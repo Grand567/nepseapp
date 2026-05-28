@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+proxy/node_modules/
+
+# Build output
+dist/
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.production
+
+# Capacitor / Android
+android/
+.DS_Store

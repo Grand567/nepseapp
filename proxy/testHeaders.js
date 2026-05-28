@@ -1,0 +1,1 @@
+const axios=require('axios'); const cheerio=require('cheerio'); axios.get('https://www.sharesansar.com/today-share-price').then(r => { const $=cheerio.load(r.data); console.log($('table thead').text().replace(/\s+/g, ' ')); })

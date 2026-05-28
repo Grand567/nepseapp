@@ -1,0 +1,14 @@
+services:
+  # NEPSE Live Data Proxy — deploys to https://nepse-proxy.onrender.com (or similar)
+  - type: web
+    name: nepse-proxy
+    runtime: node
+    rootDir: proxy
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000        # Render assigns this automatically; this is just a hint
+    autoDeploy: true
