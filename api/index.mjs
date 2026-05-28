@@ -1,7 +1,9 @@
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const cheerio = require('cheerio');
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { CookieJar } from 'tough-cookie';
+import { wrapper } from 'axios-cookiejar-support';
 
 const app = express();
 
@@ -40,7 +42,7 @@ const parseMoney = (str) => {
 /* ═══════════════════════════════════════════════════
    ENDPOINT 1 — Live Trading (market hours only)
    Source: https://www.sharesansar.com/live-trading
-═══════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════ */
 app.get('/api/market-summary', async (req, res) => {
   try {
     const response = await axios.get('https://www.sharesansar.com/live-trading', {
@@ -98,7 +100,7 @@ app.get('/api/market-summary', async (req, res) => {
    ENDPOINT 2 — Today's / Last Closing Prices
    Source: https://www.sharesansar.com/today-share-price
    Available even AFTER market close — shows last session data
-═══════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════ */
 app.get('/api/today-prices', async (req, res) => {
   try {
     const response = await axios.get('https://www.sharesansar.com/today-share-price', {
@@ -164,7 +166,7 @@ app.get('/api/today-prices', async (req, res) => {
 
 /* ═══════════════════════════════════════════════════
    ENDPOINT 3 — Market Status check
-═══════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════ */
 app.get('/api/status', (req, res) => {
   // NEPSE market hours: Sun-Thu, 11:00 – 15:00 NPT (UTC+5:45)
   const now = new Date();
@@ -189,7 +191,7 @@ app.get('/api/status', (req, res) => {
 /* ═══════════════════════════════════════════════════
    ENDPOINT 4 — Market Indices (Real NEPSE Index)
    Source: https://www.sharesansar.com/market
-═══════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════ */
 app.get('/api/market-indices', async (req, res) => {
   try {
     const response = await axios.get('https://www.sharesansar.com/market', {
@@ -236,15 +238,12 @@ app.get('/api/market-indices', async (req, res) => {
    MEROSHARE ENDPOINTS — Proxy to backend.cdsc.com.np
    These run server-side to bypass browser CORS limits.
    Uses tough-cookie for proper F5 BIG-IP WAF session handling.
-═══════════════════════════════════════════════════ */
-
-const { CookieJar } = require('tough-cookie');
-const { wrapper } = require('axios-cookiejar-support');
+   ═══════════════════════════════════════════════════ */
 
 const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
 
 // Create a session-aware axios instance with cookie jar for WAF bypass
-const createMeroShareSession = () => {
+const createMeroShareSession = async () => {
   const jar = new CookieJar();
   const client = wrapper(axios.create({
     jar,
@@ -304,7 +303,7 @@ const primeSession = async (client) => {
 /* ENDPOINT 5 — Get DP (Capital/Bank) list from MeroShare */
 app.get('/api/meroshare/dp-list', async (req, res) => {
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     const response = await client.get(`${MEROSHARE_BASE}/capital/`, {
       headers: { 'Content-Type': 'application/json' },
     });
@@ -326,7 +325,7 @@ app.post('/api/meroshare/login', async (req, res) => {
   }
   try {
     // Create a fresh session with cookie jar
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
 
     // Prime the session to get WAF cookies into the jar
     console.log('[meroshare/login] Priming session...');
@@ -385,7 +384,7 @@ app.post('/api/meroshare/portfolio', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const payload = {
@@ -428,7 +427,7 @@ app.post('/api/meroshare/own-detail', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const response = await client.get(`${MEROSHARE_BASE}/ownDetail/`, {
@@ -458,7 +457,7 @@ app.get('/api/meroshare/current-issues', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const response = await client.get(`${MEROSHARE_BASE}/companyShare/currentIssue`, {
@@ -525,15 +524,6 @@ app.post('/api/ipo-result/check', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ NEPSE Proxy Server running on http://localhost:${PORT}`);
-  console.log(`   • Live trading:    /api/market-summary`);
-  console.log(`   • Today's prices:  /api/today-prices`);
-  console.log(`   • Market status:   /api/status`);
-  console.log(`   • Market indices:  /api/market-indices`);
-  console.log(`   • MeroShare DP:    /api/meroshare/dp-list`);
-  console.log(`   • MeroShare Login: /api/meroshare/login`);
-  console.log(`   • Demat Portfolio: /api/meroshare/portfolio`);
-});
+// Vercel Serverless Function - app.listen is removed
 
-module.exports = app;
+export default app;
