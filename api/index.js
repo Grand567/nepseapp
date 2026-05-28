@@ -238,15 +238,22 @@ app.get('/api/market-indices', async (req, res) => {
    Uses tough-cookie for proper F5 BIG-IP WAF session handling.
    ═══════════════════════════════════════════════════ */
 
-const { CookieJar } = require('tough-cookie');
-const { wrapper } = require('axios-cookiejar-support');
-
 const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
 
-// Create a session-aware axios instance with cookie jar for WAF bypass
-const createMeroShareSession = () => {
-  const jar = new CookieJar();
-  const client = wrapper(axios.create({
+// Dynamically load ESM cookie jar libraries on demand to prevent ERR_REQUIRE_ESM
+let toughCookieModule = null;
+let cookieJarSupportModule = null;
+
+const createMeroShareSession = async () => {
+  if (!toughCookieModule) {
+    toughCookieModule = await import('tough-cookie');
+  }
+  if (!cookieJarSupportModule) {
+    cookieJarSupportModule = await import('axios-cookiejar-support');
+  }
+
+  const jar = new toughCookieModule.CookieJar();
+  const client = cookieJarSupportModule.wrapper(axios.create({
     jar,
     withCredentials: true,
     timeout: 20000,
@@ -304,7 +311,7 @@ const primeSession = async (client) => {
 /* ENDPOINT 5 — Get DP (Capital/Bank) list from MeroShare */
 app.get('/api/meroshare/dp-list', async (req, res) => {
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     const response = await client.get(`${MEROSHARE_BASE}/capital/`, {
       headers: { 'Content-Type': 'application/json' },
     });
@@ -326,7 +333,7 @@ app.post('/api/meroshare/login', async (req, res) => {
   }
   try {
     // Create a fresh session with cookie jar
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
 
     // Prime the session to get WAF cookies into the jar
     console.log('[meroshare/login] Priming session...');
@@ -385,7 +392,7 @@ app.post('/api/meroshare/portfolio', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const payload = {
@@ -428,7 +435,7 @@ app.post('/api/meroshare/own-detail', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const response = await client.get(`${MEROSHARE_BASE}/ownDetail/`, {
@@ -458,7 +465,7 @@ app.get('/api/meroshare/current-issues', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Auth token is required.' });
   }
   try {
-    const client = createMeroShareSession();
+    const client = await createMeroShareSession();
     await primeSession(client);
 
     const response = await client.get(`${MEROSHARE_BASE}/companyShare/currentIssue`, {
