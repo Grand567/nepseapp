@@ -2,7 +2,6 @@
   "name": "nepse-app",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
