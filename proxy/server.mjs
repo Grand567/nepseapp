@@ -2893,7 +2893,7 @@ app.get('/api/udf/history', async (req, res) => {
   }
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
     try {
         await initDB();
         startWorkers();

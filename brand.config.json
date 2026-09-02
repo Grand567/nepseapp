@@ -1,0 +1,21 @@
+{
+  "appName": "Drabyashree NEPSE",
+  "appId": "com.smartwealth.nepse",
+  "theme": {
+    "primary": "#3b82f6",
+    "primaryLight": "#60a5fa",
+    "primaryGlow": "rgba(59, 130, 246, 0.22)",
+    "primarySubtle": "rgba(59, 130, 246, 0.08)"
+  },
+  "firebase": {
+    "apiKey": "AIzaSyA3PbGh1ZQ16zNUPPrmjOW43VCAJ3gtmWY",
+    "authDomain": "drabyashree-nepse-hub-11ef9.firebaseapp.com",
+    "projectId": "drabyashree-nepse-hub-11ef9",
+    "storageBucket": "drabyashree-nepse-hub-11ef9.firebasestorage.app",
+    "messagingSenderId": "646874388203",
+    "appId": "1:646874388203:web:cd74981599584dc92e50ae"
+  },
+  "proxy": {
+    "viteProxyUrl": "https://drabyashree-nepse-hub6936.vercel.app"
+  }
+}

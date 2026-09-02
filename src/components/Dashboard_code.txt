@@ -1,0 +1,306 @@
+export default function Dashboard({ stocks, indices, triggerTick, marketStatus }) {
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(null);
+  
+  const { watchlist } = useWatchlist();
+  const watchlistStocks = watchlist.map(sym => stocks.find(s => s.symbol === sym)).filter(Boolean);
+  
+  // Interactive UI States
+  const [timeframe, setTimeframe] = useState('1D');
+  const [chartType, setChartType] = useState('line');
+  const [statModal, setStatModal] = useState(null); // { label: 'Advanced', list: [...] }
+
+  // Helpers
+  const fmtCr = n => (n / 10000000).toFixed(2) + 'Cr';
+  const fmtB = n => (n / 1000000000).toFixed(2) + ' B';
+
+  // Stats Calculations
+  const totalTurnover = stocks.reduce((acc, s) => acc + (s.turnover || (s.ltp * s.volume) || 0), 0);
+  const totalShares = stocks.reduce((acc, s) => acc + (s.volume || 0), 0);
+  const totalTransactions = Math.floor(totalShares / 167);
+  const totalScripts = stocks.length;
+  
+  const gainers = stocks.filter(s => s.pChange > 0);
+  const losers = stocks.filter(s => s.pChange < 0);
+  const unchanged = stocks.filter(s => s.pChange === 0);
+  const posCircuit = stocks.filter(s => s.pChange >= 9.95);
+  const negCircuit = stocks.filter(s => s.pChange <= -9.95);
+
+  const turnoverLeaders = [...stocks].sort((a,b) => (b.turnover || (b.ltp*b.volume)) - (a.turnover || (a.ltp*a.volume))).slice(0, 8);
+  const topGainers = [...gainers].sort((a,b) => b.pChange - a.pChange).slice(0, 10);
+
+  const nepse = indices?.nepse || { value: 0, change: 0, pChange: 0 };
+  const isMarketOpen = marketStatus?.isOpen;
+  const isBull = nepse.change >= 0;
+
+  // Search filter
+  const searchResults = search ? stocks.filter(s => s.symbol.toLowerCase().includes(search.toLowerCase()) || (s.name && s.name.toLowerCase().includes(search.toLowerCase()))) : [];
+
+  return (
+    <div style={{ padding: '16px', paddingBottom: '80px' }}>
+      
+      {/* 1. Search Bar */}
+      <div style={{ position: 'relative', marginBottom: '16px' }}>
+        <Search style={{ position: 'absolute', left: 12, top: 12, color: 'var(--text-muted)' }} size={18} />
+        <input 
+          type="text" 
+          placeholder="Search stocks by symbol or name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 12px 12px 38px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            color: '#fff',
+            fontSize: 'calc(14px * var(--font-scale, 1))',
+            outline: 'none'
+          }}
+        />
+        {search && (
+          <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 12, top: 12, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* 2. Search Results View */}
+      {search ? (
+        <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 'calc(14px * var(--font-scale, 1))', fontWeight: '800', color: '#fff', marginBottom: '16px' }}>Search Results</div>
+          {searchResults.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', fontSize: 'calc(12px * var(--font-scale, 1))', color: 'var(--text-muted)', paddingBottom: '8px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+              <div>Symbol</div>
+              <div style={{ textAlign: 'right' }}>LTP</div>
+              <div style={{ textAlign: 'right' }}>CH%</div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 'calc(13px * var(--font-scale, 1))', color: 'var(--text-muted)' }}>No stocks found matching "{search}"</div>
+          )}
+          {searchResults.map(s => (
+            <div key={s.symbol} onPointerDown={() => setSelected(s)} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', cursor: 'pointer' }}>
+              <div style={{ fontWeight: '800', color: '#fff', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.symbol}</div>
+              <div style={{ textAlign: 'right', color: '#fff', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.ltp}</div>
+              <div style={{ textAlign: 'right', color: s.pChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.pChange >= 0 ? '+' : ''}{s.pChange}%</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          {/* Default Dashboard View */}
+          <div className="ticker-strip" style={{ margin: '-16px -16px 16px -16px' }}>
+            <div className="ticker-scroll">
+              {[...stocks, ...stocks].map((s, i) => (
+                <div key={i} className="ticker-item" onClick={() => setSelected(s)} style={{ fontSize: 'calc(13px * var(--font-scale, 1))' }}>
+                  <span className="ticker-symbol" style={{ fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.symbol}</span>
+                  <span className="ticker-price" style={{ fontSize: 'calc(13px * var(--font-scale, 1))' }}>Rs.{Number(s.ltp || 0).toFixed(2)}</span>
+                  <span className="ticker-change" style={{color: s.pChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontSize: 'calc(13px * var(--font-scale, 1))'}}>
+                    {s.pChange >= 0 ? '▲' : '▼'}{Number(Math.abs(s.pChange || 0)).toFixed(2)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'calc(18px * var(--font-scale, 1))', fontWeight: '800', color: '#fff' }}>NEPSE Index <ChevronDown style={{ width: 16, height: 16, display: 'inline' }} /></span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button onClick={() => setTimeframe(t => t === '1D' ? '1W' : t === '1W' ? '1M' : '1D')} style={{ fontSize: 'calc(13px * var(--font-scale, 1))', color: '#fff', background: 'var(--bg-base)', padding: '4px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', border: 'none', cursor: 'pointer' }}>
+                  {timeframe} <ChevronDown style={{ width: 14, height: 14, marginLeft: 2 }} />
+                </button>
+                <div style={{ display: 'flex', background: 'var(--bg-base)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <button onClick={() => setChartType('line')} style={{ padding: '4px 8px', background: chartType === 'line' ? 'var(--primary)' : 'transparent', border: 'none', cursor: 'pointer' }}>
+                    <TrendingUp style={{ width: 14, height: 14, color: chartType === 'line' ? '#fff' : 'var(--text-muted)' }} />
+                  </button>
+                  <button onClick={() => setChartType('candle')} style={{ padding: '4px 8px', background: chartType === 'candle' ? 'var(--primary)' : 'transparent', border: 'none', cursor: 'pointer' }}>
+                    <BarChart2 style={{ width: 14, height: 14, color: chartType === 'candle' ? '#fff' : 'var(--text-muted)' }} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ background: isBull ? 'var(--bull)' : 'var(--bear)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', fontSize: 'calc(15px * var(--font-scale, 1))' }}>{Number(nepse.value || 0).toFixed(2)}</div>
+                <div style={{ background: isBull ? 'var(--bull)' : 'var(--bear)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', fontSize: 'calc(15px * var(--font-scale, 1))' }}>{nepse.change >= 0 ? '+' : ''}{Number(nepse.change || 0).toFixed(2)}</div>
+                <div style={{ background: isBull ? 'var(--bull)' : 'var(--bear)', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontWeight: '800', fontSize: 'calc(15px * var(--font-scale, 1))' }}>{nepse.pChange >= 0 ? '+' : ''}{Number(nepse.pChange || 0).toFixed(2)}%</div>
+              </div>
+              <div style={{ background: isMarketOpen ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: isMarketOpen ? 'var(--bull)' : 'var(--bear)', padding: '4px 10px', borderRadius: '6px', fontWeight: '700', fontSize: 'calc(12px * var(--font-scale, 1))' }}>
+                {isMarketOpen ? 'Market Open' : 'Market Closed'}
+              </div>
+            </div>
+            <div style={{ fontSize: 'calc(11px * var(--font-scale, 1))', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '16px' }}>
+              As of {marketStatus?.nptTime || new Date().toLocaleTimeString()}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+            {[
+              { label: 'Advanced', count: gainers.length, color: 'var(--bull)', icon: TrendingUp, list: gainers },
+              { label: 'Declined', count: losers.length, color: 'var(--bear)', icon: TrendingDown, list: losers },
+              { label: 'Unchanged', count: unchanged.length, color: 'var(--text-secondary)', icon: Activity, list: unchanged },
+              { label: '+Circuit', count: posCircuit.length, color: 'var(--bull)', icon: Zap, list: posCircuit },
+              { label: '-Circuit', count: negCircuit.length, color: 'var(--bear)', icon: Zap, list: negCircuit },
+            ].map(stat => (
+              <div 
+                key={stat.label} 
+                onClick={() => stat.count > 0 && setStatModal(stat)}
+                style={{ 
+                  background: 'var(--bg-elevated)', border: `1px solid ${stat.color}40`, borderRadius: '8px', 
+                  padding: '10px 4px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  cursor: stat.count > 0 ? 'pointer' : 'default', transition: 'var(--transition)'
+                }}
+              >
+                <stat.icon style={{ width: 14, height: 14, color: stat.color, marginBottom: '4px' }} />
+                <div style={{ fontSize: 'calc(16px * var(--font-scale, 1))', fontWeight: '800', color: stat.color }}>{stat.count}</div>
+                <div style={{ fontSize: 'calc(9px * var(--font-scale, 1))', color: 'var(--text-muted)', marginTop: '2px', textTransform: 'uppercase' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <SectorHeatmap stocks={stocks} />
+
+          <div style={{ background: 'linear-gradient(90deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))', borderRadius: '12px', padding: '16px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <div style={{ background: 'rgba(16,185,129,0.2)', padding: '8px', borderRadius: '8px' }}>
+              <Sparkles style={{ width: 20, height: 20, color: 'var(--bull)' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 'calc(15px * var(--font-scale, 1))', fontWeight: '800', color: '#fff' }}>Bring in your shares</div>
+              <div style={{ fontSize: 'calc(13px * var(--font-scale, 1))', color: 'var(--text-secondary)' }}>Link MeroShare once and we do the rest</div>
+            </div>
+            <ChevronDown style={{ width: 16, height: 16, color: 'var(--text-muted)', transform: 'rotate(-90deg)' }} />
+          </div>
+
+          {watchlistStocks.length > 0 && (
+            <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                 <div style={{ background: '#ffc107', color: '#000', padding: '6px 12px', borderRadius: '6px', fontSize: 'calc(13px * var(--font-scale, 1))', fontWeight: '800', display: 'flex', alignItems: 'center', gap: 6 }}>
+                   <Star style={{width:14,height:14}} fill="#000" stroke="#000" /> My Watchlist
+                 </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', fontSize: 'calc(12px * var(--font-scale, 1))', color: 'var(--text-muted)', paddingBottom: '8px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+                <div>Symbol</div>
+                <div style={{ textAlign: 'right' }}>LTP</div>
+                <div style={{ textAlign: 'right' }}>CH%</div>
+              </div>
+              {watchlistStocks.map(s => (
+                <div key={s.symbol} onClick={() => setSelected(s)} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', cursor: 'pointer' }}>
+                  <div style={{ fontWeight: '800', color: '#fff', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.symbol}</div>
+                  <div style={{ textAlign: 'right', color: '#fff', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.ltp}</div>
+                  <div style={{ textAlign: 'right', color: s.pChange >= 0 ? 'var(--bull)' : (s.pChange < 0 ? 'var(--bear)' : 'var(--text-secondary)'), fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.pChange >= 0 ? '+' : ''}{s.pChange}%</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+               <div style={{ background: 'var(--primary-light)', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: 'calc(13px * var(--font-scale, 1))', fontWeight: '800' }}>Turnover Leaders</div>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary-light)', fontSize: 'calc(12px * var(--font-scale, 1))', fontWeight: '700', border: '1px solid var(--primary-light)', padding: '4px 10px', borderRadius: '20px' }}>
+                 Share
+               </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', fontSize: 'calc(12px * var(--font-scale, 1))', color: 'var(--text-muted)', paddingBottom: '8px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+              <div>Symbol</div>
+              <div style={{ textAlign: 'right' }}>Turnover</div>
+              <div style={{ textAlign: 'right' }}>CH%</div>
+              <div style={{ textAlign: 'right' }}>LTP</div>
+            </div>
+            {turnoverLeaders.map(s => (
+              <div key={s.symbol} onClick={() => setSelected(s)} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', cursor: 'pointer' }}>
+                <div style={{ fontWeight: '800', color: '#fff', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.symbol}</div>
+                <div style={{ textAlign: 'right', color: 'var(--text-secondary)', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{fmtCr(s.turnover || (s.ltp * s.volume))}</div>
+                <div style={{ textAlign: 'right', color: s.pChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.pChange >= 0 ? '+' : ''}{s.pChange}%</div>
+                <div style={{ textAlign: 'right', color: '#fff', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.ltp}</div>
+              </div>
+            ))}
+            <div style={{ textAlign: 'right', marginTop: '12px', color: 'var(--primary-light)', fontSize: 'calc(13px * var(--font-scale, 1))', fontWeight: '700', cursor: 'pointer' }}>View More &gt;</div>
+          </div>
+
+          <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '20px', border: '1px solid var(--border)', marginBottom: '24px' }}>
+            <h3 style={{ textAlign: 'center', fontSize: 'calc(16px * var(--font-scale, 1))', fontWeight: '800', color: '#fff', marginBottom: '20px' }}>Market Summary</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'calc(13px * var(--font-scale, 1))' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: '700' }}>Total Turnover</span>
+                <span style={{ color: '#fff', fontWeight: '800' }}>NPR {fmtB(totalTurnover)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'calc(13px * var(--font-scale, 1))' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: '700' }}>Total Traded Shares</span>
+                <span style={{ color: '#fff', fontWeight: '800' }}>{Number(totalShares).toLocaleString('en-IN')}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'calc(13px * var(--font-scale, 1))' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: '700' }}>Total Transactions</span>
+                <span style={{ color: '#fff', fontWeight: '800' }}>{Number(totalTransactions).toLocaleString('en-IN')}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'calc(13px * var(--font-scale, 1))' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: '700' }}>Total Scripts Traded</span>
+                <span style={{ color: '#fff', fontWeight: '800' }}>{totalScripts}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--bg-elevated)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+               <div style={{ background: 'var(--bull)', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: 'calc(13px * var(--font-scale, 1))', fontWeight: '800' }}>Top Gainers</div>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--bull)', fontSize: 'calc(12px * var(--font-scale, 1))', fontWeight: '700', border: '1px solid var(--bull)', padding: '4px 10px', borderRadius: '20px' }}>
+                 Share
+               </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', fontSize: 'calc(12px * var(--font-scale, 1))', color: 'var(--text-muted)', paddingBottom: '8px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+              <div>Symbol</div>
+              <div style={{ textAlign: 'right' }}>CH</div>
+              <div style={{ textAlign: 'right' }}>CH%</div>
+              <div style={{ textAlign: 'right' }}>LTP</div>
+            </div>
+            {topGainers.map(s => (
+              <div key={s.symbol} onClick={() => setSelected(s)} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.02)', cursor: 'pointer' }}>
+                <div style={{ fontWeight: '800', color: '#fff', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.symbol}</div>
+                <div style={{ textAlign: 'right', color: 'var(--bull)', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{Number(s.change || 0).toFixed(2)}</div>
+                <div style={{ textAlign: 'right', color: 'var(--bull)', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{Number(s.pChange || 0).toFixed(2)}%</div>
+                <div style={{ textAlign: 'right', color: '#fff', fontWeight: '700', fontSize: 'calc(13px * var(--font-scale, 1))' }}>{s.ltp}</div>
+              </div>
+            ))}
+            <div style={{ textAlign: 'right', marginTop: '12px', color: 'var(--bull)', fontSize: 'calc(13px * var(--font-scale, 1))', fontWeight: '700', cursor: 'pointer' }}>View More &gt;</div>
+          </div>
+        </>
+      )}
+
+      {/* 3. Stat Modal */}
+      {statModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+               <statModal.icon style={{ width: 20, height: 20, color: statModal.color }} />
+               <span style={{ fontSize: 'calc(18px * var(--font-scale, 1))', fontWeight: '800', color: statModal.color }}>{statModal.label} Stocks ({statModal.list.length})</span>
+            </div>
+            <button onClick={() => setStatModal(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={24} /></button>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', fontSize: 'calc(12px * var(--font-scale, 1))', color: 'var(--text-muted)', paddingBottom: '8px', borderBottom: '1px solid var(--border)', marginBottom: '12px' }}>
+              <div>Symbol</div>
+              <div style={{ textAlign: 'right' }}>LTP</div>
+              <div style={{ textAlign: 'right' }}>CH%</div>
+            </div>
+            {statModal.list.map(s => (
+              <div 
+                key={s.symbol} 
+                onClick={() => { setSelected(s); setStatModal(null); }} 
+                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+              >
+                <div style={{ fontWeight: '800', color: '#fff', fontSize: 'calc(15px * var(--font-scale, 1))' }}>{s.symbol}</div>
+                <div style={{ textAlign: 'right', color: '#fff', fontWeight: '700', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.ltp}</div>
+                <div style={{ textAlign: 'right', color: s.pChange >= 0 ? 'var(--bull)' : (s.pChange < 0 ? 'var(--bear)' : 'var(--text-secondary)'), fontWeight: '700', fontSize: 'calc(14px * var(--font-scale, 1))' }}>{s.pChange >= 0 ? '+' : ''}{s.pChange}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selected && <StockDrawer stock={selected} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}

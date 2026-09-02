@@ -1,0 +1,1898 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head><meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="google-adsense-account" content="ca-pub-5212639010415313" /><title>
+	merolagani - Datewise NEPSE Indices
+</title>
+    <link rel="preload" href="/bundles/css/main200?v=XBmv3Nbj66DV6lzAxQCBgaIOrn903Diuut8lsSb3n9k1" as="style">
+    <link rel="preload" href="/bundles/css/site205?v=L5V1uk5xoLic8qHQPSOAgTWwYTf5257cWEew3F97Y_c1" as="style">
+    
+    <link href="/bundles/css/main200?v=XBmv3Nbj66DV6lzAxQCBgaIOrn903Diuut8lsSb3n9k1" rel="stylesheet"/>
+<link href="/bundles/css/site205?v=L5V1uk5xoLic8qHQPSOAgTWwYTf5257cWEew3F97Y_c1" rel="stylesheet"/>
+<link href="/Content/Services.css" rel="stylesheet"/>
+<link href="/Content/owl.carousel.min.css" rel="stylesheet"/>
+<link href="/Content/lightslider/css/lightslider.css" rel="stylesheet"/>
+<script src="/scripts/jquery/jquery-1.11.0.min.js"></script>
+<script src="/scripts/jquery/jquery-ui.js"></script>
+
+
+
+ 
+
+
+
+
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!--[if IE 7]>
+      <link rel="stylesheet" href="path/to/font-awesome/css/font-awesome-ie7.min.css" />
+    <![endif]-->
+    
+
+    
+
+	<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5212639010415313" crossorigin="anonymous"></script>
+<meta name="description" content="Track the live changes in market index values, absolute change, percentage changes everyday" /></head>
+<body>
+    <!-- Go to www.addthis.com/dashboard to customize your tools -->
+    
+
+    
+    <div class="popup-wrapper">
+        <div class="popup">
+            <div class="popup-body">
+                <div class="popup-image">
+                    <img src="Content/images/brand-logo.png" class="float-left" height="45" width="100" alt="merolagani logo" />
+                </div>
+                <div class="popup-desc">
+                    <span class="float-right">We'd like to send you notifications for the latest news and updates.</span>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button class="btn btn-sm btn-link" onclick="AlertNotification.updateRequestExpiryDate();$('.popup').hide();">No Thanks</button>
+                <button class="btn btn-sm btn-primary allow-btn" onclick="AlertNotification.requestNotification();$('.popup').hide();">Allow</button>
+            </div>
+        </div>
+    </div>
+
+
+    <form method="post" action="./Indices.aspx" id="aspnetForm">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="dP3aJavwZdTlfFvkVTgYo4naGwB54boW9njO0qnqK/PZlGEsNaiSxhsDrrNHgobV/SDdkUMhTvBr7E7iAeGr9LQfnQAFXdKImLIPY+CzwSAtXIF44SMIcdbw6vuicZu08i6RjBcu2Hq90ZFDwYvLeWn+qbBxSuwJRrHA6kL74OeIW8aSbNmaPFT21699a1lp14qIlQZHpMHtY6FKWZJVYUrb0uVXbKhwqxJXdV7nMyTnKClauXtL/Io0YeH452+UvqCK69kQn/ghEtbDPkLoalk93sOLM5RLh4GAjJiZAWqYQU0sbmlPHdfJG9gilk9udXXN7bs1E97vtK9huQpBIIMrFju/WDXaW3pQhnorpw7Vz1D15LPTsZdgIJ21IigdDeQg2Lu8wop5zzio7FNKQMpKLRFTRBb48f2rn6j4Ii3/nw/MTv0wWW/tl4E2Lylrjp8BJpDGMDn7cpCNKOtyqCTt8pc6EcTPxuzTqqRKCTFi+Rdl373/HZ1EFghcRiUa2JKbRQ5CXaE+C7zIIgnlHE8OORM5mO0qiTV16QLLwgaPySIRS5hThwKARAAFtzXgx2nL83xt8QtDDm36gHm6GYlcB771Iltqi2T3NLaqxwx7uic+pSEJi/YYxfWNozByBjoR4z+29y9etFqEjFx1RRw5X0x2lpymDCnRu0XMJc7kppqLEuPqDkhjlSnnZPgrVxgcvWCGKjxJWe84SWOcAdu799pEoDwpwjUjnt9rIUOzq2hwKYG2RUvFHvyc87LZFcgLXcv2ln3hPpYTtvgKG2kmzeKcuPhpFLk+TDzIxi8CSqyVrNjUjxz6atbawgWmodEmRdl6f1age6/XNH1aMW1GycMnamuw96hb/Z2v0lZf11vcYdx+odEWuc2ZTXOp3UbKO3LvbmZHECJCXaIzyHiPZFBbKXeR37tYEk26CVBXOXOiHNU7EnBs5KBPRBTXDodd/9dNtwB6ttoYSgpYoow12ahnedlQDn28tl+s7pTfGBEEFjxR6CKuKT4YwUC3lxOfF9N31MM+vMrkpWO5RPtsHImPeazKFJK00VCrgfce5/V7lRANQ7Uzi8Rxwm22zdRZpRxCn2Ubz2ndtFaU/ELgco1eS83qy1aq0cb+KUxere5xMmC66v0ZUue3Mv/PNA8VV2Qn+mmGEfw8gGjjEpWOiQWvX1g2ysQ5rKjZZLG6gXKX8b0/7Ec03u+IZMWPhzembr9vw1Xypl/I7Hmrbw==" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['aspnetForm'];
+if (!theForm) {
+    theForm = document.aspnetForm;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<script src="/WebResource.axd?d=pynGkmcFUV13He1Qd6_TZE7Ly-D96wxzD42IvLApR2o842mVyy4xW2LPTp9e5wKiaIYjSBfGFwEpo-3VT5GvYg2&amp;t=637300258292347039" type="text/javascript"></script>
+
+
+<script src="/ScriptResource.axd?d=NJmAwtEo3Ipnlaxl6CMhvipoe7GwaCubeHW4UfRJaQMYfe2vWimaAfUruL3Jtc4RZThytRvxUyO6d2j9jojy_JqJ8YoxAw6iCsm-JPqTwJfdJvJSxEeEFIbBEXpHYYtCgxTm4YOpj1K-gzjpPimOUKDDL-_Y3e26hQI4FR_aAxo1&amp;t=ffffffffecf19baa" type="text/javascript"></script>
+<script src="/ScriptResource.axd?d=dwY9oWetJoJoVpgL6Zq8OOcWcFj2O5NKyKGqqU-fAkUwr90Ru-qT50Y5JKbSFEPP4-evK-OtFSvef85H5u4XIfb4blMPg1FX6u7qjG8LbJZs-nQWWlU0w2v-_7a_mYnGEWjEKlaec_A6xBD0ZbbTlR3m4GdSSIWaqLTiWKOnajo1&amp;t=ffffffffecf19baa" type="text/javascript"></script>
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="4D8179A0" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="wilCn722itfF4TOz5rX5BA9pDvHYsNQTykJo4aELR4WF4XL/AewmZShf7Bp9PvBU60DJX7Cttb1DF+y8FMH+isxsMf6Xz8uHwT9tiWEgaUwWrk0oXlNAicVBdAy3BiK11Xg5rDvgXd+29Z1UZnnx66aN1GidipP85Roli0037STrMghRMI03umK0b5W0DfWiYERGngh8779AZXbydn90IJiID21oFwhlUJJNLgBuVznVfet1z/YYDSvxoxXhA6qF8hCtMIJ81ajp3aRqtLIWZpXD1uayhlv7pjLut53cxq3hyCddjQlUf59grOxw2Raqas2n+jMrdK68pHQcfvy85TFXQkovhnqDvzvC7TZF5FGp7w0n6/z4usb8nBcESNFQtcvUnGQOUzfHZC96ZZ/06FTocq0EyoraiCyJARVUS/vT/5HQD1glQ2o7m3hDdoDs7lx3zGEUw2xvm8b4OwDr0C1LMSxoNTJ8oCSo6chuDNJRa2BgfhpAqvnLWhNQzIZ/dtTZiwV21Bfg7BNY6RsiaQcFIsPNPgPj0AStRkuPrRyUu3JuKfc3pO6/RR91cY5FhpRV3vzzHD7Sb4xI+Nd3ZtO6aRSeK/xIeybWySCA0nN+zmfVzWhjlEcynvs2307wwlj92+rybt1qmbGk0Tp1vmXg/rZsgPaU9mJAS9MpPfZN6Q+m3j8az4UxD/+Xgt5+HdAgSf6vfpifZHoT6gpNWYA2oue31JdNdesxkiezW/TIWD7/L0+qN9Kjgp8Y6+XvfrrGvGHhUfiLxaFKj36XGw0feHLGIwjurvMjVO9a7nAYvB1PPNLGvqd3fhj26mbOvAf/iHWqnsKsbj0nrVaiTsEn+HZqgzDI0Ul01RKO5luVGwGzJCIYI0Rr0msgn/JU" />
+</div>
+
+        <div>
+            
+            <div class="visible-mobile-ad">
+                
+
+                
+            </div>
+            <div class="topbar">
+                <div class="container">
+                    <div class="row">
+                        <div class="col-lg-13">
+                            <p class="date-topbar pull-left hidden-sm hidden-xs">Thu, Aug 27, 2026</p>
+                            <ul class="list-inline list-topbar pull-right">
+                                <li><i class="icon-envelope"></i>support@asteriskt.com</li>
+                                <li><i class="icon-phone"></i>(+977) 01-5315101/5315184</li>
+                                <li><i class="icon-mobile-phone"></i>9801000860</li>
+                                <li>
+                                    
+                                    <a onclick="javascript: window.open(&#39;https://eng.merolagani.com&#39;);" id="ctl00_btnEn" title="English Version" class="btn btn-primary btn-xs act-btn" href="javascript:__doPostBack(&#39;ctl00$btnEn&#39;,&#39;&#39;)">
+                                    <span class="glyphicon glyphicon-one-fine-white-dot">ENGLISH</span></a>
+                                </li>
+                                
+                                <li id="ctl00_liFreeAccount" style="display: none">
+                                    <a href="/Login.aspx" class="btn btn-primary btn-xs">Create Free Account</a>
+                                </li>
+                                <li>
+                                    <div class="btn-group">
+                                        <button tabindex="-1" type="button" class="btn btn-success btn-xs dropdown-toggle" data-toggle="dropdown">
+                                            Help <span class="icon-angle-down"></span>
+                                        </button>
+                                        <ul class="dropdown-menu" role="menu">
+                                            <!--<li>
+                                                <a href="/Uploads/Help.pdf">PDF</a>
+                                            </li>-->
+                                            <li>
+                                                <a href="/VideoTutorials.aspx">Video Tutorials</a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </li>
+                                <li class="mobile-d-none">
+                                    <a href="/AboutUs.aspx">About Us</a>
+                                </li>
+                                <li class="mobile-d-none">
+                                    <a href="/ContactUs.aspx">Contact Us</a>
+                                </li>
+                                <li class="mobile-d-none">
+                                    <a href="/BankAccounts.aspx">Bank Accounts</a>
+                                </li>
+
+                                <li id="ctl00_liLogout" style="display: none">
+                                    <a href="/Logout.aspx" onclick="webEngageLogout();">Log Out</a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="visible-desktop-ad">
+                <div class="slot-A9">
+                    
+
+                </div>
+            </div>
+            <div class="logobar">
+                <div class="container">
+                    <div class="row">
+                        <div class="visible-mobile-ad">
+                            
+
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-xs-6 col-md-4 col-sm-4">
+                            <a href="/Index.aspx">
+                                <img src="/Content/images/merolagani.png" class="img-responsive" /></a>
+                        </div>
+                        <div id="ctl00_divA1Ads" class="visible-desktop-ad ear-panel">
+                            <div id="ctl00_A1_divAdvertisement">
+    <div id="ctl00_A1_divA1" class="col-sm-8">
+        <a href="https://merolagani.com/ServiceDetails.aspx?ServiceId=10015"
+           target='_blank'
+           onclick="addAdvHitCounter.UpdateAdvHitCounter('668',this)">
+            <img src="https://images.merolagani.com//content/bigyapan/f4ac68d3-5980-4c7e-9896-932b1c160de4.gif" class="img-responsive"/>
+        </a>
+    </div>
+
+    
+</div>
+
+                        </div>
+                        
+                        
+                        
+                        
+                        
+                        
+                    </div>
+                </div>
+            </div>
+            <div class="visible-mobile-ad">
+                
+
+            </div>
+            <nav id="navbars" class="navbar navbar-inverse" data-spy="affix" data-offset-top="197">
+                <div class="container">
+                    <div class="navbar-header">
+                        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+                            <span class="sr-only">Toggle navigation</span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                            <span class="icon-bar"></span>
+                        </button>
+
+                        <div class="navbar-brand visible-xs">
+                             <ul>
+                                <li>
+                                    <div class="form-inline home-panel-search" onkeypress="javascript:return WebForm_FireDefaultButton(event, &#39;ctl00_lbtnSearchHeader&#39;)">
+	
+                                        
+
+<autosuggest>
+    <input type="hidden" name="ctl00$ASCompany$hdnAutoSuggest" id="ctl00_ASCompany_hdnAutoSuggest" value="0" />
+        <input name="ctl00$ASCompany$txtAutoSuggest" type="text" maxlength="255" id="ctl00_ASCompany_txtAutoSuggest" tabindex="-1" title="Type company name or stock symbol" class="form-control form-control-inline" autocomplete="off" data-bound="0" onblur="" placeholder="Company name or symbol" onkeypress="AutoSuggest.getAutoSuggestDataByElement(&quot;Company&quot;,this);" onkeyup="AutoSuggest.clearValue(event,this);" />
+        <span id="username-verify" class="pull-right verify-position"></span>
+</autosuggest>
+                                        <a onclick="return false;" id="ctl00_lbtnSearchHeader" tabindex="-1" title="Search Company Detail" class="btn btn-primary home-button-search" data-trigger="company-detail" href="javascript:__doPostBack(&#39;ctl00$lbtnSearchHeader&#39;,&#39;&#39;)"><span class="icon-search"></span></a>
+                                    
+</div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="collapse navbar-collapse" id="navbar">
+                        <ul class="nav navbar-nav">
+                            <li class="">
+                                <a href="/Index.aspx" style="display:flex;align-items:center;">
+                                    <span class="icon-home icon-2x" style="line-height: 20px"></span>
+									<img id ="nav-app-icon" src="/Content/images/merolagani.png" class="img-responsive" style="object-fit:contain; height:30px;display:none;"  />
+
+                                </a>
+                            </li>
+                            <li class="dropdown active">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown" title="Market">Market <b class="icon-angle-down"></b></a>
+                                <ul class="dropdown-menu">
+                                    <li class="">
+                                        <a href="/LatestMarket.aspx">Live Trading</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/StockQuote.aspx">Todays Shareprice</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/Floorsheet.aspx">Floorsheet</a>
+                                    </li>
+                                    <li class="active">
+                                        <a href="/Indices.aspx">Indices</a>
+                                    </li>
+                                   
+                                    <li class="">
+                                        <a href="/MarketSummary.aspx">Market Overview</a>
+                                    </li>
+                                    <li class="divider"></li>
+                                    <li class="dropdown-header">Market Summary</li>
+                                    <li class="">
+                                        <a href="/MarketSummary.aspx?type=gainers">Top Gainers</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/MarketSummary.aspx?type=losers">Top Losers</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/MarketSummary.aspx?type=turnovers">Top Turnovers</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/MarketSummary.aspx?type=sectors">Top Sectors</a>
+                                    </li>
+                                    <li class="divider"></li>
+                                    <li class="">
+                                        <a href="/#StockEvents" onclick="LayoutMaster_ClientID.TrackEvent_OnStockEvent();">Stock Events</a>
+                                    </li>
+                                    <li class="">
+                                        <a 
+                                            href="/#divOpportunity">Tender & Auction</a>
+                                    </li>
+
+                                </ul>
+                            </li>
+                            <li class="dropdown">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown" title="Market">News <b class="icon-angle-down"></b></a>
+                                <ul class="dropdown-menu">
+                                    <li class="">
+                                        <a href="/NewsList.aspx">News</a>
+                                    </li>
+                                    <li class="divider"></li>
+                                    <li class="dropdown-header">News Category</li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=13&type=latest">Insurance</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=25&type=latest">Current Affairs</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=23&type=latestY">IT/Auto</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=15&type=latest">Technical Analysis</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=10&type=latest">Opinion & Analysis</a>
+                                    </li>
+									<li class="">
+                                        <a href="/NewsList.aspx?id=17&type=latest">Corporate</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/NewsList.aspx?id=12&type=latest">International</a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="">
+                                <a href="/AnnouncementList.aspx">Announcements</a>
+                            </li>
+                            <li class="dropdown">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown" title="Market">Reports <b class="icon-angle-down"></b></a>
+                                <ul class="dropdown-menu">
+                                    <li class="">
+                                        <a href="/CompanyReports.aspx?type=ANNUAL">Annual Report</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/CompanyReports.aspx?type=QUARTERLY">Quarterly Report</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/BrokerList.aspx">Brokers</a>
+                                    </li>
+									<li class="">
+                                        <a href="/InterestRate.aspx">Interest Rate</a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="dropdown">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown">Portfolio <b class="icon-angle-down"></b></a>
+                                <ul class="dropdown-menu">
+                                    <li class="">
+                                        <a href="/MyPortfolio.aspx">My Portfolio</a>
+                                    </li>                                    
+                                    <li class="">
+                                        <a class="" href="/Newsletter.aspx">Newsletter <span class="badge-info"><span class="glyphicon glyphicon-flag blink" style="color: #edaa4e"></span></span></a>
+                                    </li>
+                                    <li class="">
+                                        <a class="" href="/TechnicalData.aspx">Technical Data <span class="badge-info"><span class="glyphicon glyphicon-flag blink" style="color: #edaa4e"></span></span></a>
+                                    </li>
+                                    <li class="">
+                                        <a class="" href="/Podcast.aspx">Podcast <span class="badge-info"><span class="glyphicon glyphicon-flag blink" style="color: #edaa4e"></span></span></a>
+                                    <li class="">
+                                        <a class="" href="/StockTrainingPodcast.aspx">Online Stock Training <span class="badge-info"><span class="glyphicon glyphicon-flag blink" style="color: #edaa4e"></span></span></a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="dropdown">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown">IPO <b class="icon-angle-down"></b></a>
+                                <ul class="dropdown-menu">
+                                    <li class="">
+                                        <a href="/IpoResult.aspx">IPO Results</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/Ipo.aspx?type=upcoming">Upcoming IPO</a>
+                                    </li>
+                                    <li class="">
+                                        <a href="/Ipo.aspx?type=past">Past IPO</a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="">
+                                <a href="/Services.aspx">Services</a>
+                            </li>
+                            <li class="">
+                                <a href="/Dashboard.aspx">Dashboard <span class="blink label label-warning">New</span> </a>
+                            </li>
+                        </ul>
+
+                        <ul class="nav navbar-nav navbar-right">
+
+                            <!-- Service purchased and pending cart start -->
+                            <li class="">
+                                <a href="/ServicePurchased.aspx">
+                                    <span class="glyphicon glyphicon-shopping-cart"></span>
+                                </a>
+                            </li>
+                            <!-- Service purchased and pending cart start -->
+                            <li class="dropdown search-form" style="display: none;">
+                                <a href="javascript:void(0);" class="dropdown-toggle" data-toggle="dropdown">
+                                   <span>Search...</span> <i class="icon-search"></i>
+                                    <span class="hidden-sm"></span>
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li>
+                                        <input name="ctl00$txtNews" type="text" id="ctl00_txtNews" class="form-control form-control-inline" maxlength="255" title="Enter search keywords" placeholder="News keyword" tabindex="-1" style="width: 280px" data-news="company-detail" />
+                                        <br />
+                                        <a onclick="return LayoutMaster_ClientID.trackEvent_OnNavSearch();" id="ctl00_aa" tabindex="-1" title="Search" class="btn btn-primary" href="javascript:__doPostBack(&#39;ctl00$aa&#39;,&#39;&#39;)" style="margin-top: 6px"><span class="icon-search"></span> Search</a>
+
+                                    </li>
+                                </ul>
+                            </li>
+							<li>
+                                <div id="ctl00_Panel1" class="form-inline home-panel-search" onkeypress="javascript:return WebForm_FireDefaultButton(event, &#39;ctl00_lbtnSearch&#39;)">
+	
+                                    
+
+<autosuggest>
+    <input type="hidden" name="ctl00$AutoSuggest1$hdnAutoSuggest" id="ctl00_AutoSuggest1_hdnAutoSuggest" value="0" />
+        <input name="ctl00$AutoSuggest1$txtAutoSuggest" type="text" maxlength="255" id="ctl00_AutoSuggest1_txtAutoSuggest" tabindex="-1" title="Type company name or stock symbol" class="form-control form-control-inline" autocomplete="off" data-bound="0" onblur="" placeholder="Company name or symbol" onkeypress="AutoSuggest.getAutoSuggestDataByElement(&quot;Company&quot;,this);" onkeyup="AutoSuggest.clearValue(event,this);" style="width:280px;" />
+        <span id="username-verify" class="pull-right verify-position"></span>
+</autosuggest>
+                                    <a onclick="return LayoutMaster_ClientID.trackEvent_OnNavSearch();" id="ctl00_lbtnSearch" tabindex="-1" title="Search" class="btn btn-primary home-button-search" data-trigger="company-detail" href="javascript:__doPostBack(&#39;ctl00$lbtnSearch&#39;,&#39;&#39;)"><span class="icon-search"></span></a>
+                                
+</div>
+                            </li>
+                            <li id="ctl00_liLogin" style="display: none">
+                                <a href="/Login.aspx">
+                                    <span class="icon-user"></span>
+                                    <span class="hidden-sm">Log In</span>
+                                </a>
+                            </li>
+                            <li id="ctl00_liUser" class="dropdown" style="display: none">
+                                <a href="javascript:void(0);" class="dropdown-toggle" data-toggle="dropdown">
+                                    <span class="icon-user"></span>
+                                    <label id="ctl00_lblUsername" class="hidden-md"></label>
+                                    &nbsp;<i class="icon-angle-down"></i>
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li>
+                                        <a href="/EditAccount.aspx?type=ea">Edit Account</a>
+                                    </li>
+                                    <li>
+                                        <a href="/EditAccount.aspx?type=pw">Change Password</a>
+                                    </li>
+                                    <li>
+                                        <a href="/EditAccount.aspx?type=vm">Verify Mobile</a>
+                                    </li>
+                                    <li class="divider"></li>
+
+                                    <li>
+                                        <a href="/EditAccount.aspx?type=rm">Remove Account</a>
+                                    </li>
+                                    
+                                    <li class="divider"></li>
+                                    <li><a href="/Logout.aspx" onclick="webEngageLogout();">Log Out</a></li>
+                                </ul>
+                            </li>
+
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+        <div class="container">
+            <div id="page-alert" class="page-alert"></div>
+            <div id="processing"></div>
+            <script type="text/javascript">
+//<![CDATA[
+Sys.WebForms.PageRequestManager._initialize('ctl00$ScriptManager1', 'aspnetForm', [], [], [], 90, 'ctl00');
+//]]>
+</script>
+
+            
+    <link href="/Content/sortable.css" rel="stylesheet"/>
+
+    <script src="/scripts/jquery/jquery-1.10.2.min.js"></script>
+
+    <script src="/scripts/jquery/sortable.js"></script>
+
+    <div class="row">
+	    <div class="googleAds center-block">
+          <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5212639010415313"
+					 crossorigin="anonymous"></script>
+				<!-- Indices-Top -->
+				<ins class="adsbygoogle"
+					 style="display:block"
+					 data-ad-client="ca-pub-5212639010415313"
+					 data-ad-slot="7584135068"
+					 data-ad-format="auto"
+					 data-full-width-responsive="true"></ins>
+				<script>
+					 (adsbygoogle = window.adsbygoogle || []).push({});
+				</script>
+        </div>
+		
+        <div class="col-lg-12">
+            <h4 class="page-header">
+                <span>Indices</span>
+            </h4>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12">
+            <div class="well well-sm" onkeypress="javascript:return WebForm_FireDefaultButton(event, &#39;ctl00_ContentPlaceHolder1_lbtnSearchIndices&#39;)">
+	
+                <div class="row">
+                    <div class="col-sm-3">
+                        <label class="control-label">Indices</label>
+                        <select name="ctl00$ContentPlaceHolder1$ddlIndexFilter" id="ctl00_ContentPlaceHolder1_ddlIndexFilter" tabindex="1" title="Indices" class="form-control">
+		<option value="1">Nepse1</option>
+		<option selected="selected" value="58">NEPSE</option>
+		<option value="57">Sensitive</option>
+		<option value="62">Float</option>
+		<option value="63">Sen. Float</option>
+		<option value="51">Banking</option>
+		<option value="61">Trading</option>
+		<option value="52">Hotels And Tourism</option>
+		<option value="55">Development Bank</option>
+		<option value="54">Hydropower</option>
+		<option value="60">Finance</option>
+		<option value="64">Microfinance</option>
+		<option value="59">Non-Life Insurance</option>
+		<option value="65">Life Insurance</option>
+		<option value="56">Manu.and Pro.</option>
+		<option value="53">Others</option>
+		<option value="66">Mutual Fund</option>
+		<option value="67">Investment</option>
+
+	</select>
+                    </div>
+                    <div class="col-sm-5">
+                        <label class="control-label">Date</label>
+                        <div class="input-group">
+                            <input name="ctl00$ContentPlaceHolder1$txtFromDateFilter" type="text" id="ctl00_ContentPlaceHolder1_txtFromDateFilter" class="form-control" title="From Date" placeholder="From Date" tabindex="2" />
+                            <span class="input-group-addon">to</span>
+                            <input name="ctl00$ContentPlaceHolder1$txtToDateFilter" type="text" id="ctl00_ContentPlaceHolder1_txtToDateFilter" class="form-control" title="To Date" placeholder="To Date" tabindex="3" />
+                        </div>
+                    </div>
+                </div>
+                <br />
+                <div class="text-left">
+                    <a onclick="showProcessing();AddWebEngage(&#39;IndicesPage_Search&#39;);" id="ctl00_ContentPlaceHolder1_lbtnSearchIndices" tabindex="4" title="Search" class="btn btn-primary" href="javascript:__doPostBack(&#39;ctl00$ContentPlaceHolder1$lbtnSearchIndices&#39;,&#39;&#39;)">
+                        <i class="icon-search"></i> Search
+                    </a>
+                    <a onclick="showProcessing();" id="ctl00_ContentPlaceHolder1_lbtnClearFilter" tabindex="5" title="Clear Filter" class="btn btn-default" href="javascript:__doPostBack(&#39;ctl00$ContentPlaceHolder1$lbtnClearFilter&#39;,&#39;&#39;)">
+                        <i class="icon-eraser"></i> Clear
+                    </a>
+                </div>
+            
+</div>
+        </div>
+    </div>
+
+    <div class="panel panel-default">
+        
+        <div id="ctl00_ContentPlaceHolder1_divData">
+            <div class="data-label">
+                <span id="ctl00_ContentPlaceHolder1_indexName" class="label label-default">NEPSE Index</span>
+            </div>
+            
+
+<script type="text/javascript">
+
+    var PagerControl1_ClientID = {
+        hdnCurrentPage: "ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage",
+        hdnCurrentPage: "ctl00_ContentPlaceHolder1_PagerControl1_btnPaging"
+    }
+
+</script>
+
+<input type="hidden" name="ctl00$ContentPlaceHolder1$PagerControl1$hdnPCID" id="ctl00_ContentPlaceHolder1_PagerControl1_hdnPCID" value="PC1" />
+<div class="pagging">
+    <div style="float: left;">
+        <input type="hidden" name="ctl00$ContentPlaceHolder1$PagerControl1$hdnCurrentPage" id="ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage" value="0" />
+        <input type="submit" name="ctl00$ContentPlaceHolder1$PagerControl1$btnPaging" value="" id="ctl00_ContentPlaceHolder1_PagerControl1_btnPaging" style="display: none;" />
+        <span id="ctl00_ContentPlaceHolder1_PagerControl1_litRecords" class="hidden-xs">Showing 1 - 100 of 2868 records. [Total pages: 29]</span>
+    </div>
+    <div style="float: right;">
+        <a title='Page 1' href='javascript:void(0);' class='current_page' onclick='changePageIndex("1","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>1 </a><a title='Page 2' href='javascript:void(0);' onclick='changePageIndex("2","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>2 </a><a title='Page 3' href='javascript:void(0);' onclick='changePageIndex("3","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>3 </a><a title='Page 4' href='javascript:void(0);' onclick='changePageIndex("4","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>4 </a><a title='Page 5' href='javascript:void(0);' onclick='changePageIndex("5","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>5 </a><a title='Next Page' href='javascript:void(0);' onclick='changePageIndex("2","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>Next</a><a title='Last Page' href='javascript:void(0);' onclick='changePageIndex("29","ctl00_ContentPlaceHolder1_PagerControl1_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl1_btnPaging")'>Last</a>
+    </div>
+</div>
+            <br class="clearfix" />
+            <div class="table-responsive">
+                
+                        <table class="table table-bordered table-striped table-hover sortable">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">
+                                        <span>#</span></th>
+                                    <th>
+                                        <span title="Index Date in AD">Date (AD)</span></th>
+                                    <th>
+                                        <span title="Index Value">Index Value</span></th>
+                                    <th>
+                                        <span title="Absolute Change">Absolute Change</span></th>
+                                    <th>
+                                        <span title="Percentage Change">Percentage Change</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    
+                        <tr>
+                            <td class="text-center td-icon">1</td>
+                            <td class="text-center">2026/08/27</td>
+                            <td class="text-right">2,557.31</td>
+                            <td class="text-right">-1.04</td>
+                            <td class="text-right">-0.04%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">2</td>
+                            <td class="text-center">2026/08/26</td>
+                            <td class="text-right">2,558.35</td>
+                            <td class="text-right">-35.92</td>
+                            <td class="text-right">-1.38%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">3</td>
+                            <td class="text-center">2026/08/25</td>
+                            <td class="text-right">2,594.27</td>
+                            <td class="text-right">-5.30</td>
+                            <td class="text-right">-0.2%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">4</td>
+                            <td class="text-center">2026/08/24</td>
+                            <td class="text-right">2,599.58</td>
+                            <td class="text-right">-19.13</td>
+                            <td class="text-right">-0.73%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">5</td>
+                            <td class="text-center">2026/08/21</td>
+                            <td class="text-right">2,618.72</td>
+                            <td class="text-right">-10.67</td>
+                            <td class="text-right">-0.4%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">6</td>
+                            <td class="text-center">2026/08/20</td>
+                            <td class="text-right">2,629.40</td>
+                            <td class="text-right">7.17</td>
+                            <td class="text-right">0.27%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">7</td>
+                            <td class="text-center">2026/08/19</td>
+                            <td class="text-right">2,622.22</td>
+                            <td class="text-right">-0.26</td>
+                            <td class="text-right">0%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">8</td>
+                            <td class="text-center">2026/08/18</td>
+                            <td class="text-right">2,622.48</td>
+                            <td class="text-right">-19.34</td>
+                            <td class="text-right">-0.73%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">9</td>
+                            <td class="text-center">2026/08/17</td>
+                            <td class="text-right">2,641.82</td>
+                            <td class="text-right">-2.01</td>
+                            <td class="text-right">-0.07%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">10</td>
+                            <td class="text-center">2026/08/14</td>
+                            <td class="text-right">2,643.83</td>
+                            <td class="text-right">-7.37</td>
+                            <td class="text-right">-0.27%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">11</td>
+                            <td class="text-center">2026/08/13</td>
+                            <td class="text-right">2,651.21</td>
+                            <td class="text-right">8.81</td>
+                            <td class="text-right">0.33%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">12</td>
+                            <td class="text-center">2026/08/12</td>
+                            <td class="text-right">2,642.40</td>
+                            <td class="text-right">0.55</td>
+                            <td class="text-right">0.02%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">13</td>
+                            <td class="text-center">2026/08/11</td>
+                            <td class="text-right">2,641.85</td>
+                            <td class="text-right">0.79</td>
+                            <td class="text-right">0.03%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">14</td>
+                            <td class="text-center">2026/08/10</td>
+                            <td class="text-right">2,641.06</td>
+                            <td class="text-right">-9.02</td>
+                            <td class="text-right">-0.34%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">15</td>
+                            <td class="text-center">2026/08/07</td>
+                            <td class="text-right">2,650.09</td>
+                            <td class="text-right">-4.05</td>
+                            <td class="text-right">-0.15%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">16</td>
+                            <td class="text-center">2026/08/06</td>
+                            <td class="text-right">2,654.15</td>
+                            <td class="text-right">-13.82</td>
+                            <td class="text-right">-0.51%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">17</td>
+                            <td class="text-center">2026/08/05</td>
+                            <td class="text-right">2,667.97</td>
+                            <td class="text-right">4.79</td>
+                            <td class="text-right">0.18%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">18</td>
+                            <td class="text-center">2026/08/04</td>
+                            <td class="text-right">2,663.18</td>
+                            <td class="text-right">-21.15</td>
+                            <td class="text-right">-0.78%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">19</td>
+                            <td class="text-center">2026/08/03</td>
+                            <td class="text-right">2,684.33</td>
+                            <td class="text-right">-1.20</td>
+                            <td class="text-right">-0.04%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">20</td>
+                            <td class="text-center">2026/07/31</td>
+                            <td class="text-right">2,685.54</td>
+                            <td class="text-right">12.96</td>
+                            <td class="text-right">0.48%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">21</td>
+                            <td class="text-center">2026/07/30</td>
+                            <td class="text-right">2,672.58</td>
+                            <td class="text-right">-16.29</td>
+                            <td class="text-right">-0.6%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">22</td>
+                            <td class="text-center">2026/07/29</td>
+                            <td class="text-right">2,688.88</td>
+                            <td class="text-right">-7.79</td>
+                            <td class="text-right">-0.28%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">23</td>
+                            <td class="text-center">2026/07/28</td>
+                            <td class="text-right">2,696.67</td>
+                            <td class="text-right">-4.64</td>
+                            <td class="text-right">-0.17%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">24</td>
+                            <td class="text-center">2026/07/27</td>
+                            <td class="text-right">2,701.32</td>
+                            <td class="text-right">-33.28</td>
+                            <td class="text-right">-1.21%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">25</td>
+                            <td class="text-center">2026/07/24</td>
+                            <td class="text-right">2,734.60</td>
+                            <td class="text-right">7.88</td>
+                            <td class="text-right">0.28%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">26</td>
+                            <td class="text-center">2026/07/23</td>
+                            <td class="text-right">2,726.72</td>
+                            <td class="text-right">14.17</td>
+                            <td class="text-right">0.52%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">27</td>
+                            <td class="text-center">2026/07/22</td>
+                            <td class="text-right">2,712.54</td>
+                            <td class="text-right">-13.95</td>
+                            <td class="text-right">-0.51%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">28</td>
+                            <td class="text-center">2026/07/21</td>
+                            <td class="text-right">2,726.49</td>
+                            <td class="text-right">7.25</td>
+                            <td class="text-right">0.26%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">29</td>
+                            <td class="text-center">2026/07/20</td>
+                            <td class="text-right">2,719.24</td>
+                            <td class="text-right">41.70</td>
+                            <td class="text-right">1.55%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">30</td>
+                            <td class="text-center">2026/07/17</td>
+                            <td class="text-right">2,677.54</td>
+                            <td class="text-right">79.74</td>
+                            <td class="text-right">3.06%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">31</td>
+                            <td class="text-center">2026/07/16</td>
+                            <td class="text-right">2,597.80</td>
+                            <td class="text-right">7.50</td>
+                            <td class="text-right">0.28%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">32</td>
+                            <td class="text-center">2026/07/15</td>
+                            <td class="text-right">2,590.29</td>
+                            <td class="text-right">14.00</td>
+                            <td class="text-right">0.54%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">33</td>
+                            <td class="text-center">2026/07/14</td>
+                            <td class="text-right">2,576.29</td>
+                            <td class="text-right">6.11</td>
+                            <td class="text-right">0.23%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">34</td>
+                            <td class="text-center">2026/07/13</td>
+                            <td class="text-right">2,570.18</td>
+                            <td class="text-right">-30.60</td>
+                            <td class="text-right">-1.17%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">35</td>
+                            <td class="text-center">2026/07/10</td>
+                            <td class="text-right">2,600.78</td>
+                            <td class="text-right">-1.13</td>
+                            <td class="text-right">-0.04%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">36</td>
+                            <td class="text-center">2026/07/09</td>
+                            <td class="text-right">2,601.92</td>
+                            <td class="text-right">-19.67</td>
+                            <td class="text-right">-0.75%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">37</td>
+                            <td class="text-center">2026/07/08</td>
+                            <td class="text-right">2,621.59</td>
+                            <td class="text-right">-30.09</td>
+                            <td class="text-right">-1.13%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">38</td>
+                            <td class="text-center">2026/07/07</td>
+                            <td class="text-right">2,651.68</td>
+                            <td class="text-right">24.57</td>
+                            <td class="text-right">0.93%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">39</td>
+                            <td class="text-center">2026/07/06</td>
+                            <td class="text-right">2,627.11</td>
+                            <td class="text-right">-26.29</td>
+                            <td class="text-right">-0.99%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">40</td>
+                            <td class="text-center">2026/07/03</td>
+                            <td class="text-right">2,653.40</td>
+                            <td class="text-right">-8.30</td>
+                            <td class="text-right">-0.31%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">41</td>
+                            <td class="text-center">2026/07/02</td>
+                            <td class="text-right">2,661.71</td>
+                            <td class="text-right">8.78</td>
+                            <td class="text-right">0.33%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">42</td>
+                            <td class="text-center">2026/07/01</td>
+                            <td class="text-right">2,652.93</td>
+                            <td class="text-right">44.59</td>
+                            <td class="text-right">1.7%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">43</td>
+                            <td class="text-center">2026/06/30</td>
+                            <td class="text-right">2,608.33</td>
+                            <td class="text-right">-24.63</td>
+                            <td class="text-right">-0.93%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">44</td>
+                            <td class="text-center">2026/06/29</td>
+                            <td class="text-right">2,632.96</td>
+                            <td class="text-right">-16.54</td>
+                            <td class="text-right">-0.62%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">45</td>
+                            <td class="text-center">2026/06/26</td>
+                            <td class="text-right">2,649.51</td>
+                            <td class="text-right">-2.00</td>
+                            <td class="text-right">-0.07%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">46</td>
+                            <td class="text-center">2026/06/25</td>
+                            <td class="text-right">2,651.52</td>
+                            <td class="text-right">-8.50</td>
+                            <td class="text-right">-0.31%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">47</td>
+                            <td class="text-center">2026/06/24</td>
+                            <td class="text-right">2,660.02</td>
+                            <td class="text-right">-14.45</td>
+                            <td class="text-right">-0.54%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">48</td>
+                            <td class="text-center">2026/06/23</td>
+                            <td class="text-right">2,674.48</td>
+                            <td class="text-right">-26.16</td>
+                            <td class="text-right">-0.96%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">49</td>
+                            <td class="text-center">2026/06/22</td>
+                            <td class="text-right">2,700.65</td>
+                            <td class="text-right">-1.46</td>
+                            <td class="text-right">-0.05%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">50</td>
+                            <td class="text-center">2026/06/19</td>
+                            <td class="text-right">2,702.11</td>
+                            <td class="text-right">1.63</td>
+                            <td class="text-right">0.06%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">51</td>
+                            <td class="text-center">2026/06/18</td>
+                            <td class="text-right">2,700.47</td>
+                            <td class="text-right">-5.06</td>
+                            <td class="text-right">-0.18%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">52</td>
+                            <td class="text-center">2026/06/17</td>
+                            <td class="text-right">2,705.53</td>
+                            <td class="text-right">0.08</td>
+                            <td class="text-right">0%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">53</td>
+                            <td class="text-center">2026/06/16</td>
+                            <td class="text-right">2,705.45</td>
+                            <td class="text-right">-6.31</td>
+                            <td class="text-right">-0.23%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">54</td>
+                            <td class="text-center">2026/06/15</td>
+                            <td class="text-right">2,711.76</td>
+                            <td class="text-right">-12.26</td>
+                            <td class="text-right">-0.45%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">55</td>
+                            <td class="text-center">2026/06/12</td>
+                            <td class="text-right">2,724.03</td>
+                            <td class="text-right">-4.00</td>
+                            <td class="text-right">-0.14%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">56</td>
+                            <td class="text-center">2026/06/11</td>
+                            <td class="text-right">2,728.03</td>
+                            <td class="text-right">-8.14</td>
+                            <td class="text-right">-0.29%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">57</td>
+                            <td class="text-center">2026/06/10</td>
+                            <td class="text-right">2,736.17</td>
+                            <td class="text-right">2.57</td>
+                            <td class="text-right">0.09%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">58</td>
+                            <td class="text-center">2026/06/09</td>
+                            <td class="text-right">2,733.59</td>
+                            <td class="text-right">-1.54</td>
+                            <td class="text-right">-0.05%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">59</td>
+                            <td class="text-center">2026/06/08</td>
+                            <td class="text-right">2,735.14</td>
+                            <td class="text-right">-20.27</td>
+                            <td class="text-right">-0.73%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">60</td>
+                            <td class="text-center">2026/06/05</td>
+                            <td class="text-right">2,755.41</td>
+                            <td class="text-right">-11.37</td>
+                            <td class="text-right">-0.41%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">61</td>
+                            <td class="text-center">2026/06/04</td>
+                            <td class="text-right">2,766.78</td>
+                            <td class="text-right">-13.46</td>
+                            <td class="text-right">-0.48%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">62</td>
+                            <td class="text-center">2026/06/03</td>
+                            <td class="text-right">2,780.25</td>
+                            <td class="text-right">2.66</td>
+                            <td class="text-right">0.09%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">63</td>
+                            <td class="text-center">2026/06/02</td>
+                            <td class="text-right">2,777.58</td>
+                            <td class="text-right">22.21</td>
+                            <td class="text-right">0.8%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">64</td>
+                            <td class="text-center">2026/06/01</td>
+                            <td class="text-right">2,755.37</td>
+                            <td class="text-right">-26.72</td>
+                            <td class="text-right">-0.96%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">65</td>
+                            <td class="text-center">2026/05/27</td>
+                            <td class="text-right">2,782.10</td>
+                            <td class="text-right">4.99</td>
+                            <td class="text-right">0.17%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">66</td>
+                            <td class="text-center">2026/05/26</td>
+                            <td class="text-right">2,777.10</td>
+                            <td class="text-right">-9.24</td>
+                            <td class="text-right">-0.33%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">67</td>
+                            <td class="text-center">2026/05/25</td>
+                            <td class="text-right">2,786.35</td>
+                            <td class="text-right">27.85</td>
+                            <td class="text-right">1%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">68</td>
+                            <td class="text-center">2026/05/22</td>
+                            <td class="text-right">2,758.49</td>
+                            <td class="text-right">16.38</td>
+                            <td class="text-right">0.59%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">69</td>
+                            <td class="text-center">2026/05/21</td>
+                            <td class="text-right">2,742.11</td>
+                            <td class="text-right">-12.36</td>
+                            <td class="text-right">-0.44%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">70</td>
+                            <td class="text-center">2026/05/20</td>
+                            <td class="text-right">2,754.48</td>
+                            <td class="text-right">30.08</td>
+                            <td class="text-right">1.1%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">71</td>
+                            <td class="text-center">2026/05/19</td>
+                            <td class="text-right">2,724.39</td>
+                            <td class="text-right">-6.51</td>
+                            <td class="text-right">-0.23%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">72</td>
+                            <td class="text-center">2026/05/18</td>
+                            <td class="text-right">2,730.91</td>
+                            <td class="text-right">-1.03</td>
+                            <td class="text-right">-0.03%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">73</td>
+                            <td class="text-center">2026/05/15</td>
+                            <td class="text-right">2,731.94</td>
+                            <td class="text-right">1.77</td>
+                            <td class="text-right">0.06%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">74</td>
+                            <td class="text-center">2026/05/14</td>
+                            <td class="text-right">2,730.17</td>
+                            <td class="text-right">-10.07</td>
+                            <td class="text-right">-0.36%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">75</td>
+                            <td class="text-center">2026/05/13</td>
+                            <td class="text-right">2,740.25</td>
+                            <td class="text-right">-4.15</td>
+                            <td class="text-right">-0.15%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">76</td>
+                            <td class="text-center">2026/05/12</td>
+                            <td class="text-right">2,744.40</td>
+                            <td class="text-right">-39.44</td>
+                            <td class="text-right">-1.41%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">77</td>
+                            <td class="text-center">2026/05/11</td>
+                            <td class="text-right">2,783.85</td>
+                            <td class="text-right">38.19</td>
+                            <td class="text-right">1.39%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">78</td>
+                            <td class="text-center">2026/05/08</td>
+                            <td class="text-right">2,745.65</td>
+                            <td class="text-right">27.49</td>
+                            <td class="text-right">1.01%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">79</td>
+                            <td class="text-center">2026/05/07</td>
+                            <td class="text-right">2,718.16</td>
+                            <td class="text-right">6.94</td>
+                            <td class="text-right">0.25%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">80</td>
+                            <td class="text-center">2026/05/06</td>
+                            <td class="text-right">2,711.22</td>
+                            <td class="text-right">-1.64</td>
+                            <td class="text-right">-0.06%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">81</td>
+                            <td class="text-center">2026/05/05</td>
+                            <td class="text-right">2,712.86</td>
+                            <td class="text-right">8.78</td>
+                            <td class="text-right">0.32%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">82</td>
+                            <td class="text-center">2026/05/04</td>
+                            <td class="text-right">2,704.08</td>
+                            <td class="text-right">-34.63</td>
+                            <td class="text-right">-1.26%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">83</td>
+                            <td class="text-center">2026/04/30</td>
+                            <td class="text-right">2,738.72</td>
+                            <td class="text-right">-5.73</td>
+                            <td class="text-right">-0.2%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">84</td>
+                            <td class="text-center">2026/04/29</td>
+                            <td class="text-right">2,744.45</td>
+                            <td class="text-right">-25.81</td>
+                            <td class="text-right">-0.93%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">85</td>
+                            <td class="text-center">2026/04/28</td>
+                            <td class="text-right">2,770.26</td>
+                            <td class="text-right">-26.16</td>
+                            <td class="text-right">-0.93%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">86</td>
+                            <td class="text-center">2026/04/27</td>
+                            <td class="text-right">2,796.43</td>
+                            <td class="text-right">7.73</td>
+                            <td class="text-right">0.27%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">87</td>
+                            <td class="text-center">2026/04/24</td>
+                            <td class="text-right">2,788.70</td>
+                            <td class="text-right">1.54</td>
+                            <td class="text-right">0.05%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">88</td>
+                            <td class="text-center">2026/04/23</td>
+                            <td class="text-right">2,787.15</td>
+                            <td class="text-right">-17.01</td>
+                            <td class="text-right">-0.6%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">89</td>
+                            <td class="text-center">2026/04/22</td>
+                            <td class="text-right">2,804.17</td>
+                            <td class="text-right">-2.95</td>
+                            <td class="text-right">-0.1%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">90</td>
+                            <td class="text-center">2026/04/21</td>
+                            <td class="text-right">2,807.12</td>
+                            <td class="text-right">-18.10</td>
+                            <td class="text-right">-0.64%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">91</td>
+                            <td class="text-center">2026/04/20</td>
+                            <td class="text-right">2,825.23</td>
+                            <td class="text-right">-13.17</td>
+                            <td class="text-right">-0.46%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">92</td>
+                            <td class="text-center">2026/04/17</td>
+                            <td class="text-right">2,838.40</td>
+                            <td class="text-right">5.36</td>
+                            <td class="text-right">0.18%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">93</td>
+                            <td class="text-center">2026/04/16</td>
+                            <td class="text-right">2,833.03</td>
+                            <td class="text-right">-33.83</td>
+                            <td class="text-right">-1.18%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">94</td>
+                            <td class="text-center">2026/04/15</td>
+                            <td class="text-right">2,866.87</td>
+                            <td class="text-right">33.27</td>
+                            <td class="text-right">1.17%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">95</td>
+                            <td class="text-center">2026/04/13</td>
+                            <td class="text-right">2,833.60</td>
+                            <td class="text-right">-4.18</td>
+                            <td class="text-right">-0.14%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">96</td>
+                            <td class="text-center">2026/04/10</td>
+                            <td class="text-right">2,837.78</td>
+                            <td class="text-right">-13.45</td>
+                            <td class="text-right">-0.47%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">97</td>
+                            <td class="text-center">2026/04/09</td>
+                            <td class="text-right">2,851.24</td>
+                            <td class="text-right">48.71</td>
+                            <td class="text-right">1.73%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">98</td>
+                            <td class="text-center">2026/04/08</td>
+                            <td class="text-right">2,802.52</td>
+                            <td class="text-right">45.12</td>
+                            <td class="text-right">1.63%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">99</td>
+                            <td class="text-center">2026/04/07</td>
+                            <td class="text-right">2,757.40</td>
+                            <td class="text-right">-2.61</td>
+                            <td class="text-right">-0.09%</td>
+                        </tr>
+                    
+                        <tr>
+                            <td class="text-center td-icon">100</td>
+                            <td class="text-center">2026/04/06</td>
+                            <td class="text-right">2,760.02</td>
+                            <td class="text-right">83.33</td>
+                            <td class="text-right">3.11%</td>
+                        </tr>
+                    
+                        </tbody>
+                            </table>
+                    
+            </div>
+            
+
+<script type="text/javascript">
+
+    var PagerControl2_ClientID = {
+        hdnCurrentPage: "ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage",
+        hdnCurrentPage: "ctl00_ContentPlaceHolder1_PagerControl2_btnPaging"
+    }
+
+</script>
+
+<input type="hidden" name="ctl00$ContentPlaceHolder1$PagerControl2$hdnPCID" id="ctl00_ContentPlaceHolder1_PagerControl2_hdnPCID" value="PC2" />
+<div class="pagging">
+    <div style="float: left;">
+        <input type="hidden" name="ctl00$ContentPlaceHolder1$PagerControl2$hdnCurrentPage" id="ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage" value="0" />
+        <input type="submit" name="ctl00$ContentPlaceHolder1$PagerControl2$btnPaging" value="" id="ctl00_ContentPlaceHolder1_PagerControl2_btnPaging" style="display: none;" />
+        <span id="ctl00_ContentPlaceHolder1_PagerControl2_litRecords" class="hidden-xs">Showing 1 - 100 of 2868 records. [Total pages: 29]</span>
+    </div>
+    <div style="float: right;">
+        <a title='Page 1' href='javascript:void(0);' class='current_page' onclick='changePageIndex("1","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>1 </a><a title='Page 2' href='javascript:void(0);' onclick='changePageIndex("2","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>2 </a><a title='Page 3' href='javascript:void(0);' onclick='changePageIndex("3","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>3 </a><a title='Page 4' href='javascript:void(0);' onclick='changePageIndex("4","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>4 </a><a title='Page 5' href='javascript:void(0);' onclick='changePageIndex("5","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>5 </a><a title='Next Page' href='javascript:void(0);' onclick='changePageIndex("2","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>Next</a><a title='Last Page' href='javascript:void(0);' onclick='changePageIndex("29","ctl00_ContentPlaceHolder1_PagerControl2_hdnCurrentPage","ctl00_ContentPlaceHolder1_PagerControl2_btnPaging")'>Last</a>
+    </div>
+</div>
+            <br />
+        </div>
+    </div>
+
+        </div>
+
+        <div class="footer">
+            <div class="container">
+                <div class="row">
+                    <div class="col-sm-4 col-md-3">
+                        <ul class="nav-stacked">
+                            <li><a tabindex="-1" href='/Index.aspx'>Home</a></li>
+                            <li><a tabindex="-1" href='/LatestMarket.aspx'>Latest Market</a></li>
+                            <li><a tabindex="-1" href='/StockQuote.aspx'>Daily Stock Quotes</a></li>
+                            <li><a tabindex="-1" href='/Floorsheet.aspx'>Floorsheet</a></li>
+                            <li><a tabindex="-1" href='/Indices.aspx'>Indices</a></li>
+                            <li><a tabindex="-1" href='/MarketSummary.aspx?type=brokers'>Top Brokers</a></li>
+                            <li><a tabindex="-1" href='/MarketSummary.aspx?type=gainers'>Top Gainers</a></li>
+                            <li><a tabindex="-1" href='/MarketSummary.aspx?type=losers'>Top Losers</a></li>
+                        </ul>
+                    </div>
+                    <div class="col-sm-4 col-md-3">
+                        <ul class="nav-stacked">
+                            <li><a tabindex="-1" href='/NewsList.aspx?popular=false'>Latest News</a></li>
+                            <li><a tabindex="-1" href='/NewsList.aspx?popular=true'>Popular News</a></li>
+                            <li><a tabindex="-1" href='/AnnouncementList.aspx'>Announcements</a></li>
+                            <li><a tabindex="-1" href='/CompanyReports.aspx?type=ANNUAL'>Annual Reports</a></li>
+                            <li><a tabindex="-1" href='/CompanyReports.aspx?type=QUARTERLY'>Quarterly Reports</a></li>
+                            <li><a tabindex="-1" href='/CompanyList.aspx'>Companies</a></li>
+                            <li><a tabindex="-1" href='/BrokerList.aspx'>Brokers</a></li>
+
+                        </ul>
+                    </div>
+                    <div class="col-sm-4 col-md-3">
+                        <ul class="nav-stacked">
+                            <li><a tabindex="-1" href='/ContactUs.aspx'>Contact Us</a></li>
+                            <!--<li><a tabindex="-1" href="/Uploads/Help.pdf" target="_blank">Help Docs</a></li>-->
+                            <li><a tabindex="-1" href="/VideoTutorials.aspx" target="_blank">Video Tutorials</a></li>
+                            <li><a tabindex="-1" href="/BankAccounts.aspx">Bank Accounts</a></li>
+                            <li><a tabindex="-1" href="/AboutUs.aspx">About Us</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="col-sm-12 col-md-3">
+                        <hr class="visible-xs-block visible-sm-block" />
+                        <address>
+                            <strong>MERO LAGANI</strong>
+                            <br />
+                            4th Floor, Orchid Hotel Building
+                            <br />
+                            Tripureshwor, Kathmandu, Nepal
+                            <br />
+                            <strong>Tel:</strong>
+                            (+977) 01-5315101/5315184
+                            <br />
+                            <strong style="font-family: 'Times New Roman'; font-size : 16px;">For Customer Support</strong>
+                            <br />
+                            <strong>Mobile:</strong>
+                            9801000860
+                            <br />
+                            <strong>E-mail:</strong>
+                            support@asteriskt.com                            
+                            <br />
+							<strong>For advertisement:</strong><br />
+							<em>Brajesh Subedi</em><br />
+							<i>Marketing Manager</i><br />
+                            <em>9851004547</em>
+                            <em>merolaganimarketing@gmail.com</em>
+                            <br/>
+                        </address>
+                        <ul class="list-inline list-social-icons">
+                            <li>
+                                <a target="_blank" href="https://www.facebook.com/Merolagani"><i class="icon-facebook-sign icon-3x"></i></a>
+                            </li>
+                            <li>
+                                <a target="_blank" href="https://twitter.com/ComMerolagani"><i class="icon-twitter-sign icon-3x"></i></a>
+                            </li>
+                            <li>
+                                <a target="_blank" href="https://www.youtube.com/channel/UCygzOsiHWgvOq5vNahSTehg"><i class="icon-youtube-sign icon-3x"></i></a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="row payment-method">
+
+                    <div class="col-sm-12 col-md-5">
+
+                        <strong>PAYMENT PARTNERS</strong>
+                        <br>
+                        <ul class="list-inline list-payment-partners">
+                            <li>
+                                <a target="_blank" href="/Services.aspx">
+                                     <img title="NCELL" src="https://images.merolagani.com/Content/images/payment-partners/Ncell-new.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                            <li>
+                               <a target="_blank" href="/Services.aspx">
+                                    <img title="ESEWA" src="https://images.merolagani.com/Content/images/payment-partners/esewa-new.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                            <li>
+                                <a target="_blank" href="/Services.aspx">
+                                     <img title="CONNECTIPS" src="https://images.merolagani.com/Content/images/payment-partners/ConnectIPS-new.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+
+                            <li>
+                                <a target="_blank" href="/Services.aspx">
+                                    <img title="KHALTI" src="https://images.merolagani.com/Content/images/payment-partners/khalti-final.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                            <li>
+                                <a target="_blank" href="/Services.aspx">
+                                     <img title="IME PAY" src="https://images.merolagani.com/Content/images/payment-partners/IMEPAY-new.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="col-sm-12 col-md-4">
+
+                        <strong>WE ACCEPT</strong>
+                        <br>
+
+                        <ul class="list-inline list-payment-partners list-payment-partners-accept">
+
+                            <li>
+                                <a target="_blank" href="/Services.aspx">
+                                    <img src="https://images.merolagani.com/Content/images/payment-partners/nabil-bank.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                            <li>
+                               <a target="_blank" href="/Services.aspx">
+                                    <img src="https://images.merolagani.com/Content/images/payment-partners/verified.png" style="width:100%" class="lazy" />
+                                </a>
+                            </li>
+                        </ul>
+
+                    </div>
+                    <div class="col-sm-12 col-md-3 freeAccount">
+                        <div id="ctl00_divFreeAccount" class="">
+                            <a href="/Login.aspx" class="btn btn-default btn-lg">Create Free Account</a>
+                        </div>
+                    </div>
+                </div>
+                <br />
+                <div class="row">
+                    <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+                        <center><strong>सुचना तथा प्रसारण विभाग द.न. ४४०/०७३/०७४  &nbsp;  *  &nbsp;  प्रकाशक - एस्ट्रिक टेक्नोलोजी प्रा.लि.  &nbsp; *  &nbsp; इमेल:  editor@merolagani.com</strong></center>
+                    </div>
+                    <br />
+                    <br />
+                </div>
+                <a href="javascript:void(0);" class="scrollToTop" title="click here for top"><i class="icon-chevron-up"></i></a>
+            </div>
+
+            <div class="copyright">
+                <div class="container">
+                    <div class="row">
+                        <div class="credential_footer">
+                            <div class="col-sm-5 col-xs-12">
+                                &copy; 2026 - MERO LAGANI. All Rights Reserved  
+                            | Developed by <a href="#">Asterisk Technology </a>
+                            </div>
+							<div class="col-sm-4 col-xs-12 text-left">
+                                <ul class="list-inline">
+                                    <li>Supported By:<a href="https://waterflow.technology/" target="_blank">
+                                        <img src="Content/images/waterflowlogo.jpg" height="35px" width="80px" class="lazy" />
+                                    </a>
+                                        
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="col-sm-3 col-xs-12 text-right">
+                                <ul class="list-inline">
+                                    <li><a href="/Disclaimer.aspx">Disclaimer, Privacy & Terms of Use</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    
+
+<script type="text/javascript">
+//<![CDATA[
+$(document).ready(function(){AutoSuggest.getAutoSuggestDataById('Company','ctl00_ASCompany_txtAutoSuggest');});$(document).ready(function(){AutoSuggest.getAutoSuggestDataById('Company','ctl00_AutoSuggest1_txtAutoSuggest');});//]]>
+</script>
+</form>
+
+
+
+
+
+
+
+
+<script src="/bundles/js/main202?v=VD6bqorsuD1w-RGcQWSdfuxqERmIia3cP7aWv19lIqw1"></script>
+<script src="/bundles/js/site205?v=z2vSKc9FNNJTy4RslQwUZyYe8rHHsv4Eh9kIlhtbQRU1"></script>
+<script src="/Scripts/jquery.cookie.min.js"></script>
+
+
+
+
+
+
+    <script type="text/javascript" defer>
+        var uid = "";
+        var LayoutMaster_ClientID = {
+
+            liUser: "ctl00_liUser",
+            liLogin: "ctl00_liLogin",
+            liStartTour: "ctl00_liStartTour",
+            liFreeAccount: "ctl00_liFreeAccount",
+            divFreeAccount: "ctl00_divFreeAccount",
+            liLogout: "ctl00_liLogout",
+            lblUsername: "ctl00_lblUsername",
+           trackEvent_OnNavSearch: function () {
+                var newsletter = $("#ctl00_txtNews").val();
+                
+               
+                return false;
+            },
+            TrackEvent_OnStockEvent: function () {
+                
+            }
+        };
+
+ 
+
+        
+
+        $(function () {
+            $('.navbar-toggle').on('click',
+                function () {
+                    if ($('#navbar').hasClass("navbar-collapse collapse in")) {
+                        $('.affix').css({ "height": "auto" });
+                    } else {
+                        $('.affix').css({ "height": "100%", "overflow": "scroll" });
+                    }
+                });
+        });
+		
+		    addEventListener("scroll", (event) => {
+            if ($("#navbars").hasClass("affix")) {
+                $(".icon-home").css("display", "none");
+                $('#nav-app-icon').css("display", "block")
+            }
+            else if ($("#navbars").hasClass("affix-top")) {
+                $(".icon-home").css("display", "block");
+                $('#nav-app-icon').css("display", "none")
+            }
+        });
+
+    </script>
+
+    <script src="/Scripts/advertisementHitCounter.js" defer></script>
+<script src="/Scripts/jquicker-1.5.js" defer></script>
+
+
+    
+    <script type="text/javascript">
+        $(document).ready(function () {
+			
+
+				$('#ctl00_ContentPlaceHolder1_txtFromDateFilter, #ctl00_ContentPlaceHolder1_txtToDateFilter').datepicker({
+                changeYear: true,
+                changeMonth: true,
+                yearRange: "2014:2027",
+                beforeShowDay: function (date) {
+                    // If the year is 2014, only allow Feb 15 onwards
+                    if (date.getFullYear() === 2014) {
+                        var minDate = new Date(2014, 1, 02); // Months are 0-based: 1 = February
+                        return [date >= minDate, ""];
+                    }
+                    // Other years: allow all dates
+                    return [true, ""];
+                }
+            });
+
+
+            //AddWebEngage("IndicesPage_Viewed")
+        });
+        $(document).ready(function () {
+            $('table.sortable').sorttable({
+                widgets: ["zebra"],
+                usNumberFormat: true,
+                sortIndicator: true,
+                sortList: [[0, 0]],
+                headers: {
+                    1: { sorter: 'shortDate' },
+                    2: { sorter: 'numbers' },
+                    3: { sorter: 'numbers' },
+                    4: { sorter: 'percent' },
+                }
+            });
+        });
+
+        function AddWebEngage(eventName) {
+            var txtFromDate = $("#ctl00_ContentPlaceHolder1_txtFromDateFilter").val().toString();
+            var txtToDate = $("#ctl00_ContentPlaceHolder1_txtToDateFilter").val().toString();
+             webengage.track(eventName,
+             {
+                 "Indices": $("#ctl00_ContentPlaceHolder1_ddlIndexFilter  option:selected").text(),
+                 "FromDate": txtFromDate,
+                 "ToDate": txtToDate,
+             });
+        }
+    </script>
+
+
+    <div id="ctl00_divAnalytics">
+
+	<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-L4NG7Z97D2"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-L4NG7Z97D2');
+</script>
+		<script type="text/javascript">
+            var ChatUserEmail = "", ChatMobileNumber = "", ChatUserName = "";
+
+            // <!-- (function (i, s, o, g, r, a, m) {
+            //    i['GoogleAnalyticsObject'] = r; i[r] = i[r] || function () {
+            //        (i[r].q = i[r].q || []).push(arguments)
+            //    }, i[r].l = 1 * new Date(); a = s.createElement(o),
+            //        m = s.getElementsByTagName(o)[0]; a.async = 1; a.src = g; m.parentNode.insertBefore(a, m)
+            //})(window, document, 'script', '//www.google-analytics.com/analytics.js', 'ga');
+
+            //ga('create', 'UA-4719539-2', 'auto');
+            //ga('send', 'pageview'); -->
+
+            $.ajax({
+                url: window.location.origin + "/handlers/webrequesthandler.ashx?type=Current_User_Info",
+                type: "GET",
+                dataType: "json",
+                success: function (data) {
+				  console.log("success...");
+                    if (data != null) {
+						  console.log("here in...");
+                        if (data.IsAuthenticated) { 
+							console.log("true...");						
+                            $("#" + LayoutMaster_ClientID.liUser).show();
+                            $("#" + LayoutMaster_ClientID.liLogin).hide();
+                            $("#" + LayoutMaster_ClientID.liStartTour).show();
+                            $("#" + LayoutMaster_ClientID.liFreeAccount).hide();
+                            $("#" + LayoutMaster_ClientID.divFreeAccount).hide();
+                            $("#" + LayoutMaster_ClientID.liLogout).show();
+
+                            var userEmail = data.UserEmail;
+                            var mobileNumber = data.MobileNumber;
+
+                            if (userEmail.indexOf("@") >= 0) {
+                                userEmail = (userEmail == "")
+                                    ? mobileNumber
+                                    : userEmail.substring(0, userEmail.indexOf("@"));
+                            }
+                            else {
+                                userEmail = mobileNumber;
+                            }
+                            $("#" + LayoutMaster_ClientID.lblUsername).val(userEmail);
+                            $("#" + LayoutMaster_ClientID.lblUsername).text(userEmail);
+
+                            ChatUserEmail = (data.UserEmail == "") ? mobileNumber : data.UserEmail;
+                            ChatMobileNumber = (mobileNumber == "") ? userEmail : mobileNumber;
+                            ChatUserName = userEmail == "" ? ChatMobileNumber : userEmail;
+
+                        //  $.getScript("https://msg.dmnepal.online/userIsLoggedIn?partyId=50446b4c-4447-4b74-8709-23242d05272f&userName=" + ChatUserName + "&userEmail=" + ChatUserEmail + "&phone=" + ChatMobileNumber);
+
+                        }
+                        else {
+							 console.log("false...");
+                            $("#" + LayoutMaster_ClientID.liUser).hide();
+                            $("#" + LayoutMaster_ClientID.liLogin).show();
+                            $("#" + LayoutMaster_ClientID.liStartTour).hide();
+                            $("#" + LayoutMaster_ClientID.liFreeAccount).show();
+                            $("#" + LayoutMaster_ClientID.liLogout).hide();
+
+                        //    $.getScript("https://msg.dmnepal.online/3rd/foo/platform.js?partyId=50446b4c-4447-4b74-8709-23242d05272f");
+                        }
+                    }
+                    else {
+					 console.log("here out ...");
+                        $("#" + LayoutMaster_ClientID.liUser).hide();
+                        $("#" + LayoutMaster_ClientID.liLogin).show();
+                        $("#" + LayoutMaster_ClientID.liStartTour).hide();
+                        $("#" + LayoutMaster_ClientID.liFreeAccount).show();
+                        $("#" + LayoutMaster_ClientID.liLogout).hide();
+                    //    $.getScript("https://msg.dmnepal.online/3rd/foo/platform.js?partyId=50446b4c-4447-4b74-8709-23242d05272f");
+                    }
+                },
+                error: function (xhr, s, e) {
+				 console.log("error ...");
+                    $("#" + LayoutMaster_ClientID.liUser).hide();
+                    $("#" + LayoutMaster_ClientID.liLogin).show();
+                    $("#" + LayoutMaster_ClientID.liStartTour).hide();
+                    $("#" + LayoutMaster_ClientID.liFreeAccount).show();
+                    $("#" + LayoutMaster_ClientID.liLogout).hide();
+                //    $.getScript("https://msg.dmnepal.online/3rd/foo/platform.js?partyId=50446b4c-4447-4b74-8709-23242d05272f");
+
+                 }
+             });
+
+            function webEngageLogout() {
+                webengage.user.logout();
+            }
+        </script>
+        
+    </div>
+    <script type="text/javascript">
+            var allowNotification = 'true';
+            console.log("Allow notification " + allowNotification);
+            if (allowNotification) {
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = 'Scripts/firebase-messaging.js';
+                document.head.appendChild(script);
+            }
+    </script>
+
+</body>
+</html>
+
+<style>
+      a:focus {
+      outline:none!important
+  }
+    .act-btn {
+        font-weight: 600;
+        background-color: #e80811;
+        text-align: center;
+        vertical-align: middle;
+        border-color: #e80811;
+        font-size: 12px;
+    }
+
+        .act-btn:hover {
+            background: #e80811;
+            border-color: #e80811;
+        }
+		
+	 .list-inline.list-payment-partners li {
+        width: 20%;
+        margin-bottom: 5px;
+    }
+
+    .list-inline.list-payment-partners {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+        .list-inline.list-payment-partners.list-payment-partners-accept li {
+            width: 28%;
+        }
+
+    .freeAccount {
+        margin-top: 30px;
+    }
+
+    .freeAccount .btn.btn-default.btn-lg {
+        padding: 5.5px 5px;
+    }
+    
+    @media only screen and (min-width: 768px) {
+        .navbar-nav{
+            margin-left:-30px!important;
+        }
+        .navbar-right {
+            float: right !important;
+            margin-right: -50px !important;
+        }
+    }
+    
+</style>
+
+
+
+
