@@ -16,7 +16,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
 app.get('/api/ping', (req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, version: '2.1.0', routes: ['intraday-graph', 'index-history', 'price-history'] });
 });
 
 const HEADERS = {
