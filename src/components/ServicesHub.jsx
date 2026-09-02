@@ -12,8 +12,7 @@ import {
 import {
   runStockScanners, LOCK_IN_DATA, SECTOR_AD_DATA, SEBON_IPO_PIPELINE,
   NEPSE_SEASONALITY, SIP_BASKETS, NEPSE_BROKERS, getMarketNews,
-  generateFloorsheet, generateBrokerAnalysis, MUTUAL_FUNDS_DATA,
-  DIVIDEND_KINGS_DATA, generateZeroSumFloorsheet, calculateStocksAccumulationDistribution
+  MUTUAL_FUNDS_DATA, DIVIDEND_KINGS_DATA
 } from '../utils/mockData';
 import { calculateBuyDetails, calculateSellDetails, calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from '../utils/calculations';
 import {
@@ -4181,6 +4180,9 @@ function PriceHistoryModal({ stocks, onClose }) {
   const [selectedSym, setSelectedSym] = useState(stocks[0]?.symbol || 'NABIL');
   const [timeframe, setTimeframe] = useState('1Y');
 
+  const [allHistory, setAllHistory] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+
   const selectedStock = useMemo(() => {
     return stocks.find(s => s.symbol === selectedSym) || stocks[0] || { symbol: 'NABIL', ltp: 500 };
   }, [stocks, selectedSym]);
@@ -4197,18 +4199,46 @@ function PriceHistoryModal({ stocks, onClose }) {
     }
   }, [timeframe]);
 
+  // Fetch real OHLCV from NEPSE proxy when symbol changes
+  useEffect(() => {
+    let active = true;
+    setHistLoading(true);
+    setAllHistory([]);
+    servicesApi.fetchPriceHistory(selectedSym, 500).then(data => {
+      if (!active) return;
+      if (data && Array.isArray(data) && data.length > 0) {
+        const closes = data.map(r => Number(r.close));
+        const withSMA = data.map((r, i) => {
+          const s200 = Math.max(0, i - 199);
+          const sma200 = closes.slice(s200, i + 1).reduce((a, b) => a + b, 0) / (i - s200 + 1);
+          const s50 = Math.max(0, i - 49);
+          const sma50 = closes.slice(s50, i + 1).reduce((a, b) => a + b, 0) / (i - s50 + 1);
+          return { ...r, sma200: Number(sma200.toFixed(2)), sma50: Number(sma50.toFixed(2)) };
+        });
+        setAllHistory(withSMA);
+      } else {
+        setAllHistory([]);
+      }
+    }).catch(() => { if (active) setAllHistory([]); })
+      .finally(() => { if (active) setHistLoading(false); });
+    return () => { active = false; };
+  }, [selectedSym]);
+
+  // Slice to requested timeframe window
   const historyRows = useMemo(() => {
-    return generateHistory(selectedStock.symbol, selectedStock.ltp, daysCount);
-  }, [selectedStock, daysCount]);
+    if (!allHistory || allHistory.length === 0) return [];
+    return daysCount >= allHistory.length ? allHistory : allHistory.slice(-daysCount);
+  }, [allHistory, daysCount]);
 
   const stats = useMemo(() => {
     if (!historyRows || historyRows.length === 0) return null;
-    const highs = historyRows.map(h => h.high);
-    const lows = historyRows.map(h => h.low);
+    const highs = historyRows.map(h => Number(h.high));
+    const lows = historyRows.map(h => Number(h.low));
     const maxHigh = Math.max(...highs);
     const minLow = Math.min(...lows);
-    const firstClose = historyRows[0]?.close || selectedStock.ltp;
-    const returnPct = (((selectedStock.ltp - firstClose) / firstClose) * 100).toFixed(2);
+    const firstClose = Number(historyRows[0]?.close) || selectedStock.ltp;
+    const lastLtp = Number(selectedStock.ltp) || firstClose;
+    const returnPct = (((lastLtp - firstClose) / firstClose) * 100).toFixed(2);
     const latest = historyRows[historyRows.length - 1];
     return { maxHigh, minLow, returnPct, sma200: latest?.sma200, sma50: latest?.sma50 };
   }, [historyRows, selectedStock]);
@@ -4286,6 +4316,18 @@ function PriceHistoryModal({ stocks, onClose }) {
         )}
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {histLoading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              <RefreshCw style={{ width: 20, height: 20, marginBottom: 8, opacity: 0.5, animation: 'spin 1s linear infinite' }} />
+              <div>Loading official NEPSE price history for {selectedSym}…</div>
+            </div>
+          ) : historyRows.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              <Activity style={{ width: 28, height: 28, marginBottom: 12, opacity: 0.3 }} />
+              <div style={{ fontWeight: 700 }}>No historical price records available from NEPSE</div>
+              <div style={{ fontSize: 11, marginTop: 6, opacity: 0.6 }}>This stock may be inactive, unlisted, or data is temporarily unavailable.</div>
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>
@@ -4306,12 +4348,13 @@ function PriceHistoryModal({ stocks, onClose }) {
                   <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--bull)' }}>{fmt(r.high)}</td>
                   <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#ef4444' }}>{fmt(r.low)}</td>
                   <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#ffffff' }}>{fmt(r.close)}</td>
-                  <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--text-secondary)' }}>{(r.volume || 15000).toLocaleString()}</td>
+                  <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--text-secondary)' }}>{r.volume ? Number(r.volume).toLocaleString() : '—'}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right', color: '#38bdf8' }}>{fmt(r.sma200)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </div>
     </div>
