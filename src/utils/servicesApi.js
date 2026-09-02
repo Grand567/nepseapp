@@ -1,9 +1,7 @@
-﻿/**
- * servicesApi.js — Centralized API client for NEPSE Services Tab
- */
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 const getProxy = () => {
-  try { const env = import.meta?.env?.VITE_PROXY_URL; return (env && env.trim()) ? env.trim().replace(/\/$/, '') : 'http://localhost:5000'; } catch { return 'http://localhost:5000'; }
+  try { const env = import.meta?.env?.VITE_PROXY_URL; return (env && env.trim()) ? env.trim().replace(/\/$/, '') : 'https://nepseapp.onrender.com'; } catch { return 'https://nepseapp.onrender.com'; }
 };
 
 const PROXY = getProxy();
@@ -18,12 +16,35 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
   const cached = _getCache(cacheKey);
   if (cached !== null) return cached;
   try {
+    const url = PROXY + path;
+    const isNative = Capacitor.isNativePlatform();
+
+    if (isNative) {
+      const res = await CapacitorHttp.request({
+        url,
+        method: options.body ? 'POST' : 'GET',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        data: options.body || undefined,
+        connectTimeout: options.timeout || 25000,
+        readTimeout: options.timeout || 25000
+      });
+      if (res.status >= 200 && res.status < 300) {
+        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        if (json && json.success !== false) {
+          const data = json.data ?? json.results ?? json;
+          _setCache(cacheKey, data, ttlMs);
+          return data;
+        }
+      }
+      return null;
+    }
+
     const method = options.body ? 'POST' : 'GET';
-    const resp = await fetch(PROXY + path, {
+    const resp = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json', ...options.headers },
       body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: AbortSignal.timeout(options.timeout || 15000),
+      signal: AbortSignal.timeout(options.timeout || 25000),
     });
     if (!resp.ok) return null;
     const json = await resp.json();
@@ -31,7 +52,10 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
     const data = json.data ?? json.results ?? json;
     _setCache(cacheKey, data, ttlMs);
     return data;
-  } catch { return null; }
+  } catch (err) {
+    console.warn('[servicesApi] Request failed:', path, err.message);
+    return null;
+  }
 };
 
 export const fetchLiveStocks = () => _proxyFetch('/api/mero/market-summary', {}, 15000);

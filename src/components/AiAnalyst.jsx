@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { BrainCircuit, MessageSquare, ListFilter, Cpu, Sparkles, Send, Search, TrendingUp, TrendingDown, Minus, ExternalLink, ChevronDown, ChevronUp, BarChart2, Zap, Target, Award, Shield } from 'lucide-react';
 import { calculateBuyDetails } from '../utils/calculations';
-import { generateMockDematPortfolio, generateHistory } from '../utils/mockData';
+import * as servicesApi from '../utils/servicesApi';
 import { getProxyBase } from '../utils/liveData';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent, generateOfflineStockReport, GURU_AI_SYSTEM_PROMPT } from '../services/aiService';
 import {
@@ -406,36 +406,26 @@ export default function AiAnalyst({ marketStocks }) {
 
     let historyData = [];
     try {
-      const base = getProxyBase();
-      const res = await fetch(`${base}/api/price-history/${stock.symbol}`, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) historyData = json.data.slice(0, 20);
+      const data = await servicesApi.fetchPriceHistory(stock.symbol, 30);
+      if (data && Array.isArray(data)) {
+        historyData = data.slice(-20);
       }
     } catch (e) {
-      console.warn('Price history fetch failed, using generated data:', e.message);
+      console.warn('[AiAnalyst] Price history fetch failed:', e.message);
     }
 
-    if (historyData.length === 0) {
-      historyData = generateHistory(stock.symbol, stock.ltp, 20);
-    } else {
-      // Ensure the latest point in history matches the live stock LTP
-      const last = historyData[historyData.length - 1];
-      if (last) {
-        last.close = stock.ltp;
-        last.high = Math.max(last.high || stock.ltp, stock.ltp);
-        last.low = Math.min(last.low || stock.ltp, stock.ltp);
-      }
-    }
+    const historyStr = historyData.length > 0
+      ? historyData
+          .map(h => `  - ${h.date || 'Session'}: Close Rs.${h.close}, Vol ${(h.volume || 0).toLocaleString()}`)
+          .join('\n')
+      : '  - Verified daily trading records loading from NEPSE';
 
-    const historyStr = historyData
-      .map(h => `  - ${h.date || 'Session'}: Close Rs.${h.close}, Vol ${(h.volume || 0).toLocaleString()}`)
-      .join('\n');
-
-    // Accumulation/Distribution estimation
+    // Accumulation/Distribution estimation from real data
     const recentVols = historyData.slice(-5).map(h => h.volume || 0);
-    const avgVol = recentVols.reduce((a, b) => a + b, 0) / (recentVols.length || 1);
-    const adSignal = avgVol > (stock.volume * 0.8) ? 'Accumulation (above average volume)' : 'Distribution (below average volume)';
+    const avgVol = recentVols.length > 0 ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0;
+    const adSignal = (stock.volume > 0 && avgVol > 0)
+      ? (stock.volume > avgVol * 1.1 ? 'Accumulation (above average volume)' : 'Distribution (below average volume)')
+      : 'Observation phase';
 
     return { stock, historyData, historyStr, adSignal };
   };

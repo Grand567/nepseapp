@@ -3,7 +3,7 @@ import {
   X, Maximize2, Minimize2, LineChart, BarChart2, Activity,
   Layers, Zap, ChevronLeft, Sliders, Eye, RefreshCw
 } from 'lucide-react';
-import { generateHistory, generateHourlyHistory } from '../utils/mockData';
+import * as servicesApi from '../utils/servicesApi';
 import { useBackHandler } from '../context/NavigationContext';
 
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -25,15 +25,16 @@ export default function AdvancedChartModal({
   const [showVolume, setShowVolume] = useState(true);
   const [chartSource, setChartSource] = useState('native'); // 'native' | 'web'
   const [hoverIndex, setHoverIndex] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const isIntraday = timeframe === '1D' || timeframe === '2D' || timeframe === '3D';
   const ltp = Number(stock?.ltp || 350);
-
   const [history, setHistory] = useState([]);
 
-  // Fetch historical data from UDF endpoint
+  // Fetch real historical data from proxy API
   useEffect(() => {
+    let active = true;
     async function fetchData() {
+      setLoading(true);
       try {
         let days = 180;
         if (timeframe === '1W') days = 7;
@@ -41,40 +42,34 @@ export default function AdvancedChartModal({
         else if (timeframe === '3M') days = 90;
         else if (timeframe === '6M') days = 180;
         else if (timeframe === '1Y') days = 365;
-        else if (timeframe === '2Y' || timeframe === 'All') days = 730;
+        else if (timeframe === '2Y' || timeframe === 'All') days = 500;
 
-        const to = Math.floor(Date.now() / 1000);
-        const from = to - (days * 24 * 60 * 60);
-
-        const res = await fetch(`http://localhost:5000/api/udf/history?symbol=${symbol}&from=${from}&to=${to}&resolution=1D`);
-        const data = await res.json();
+        const data = await servicesApi.fetchPriceHistory(symbol, 500);
+        if (!active) return;
         
-        if (data.s === 'ok') {
-          const formatted = data.t.map((time, idx) => ({
-            time: new Date(time * 1000).toISOString().split('T')[0],
-            open: data.o[idx],
-            high: data.h[idx],
-            low: data.l[idx],
-            close: data.c[idx],
-            volume: data.v[idx]
+        if (data && Array.isArray(data) && data.length > 0) {
+          const formatted = data.slice(-days).map(item => ({
+            time: item.date,
+            open: Number(item.open) || Number(item.close),
+            high: Number(item.high) || Number(item.close),
+            low: Number(item.low) || Number(item.close),
+            close: Number(item.close),
+            volume: Number(item.volume) || 0
           }));
           setHistory(formatted);
         } else {
-          // Fallback to mock data if DB is empty
-          if (isIntraday) {
-            setHistory(generateHourlyHistory(symbol, ltp, '15m', stock));
-          } else {
-            setHistory(generateHistory(symbol, ltp, days));
-          }
+          setHistory([]);
         }
       } catch (err) {
-        console.error('Failed to fetch UDF history:', err);
-        // Fallback to mock data on error
-        setHistory(generateHistory(symbol, ltp, 180));
+        console.warn('[AdvancedChartModal] Failed to fetch real price history:', err);
+        if (active) setHistory([]);
+      } finally {
+        if (active) setLoading(false);
       }
     }
     fetchData();
-  }, [symbol, timeframe, isIntraday, ltp, stock]);
+    return () => { active = false; };
+  }, [symbol, timeframe]);
 
   // Technical Calculations (SMA5, SMA10, SMA20, SMA50, SMA200, Bollinger Bands, RSI)
   const technicalData = useMemo(() => {
@@ -416,13 +411,26 @@ export default function AdvancedChartModal({
               touchAction: 'none',
               userSelect: 'none',
               background: '#070b14',
-              padding: '8px 4px'
+              padding: '8px 4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
             onTouchMove={e => handleTouch(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
             onTouchStart={e => handleTouch(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
             onMouseMove={e => handleTouch(e.clientX, e.currentTarget.getBoundingClientRect())}
             onMouseLeave={() => setHoverIndex(null)}
           >
+            {loading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10d98a', fontSize: 13, fontWeight: 700 }}>
+                <RefreshCw style={{ width: 18, height: 18, animation: 'spin 1s linear infinite' }} />
+                <span>Loading verified NEPSE historical price data...</span>
+              </div>
+            ) : technicalData.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>
+                No historical price records found for {symbol} from NEPSE.
+              </div>
+            ) : (
             <svg
               viewBox={`0 0 ${W} ${H_TOTAL}`}
               style={{ width: '100%', height: '100%', overflow: 'visible' }}
@@ -597,6 +605,7 @@ export default function AdvancedChartModal({
                 </g>
               )}
             </svg>
+            )}
           </div>
 
           {/* Bottom Timeframe Selector Bar */}

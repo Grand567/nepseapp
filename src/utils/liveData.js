@@ -466,6 +466,18 @@ const fetchMerolaganiLatestDirect = async () => {
 };
 
 export const fetchLiveMarketData = async () => {
+  // ── Medium 0: Use Proxy Server API (Primary) ──
+  try {
+    const proxyStocks = await servicesApi.fetchTodayPrices();
+    if (proxyStocks && Array.isArray(proxyStocks) && proxyStocks.length > 0) {
+      console.log(`[NEPSE] 🌐 Proxy API live data loaded — ${proxyStocks.length} stocks`);
+      lastMarketSyncTime = new Date();
+      return { data: proxyStocks, source: 'live' };
+    }
+  } catch (e) {
+    console.warn('[NEPSE] Proxy Today Prices failed:', e.message);
+  }
+
   // ── Medium 1: Merolagani Summary Direct (ultra-fast JSON, ~60KB, contains all 348 stocks) ──
   try {
     const summaryData = await fetchMerolaganiSummaryDirect();
@@ -1072,167 +1084,30 @@ export const fetchPriceHistory = async (symbol) => {
  * @returns {Array<{date, open, high, low, close, volume}>|null}
  */
 export const fetchRealPriceHistory = async (symbol, length = 365) => {
-  const proxyBase = getProxyBase();
-  const isNative = Capacitor.isNativePlatform();
-
-  // On native, try direct ShareSansar CSRF scrape first
-  if (isNative) {
-    try {
-      const direct = await fetchPriceHistory(symbol);
-      if (direct && direct.length > 0) return direct;
-    } catch (_) {}
-  }
-
-  // Via backend proxy (works on both web and native)
-  try {
-    const url = `${proxyBase}/api/price-history/${symbol.toUpperCase()}?length=${length}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchRealPriceHistory] Proxy failed:', err.message);
-  }
-
-  return null;
+  if (!symbol) return null;
+  return servicesApi.fetchPriceHistory(symbol, length);
 };
 
-/**
- * Fetch real floorsheet (broker buy/sell rows) from NEPSE via backend proxy.
- * @param {string} [symbol]     - Stock symbol e.g. 'NABIL' (optional, omit for market-wide)
- * @param {string} [date]       - Trading date YYYY-MM-DD (empty = latest)
- * @param {number} [page=1]     - Page number (1-based)
- * @param {number} [size=50]    - Rows per page (max 100)
- * @returns {{ rows, page, totalPages, totalElements }|null}
- */
 export const fetchRealFloorsheet = async (symbol = '', date = '', page = 1, size = 50) => {
-  const proxyBase = getProxyBase();
-  try {
-    const symParam = symbol ? `/${symbol.toUpperCase()}` : '';
-    let url = `${proxyBase}/api/floorsheet${symParam}?page=${page}&size=${size}`;
-    if (date) url += `&date=${date}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.data) return json.data;
-    }
-  } catch (err) {
-    console.warn('[fetchRealFloorsheet] Failed:', err.message);
-  }
-  return null;
+  return servicesApi.fetchFloorsheet(symbol, page, size, date);
 };
 
-/**
- * Fetch aggregated broker analysis (Accumulation/Distribution) from NEPSE floorsheet.
- * @param {string} symbol - Stock symbol e.g. 'NABIL'
- * @param {number} days   - Number of trading days to analyse (max 90)
- * @returns {{ adSignal, adStrength, topBuyers, topSellers, topNetBuyers, topNetSellers, dailyFlow, totalVolume }|null}
- */
 export const fetchRealBrokerAnalysis = async (symbol, days = 30) => {
-  const proxyBase = getProxyBase();
-  try {
-    const url = `${proxyBase}/api/broker-analysis/${symbol.toUpperCase()}?days=${days}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.data) return json.data;
-    }
-  } catch (err) {
-    console.warn('[fetchRealBrokerAnalysis] Failed:', err.message);
-  }
-  return null;
+  if (!symbol) return null;
+  return servicesApi.fetchBrokerAnalysis(symbol, days);
 };
 
-/**
- * Fetch Level-2 market depth (bid/ask order book) for a stock.
- * @param {string} symbol - Stock ticker e.g. 'NABIL'
- * @returns {{ bids, asks, totalBidQty, totalAskQty, obir, source }|null}
- */
 export const fetchMarketDepth = async (symbol) => {
   if (!symbol) return null;
-  const proxyBase = getProxyBase();
-  try {
-    const url = `${proxyBase}/api/nepse/market-depth/${symbol.toUpperCase()}`;
-    const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-      const res = await CapacitorHttp.get({ url, connectTimeout: 10000, readTimeout: 10000 });
-      if (res.status >= 200 && res.status < 300) {
-        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        if (json.success && json.data) return json.data;
-      }
-    } else {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchMarketDepth] Failed:', err.message);
-  }
-  return null;
+  return servicesApi.fetchMarketDepth(symbol);
 };
 
-/**
- * Fetch dividend and bonus share history for a stock.
- * @param {string} symbol - Stock ticker e.g. 'NABIL'
- * @returns {{ symbol, dividends: Array<{ fiscalYear, cashDividend, bonusShare, rightShare, totalYield }> }|null}
- */
 export const fetchDividendHistory = async (symbol) => {
   if (!symbol) return null;
-  const proxyBase = getProxyBase();
-  try {
-    const url = `${proxyBase}/api/dividend-history/${symbol.toUpperCase()}`;
-    const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-      const res = await CapacitorHttp.get({ url, connectTimeout: 12000, readTimeout: 12000 });
-      if (res.status >= 200 && res.status < 300) {
-        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        if (json.success && json.data) return json.data;
-      }
-    } else {
-      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchDividendHistory] Failed:', err.message);
-  }
-  return null;
+  return servicesApi.fetchDividendHistory(symbol);
 };
 
-/**
- * Fetch side-by-side comparison data for two stocks.
- * @param {string} symbol1 - First stock ticker
- * @param {string} symbol2 - Second stock ticker
- * @returns {{ stock1, stock2, comparedAt }|null}
- */
 export const fetchCompareStocks = async (symbol1, symbol2) => {
   if (!symbol1 || !symbol2) return null;
-  const proxyBase = getProxyBase();
-  try {
-    const url = `${proxyBase}/api/compare/${symbol1.toUpperCase()}/${symbol2.toUpperCase()}`;
-    const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-      const res = await CapacitorHttp.get({ url, connectTimeout: 15000, readTimeout: 15000 });
-      if (res.status >= 200 && res.status < 300) {
-        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        if (json.success && json.data) return json.data;
-      }
-    } else {
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchCompareStocks] Failed:', err.message);
-  }
-  return null;
+  return servicesApi.fetchStockComparison(symbol1, symbol2);
 };

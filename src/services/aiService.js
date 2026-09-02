@@ -10,7 +10,6 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { fetchMerolaganiNews, analyzePoliticalAndMarketPulse } from './merolaganiNewsService';
-import { generateHistory, generateAccumulationDistributionHistory12M, generateBroker12MHistory, generateQuarterlyReports } from '../utils/mockData';
 import {
   calculateGrahamIntrinsicValue,
   calculateVolumeZScore,
@@ -266,39 +265,37 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
   const volume = Number(stock.volume) || 5000;
   const turnover = Number(stock.turnover) || (ltp * volume);
 
-  // 1. 12-Month (365 Days) Historical Dataset Analysis (prefer real NEPSE history)
+  // 1. 12-Month (365 Days) Historical Dataset Analysis (strictly real NEPSE history)
   const hasRealHistory = Array.isArray(realPriceHistory) && realPriceHistory.length > 0;
-  const historyList = hasRealHistory ? realPriceHistory : generateHistory(sym, ltp, 365);
+  const historyList = hasRealHistory ? realPriceHistory : [];
 
   // 52-Week Range: strictly use official high52w/low52w from NEPSE if available, else real history
   const high12M = (stock.high52w && Number(stock.high52w) > 0)
     ? Number(stock.high52w)
-    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : Number((ltp * 1.25).toFixed(1)));
+    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp);
 
   const low12M = (stock.low52w && Number(stock.low52w) > 0)
     ? Number(stock.low52w)
-    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : Number((ltp * 0.75).toFixed(1)));
+    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp);
 
   // 12-Month Net Return: calculated against authentic 1-year ago candle
   const yearAgoClose = hasRealHistory && historyList[0]?.close
     ? Number(historyList[0].close)
-    : (Number(stock.prevYearClose) || Number((low12M + (high12M - low12M) * 0.45).toFixed(1)));
+    : (Number(stock.prevYearClose) || ltp);
   const return12M = yearAgoClose > 0 ? (((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2) : '0.00';
 
   // 200 SMA and 50 SMA: calculate accurately over real closing prices
   const closes = historyList.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
   const sma50 = closes.length >= 10
     ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(closes.length, 50)).toFixed(1))
-    : Number((ltp * 0.98).toFixed(1));
+    : ltp;
   const sma200 = closes.length >= 20
     ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
-    : Number((ltp * 0.95).toFixed(1));
+    : ltp;
   const smaTrend = ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)';
 
-  // 2. 12-Month Accumulation & Distribution Cycle (Wyckoff Engine)
-  const baseAd12M = generateAccumulationDistributionHistory12M(stock);
+  // 2. 12-Month Accumulation & Distribution Cycle (Real Broker Flow)
   const ad12M = realBrokerAnalysis ? {
-    ...baseAd12M,
     wyckoffPhase: realBrokerAnalysis.adSignal === 'Accumulation'
       ? 'Phase C: Spring / Last Point of Support (LPS)'
       : realBrokerAnalysis.adSignal === 'Distribution'
@@ -308,16 +305,14 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
       ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bullish Institutional Inflow)`
       : `${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bearish Outflow)`,
     accumulationScore: Math.round(Math.min(95, Math.max(15, 50 + (realBrokerAnalysis.adRatio * 100))))
-  } : baseAd12M;
+  } : {
+    wyckoffPhase: 'Phase B: Testing / Real-time flow pending',
+    chaikinMoneyFlow: '0.00 (Neutral)',
+    accumulationScore: 50
+  };
 
-  // 3. 12-Month Broker Favourites & Institutional Flow
-  const broker12M = generateBroker12MHistory(stock);
-
-  // 4. Multi-Quarter Financial Trajectory
-  const qReports = generateQuarterlyReports(stock);
-  const latestQ = qReports[0];
-  const prevYearQ = qReports[4] || qReports[qReports.length - 1];
-  const epsYoY = (((latestQ.eps - prevYearQ.eps) / (Math.abs(prevYearQ.eps) || 1)) * 100).toFixed(1);
+  // 3. Broker Accumulators
+  const topBrokers = realBrokerAnalysis?.topBuyers || [];
 
   // 52-Week Cycle & Momentum Position
   const cyclePosition = high12M > low12M ? (((ltp - low12M) / (high12M - low12M)) * 100).toFixed(0) : '50';
@@ -482,30 +477,27 @@ export async function analyzeStockWithAi(stockContext) {
     };
   } catch (_) {}
 
-  // 2. Fetch 12-Month Quantitative Data (prefer real NEPSE history)
+  // 2. Fetch 12-Month Quantitative Data (strictly real NEPSE history)
   const hasReal = Array.isArray(realPriceHistory) && realPriceHistory.length > 0;
-  const historyList = hasReal ? realPriceHistory : generateHistory(sym, ltp, 365);
-  const yearAgoClose = hasReal && historyList[0]?.close ? Number(historyList[0].close) : (ltp * 0.88);
+  const historyList = hasReal ? realPriceHistory : [];
+  const yearAgoClose = hasReal && historyList[0]?.close ? Number(historyList[0].close) : ltp;
   const return12M = yearAgoClose > 0 ? (((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2) : '0.00';
   const closes = historyList.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
   const sma50 = closes.length >= 10
     ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(closes.length, 50)).toFixed(1))
-    : Number((ltp * 0.98).toFixed(1));
+    : ltp;
   const sma200 = closes.length >= 20
     ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
-    : Number((ltp * 0.95).toFixed(1));
-  const high12M = stock.high52w || (hasReal ? Math.max(...historyList.map(h => Number(h.high || h.close))) : (ltp * 1.25));
-  const low12M = stock.low52w || (hasReal ? Math.min(...historyList.map(h => Number(h.low || h.close))) : (ltp * 0.75));
-  const ad12M = generateAccumulationDistributionHistory12M(stock);
-  const broker12M = generateBroker12MHistory(stock);
-  const qReports = generateQuarterlyReports(stock);
+    : ltp;
+  const high12M = stock.high52w || (hasReal ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp);
+  const low12M = stock.low52w || (hasReal ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp);
   
-  const prompt = `Analyze ${sym} (${stock.name || sym}) for a Nepali retail investor using 12+ months historical dataset:
+  const prompt = `Analyze ${sym} (${stock.name || sym}) for a Nepali retail investor using verified NEPSE market data:
 - LTP: Rs. ${stock.ltp} (${stock.pChange}%) | Sector: ${stock.sector || 'Commercial Banks'}
 - 12-Month Price Action: 1-Year Return: ${return12M}%, 200 SMA: Rs. ${sma200}, 50 SMA: Rs. ${sma50}, 52W Range: Rs. ${low12M} to Rs. ${high12M}
-- 12-Month Accumulation & Distribution (Wyckoff): ${realBrokerAnalysis?.adSignal || ad12M.wyckoffPhase} | CMF: ${ad12M.chaikinMoneyFlow} | 12M Net Inflow: ${ad12M.twelveMonthNetInflow}
-- 12-Month Broker Favourites: Top institutional brokers (${realBrokerAnalysis?.topBuyers?.map(b => '#' + b.broker).join(', ') || '#58, #45, #34, #49'})
-- 2-Year Fundamentals: Latest EPS: Rs. ${stock.eps || qReports[0].eps}, P/E: ${stock.pe || qReports[0].pe}x, Net Profit: ${qReports[0].netProfit}, Book Value: Rs. ${stock.bookValue || qReports[0].bookValue}
+- Accumulation & Distribution (Wyckoff): ${realBrokerAnalysis?.adSignal || 'Observation Phase'} | CMF Ratio: ${realBrokerAnalysis?.adRatio || '0.00'}
+- Top Institutional Accumulators: (${realBrokerAnalysis?.topBuyers?.map(b => '#' + b.broker).join(', ') || 'Direct order flow'})
+- Fundamentals: Latest EPS: Rs. ${stock.eps || '—'}, P/E: ${stock.pe || '—'}x, Book Value: Rs. ${stock.bookValue || '—'}
 - Live Merolagani News Pulse: ${newsPulse?.sentiment || 'Stable'}
 ${(newsPulse?.highlights || []).map(h => `  • ${h}`).join('\n')}
 
@@ -513,7 +505,7 @@ Format your expert analysis following the 5-point profit blueprint:
 1. ⚡ SMART MONEY ACTION VERDICT (Action: BUY/HOLD/EXIT, Entry Zone, Target 1, Target 2, Stop-loss, Risk/Reward)
 2. 📜 12-MONTH PRICE HISTORY & 200 SMA TREND
 3. 🏛️ 12-MONTH ACCUMULATION & DISTRIBUTION (Wyckoff cycle)
-4. 🤝 12-MONTH BROKER FAVOURITES & WHALE POSITIONING
+4. 🤝 BROKER FAVOURITES & WHALE POSITIONING
 5. 🔮 PREDICT FUTURE (Tactical trade plan to make profit)`;
 
   const aiRes = await generateNepseAiContent(prompt, { systemPrompt: GURU_AI_SYSTEM_PROMPT });

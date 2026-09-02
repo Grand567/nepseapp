@@ -9,10 +9,9 @@ import {
 import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
 import {
-  generateHistory, generateHourlyHistory, calculatePivotPoints,
-  calculateFibonacci, generateMarketDepth, generateBrokerAnalysis,
-  generateFloorsheet, generateQuarterlyReports, getPeerStocks,
-  generateAccumulationDistributionHistory12M, generateBroker12MHistory
+  calculatePivotPoints,
+  calculateFibonacci,
+  getPeerStocks
 } from '../utils/mockData';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import {
@@ -98,27 +97,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     }
     return {
       ...s,
-      ltp,
-      pChange: Number(s.pChange) || 0,
-      change: Number(s.change) || 0,
-      open: Number(s.open) || ltp,
-      high: Number(s.high) || ltp * 1.02,
-      low: Number(s.low) || ltp * 0.98,
-      eps: Number(liveDetail.eps || s.eps) || 18.5,
-      pe: Number(liveDetail.pe || s.pe) || 22.4,
-      pb: Number(liveDetail.pbv || liveDetail.pb || s.pb) || 1.8,
-      bookValue: Number(liveDetail.bookValue || s.bookValue) || 185.0,
-      high52w: (liveDetail.high52w && liveDetail.high52w > 0) ? Number(liveDetail.high52w) : (Number(s.high52w) || ltp * 1.25),
-      low52w: (liveDetail.low52w && liveDetail.low52w > 0) ? Number(liveDetail.low52w) : (Number(s.low52w) || ltp * 0.75),
-      marketCap: liveDetail.marketCap ? Number(liveDetail.marketCap) / 1000000 : (Number(s.marketCap) || 1250),
-      listedShares: liveDetail.listedShares ? Number(liveDetail.listedShares) / 1000000 : (Number(s.listedShares) || 30.5),
-      paidUpCapital: liveDetail.paidUpCapital ? Number(liveDetail.paidUpCapital) / 1000000 : (Number(s.paidUpCapital) || 300),
-      bonusShare: Number(liveDetail.bonus || s.bonusShare) || 10.0,
-      cashDiv: Number(liveDetail.dividend || s.cashDiv) || 0.52,
+      pe: Number(liveDetail?.pe || s.pe) || 0,
+      pbv: Number(liveDetail?.pbv || s.pbv) || 0,
+      eps: Number(liveDetail?.eps || s.eps) || 0,
+      bookValue: Number(liveDetail?.bookValue || s.bookValue) || 0,
+      high52w: (liveDetail?.high52w && liveDetail.high52w > 0) ? Number(liveDetail.high52w) : Number(s.high52w || 0),
+      low52w: (liveDetail?.low52w && liveDetail.low52w > 0) ? Number(liveDetail.low52w) : Number(s.low52w || 0),
+      marketCap: liveDetail?.marketCap ? Number(liveDetail.marketCap) / 1000000 : Number(s.marketCap || 0),
+      listedShares: liveDetail?.listedShares ? Number(liveDetail.listedShares) / 1000000 : Number(s.listedShares || 0),
+      paidUpCapital: liveDetail?.paidUpCapital ? Number(liveDetail.paidUpCapital) / 1000000 : Number(s.paidUpCapital || 0),
+      bonusShare: Number(liveDetail?.bonus || s.bonusShare || 0),
+      cashDiv: Number(liveDetail?.dividend || s.cashDiv || 0),
     };
-  }, [resolvedStock, liveDetail]);
+  }, [d, liveDetail]);
 
-  const [history, setHistory] = useState(() => generateHourlyHistory(d.symbol, d.ltp, '15m', d));
+  const [history, setHistory] = useState([]);
 
   // ── Real data state ──────────────────────────────────────────────────
   const [realPriceHistory, setRealPriceHistory] = useState(null);
@@ -128,7 +121,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [floorsheetPage, setFloorsheetPage] = useState(1);
   const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(null);
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(false);
-  // ── New: market depth, compare, dividends ──────────────────────────────
   const [realMarketDepth, setRealMarketDepth] = useState(null);
   const [marketDepthLoading, setMarketDepthLoading] = useState(false);
   const [dividendHistory, setDividendHistory] = useState(null);
@@ -136,7 +128,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [compareSymbol, setCompareSymbol] = useState('');
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
-  const [comparePeer, setComparePeer] = useState(null); // preloaded peer
+  const [comparePeer, setComparePeer] = useState(null);
 
   // Helper: compute performance return for N days using real price history
   const computePerformance = useCallback((days) => {
@@ -150,27 +142,34 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     return { pct: Number(pct.toFixed(2)), bull: pct >= 0 };
   }, [realPriceHistory]);
 
-  // Fetch real price history (runs once per symbol, 365 days by default)
+  // Fetch real price history (500 trading days)
   useEffect(() => {
     let active = true;
     if (!d?.symbol) return;
     setRealHistoryLoading(true);
-    fetchRealPriceHistory(d.symbol, 365).then(data => {
+    fetchRealPriceHistory(d.symbol, 500).then(data => {
       if (!active) return;
       if (data && data.length > 0) {
         setRealPriceHistory(data);
-        // Also update the chart with real data (convert to chart format)
         const chartData = data.slice(-30).map(item => ({
           time: item.date,
-          open: item.open,
-          high: item.high,
-          low: item.low,
-          close: item.close,
-          volume: item.volume
+          open: Number(item.open) || Number(item.close),
+          high: Number(item.high) || Number(item.close),
+          low: Number(item.low) || Number(item.close),
+          close: Number(item.close),
+          volume: Number(item.volume) || 0
         }));
         if (chartData.length > 0) setHistory(chartData);
+      } else {
+        setRealPriceHistory([]);
+        setHistory([]);
       }
-    }).catch(() => {}).finally(() => { if (active) setRealHistoryLoading(false); });
+    }).catch(() => {
+      if (active) {
+        setRealPriceHistory([]);
+        setHistory([]);
+      }
+    }).finally(() => { if (active) setRealHistoryLoading(false); });
     return () => { active = false; };
   }, [d?.symbol]);
 
@@ -207,7 +206,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     if (activeTab === 'depth_broker' && d?.symbol) {
       if (!realFloorsheet) fetchFloorsheetData(1);
       if (!realBrokerAnalysis) fetchBrokerAnalysisData();
-      // Also fetch live market depth for the order book
       if (!realMarketDepth && !marketDepthLoading) {
         setMarketDepthLoading(true);
         fetchMarketDepth(d.symbol)
@@ -224,92 +222,41 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         .finally(() => setDividendLoading(false));
     }
     if (activeTab === 'compare' && d?.symbol && !comparePeer) {
-      // Auto-load a sector peer for comparison
       const peers = getPeerStocks ? getPeerStocks(d.symbol, d.sector, allStocks) : [];
       const peerSymbol = peers.length > 0 ? peers[0]?.symbol : null;
       if (peerSymbol) setCompareSymbol(peerSymbol);
     }
   }, [activeTab, d?.symbol]);
 
-  // Reset scroll and update chart history when stock symbol changes
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = 0;
-    }
-    if (d?.symbol) {
-      if (chartTimeframe === '1D') {
-        setHistory(generateHourlyHistory(d.symbol, d.ltp, '15m', d));
-      } else {
-        handleTimeframeChange(chartTimeframe);
-      }
-    }
-  }, [d?.symbol, activeTab]);
-
-  // Fetch live fundamentals on mount / stock change
-  useEffect(() => {
-    let active = true;
-    if (d?.symbol) {
-      fetchStockFundamentals(d.symbol).then(fund => {
-        if (active && fund) setLiveDetail(fund);
-      }).catch(() => {});
-    }
-    return () => { active = false; };
-  }, [d?.symbol]);
-
   const handleTimeframeChange = (tf) => {
     setChartTimeframe(tf);
     if (!d?.symbol) return;
 
-    // For 1D/2D/3D use intraday (generated, no real intraday data available)
-    if (tf === '1D') {
-      setHistory(generateHourlyHistory(d.symbol, d.ltp, '15m', d));
-      return;
-    } else if (tf === '2D') {
-      setHistory(generateHourlyHistory(d.symbol, d.ltp, '30m', d));
-      return;
-    } else if (tf === '3D') {
-      setHistory(generateHourlyHistory(d.symbol, d.ltp, '60m', d));
-      return;
-    }
-
-    // For weekly/monthly/yearly: use real price history slice
-    const tfDaysMap = { '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 500, 'All': 500 };
-    const days = tfDaysMap[tf] || 365;
+    const tfDaysMap = { '1D': 5, '2D': 10, '3D': 15, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 500, 'All': 500 };
+    const days = tfDaysMap[tf] || 30;
 
     if (realPriceHistory && realPriceHistory.length > 0) {
       const sliced = realPriceHistory.slice(-days).map(item => ({
         time: item.date,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-        volume: item.volume
+        open: Number(item.open) || Number(item.close),
+        high: Number(item.high) || Number(item.close),
+        low: Number(item.low) || Number(item.close),
+        close: Number(item.close),
+        volume: Number(item.volume) || 0
       }));
       setHistory(sliced);
     } else {
-      // Fallback to mock while real data loads
-      setHistory(generateHistory(d.symbol, d.ltp, days));
-      // Trigger a longer history fetch if needed
-      if (days > 365 && !realHistoryLoading) {
-        setRealHistoryLoading(true);
-        fetchRealPriceHistory(d.symbol, 500).then(data => {
-          if (data && data.length > 0) {
-            setRealPriceHistory(data);
-            const sliced = data.slice(-days).map(item => ({ time: item.date, open: item.open, high: item.high, low: item.low, close: item.close, volume: item.volume }));
-            setHistory(sliced);
-          }
-        }).catch(() => {}).finally(() => setRealHistoryLoading(false));
-      }
+      setHistory([]);
     }
   };
 
   // Technical Calculations with safe fallbacks
   const pivot = useMemo(() => calculatePivotPoints(d), [d]);
   const fib = useMemo(() => calculateFibonacci(d), [d]);
-  // Use real market depth when available (fetched on depth_broker tab open), fallback to mock
+
+  // Real market depth
   const marketDepth = useMemo(() => {
     if (realMarketDepth && (realMarketDepth.bids?.length > 0 || realMarketDepth.asks?.length > 0)) {
-      // Normalize real depth to match the shape expected by the UI
       return {
         ...realMarketDepth,
         buyOrders: realMarketDepth.bids?.map(b => ({ price: b.price, qty: b.quantity, orders: b.orders })) || [],
@@ -321,26 +268,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         source: realMarketDepth.source || 'live'
       };
     }
-    return generateMarketDepth(d);
-  }, [realMarketDepth, d]);
-  const graham = useMemo(() => calculateGrahamIntrinsicValue(d.eps, d.bookValue, d.ltp), [d.eps, d.bookValue, d.ltp]);
+    return null;
+  }, [realMarketDepth]);
+
+  const graham = useMemo(() => calculateGrahamIntrinsicValue(d?.eps, d?.bookValue, d?.ltp), [d?.eps, d?.bookValue, d?.ltp]);
   const actionZone = useMemo(() => classifyActionZone(d), [d]);
   const quantTech = useMemo(() => calculateCompositeTechnicalScore(d), [d]);
-  const zVol = useMemo(() => calculateVolumeZScore(d.volume || 10000, d.avgVolume20D || 10000), [d.volume, d.avgVolume20D]);
-  // Use real broker analysis if available, else fall back to mock
+  const zVol = useMemo(() => calculateVolumeZScore(d?.volume || 0, d?.avgVolume20D || 0), [d?.volume, d?.avgVolume20D]);
 
+  // Real broker analysis
   const brokerAnalysis = useMemo(() => {
-    if (realBrokerAnalysis?.topBuyers) return {
-      ...generateBrokerAnalysis(d),
-      topBuyers: realBrokerAnalysis.topBuyers,
-      topSellers: realBrokerAnalysis.topSellers,
-      adSignal: realBrokerAnalysis.adSignal,
-      isReal: true
-    };
-    return generateBrokerAnalysis(d);
-  }, [d, realBrokerAnalysis]);
+    if (realBrokerAnalysis?.topBuyers) {
+      return {
+        ...realBrokerAnalysis,
+        isReal: true
+      };
+    }
+    return null;
+  }, [realBrokerAnalysis]);
 
-  // Use real floorsheet if available, else fall back to mock
+  // Real floorsheet
   const floorsheet = useMemo(() => {
     if (realFloorsheet?.rows && realFloorsheet.rows.length > 0) {
       return realFloorsheet.rows.map(r => ({
@@ -356,10 +303,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         isReal: true
       }));
     }
-    return generateFloorsheet(d);
-  }, [d, realFloorsheet]);
+    return [];
+  }, [realFloorsheet]);
 
-  // 12-Month Historical Engines — use real data if available
+  // Real 12-Month Historical OHLCV
   const history12M = useMemo(() => {
     let days = 365;
     if (historyTimeframe === '1M') days = 30;
@@ -376,19 +323,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         high: item.high,
         low: item.low,
         volume: item.volume,
-        // compute basic moving averages inline
-        sma200: item.close // placeholder — real SMA computed below if needed
+        sma200: item.close
       }));
     }
-    return generateHistory(d.symbol, d.ltp, days);
-  }, [d.symbol, d.ltp, historyTimeframe, realPriceHistory]);
+    return [];
+  }, [historyTimeframe, realPriceHistory]);
 
-  // A/D: use real broker analysis for Wyckoff phase if available
+  // A/D from real broker analysis
   const ad12M = useMemo(() => {
-    const base = generateAccumulationDistributionHistory12M(d);
     if (realBrokerAnalysis) {
       return {
-        ...base,
         status: realBrokerAnalysis.adSignal,
         wyckoffPhase: realBrokerAnalysis.adSignal === 'Accumulation'
           ? 'Phase C (Spring / Last Point of Support)'
@@ -401,11 +345,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         isReal: true
       };
     }
-    return base;
-  }, [d, realBrokerAnalysis]);
+    return null;
+  }, [realBrokerAnalysis]);
 
-  const broker12M = useMemo(() => generateBroker12MHistory(d), [d]);
-  const quarterlyReports = useMemo(() => generateQuarterlyReports(d), [d]);
+  const broker12M = useMemo(() => realBrokerAnalysis?.dailyFlow || [], [realBrokerAnalysis]);
+  const quarterlyReports = useMemo(() => [], []);
   const peerStocks = useMemo(() => getPeerStocks(d, allStocks), [d, allStocks]);
 
   // Real performance values from actual price history
@@ -413,7 +357,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     const computeVal = (days, label) => {
       const real = computePerformance(days);
       if (real) return { label, val: `${real.bull ? '+' : ''}${real.pct}%`, bull: real.bull, isReal: true };
-      return null; // signals to use fallback
+      return { label, val: '—', bull: true, isReal: false };
     };
     return [
       computeVal(3, '3 Days'),
@@ -1163,43 +1107,36 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               </div>
             </div>
 
-            {/* 12-Month Quarterly Broker Holdings Tracker */}
+            {/* Broker Daily Institutional Flow Tracker */}
             <div style={{ background: '#0d1523', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
-                  🤝 12-Month Broker Whale Accumulation
+                  🤝 Institutional Net Broker Flow (Recent Sessions)
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--primary-light)', fontWeight: 700 }}>
-                  4 Quarters YoY
+                  Verified Exchange Flow
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px 60px 70px', padding: '6px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 6 }}>
-                <span>BROKER</span>
-                <span style={{ textAlign: 'right' }}>Q1</span>
-                <span style={{ textAlign: 'right' }}>Q2</span>
-                <span style={{ textAlign: 'right' }}>Q4</span>
-                <span style={{ textAlign: 'right', color: '#10d98a' }}>YoY CHG</span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {(broker12M?.topBrokers || []).map((b) => (
-                  <div key={b.brokerNo} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px 60px 70px', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 11.5, alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 800, color: '#ffffff' }}>#{b.brokerNo} {b.name}</div>
-                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Avg: Rs {b.avgRate}</div>
+              {Array.isArray(broker12M) && broker12M.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {broker12M.slice(0, 8).map((b, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 11.5, alignItems: 'center' }}>
+                      <span style={{ fontWeight: 800, color: '#ffffff' }}>📅 {b.date || `Session ${idx + 1}`}</span>
+                      <span style={{ color: (b.netFlow || 0) >= 0 ? 'var(--bull)' : '#ef4444', fontWeight: 800 }}>
+                        {(b.netFlow || 0) >= 0 ? '+' : ''}{(b.netFlow || 0).toLocaleString()} Net Qty
+                      </span>
                     </div>
-                    <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{b.q1Holding}</span>
-                    <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{b.q2Holding}</span>
-                    <span style={{ textAlign: 'right', fontWeight: 800, color: '#ffffff' }}>{b.q4Holding}</span>
-                    <span style={{ textAlign: 'right', fontWeight: 800, color: '#10d98a' }}>{b.changeYoY}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  {brokerAnalysisLoading ? 'Loading institutional broker flow...' : 'No historical broker net flow records available for this stock.'}
+                </div>
+              )}
             </div>
 
-
-            {/* Top Buyer & Seller Brokers Today */}
+            {/* Top Buyer & Seller Brokers */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
               <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -1208,12 +1145,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {brokerAnalysisLoading && <RefreshCw style={{ width: 11, height: 11, color: 'var(--text-muted)', animation: 'spin 1s linear infinite' }} />}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(brokerAnalysis?.topBuyers || []).map((b, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                      <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
-                      <span style={{ color: 'var(--bull)', fontWeight: 700 }}>+{(b.buyQty || b.shares || b.qty || 0).toLocaleString()}</span>
+                  {(brokerAnalysis?.topBuyers && brokerAnalysis.topBuyers.length > 0) ? (
+                    brokerAnalysis.topBuyers.map((b, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
+                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
+                        <span style={{ color: 'var(--bull)', fontWeight: 700 }}>+{(b.buyQty || b.shares || b.qty || 0).toLocaleString()}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: '10px 0' }}>
+                      {brokerAnalysisLoading ? 'Fetching...' : 'No buy orders recorded'}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
 
@@ -1223,12 +1166,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(239,68,68,0.12)', color: '#ef4444', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(brokerAnalysis?.topSellers || []).map((b, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                      <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
-                      <span style={{ color: '#ef4444', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
+                  {(brokerAnalysis?.topSellers && brokerAnalysis.topSellers.length > 0) ? (
+                    brokerAnalysis.topSellers.map((b, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
+                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
+                        <span style={{ color: '#ef4444', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: '10px 0' }}>
+                      {brokerAnalysisLoading ? 'Fetching...' : 'No sell orders recorded'}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
@@ -1578,36 +1527,42 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               </div>
             </div>
 
-            {/* 8-Quarter Financial Trajectory Table */}
+            {/* Financial Performance */}
             <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', marginBottom: 10 }}>
-                📊 8-Quarter Financial Performance (2 Fiscal Years)
+                📊 Quarterly Financial Performance
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse', minWidth: 460 }}>
-                  <thead>
-                    <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>QUARTER</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>EPS (Rs.)</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>NET PROFIT</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>P/E</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>BOOK VAL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(quarterlyReports || []).map((q, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={{ padding: '8px', fontWeight: 800, color: '#ffffff' }}>{q.quarter}</td>
-                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--bull)', fontWeight: 800 }}>{q.eps}</td>
-                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-primary)' }}>{q.netProfit}</td>
-                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{q.pe}x</td>
-                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>Rs. {q.bookValue}</td>
+              {quarterlyReports && quarterlyReports.length > 0 ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse', minWidth: 460 }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '8px', textAlign: 'left' }}>QUARTER</th>
+                        <th style={{ padding: '8px', textAlign: 'right' }}>EPS (Rs.)</th>
+                        <th style={{ padding: '8px', textAlign: 'right' }}>NET PROFIT</th>
+                        <th style={{ padding: '8px', textAlign: 'right' }}>P/E</th>
+                        <th style={{ padding: '8px', textAlign: 'right' }}>BOOK VAL</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {quarterlyReports.map((q, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '8px', fontWeight: 800, color: '#ffffff' }}>{q.quarter}</td>
+                          <td style={{ padding: '8px', textAlign: 'right', color: 'var(--bull)', fontWeight: 800 }}>{q.eps}</td>
+                          <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-primary)' }}>{q.netProfit}</td>
+                          <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{q.pe}x</td>
+                          <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>Rs. {q.bookValue}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  Quarterly financial breakdown unavailable for this symbol.
+                </div>
+              )}
             </div>
 
             {/* Dividend & Bonus History */}
@@ -1616,22 +1571,39 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 🎁 Dividend & Bonus Share History
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {[
-                  { fy: 'FY 2080/81', bonus: `${d.bonusShare || 15.0}%`, cash: `${d.cashDiv || 0.78}%`, bookClosure: '2024-11-20' },
-                  { fy: 'FY 2079/80', bonus: '12.5%', cash: '0.65%', bookClosure: '2023-11-15' },
-                  { fy: 'FY 2078/79', bonus: '10.0%', cash: '0.52%', bookClosure: '2022-11-10' }
-                ].map((div, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSize: 12 }}>
+                {dividendLoading ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    Loading corporate dividend records...
+                  </div>
+                ) : (dividendHistory?.dividends && dividendHistory.dividends.length > 0) ? (
+                  dividendHistory.dividends.map((div, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSize: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 800, color: '#ffffff' }}>{div.fiscalYear || div.fy}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{div.bookClosure ? `Book Closure: ${div.bookClosure}` : 'Verified Exchange Filing'}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        {div.bonusShare ? <span style={{ color: 'var(--bull)', fontWeight: 800 }}>Bonus: {div.bonusShare}%</span> : null}
+                        {div.cashDividend ? <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Cash: {div.cashDividend}%</span> : null}
+                      </div>
+                    </div>
+                  ))
+                ) : (d.bonusShare > 0 || d.cashDiv > 0) ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSize: 12 }}>
                     <div>
-                      <div style={{ fontWeight: 800, color: '#ffffff' }}>{div.fy}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Book Closure: {div.bookClosure}</div>
+                      <div style={{ fontWeight: 800, color: '#ffffff' }}>Latest Fiscal Distribution</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Annual General Meeting declared</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ color: 'var(--bull)', fontWeight: 800 }}>Bonus: {div.bonus}</span>
-                      <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Cash: {div.cash}</span>
+                      {d.bonusShare > 0 && <span style={{ color: 'var(--bull)', fontWeight: 800 }}>Bonus: {d.bonusShare}%</span>}
+                      {d.cashDiv > 0 && <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Cash: {d.cashDiv}%</span>}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    No corporate dividend or bonus share records filed for this stock.
+                  </div>
+                )}
               </div>
             </div>
 

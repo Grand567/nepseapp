@@ -285,15 +285,13 @@ function AppInner() {
         hasFreshData = true;
       }
 
-      // 2. Process Indices — always prioritize live exchange index or calculate real-time weighted index from live stocks
-      if (liveIndices && liveIndices.nepse && liveIndices.nepse.value > 0 && liveIndices.nepse.change !== 0) {
+      // 2. Process Indices — always prioritize real live exchange index from proxy/market
+      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
         setIndices(liveIndices);
+        saveCachedIndices(liveIndices);
         hasFreshData = true;
       } else if (currentStocks && currentStocks.length > 0) {
         setIndices(calculateIndices(currentStocks));
-        hasFreshData = true;
-      } else if (liveIndices && liveIndices.nepse && liveIndices.nepse.value > 0) {
-        setIndices(liveIndices);
         hasFreshData = true;
       }
 
@@ -333,14 +331,12 @@ function AppInner() {
       }
 
       // Process Indices in manual refresh
-      if (liveIndices && liveIndices.nepse && liveIndices.nepse.value > 0 && liveIndices.nepse.change !== 0) {
+      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
         setIndices(liveIndices);
+        saveCachedIndices(liveIndices);
         hasFreshData = true;
       } else if (currentStocks && currentStocks.length > 0) {
         setIndices(calculateIndices(currentStocks));
-        hasFreshData = true;
-      } else if (liveIndices && liveIndices.nepse && liveIndices.nepse.value > 0) {
-        setIndices(liveIndices);
         hasFreshData = true;
       }
 
