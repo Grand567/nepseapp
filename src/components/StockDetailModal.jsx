@@ -222,7 +222,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         .finally(() => setDividendLoading(false));
     }
     if (activeTab === 'compare' && d?.symbol && !comparePeer) {
-      const peers = getPeerStocks ? getPeerStocks(d.symbol, d.sector, allStocks) : [];
+      const peers = getPeerStocks ? getPeerStocks(d, Array.isArray(allStocks) ? allStocks : []) : [];
       const peerSymbol = peers.length > 0 ? peers[0]?.symbol : null;
       if (peerSymbol) setCompareSymbol(peerSymbol);
     }
@@ -332,15 +332,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     else if (historyTimeframe === '2Y' || historyTimeframe === 'All') days = 500;
 
     if (realPriceHistory && realPriceHistory.length > 0) {
-      return realPriceHistory.slice(-days).map(item => ({
-        date: item.date,
-        close: item.close,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        volume: item.volume,
-        sma200: item.close
-      }));
+      const closes = realPriceHistory.map(r => Number(r.close));
+      const withSMA = realPriceHistory.map((item, i) => {
+        const s200 = Math.max(0, i - 199);
+        const sma200 = closes.slice(s200, i + 1).reduce((a, b) => a + b, 0) / (i - s200 + 1);
+        return {
+          date: item.date,
+          close: item.close,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          volume: item.volume,
+          sma200: Number(sma200.toFixed(2))
+        };
+      });
+      return (days >= withSMA.length || days >= 500) ? withSMA : withSMA.slice(-days);
     }
     return [];
   }, [historyTimeframe, realPriceHistory]);
@@ -1379,21 +1385,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Daily OHLCV Table */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
+            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden', maxHeight: '70vh', overflowY: 'auto' }}>
               <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>DATE</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right' }}>OPEN</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right' }}>HIGH</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right' }}>LOW</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right' }}>CLOSE</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right' }}>200 SMA</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right' }}>VOL</th>
+                  <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', position: 'sticky', top: 0, zIndex: 1 }}>
+                    <th style={{ padding: '10px 8px', textAlign: 'left', background: '#0d1523' }}>DATE</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>OPEN</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>HIGH</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>LOW</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>CLOSE</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>200 SMA</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>VOL</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[...(history12M || [])].reverse().slice(0, 40).map((h, idx) => {
+                  {[...(history12M || [])].reverse().map((h, idx) => {
                     const rowBull = (h.close >= h.open);
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -1745,26 +1751,25 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
         {/* ════ TAB 7: DIVIDENDS ════ */}
         {activeTab === 'dividends' && (() => {
-          const divData = dividendHistory?.dividends || [];
-          const mockDivs = [
-            { fiscalYear: '2079/80', cashDividend: d.cashDiv || 5, bonusShare: d.bonusShare || 10, rightShare: 0 },
-            { fiscalYear: '2078/79', cashDividend: (d.cashDiv || 5) * 0.9, bonusShare: (d.bonusShare || 10) * 0.8, rightShare: 0 },
-            { fiscalYear: '2077/78', cashDividend: (d.cashDiv || 5) * 0.8, bonusShare: 0, rightShare: 0 },
-            { fiscalYear: '2076/77', cashDividend: (d.cashDiv || 5) * 0.7, bonusShare: (d.bonusShare || 10) * 0.5, rightShare: 0 },
-            { fiscalYear: '2075/76', cashDividend: (d.cashDiv || 5) * 0.6, bonusShare: 0, rightShare: 0 },
-          ];
-          const rows = divData.length > 0 ? divData : mockDivs;
-          const totalCash = rows.reduce((s, r) => s + (r.cashDividend || 0), 0);
-          const totalBonus = rows.reduce((s, r) => s + (r.bonusShare || 0), 0);
+          const rawDivs = Array.isArray(dividendHistory?.dividends) ? dividendHistory.dividends : [];
+          const rows = rawDivs.filter(r => {
+            if (!r || !r.fiscalYear) return false;
+            const fy = String(r.fiscalYear).trim();
+            return !fy.includes('Value') && !fy.includes('#') && fy !== '1.' && fy !== '2.';
+          });
+
+          const count = rows.length || 1;
+          const totalCash = rows.reduce((s, r) => s + (Number(r.cashDividend) || 0), 0);
+          const totalBonus = rows.reduce((s, r) => s + (Number(r.bonusShare) || 0), 0);
 
           return (
             <div style={{ padding: '0 4px' }}>
               {/* Header Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
                 {[
-                  { label: 'Avg Cash Div', val: `${(totalCash / rows.length).toFixed(2)}%`, color: '#10d98a' },
-                  { label: 'Avg Bonus', val: `${(totalBonus / rows.length).toFixed(2)}%`, color: '#a855f7' },
-                  { label: 'Years Tracked', val: `${rows.length}`, color: '#38bdf8' },
+                  { label: 'Avg Cash Div', val: rows.length > 0 ? `${(totalCash / count).toFixed(2)}%` : '—', color: '#10d98a' },
+                  { label: 'Avg Bonus', val: rows.length > 0 ? `${(totalBonus / count).toFixed(2)}%` : '—', color: '#a855f7' },
+                  { label: 'Years Tracked', val: rows.length > 0 ? `${rows.length}` : '—', color: '#38bdf8' },
                 ].map(card => (
                   <div key={card.label} style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 900, color: card.color }}>{card.val}</div>
@@ -1775,7 +1780,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
               {/* Dividend History Table */}
               {dividendLoading ? (
-                <div style={{ textAlign: 'center', padding: 30, color: '#10d98a', fontSize: 13 }}>⏳ Loading dividend history...</div>
+                <div style={{ textAlign: 'center', padding: 30, color: '#10d98a', fontSize: 13 }}>⏳ Loading official dividend records...</div>
+              ) : rows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 36, color: 'rgba(255,255,255,0.5)', fontSize: 13, background: '#0d1523', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
+                  No dividend distribution history available for {d.symbol}
+                </div>
               ) : (
                 <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', background: 'rgba(16,217,138,0.08)', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
@@ -1783,32 +1792,37 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       <div key={h} style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>{h}</div>
                     ))}
                   </div>
-                  {rows.map((row, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', padding: '10px 14px', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{row.fiscalYear}</div>
-                      <div style={{ fontSize: 12, color: row.cashDividend > 0 ? '#10d98a' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                        {row.cashDividend > 0 ? `${row.cashDividend.toFixed(2)}%` : '—'}
+                  {rows.map((row, i) => {
+                    const cleanFy = String(row.fiscalYear).replace(/[()]/g, '').trim();
+                    const fyLabel = cleanFy.startsWith('FY') ? cleanFy : `FY ${cleanFy}`;
+                    return (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', padding: '10px 14px', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{fyLabel}</div>
+                        <div style={{ fontSize: 12, color: row.cashDividend > 0 ? '#10d98a' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
+                          {row.cashDividend > 0 ? `${Number(row.cashDividend).toFixed(2)}%` : '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: row.bonusShare > 0 ? '#a855f7' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
+                          {row.bonusShare > 0 ? `${Number(row.bonusShare).toFixed(2)}%` : '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: row.rightShare > 0 ? '#38bdf8' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
+                          {row.rightShare > 0 ? `${Number(row.rightShare).toFixed(2)}%` : '—'}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, color: row.bonusShare > 0 ? '#a855f7' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                        {row.bonusShare > 0 ? `${row.bonusShare.toFixed(2)}%` : '—'}
-                      </div>
-                      <div style={{ fontSize: 12, color: row.rightShare > 0 ? '#38bdf8' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                        {row.rightShare > 0 ? `${row.rightShare.toFixed(2)}%` : '—'}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
               {/* Total Yield */}
-              <div style={{ background: 'rgba(16,217,138,0.06)', border: '1px solid rgba(16,217,138,0.2)', borderRadius: 12, padding: '12px 14px', marginTop: 14 }}>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>Total Yield ({rows.length} years)</div>
-                <div style={{ display: 'flex', gap: 20 }}>
-                  <span style={{ fontSize: 15, fontWeight: 900, color: '#10d98a' }}>Cash: {totalCash.toFixed(2)}%</span>
-                  <span style={{ fontSize: 15, fontWeight: 900, color: '#a855f7' }}>Bonus: {totalBonus.toFixed(2)}%</span>
+              {rows.length > 0 && (
+                <div style={{ background: 'rgba(16,217,138,0.06)', border: '1px solid rgba(16,217,138,0.2)', borderRadius: 12, padding: '12px 14px', marginTop: 14 }}>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>Total Cumulative Yield ({rows.length} fiscal years)</div>
+                  <div style={{ display: 'flex', gap: 20 }}>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#10d98a' }}>Cash: {totalCash.toFixed(2)}%</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#a855f7' }}>Bonus: {totalBonus.toFixed(2)}%</span>
+                  </div>
                 </div>
-                {divData.length === 0 && <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 6 }}>* Estimated — live data unavailable</div>}
-              </div>
+              )}
             </div>
           );
         })()}

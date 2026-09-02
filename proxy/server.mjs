@@ -2087,29 +2087,59 @@ app.get('/api/dividend-history/:symbol', async (req, res) => {
 
       if (html) {
         const $ = cheerio.load(html);
-        $('table').each((_, table) => {
-          const headers = $(table).find('th').map((_, th) => $(th).text().toLowerCase()).get().join(' ');
-          if (headers.includes('dividend') || headers.includes('bonus') || headers.includes('fiscal')) {
-            $(table).find('tbody tr').each((_, row) => {
-              const tds = $(row).find('td');
-              if (tds.length >= 2) {
-                const year = $(tds[0]).text().trim();
-                const cashDiv = parseMoney($(tds[1]).text());
-                const bonusShare = tds.length >= 3 ? parseMoney($(tds[2]).text()) : 0;
-                const rightShare = tds.length >= 4 ? parseMoney($(tds[3]).text()) : 0;
-                if (year && year.length > 0) {
-                  dividends.push({
-                    fiscalYear: year,
-                    cashDividend: isNaN(cashDiv) ? 0 : cashDiv,
-                    bonusShare: isNaN(bonusShare) ? 0 : bonusShare,
-                    rightShare: isNaN(rightShare) ? 0 : rightShare,
-                    totalYield: (isNaN(cashDiv) ? 0 : cashDiv) + (isNaN(bonusShare) ? 0 : bonusShare)
-                  });
-                }
-              }
-            });
+        const fyMap = new Map();
+
+        const getEntry = (rawFy) => {
+          const match = rawFy.match(/\d{2,4}[-–/]\d{2,4}/);
+          if (!match) return null;
+          const fy = `FY ${match[0]}`;
+          if (!fyMap.has(fy)) {
+            fyMap.set(fy, { fiscalYear: fy, cashDividend: 0, bonusShare: 0, rightShare: 0, totalYield: 0 });
           }
+          return fyMap.get(fy);
+        };
+
+        $('table').each((_, table) => {
+          const tblText = $(table).text();
+          const isBonus = /bonus/i.test(tblText);
+          const isCash = /cash/i.test(tblText);
+          const isRight = /right/i.test(tblText);
+
+          $(table).find('tr').each((_, row) => {
+            const rowText = $(row).text();
+            const entry = getEntry(rowText);
+            if (entry) {
+              $(row).find('td, th').each((_, cell) => {
+                const txt = $(cell).text().trim();
+                const pctMatch = txt.match(/^([\d.]+)\s*%?$/);
+                if (pctMatch) {
+                  const val = parseFloat(pctMatch[1]);
+                  if (!isNaN(val) && val < 500) {
+                    if (isCash && entry.cashDividend === 0) entry.cashDividend = val;
+                    else if (isBonus && entry.bonusShare === 0) entry.bonusShare = val;
+                    else if (isRight && entry.rightShare === 0) entry.rightShare = val;
+                  }
+                } else {
+                  const ratioMatch = txt.match(/1\s*:\s*([\d.]+)/);
+                  if (ratioMatch) {
+                    const rVal = parseFloat(ratioMatch[1]) * 100;
+                    if (!isNaN(rVal)) entry.rightShare = rVal;
+                  }
+                }
+              });
+            }
+          });
         });
+
+        const parsed = Array.from(fyMap.values()).map(e => ({
+          ...e,
+          totalYield: Number((e.cashDividend + e.bonusShare).toFixed(2))
+        }));
+
+        parsed.sort((a, b) => b.fiscalYear.localeCompare(a.fiscalYear));
+        if (parsed.length > 0) {
+          dividends.push(...parsed);
+        }
       }
     }
 
