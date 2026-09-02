@@ -232,11 +232,27 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     setChartTimeframe(tf);
     if (!d?.symbol) return;
 
-    const tfDaysMap = { '1D': 5, '2D': 10, '3D': 15, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 500, 'All': 500 };
-    const days = tfDaysMap[tf] || 30;
+    let days = 30;
+    const str = String(tf).toUpperCase();
+    if (str === '1D') days = 1;
+    else if (str === '2D') days = 2;
+    else if (str === '3D') days = 3;
+    else if (str === '1W' || str === '7') days = 7;
+    else if (str === '1M' || str === '30') days = 30;
+    else if (str === '3M' || str === '90') days = 90;
+    else if (str === '6M' || str === '180') days = 180;
+    else if (str === '1Y' || str === '365') days = 365;
+    else if (str === '2Y' || str === 'ALL' || str === '500') days = 500;
+    else {
+      const parsed = parseInt(tf, 10);
+      days = isNaN(parsed) ? 30 : parsed;
+    }
 
     if (realPriceHistory && realPriceHistory.length > 0) {
-      const sliced = realPriceHistory.slice(-days).map(item => ({
+      const sliced = (days >= 500 || days >= realPriceHistory.length)
+        ? realPriceHistory
+        : realPriceHistory.slice(-days);
+      const formatted = sliced.map(item => ({
         time: item.date,
         open: Number(item.open) || Number(item.close),
         high: Number(item.high) || Number(item.close),
@@ -244,7 +260,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         close: Number(item.close),
         volume: Number(item.volume) || 0
       }));
-      setHistory(sliced);
+      setHistory(formatted);
     } else {
       setHistory([]);
     }

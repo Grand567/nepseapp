@@ -1059,12 +1059,27 @@ export default function Dashboard({
           }
         }
 
-        const tfDaysMap = { '1D': 5, '2D': 10, '3D': 15, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'all': 500 };
-        const days = tfDaysMap[heroTimeframe] || 30;
+        let days = 30;
+        const str = String(heroTimeframe).toUpperCase();
+        if (str === '1D') days = 5; // On 1D fallback, show recent 5 sessions if intraday pending
+        else if (str === '2D') days = 2;
+        else if (str === '3D') days = 3;
+        else if (str === '1W' || str === '7') days = 7;
+        else if (str === '1M' || str === '30') days = 30;
+        else if (str === '3M' || str === '90') days = 90;
+        else if (str === '6M' || str === '180') days = 180;
+        else if (str === '1Y' || str === '365') days = 365;
+        else if (str === '2Y' || str === 'ALL' || str === '500') days = 500;
+        else {
+          const parsed = parseInt(heroTimeframe, 10);
+          days = isNaN(parsed) ? 30 : parsed;
+        }
+
         const data = await servicesApi.fetchPriceHistory(sym, 500);
         if (!active) return;
         if (data && Array.isArray(data) && data.length > 0) {
-          const formatted = data.slice(-days).map(item => ({
+          const sliced = (days >= 500 || days >= data.length) ? data : data.slice(-days);
+          const formatted = sliced.map(item => ({
             time: item.date,
             open: Number(item.open) || Number(item.close),
             high: Number(item.high) || Number(item.close),
