@@ -13,12 +13,11 @@
     "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE-release.apk && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE.apk",
     "build:apk": "npm run mobile:build-release"
   },
-
-
   "dependencies": {
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.3.4",
+    "@rumess/nepse-api": "^1.0.5",
     "axios": "^1.16.1",
     "axios-cookiejar-support": "^7.0.0",
     "cheerio": "^1.2.0",
@@ -27,6 +26,7 @@
     "firebase": "^12.13.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.395.0",
+    "pg": "^8.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tough-cookie": "^6.0.1"
