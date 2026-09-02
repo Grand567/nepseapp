@@ -1650,7 +1650,7 @@ app.get('/api/price-history/:symbol', async (req, res) => {
    REAL DATA ENDPOINT B — Real Floorsheet (via @rumess/nepse-api)
    GET /api/floorsheet/:symbol? (optional symbol for market-wide or stock-specific)
    ═══════════════════════════════════════════════════ */
-app.get('/api/floorsheet/:symbol?', async (req, res) => {
+app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
   const symbol = (req.params.symbol || '').toUpperCase();
   const page = Math.max(0, parseInt(req.query.page || '1', 10) - 1);
   const size = Math.min(parseInt(req.query.size || '25', 10), 100);
