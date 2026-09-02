@@ -10,9 +10,9 @@ import {
   CheckCircle, ArrowUpRight, ArrowDownRight, Radio
 } from 'lucide-react';
 import {
-  runStockScanners, LOCK_IN_DATA, SECTOR_AD_DATA, SEBON_IPO_PIPELINE,
-  NEPSE_SEASONALITY, SIP_BASKETS, NEPSE_BROKERS, getMarketNews,
-  MUTUAL_FUNDS_DATA, DIVIDEND_KINGS_DATA
+  runStockScanners, LOCK_IN_DATA, SEBON_IPO_PIPELINE,
+  NEPSE_SEASONALITY, SIP_BASKETS, NEPSE_BROKERS,
+  DIVIDEND_KINGS_DATA
 } from '../utils/mockData';
 import { calculateBuyDetails, calculateSellDetails, calculateBrokerCommission, calculateSebonFee, DP_CHARGE } from '../utils/calculations';
 import {
@@ -1672,21 +1672,19 @@ function BrokerHeatmapModal({ stocks, onClose }) {
                       intensity = Math.min(Math.abs(cellData.net) / 100000, 0.5); // scaling for bg opacity
                       displayValue = cellData.net > 0 ? `+${fmtCr(cellData.net)}` : fmtCr(cellData.net);
                     } else {
-                      // Fallback logic
-                      const seed = (sym.charCodeAt(0) * 7 + b * 13 + sIdx * 5) % 100;
-                      isNetBuy = seed > 45;
-                      const fallbackInt = (seed % 40) + 10;
-                      intensity = fallbackInt / 100;
-                      displayValue = `${isNetBuy ? '+' : '-'}${fallbackInt}L`;
+                      // No transaction recorded between this broker & scrip
+                      isNetBuy = true;
+                      intensity = 0;
+                      displayValue = '—';
                     }
 
                     return (
                       <td key={b} style={{ padding: '6px 2px', textAlign: 'center' }}>
                         <div style={{
-                          background: isNetBuy ? `rgba(16, 217, 138, ${0.15 + intensity})` : `rgba(239, 68, 68, ${0.15 + intensity})`,
-                          color: isNetBuy ? 'var(--bull)' : '#ef4444',
+                          background: displayValue === '—' ? 'rgba(255,255,255,0.02)' : isNetBuy ? `rgba(16, 217, 138, ${0.15 + intensity})` : `rgba(239, 68, 68, ${0.15 + intensity})`,
+                          color: displayValue === '—' ? 'var(--text-muted)' : isNetBuy ? 'var(--bull)' : '#ef4444',
                           padding: '4px 2px', borderRadius: 4, fontWeight: 800, fontSize: 9.5
-                        }} title={cellData ? `Buy: ${fmtCr(cellData.buy)} | Sell: ${fmtCr(cellData.sell)} | Net: ${fmtCr(cellData.net)}` : ''}>
+                        }} title={cellData ? `Buy: ${fmtCr(cellData.buy)} | Sell: ${fmtCr(cellData.sell)} | Net: ${fmtCr(cellData.net)}` : 'No trades recorded'}>
                           {displayValue}
                         </div>
                       </td>
@@ -2660,25 +2658,41 @@ function RiskRewardModal({ onClose }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 function AIWatchlistModal({ stocks, onClose, onSelectStock }) {
   const aiPicks = useMemo(() => {
-    return stocks.slice(0, 10).map((s, idx) => {
-      const target = Math.round(s.ltp * (1.12 + (idx % 3) * 0.05));
-      const stop = Math.round(s.ltp * 0.94);
-      const rr = ((target - s.ltp) / Math.max(1, s.ltp - stop)).toFixed(1);
-      const confidence = 85 + (idx % 12);
-      const reasons = [
-        "Rebounding off 20 EMA dynamic support with 2.8x volume expansion.",
-        "MACD bullish histogram golden cross + descending trendline breakout.",
-        "Institutional accumulation detected with Broker #58 & #45 net buying.",
-        "Bollinger Band squeeze expansion with upper band continuation.",
-        "Consolidation base breakout with strong RSI momentum above 60."
-      ];
+    const active = [...stocks]
+      .filter(s => Number(s.pChange || 0) > 0 && (Number(s.turnover || 0) > 0 || Number(s.volume || 0) > 0))
+      .sort((a, b) => (Number(b.turnover || 0) * (Number(b.pChange || 0) + 1)) - (Number(a.turnover || 0) * (Number(a.pChange || 0) + 1)))
+      .slice(0, 15);
+
+    return active.map((s, idx) => {
+      const ltp = Number(s.ltp || 100);
+      const high = Number(s.high || ltp);
+      const low = Number(s.low || ltp);
+      const pChange = Number(s.pChange || 0);
+
+      // Target based on resistance / 8-15% projection
+      const upsidePct = Math.max(0.08, Math.min(0.20, (pChange * 0.03) + 0.08));
+      const target = Math.round(ltp * (1 + upsidePct));
+      // Stop based on day low or 4-6% risk
+      const stop = Math.round(low > 0 && low < ltp ? low * 0.98 : ltp * 0.95);
+      const risk = Math.max(1, ltp - stop);
+      const reward = Math.max(1, target - ltp);
+      const rr = (reward / risk).toFixed(1);
+      const confidence = Math.min(96, Math.max(78, Math.round(80 + pChange * 2 + (idx === 0 ? 6 : 0))));
+
+      let reason = `Strong momentum day (+${pChange.toFixed(2)}%) with ${fmt(s.volume)} shares traded and Rs. ${fmtCr(s.turnover)} turnover.`;
+      if (s.high52w && ltp >= s.high52w * 0.95) {
+        reason = `Trading within 5% of 52-week high with high institutional volume and ${pChange}% price expansion.`;
+      } else if (pChange >= 3.0) {
+        reason = `Significant intraday breakout (+${pChange}%) breaking above previous session range with heavy buyer participation.`;
+      }
+
       return {
         ...s,
         target,
         stop,
         rr,
         confidence,
-        reason: reasons[idx % reasons.length]
+        reason
       };
     });
   }, [stocks]);
@@ -3124,91 +3138,72 @@ function BrokerAnalysisModal({ stocks = [], onClose, onSelectStock }) {
     return NEPSE_BROKERS.find(b => b.no === selectedBrokerNo) || NEPSE_BROKERS[0] || { no: 58, name: "Naasa Securities Co. Ltd." };
   }, [selectedBrokerNo]);
 
-  // Generate deterministic activity lists based on broker ID and real stock universe
+  // Generate activity lists based on broker ID and real stock universe
   const { topBuyList, topHoldingList, topSellList, matchingList, brokerSummary } = useMemo(() => {
     const bNo = activeBroker.no || 58;
-    const isTopWhale = [58, 45, 34, 49, 28, 42, 57, 44].includes(bNo);
-    const multiplier = isTopWhale ? 1.8 : 0.7;
+    const sorted = [...stockList]
+      .filter(s => (Number(s.turnover || 0) > 0 || Number(s.volume || 0) > 0))
+      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0));
 
-    // Build curated items from stocks or fallbacks
-    const samplePool = stockList.length >= 10 ? stockList.slice(0, 30) : [
-      { symbol: 'SHIVM', ltp: 660, pChange: 3.2, sector: 'Manufacturing' },
-      { symbol: 'RIDI', ltp: 348, pChange: 2.1, sector: 'Hydropower' },
-      { symbol: 'RHPL', ltp: 188, pChange: -1.5, sector: 'Hydropower' },
-      { symbol: 'HDL', ltp: 1160, pChange: 1.8, sector: 'Manufacturing' },
-      { symbol: 'PCIL', ltp: 618, pChange: 4.5, sector: 'Hydropower' },
-      { symbol: 'SONA', ltp: 408, pChange: 5.0, sector: 'Manufacturing' },
-      { symbol: 'GBIME', ltp: 240, pChange: 0.5, sector: 'Commercial Banks' },
-      { symbol: 'UMHL', ltp: 558, pChange: 3.8, sector: 'Hydropower' },
-      { symbol: 'HFIN', ltp: 614, pChange: 2.9, sector: 'Finance' },
-      { symbol: 'TAMOR', ltp: 482, pChange: -2.1, sector: 'Hydropower' },
-      { symbol: 'CHCL', ltp: 405, pChange: 0.8, sector: 'Hydropower' },
-      { symbol: 'NABIL', ltp: 620, pChange: 1.2, sector: 'Commercial Banks' },
-      { symbol: 'NICA', ltp: 308, pChange: 0.9, sector: 'Commercial Banks' },
-      { symbol: 'NRN', ltp: 1348, pChange: -3.5, sector: 'Investment' }
-    ];
+    const activePool = sorted.length >= 8 ? sorted : stockList.slice(0, 20);
 
-    const buys = samplePool.slice(0, 8).map((s, i) => {
-      const pct = (85 - (i * 4) + (bNo % 7)).toFixed(1);
-      const qty = ((12 + i * 2.5) * multiplier).toFixed(2);
-      const amt = ((45 + i * 8.2) * multiplier).toFixed(2);
+    const buys = activePool.slice(0, 8).map((s, i) => {
+      const vol = Number(s.volume || 10000);
+      const to = Number(s.turnover || 1000000);
       return {
         symbol: s.symbol,
-        pct: `${Math.min(99.5, Math.max(50, pct))}%`,
-        qty: `${qty}K`,
-        amt: `${amt} L`,
+        pct: `${Math.min(99.5, Math.max(50, 85 - i * 4))}%`,
+        qty: `${(vol / 1000).toFixed(1)}K`,
+        amt: `${(to / 100000).toFixed(1)} L`,
         avg: (s.ltp || 350).toFixed(2),
         stock: s
       };
     });
 
-    const holdings = samplePool.slice(2, 9).map((s, i) => {
-      const pct = (90 - (i * 3.5) + (bNo % 5)).toFixed(1);
-      const qty = ((15 + i * 3.2) * multiplier).toFixed(2);
-      const amt = ((50 + i * 9.5) * multiplier).toFixed(2);
+    const holdings = activePool.slice(2, 9).map((s, i) => {
+      const vol = Number(s.volume || 8000);
+      const to = Number(s.turnover || 800000);
       return {
         symbol: s.symbol,
-        pct: `${Math.min(99.8, Math.max(55, pct))}%`,
-        qty: `${qty}K`,
-        amt: `${amt} L`,
+        pct: `${Math.min(99.8, Math.max(55, 90 - i * 3.5))}%`,
+        qty: `${(vol / 1000).toFixed(1)}K`,
+        amt: `${(to / 100000).toFixed(1)} L`,
         avg: (s.ltp || 400).toFixed(2),
         stock: s
       };
     });
 
-    const sells = samplePool.slice(5, 12).map((s, i) => {
-      const pct = (88 - (i * 4.2) + (bNo % 6)).toFixed(1);
-      const qty = ((10 + i * 2.1) * multiplier).toFixed(2);
-      const amt = ((38 + i * 7.1) * multiplier).toFixed(2);
+    const sells = [...activePool].reverse().slice(0, 7).map((s, i) => {
+      const vol = Number(s.volume || 5000);
+      const to = Number(s.turnover || 500000);
       return {
         symbol: s.symbol,
-        pct: `${Math.min(99.0, Math.max(45, pct))}%`,
-        qty: `${qty}K`,
-        amt: `${amt} L`,
+        pct: `${Math.min(99.0, Math.max(45, 88 - i * 4.2))}%`,
+        qty: `${(vol / 1000).toFixed(1)}K`,
+        amt: `${(to / 100000).toFixed(1)} L`,
         avg: (s.ltp || 380).toFixed(2),
         stock: s
       };
     });
 
-    const matching = samplePool.slice(1, 7).map((s, i) => {
+    const matching = activePool.slice(1, 7).map((s, i) => {
       const counterBroker = NEPSE_BROKERS[(i * 3 + bNo) % NEPSE_BROKERS.length] || { no: 45, name: 'Imperial' };
-      const syncScore = (75 + (i * 3.5) + (bNo % 9)).toFixed(1);
-      const vol = ((8 + i * 3) * multiplier).toFixed(1);
+      const vol = Number(s.volume || 6000);
       return {
         symbol: s.symbol,
         counterBrokerNo: counterBroker.no,
         counterBrokerName: counterBroker.name,
-        syncScore: `${Math.min(98.5, syncScore)}%`,
-        volume: `${vol}K shares`,
-        amount: `Rs. ${((parseFloat(vol) * (s.ltp || 400)) / 100).toFixed(2)} Lakhs`,
+        syncScore: `${Math.min(98.5, 75 + i * 3)}%`,
+        volume: `${(vol / 1000).toFixed(1)}K shares`,
+        amount: `Rs. ${(Number(s.turnover || 0) / 100000).toFixed(2)} Lakhs`,
         stock: s
       };
     });
 
-    const totalBuyTurnover = (isTopWhale ? 27.74 : 8.45).toFixed(2);
-    const totalSellTurnover = (isTopWhale ? 25.12 : 7.20).toFixed(2);
+    const totalBuyTurnover = (buys.reduce((sum, b) => sum + parseFloat(b.amt || 0), 0) / 100).toFixed(2);
+    const totalSellTurnover = (sells.reduce((sum, s) => sum + parseFloat(s.amt || 0), 0) / 100).toFixed(2);
     const netTurnover = (parseFloat(totalBuyTurnover) - parseFloat(totalSellTurnover)).toFixed(2);
-    const dominanceBdi = (isTopWhale ? 18.4 : 6.2).toFixed(1);
+    const dominanceBdi = Math.min(25.0, Math.max(3.0, (parseFloat(totalBuyTurnover) / 2))).toFixed(1);
 
     return {
       topBuyList: buys,
@@ -3584,20 +3579,27 @@ function BrokerFavouritesModal({ stocks = [], onClose, onSelectStock }) {
   const [tab, setTab] = useState('all'); // 'all' | 'high_conviction' | 'large_cap' | 'whale_accum'
   const [searchQuery, setSearchQuery] = useState('');
 
-  const favouritesList = useMemo(() => [
-    { symbol: 'RIDI', name: 'Ridi Power Company', sector: 'Hydropower', conviction: 99.1, qty: '15.20K', amt: '52.94 L', avg: '348.27', topBrokers: [58, 45, 34], isWhale: true },
-    { symbol: 'RHPL', name: 'Rasuwagadhi Hydropower', sector: 'Hydropower', conviction: 88.5, qty: '12.41K', amt: '23.29 L', avg: '188.00', topBrokers: [42, 58, 28], isWhale: true },
-    { symbol: 'HDL', name: 'Himalayan Distillery', sector: 'Manufacturing', conviction: 82.1, qty: '2.12K', amt: '24.96 L', avg: '1,160.06', topBrokers: [58, 49, 57], isWhale: false },
-    { symbol: 'PCIL', name: 'Pokhara Finance / Power', sector: 'Finance', conviction: 78.4, qty: '4.01K', amt: '24.43 L', avg: '618.49', topBrokers: [45, 34], isWhale: false },
-    { symbol: 'SONA', name: 'Sonapur Minerals & Oil', sector: 'Manufacturing', conviction: 84.3, qty: '6.66K', amt: '27.82 L', avg: '408.35', topBrokers: [58, 42, 44], isWhale: true },
-    { symbol: 'GBIME', name: 'Global IME Bank Ltd.', sector: 'Commercial Banks', conviction: 100.0, qty: '14.01K', amt: '33.64 L', avg: '240.42', topBrokers: [58, 34, 28, 49], isWhale: true },
-    { symbol: 'UMHL', name: 'United Modi Hydropower', sector: 'Hydropower', conviction: 95.0, qty: '5.41K', amt: '30.87 L', avg: '558.34', topBrokers: [45, 58], isWhale: true },
-    { symbol: 'HFIN', name: 'Hathway Investment', sector: 'Investment', conviction: 91.0, qty: '5.25K', amt: '32.68 L', avg: '614.12', topBrokers: [58, 42], isWhale: true },
-    { symbol: 'SHIVM', name: 'Shivam Cements Ltd.', sector: 'Manufacturing', conviction: 86.4, qty: '18.50K', amt: '122.10 L', avg: '660.00', topBrokers: [58, 45, 34, 42], isWhale: true },
-    { symbol: 'CHCL', name: 'Chilime Hydropower', sector: 'Hydropower', conviction: 92.0, qty: '8.20K', amt: '33.86 L', avg: '405.00', topBrokers: [49, 28, 57], isWhale: false },
-    { symbol: 'NABIL', name: 'Nabil Bank Limited', sector: 'Commercial Banks', conviction: 81.5, qty: '9.30K', amt: '57.66 L', avg: '620.00', topBrokers: [58, 45, 49], isWhale: true },
-    { symbol: 'NRN', name: 'NRN Infrastructure', sector: 'Investment', conviction: 89.7, qty: '4.91K', amt: '66.76 L', avg: '1,348.27', topBrokers: [58, 34], isWhale: true },
-  ], []);
+  const favouritesList = useMemo(() => {
+    return [...stockList]
+      .filter(s => Number(s.turnover || 0) > 0 || Number(s.volume || 0) > 0)
+      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+      .slice(0, 25)
+      .map((s, idx) => {
+        const isWhale = (Number(s.turnover || 0) >= 5000000 || Number(s.volume || 0) >= 25000);
+        const conviction = Math.min(99.5, Math.max(65.0, 75 + Number(s.pChange || 0) * 3 + (isWhale ? 10 : 0)));
+        return {
+          symbol: s.symbol,
+          name: s.name || s.symbol,
+          sector: s.sector || 'Equities',
+          conviction: Number(conviction.toFixed(1)),
+          qty: fmt(s.volume),
+          amt: fmtCr(s.turnover),
+          avg: fmt(s.ltp),
+          topBrokers: [58, 45, 34, 49, 28].slice(0, 2 + (idx % 3)),
+          isWhale
+        };
+      });
+  }, [stockList]);
 
   const filteredList = useMemo(() => {
     let list = favouritesList;
@@ -4010,13 +4012,18 @@ function TopBrokersModal({ onClose }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 function DividendBoardModal({ stocks, onClose, onSelectStock }) {
   const dividendStocks = useMemo(() => {
-    return stocks.map((s, i) => {
-      const bonus = (i % 7) * 2.5;
-      const cash = (i % 5) * 3.2;
-      const totalDiv = (bonus + cash).toFixed(2);
-      const yieldPct = ((totalDiv / s.ltp) * 100).toFixed(2);
-      return { ...s, bonus, cash, totalDiv, yieldPct };
-    }).sort((a, b) => parseFloat(b.yieldPct) - parseFloat(a.yieldPct));
+    return [...stocks]
+      .filter(s => Number(s.ltp || 0) > 0)
+      .map(s => {
+        const bonus = Number(s.bonusShare || 0);
+        const cash = Number(s.cashDiv || 0);
+        const totalDiv = Number((bonus + cash).toFixed(2));
+        const ltp = Number(s.ltp || 100);
+        const yieldPct = totalDiv > 0 ? Number(((totalDiv / ltp) * 100).toFixed(2)) : 0;
+        return { ...s, bonus, cash, totalDiv, yieldPct };
+      })
+      .sort((a, b) => b.yieldPct - a.yieldPct || Number(b.turnover || 0) - Number(a.turnover || 0))
+      .slice(0, 30);
   }, [stocks]);
 
   return (
@@ -4933,19 +4940,47 @@ function TechnicalRatingsModal({ stocks, onClose, onSelectStock }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
+  const enrichedStocks = useMemo(() => {
+    const avgVol = stocks.reduce((sum, s) => sum + Number(s.volume || 0), 0) / Math.max(stocks.length, 1);
+    return stocks.map(s => {
+      let score = 50;
+      const p = Number(s.pChange || 0);
+      const v = Number(s.volume || 0);
+      const ltp = Number(s.ltp || 100);
+      const high = Number(s.high || ltp);
+      const low = Number(s.low || ltp);
+      
+      score += Math.max(-25, Math.min(25, p * 4));
+      if (v > avgVol * 2) score += 15;
+      else if (v > avgVol) score += 8;
+      else if (v < avgVol * 0.3) score -= 8;
+      
+      if (high > low && (ltp - low) / (high - low) > 0.8) score += 10;
+      else if (high > low && (ltp - low) / (high - low) < 0.2) score -= 10;
+
+      const finalScore = Math.max(15, Math.min(98, Math.round(score)));
+      const rating = finalScore >= 80 ? 'Strong Buy' : finalScore >= 65 ? 'Buy' : finalScore >= 45 ? 'Neutral' : 'Sell';
+      return {
+        ...s,
+        technicalScore: finalScore,
+        technicalRating: rating
+      };
+    });
+  }, [stocks]);
+
   const ranked = useMemo(() => {
-    let list = [...stocks].sort((a, b) => (b.technicalScore || 50) - (a.technicalScore || 50));
-    if (filter === 'strong_buy') list = list.filter(s => (s.technicalScore || 50) >= 80);
-    else if (filter === 'buy') list = list.filter(s => (s.technicalScore || 50) >= 65 && (s.technicalScore || 50) < 80);
-    else if (filter === 'neutral') list = list.filter(s => (s.technicalScore || 50) >= 45 && (s.technicalScore || 50) < 65);
-    else if (filter === 'sell') list = list.filter(s => (s.technicalScore || 50) < 45);
+    let list = [...enrichedStocks].sort((a, b) => b.technicalScore - a.technicalScore);
+    if (filter === 'strong_buy') list = list.filter(s => s.technicalScore >= 80);
+    else if (filter === 'buy') list = list.filter(s => s.technicalScore >= 65 && s.technicalScore < 80);
+    else if (filter === 'neutral') list = list.filter(s => s.technicalScore >= 45 && s.technicalScore < 65);
+    else if (filter === 'sell') list = list.filter(s => s.technicalScore < 45);
 
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q)));
     }
     return list;
-  }, [stocks, filter, search]);
+  }, [enrichedStocks, filter, search]);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -5378,25 +5413,33 @@ function DividendKingsModal({ stocks, onClose, onSelectStock }) {
               </div>
             ))
           ) : (
-            stocks.slice(0, 15).map((s, idx) => (
-              <div
-                key={s.symbol}
-                onClick={() => { onClose(); if (onSelectStock) onSelectStock(s); }}
-                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>LTP: Rs. {fmt(s.ltp)} · Bonus: {s.bonusShare || 5}%</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--bull)', fontFamily: 'var(--font-mono)' }}>
-                      {((s.bonusShare || 5) * 100 / (s.ltp || 100)).toFixed(2)}% Yield
+            [...stocks]
+              .filter(s => (Number(s.bonusShare || 0) > 0 || Number(s.cashDiv || 0) > 0 || Number(s.turnover || 0) > 0))
+              .sort((a, b) => ((Number(b.bonusShare || 0) + Number(b.cashDiv || 0)) / Math.max(b.ltp || 100, 1)) - ((Number(a.bonusShare || 0) + Number(a.cashDiv || 0)) / Math.max(a.ltp || 100, 1)) || Number(b.turnover || 0) - Number(a.turnover || 0))
+              .slice(0, 25)
+              .map((s, idx) => {
+                const totalDiv = Number(s.bonusShare || 0) + Number(s.cashDiv || 0);
+                const yieldPct = totalDiv > 0 ? ((totalDiv / (s.ltp || 100)) * 100).toFixed(2) : null;
+                return (
+                  <div
+                    key={s.symbol}
+                    onClick={() => { onClose(); if (onSelectStock) onSelectStock(s); }}
+                    style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>#{idx + 1} {s.symbol}</span>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>LTP: Rs. {fmt(s.ltp)} {totalDiv > 0 ? `· Div: ${totalDiv}%` : `· Turnover: ${fmtCr(s.turnover)}`}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--bull)', fontFamily: 'var(--font-mono)' }}>
+                          {yieldPct ? `${yieldPct}% Yield` : `${s.pChange >= 0 ? '+' : ''}${s.pChange}%`}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            ))
+                );
+              })
           )}
         </div>
       </div>
@@ -5871,18 +5914,33 @@ function DividendsListModal({ stocks, onClose, onSelectStock }) {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, []);
 
-  const dividendData = useMemo(() => [
-    { sym: 'UNL', bonus: '0.00%', cash: '650.00%', total: '650.00%', fy: '081/082', status: 'Approved' },
-    { sym: 'HDL', bonus: '10.50%', cash: '0.55%', total: '11.05%', fy: '081/082', status: 'Book Closed' },
-    { sym: 'CIT', bonus: '14.00%', cash: '0.73%', total: '14.73%', fy: '081/082', status: 'Proposed' },
-    { sym: 'SHIVM', bonus: '10.53%', cash: '0.55%', total: '11.08%', fy: '081/082', status: 'Approved' },
-    { sym: 'NTC', bonus: '0.00%', cash: '40.00%', total: '40.00%', fy: '081/082', status: 'Approved' },
-    { sym: 'NABIL', bonus: '10.00%', cash: '2.50%', total: '12.50%', fy: '081/082', status: 'Approved' },
-    { sym: 'EBL', bonus: '10.00%', cash: '5.30%', total: '15.30%', fy: '081/082', status: 'Approved' },
-    { sym: 'SCB', bonus: '6.50%', cash: '19.00%', total: '25.50%', fy: '081/082', status: 'Approved' },
-    { sym: 'GBIME', bonus: '8.00%', cash: '1.50%', total: '9.50%', fy: '081/082', status: 'Proposed' },
-    { sym: 'NICL', bonus: '11.50%', cash: '0.60%', total: '12.10%', fy: '081/082', status: 'Approved' }
-  ], []);
+  const dividendData = useMemo(() => {
+    const baseKnown = [
+      { sym: 'UNL', bonus: '0.00%', cash: '650.00%', total: '650.00%', fy: '081/082', status: 'Approved' },
+      { sym: 'HDL', bonus: '10.50%', cash: '0.55%', total: '11.05%', fy: '081/082', status: 'Book Closed' },
+      { sym: 'CIT', bonus: '14.00%', cash: '0.73%', total: '14.73%', fy: '081/082', status: 'Proposed' },
+      { sym: 'SHIVM', bonus: '10.53%', cash: '0.55%', total: '11.08%', fy: '081/082', status: 'Approved' },
+      { sym: 'NTC', bonus: '0.00%', cash: '40.00%', total: '40.00%', fy: '081/082', status: 'Approved' },
+      { sym: 'NABIL', bonus: '10.00%', cash: '2.50%', total: '12.50%', fy: '081/082', status: 'Approved' },
+      { sym: 'EBL', bonus: '10.00%', cash: '5.30%', total: '15.30%', fy: '081/082', status: 'Approved' },
+      { sym: 'SCB', bonus: '6.50%', cash: '19.00%', total: '25.50%', fy: '081/082', status: 'Approved' },
+      { sym: 'GBIME', bonus: '8.00%', cash: '1.50%', total: '9.50%', fy: '081/082', status: 'Proposed' },
+      { sym: 'NICL', bonus: '11.50%', cash: '0.60%', total: '12.10%', fy: '081/082', status: 'Approved' }
+    ];
+
+    const liveScrips = stocks
+      .filter(s => (Number(s.cashDiv || 0) > 0 || Number(s.bonusShare || 0) > 0) && !baseKnown.some(b => b.sym === s.symbol))
+      .map(s => ({
+        sym: s.symbol,
+        bonus: `${Number(s.bonusShare || 0).toFixed(2)}%`,
+        cash: `${Number(s.cashDiv || 0).toFixed(2)}%`,
+        total: `${(Number(s.bonusShare || 0) + Number(s.cashDiv || 0)).toFixed(2)}%`,
+        fy: '081/082',
+        status: 'Declared'
+      }));
+
+    return [...baseKnown, ...liveScrips];
+  }, [stocks]);
 
   const filtered = dividendData.filter(d => !search || d.sym.toLowerCase().includes(search.toLowerCase()));
 
