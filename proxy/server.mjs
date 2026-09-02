@@ -1546,19 +1546,104 @@ app.get('/api/news/merolagani', async (req, res) => {
    Returns real OHLCV history from NEPSE official API
    GET /api/price-history/:symbol?length=365
    ═══════════════════════════════════════════════════ */
+app.get('/api/nepse/intraday-graph', async (req, res) => {
+  const cacheKey = 'nepse-intraday-graph';
+  const cached = getCache(cacheKey);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return res.json({ success: true, data: cached, cached: true });
+  }
+
+  try {
+    const rawGraph = await nepseClient.getNepseIndexDailyGraph();
+    if (Array.isArray(rawGraph) && rawGraph.length > 0) {
+      const formatted = rawGraph.map(pt => ({
+        time: new Date(pt[0] * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
+        timestamp: pt[0],
+        open: pt[1],
+        high: pt[1],
+        low: pt[1],
+        close: pt[1],
+        volume: 0
+      }));
+      setCache(cacheKey, formatted, 60 * 1000); // 1 min cache
+      return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-intraday' });
+    }
+  } catch (err) {
+    console.warn('[nepse/intraday-graph] Failed:', err.message);
+  }
+
+  return res.json({ success: false, data: [], message: 'No intraday graph data available' });
+});
+
 app.get('/api/price-history/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const rawSymbol = (req.params.symbol || '').toUpperCase().trim();
   const length = Math.min(Math.max(parseInt(req.query.length || '365', 10), 1), 500);
-  const cacheKey = `price-history-${symbol}-${length}`;
+  const cacheKey = `price-history-${rawSymbol}-${length}`;
   const cached = getCache(cacheKey);
   if (cached && Array.isArray(cached) && cached.length > 0) {
     return res.json({ success: true, data: cached, cached: true, count: cached.length });
   }
 
-  // Method 1: Direct NEPSE API via nepseClient (official data)
+  const INDEX_MAP = {
+    'NEPSE': 58,
+    'NEPSE INDEX': 58,
+    'SENSITIVE': 57,
+    'SENSITIVE INDEX': 57,
+    'FLOAT': 62,
+    'FLOAT INDEX': 62,
+    'SENSITIVE FLOAT': 63,
+    'BANKING': 51,
+    'DEVELOPMENT BANK': 52,
+    'FINANCE': 53,
+    'HOTEL': 54,
+    'HOTELS AND TOURISM': 54,
+    'HYDROPOWER': 55,
+    'NON LIFE INSURANCE': 56,
+    'MANUFACTURING': 59,
+    'OTHERS': 60,
+    'MICROFINANCE': 64,
+    'LIFE INSURANCE': 65,
+    'MUTUAL FUND': 66,
+    'INVESTMENT': 67,
+    'TRADING': 68
+  };
+
+  const indexId = INDEX_MAP[rawSymbol];
+  if (indexId) {
+    try {
+      const response = await nepseClient.requestGETAPI(`/api/nots/index/history/${indexId}?page=0&size=${length}`);
+      const content = response?.content || (Array.isArray(response) ? response : []);
+      if (content.length > 0) {
+        const formatted = content.map(item => ({
+          date: item.businessDate,
+          open: parseFloat(item.openIndex || item.closingIndex || 0),
+          high: parseFloat(item.highIndex || item.closingIndex || 0),
+          low: parseFloat(item.lowIndex || item.closingIndex || 0),
+          close: parseFloat(item.closingIndex || 0),
+          volume: parseFloat(item.turnoverVolume || 0),
+          turnover: parseFloat(item.turnoverValue || 0),
+          trades: item.totalTransaction || 0,
+          change: parseFloat(item.absChange || 0),
+          pChange: parseFloat(item.percentageChange || 0),
+          high52w: parseFloat(item.fiftyTwoWeekHigh || 0),
+          low52w: parseFloat(item.fiftyTwoWeekLow || 0),
+        })).filter(d => d.close > 0);
+
+        formatted.sort((a, b) => new Date(a.date) - new Date(b.date));
+        if (formatted.length > 0) {
+          setCache(cacheKey, formatted, 30 * 60 * 1000);
+          return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-index' });
+        }
+      }
+    } catch (idxErr) {
+      console.warn(`[price-history] NEPSE index history failed for ${rawSymbol}:`, idxErr.message);
+    }
+  }
+
+  // Method 1: Direct NEPSE API via nepseClient (official data for equities)
   try {
     const keymap = await nepseClient.getSecuritySymbolIdKeymap();
-    const securityId = keymap.get(symbol);
+    const securityId = keymap.get(rawSymbol);
     if (securityId) {
       const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${length}&sort=businessDate,desc`;
       const response = await nepseClient.requestGETAPI(endpoint);

@@ -109,7 +109,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       bonusShare: Number(liveDetail?.bonus || s.bonusShare || 0),
       cashDiv: Number(liveDetail?.dividend || s.cashDiv || 0),
     };
-  }, [d, liveDetail]);
+  }, [resolvedStock, liveDetail]);
 
   const [history, setHistory] = useState([]);
 

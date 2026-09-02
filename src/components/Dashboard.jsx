@@ -1049,9 +1049,18 @@ export default function Dashboard({
     let active = true;
     async function loadHeroHistory() {
       try {
+        const sym = (activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') ? 'NEPSE' : (activeHeroIndex.key || 'NEPSE');
+        if (heroTimeframe === '1D' && sym === 'NEPSE') {
+          const intraday = await servicesApi.fetchNepseIntradayGraph();
+          if (intraday && Array.isArray(intraday) && intraday.length > 0) {
+            if (!active) return;
+            setHeroHistory(intraday);
+            return;
+          }
+        }
+
         const tfDaysMap = { '1D': 5, '2D': 10, '3D': 15, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, 'all': 500 };
         const days = tfDaysMap[heroTimeframe] || 30;
-        const sym = (activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') ? 'NEPSE' : (activeHeroIndex.key || 'NEPSE');
         const data = await servicesApi.fetchPriceHistory(sym, 500);
         if (!active) return;
         if (data && Array.isArray(data) && data.length > 0) {

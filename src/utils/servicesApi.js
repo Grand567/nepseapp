@@ -62,6 +62,7 @@ export const fetchLiveStocks = () => _proxyFetch('/api/mero/market-summary', {},
 export const fetchFullIndex = () => _proxyFetch('/api/nepse/full-index', {}, 30000);
 export const fetchMarketIndices = () => _proxyFetch('/api/market-indices', {}, 30000);
 export const fetchTodayPrices = () => _proxyFetch('/api/today-prices', {}, 30000);
+export const fetchNepseIntradayGraph = () => _proxyFetch('/api/nepse/intraday-graph', {}, 60000);
 
 export const fetchIPOListings = () => _proxyFetch('/api/ipo/live-listings', {}, 1800000);
 export const fetchIPOPipeline = () => _proxyFetch('/api/ipo/pipeline', {}, 3600000);
