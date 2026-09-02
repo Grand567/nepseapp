@@ -1500,7 +1500,7 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'buyers_choice':
       return stocks.filter(s => s.volume > 50000 && s.pChange > 0).sort((a, b) => (b.turnover || 0) - (a.turnover || 0)).slice(0, 20);
     default:
-      return stocks.slice(0, 20);
+      return [];
   }
 }
 

@@ -927,7 +927,19 @@ function ScannerDrawer({ stocks, scannerKey, title, onClose, onSelectStock }) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 14px' }}>
-          {matched.map(s => {
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
+              <RefreshCw style={{ width: 20, height: 20, animation: 'spin 1s linear infinite', marginBottom: 8, opacity: 0.6 }} />
+              <div>Running live quantitative scanner…</div>
+            </div>
+          ) : matched.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', borderRadius: 14, border: '1px solid var(--border)', marginTop: 8 }}>
+              <Activity style={{ width: 28, height: 28, marginBottom: 10, opacity: 0.4 }} />
+              <div style={{ fontWeight: 800, color: '#fff', fontSize: 13 }}>No stocks qualify for {title} today</div>
+              <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>No active scrip currently triggers this algorithmic rule in the market.</div>
+            </div>
+          ) : (
+            matched.map(s => {
             const isBull = (s.pChange || 0) >= 0;
             const scoreColor = (s.technicalScore || 50) >= 70 ? 'var(--bull)' : (s.technicalScore || 50) >= 55 ? '#38bdf8' : '#ef4444';
             return (
@@ -987,7 +999,7 @@ function ScannerDrawer({ stocks, scannerKey, title, onClose, onSelectStock }) {
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       </div>
     </div>
@@ -5396,6 +5408,13 @@ function DividendKingsModal({ stocks, onClose, onSelectStock }) {
    SUB-COMPONENT: PRICE VS VOLUME SPREAD ANALYSIS (VSA)
 ═══════════════════════════════════════════════════════════════════════════ */
 function PriceVsVolumeModal({ stocks, onClose, onSelectStock }) {
+  const sorted = useMemo(() => {
+    return [...stocks]
+      .filter(s => (Number(s.volume || 0) > 0 || Number(s.turnover || 0) > 0))
+      .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))
+      .slice(0, 30);
+  }, [stocks]);
+
   return (
     <div className="drawer-overlay" onClick={onClose}>
       <div className="drawer" style={{ maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -5405,7 +5424,7 @@ function PriceVsVolumeModal({ stocks, onClose, onSelectStock }) {
             <DollarSign style={{ width: 18, height: 18, color: '#a855f7' }} />
             <div>
               <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>Price vs Volume (VSA)</h3>
-              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Effort vs Result: Volume expansion & float turnover</div>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Ranked by Highest Traded Volume &amp; Effort vs Result</div>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: 'var(--text-muted)' }}>
@@ -5414,37 +5433,40 @@ function PriceVsVolumeModal({ stocks, onClose, onSelectStock }) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-          {stocks.slice(0, 15).map(s => {
-            const isHighEffort = (s.volumeSurgeRatio || 1) >= 1.5;
-            return (
-              <div
-                key={s.symbol}
-                onClick={() => { onClose(); if (onSelectStock) onSelectStock(s); }}
-                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div>
-                    <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
-                    <span style={{ fontSize: 9.5, background: isHighEffort ? 'rgba(16,217,138,0.15)' : 'rgba(255,255,255,0.05)', color: isHighEffort ? 'var(--bull)' : 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, marginLeft: 6, fontWeight: 800 }}>
-                      {isHighEffort ? '🚀 High Effort & Volume Expansion' : '⚡ Normal Flow'}
-                    </span>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)' }}>Rs. {fmt(s.ltp)}</div>
-                    <div style={{ fontSize: 10.5, color: s.pChange >= 0 ? 'var(--bull)' : '#ef4444', fontWeight: 800 }}>
-                      {s.pChange >= 0 ? '+' : ''}{s.pChange}%
+          {sorted.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No active volume data found today.</div>
+          ) : (
+            sorted.map((s, idx) => {
+              const isHighEffort = (Number(s.volume) > 20000 && Math.abs(Number(s.pChange || 0)) >= 1.0);
+              return (
+                <div
+                  key={s.symbol}
+                  onClick={() => { onClose(); if (onSelectStock) onSelectStock(s); }}
+                  style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <div>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>#{idx + 1} {s.symbol}</span>
+                      <span style={{ fontSize: 9.5, background: isHighEffort ? 'rgba(16,217,138,0.15)' : 'rgba(255,255,255,0.05)', color: isHighEffort ? 'var(--bull)' : 'var(--text-muted)', padding: '2px 6px', borderRadius: 4, marginLeft: 6, fontWeight: 800 }}>
+                        {isHighEffort ? '🚀 High Effort & Volume Expansion' : '⚡ Normal Flow'}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)' }}>Rs. {fmt(s.ltp)}</div>
+                      <div style={{ fontSize: 10.5, color: s.pChange >= 0 ? 'var(--bull)' : '#ef4444', fontWeight: 800 }}>
+                        {s.pChange >= 0 ? '+' : ''}{s.pChange}%
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                  <span>Traded: <strong style={{ color: 'var(--text-primary)' }}>{fmt(s.volume)} shares</strong></span>
-                  <span>Float Turnover: <strong style={{ color: '#38bdf8' }}>{s.floatTurnoverPct || 1.1}%</strong></span>
-                  <span>Surge: <strong style={{ color: 'var(--primary-light)' }}>{s.volumeSurgeRatio || 1.2}x 20D Avg</strong></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                    <span>Traded: <strong style={{ color: 'var(--text-primary)' }}>{fmt(s.volume)} shares</strong></span>
+                    <span>Turnover: <strong style={{ color: 'var(--primary-light)' }}>{fmtCr(s.turnover)}</strong></span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     </div>
@@ -5456,7 +5478,18 @@ function PriceVsVolumeModal({ stocks, onClose, onSelectStock }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 function ZeroSumFloorsheetModal({ stocks, onClose }) {
   const [selectedStock, setSelectedStock] = useState(stocks[0] || { symbol: 'NABIL', ltp: 395 });
-  const rows = useMemo(() => generateZeroSumFloorsheet(selectedStock, 15), [selectedStock]);
+  const [realRows, setRealRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedStock?.symbol) return;
+    setLoading(true);
+    servicesApi.fetchFloorsheet(selectedStock.symbol, 1, 20).then(data => {
+      const list = data?.rows || (Array.isArray(data) ? data : []);
+      setRealRows(list);
+    }).catch(() => setRealRows([]))
+      .finally(() => setLoading(false));
+  }, [selectedStock]);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -5466,8 +5499,8 @@ function ZeroSumFloorsheetModal({ stocks, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Table style={{ width: 18, height: 18, color: '#8b5cf6' }} />
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>Zero Sum Floorsheet</h3>
-              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Bilateral broker matching & institutional absorption</div>
+              <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>Zero Sum Floorsheet ({selectedStock.symbol})</h3>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Real NEPSE bilateral trade contract matching</div>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: 'var(--text-muted)' }}>
@@ -5485,30 +5518,39 @@ function ZeroSumFloorsheetModal({ stocks, onClose }) {
             }}
             className="select-input"
           >
-            {stocks.slice(0, 30).map(s => (
-              <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name}</option>
+            {stocks.slice(0, 50).map(s => (
+              <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name || s.symbol}</option>
             ))}
           </select>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-          {rows.map(r => (
-            <div key={r.id} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 10, marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--bull)' }}>Broker #{r.buyer}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>&larr; bought from &larr;</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>Broker #{r.seller}</span>
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{r.time}</div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-primary)', marginTop: 2 }}>
-                <span>{r.qty.toLocaleString()} Units @ Rs. {fmt(r.rate)}</span>
-                <strong style={{ color: 'var(--primary-light)' }}>{fmtCr(r.amount)}</strong>
-              </div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
+              <RefreshCw style={{ width: 20, height: 20, animation: 'spin 1s linear infinite', marginBottom: 8 }} />
+              <div>Loading real floorsheet for {selectedStock.symbol}…</div>
             </div>
-          ))}
+          ) : realRows.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No live floorsheet transactions recorded today for {selectedStock.symbol}.</div>
+          ) : (
+            realRows.map((r, idx) => (
+              <div key={r.contractId || idx} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)', borderRadius: 12, padding: 10, marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--bull)' }}>Broker #{r.buyerMemberId || r.buyer || '—'}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>&larr; bought from &larr;</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>Broker #{r.sellerMemberId || r.seller || '—'}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{r.time || 'Today'}</div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-primary)', marginTop: 2 }}>
+                  <span>{Number(r.contractQuantity || r.qty || 0).toLocaleString()} Units @ Rs. {fmt(r.contractRate || r.rate)}</span>
+                  <strong style={{ color: 'var(--primary-light)' }}>{fmtCr(r.contractAmount || r.amount)}</strong>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -5521,9 +5563,11 @@ function ZeroSumFloorsheetModal({ stocks, onClose }) {
 function StockwiseAnalysisModal({ stocks, onClose, onSelectStock }) {
   const [search, setSearch] = useState('');
   const filtered = useMemo(() => {
-    if (!search.trim()) return stocks.slice(0, 20);
+    if (!search.trim()) {
+      return [...stocks].sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0)).slice(0, 30);
+    }
     const q = search.toLowerCase();
-    return stocks.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q))).slice(0, 20);
+    return stocks.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q))).slice(0, 30);
   }, [stocks, search]);
 
   return (
@@ -5535,7 +5579,7 @@ function StockwiseAnalysisModal({ stocks, onClose, onSelectStock }) {
             <BarChart3 style={{ width: 18, height: 18, color: '#38bdf8' }} />
             <div>
               <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>Stockwise 360° Deep Dive</h3>
-              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Select any NEPSE listed stock for complete analysis</div>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Ranked by highest market turnover / search any ticker</div>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, padding: 6, cursor: 'pointer', color: 'var(--text-muted)' }}>
@@ -5574,10 +5618,9 @@ function StockwiseAnalysisModal({ stocks, onClose, onSelectStock }) {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
-                <span>EPS: <strong>{s.eps}</strong></span>
-                <span>PE: <strong>{s.pe}</strong></span>
-                <span>Float: <strong>{s.floatTurnoverPct || 0.9}%</strong></span>
-                <span>Score: <strong style={{ color: 'var(--bull)' }}>{s.technicalScore || 50}/100</strong></span>
+                <span>Turnover: <strong style={{ color: 'var(--primary-light)' }}>{fmtCr(s.turnover)}</strong></span>
+                <span>Volume: <strong>{fmt(s.volume)}</strong></span>
+                <span>PE: <strong>{s.pe || '—'}</strong></span>
               </div>
             </div>
           ))}

@@ -2581,6 +2581,83 @@ app.get('/api/scanner/bulk', async (req, res) => {
         results = [...allStocks].sort((a, b) => Number(b.turnover||0) - Number(a.turnover||0)).slice(0, 30);
         break;
       }
+      case 'aggressive_accumulators': case 'agg_accumulators': {
+        results = allStocks
+          .filter(s => Number(s.turnover || 0) > 2000000 && Number(s.pChange || 0) > 0.5)
+          .sort((a, b) => (Number(b.turnover || 0) * (Number(b.pChange || 0) + 1)) - (Number(a.turnover || 0) * (Number(a.pChange || 0) + 1)))
+          .slice(0, 30);
+        break;
+      }
+      case 'aggressive_holdings': case 'agg_holdings': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 0 && Number(s.volume || 0) > 5000)
+          .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'broker_dominance': {
+        results = allStocks
+          .filter(s => Number(s.volume || 0) > 10000)
+          .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'distribution_leaders': case 'distrib_leaders': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) < 0 && Number(s.turnover || 0) > 1000000)
+          .sort((a, b) => Number(a.pChange || 0) - Number(b.pChange || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'hot_stocks': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 1.5 && Number(s.volume || 0) >= 5000)
+          .sort((a, b) => Number(b.pChange || 0) - Number(a.pChange || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'support_setups': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 0 && Number(s.ltp || 0) <= Number(s.high || s.ltp || 0) * 0.96)
+          .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'next_breakouts': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 1.0 && Number(s.ltp || 0) >= Number(s.high || s.ltp || 0) * 0.98)
+          .sort((a, b) => Number(b.pChange || 0) - Number(a.pChange || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'consolidating_picks': {
+        results = allStocks
+          .filter(s => Math.abs(Number(s.pChange || 0)) <= 0.8 && Number(s.volume || 0) > 2000)
+          .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'breakout_tradable': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 2.5 && Number(s.volume || 0) > avgVol)
+          .sort((a, b) => Number(b.pChange || 0) - Number(a.pChange || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'investment_picks': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 0 && Number(s.turnover || 0) > 3000000)
+          .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+          .slice(0, 30);
+        break;
+      }
+      case 'slow_accumulation': {
+        results = allStocks
+          .filter(s => Number(s.pChange || 0) >= 0 && Number(s.pChange || 0) <= 1.5 && Number(s.volume || 0) > 5000)
+          .sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))
+          .slice(0, 30);
+        break;
+      }
       case '52w_high': {
         results = allStocks.filter(s => Number(s.high52w||0) > 0 && Number(s.ltp||0)/Number(s.high52w||1) >= 0.98)
           .sort((a, b) => (b.ltp/b.high52w||0) - (a.ltp/a.high52w||0));
