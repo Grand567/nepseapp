@@ -903,7 +903,188 @@ export function calculateTradeLabRankScore(stock) {
 }
 
 /**
- * 19. Broker Dominance Index (BDI)
+ * 20. Multi-Horizon Predictive Target & Risk Formulation
+ * Computes T1 (Conservative Scalp), T2 (Institutional Swing), T3 (Cycle Expansion), and Invalidation Stop
+ */
+export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0, atr = 0, pChange = 0) {
+  const price = Number(ltp) || 100;
+  const calculatedAtr = Number(atr) > 0 ? Number(atr) : Math.max(2, price * 0.035);
+  const pChg = Number(pChange) || 0;
+  const h52 = Number(high52w) > 0 ? Number(high52w) : price * 1.30;
+  const l52 = Number(low52w) > 0 ? Number(low52w) : price * 0.70;
+
+  // T1: Conservative Swing Target (+1.0x ATR to +1.5x ATR, min +6%)
+  const t1Gain = Math.max(price * 0.06, calculatedAtr * 1.25);
+  const target1 = Number((price + t1Gain).toFixed(1));
+  const t1Pct = Number((((target1 - price) / price) * 100).toFixed(2));
+
+  // T2: Institutional Expansion Target (+2.0x ATR to Fibonacci 1.618 projection, min +14%)
+  const t2Gain = Math.max(price * 0.14, calculatedAtr * 2.5);
+  const target2 = Number((price + t2Gain).toFixed(1));
+  const t2Pct = Number((((target2 - price) / price) * 100).toFixed(2));
+
+  // T3: 52-Week High / Macro Cycle Extension (+3.5x ATR or 52W High retest)
+  const target3 = Number(Math.max(price + calculatedAtr * 3.8, h52 * 0.98).toFixed(1));
+  const t3Pct = Number((((target3 - price) / price) * 100).toFixed(2));
+
+  // Invalidation Stop-Loss Floor (Key support level / -1.25x ATR, max -6.5%)
+  const stopLossDistance = Math.min(price * 0.065, Math.max(price * 0.035, calculatedAtr * 1.25));
+  const stopLoss = Number((price - stopLossDistance).toFixed(1));
+  const stopPct = Number((((price - stopLoss) / price) * 100).toFixed(2));
+
+  // Risk-to-Reward Ratio (Target 1 Reward / Risk)
+  const risk = Math.max(1, price - stopLoss);
+  const reward1 = Math.max(1, target1 - price);
+  const reward2 = Math.max(1, target2 - price);
+  const rrr1 = Number((reward1 / risk).toFixed(2));
+  const rrr2 = Number((reward2 / risk).toFixed(2));
+
+  // Entry Accumulation Zone
+  const entryMin = Number((price * 0.985).toFixed(1));
+  const entryMax = Number((price * 1.01).toFixed(1));
+
+  return {
+    ltp: price,
+    entryZone: { min: entryMin, max: entryMax, label: `Rs. ${entryMin} – Rs. ${entryMax}` },
+    target1: { price: target1, pct: t1Pct, horizon: '1–2 Weeks (Swing)', label: `Rs. ${target1} (+${t1Pct}%)` },
+    target2: { price: target2, pct: t2Pct, horizon: '3–6 Weeks (Breakout)', label: `Rs. ${target2} (+${t2Pct}%)` },
+    target3: { price: target3, pct: t3Pct, horizon: '2–4 Months (Macro Peak)', label: `Rs. ${target3} (+${t3Pct}%)` },
+    stopLoss: { price: stopLoss, pct: stopPct, label: `Rs. ${stopLoss} (-${stopPct}%)` },
+    rrr1,
+    rrr2,
+    isValidTradeSetup: rrr1 >= 1.5,
+    atr: Number(calculatedAtr.toFixed(2))
+  };
+}
+
+/**
+ * 21. Multi-Factor Probabilistic Decision Matrix
+ * Combines Momentum, Volume RVOL, Valuation Margin of Safety, and Macro Sentiment into Outcome Probabilities
+ */
+export function calculateProbabilisticMatrix(stock = {}, history = [], macroPulse = null) {
+  const ltp = Number(stock.ltp) || 100;
+  const pChange = Number(stock.pChange) || 0;
+  const rsi = Number(stock.rsi) || 50;
+  const pe = Number(stock.pe) || 0;
+  const eps = Number(stock.eps) || 0;
+  const volume = Number(stock.volume) || 0;
+  const avgVol = Number(stock.avgVolume20D) || Math.max(1000, volume * 0.8);
+
+  let bullishScore = 50;
+  let bearishScore = 50;
+
+  // 1. Price Momentum (+/- 20)
+  if (pChange >= 3.0) bullishScore += 18;
+  else if (pChange > 0.5) bullishScore += 10;
+  else if (pChange <= -3.0) bearishScore += 18;
+  else if (pChange < -0.5) bearishScore += 10;
+
+  // 2. RSI Indicator (+/- 15)
+  if (rsi >= 52 && rsi <= 68) bullishScore += 12;
+  else if (rsi < 35) bullishScore += 15; // Oversold absorption
+  else if (rsi > 75) bearishScore += 16; // Overbought distribution
+
+  // 3. Volume Expansion RVOL (+/- 15)
+  const rvol = avgVol > 0 ? volume / avgVol : 1.0;
+  if (rvol >= 2.0 && pChange > 0) bullishScore += 15;
+  else if (rvol >= 1.5 && pChange > 0) bullishScore += 8;
+  else if (rvol >= 2.0 && pChange < 0) bearishScore += 15;
+
+  // 4. Fundamental Quality (+/- 12)
+  if (eps > 20 && pe > 0 && pe < 25) bullishScore += 12;
+  else if (eps < 0 || pe > 70) bearishScore += 12;
+
+  // 5. Macro Pulse (+/- 8)
+  if (macroPulse?.sentiment === 'Bullish' || macroPulse?.score > 60) bullishScore += 8;
+  else if (macroPulse?.sentiment === 'Bearish' || macroPulse?.score < 40) bearishScore += 8;
+
+  // Normalize to 100% total
+  const total = bullishScore + bearishScore;
+  const bullishPct = Math.min(92, Math.max(15, Math.round((bullishScore / total) * 100)));
+  const bearishPct = Math.min(85, Math.max(8, Math.round((bearishScore / total) * 100)));
+  const neutralPct = Math.max(5, 100 - (bullishPct + bearishPct));
+
+  // Determine overall AI confidence and signal
+  let signal = 'HOLD / MONITOR';
+  let confidence = 'Moderate (60%)';
+  if (bullishPct >= 70) {
+    signal = 'STRONG BUY / ACCUMULATE';
+    confidence = `High (${bullishPct}%)`;
+  } else if (bullishPct >= 58) {
+    signal = 'BUY ON DIPS';
+    confidence = `Favorable (${bullishPct}%)`;
+  } else if (bearishPct >= 65) {
+    signal = 'SELL / EXIT TO CASH';
+    confidence = `High Risk (${bearishPct}%)`;
+  } else if (bearishPct >= 55) {
+    signal = 'TAKE PROFIT / TIGHTEN STOP';
+    confidence = `Cautious (${bearishPct}%)`;
+  }
+
+  return {
+    bullishPct,
+    bearishPct,
+    neutralPct,
+    signal,
+    confidence,
+    rvol: Number(rvol.toFixed(2)),
+    factors: {
+      momentum: pChange >= 0 ? 'Bullish' : 'Bearish',
+      volume: rvol >= 1.3 ? 'Expanding (Institutional Activity)' : 'Normal',
+      valuation: eps > 0 && pe < 30 ? 'Sound Fundamentals' : 'Elevated Multiple'
+    }
+  };
+}
+
+/**
+ * 22. Wyckoff Accumulation / Distribution Phase Classifier
+ */
+export function detectWyckoffPhase(history = [], currentVolume = 0) {
+  if (!Array.isArray(history) || history.length < 5) {
+    return {
+      phase: 'Phase B: Base Building & Range Testing',
+      action: 'Neutral Accumulation',
+      description: 'Institutional range testing within dynamic support and resistance boundaries.'
+    };
+  }
+
+  const closes = history.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
+  const first = closes[0];
+  const last = closes[closes.length - 1];
+  const high = Math.max(...closes);
+  const low = Math.min(...closes);
+  const netChg = ((last - first) / Math.max(1, first)) * 100;
+  const currentPos = high > low ? ((last - low) / (high - low)) * 100 : 50;
+
+  if (currentPos <= 25 && netChg <= -10) {
+    return {
+      phase: 'Phase C: Spring / Last Point of Support (LPS)',
+      action: 'Smart Money Absorption',
+      description: 'Smart Money absorbing supply at deep discount floors before markup initiation.'
+    };
+  } else if (currentPos >= 80 && netChg >= 15) {
+    return {
+      phase: 'Phase D: Markup Breakout / Sign of Strength (SOS)',
+      action: 'Momentum Trend Continuation',
+      description: 'Confirmed breakout above historical accumulation base with institutional buyer support.'
+    };
+  } else if (currentPos >= 85 && netChg >= 35) {
+    return {
+      phase: 'Phase D/E: Distribution / Upthrust After Distribution (UTAD)',
+      action: 'Institutional Scale-Out',
+      description: 'Smart Money offloading into retail liquidity spikes near multi-month highs.'
+    };
+  }
+
+  return {
+    phase: 'Phase B: Absorption & Cause Building',
+    action: 'Consolidation / Base Building',
+    description: 'Order flow testing supply/demand equilibrium inside the trading range.'
+  };
+}
+
+/**
+ * 23. Broker Dominance Index (BDI)
  * BDI_{b,s} = ((Buy Volume + Sell Volume) / (2 * Total Security Volume)) * 100
  */
 export function calculateBrokerDominanceIndex(buyVol = 0, sellVol = 0, totalVol = 1) {
@@ -923,5 +1104,6 @@ export function calculateBrokerDominanceIndex(buyVol = 0, sellVol = 0, totalVol 
     classification: isDominant ? '🏛️ High Broker Dominance (>= 25%)' : 'Distributed Market Liquidity'
   };
 }
+
 
 

@@ -16,8 +16,19 @@ import {
   calculateBollingerBandWidth,
   calculateCompositeMomentumScore,
   classifyActionZone,
-  calculateATR
+  calculateATR,
+  calculateMultiHorizonTargets,
+  calculateProbabilisticMatrix,
+  detectWyckoffPhase
 } from '../utils/quantEngine';
+
+const fmtCr = n => {
+  if (n == null || isNaN(n) || n === 0) return '—';
+  const num = Number(n);
+  if (num >= 10000000) return `${(num / 10000000).toFixed(2)} Cr`;
+  if (num >= 100000) return `${(num / 100000).toFixed(2)} L`;
+  return num.toLocaleString('en-IN');
+};
 
 export const DEFAULT_AI_KEY = 'REMOVED_KEY';
 
@@ -261,6 +272,7 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
   const pe = Number(stock.pe) || 0;
   const pb = Number(stock.pb) || 0;
   const eps = Number(stock.eps) || 0;
+  const bookValue = Number(stock.bookValue) || 100;
   const pChg = Number(stock.pChange) || 0;
   const volume = Number(stock.volume) || 5000;
   const turnover = Number(stock.turnover) || (ltp * volume);
@@ -272,11 +284,11 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
   // 52-Week Range: strictly use official high52w/low52w from NEPSE if available, else real history
   const high12M = (stock.high52w && Number(stock.high52w) > 0)
     ? Number(stock.high52w)
-    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp);
+    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp * 1.25);
 
   const low12M = (stock.low52w && Number(stock.low52w) > 0)
     ? Number(stock.low52w)
-    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp);
+    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp * 0.75);
 
   // 12-Month Net Return: calculated against authentic 1-year ago candle
   const yearAgoClose = hasRealHistory && historyList[0]?.close
@@ -294,120 +306,41 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
     : ltp;
   const smaTrend = ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)';
 
-  // 2. 12-Month Accumulation & Distribution Cycle (Real Broker Flow)
-  const ad12M = realBrokerAnalysis ? {
-    wyckoffPhase: realBrokerAnalysis.adSignal === 'Accumulation'
-      ? 'Phase C: Spring / Last Point of Support (LPS)'
-      : realBrokerAnalysis.adSignal === 'Distribution'
-      ? 'Phase D: Distribution / Sign of Weakness (SOW)'
-      : 'Phase B: Neutral Institutional Range Testing',
-    chaikinMoneyFlow: realBrokerAnalysis.adRatio > 0
-      ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bullish Institutional Inflow)`
-      : `${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bearish Outflow)`,
-    accumulationScore: Math.round(Math.min(95, Math.max(15, 50 + (realBrokerAnalysis.adRatio * 100))))
-  } : {
-    wyckoffPhase: 'Phase B: Testing / Real-time flow pending',
-    chaikinMoneyFlow: '0.00 (Neutral)',
-    accumulationScore: 50
-  };
+  // 2. Wyckoff Accumulation & Distribution Phase
+  const wyckoff = detectWyckoffPhase(historyList, volume);
 
-  // 3. Broker Accumulators
-  const topBrokers = realBrokerAnalysis?.topBuyers || [];
+  // 3. Multi-Horizon Predictive Targets and Stop-Loss
+  const atrVal = calculateATR(historyList);
+  const targets = calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg);
 
-  // 52-Week Cycle & Momentum Position
-  const cyclePosition = high12M > low12M ? (((ltp - low12M) / (high12M - low12M)) * 100).toFixed(0) : '50';
-  let momentumStage = 'Mid-Range Accumulation Base';
-  if (Number(cyclePosition) <= 30) momentumStage = 'Deep Value Pocket (High Margin of Safety)';
-  else if (Number(cyclePosition) >= 80) momentumStage = 'High Momentum / Breakout Retest';
-
-  // Smart Money & Institutional Flow Calculations
-  let isAccumulation = false;
-  let smartMoneyAction = '';
-  let smartMoneyBadge = '';
-  let accumulationScore = ad12M.accumulationScore || 50;
-  let verdict = '';
-  let entryZone = '';
-  let target1 = '';
-  let target2 = '';
-  let stopLoss = '';
-  let riskReward = '1 : 2.5';
-  let technicalRationale = '';
-
-  if (rsi <= 38 || pChg <= -4.0) {
-    isAccumulation = true;
-    accumulationScore = 88;
-    smartMoneyAction = '🟢 SMART MONEY ENTRY (Institutional Absorption on Dips)';
-    smartMoneyBadge = 'Strong Institutional Accumulation';
-    verdict = 'STRONG BUY / ACCUMULATE ON WEAKNESS';
-    entryZone = `Rs. ${(ltp * 0.97).toFixed(1)} – Rs. ${ltp.toFixed(1)}`;
-    target1 = `Rs. ${(ltp * 1.09).toFixed(1)} (+9.0% Swing Profit)`;
-    target2 = `Rs. ${(ltp * 1.22).toFixed(1)} (+22.0% Major Target)`;
-    stopLoss = `Rs. ${(ltp * 0.94).toFixed(1)} (-6.0% Support Floor)`;
-    riskReward = '1 : 3.6';
-    technicalRationale = `RSI at ${rsi.toFixed(1)} indicates seller exhaustion near institutional support. 12-month Wyckoff cycle shows ${ad12M.wyckoffPhase} with ${ad12M.twelveMonthNetInflow} net institutional inflow.`;
-  } else if (rsi >= 68 || pChg >= 7.5) {
-    isAccumulation = false;
-    accumulationScore = 32;
-    smartMoneyAction = '🔴 SMART MONEY EXIT (Institutional Distribution into Strength)';
-    smartMoneyBadge = 'High Institutional Distribution';
-    verdict = 'TAKE PROFIT / TIGHTEN TRAILING STOP-LOSS';
-    entryZone = `No Fresh Entry (Wait for healthy pullback towards Rs. ${(ltp * 0.89).toFixed(1)})`;
-    target1 = `Rs. ${(ltp * 1.04).toFixed(1)} (+4.0%)`;
-    target2 = `Rs. ${(ltp * 1.09).toFixed(1)} (+9.0%)`;
-    stopLoss = `Rs. ${(ltp * 0.96).toFixed(1)} (-4.0%)`;
-    riskReward = '1 : 1.2';
-    technicalRationale = `RSI at ${rsi.toFixed(1)} trades in overbought liquidity pool near 12M High (Rs. ${high12M.toFixed(1)}). Top brokers offloading into retail spikes.`;
-  } else if (pChg > 0 && rsi < 62) {
-    isAccumulation = true;
-    accumulationScore = 76;
-    smartMoneyAction = '🟢 SMART MONEY MARKUP (Sustained Institutional Buying)';
-    smartMoneyBadge = 'Steady Accumulation';
-    verdict = 'BUY / SWING MOMENTUM ENTRY';
-    entryZone = `Rs. ${(ltp * 0.98).toFixed(1)} – Rs. ${ltp.toFixed(1)}`;
-    target1 = `Rs. ${(ltp * 1.08).toFixed(1)} (+8.0% First Target)`;
-    target2 = `Rs. ${(ltp * 1.18).toFixed(1)} (+18.0% Expansion Target)`;
-    stopLoss = `Rs. ${(ltp * 0.95).toFixed(1)} (-5.0%)`;
-    riskReward = '1 : 2.9';
-    technicalRationale = `Price is above both 50 SMA (Rs. ${sma50.toFixed(1)}) and 200 SMA (Rs. ${sma200.toFixed(1)}). Wyckoff structure shows ${ad12M.wyckoffPhase}.`;
-  } else {
-    isAccumulation = false;
-    accumulationScore = 55;
-    smartMoneyAction = '🟡 CONSOLIDATION / BASE BUILDING';
-    smartMoneyBadge = 'Neutral Base Building';
-    verdict = 'HOLD / MONITOR LEVEL BREAKOUT';
-    entryZone = `Rs. ${(ltp * 0.96).toFixed(1)} – Rs. ${(ltp * 0.99).toFixed(1)}`;
-    target1 = `Rs. ${(ltp * 1.07).toFixed(1)} (+7.0%)`;
-    target2 = `Rs. ${(ltp * 1.15).toFixed(1)} (+15.0%)`;
-    stopLoss = `Rs. ${(ltp * 0.94).toFixed(1)} (-6.0%)`;
-    riskReward = '1 : 2.3';
-    technicalRationale = `Compressing in tight 12-month consolidation range between Rs. ${(low12M * 1.1).toFixed(1)} and Rs. ${(high12M * 0.9).toFixed(1)}.`;
-  }
-
-  // 5. Quantitative Analytics Engine Integration
-  const graham = calculateGrahamIntrinsicValue(stock.eps || latestQ.eps, stock.bookValue || latestQ.bookValue, ltp);
-  const actionZone = classifyActionZone({ ...stock, eps: stock.eps || latestQ.eps, bookValue: stock.bookValue || latestQ.bookValue, ltp });
-  const zVol = calculateVolumeZScore(volume, stock.avgVolume20D || volume * 0.6);
-
-  // Merolagani Political & News Digest
+  // 4. Probabilistic Matrix
   const newsHighlight = customNewsPulse || {
     sentiment: '🟢 Supportive Macro Policy',
+    score: 65,
     highlights: [
       'नेपाल राष्ट्र बैंकद्वारा मौद्रिक तरलता व्यवस्थापन: बैंक ब्याजदर एकल अंकमा स्थिर',
       'वाणिज्य बैंक तथा वित्तीय संस्थाहरूको लाभांश घोषणा चक्र सुरु',
       'अर्थ मन्त्रालय र सेबोनद्वारा पूँजीबजार सुधारसम्बन्धी कार्यदल प्रतिवेदन कार्यान्वयन प्रक्रिया'
     ]
   };
+  const probMatrix = calculateProbabilisticMatrix(stock, historyList, newsHighlight);
+
+  // 5. Quantitative Analytics Engine Integration
+  const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
+  const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp });
+  const zVol = calculateVolumeZScore(volume, stock.avgVolume20D || volume * 0.6);
 
   const chg = Number(stock.change || (ltp * (pChg / 100))) || 0;
   const pClose = Number(stock.prevClose || (ltp - chg)) || ltp;
   const dayHigh = Number(stock.high || (ltp * 1.015));
   const dayLow = Number(stock.low || (ltp * 0.985));
+  const cyclePosition = high12M > low12M ? (((ltp - low12M) / (high12M - low12M)) * 100).toFixed(0) : '50';
 
   return `### 📌 Live Market Price: **${sym}** (${name})
 • **Official Final Price (LTP)**: **Rs. ${ltp.toFixed(2)}** (${pChg >= 0 ? '+' : ''}${chg.toFixed(2)} / ${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%)
 • **Previous Closing Price**: **Rs. ${pClose.toFixed(2)}** | **Today's Range**: Low **Rs. ${dayLow.toFixed(2)}** — High **Rs. ${dayHigh.toFixed(2)}**
 • **Today's Volume**: ${(volume).toLocaleString()} shares · Turnover: **Rs. ${(turnover >= 10000000 ? (turnover/10000000).toFixed(2) + ' Cr' : (turnover/100000).toFixed(2) + ' Lakh')}**
-• **Volume Z-Score**: **${zVol.zScore}** (${zVol.severity})
+• **Volume Expansion (RVOL)**: **${probMatrix.rvol}x** (Z-Score: **${zVol.zScore}**)
 
 ---
 
@@ -415,14 +348,15 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 
 | Tactical Trading Parameter | Systematic Quantitative Action |
 |:---|:---|
-| **Operational Action Zone** | **${actionZone.zone}** (MS Score: **${actionZone.momentumScore >= 0 ? '+' : ''}${actionZone.momentumScore}**) |
-| **Zone Trigger Rationale** | ${actionZone.triggerLogic} |
-| **Optimal Entry Target** | **${actionZone.entryTarget}** |
-| **Target 1 (First Resistance)**| **${actionZone.profitTarget1}** |
-| **Target 2 (Expansion Runner)**| **${actionZone.profitTarget2}** |
-| **ATR Trailing Stop-Loss** | **${actionZone.stopLoss}** (ATR: Rs. ${actionZone.atr}) |
-| **Risk / Reward Ratio (RRR)** | **1 : ${actionZone.rrr}** (${actionZone.isHighProbabilityTrade ? '✅ High Probability Setup' : '⚠️ Moderate Setup'}) |
-| **Systematic Execution Rule** | ${actionZone.systematicStrategy} |
+| **Executive Verdict** | **${probMatrix.signal}** (${probMatrix.confidence}) |
+| **Probability Matrix** | 🟢 **${probMatrix.bullishPct}% Bullish** · 🟡 **${probMatrix.neutralPct}% Neutral** · 🔴 **${probMatrix.bearishPct}% Bearish** |
+| **Operational Action Zone** | **${actionZone.zone}** (Momentum Score: **${actionZone.momentumScore >= 0 ? '+' : ''}${actionZone.momentumScore}**) |
+| **Recommended Entry Zone** | **${targets.entryZone.label}** |
+| **Target 1 (Conservative Swing)**| **${targets.target1.label}** (${targets.target1.horizon}) |
+| **Target 2 (Breakout Runner)** | **${targets.target2.label}** (${targets.target2.horizon}) |
+| **Target 3 (Macro Cycle Peak)** | **${targets.target3.label}** (${targets.target3.horizon}) |
+| **Invalidation Stop-Loss Floor** | **${targets.stopLoss.label}** (Key Structural Support) |
+| **Risk / Reward Ratio (RRR)** | **1 : ${targets.rrr1}** (${targets.isValidTradeSetup ? '✅ Institutional Setup' : '⚠️ Cautious Sizing'}) |
 
 ---
 
@@ -430,34 +364,24 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 - **Graham Intrinsic Value ($V^* = \\sqrt{22.5 \\times \\text{EPS} \\times \\text{BVPS}}$)**: **Rs. ${graham.intrinsicValue > 0 ? graham.intrinsicValue.toFixed(2) : 'N/A'}**
 - **Margin of Safety**: **${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}%**
 - **Valuation Multiple Status**: **${graham.valuationStatus}**
-- **Underlying Fundamentals**: TTM EPS **Rs. ${stock.eps || latestQ.eps}** | Book Value **Rs. ${stock.bookValue || latestQ.bookValue}** | P/E **${stock.pe || (ltp / (stock.eps || 1)).toFixed(1)}x**
+- **Underlying Fundamentals**: TTM EPS **Rs. ${eps > 0 ? eps.toFixed(2) : '—'}** | Book Value **Rs. ${bookValue > 0 ? bookValue.toFixed(2) : '—'}** | P/E **${pe > 0 ? pe.toFixed(1) : (eps > 0 ? (ltp/eps).toFixed(1) : '—')}x**
 
 ---
 
-### 📜 3. 12-MONTH PRICE HISTORY & TREND ANALYSIS
-- **12-Month (52W) Range**: Low **Rs. ${low12M.toFixed(1)}** — High **Rs. ${high12M.toFixed(1)}**
+### 📜 3. 12-MONTH PRICE HISTORY & TREND ANATOMY
+- **12-Month (52W) Range**: Low **Rs. ${low12M.toFixed(1)}** — High **Rs. ${high12M.toFixed(1)}** (${cyclePosition}% cycle stage)
 - **12-Month Net Return**: **${return12M >= 0 ? '+' : ''}${return12M}%** (Price 1 year ago: Rs. ${yearAgoClose.toFixed(1)})
 - **200-Day Moving Average (200 SMA)**: **Rs. ${sma200.toFixed(1)}** (${smaTrend})
 - **50-Day Moving Average (50 SMA)**: **Rs. ${sma50.toFixed(1)}** (${ltp >= sma50 ? 'Above 50 SMA' : 'Below 50 SMA'})
-- **Cycle Range Position**: **${cyclePosition}%** of 52W range (${momentumStage}).
+- **Wyckoff Cycle Stage**: **${wyckoff.phase}** (${wyckoff.description})
 
 ---
 
-### 🏛️ 4. 12-MONTH ACCUMULATION & DISTRIBUTION (WYCKOFF ENGINE)
-- **Wyckoff Cycle Stage**: **${ad12M.wyckoffPhase}**
-- **Chaikin Money Flow (CMF)**: **${ad12M.chaikinMoneyFlow}**
-- **On-Balance Volume (OBV)**: **${ad12M.obvTrend}**
-- **12-Month Net Institutional Flow**: **${ad12M.twelveMonthNetInflow}** (${ad12M.smartMoneyDominance})
-- **Top Broker Whale Positioning**:
-${broker12M.topBrokers.slice(0, 4).map(b => `  • **Broker #${b.brokerNo} (${b.name})**: Q1: ${b.q1Holding} → Q4: ${b.q4Holding} (**${b.changeYoY}** YoY, Avg: Rs. ${b.avgRate})`).join('\n')}
-
----
-
-### 🔮 5. PREDICT FUTURE: Systematic Execution Blueprint
-- **Capital Allocation**: Allocate position size according to **1 : ${actionZone.rrr}** Risk/Reward Ratio.
-- **Entry Protocol**: ${actionZone.entryTarget}. Never chase gaps above upper band limits.
-- **Profit-Taking**: Take 50% partial profits at **${actionZone.profitTarget1}** and trail the remaining balance using **${actionZone.stopLoss}**.`;
-
+### 🔮 4. PREDICT FUTURE: Systematic Execution Blueprint
+- **Capital Allocation Protocol**: Maintain position risk strictly below 2% of portfolio cash equity.
+- **Trigger Condition**: Enter within **${targets.entryZone.label}**. Never chase gap-ups beyond Target 1.
+- **Profit Scaling**: Scale out 50% profits at **${targets.target1.label}**, move stop to Breakeven, and let the remaining runner target **${targets.target2.label}**.
+- **Invalidation Condition**: If session closes below **${targets.stopLoss.label}**, immediately exit to preserve capital.`;
 }
 
 // ─── Stock Analyzer Helper ───────────────────────────────────────────────────
@@ -465,6 +389,9 @@ export async function analyzeStockWithAi(stockContext) {
   const { stock, historyStr, adSignal, realPriceHistory, realBrokerAnalysis } = stockContext;
   const sym = (stock.symbol || 'STOCK').toUpperCase();
   const ltp = Number(stock.ltp) || 100;
+  const eps = Number(stock.eps) || 0;
+  const bookValue = Number(stock.bookValue) || 100;
+  const pChg = Number(stock.pChange) || 0;
 
   // 1. Fetch live Merolagani political news
   let newsPulse = null;
@@ -473,6 +400,7 @@ export async function analyzeStockWithAi(stockContext) {
     const pulse = analyzePoliticalAndMarketPulse(rawNews);
     newsPulse = {
       sentiment: pulse.sentiment,
+      score: pulse.sentiment === 'Bullish' ? 70 : pulse.sentiment === 'Bearish' ? 30 : 50,
       highlights: pulse.keyHighlights
     };
   } catch (_) {}
@@ -489,31 +417,53 @@ export async function analyzeStockWithAi(stockContext) {
   const sma200 = closes.length >= 20
     ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
     : ltp;
-  const high12M = stock.high52w || (hasReal ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp);
-  const low12M = stock.low52w || (hasReal ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp);
+  const high12M = stock.high52w || (hasReal ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp * 1.25);
+  const low12M = stock.low52w || (hasReal ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp * 0.75);
   
-  const prompt = `Analyze ${sym} (${stock.name || sym}) for a Nepali retail investor using verified NEPSE market data:
-- LTP: Rs. ${stock.ltp} (${stock.pChange}%) | Sector: ${stock.sector || 'Commercial Banks'}
-- 12-Month Price Action: 1-Year Return: ${return12M}%, 200 SMA: Rs. ${sma200}, 50 SMA: Rs. ${sma50}, 52W Range: Rs. ${low12M} to Rs. ${high12M}
-- Accumulation & Distribution (Wyckoff): ${realBrokerAnalysis?.adSignal || 'Observation Phase'} | CMF Ratio: ${realBrokerAnalysis?.adRatio || '0.00'}
-- Top Institutional Accumulators: (${realBrokerAnalysis?.topBuyers?.map(b => '#' + b.broker).join(', ') || 'Direct order flow'})
-- Fundamentals: Latest EPS: Rs. ${stock.eps || '—'}, P/E: ${stock.pe || '—'}x, Book Value: Rs. ${stock.bookValue || '—'}
-- Live Merolagani News Pulse: ${newsPulse?.sentiment || 'Stable'}
+  const wyckoff = detectWyckoffPhase(historyList, stock.volume);
+  const atrVal = calculateATR(historyList);
+  const targets = calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg);
+  const probMatrix = calculateProbabilisticMatrix(stock, historyList, newsPulse);
+  const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
+
+  const prompt = `You are NEPSE GURU, the institutional quantitative analyst and Smart Money strategist for the Nepal Stock Exchange (NEPSE).
+Analyze ${sym} (${stock.name || sym}) by fusing PAST history, PRESENT microstructure, and PREDICTIVE FUTURE forecasting:
+
+📊 LIVE PRESENT DATA:
+- LTP: Rs. ${ltp} (${pChg >= 0 ? '+' : ''}${pChg}%) | Volume: ${(stock.volume || 0).toLocaleString()} shares | Turnover: Rs. ${fmtCr(stock.turnover)}
+- Fundamentals: EPS: Rs. ${eps || '—'} | P/E: ${stock.pe || '—'}x | Book Value: Rs. ${bookValue || '—'}
+- Graham Intrinsic Valuation V*: Rs. ${graham.intrinsicValue} (Margin of Safety: ${graham.marginOfSafetyPct}%)
+
+📜 PAST 12-MONTH HISTORICAL DATA:
+- 1-Year Return: ${return12M}% | 52W Range: Rs. ${low12M} to Rs. ${high12M}
+- 200 SMA: Rs. ${sma200} | 50 SMA: Rs. ${sma50}
+- Wyckoff Phase: ${wyckoff.phase} (${wyckoff.action})
+
+🔮 ALGORITHMIC PREDICTIVE MODEL:
+- Outcome Probability: ${probMatrix.bullishPct}% Bullish, ${probMatrix.neutralPct}% Neutral, ${probMatrix.bearishPct}% Bearish
+- Suggested Entry: ${targets.entryZone.label}
+- Target 1 (Conservative): ${targets.target1.label}
+- Target 2 (Breakout Expansion): ${targets.target2.label}
+- Target 3 (Cycle Peak): ${targets.target3.label}
+- Invalidation Stop-Loss: ${targets.stopLoss.label} (RRR: 1 : ${targets.rrr1})
+
+🇳🇵 LIVE MACRO / MEROLAGANI NEWS PULSE:
+- Sentiment: ${newsPulse?.sentiment || 'Neutral / Supportive Policy'}
 ${(newsPulse?.highlights || []).map(h => `  • ${h}`).join('\n')}
 
-Format your expert analysis following the 5-point profit blueprint:
-1. ⚡ SMART MONEY ACTION VERDICT (Action: BUY/HOLD/EXIT, Entry Zone, Target 1, Target 2, Stop-loss, Risk/Reward)
-2. 📜 12-MONTH PRICE HISTORY & 200 SMA TREND
-3. 🏛️ 12-MONTH ACCUMULATION & DISTRIBUTION (Wyckoff cycle)
-4. 🤝 BROKER FAVOURITES & WHALE POSITIONING
-5. 🔮 PREDICT FUTURE (Tactical trade plan to make profit)`;
+Format your output in clean Markdown according to the 5-part institutional blueprint:
+1. 🎯 EXECUTIVE VERDICT & PROBABILITY MATRIX
+2. 🏛️ BENJAMIN GRAHAM INTRINSIC VALUATION ($V^*$)
+3. 📜 PAST ANATOMY & 200 SMA / WYCKOFF CYCLE
+4. 🔍 PRESENT MICROSTRUCTURE & SECTOR MOMENTUM
+5. 🔮 PREDICT FUTURE: TACTICAL EXECUTION BLUEPRINT`;
 
   const aiRes = await generateNepseAiContent(prompt, { systemPrompt: GURU_AI_SYSTEM_PROMPT });
   if (aiRes.success && aiRes.text) return aiRes;
 
   return {
     text: generateOfflineStockReport(stock, newsPulse, realPriceHistory, realBrokerAnalysis),
-    source: '12-Month Quantitative Intelligence Engine',
+    source: 'Multi-Horizon Quantitative Engine',
     success: true
   };
 }

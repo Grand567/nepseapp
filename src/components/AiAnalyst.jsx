@@ -8,7 +8,11 @@ import {
   calculateGrahamIntrinsicValue,
   classifyActionZone,
   calculateVolumeZScore,
-  calculateCompositeMomentumScore
+  calculateCompositeMomentumScore,
+  calculateMultiHorizonTargets,
+  calculateProbabilisticMatrix,
+  detectWyckoffPhase,
+  calculateATR
 } from '../utils/quantEngine';
 import { fetchMerolaganiNews, analyzePoliticalAndMarketPulse } from '../services/merolaganiNewsService';
 
@@ -135,6 +139,7 @@ export default function AiAnalyst({ marketStocks }) {
   const [analyzerHistory, setAnalyzerHistory] = useState([]);
   const [showApiHelp, setShowApiHelp] = useState(false);
   const [zoneFilter, setZoneFilter] = useState('ALL');
+  const [activeResultTab, setActiveResultTab] = useState('synthesis');
 
   // ── Multi-Factor Operational Action Zones Radar dataset ──
   const radarStocks = useMemo(() => {
@@ -399,35 +404,90 @@ export default function AiAnalyst({ marketStocks }) {
       "5. `'What is WACC?'` (Clear explanation of purchase cost base)";
   };
 
-  // ── Layer 1: Fetch NEPSE market data & price history ───────────────────────
+  // ── Layer 1: Fetch NEPSE market data & 365-day price history ───────────────────────
   const fetchStockContext = async (symbol) => {
     const stock = marketStocks.find(s => s.symbol.toUpperCase() === symbol.toUpperCase());
     if (!stock) return null;
 
     let historyData = [];
     try {
-      const data = await servicesApi.fetchPriceHistory(stock.symbol, 30);
-      if (data && Array.isArray(data)) {
-        historyData = data.slice(-20);
+      const data = await servicesApi.fetchPriceHistory(stock.symbol, 365);
+      if (data && Array.isArray(data) && data.length > 0) {
+        historyData = data;
       }
     } catch (e) {
       console.warn('[AiAnalyst] Price history fetch failed:', e.message);
     }
 
+    const ltp = Number(stock.ltp) || 100;
+    const eps = Number(stock.eps) || 0;
+    const bookValue = Number(stock.bookValue) || 100;
+    const pChg = Number(stock.pChange) || 0;
+
+    // 12-Month & 52-Week Range
+    const high52w = (stock.high52w && Number(stock.high52w) > 0)
+      ? Number(stock.high52w)
+      : (historyData.length > 0 ? Math.max(...historyData.map(h => Number(h.high || h.close || ltp))) : ltp * 1.25);
+    const low52w = (stock.low52w && Number(stock.low52w) > 0)
+      ? Number(stock.low52w)
+      : (historyData.length > 0 ? Math.min(...historyData.map(h => Number(h.low || h.close || ltp))) : ltp * 0.75);
+
+    const yearAgoClose = (historyData.length > 0 && historyData[0]?.close)
+      ? Number(historyData[0].close)
+      : (Number(stock.prevYearClose) || ltp);
+    const return12M = yearAgoClose > 0 ? Number((((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2)) : 0;
+
+    // Moving Averages
+    const closes = historyData.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
+    const sma50 = closes.length >= 10
+      ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(closes.length, 50)).toFixed(1))
+      : ltp;
+    const sma200 = closes.length >= 20
+      ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
+      : ltp;
+    const smaTrend = ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)';
+    const cyclePosition = high52w > low52w ? Math.round(((ltp - low52w) / (high52w - low52w)) * 100) : 50;
+
+    // Quant & Predictive Algorithms
+    const atr = calculateATR(historyData);
+    const wyckoff = detectWyckoffPhase(historyData, stock.volume);
+    const targets = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChg);
+    const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
+    const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp });
+    const zVol = calculateVolumeZScore(stock.volume, stock.avgVolume20D || stock.volume * 0.6);
+
     const historyStr = historyData.length > 0
-      ? historyData
+      ? historyData.slice(-15)
           .map(h => `  - ${h.date || 'Session'}: Close Rs.${h.close}, Vol ${(h.volume || 0).toLocaleString()}`)
           .join('\n')
       : '  - Verified daily trading records loading from NEPSE';
 
-    // Accumulation/Distribution estimation from real data
+    // Accumulation/Distribution
     const recentVols = historyData.slice(-5).map(h => h.volume || 0);
     const avgVol = recentVols.length > 0 ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0;
     const adSignal = (stock.volume > 0 && avgVol > 0)
       ? (stock.volume > avgVol * 1.1 ? 'Accumulation (above average volume)' : 'Distribution (below average volume)')
       : 'Observation phase';
 
-    return { stock, historyData, historyStr, adSignal };
+    return {
+      stock,
+      historyData,
+      historyStr,
+      adSignal,
+      high52w,
+      low52w,
+      return12M,
+      sma50,
+      sma200,
+      smaTrend,
+      cyclePosition,
+      atr,
+      wyckoff,
+      targets,
+      graham,
+      actionZone,
+      zVol
+    };
   };
 
   // ── Layer 2a: Groq LLM ──────────────────────────────────────────────────────
@@ -652,14 +712,32 @@ MANDATORY OUTPUT BLUEPRINT (Always start with the Official Final Price quote hea
       if (upperText.includes('STRONG BUY') || upperText.includes('BUY /') || upperText.includes('RECOMMENDATION: BUY') || upperText.includes('VERDICT: BUY') || upperText.includes('BUY ON DIPS')) verdict = 'BUY';
       else if (upperText.includes('VERDICT: SELL') || upperText.includes('TAKE PROFIT') || upperText.includes('RECOMMENDATION: SELL') || upperText.includes('EXIT')) verdict = 'SELL';
 
+      // Calculate full probabilistic matrix & predictive forecast
+      const probMatrix = calculateProbabilisticMatrix(ctx.stock, ctx.historyData, newsPulse);
+
       setAnalyzerResult({
         symbol: sym,
         stock: ctx.stock,
         aiText: finalText,
-        source: aiText ? source : '⚡ Quantitative Smart Money Engine',
+        source: aiText ? source : '⚡ Multi-Horizon Quantitative Engine',
         verdict,
         adSignal: ctx.adSignal,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        targets: ctx.targets,
+        probMatrix,
+        graham: ctx.graham,
+        actionZone: ctx.actionZone,
+        zVol: ctx.zVol,
+        wyckoff: ctx.wyckoff,
+        return12M: ctx.return12M,
+        high52w: ctx.high52w,
+        low52w: ctx.low52w,
+        sma50: ctx.sma50,
+        sma200: ctx.sma200,
+        smaTrend: ctx.smaTrend,
+        cyclePosition: ctx.cyclePosition,
+        historyData: ctx.historyData,
+        newsPulse
       });
     } catch (e) {
       setAnalyzerError(`Analysis failed: ${e.message}`);
@@ -1253,87 +1331,327 @@ User question: ${text}`;
 
           {/* Analysis Result Card */}
           {analyzerResult && !analyzerLoading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-              {/* Header card */}
+              {/* 1. Executive Scorecard Header */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(91,94,244,0.1), rgba(0,0,0,0.3))',
-                border: '1px solid rgba(91,94,244,0.3)', borderRadius: 'var(--radius-lg)', padding: 16
+                background: 'linear-gradient(135deg, rgba(91,94,244,0.15), rgba(16,217,138,0.05), rgba(0,0,0,0.4))',
+                border: '1px solid rgba(91,94,244,0.35)', borderRadius: 'var(--radius-lg)', padding: 16,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)' }}>{analyzerResult.symbol}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{analyzerResult.stock.name}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{analyzerResult.stock.sector}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 22, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{analyzerResult.symbol}</span>
+                      {analyzerResult.actionZone && (
+                        <span style={{
+                          fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 12,
+                          background: analyzerResult.actionZone.color ? `${analyzerResult.actionZone.color}22` : 'rgba(91,94,244,0.2)',
+                          color: analyzerResult.actionZone.color || 'var(--primary-light)',
+                          border: `1px solid ${analyzerResult.actionZone.color || 'var(--primary-light)'}44`
+                        }}>
+                          {analyzerResult.actionZone.zone}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{analyzerResult.stock.name} · {analyzerResult.stock.sector}</div>
                   </div>
-                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <VerdictBadge verdict={analyzerResult.verdict} />
-                    <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.stock.ltp}</div>
-                    <span style={{ fontSize: 10, color: (analyzerResult.stock.change || 0) >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
-                      {(analyzerResult.stock.change || 0) >= 0 ? '▲' : '▼'} {Math.abs(analyzerResult.stock.change || 0)} ({analyzerResult.stock.changePercent?.toFixed(2) || '0.00'}%)
+                    <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {Number(analyzerResult.stock.ltp).toFixed(2)}</div>
+                    <span style={{ fontSize: 11, fontWeight: 'bold', color: (analyzerResult.stock.pChange || 0) >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
+                      {(analyzerResult.stock.pChange || 0) >= 0 ? '▲ +' : '▼ '}{Number(analyzerResult.stock.pChange || 0).toFixed(2)}%
                     </span>
                   </div>
                 </div>
 
-                {/* Quick stats row */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {[
-                    { label: 'RSI', value: analyzerResult.stock.rsi?.toFixed(1), color: analyzerResult.stock.rsi < 35 ? 'var(--bull)' : analyzerResult.stock.rsi > 70 ? 'var(--bear)' : 'var(--text-primary)' },
-                    { label: 'P/E', value: analyzerResult.stock.pe },
-                    { label: 'P/B', value: analyzerResult.stock.pb },
-                    { label: 'EPS', value: `Rs.${analyzerResult.stock.eps}` },
-                    { label: 'ROE', value: `${analyzerResult.stock.roe}%` },
-                    { label: 'Div Yield', value: `${analyzerResult.stock.divYield}%` },
-                  ].map(stat => (
-                    <div key={stat.label} style={{
-                      background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)', padding: '4px 10px',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 52
-                    }}>
-                      <span style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{stat.label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', color: stat.color || 'var(--text-primary)' }}>{stat.value || 'N/A'}</span>
+                {/* Probabilistic Outcome Bar */}
+                {analyzerResult.probMatrix && (
+                  <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11 }}>
+                      <span style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Target size={13} style={{ color: '#10d98a' }} /> AI Outcome Probability
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        Confidence: <strong style={{ color: '#10d98a' }}>{analyzerResult.probMatrix.confidence}</strong>
+                      </span>
                     </div>
-                  ))}
-                </div>
 
-                {/* Sparkline */}
-                {analyzerHistory.length > 1 && (
-                  <div style={{ marginTop: 12, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>PRICE HISTORY (20 SESSIONS)</div>
-                    <Sparkline history={analyzerHistory} width={300} height={48} />
+                    {/* 3-Color Segmented Probability Bar */}
+                    <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(255,255,255,0.05)', marginBottom: 6 }}>
+                      <div style={{ width: `${analyzerResult.probMatrix.bullishPct}%`, background: '#10d98a' }} title={`Bullish: ${analyzerResult.probMatrix.bullishPct}%`} />
+                      <div style={{ width: `${analyzerResult.probMatrix.neutralPct}%`, background: '#eab308' }} title={`Neutral: ${analyzerResult.probMatrix.neutralPct}%`} />
+                      <div style={{ width: `${analyzerResult.probMatrix.bearishPct}%`, background: '#ff4f6a' }} title={`Bearish: ${analyzerResult.probMatrix.bearishPct}%`} />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+                      <span style={{ color: '#10d98a', fontWeight: 700 }}>🟢 Bullish {analyzerResult.probMatrix.bullishPct}%</span>
+                      <span style={{ color: '#eab308', fontWeight: 700 }}>🟡 Neutral {analyzerResult.probMatrix.neutralPct}%</span>
+                      <span style={{ color: '#ff4f6a', fontWeight: 700 }}>🔴 Bearish {analyzerResult.probMatrix.bearishPct}%</span>
+                    </div>
                   </div>
                 )}
 
-                {/* Volume/AD signal */}
-                <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-muted)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 10 }}>
-                    📊 {analyzerResult.adSignal}
-                  </span>
-                  <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 10 }}>
-                    🤖 {analyzerResult.source}
-                  </span>
-                  <span style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 10 }}>
-                    🕒 {analyzerResult.timestamp}
-                  </span>
+                {/* Quick key stat pills */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                  {[
+                    { label: 'RSI (14)', value: analyzerResult.stock.rsi?.toFixed(1), color: analyzerResult.stock.rsi < 35 ? 'var(--bull)' : analyzerResult.stock.rsi > 70 ? 'var(--bear)' : 'var(--text-primary)' },
+                    { label: 'Volume RVOL', value: `${analyzerResult.probMatrix?.rvol || 1.0}x`, color: (analyzerResult.probMatrix?.rvol || 1) >= 1.5 ? '#eab308' : 'var(--text-primary)' },
+                    { label: 'P/E', value: `${analyzerResult.stock.pe || '—'}x` },
+                    { label: 'EPS', value: `Rs. ${analyzerResult.stock.eps || '—'}` },
+                    { label: '1Y Return', value: `${analyzerResult.return12M >= 0 ? '+' : ''}${analyzerResult.return12M}%`, color: analyzerResult.return12M >= 0 ? 'var(--bull)' : 'var(--bear)' },
+                    { label: 'RRR', value: `1 : ${analyzerResult.targets?.rrr1 || '2.5'}`, color: '#38bdf8' }
+                  ].map(stat => (
+                    <div key={stat.label} style={{
+                      background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)', padding: '4px 8px',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 50
+                    }}>
+                      <span style={{ fontSize: 7.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{stat.label}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 'bold', color: stat.color || 'var(--text-primary)' }}>{stat.value || 'N/A'}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* AI Analysis Text */}
-              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <BrainCircuit size={13} /> AI Analysis Report
+              {/* 2. Multi-Horizon Predictive Target Roadmap */}
+              {analyzerResult.targets && (
+                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Zap size={14} style={{ color: '#eab308' }} /> Predictive Target & Risk Ladder
+                    </span>
+                    <span style={{ fontSize: 10, color: analyzerResult.targets.isValidTradeSetup ? '#10d98a' : 'var(--text-muted)' }}>
+                      {analyzerResult.targets.isValidTradeSetup ? '✅ Institutional R:R Setup' : '⚠️ Defensive Sizing'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+                    {/* Stop Loss */}
+                    <div style={{ background: 'rgba(255,79,106,0.08)', border: '1px solid rgba(255,79,106,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 8.5, color: '#ff4f6a', fontWeight: 800, textTransform: 'uppercase' }}>🛑 Invalidation Stop</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#ff4f6a', marginTop: 2 }}>Rs. {analyzerResult.targets.stopLoss.price}</div>
+                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>-{analyzerResult.targets.stopLoss.pct}% Floor</div>
+                    </div>
+
+                    {/* Entry Zone */}
+                    <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 8.5, color: '#38bdf8', fontWeight: 800, textTransform: 'uppercase' }}>🎯 Optimal Entry</div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>{analyzerResult.targets.entryZone.min} – {analyzerResult.targets.entryZone.max}</div>
+                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Accumulation Band</div>
+                    </div>
+
+                    {/* Target 1 */}
+                    <div style={{ background: 'rgba(16,217,138,0.08)', border: '1px solid rgba(16,217,138,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 8.5, color: '#10d98a', fontWeight: 800, textTransform: 'uppercase' }}>🚀 Target 1 (Swing)</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#10d98a', marginTop: 2 }}>Rs. {analyzerResult.targets.target1.price}</div>
+                      <div style={{ fontSize: 9.5, color: '#10d98a' }}>+{analyzerResult.targets.target1.pct}% (1-2W)</div>
+                    </div>
+
+                    {/* Target 2 */}
+                    <div style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 8.5, color: '#a855f7', fontWeight: 800, textTransform: 'uppercase' }}>💎 Target 2 (Breakout)</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#a855f7', marginTop: 2 }}>Rs. {analyzerResult.targets.target2.price}</div>
+                      <div style={{ fontSize: 9.5, color: '#a855f7' }}>+{analyzerResult.targets.target2.pct}% (3-6W)</div>
+                    </div>
+                  </div>
                 </div>
-                <div
-                  className="markdown-content"
-                  style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-primary)' }}
-                  dangerouslySetInnerHTML={{ __html: parseMarkdown(analyzerResult.aiText) }}
-                />
+              )}
+
+              {/* 3. Multi-Horizon Deep-Dive Tab Switcher */}
+              <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.25)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
+                {[
+                  { id: 'synthesis', label: '🎯 AI Synthesis' },
+                  { id: 'past', label: '📜 Past 365D & Trend' },
+                  { id: 'present', label: '🔍 Graham V* & Live' },
+                  { id: 'future', label: '🔮 Trade Blueprint' }
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveResultTab(t.id)}
+                    style={{
+                      flex: 1, padding: '7px 4px', fontSize: 10.5, fontWeight: 800, borderRadius: 8,
+                      border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                      background: activeResultTab === t.id ? 'var(--primary)' : 'transparent',
+                      color: activeResultTab === t.id ? '#fff' : 'var(--text-muted)'
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Analyze Another */}
+              {/* Tab 1: AI Synthesis Report */}
+              {activeResultTab === 'synthesis' && (
+                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <BrainCircuit size={13} /> Guru AI Synthesis Report
+                  </div>
+                  <div
+                    className="markdown-content"
+                    style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-primary)' }}
+                    dangerouslySetInnerHTML={{ __html: parseMarkdown(analyzerResult.aiText) }}
+                  />
+                </div>
+              )}
+
+              {/* Tab 2: Past Anatomy & 365D History */}
+              {activeResultTab === 'past' && (
+                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <BarChart2 size={14} style={{ color: '#38bdf8' }} /> 365-Day Historical Memory & Wyckoff Phase
+                  </div>
+
+                  {analyzerHistory.length > 1 && (
+                    <div style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 6 }}>365-DAY HISTORICAL OHLCV TREND</div>
+                      <Sparkline history={analyzerHistory} width={320} height={60} />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>200-DAY MOVING AVERAGE</span>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.sma200}</div>
+                      <span style={{ fontSize: 10, color: analyzerResult.stock.ltp >= analyzerResult.sma200 ? '#10d98a' : '#ff4f6a' }}>
+                        {analyzerResult.smaTrend}
+                      </span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>50-DAY MOVING AVERAGE</span>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.sma50}</div>
+                      <span style={{ fontSize: 10, color: analyzerResult.stock.ltp >= analyzerResult.sma50 ? '#10d98a' : '#ff4f6a' }}>
+                        {analyzerResult.stock.ltp >= analyzerResult.sma50 ? 'Above 50 SMA' : 'Below 50 SMA'}
+                      </span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>52-WEEK CYCLE POSITION</span>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{analyzerResult.cyclePosition}%</div>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                        Low Rs. {analyzerResult.low52w} — High Rs. {analyzerResult.high52w}
+                      </span>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>1-YEAR HISTORICAL RETURN</span>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: analyzerResult.return12M >= 0 ? '#10d98a' : '#ff4f6a' }}>
+                        {analyzerResult.return12M >= 0 ? '+' : ''}{analyzerResult.return12M}%
+                      </div>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>From authentic 1Y ago candle</span>
+                    </div>
+                  </div>
+
+                  {analyzerResult.wyckoff && (
+                    <div style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', padding: 12, borderRadius: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#a855f7' }}>Wyckoff Cycle: {analyzerResult.wyckoff.phase}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{analyzerResult.wyckoff.description}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 3: Present Fundamentals & Graham Valuation */}
+              {activeResultTab === 'present' && (
+                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Award size={14} style={{ color: '#10d98a' }} /> Benjamin Graham Intrinsic Valuation & Fundamentals
+                  </div>
+
+                  {analyzerResult.graham && (
+                    <div style={{ background: 'rgba(16,217,138,0.06)', border: '1px solid rgba(16,217,138,0.2)', padding: 12, borderRadius: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>GRAHAM INTRINSIC VALUE (V*)</span>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: '#10d98a' }}>Rs. {analyzerResult.graham.intrinsicValue > 0 ? analyzerResult.graham.intrinsicValue : 'N/A'}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>MARGIN OF SAFETY</span>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: analyzerResult.graham.marginOfSafetyPct >= 0 ? '#10d98a' : '#ff4f6a' }}>
+                            {analyzerResult.graham.marginOfSafetyPct >= 0 ? '+' : ''}{analyzerResult.graham.marginOfSafetyPct}%
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6 }}>{analyzerResult.graham.valuationStatus}</div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>TTM EPS</span>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.stock.eps || '—'}</div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>BOOK VALUE</span>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.stock.bookValue || '—'}</div>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>P/E MULTIPLE</span>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>{analyzerResult.stock.pe || '—'}x</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Future Predictive Strategy */}
+              {activeResultTab === 'future' && (
+                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Shield size={14} style={{ color: '#eab308' }} /> Tactical Trade Execution Blueprint
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 11.5, color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <strong style={{ color: '#38bdf8' }}>1. Entry Trigger Condition:</strong>
+                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Accumulate strictly within {analyzerResult.targets?.entryZone.label || 'the suggested buy band'}. Do not chase spikes above Target 1.</div>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <strong style={{ color: '#10d98a' }}>2. Profit Scaling Protocol:</strong>
+                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Book 50% initial profit at {analyzerResult.targets?.target1.label}, trail stop to Breakeven, and let the remainder ride to {analyzerResult.targets?.target2.label}.</div>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
+                      <strong style={{ color: '#ff4f6a' }}>3. Invalidation Stop-Loss:</strong>
+                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>If a daily session closes below {analyzerResult.targets?.stopLoss.label}, trigger full capital protection exit.</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Interactive Quick-Prompt Chips */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Ask Guru AI about {analyzerResult.symbol}:</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[
+                    `🎯 What is the exact buy order price for ${analyzerResult.symbol}?`,
+                    `📉 What if NEPSE drops 50 points tomorrow for ${analyzerResult.symbol}?`,
+                    `🏛️ Explain the Graham Intrinsic Value of ${analyzerResult.symbol}`,
+                    `🌊 What are top brokers doing with ${analyzerResult.symbol}?`
+                  ].map(q => (
+                    <button
+                      key={q}
+                      onClick={() => {
+                        setActiveTab('chat');
+                        submitQuestion(q);
+                      }}
+                      style={{
+                        background: 'rgba(91,94,244,0.1)', border: '1px solid rgba(91,94,244,0.25)',
+                        color: 'var(--primary-light)', borderRadius: 16, padding: '5px 10px',
+                        fontSize: 10.5, cursor: 'pointer', textAlign: 'left'
+                      }}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Analyze Another Button */}
               <button
                 onClick={() => { setAnalyzerResult(null); setAnalyzerQuery(''); setAnalyzerSymbol(''); setAnalyzerHistory([]); }}
                 className="btn btn-secondary btn-sm"
-                style={{ width: '100%' }}
+                style={{ width: '100%', marginTop: 4 }}
               >
                 🔍 Analyze Another Stock
               </button>
