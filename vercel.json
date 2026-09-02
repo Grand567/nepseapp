@@ -1,8 +1,12 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.mjs"
+  "version": 2,
+  "experimentalServices": {
+    "nepse-proxy": {
+      "type": "web",
+      "root": "proxy",
+      "entrypoint": "server.mjs",
+      "routePrefix": "/",
+      "buildCommand": "npm install"
     }
-  ]
+  }
 }

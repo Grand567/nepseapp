@@ -9,7 +9,6 @@ const FacebookIcon = ({ size = 16 }) => (
   </svg>
 );
 
-// ─── Shared layout wrapper ──────────────────────────────────────────────────
 const Wrapper = ({ children }) => (
   <div style={{
     minHeight: '100dvh', display: 'flex', flexDirection: 'column',
@@ -20,15 +19,38 @@ const Wrapper = ({ children }) => (
     {/* Glow orbs */}
     <div style={{ position:'absolute', top:'-80px', left:'-80px', width:280, height:280, borderRadius:'50%', background:'radial-gradient(circle, rgba(91,94,244,0.18) 0%, transparent 70%)', pointerEvents:'none' }} />
     <div style={{ position:'absolute', bottom:'-60px', right:'-60px', width:240, height:240, borderRadius:'50%', background:'radial-gradient(circle, rgba(168,85,247,0.15) 0%, transparent 70%)', pointerEvents:'none' }} />
-    {children}
+    
+    {/* Large stylized Nepali "Shree" (श्री) watermark background */}
+    <div style={{
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      fontSize: 'min(70vw, 420px)',
+      fontWeight: 900,
+      pointerEvents: 'none',
+      userSelect: 'none',
+      zIndex: 0,
+      fontFamily: '"Outfit", "Inter", "Noto Sans Devanagari", sans-serif',
+      whiteSpace: 'nowrap',
+      background: 'linear-gradient(135deg, rgba(91,94,244,0.06) 0%, rgba(168,85,247,0.06) 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    }}>
+      श्री
+    </div>
+
+    <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+      {children}
+    </div>
   </div>
 );
 
 // ─── Shared Logo + Title ────────────────────────────────────────────────────
 const Logo = () => (
   <>
-    <div style={{ width:72, height:72, background:'linear-gradient(135deg,#5b5ef4 0%,#a855f7 100%)', borderRadius:22, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20, boxShadow:'0 0 48px rgba(91,94,244,0.45),0 8px 32px rgba(0,0,0,0.4)' }}>
-      <BarChart3 style={{ width:36, height:36, color:'#fff' }} />
+    <div style={{ width:72, height:72, background:'rgba(255,255,255,0.03)', border:'1px solid var(--border)', borderRadius:22, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:20, boxShadow:'0 0 48px rgba(91,94,244,0.3),0 8px 32px rgba(0,0,0,0.4)', overflow:'hidden' }}>
+      <img src="logo.png" alt="Drabyashree Nepse Hub" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
     </div>
     <h1 style={{ fontSize:26, fontWeight:900, color:'var(--text-primary)', textAlign:'center', marginBottom:6, letterSpacing:'-0.03em' }}>
       Drabyashree Nepse Hub
@@ -324,7 +346,7 @@ export default function LoginScreen({ onLogin }) {
           Continue as Guest (Local Only)
         </button>
 
-        <ErrorBanner />
+        <ErrorBanner error={error} />
       </div>
 
       <p style={{ marginTop:24, fontSize:11, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:300 }}>

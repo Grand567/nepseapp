@@ -2,16 +2,19 @@
   "name": "nepse-proxy",
   "version": "1.0.0",
   "description": "NEPSE live data proxy",
+  "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs"
   },
   "dependencies": {
+    "@rumess/nepse-api": "^1.0.5",
     "axios": "^1.6.2",
     "axios-cookiejar-support": "^7.0.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
+    "pg": "^8.23.0",
     "tough-cookie": "^6.0.1"
   }
 }

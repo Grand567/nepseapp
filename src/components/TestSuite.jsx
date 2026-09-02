@@ -119,8 +119,8 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
     await new Promise(r => setTimeout(r, 300));
     addLog('info', '🧪 Test 5: CDSC Public Allotment Check API mock parser');
     try {
-      const validCheck = await checkIpoAllotmentMock("101", "1201060001234567");
-      const invalidCheck = await checkIpoAllotmentMock("101", "abc");
+      const validCheck = await checkIpoAllotmentMock("107", "1201060001234567");
+      const invalidCheck = await checkIpoAllotmentMock("107", "abc");
 
       if (validCheck.hasOwnProperty('status') && !invalidCheck.success) {
         addLog('success', '✅ Test 5 Passed: Allotment API responds correctly to valid and handles invalid BOIDs.');

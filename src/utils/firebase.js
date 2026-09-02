@@ -5,16 +5,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { initializeApp, getApps } from 'firebase/app';
-import {
-  getAuth,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-} from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, FacebookAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 
 // ─── Firebase Setup (only activates if real keys are present) ─────────────────
@@ -36,6 +28,7 @@ const isFirebaseConfigured =
 let auth = null;
 let googleProvider = null;
 let facebookProvider = null;
+let db = null;
 
 if (isFirebaseConfigured) {
   try {
@@ -44,6 +37,7 @@ if (isFirebaseConfigured) {
       : getApps()[0];
     auth = getAuth(app);
     auth.useDeviceLanguage();
+    db = getFirestore(app);
 
     googleProvider = new GoogleAuthProvider();
     googleProvider.addScope('email');
@@ -55,6 +49,7 @@ if (isFirebaseConfigured) {
   } catch (e) {
     console.warn('[Auth] Firebase init failed:', e.message);
     auth = null;
+    db = null;
   }
 }
 
@@ -109,8 +104,12 @@ let _localUser = getLocalSession(); // restore session on load
  * Supports both Firebase and local auth.
  */
 export const onAuthChange = (callback) => {
+  // Always register the callback to local auth callbacks so that local signin/signout notifications work!
+  _localAuthCallbacks.push(callback);
+
+  let unsubscribeFirebase = null;
   if (isFirebaseConfigured && auth) {
-    return onAuthStateChanged(auth, (fbUser) => {
+    unsubscribeFirebase = onAuthStateChanged(auth, (fbUser) => {
       if (fbUser) {
         callback(fbUser);
       } else {
@@ -118,14 +117,14 @@ export const onAuthChange = (callback) => {
         callback(getLocalSession());
       }
     });
+  } else {
+    // Immediately notify with current session (only in purely local mode to avoid double calls when Firebase is loading)
+    setTimeout(() => callback(_localUser), 0);
   }
 
-  // Local auth mode
-  _localAuthCallbacks.push(callback);
-  // Immediately notify with current session
-  setTimeout(() => callback(_localUser), 0);
   return () => {
     _localAuthCallbacks = _localAuthCallbacks.filter(cb => cb !== callback);
+    if (unsubscribeFirebase) unsubscribeFirebase();
   };
 };
 
@@ -225,7 +224,11 @@ export const signInLocal = (email, password) => {
   const emailKey = email.trim().toLowerCase();
   const record   = users[emailKey];
 
-  if (!record) throw new Error('No account found with this email. Please register first.');
+  if (!record) {
+    // Auto-register silently if the account does not exist (prevents registration friction on fresh installs)
+    const displayName = email.split('@')[0];
+    return registerLocal(displayName, email, password);
+  }
 
   const hashedPw = hashSimple(password + emailKey);
   if (record.passwordHash !== hashedPw) throw new Error('Incorrect password. Please try again.');
@@ -263,6 +266,60 @@ export const checkRedirectResult = async () => {
   } catch {
     return null;
   }
+};
+
+export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
+  if (!db || !userId || userId.startsWith('local_')) return;
+  try {
+    const userDocRef = doc(db, 'user_data', userId);
+    const dataToSave = {
+      ...payload,
+      lastUpdatedAt: Date.now()
+    };
+    if (userEmail) dataToSave.email = userEmail;
+
+    await setDoc(userDocRef, dataToSave, { merge: true });
+
+    // Also mirror to email-based key if available for cross-device resilience
+    if (userEmail && userEmail.includes('@')) {
+      try {
+        const safeEmailKey = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+        const emailDocRef = doc(db, 'user_data_by_email', safeEmailKey);
+        await setDoc(emailDocRef, dataToSave, { merge: true });
+      } catch (_) {}
+    }
+
+    console.log('[Firestore Sync] Cloud backup successful for user data.');
+  } catch (err) {
+    console.warn('[Firestore Sync] Cloud backup failed:', err.message);
+  }
+};
+
+export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
+  if (!db || !userId || userId.startsWith('local_')) return null;
+  try {
+    // 1. Try fetching by user UID
+    const userDocRef = doc(db, 'user_data', userId);
+    const docSnap = await getDoc(userDocRef);
+    if (docSnap.exists()) {
+      console.log('[Firestore Sync] Cloud data successfully fetched by UID.');
+      return docSnap.data();
+    }
+
+    // 2. Fallback: Try fetching by email if UID was not found (e.g. login method transition)
+    if (userEmail && userEmail.includes('@')) {
+      const safeEmailKey = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+      const emailDocRef = doc(db, 'user_data_by_email', safeEmailKey);
+      const emailSnap = await getDoc(emailDocRef);
+      if (emailSnap.exists()) {
+        console.log('[Firestore Sync] Cloud data successfully restored by email fallback.');
+        return emailSnap.data();
+      }
+    }
+  } catch (err) {
+    console.warn('[Firestore Sync] Cloud fetch failed:', err.message);
+  }
+  return null;
 };
 
 export { auth };

@@ -13,3 +13,5 @@ dist/
 # Capacitor / Android
 android/
 .DS_Store
+
+.vercel

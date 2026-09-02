@@ -1,14 +1,23 @@
 {
   "name": "nepse-app",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "scripts": {
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "whitelabel": "node white-label.mjs",
+    "mobile:sync": "npm run build && npx cap sync android",
+    "mobile:build-debug": "npm run mobile:sync && cd android && .\\gradlew.bat assembleDebug && copy /Y .\\app\\build\\outputs\\apk\\debug\\Drabyashree-NEPSE-debug.apk ..\\Drabyashree-NEPSE-debug.apk && copy /Y .\\app\\build\\outputs\\apk\\debug\\Drabyashree-NEPSE-debug.apk ..\\Drabyashree-NEPSE.apk",
+    "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE-release.apk && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE.apk",
+    "build:apk": "npm run mobile:build-release"
   },
+
+
   "dependencies": {
     "@capacitor/android": "^8.3.4",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.3.4",
     "axios": "^1.16.1",
     "axios-cookiejar-support": "^7.0.0",
@@ -16,6 +25,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "firebase": "^12.13.0",
+    "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.395.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

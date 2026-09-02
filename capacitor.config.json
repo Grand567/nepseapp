@@ -1,5 +1,34 @@
 {
-  "appId": "com.drabyashree.nepsehub",
-  "appName": "Drabyashree Nepse Hub",
-  "webDir": "dist"
+  "appId": "com.smartwealth.nepse",
+  "appName": "Drabyashree NEPSE",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "CapacitorCookies": {
+      "enabled": true
+    }
+  },
+  "server": {
+    "allowNavigation": [
+      "sharesansar.com",
+      "*.sharesansar.com",
+      "allorigins.win",
+      "*.allorigins.win",
+      "vercel.app",
+      "*.vercel.app",
+      "cdsc.com.np",
+      "*.cdsc.com.np",
+      "corsproxy.io",
+      "*.corsproxy.io",
+      "merolagani.com",
+      "*.merolagani.com",
+      "freeboard.io",
+      "*.freeboard.io"
+    ]
+  }
 }
