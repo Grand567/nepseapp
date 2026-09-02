@@ -1626,8 +1626,8 @@ function BrokerHeatmapModal({ stocks, onClose }) {
     loadData();
   }, []);
 
-  const topBrokers = heatmap?.brokers || [58, 45, 34, 49, 28, 57, 17, 38];
-  const sampleScrips = heatmap?.scrips || (stocks.slice(0, 10)).map(s => s.symbol);
+  const topBrokers = heatmap?.brokers || [];
+  const sampleScrips = heatmap?.scrips || [];
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -1647,6 +1647,11 @@ function BrokerHeatmapModal({ stocks, onClose }) {
         </div>
 
         <div style={{ flex: 1, overflowX: 'auto', padding: 14 }}>
+          {topBrokers.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 12 }}>
+              — No broker heatmap data available —
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
@@ -1694,6 +1699,7 @@ function BrokerHeatmapModal({ stocks, onClose }) {
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </div>
     </div>
@@ -2266,7 +2272,7 @@ function FloorSheetModal({ stocks, onClose }) {
   const loadFloorsheet = async (pg = 1) => {
     setLoading(true);
     try {
-      const data = await fetchRealFloorsheet(symbolInput.trim(), dateInput.trim(), pg, pageSize);
+      const data = await servicesApi.fetchFloorsheet(symbolInput.trim(), pg, pageSize, dateInput.trim());
       if (data) {
         const rows = data.rows || data.content || [];
         if (rows.length > 0) {
@@ -2288,8 +2294,7 @@ function FloorSheetModal({ stocks, onClose }) {
 
   useEffect(() => { loadFloorsheet(1); }, []);
 
-  const mockStock = (stocks || [])[0] || { symbol: 'NABIL', ltp: 395 };
-  const displaySheet = realSheet || generateFloorsheet(mockStock, 30);
+  const displaySheet = realSheet || [];
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#060810', display: 'flex', flexDirection: 'column' }}>
@@ -2361,9 +2366,15 @@ function FloorSheetModal({ stocks, onClose }) {
             </tr>
           </thead>
           <tbody>
-            {displaySheet.map((row, idx) => {
+            {displaySheet.length === 0 ? (
+              <tr>
+                <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                  No floor sheet data available for the selected criteria.
+                </td>
+              </tr>
+            ) : displaySheet.map((row, idx) => {
               const contractNo = row.contractId || row.contractNo || `#${(page - 1) * pageSize + idx + 1}`;
-              const symbol = row.stockSymbol || row.symbol || mockStock.symbol;
+              const symbol = row.stockSymbol || row.symbol || '-';
               const buyer = row.buyerMemberId || row.buyerBroker || row.buyer || '?';
               const seller = row.sellerMemberId || row.sellerBroker || row.seller || '?';
               const qty = Number(row.contractQuantity || row.qty || row.quantity || 0);
@@ -2403,14 +2414,14 @@ function FloorSheetModal({ stocks, onClose }) {
    SUB-COMPONENT: MARKET NEWS MODAL
 ═══════════════════════════════════════════════════════════════════════════ */
 function MarketNewsModal({ onClose }) {
-  const [news, setNews] = useState(() => getMarketNews());
+  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(false);
 
   const loadLiveNews = async () => {
     setLoading(true);
     try {
-      const liveItems = await fetchMerolaganiNews();
+      const liveItems = await servicesApi.fetchMarketNews();
       if (Array.isArray(liveItems) && liveItems.length > 0) {
         setNews(liveItems);
         setIsLive(true);
@@ -2985,15 +2996,8 @@ function BulkTransactionModal({ stocks, onClose, onSelectStock }) {
         time: r.tradeTime ? (r.tradeTime.includes('T') ? r.tradeTime.split('T')[1].slice(0, 8) : r.tradeTime) : 'Today'
       }));
     }
-    const raw = generateFloorsheet(stocks);
-    if (filterThreshold === '10k') {
-      return raw.filter(r => r.quantity >= 10000 || r.amount >= 2500000);
-    }
-    if (filterThreshold === '25k') {
-      return raw.filter(r => r.quantity >= 25000 || r.amount >= 5000000);
-    }
-    return raw.filter(r => r.quantity >= 5000 || r.amount >= 1000000);
-  }, [stocks, filterThreshold, realTrades]);
+    return [];
+  }, [filterThreshold, realTrades]);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -3795,28 +3799,28 @@ function TopTradersModal({ stocks, initialTab = 'turnover', onClose, onSelectSto
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [tab]);
 
-  const defaultTurnoverList = useMemo(() => [
-    { sn: 1, sym: 'SHIVM', turnover: '21.76Cr', ch: '+4.17%', ltp: '650.00', bull: true },
-    { sn: 2, sym: 'SBI', turnover: '16.66Cr', ch: '+0.25%', ltp: '400.00', bull: true },
-    { sn: 3, sym: 'CHCL', turnover: '16.07Cr', ch: '-5.15%', ltp: '405.00', bull: false },
-    { sn: 4, sym: 'AKJCL', turnover: '11.62Cr', ch: '+1.48%', ltp: '343.00', bull: true },
-    { sn: 5, sym: 'RSML', turnover: '10.97Cr', ch: '+0.81%', ltp: '2728.00', bull: true },
-    { sn: 6, sym: 'SOHL', turnover: '10.66Cr', ch: '-0.59%', ltp: '660.00', bull: false },
-    { sn: 7, sym: 'RIDI', turnover: '9.16Cr', ch: '+0.85%', ltp: '345.90', bull: true },
-    { sn: 8, sym: 'RHPL', turnover: '7.70Cr', ch: '-8.38%', ltp: '188.00', bull: false },
-    { sn: 9, sym: 'MAKAR', turnover: '7.17Cr', ch: '-5.87%', ltp: '401.00', bull: false },
-    { sn: 10, sym: 'SAHAS', turnover: '6.41Cr', ch: '+0.01%', ltp: '682.00', bull: true },
-    { sn: 11, sym: 'SONA', turnover: '6.28Cr', ch: '+5.05%', ltp: '408.00', bull: true },
-    { sn: 12, sym: 'TAMOR', turnover: '5.91Cr', ch: '+0.42%', ltp: '482.00', bull: true },
-    { sn: 13, sym: 'API', turnover: '5.76Cr', ch: '-0.49%', ltp: '325.90', bull: false },
-    { sn: 14, sym: 'BHCL', turnover: '5.75Cr', ch: '+0.40%', ltp: '555.00', bull: true },
-    { sn: 15, sym: 'GBIME', turnover: '5.70Cr', ch: '-0.45%', ltp: '242.00', bull: false },
-    { sn: 16, sym: 'GCIL', turnover: '5.44Cr', ch: '+8.19%', ltp: '370.00', bull: true },
-    { sn: 17, sym: 'SYPNL', turnover: '5.39Cr', ch: '+1.99%', ltp: '1244.30', bull: true },
-    { sn: 18, sym: 'KBL', turnover: '4.86Cr', ch: '-0.24%', ltp: '212.00', bull: false },
-    { sn: 19, sym: 'NHPC', turnover: '4.79Cr', ch: '+1.84%', ltp: '254.60', bull: true },
-    { sn: 20, sym: 'NRN', turnover: '4.37Cr', ch: '+0.41%', ltp: '1349.50', bull: true }
-  ], []);
+  const computedList = useMemo(() => {
+    if (!stocks || stocks.length === 0) return [];
+    let list = [...stocks];
+    if (tab === 'gainers') {
+      list.sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+    } else if (tab === 'losers') {
+      list.sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+    } else if (tab === 'turnover') {
+      list.sort((a, b) => (b.turnover || 0) - (a.turnover || 0));
+    } else if (tab === 'volume') {
+      list.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    }
+    return list.slice(0, 50).map((s, i) => ({
+      sn: i + 1,
+      sym: s.symbol,
+      turnover: s.turnover ? (s.turnover / 10000000).toFixed(2) + 'Cr' : '—',
+      ch: (s.pChange || 0) >= 0 ? '+' + (s.pChange || 0).toFixed(2) + '%' : (s.pChange || 0).toFixed(2) + '%',
+      ltp: s.ltp ? s.ltp.toFixed(2) : '—',
+      bull: (s.pChange || 0) >= 0,
+      stockInfo: s
+    }));
+  }, [stocks, tab]);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -3888,15 +3892,12 @@ function TopTradersModal({ stocks, initialTab = 'turnover', onClose, onSelectSto
 
         {/* Table Rows */}
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
-          {defaultTurnoverList.map((row) => {
-            const matchedStock = stocks.find(s => s.symbol === row.sym) || {
-              symbol: row.sym,
-              name: `${row.sym} Ltd.`,
-              ltp: parseFloat(row.ltp.replace(/,/g, '')) || 400,
-              change: 10.0,
-              pChange: parseFloat(row.ch) || 2.0,
-              sector: 'Hydropower'
-            };
+          {computedList.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+              No data available
+            </div>
+          ) : computedList.map((row) => {
+            const matchedStock = row.stockInfo;
 
             return (
               <div
@@ -3935,8 +3936,8 @@ function TopBrokersModal({ onClose }) {
   const [search, setSearch] = useState('');
   const brokers = useMemo(() => {
     const list = NEPSE_BROKERS.map((b, i) => {
-      const turnoverCr = (85 - i * 1.25).toFixed(2);
-      const marketShare = (7.8 - i * 0.11).toFixed(2);
+      const turnoverCr = '—';
+      const marketShare = '—';
       return { ...b, turnoverCr, marketShare };
     });
     if (!search.trim()) return list;
@@ -4794,28 +4795,29 @@ function SectorHeatmapModal({ stocks, indices, onClose }) {
    SUB-COMPONENT: MARKET INDICES LIVE TABLE
 ═══════════════════════════════════════════════════════════════════════════ */
 function MarketIndicesModal({ indices = {}, onClose }) {
-  // Use live data when available, fallback to static data
+  // Use live data when available
   const nepse = indices?.nepse || {};
   const float = indices?.float || {};
   const sensitive = indices?.sensitive || {};
+  const sensitiveFloat = indices?.sensitiveFloat || {};
 
   const list = [
-    { name: 'NEPSE Index', val: nepse.value || 2594.27, chg: nepse.change || -5.30, pChg: nepse.pChange || -0.20, high: nepse.high || (nepse.value ? nepse.value * 1.008 : 2618.40), low: nepse.low || (nepse.value ? nepse.value * 0.995 : 2588.10) },
-    { name: 'Sensitive Index', val: sensitive.value || 456.80, chg: sensitive.change || -0.92, pChg: sensitive.pChange || -0.20, high: sensitive.high || (sensitive.value ? sensitive.value * 1.01 : 461.20), low: sensitive.low || (sensitive.value ? sensitive.value * 0.997 : 455.10) },
-    { name: 'Float Index', val: float.value || 178.45, chg: float.change || -0.35, pChg: float.pChange || -0.20, high: float.high || (float.value ? float.value * 1.01 : 180.10), low: float.low || (float.value ? float.value * 0.997 : 177.90) },
-    { name: 'Sensitive Float', val: indices?.sensitiveFloat?.value || 148.90, chg: indices?.sensitiveFloat?.change || -0.28, pChg: indices?.sensitiveFloat?.pChange || -0.19, high: 150.20, low: 148.40 },
-    { name: 'Banking', val: indices?.banking?.value || 1420.50, chg: indices?.banking?.change || 12.40, pChg: indices?.banking?.pChange || 0.88, high: 1435.00, low: 1412.00 },
-    { name: 'Development Bank', val: indices?.developmentBank?.value || 5120.30, chg: indices?.developmentBank?.change || 24.10, pChg: indices?.developmentBank?.pChange || 0.47, high: 5180.00, low: 5090.00 },
-    { name: 'Hydropower', val: indices?.hydropower?.value || 3280.90, chg: indices?.hydropower?.change || -18.40, pChg: indices?.hydropower?.pChange || -0.56, high: 3340.00, low: 3260.00 },
-    { name: 'Finance', val: indices?.finance?.value || 3010.40, chg: indices?.finance?.change || -22.10, pChg: indices?.finance?.pChange || -0.73, high: 3080.00, low: 2990.00 },
-    { name: 'Life Insurance', val: indices?.lifeInsurance?.value || 12480.00, chg: indices?.lifeInsurance?.change || 85.00, pChg: indices?.lifeInsurance?.pChange || 0.69, high: 12600.00, low: 12350.00 },
-    { name: 'Non-Life Insurance', val: indices?.nonLifeInsurance?.value || 11920.00, chg: indices?.nonLifeInsurance?.change || 45.00, pChg: indices?.nonLifeInsurance?.pChange || 0.38, high: 12050.00, low: 11840.00 },
-    { name: 'Microfinance', val: indices?.microfinance?.value || 5410.20, chg: indices?.microfinance?.change || 16.80, pChg: indices?.microfinance?.pChange || 0.31, high: 5480.00, low: 5380.00 },
-    { name: 'Hotels & Tourism', val: indices?.hotels?.value || 5890.00, chg: indices?.hotels?.change || 110.00, pChg: indices?.hotels?.pChange || 1.90, high: 5940.00, low: 5760.00 },
-    { name: 'Manufacturing', val: indices?.manufacturing?.value || 7620.00, chg: indices?.manufacturing?.change || -14.00, pChg: indices?.manufacturing?.pChange || -0.18, high: 7700.00, low: 7580.00 },
-    { name: 'Others', val: indices?.others?.value || 1840.00, chg: indices?.others?.change || 8.50, pChg: indices?.others?.pChange || 0.46, high: 1860.00, low: 1825.00 },
-    { name: 'Investment', val: indices?.investment?.value || 104.50, chg: indices?.investment?.change || 1.20, pChg: indices?.investment?.pChange || 1.16, high: 106.00, low: 103.00 },
-  ];
+    { name: 'NEPSE Index', val: nepse.value, chg: nepse.change, pChg: nepse.pChange, high: nepse.high, low: nepse.low },
+    { name: 'Sensitive Index', val: sensitive.value, chg: sensitive.change, pChg: sensitive.pChange, high: sensitive.high, low: sensitive.low },
+    { name: 'Float Index', val: float.value, chg: float.change, pChg: float.pChange, high: float.high, low: float.low },
+    { name: 'Sensitive Float', val: sensitiveFloat.value, chg: sensitiveFloat.change, pChg: sensitiveFloat.pChange, high: sensitiveFloat.high, low: sensitiveFloat.low },
+    { name: 'Banking', val: indices?.banking?.value, chg: indices?.banking?.change, pChg: indices?.banking?.pChange, high: indices?.banking?.high, low: indices?.banking?.low },
+    { name: 'Development Bank', val: indices?.developmentBank?.value, chg: indices?.developmentBank?.change, pChg: indices?.developmentBank?.pChange, high: indices?.developmentBank?.high, low: indices?.developmentBank?.low },
+    { name: 'Hydropower', val: indices?.hydropower?.value, chg: indices?.hydropower?.change, pChg: indices?.hydropower?.pChange, high: indices?.hydropower?.high, low: indices?.hydropower?.low },
+    { name: 'Finance', val: indices?.finance?.value, chg: indices?.finance?.change, pChg: indices?.finance?.pChange, high: indices?.finance?.high, low: indices?.finance?.low },
+    { name: 'Life Insurance', val: indices?.lifeInsurance?.value, chg: indices?.lifeInsurance?.change, pChg: indices?.lifeInsurance?.pChange, high: indices?.lifeInsurance?.high, low: indices?.lifeInsurance?.low },
+    { name: 'Non-Life Insurance', val: indices?.nonLifeInsurance?.value, chg: indices?.nonLifeInsurance?.change, pChg: indices?.nonLifeInsurance?.pChange, high: indices?.nonLifeInsurance?.high, low: indices?.nonLifeInsurance?.low },
+    { name: 'Microfinance', val: indices?.microfinance?.value, chg: indices?.microfinance?.change, pChg: indices?.microfinance?.pChange, high: indices?.microfinance?.high, low: indices?.microfinance?.low },
+    { name: 'Hotels & Tourism', val: indices?.hotels?.value, chg: indices?.hotels?.change, pChg: indices?.hotels?.pChange, high: indices?.hotels?.high, low: indices?.hotels?.low },
+    { name: 'Manufacturing', val: indices?.manufacturing?.value, chg: indices?.manufacturing?.change, pChg: indices?.manufacturing?.pChange, high: indices?.manufacturing?.high, low: indices?.manufacturing?.low },
+    { name: 'Others', val: indices?.others?.value, chg: indices?.others?.change, pChg: indices?.others?.pChange, high: indices?.others?.high, low: indices?.others?.low },
+    { name: 'Investment', val: indices?.investment?.value, chg: indices?.investment?.change, pChg: indices?.investment?.pChange, high: indices?.investment?.high, low: indices?.investment?.low },
+  ].filter(idx => idx.val != null);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -5312,6 +5314,8 @@ function MutualFundsModal({ onClose }) {
         <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Loading live mutual funds data...</div>
+          ) : funds.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>No mutual funds data available</div>
           ) : (
             funds.map(f => {
               const isDiscount = f.discountPct < 0;
@@ -5827,17 +5831,7 @@ function DatewiseSummaryModal({ onClose }) {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, []);
 
-  const history = useMemo(() => [
-    { date: '2026-08-27', turnover: '3.78 B', volume: '11,489,450', trans: '68,490' },
-    { date: '2026-08-26', turnover: '4.12 B', volume: '12,940,110', trans: '74,102' },
-    { date: '2026-08-25', turnover: '3.95 B', volume: '11,800,240', trans: '69,820' },
-    { date: '2026-08-24', turnover: '5.20 B', volume: '16,210,000', trans: '89,430' },
-    { date: '2026-08-23', turnover: '4.88 B', volume: '14,650,300', trans: '82,100' },
-    { date: '2026-08-20', turnover: '3.65 B', volume: '10,940,200', trans: '64,900' },
-    { date: '2026-08-19', turnover: '4.01 B', volume: '12,120,400', trans: '71,300' },
-    { date: '2026-08-18', turnover: '3.42 B', volume: '9,890,100', trans: '58,400' },
-    { date: '2026-08-17', turnover: '3.80 B', volume: '11,200,000', trans: '66,500' },
-  ], []);
+  const history = useMemo(() => [], []);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -5880,7 +5874,11 @@ function DatewiseSummaryModal({ onClose }) {
 
         {/* Rows */}
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
-          {history.map((row, idx) => (
+          {history.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+              No summary data available.
+            </div>
+          ) : history.map((row, idx) => (
             <div
               key={idx}
               style={{
@@ -5915,21 +5913,8 @@ function DividendsListModal({ stocks, onClose, onSelectStock }) {
   }, []);
 
   const dividendData = useMemo(() => {
-    const baseKnown = [
-      { sym: 'UNL', bonus: '0.00%', cash: '650.00%', total: '650.00%', fy: '081/082', status: 'Approved' },
-      { sym: 'HDL', bonus: '10.50%', cash: '0.55%', total: '11.05%', fy: '081/082', status: 'Book Closed' },
-      { sym: 'CIT', bonus: '14.00%', cash: '0.73%', total: '14.73%', fy: '081/082', status: 'Proposed' },
-      { sym: 'SHIVM', bonus: '10.53%', cash: '0.55%', total: '11.08%', fy: '081/082', status: 'Approved' },
-      { sym: 'NTC', bonus: '0.00%', cash: '40.00%', total: '40.00%', fy: '081/082', status: 'Approved' },
-      { sym: 'NABIL', bonus: '10.00%', cash: '2.50%', total: '12.50%', fy: '081/082', status: 'Approved' },
-      { sym: 'EBL', bonus: '10.00%', cash: '5.30%', total: '15.30%', fy: '081/082', status: 'Approved' },
-      { sym: 'SCB', bonus: '6.50%', cash: '19.00%', total: '25.50%', fy: '081/082', status: 'Approved' },
-      { sym: 'GBIME', bonus: '8.00%', cash: '1.50%', total: '9.50%', fy: '081/082', status: 'Proposed' },
-      { sym: 'NICL', bonus: '11.50%', cash: '0.60%', total: '12.10%', fy: '081/082', status: 'Approved' }
-    ];
-
     const liveScrips = stocks
-      .filter(s => (Number(s.cashDiv || 0) > 0 || Number(s.bonusShare || 0) > 0) && !baseKnown.some(b => b.sym === s.symbol))
+      .filter(s => (Number(s.cashDiv || 0) > 0 || Number(s.bonusShare || 0) > 0))
       .map(s => ({
         sym: s.symbol,
         bonus: `${Number(s.bonusShare || 0).toFixed(2)}%`,
@@ -5939,7 +5924,7 @@ function DividendsListModal({ stocks, onClose, onSelectStock }) {
         status: 'Declared'
       }));
 
-    return [...baseKnown, ...liveScrips];
+    return liveScrips;
   }, [stocks]);
 
   const filtered = dividendData.filter(d => !search || d.sym.toLowerCase().includes(search.toLowerCase()));
@@ -5985,13 +5970,7 @@ function DividendsListModal({ stocks, onClose, onSelectStock }) {
         {/* Rows */}
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
           {filtered.map((row, idx) => {
-            const matchedStock = stocks.find(s => s.symbol === row.sym) || {
-              symbol: row.sym,
-              name: `${row.sym} Ltd.`,
-              ltp: 500,
-              change: 10,
-              pChange: 2
-            };
+            const matchedStock = stocks.find(s => s.symbol === row.sym) || {};
 
             return (
               <div
