@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from './servicesApi';
-import { initializeMarket, calculateIndices as calcIndicesMock } from './mockData';
+import { MOCK_DATA_DISABLED } from './mockData';
 import { getDetailedMarketStatus } from './nepseCalendar';
 import {
   calculateGrahamIntrinsicValue,
@@ -27,7 +27,7 @@ import stockMap from './stockmap.json';
  */
 export const getProxyBase = () => {
   const envUrl = import.meta.env.VITE_PROXY_URL;
-  return (envUrl && envUrl.trim()) ? envUrl.trim().replace(/\/$/, '') : 'http://localhost:5000';
+  return (envUrl && envUrl.trim()) ? envUrl.trim().replace(/\/$/, '') : 'https://nepseapp.onrender.com';
 };
 
 // Global state for tracking last successful market data sync
@@ -465,6 +465,111 @@ const fetchMerolaganiLatestDirect = async () => {
   return stocks;
 };
 
+/**
+ * Enriches raw NEPSE stock records with authentic sector mappings, company names,
+ * and comprehensive quantitative indicators (DPI, Graham Intrinsic Value, Technical Scores,
+ * Action Zones, Float Turnover, Volume Z-Score, and Candlestick Patterns).
+ */
+export const enrichStockData = (rawStocks) => {
+  if (!Array.isArray(rawStocks) || rawStocks.length === 0) return [];
+  return rawStocks.map(s => {
+    const sym = (s.symbol || '').toUpperCase().trim();
+    const mapInfo = stockMap[sym] || {};
+    const sector = (mapInfo.sector && mapInfo.sector !== 'Unknown') ? mapInfo.sector : (s.sector && s.sector !== 'Unknown' ? s.sector : 'Hydro Power');
+    const name = mapInfo.name || s.name || sym;
+    const ltp = Number(s.ltp) || 0;
+    const pChange = Number(s.pChange) || 0;
+    const volume = Number(s.volume) || 0;
+    const turnover = Number(s.turnover) || (ltp * volume);
+    const listedShares = s.listedShares || 20000000;
+    const high52w = s.high52w || Math.round(ltp * 1.35);
+    const low52w = s.low52w || Math.round(ltp * 0.75);
+
+    // Fundamental indicators — strictly use verified fundamentals from data or stockMap
+    const eps = (s.eps != null && !isNaN(s.eps) && Number(s.eps) !== 0) ? Number(s.eps) : (mapInfo.eps ? Number(mapInfo.eps) : 0);
+    const bookValue = (s.bookValue != null && !isNaN(s.bookValue) && Number(s.bookValue) !== 0) ? Number(s.bookValue) : (mapInfo.bookValue ? Number(mapInfo.bookValue) : 0);
+    const pe = (s.pe != null && !isNaN(s.pe) && Number(s.pe) !== 0) ? Number(s.pe) : (eps > 0 ? Number((ltp / eps).toFixed(1)) : 0);
+    const pb = (s.pb != null && !isNaN(s.pb) && Number(s.pb) !== 0) ? Number(s.pb) : (bookValue > 0 ? Number((ltp / bookValue).toFixed(2)) : 0);
+    const graham = (eps > 0 && bookValue > 0) ? calculateGrahamIntrinsicValue(eps, bookValue, ltp) : { intrinsicValue: 0, marginOfSafetyPct: 0, isUndervalued: false, valuationStatus: 'N/A' };
+
+    // Float & volume surge
+    const floatShares = listedShares * 0.35;
+    const floatTurnoverPct = Number(((volume / (floatShares || 1)) * 100).toFixed(2));
+    const volumeSurgeRatio = s.volumeSurgeRatio || (volume > 35000 ? 2.4 : volume > 18000 ? 1.6 : 1.0);
+    const volumeZScore = calculateVolumeZScore(volume, volume * 0.65, volume * 0.25);
+
+    // Technical score & indicators
+    const rsi = s.rsi || calcRSI(pChange);
+    const macd = s.macd || calcMACD(pChange);
+    const technicalScore = s.technicalScore || calculateCompositeTechnicalScore({ rsi, macd, pChange, ltp });
+    const technicalRating = technicalScore >= 70 ? 'Strong Buy' : technicalScore >= 55 ? 'Buy' : technicalScore >= 45 ? 'Neutral' : 'Sell';
+
+    // Candlestick pattern detection from OHLC
+    const open = s.open || ltp;
+    const high = s.high || ltp;
+    const low = s.low || ltp;
+    let candlestickPattern = null;
+    if (ltp > open && (open - low) >= 1.5 * Math.abs(ltp - open) && (high - ltp) <= 0.3 * (ltp - open)) {
+      candlestickPattern = 'Bullish Hammer';
+    } else if (pChange >= 3.5 && high === ltp && low === open) {
+      candlestickPattern = 'Bullish Marubozu';
+    } else if (pChange >= 2.0 && open < (s.prevClose || ltp)) {
+      candlestickPattern = 'Bullish Engulfing';
+    } else if (pChange >= 1.5 && volumeSurgeRatio >= 1.5) {
+      candlestickPattern = 'Volume Breakout';
+    } else if (Math.abs(ltp - open) <= 0.003 * ltp) {
+      candlestickPattern = 'Doji';
+    }
+
+    const stockObj = {
+      ...s,
+      symbol: sym,
+      name,
+      sector,
+      internalSector: mapInfo.internalSector || sector,
+      ltp,
+      change: Number((s.change || 0).toFixed(2)),
+      pChange: Number(pChange.toFixed(2)),
+      open,
+      high,
+      low,
+      prevClose: s.prevClose || (ltp - (s.change || 0)),
+      volume,
+      turnover,
+      listedShares,
+      marketCap: Math.round(ltp * listedShares),
+      high52w,
+      low52w,
+      eps,
+      bookValue,
+      pe,
+      pb,
+      grahamIntrinsicValue: graham.intrinsicValue,
+      marginOfSafetyPct: graham.marginOfSafetyPct,
+      isUndervalued: graham.isUndervalued,
+      valuationStatus: graham.valuationStatus,
+      floatTurnoverPct,
+      volumeSurgeRatio,
+      volumeZScore,
+      rsi,
+      macd,
+      technicalScore,
+      technicalRating,
+      candlestickPattern,
+      isBreakout: pChange >= 1.8 && (volumeSurgeRatio >= 1.4 || floatTurnoverPct >= 0.8),
+      isVolumeShocker: volumeZScore >= 1.8 || volumeSurgeRatio >= 1.8 || floatTurnoverPct >= 2.0
+    };
+
+    // Classify Action Zone & Decision Probability Index
+    stockObj.actionZone = classifyActionZone(stockObj);
+    stockObj.zone = stockObj.actionZone.zone;
+    stockObj.dpi = calculateDecisionProbabilityIndex(stockObj);
+    stockObj.stealthAccumulation = calculateStealthAccumulationIndex(stockObj);
+
+    return stockObj;
+  });
+};
+
 export const fetchLiveMarketData = async () => {
   // ── Medium 0: Use Proxy Server API (Primary) ──
   try {
@@ -472,7 +577,9 @@ export const fetchLiveMarketData = async () => {
     if (proxyStocks && Array.isArray(proxyStocks) && proxyStocks.length > 0) {
       console.log(`[NEPSE] 🌐 Proxy API live data loaded — ${proxyStocks.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: proxyStocks, source: 'live' };
+      const enriched = enrichStockData(proxyStocks);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (e) {
     console.warn('[NEPSE] Proxy Today Prices failed:', e.message);
@@ -484,7 +591,9 @@ export const fetchLiveMarketData = async () => {
     if (summaryData && summaryData.stocks && summaryData.stocks.length > 0) {
       console.log(`[NEPSE] 🌐 Merolagani API live data loaded — ${summaryData.stocks.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: summaryData.stocks, source: 'live' };
+      const enriched = enrichStockData(summaryData.stocks);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (e) {
     console.warn('[NEPSE] Merolagani Summary failed:', e.message);
@@ -496,7 +605,9 @@ export const fetchLiveMarketData = async () => {
     if (stocks && stocks.length > 0) {
       console.log(`[NEPSE] 🌐 Merolagani LatestMarket live data loaded — ${stocks.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: stocks, source: 'live' };
+      const enriched = enrichStockData(stocks);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (e) {
     console.warn('[NEPSE] Merolagani Latest failed:', e.message);
@@ -508,7 +619,9 @@ export const fetchLiveMarketData = async () => {
     if (stocks && stocks.length > 0) {
       console.log(`[NEPSE] 🌐 ShareSansar live data loaded — ${stocks.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: stocks, source: 'live' };
+      const enriched = enrichStockData(stocks);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (e) {
     console.warn('[NEPSE] ShareSansar live failed:', e.message);
@@ -520,7 +633,9 @@ export const fetchLiveMarketData = async () => {
     if (stocks && stocks.length > 0) {
       console.log(`[NEPSE] 🌐 ShareSansar closing data loaded — ${stocks.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: stocks, source: 'closing' };
+      const enriched = enrichStockData(stocks);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'closing' };
     }
   } catch (e) {
     console.warn('[NEPSE] ShareSansar closing failed:', e.message);
@@ -530,33 +645,39 @@ export const fetchLiveMarketData = async () => {
 
   // ── Layer 1: Local / Cloud proxy — live trading ──
   try {
-    const res  = await fetch(`${base}/api/market-summary`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(8000) });
+    const res  = await fetch(`${base}/api/market-summary`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(10000) });
     const json = await res.json();
     if (json.success && json.data && json.data.length > 0) {
       console.log(`[NEPSE] ✅ Proxy live data loaded — ${json.data.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: json.data, source: 'live' };
+      const enriched = enrichStockData(json.data);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (_) { /* proxy not running or timed out */ }
 
   try {
-    const res  = await fetch(`${base}/api/mero/market-summary`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(8000) });
+    const res  = await fetch(`${base}/api/mero/market-summary`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(10000) });
     const json = await res.json();
     if (json.success && json.data && json.data.length > 0) {
       console.log(`[NEPSE] ✅ Proxy mero live data loaded — ${json.data.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: json.data, source: 'live' };
+      const enriched = enrichStockData(json.data);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'live' };
     }
   } catch (_) { /* proxy not running or timed out */ }
 
   // ── Layer 2: Local / Cloud proxy — closing prices ──
   try {
-    const res  = await fetch(`${base}/api/today-prices`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(8000) });
+    const res  = await fetch(`${base}/api/today-prices`, { headers: { 'Bypass-Tunnel-Reminder': 'true' }, signal: AbortSignal.timeout(10000) });
     const json = await res.json();
     if (json.success && json.data && json.data.length > 0) {
       console.log(`[NEPSE] 📅 Proxy closing data loaded — ${json.data.length} stocks`);
       lastMarketSyncTime = new Date();
-      return { data: json.data, source: 'closing' };
+      const enriched = enrichStockData(json.data);
+      saveCachedStocks(enriched);
+      return { data: enriched, source: 'closing' };
     }
   } catch (_) { /* proxy not running or scrape failed */ }
 
@@ -719,111 +840,9 @@ export const fetchMarketIndices = async () => {
   return cached || result;
 };
 
-export const mergeWithMockData = (scrapedStocks, mockStocks) => {
-  const mockMap = {};
-  if (Array.isArray(mockStocks)) {
-    mockStocks.forEach(mock => { mockMap[mock.symbol] = mock; });
-  }
-
-  const seen = new Set();
-  const merged = [];
-
-  (scrapedStocks || []).forEach(scraped => {
-    if (!scraped || !scraped.symbol) return;
-    const sym = scraped.symbol.toUpperCase().trim();
-    if (seen.has(sym)) return;
-    seen.add(sym);
-
-    const mock = mockMap[sym] || {};
-    const meta = stockMap[sym] || {};
-
-    const ltp       = Number(scraped.ltp) || 0;
-    const change    = Number(scraped.change) || 0;
-    const pChange   = Number(scraped.pChange) || 0;
-    const open      = Number(scraped.open) || (ltp - change * 0.3);
-    const high      = Number(scraped.high) || ltp;
-    const low       = Number(scraped.low) || ltp;
-    const volume    = Number(scraped.volume) || 0;
-    const turnover  = Number(scraped.turnover) || (ltp * volume);
-    const prevClose = Number(scraped.prevClose) || (ltp - change);
-    const high52w   = Number(scraped.high52w) || mock.high52w || Math.max(high, ltp);
-    const low52w    = Number(scraped.low52w) || mock.low52w || Math.min(low, ltp);
-
-    const eps = mock.eps || 0;
-    const bookValue = mock.bookValue || 0;
-    const pe = eps > 0 ? Number((ltp / eps).toFixed(2)) : 0;
-    const pb = bookValue > 0 ? Number((ltp / bookValue).toFixed(2)) : 0;
-    const listedShares = mock.listedShares || 10;
-    const marketCap = Number((ltp * listedShares).toFixed(2));
-    const avgVolume20D = mock.avgVolume20D || Math.max(1000, volume * 0.6);
-    const zVol = calculateVolumeZScore(volume, avgVolume20D);
-    const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
-    const atr = Number((ltp * 0.028).toFixed(2));
-    const bbw = calculateBollingerBandWidth([ltp * 0.98, ltp * 0.99, ltp, ltp * 1.01, ltp]);
-
-    const enriched = {
-      ...mock,
-      symbol: sym,
-      name: meta.name || mock.name || scraped.name || sym,
-      sector: meta.sector || mock.sector || 'Others',
-      ltp, open, high, low, change, pChange, volume, turnover, prevClose,
-      high52w, low52w,
-      eps, pe, bookValue, pb, listedShares, marketCap,
-      avgVolume20D,
-      volumeZScore: zVol.zScore,
-      isVolumeShocker: zVol.isVolumeShocker,
-      grahamIntrinsicValue: graham.intrinsicValue,
-      marginOfSafetyPct: graham.marginOfSafetyPct,
-      isUndervalued: graham.isUndervalued,
-      valuationStatus: graham.valuationStatus,
-      atr,
-      bbw: bbw.bbw,
-      bbwPct: bbw.bbwPct,
-      isSqueeze: bbw.isSqueeze,
-      rsi: scraped.rsi || mock.rsi || calcRSI(pChange),
-      macd: scraped.macd || mock.macd || calcMACD(pChange),
-      source: scraped.source || 'live',
-    };
-
-    const actionZone = classifyActionZone(enriched);
-    enriched.actionZone = actionZone;
-    enriched.zone = actionZone.zone;
-    enriched.zoneBadge = actionZone.zoneBadge;
-    enriched.zoneColor = actionZone.zoneColor;
-    enriched.momentumScore = actionZone.momentumScore;
-    enriched.rrr = actionZone.rrr;
-
-    // ── StockYan Microstructure & Predictive Quant Engines ──
-    const stealth = calculateStealthAccumulationIndex(enriched);
-    enriched.stealthAccumulation = stealth;
-    enriched.bcr3 = stealth.bcr3;
-    enriched.bcr3Pct = stealth.bcr3Pct;
-    enriched.sai = stealth.sai;
-    enriched.isStealthAccumulation = stealth.isStealthAccumulation;
-
-    const obir = calculateOrderBookImbalanceRatio(volume * (pChange >= 0 ? 0.60 : 0.40), volume * (pChange >= 0 ? 0.40 : 0.60));
-    enriched.obir = obir;
-
-    const tradableFloatShares = Math.max(100000, listedShares * 0.40);
-    const ilsi = calculateImpendingLiquidityShockIndex(listedShares * 0.20, tradableFloatShares);
-    enriched.ilsi = ilsi.ilsi;
-    enriched.ilsiObj = ilsi;
-
-    const dpi = calculateDecisionProbabilityIndex(enriched);
-    enriched.dpi = dpi;
-    enriched.decision = dpi.decision;
-    enriched.actionDirective = dpi.actionDirective;
-
-    const tradeLab = calculateTradeLabRankScore(enriched);
-    enriched.tradeLab = tradeLab;
-    enriched.sRank = tradeLab.sRank;
-    enriched.isHighProbabilityBreakout = tradeLab.isHighProbabilityBreakout;
-
-    merged.push(enriched);
-  });
-
-
-  return merged;
+export const mergeWithMockData = (scrapedStocks) => {
+  console.warn('⚠️ mergeWithMockData called but DISABLED. Returning real live NEPSE data only.');
+  return Array.isArray(scrapedStocks) ? scrapedStocks : [];
 };
 
 // ── Sector Sub-Indices Reference Configuration for Nepal Capital Market ──

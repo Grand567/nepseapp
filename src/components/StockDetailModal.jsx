@@ -1085,7 +1085,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--bull)', marginBottom: 6 }}>
-                    BUY ORDERS ({(marketDepth?.totalBuyQty || 12000).toLocaleString()})
+                    BUY ORDERS ({Number(marketDepth?.totalBuyQty || 0).toLocaleString()})
                   </div>
                   <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                     <thead>
@@ -1103,11 +1103,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       ))}
                     </tbody>
                   </table>
+                  {(!marketDepth?.bids || marketDepth.bids.length === 0) && (!marketDepth?.buyOrders || marketDepth.buyOrders.length === 0) && (
+                    <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--text-muted)', fontSize: 10.5 }}>
+                      No active buy bids (Market closed or depth pending)
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>
-                    SELL ORDERS ({(marketDepth?.totalSellQty || 9800).toLocaleString()})
+                    SELL ORDERS ({Number(marketDepth?.totalSellQty || 0).toLocaleString()})
                   </div>
                   <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                     <thead>
@@ -1125,6 +1130,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       ))}
                     </tbody>
                   </table>
+                  {(!marketDepth?.asks || marketDepth.asks.length === 0) && (!marketDepth?.sellOrders || marketDepth.sellOrders.length === 0) && (
+                    <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--text-muted)', fontSize: 10.5 }}>
+                      No active sell asks (Market closed or depth pending)
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

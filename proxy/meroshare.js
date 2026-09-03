@@ -6,8 +6,12 @@ import axios from 'axios';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const router = express.Router();
-const ACCOUNTS_FILE = path.resolve('proxy/meroshare_accounts.json');
+const ACCOUNTS_FILE = path.join(__dirname, 'meroshare_accounts.json');
 
 // AES-256-CBC configuration for secure credential storage
 const ENCRYPTION_KEY = process.env.MEROSHARE_ENCRYPTION_KEY || 'd3@bya$hr33_n3ps3_hub_s3cr3t_k3y'; // 32 chars

@@ -106,7 +106,7 @@ const VerdictBadge = ({ verdict }) => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function AiAnalyst({ marketStocks }) {
+export default function AiAnalyst({ marketStocks, initialStock, onClearInitialStock }) {
   const [activeTab, setActiveTab] = useState('suggestions');
   const [showAllOpps, setShowAllOpps] = useState(false);
   const [portfolioTxs, setPortfolioTxs] = useState([]);
@@ -745,6 +745,17 @@ MANDATORY OUTPUT BLUEPRINT (Always start with the Official Final Price quote hea
       setAnalyzerLoading(false);
     }
   };
+
+  // Auto-run analysis when navigated from Services Hub or external trigger
+  useEffect(() => {
+    if (initialStock) {
+      setActiveTab('analyzer');
+      setAnalyzerSymbol(initialStock);
+      setAnalyzerQuery(initialStock);
+      handleAnalyze(initialStock);
+      if (onClearInitialStock) onClearInitialStock();
+    }
+  }, [initialStock]);
 
   // ── Chat submit ─────────────────────────────────────────────────────────────
   const submitQuestion = useCallback(async (text) => {

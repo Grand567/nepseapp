@@ -104,3 +104,18 @@ export const fetchApplicationReport = (creds) => _proxyFetch('/api/meroshare/app
 
 export const invalidateCache = (path) => { for (const key of _cache.keys()) { if (key.startsWith(path)) _cache.delete(key); } };
 export const clearAllCache = () => _cache.clear();
+
+export const warmupProxy = () => {
+  try {
+    const isNative = Capacitor.isNativePlatform();
+    if (isNative) {
+      CapacitorHttp.request({ url: PROXY + '/api/ping', method: 'GET', connectTimeout: 10000 }).catch(() => {});
+    } else {
+      fetch(PROXY + '/api/ping', { signal: AbortSignal.timeout(10000) }).catch(() => {});
+    }
+  } catch (_) {}
+};
+
+// Immediately wake up the proxy in the background on app initialization
+warmupProxy();
+

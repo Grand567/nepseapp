@@ -17,15 +17,14 @@ import TestSuite      from './components/TestSuite';
 import StockDetailModal from './components/StockDetailModal';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 
-import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, mergeWithMockData, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks } from './utils/liveData';
-import { initializeMarket } from './utils/mockData';
+import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks } from './utils/liveData';
+import { MOCK_DATA_DISABLED } from './utils/mockData';
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud } from './utils/firebase';
 
-const defaultMockStocks = initializeMarket();
-const defaultIndices = getCachedIndices() || calculateIndices(defaultMockStocks);
-// Use last real closing/live data as initial stocks if available; otherwise fall back to generated mock
-const _cachedStocks = getCachedStocks();
-const initialStocks = (_cachedStocks && _cachedStocks.length > 0) ? _cachedStocks : defaultMockStocks;
+// Real data only - No mock fallback
+const _cachedStocks = getCachedStocks() || [];
+const initialStocks = _cachedStocks;
+const defaultIndices = getCachedIndices() || calculateIndices(initialStocks);
 
 export default function App() {
   return (
@@ -64,9 +63,10 @@ function AppInner() {
     (_cachedStocks && _cachedStocks.length > 0) ? 'yesterday' : 'offline'
   );
   const [marketStatus, setMarketStatus] = useState({ isOpen: false, nptTime: '', message: 'Loading...' });
+  const [aiTargetStock, setAiTargetStock] = useState(null);
 
-  // Store the base mock data so we don't recreate it
-  const mockStocksRef = useRef(defaultMockStocks);
+  // Real live data reference
+  const liveStocksRef = useRef(initialStocks);
 
   // ── Listen for Firebase auth state changes & sync cloud user profiles ──
   useEffect(() => {
@@ -278,7 +278,9 @@ function AppInner() {
 
       // 1. Process Stock Data if available
       if (response && response.data && response.data.length > 0) {
-        currentStocks = mergeWithMockData(response.data, mockStocksRef.current);
+        // ✅ Real data only, no mock fallback
+        currentStocks = response.data;
+        liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
         setApiStatus(response.source === 'live' ? 'live' : 'closing');
         saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
@@ -323,7 +325,9 @@ function AppInner() {
       let hasFreshData = false;
 
       if (response && response.data && response.data.length > 0) {
-        currentStocks = mergeWithMockData(response.data, mockStocksRef.current);
+        // ✅ Real data only, no mock fallback
+        currentStocks = response.data;
+        liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
         setApiStatus(response.source === 'live' ? 'live' : 'closing');
         saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
@@ -346,7 +350,7 @@ function AppInner() {
         setLastSyncTime(new Date());
       }
     } catch (err) {
-      console.warn('[NEPSE] Manual refresh failed:', err);
+      console.warn('Manual market refresh failed:', err);
     } finally {
       setIsRefreshing(false);
     }
@@ -362,8 +366,8 @@ function AppInner() {
     localStorage.removeItem('nepse_hub_local_session');
     setUser(null); // Explicitly clear React state instantly
     // Reset market state for next login
-    mockStocksRef.current = defaultMockStocks;
-    setStocks(defaultMockStocks);
+    liveStocksRef.current = _cachedStocks;
+    setStocks(_cachedStocks);
     setIndices(defaultIndices);
     setApiStatus('offline');
     setActiveTab('dashboard');
@@ -761,13 +765,24 @@ function AppInner() {
               stocks={stocks}
               indices={indices}
               apiStatus={apiStatus}
-              userId={user.uid}
+              userId={user?.uid}
               onNavigateTab={setActiveTab}
               onSelectStock={openStockDetail}
+              onAskGuruAi={(stockOrSymbol) => {
+                const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                setAiTargetStock(sym);
+                setActiveTab('ai');
+              }}
             />
           )}
           {activeTab === 'calculator' && <Calculator />}
-          {activeTab === 'ai'         && <AiAnalyst marketStocks={stocks} />}
+          {activeTab === 'ai'         && (
+            <AiAnalyst
+              marketStocks={stocks}
+              initialStock={aiTargetStock}
+              onClearInitialStock={() => setAiTargetStock(null)}
+            />
+          )}
           {activeTab === 'resources'  && <Resources />}
 
           {/* ── Global ShareHub-Style Stock Detail Modal ── */}
