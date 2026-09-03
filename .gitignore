@@ -12,6 +12,9 @@ dist/
 proxy/.env
 proxy/.env.local
 *.key
+nepse_export.txt
+export_app.py
+run_this_first.py
 
 
 # Capacitor / Android
