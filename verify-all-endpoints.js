@@ -2,7 +2,7 @@
 // Run: node verify-all-endpoints.js
 // After deploying to Render
 
-const BASE = 'https://nepseapp.onrender.com';
+const BASE = process.env.PROXY_URL || process.argv[2] || 'https://nepseapp.onrender.com';
 
 const tests = [
   { name: '🏥 Health Check', url: '/health', method: 'GET' },
