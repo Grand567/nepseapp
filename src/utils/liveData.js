@@ -1130,3 +1130,97 @@ export const fetchCompareStocks = async (symbol1, symbol2) => {
   if (!symbol1 || !symbol2) return null;
   return servicesApi.fetchStockComparison(symbol1, symbol2);
 };
+
+// ============================================================
+// REAL ENDPOINT INTEGRATION FOR SERVICES HUB
+// ============================================================
+const _callProxy = async (path, options = {}) => {
+  try {
+    const isNative = Capacitor.isNativePlatform();
+    const proxyUrl = getProxyBaseUrl();
+    const url = `${proxyUrl}${path}`;
+
+    if (isNative) {
+      const res = await CapacitorHttp.request({
+        url,
+        method: options.body ? 'POST' : 'GET',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        data: options.body || undefined,
+        connectTimeout: 20000,
+        readTimeout: 20000
+      });
+      const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+      if (res.status >= 200 && res.status < 300 && data) {
+        return { success: true, ...data };
+      }
+      return { success: false, error: data?.error || `HTTP ${res.status}`, isMockData: false };
+    }
+
+    const resp = await fetch(url, {
+      method: options.body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(25000)
+    });
+
+    const data = await resp.json();
+    if (resp.ok && data) {
+      return { success: true, ...data };
+    }
+    return { success: false, error: data?.error || `HTTP ${resp.status}`, isMockData: false };
+  } catch (err) {
+    return { success: false, error: err.message, isMockData: false };
+  }
+};
+
+export const fetchLiveMarket = () => _callProxy('/api/market/live');
+export const fetchMarketSummary = () => _callProxy('/api/market/summary');
+export const fetchTopGainers = () => _callProxy('/api/market/top-gainers');
+export const fetchTopLosers = () => _callProxy('/api/market/top-losers');
+export const fetchTopVolume = () => _callProxy('/api/market/top-volume');
+export const fetchTopTurnover = () => _callProxy('/api/market/top-turnover');
+export const fetchTopTransactions = () => _callProxy('/api/market/top-transactions');
+export const fetchStockHistory = (symbol, startDate, endDate) => _callProxy(`/api/securities/${symbol}/history?startDate=${startDate || '2024-01-01'}&endDate=${endDate || '2026-12-31'}`);
+export const fetchTodayPrice = (symbol) => _callProxy(`/api/securities/${symbol}/price`);
+export const fetchTechnicalAnalysis = (symbol) => _callProxy(`/api/analysis/${symbol}/technical`);
+export const fetchCompanyProfile = (symbol) => _callProxy(`/api/company/${symbol}/profile`);
+export const fetchCompanyFinancials = (symbol) => _callProxy(`/api/company/${symbol}/financial`);
+export const fetchBonusHistory = (symbol) => _callProxy(`/api/company/${symbol}/bonus`);
+export const fetchRightsHistory = (symbol) => _callProxy(`/api/company/${symbol}/rights`);
+export const fetchCurrentIPOs = () => _callProxy('/api/ipo/current');
+export const fetchIPOResults = () => _callProxy('/api/ipo/results');
+export const fetchBrokers = () => _callProxy('/api/brokers');
+export const fetchSectors = () => _callProxy('/api/sectors');
+export const fetchAllSecurities = () => _callProxy('/api/securities/all');
+export const fetchIndices = () => _callProxy('/api/indices');
+export const fetchSectorIndices = () => _callProxy('/api/indices/sector');
+export const fetchNepseIndexHistory = (startDate, endDate) => _callProxy(`/api/indices/nepse/history?startDate=${startDate || '2024-01-01'}&endDate=${endDate || '2026-12-31'}`);
+export const fetchFloorsheet = (symbol, page = 0, size = 30) => _callProxy(`/api/market/floorsheet?symbol=${symbol || ''}&page=${page}&size=${size}`);
+export const fetchNepseNews = () => _callProxy('/api/news/nepse');
+export const calculateLivePortfolio = (holdings) => _callProxy('/api/portfolio/calculate', { body: { holdings } });
+export const checkMarketStatus = () => _callProxy('/api/market/status');
+export const calculateGrahamValue = (eps, bvps) => {
+  const e = parseFloat(eps) || 0;
+  const b = parseFloat(bvps) || 0;
+  if (e <= 0 || b <= 0) return 0;
+  return Math.sqrt(22.5 * e * b);
+};
+export const enrichWithQuantMetrics = (stock) => {
+  if (!stock) return stock;
+  const ltp = stock.closePrice || stock.lastTradedPrice || stock.ltp || 0;
+  const high = stock.highPrice || stock.high || ltp;
+  const low = stock.lowPrice || stock.low || ltp;
+  const open = stock.openPrice || stock.open || ltp;
+  const prev = stock.previousClose || stock.prevClose || ltp;
+  return {
+    ...stock,
+    ltp,
+    high,
+    low,
+    open,
+    prev,
+    range: high - low,
+    rangePercent: prev > 0 ? ((high - low) / prev) * 100 : 0
+  };
+};
+
