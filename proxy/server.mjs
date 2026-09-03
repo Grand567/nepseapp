@@ -4317,4 +4317,15 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`   🔸 Today's prices:  /api/today-prices`);
     console.log(`   🔸 Price History:   /api/price-history/:symbol`);
     console.log(`   🔸 UDF History:     /api/udf/history`);
+
+    // Auto self-ping on Render production to prevent sleeping
+    if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+      const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/health` : 'https://nepseapp.onrender.com/health';
+      console.log(`📡 Auto keep-alive enabled: Pinging ${pingUrl} every 14 minutes`);
+      setInterval(() => {
+        import('https').then(https => {
+          https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
+        }).catch(() => {});
+      }, 14 * 60 * 1000);
+    }
 });
