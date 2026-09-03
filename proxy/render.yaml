@@ -1,9 +1,27 @@
+# proxy/render.yaml
+# SECURE VERSION - No keys in file
+
 services:
   - type: web
     name: nepse-proxy
     env: node
+    region: oregon
+    plan: free
+    rootDir: proxy
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
+      - key: RENDER_EXTERNAL_URL
+        value: https://nepseapp.onrender.com
+      - key: GLM_API_KEY
+        sync: false
+      - key: ZHIPU_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
