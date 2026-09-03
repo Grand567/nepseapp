@@ -13,6 +13,17 @@ import meroshareRouter from './meroshare.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Automatically load .env if available
+try {
+  if (process.loadEnvFile) {
+    const envProxy = path.join(__dirname, '.env');
+    const envRoot = path.join(__dirname, '..', '.env');
+    if (fs.existsSync(envProxy)) process.loadEnvFile(envProxy);
+    else if (fs.existsSync(envRoot)) process.loadEnvFile(envRoot);
+  }
+} catch (_) {}
+
 let stockMap = {};
 try {
   const mapPath = path.join(__dirname, 'stockmap.json');
@@ -4306,95 +4317,761 @@ app.post('/api/watchlist/prices', async (req, res) => {
 });
 
 // ============================================================
-// GURU AI ANALYSIS (Gemini / Multi-Provider AI)
+// GURU AI - SECURE MULTI-PROVIDER (Gemini → GLM → Pollinations)
 // ============================================================
-app.post('/api/guru/analyze', async (req, res) => {
-  try {
-    const { prompt, analysisType } = req.body;
-    if (!prompt) {
-      return res.status(400).json({ success: false, error: 'prompt is required' });
+
+// Load keys ONLY from environment - never hardcoded
+const AI_KEYS = {
+  gemini: process.env.GEMINI_API_KEY || process.env.AI_API_KEY || null,
+  glm: process.env.GLM_API_KEY || process.env.ZHIPU_API_KEY || null,
+};
+
+// Log which providers are available (never log the actual keys)
+console.log('🤖 AI Providers configured:');
+console.log(`   Gemini: ${AI_KEYS.gemini ? '✅ Key set' : '❌ No key'}`);
+console.log(`   GLM-4:  ${AI_KEYS.glm ? '✅ Key set' : '❌ No key'}`);
+console.log(`   Pollinations: ✅ Always available (no key needed)`);
+
+// ── PROVIDER 1: GEMINI ────────────────────────────────────────
+async function callGemini(prompt, analysisType = 'stock') {
+  if (!AI_KEYS.gemini) throw new Error('Gemini key not configured');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_KEYS.gemini}`;
+
+  const response = await axios.post(url, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+      // Only request JSON for non-chat
+      ...(analysisType !== 'chat' && {
+        responseMimeType: 'application/json'
+      })
     }
+  }, { timeout: 35000 });
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '';
-    if (apiKey) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
-        const response = await axios.post(geminiUrl, {
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: analysisType === 'chat' ? 'text/plain' : 'application/json'
-          }
-        }, { timeout: 35000 });
+  const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Empty response from Gemini');
 
-        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          try {
-            const data = JSON.parse(text);
-            return res.json({ success: true, data });
-          } catch {
-            return res.json({ success: true, data: text });
-          }
-        }
-      } catch (geminiErr) {
-        console.warn('Gemini API call failed:', geminiErr.message);
-      }
-    }
+  return { text, provider: 'gemini-1.5-flash' };
+}
 
-    // Provider 2: GLM-4 / Zhipu AI (Official Key)
-    const glmKey = process.env.GLM_API_KEY || process.env.ZHIPU_API_KEY || 'REMOVED_KEY';
-    if (glmKey) {
-      try {
-        const glmRes = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
-          model: 'glm-4-flash',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.3
-        }, {
+// ── PROVIDER 2: GLM-4 ─────────────────────────────────────────
+async function callGLM(prompt, model = 'glm-4-flash') {
+  if (!AI_KEYS.glm) throw new Error('GLM key not configured');
+
+  // Model waterfall: flash → air → glm-4
+  const models = ['glm-4-flash', 'glm-4-air', 'glm-4'];
+  let lastError = null;
+
+  for (const tryModel of models) {
+    try {
+      const response = await axios.post(
+        'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+        {
+          model: tryModel,
+          messages: [
+            {
+              role: 'system',
+              content: `You are GURU AI, expert NEPSE (Nepal Stock Exchange) investment advisor.
+You have deep knowledge of:
+- Nepal stock market dynamics, SEBON regulations
+- Technical analysis: RSI, MACD, Bollinger Bands, Moving Averages
+- Fundamental analysis: EPS, P/E ratio, Book Value, ROE, DPS
+- Nepal economy, NRB monetary policy impacts on stocks
+- NEPSE circuit breakers (±10% daily limit)
+- Dividend seasons (Jan-May), bonus/rights share impacts
+- Promoter lock-in periods and their effects
+Always provide structured, actionable advice for Nepali retail investors.
+When asked for JSON, return ONLY valid JSON without any markdown.`
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 2048,
+          top_p: 0.85,
+        },
+        {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${glmKey.trim()}`
+            'Authorization': `Bearer ${AI_KEYS.glm}`
           },
           timeout: 30000
-        });
-
-        const glmText = glmRes.data?.choices?.[0]?.message?.content;
-        if (glmText) {
-          const match = glmText.match(/\{[\s\S]*\}/);
-          if (match) {
-            try {
-              const data = JSON.parse(match[0]);
-              return res.json({ success: true, source: 'GLM-4 AI', data });
-            } catch {}
-          }
-          return res.json({ success: true, source: 'GLM-4 AI', data: glmText });
         }
-      } catch (glmErr) {
-        console.warn('GLM API call failed:', glmErr.message);
+      );
+
+      const text = response.data?.choices?.[0]?.message?.content;
+      if (!text) throw new Error('Empty response');
+
+      return { text, provider: tryModel };
+
+    } catch (err) {
+      lastError = err;
+      console.warn(`GLM ${tryModel} failed: ${err.message}`);
+      // Try next model
+      continue;
+    }
+  }
+
+  throw lastError || new Error('All GLM models failed');
+}
+
+// ── PROVIDER 3: POLLINATIONS (Free fallback) ──────────────────
+async function callPollinations(prompt) {
+  // Clean prompt for URL
+  const cleanPrompt = prompt.slice(0, 2000); // Limit length
+
+  const url = `https://text.pollinations.ai/${encodeURIComponent(cleanPrompt)}?model=openai&seed=42&json=true`;
+
+  const response = await axios.get(url, {
+    timeout: 25000,
+    headers: { 'Accept': 'application/json, text/plain' }
+  });
+
+  const text = typeof response.data === 'string'
+    ? response.data
+    : JSON.stringify(response.data);
+
+  if (!text || text.length < 10) throw new Error('Empty Pollinations response');
+
+  return { text, provider: 'pollinations-openai' };
+}
+
+// ── PARSE AI RESPONSE ─────────────────────────────────────────
+function parseAIResponse(text, analysisType) {
+  if (analysisType === 'chat') {
+    // For chat, return plain text
+    return { parsed: text, isJSON: false };
+  }
+
+  // Try to extract JSON
+  try {
+    // Direct JSON parse
+    const direct = JSON.parse(text);
+    return { parsed: direct, isJSON: true };
+  } catch {}
+
+  try {
+    // Extract JSON from text
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return { parsed, isJSON: true };
+    }
+  } catch {}
+
+  // Return as text if JSON parsing fails
+  return { parsed: { analysis: text, raw: true }, isJSON: false };
+}
+
+// ── MAIN GURU ENDPOINT ────────────────────────────────────────
+app.post('/api/guru/analyze', async (req, res) => {
+  const startTime = Date.now();
+
+  try {
+    const { prompt, analysisType = 'stock' } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: 'prompt is required',
+        isMockData: false
+      });
+    }
+
+    if (prompt.length > 10000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Prompt too long (max 10000 chars)',
+        isMockData: false
+      });
+    }
+
+    let result = null;
+    let providerUsed = null;
+    let providerError = null;
+
+    // ── Try Provider 1: Gemini ──────────────────────────────
+    if (AI_KEYS.gemini) {
+      try {
+        console.log('🤖 Trying Gemini...');
+        result = await callGemini(prompt, analysisType);
+        providerUsed = 'gemini';
+        console.log('✅ Gemini succeeded');
+      } catch (err) {
+        providerError = err.message;
+        console.warn(`⚠️  Gemini failed: ${err.message}`);
       }
     }
 
-    // Fallback via Pollinations or free AI generator
-    try {
-      const polUrl = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&seed=42`;
-      const pRes = await axios.get(polUrl, { timeout: 25000 });
-      if (pRes.data) {
-        let text = typeof pRes.data === 'string' ? pRes.data : JSON.stringify(pRes.data);
-        const match = text.match(/\{[\s\S]*\}/);
-        if (match) {
-          try {
-            const data = JSON.parse(match[0]);
-            return res.json({ success: true, data });
-          } catch {}
-        }
-        return res.json({ success: true, data: text });
+    // ── Try Provider 2: GLM-4 ───────────────────────────────
+    if (!result && AI_KEYS.glm) {
+      try {
+        console.log('🤖 Trying GLM-4...');
+        result = await callGLM(prompt);
+        providerUsed = 'glm';
+        console.log(`✅ GLM succeeded: ${result.provider}`);
+      } catch (err) {
+        providerError = err.message;
+        console.warn(`⚠️  GLM failed: ${err.message}`);
       }
-    } catch (_) {}
+    }
 
-    res.status(503).json({ success: false, error: 'AI service temporarily unavailable. Please set GEMINI_API_KEY.' });
+    // ── Try Provider 3: Pollinations (always available) ─────
+    if (!result) {
+      try {
+        console.log('🤖 Trying Pollinations fallback...');
+        result = await callPollinations(prompt);
+        providerUsed = 'pollinations';
+        console.log('✅ Pollinations succeeded');
+      } catch (err) {
+        providerError = err.message;
+        console.warn(`⚠️  Pollinations failed: ${err.message}`);
+      }
+    }
+
+    // ── All providers failed ────────────────────────────────
+    if (!result) {
+      return res.status(503).json({
+        success: false,
+        error: 'All AI providers temporarily unavailable. Please try again.',
+        lastError: providerError,
+        isMockData: false,
+        providers: {
+          gemini: AI_KEYS.gemini ? 'configured' : 'not configured',
+          glm: AI_KEYS.glm ? 'configured' : 'not configured',
+          pollinations: 'always available'
+        }
+      });
+    }
+
+    // ── Parse and return response ───────────────────────────
+    const { parsed, isJSON } = parseAIResponse(result.text, analysisType);
+
+    const responseTime = Date.now() - startTime;
+
+    return res.json({
+      success: true,
+      isMockData: false,
+      provider: result.provider,
+      providerType: providerUsed,
+      analysisType,
+      isStructured: isJSON,
+      data: parsed,
+      meta: {
+        responseTime: `${responseTime}ms`,
+        promptLength: prompt.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('GURU AI critical error:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      isMockData: false
+    });
   }
 });
+
+// ── GURU PORTFOLIO ANALYSIS ───────────────────────────────────
+app.post('/api/guru/portfolio', async (req, res) => {
+  try {
+    const { holdings, riskProfile = 'moderate', timeHorizon = 'medium' } = req.body;
+
+    if (!holdings?.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'holdings array required',
+        isMockData: false
+      });
+    }
+
+    // Get live prices for all holdings
+    let enrichedHoldings = holdings;
+    try {
+      const allPrices = await nepseClient.requestGETAPI(
+        '/api/nots/today-price?nonDelisted=true&size=500'
+      );
+      const priceList = Array.isArray(allPrices)
+        ? allPrices
+        : (allPrices?.content || []);
+
+      const priceMap = {};
+      priceList.forEach(p => {
+        if (p.symbol) priceMap[p.symbol] = p.closePrice || p.lastTradedPrice || 0;
+      });
+
+      enrichedHoldings = holdings.map(h => {
+        const currentPrice = priceMap[h.symbol] || 0;
+        const investedValue = h.avgPrice * h.quantity;
+        const currentValue = currentPrice * h.quantity;
+        const profitLoss = currentValue - investedValue;
+        const profitLossPct = investedValue > 0
+          ? (profitLoss / investedValue * 100)
+          : 0;
+
+        return {
+          ...h,
+          currentPrice,
+          currentValue,
+          investedValue,
+          profitLoss,
+          profitLossPct: parseFloat(profitLossPct.toFixed(2)),
+          priceSource: currentPrice > 0 ? 'LIVE_NEPSE' : 'NOT_TRADED_TODAY'
+        };
+      });
+    } catch (priceErr) {
+      console.warn('Portfolio price enrichment failed:', priceErr.message);
+    }
+
+    const totalInvested = enrichedHoldings.reduce((s, h) => s + (h.investedValue || 0), 0);
+    const totalCurrent = enrichedHoldings.reduce((s, h) => s + (h.currentValue || 0), 0);
+    const totalPL = totalCurrent - totalInvested;
+    const totalPLPct = totalInvested > 0 ? (totalPL / totalInvested * 100) : 0;
+
+    const holdingsText = enrichedHoldings.map(h =>
+      `${h.symbol}: ${h.quantity} shares | Avg: NPR ${h.avgPrice} | Current: NPR ${h.currentPrice || 'N/A'} | P/L: ${h.profitLossPct?.toFixed(2)}% | Value: NPR ${h.currentValue?.toLocaleString()}`
+    ).join('\n');
+
+    const prompt = `You are GURU AI, expert NEPSE portfolio advisor.
+
+PORTFOLIO DATA (Real NEPSE prices):
+${holdingsText}
+
+SUMMARY:
+- Total Holdings: ${enrichedHoldings.length} stocks
+- Total Invested: NPR ${totalInvested.toLocaleString()}
+- Current Value: NPR ${totalCurrent.toLocaleString()}
+- Total P/L: NPR ${totalPL.toLocaleString()} (${totalPLPct.toFixed(2)}%)
+- Risk Profile: ${riskProfile} (conservative/moderate/aggressive)
+- Time Horizon: ${timeHorizon} (short 0-1yr / medium 1-3yr / long 3yr+)
+
+Analyze this NEPSE portfolio and respond ONLY in this exact JSON format:
+{
+  "overallHealth": "EXCELLENT|GOOD|FAIR|POOR",
+  "healthScore": <0-100>,
+  "diversificationScore": <0-100>,
+  "riskScore": <0-100>,
+  "sectorConcentration": "<analysis>",
+  "recommendations": [
+    {
+      "action": "BUY|SELL|HOLD|REDUCE|ACCUMULATE",
+      "symbol": "<symbol>",
+      "reason": "<specific reason>",
+      "urgency": "HIGH|MEDIUM|LOW"
+    }
+  ],
+  "rebalancingSuggestions": ["<suggestion1>", "<suggestion2>"],
+  "portfolioStrengths": ["<strength1>", "<strength2>"],
+  "portfolioWeaknesses": ["<weakness1>", "<weakness2>"],
+  "expectedAnnualReturn": "<X-Y% range>",
+  "overallAdvice": "<2-3 sentence summary>",
+  "nepseContext": "<Nepal market specific insight>"
+}`;
+
+    let result = null;
+
+    // Try Gemini first, then GLM, then Pollinations
+    if (AI_KEYS.gemini) {
+      try {
+        result = await callGemini(prompt, 'portfolio');
+      } catch (e) {
+        console.warn('Gemini portfolio failed:', e.message);
+      }
+    }
+
+    if (!result && AI_KEYS.glm) {
+      try {
+        result = await callGLM(prompt);
+      } catch (e) {
+        console.warn('GLM portfolio failed:', e.message);
+      }
+    }
+
+    if (!result) {
+      try {
+        result = await callPollinations(prompt);
+      } catch (e) {
+        return res.status(503).json({
+          success: false,
+          error: 'AI service unavailable for portfolio analysis',
+          isMockData: false
+        });
+      }
+    }
+
+    const { parsed } = parseAIResponse(result.text, 'portfolio');
+
+    res.json({
+      success: true,
+      isMockData: false,
+      provider: result.provider,
+      data: parsed,
+      portfolioSummary: {
+        totalHoldings: enrichedHoldings.length,
+        totalInvested,
+        totalCurrentValue: totalCurrent,
+        totalProfitLoss: totalPL,
+        totalProfitLossPct: parseFloat(totalPLPct.toFixed(2)),
+        holdings: enrichedHoldings
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      isMockData: false
+    });
+  }
+});
+
+// ── GURU MARKET OUTLOOK ───────────────────────────────────────
+app.get('/api/guru/market-outlook', async (req, res) => {
+  try {
+    // Fetch real market data for AI context
+    const [nepseData, sectorIndices, gainers, losers] = await Promise.allSettled([
+      nepseClient.requestGETAPI('/api/nots/nepse-data'),
+      nepseClient.requestGETAPI('/api/nots/indice/sub-indice'),
+      nepseClient.requestPOSTAPI('/api/nots/top-ten/gainer', {}),
+      nepseClient.requestPOSTAPI('/api/nots/top-ten/loser', {}),
+    ]);
+
+    const market = nepseData.status === 'fulfilled' ? nepseData.value : {};
+    const sectors = sectorIndices.status === 'fulfilled'
+      ? (Array.isArray(sectorIndices.value) ? sectorIndices.value : []) : [];
+    const gainerList = gainers.status === 'fulfilled'
+      ? (Array.isArray(gainers.value) ? gainers.value : []) : [];
+    const loserList = losers.status === 'fulfilled'
+      ? (Array.isArray(losers.value) ? losers.value : []) : [];
+
+    const topGainersText = gainerList.slice(0, 5)
+      .map(s => `${s.symbol}(+${s.percentageChange?.toFixed(2)}%)`)
+      .join(', ') || 'N/A';
+
+    const topLosersText = loserList.slice(0, 5)
+      .map(s => `${s.symbol}(${s.percentageChange?.toFixed(2)}%)`)
+      .join(', ') || 'N/A';
+
+    const sectorText = sectors.slice(0, 10)
+      .map(s => `${s.index || s.name}: ${s.perChange?.toFixed(2) || 0}%`)
+      .join(', ') || 'N/A';
+
+    const prompt = `You are GURU AI, NEPSE market analyst. Analyze today's market.
+
+LIVE NEPSE DATA (${new Date().toLocaleDateString('en-NP')}):
+NEPSE Index: ${market.nepseIndex || 'N/A'}
+Daily Change: ${market.perChange || 0}% (${market.change || 0} points)
+Total Turnover: NPR ${((market.totalTurnover || 0) / 1e9).toFixed(3)}B
+Total Transactions: ${market.totalTransactions?.toLocaleString() || 'N/A'}
+Total Traded Shares: ${market.totalTradedShares?.toLocaleString() || 'N/A'}
+Market Status: ${market.marketStatus || 'N/A'}
+Total Scrips Traded: ${market.totalScrips || 'N/A'}
+
+TOP GAINERS: ${topGainersText}
+TOP LOSERS: ${topLosersText}
+SECTOR PERFORMANCE: ${sectorText}
+
+Provide market outlook in this exact JSON:
+{
+  "marketSentiment": "VERY_BULLISH|BULLISH|NEUTRAL|BEARISH|VERY_BEARISH",
+  "weeklyOutlook": "STRONGLY_UP|UP|SIDEWAYS|DOWN|STRONGLY_DOWN",
+  "confidence": <0-100>,
+  "nepseSupport": <number>,
+  "nepseResistance": <number>,
+  "marketAnalysis": "<3-4 comprehensive sentences>",
+  "sectorsToWatch": ["<sector1>", "<sector2>", "<sector3>"],
+  "stocksToWatch": ["<symbol1>", "<symbol2>", "<symbol3>"],
+  "investorAdvice": "<specific actionable advice for today>",
+  "riskFactors": ["<risk1>", "<risk2>", "<risk3>"],
+  "opportunities": ["<opportunity1>", "<opportunity2>"],
+  "nepseSpecificInsight": "<Nepal market unique factor>"
+}`;
+
+    let result = null;
+
+    if (AI_KEYS.gemini) {
+      try { result = await callGemini(prompt, 'market'); } catch (e) {
+        console.warn('Gemini market outlook failed:', e.message);
+      }
+    }
+    if (!result && AI_KEYS.glm) {
+      try { result = await callGLM(prompt); } catch (e) {
+        console.warn('GLM market outlook failed:', e.message);
+      }
+    }
+    if (!result) {
+      try { result = await callPollinations(prompt); } catch (e) {
+        return res.status(503).json({
+          success: false,
+          error: 'AI unavailable for market outlook',
+          isMockData: false
+        });
+      }
+    }
+
+    const { parsed } = parseAIResponse(result.text, 'market');
+
+    res.json({
+      success: true,
+      isMockData: false,
+      provider: result.provider,
+      data: parsed,
+      marketSnapshot: {
+        nepseIndex: market.nepseIndex,
+        change: market.perChange,
+        turnover: market.totalTurnover,
+        transactions: market.totalTransactions,
+        topGainers: gainerList.slice(0, 5).map(s => ({
+          symbol: s.symbol,
+          change: s.percentageChange
+        })),
+        topLosers: loserList.slice(0, 5).map(s => ({
+          symbol: s.symbol,
+          change: s.percentageChange
+        })),
+        asOf: new Date().toISOString()
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      isMockData: false
+    });
+  }
+});
+
+// ── GURU STOCK DEEP ANALYSIS ──────────────────────────────────
+app.post('/api/guru/stock-analysis', async (req, res) => {
+  try {
+    const { symbol, userQuestion } = req.body;
+
+    if (!symbol) {
+      return res.status(400).json({
+        success: false,
+        error: 'symbol required',
+        isMockData: false
+      });
+    }
+
+    const rawSymbol = symbol.toUpperCase();
+
+    // Fetch all data in parallel
+    const keymap = await nepseClient.getSecuritySymbolIdKeymap();
+    const securityId = keymap.get(rawSymbol);
+
+    const [priceData, technicalData, profileData, financialData] = await Promise.allSettled([
+      // Today's price
+      securityId
+        ? nepseClient.requestGETAPI(`/api/nots/today-price/${securityId}`)
+        : Promise.reject(new Error('Not found')),
+      // Historical for technical analysis (3 months)
+      securityId
+        ? nepseClient.requestGETAPI(
+            `/api/nots/market/security/price/${securityId}?page=0&size=90&sort=businessDate,desc`
+          )
+        : Promise.reject(new Error('Not found')),
+      // Company profile
+      securityId
+        ? nepseClient.requestGETAPI(`/api/nots/company/profile/${securityId}`)
+        : Promise.reject(new Error('Not found')),
+      // Financial details
+      securityId
+        ? nepseClient.requestGETAPI(`/api/nots/company/financial-detail/${securityId}`)
+        : Promise.reject(new Error('Not found')),
+    ]);
+
+    const price = priceData.status === 'fulfilled' ? priceData.value : {};
+    const history = technicalData.status === 'fulfilled'
+      ? (technicalData.value?.content || technicalData.value || []) : [];
+    const profile = profileData.status === 'fulfilled' ? profileData.value : {};
+    const financial = financialData.status === 'fulfilled' ? financialData.value : {};
+
+    // Calculate technical indicators from real data
+    const closes = history
+      .map(h => h.closePrice)
+      .filter(p => p && p > 0)
+      .reverse(); // Oldest first
+
+    let technicals = {};
+    if (closes.length >= 14) {
+      // RSI
+      let gains = 0, losses = 0;
+      for (let i = closes.length - 14; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff > 0) gains += diff;
+        else losses += Math.abs(diff);
+      }
+      const avgGain = gains / 14;
+      const avgLoss = losses / 14;
+      const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+
+      // SMA
+      const sma20 = closes.length >= 20
+        ? closes.slice(-20).reduce((a, b) => a + b, 0) / 20
+        : null;
+      const sma50 = closes.length >= 50
+        ? closes.slice(-50).reduce((a, b) => a + b, 0) / 50
+        : null;
+
+      // EMA 12 & 26
+      const ema = (arr, period) => {
+        if (arr.length < period) return null;
+        const k = 2 / (period + 1);
+        let val = arr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+        for (let i = period; i < arr.length; i++) val = arr[i] * k + val * (1 - k);
+        return val;
+      };
+      const ema12 = ema(closes, 12);
+      const ema26 = ema(closes, 26);
+      const macd = ema12 && ema26 ? ema12 - ema26 : null;
+
+      // Support & Resistance (20-day)
+      const recent20 = closes.slice(-20);
+      const support = Math.min(...recent20);
+      const resistance = Math.max(...recent20);
+
+      technicals = {
+        rsi: parseFloat(rsi.toFixed(2)),
+        sma20: sma20 ? parseFloat(sma20.toFixed(2)) : null,
+        sma50: sma50 ? parseFloat(sma50.toFixed(2)) : null,
+        macd: macd ? parseFloat(macd.toFixed(4)) : null,
+        support: parseFloat(support.toFixed(2)),
+        resistance: parseFloat(resistance.toFixed(2)),
+        dataPoints: closes.length,
+        rsiSignal: rsi < 30 ? 'OVERSOLD' : rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL',
+        trendSignal: price.closePrice > (sma20 || 0) && (sma20 || 0) > (sma50 || 0)
+          ? 'UPTREND'
+          : price.closePrice < (sma20 || 0) && (sma20 || 0) < (sma50 || 0)
+          ? 'DOWNTREND'
+          : 'SIDEWAYS'
+      };
+    }
+
+    const prompt = `You are GURU AI, expert NEPSE investment advisor.
+
+STOCK: ${rawSymbol}
+DATE: ${new Date().toLocaleDateString('en-NP')}
+${userQuestion ? `USER QUESTION: ${userQuestion}\n` : ''}
+
+=== LIVE PRICE DATA (Real NEPSE) ===
+Current Price: NPR ${price.closePrice || price.lastTradedPrice || 'N/A'}
+Today Change: ${price.percentageChange || 0}% (NPR ${price.pointChange || 0})
+Open: NPR ${price.openPrice || 'N/A'}
+High: NPR ${price.highPrice || 'N/A'}
+Low: NPR ${price.lowPrice || 'N/A'}
+Previous Close: NPR ${price.previousClose || 'N/A'}
+Volume: ${price.totalTradedQuantity?.toLocaleString() || 'N/A'}
+Turnover: NPR ${price.totalTradedValue?.toLocaleString() || 'N/A'}
+52-Week High: NPR ${price.fiftyTwoWeekHigh || 'N/A'}
+52-Week Low: NPR ${price.fiftyTwoWeekLow || 'N/A'}
+
+=== TECHNICAL INDICATORS (${technicals.dataPoints || 0} trading days) ===
+RSI (14): ${technicals.rsi || 'N/A'} → ${technicals.rsiSignal || 'N/A'}
+MACD: ${technicals.macd || 'N/A'}
+SMA 20: NPR ${technicals.sma20 || 'N/A'}
+SMA 50: NPR ${technicals.sma50 || 'N/A'}
+Support: NPR ${technicals.support || 'N/A'}
+Resistance: NPR ${technicals.resistance || 'N/A'}
+Trend: ${technicals.trendSignal || 'N/A'}
+
+=== FUNDAMENTAL DATA ===
+EPS: ${financial.eps || financial.earningsPerShare || 'N/A'}
+P/E Ratio: ${financial.pe || financial.priceEarnings || 'N/A'}
+Book Value/Share: ${financial.bookValuePerShare || financial.netWorthPerShare || 'N/A'}
+ROE: ${financial.roe || financial.returnOnEquity || 'N/A'}%
+Paid-up Capital: NPR ${financial.paidUpCapital || profile.paidUpCapital || 'N/A'}
+Listed Shares: ${profile.listedShares?.toLocaleString() || 'N/A'}
+
+Respond ONLY in this exact JSON format:
+{
+  "recommendation": "STRONG_BUY|BUY|ACCUMULATE|HOLD|REDUCE|SELL|STRONG_SELL",
+  "confidence": <0-100>,
+  "riskLevel": "VERY_LOW|LOW|MEDIUM|HIGH|VERY_HIGH",
+  "currentPrice": ${price.closePrice || 0},
+  "targetPrice": {
+    "oneMonth": <number>,
+    "threeMonths": <number>,
+    "sixMonths": <number>
+  },
+  "stopLoss": <number>,
+  "analysis": "<3-4 sentence comprehensive analysis>",
+  "keyReasons": ["<reason1>", "<reason2>", "<reason3>"],
+  "risks": ["<risk1>", "<risk2>"],
+  "investmentTips": "<specific actionable tip>",
+  "nepseSpecific": "<Nepal market specific insight for this stock>",
+  "sentiment": "VERY_BULLISH|BULLISH|NEUTRAL|BEARISH|VERY_BEARISH",
+  "technicalSummary": "<one sentence technical outlook>",
+  "fundamentalSummary": "<one sentence fundamental outlook>"
+}`;
+
+    let result = null;
+    let lastErr = null;
+
+    if (AI_KEYS.gemini) {
+      try { result = await callGemini(prompt, 'stock'); }
+      catch (e) { lastErr = e.message; console.warn('Gemini stock analysis failed:', e.message); }
+    }
+    if (!result && AI_KEYS.glm) {
+      try { result = await callGLM(prompt); }
+      catch (e) { lastErr = e.message; console.warn('GLM stock analysis failed:', e.message); }
+    }
+    if (!result) {
+      try { result = await callPollinations(prompt); }
+      catch (e) {
+        return res.status(503).json({
+          success: false,
+          error: 'AI unavailable for stock analysis',
+          lastError: lastErr || e.message,
+          isMockData: false
+        });
+      }
+    }
+
+    const { parsed } = parseAIResponse(result.text, 'stock');
+
+    res.json({
+      success: true,
+      isMockData: false,
+      provider: result.provider,
+      symbol: rawSymbol,
+      securityId,
+      data: parsed,
+      rawData: {
+        price,
+        technicals,
+        profile: {
+          companyName: profile.companyName || profile.name,
+          sector: profile.sectorMaster?.sectorDescription,
+          listedDate: profile.listingDate
+        },
+        financial: {
+          eps: financial.eps || financial.earningsPerShare,
+          pe: financial.pe || financial.priceEarnings,
+          bookValue: financial.bookValuePerShare
+        }
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      isMockData: false
+    });
+  }
+});
+
 
 app.listen(PORT, '0.0.0.0', async () => {
     try {

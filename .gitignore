@@ -9,6 +9,10 @@ dist/
 .env
 .env.local
 .env.production
+proxy/.env
+proxy/.env.local
+*.key
+
 
 # Capacitor / Android
 android/
