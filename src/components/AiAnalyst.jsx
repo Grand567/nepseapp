@@ -1,1827 +1,1107 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { BrainCircuit, MessageSquare, ListFilter, Cpu, Sparkles, Send, Search, TrendingUp, TrendingDown, Minus, ExternalLink, ChevronDown, ChevronUp, BarChart2, Zap, Target, Award, Shield } from 'lucide-react';
-import { calculateBuyDetails } from '../utils/calculations';
-import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase } from '../utils/liveData';
-import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent, generateOfflineStockReport, GURU_AI_SYSTEM_PROMPT } from '../services/aiService';
+// src/components/AiAnalyst.jsx
+// COMPLETE REWRITE - Uses real NEPSE data for AI analysis
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  calculateGrahamIntrinsicValue,
-  classifyActionZone,
-  calculateVolumeZScore,
-  calculateCompositeMomentumScore,
-  calculateMultiHorizonTargets,
-  calculateProbabilisticMatrix,
-  detectWyckoffPhase,
-  calculateATR
-} from '../utils/quantEngine';
-import { fetchMerolaganiNews, analyzePoliticalAndMarketPulse } from '../services/merolaganiNewsService';
+  fetchTechnicalAnalysis,
+  fetchTodayPrice,
+  fetchCompanyFinancials,
+  fetchMarketSummary,
+  fetchAllSecurities,
+  getProxyBase
+} from '../utils/liveData';
 
+const PROXY = getProxyBase();
 
-// ─── Markdown parser ─────────────────────────────────────────────────────────
-const parseMarkdown = (text) => {
-  if (!text) return '';
-  let escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escaped = escaped.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escaped = escaped.replace(/_(.*?)_/g, '<em>$1</em>');
-  // Headers
-  escaped = escaped.replace(/^### (.*$)/gm, '<h4 style="margin:10px 0 4px;color:var(--primary-light);font-size:13px">$1</h4>');
-  escaped = escaped.replace(/^## (.*$)/gm, '<h3 style="margin:12px 0 5px;color:var(--primary-light);font-size:14px">$1</h3>');
-  escaped = escaped.replace(/^# (.*$)/gm, '<h2 style="margin:14px 0 6px;color:var(--primary-light);font-size:15px">$1</h2>');
-  // Inline code
-  escaped = escaped.replace(/`([^`]+)`/g, '<code style="background:rgba(91,94,244,0.15);padding:1px 4px;border-radius:3px;font-family:monospace;font-size:11px">$1</code>');
-  const lines = escaped.split('\n');
-  let inList = false;
-  const processedLines = [];
-  lines.forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || (trimmed.startsWith('* ') && !trimmed.endsWith('*'))) {
-      const content = trimmed.substring(2).trim();
-      if (!inList) { processedLines.push('<ul style="margin:4px 0;padding-left:16px">'); inList = true; }
-      processedLines.push(`<li style="margin:3px 0;line-height:1.5">${content}</li>`);
-    } else {
-      if (inList) { processedLines.push('</ul>'); inList = false; }
-      if (trimmed.startsWith('<h')) {
-        processedLines.push(line);
-      } else if (trimmed) {
-        processedLines.push(`<p style="margin:4px 0;line-height:1.6">${line}</p>`);
-      } else {
-        processedLines.push('<br/>');
-      }
+// ── GURU AI PROMPTS ────────────────────────────────────────────
+function buildStockPrompt(symbol, stockData, technical, financials, marketData) {
+  const ind = technical?.indicators || {};
+  const sig = technical?.signals || {};
+  const price = stockData?.data || {};
+  const fin = financials?.data || {};
+
+  return `You are GURU AI, an expert NEPSE (Nepal Stock Exchange) investment advisor.
+
+STOCK: ${symbol}
+DATE: ${new Date().toLocaleDateString('en-NP')}
+
+=== LIVE MARKET DATA (Real NEPSE) ===
+Current Price: NPR ${price.closePrice || price.lastTradedPrice || 'N/A'}
+Today Change: ${price.percentageChange || 0}%
+Open: NPR ${price.openPrice || 'N/A'}
+High: NPR ${price.highPrice || 'N/A'}  
+Low: NPR ${price.lowPrice || 'N/A'}
+Volume: ${price.totalTradedQuantity?.toLocaleString() || 'N/A'} shares
+Turnover: NPR ${price.totalTradedValue?.toLocaleString() || 'N/A'}
+52W High: NPR ${price.fiftyTwoWeekHigh || 'N/A'}
+52W Low: NPR ${price.fiftyTwoWeekLow || 'N/A'}
+Previous Close: NPR ${price.previousClose || 'N/A'}
+
+=== TECHNICAL INDICATORS (${technical?.dataPoints || 0} days real data) ===
+RSI (14): ${ind.rsi?.toFixed(2) || 'N/A'} ${ind.rsi < 30 ? '→ OVERSOLD' : ind.rsi > 70 ? '→ OVERBOUGHT' : '→ NEUTRAL'}
+MACD: ${ind.macd?.toFixed(4) || 'N/A'} ${ind.macd > 0 ? '(Bullish)' : '(Bearish)'}
+SMA 20: NPR ${ind.sma20?.toFixed(2) || 'N/A'}
+SMA 50: NPR ${ind.sma50?.toFixed(2) || 'N/A'}
+SMA 200: NPR ${ind.sma200?.toFixed(2) || 'N/A'}
+EMA 12: NPR ${ind.ema12?.toFixed(2) || 'N/A'}
+EMA 26: NPR ${ind.ema26?.toFixed(2) || 'N/A'}
+Bollinger Upper: NPR ${ind.bollingerBands?.upper?.toFixed(2) || 'N/A'}
+Bollinger Middle: NPR ${ind.bollingerBands?.middle?.toFixed(2) || 'N/A'}
+Bollinger Lower: NPR ${ind.bollingerBands?.lower?.toFixed(2) || 'N/A'}
+Support Level: NPR ${ind.support?.toLocaleString() || 'N/A'}
+Resistance Level: NPR ${ind.resistance?.toLocaleString() || 'N/A'}
+Average Volume (20d): ${ind.avgVolume20?.toLocaleString() || 'N/A'}
+
+=== TECHNICAL SIGNALS ===
+Overall Signal: ${sig.overall || 'N/A'}
+Buy Signals: ${sig.buySignals || 0}
+Sell Signals: ${sig.sellSignals || 0}
+Confidence: ${sig.confidence?.toFixed(0) || 0}%
+Individual Signals: ${sig.signals?.map(s => `${s.type}(${s.indicator}:${s.strength})`).join(', ') || 'N/A'}
+
+=== FUNDAMENTAL DATA ===
+EPS: ${fin.eps || fin.earningsPerShare || 'N/A'}
+P/E Ratio: ${fin.pe || fin.priceEarnings || 'N/A'}
+Book Value/Share: ${fin.bookValuePerShare || 'N/A'}
+ROE: ${fin.roe || fin.returnOnEquity || 'N/A'}%
+Paid Up Capital: NPR ${fin.paidUpCapital || 'N/A'}
+
+=== NEPSE MARKET CONTEXT ===
+NEPSE Index: ${marketData?.data?.nepseIndex || 'N/A'}
+Market Change: ${marketData?.data?.changePercent || 0}%
+Market Turnover: NPR ${((marketData?.data?.totalTurnover || 0) / 1e9).toFixed(2)}B
+
+=== YOUR TASK ===
+Provide a comprehensive investment analysis for ${symbol} for a Nepali investor.
+Consider NEPSE-specific factors:
+- Nepal market circuit breakers (±10% daily limit)
+- Dividend season (typically Jan-May in Nepal)  
+- NRB monetary policy effects on banking stocks
+- Hydropower sector seasonal patterns
+- Promoter share lock-in impacts
+- NEPSE liquidity constraints
+
+Respond in this EXACT JSON format:
+{
+  "recommendation": "BUY|SELL|HOLD|ACCUMULATE|REDUCE",
+  "confidence": <0-100>,
+  "riskLevel": "LOW|MEDIUM|HIGH|VERY_HIGH",
+  "currentPrice": <number>,
+  "targetPrice": {
+    "oneMonth": <number>,
+    "threeMonths": <number>,
+    "sixMonths": <number>
+  },
+  "stopLoss": <number>,
+  "analysis": "<2-3 sentence market analysis>",
+  "keyReasons": ["<reason1>", "<reason2>", "<reason3>"],
+  "risks": ["<risk1>", "<risk2>"],
+  "investmentTips": "<specific actionable tip for Nepal market>",
+  "nepseSpecific": "<Nepal-specific insight>",
+  "sentiment": "VERY_BULLISH|BULLISH|NEUTRAL|BEARISH|VERY_BEARISH"
+}`;
+}
+
+function buildPortfolioPrompt(portfolio, marketData) {
+  const holdings = portfolio.map(h =>
+    `${h.symbol}: ${h.quantity} shares @ NPR ${h.avgPrice} (Current: NPR ${h.currentPrice || 'N/A'}, P/L: ${h.profitLossPercent?.toFixed(2) || 'N/A'}%)`
+  ).join('\n');
+
+  return `You are GURU AI, a NEPSE portfolio advisor.
+
+=== MY PORTFOLIO (Real prices from NEPSE) ===
+${holdings}
+
+Total Invested: NPR ${portfolio.reduce((s, h) => s + (h.investedValue || 0), 0).toLocaleString()}
+Current Value: NPR ${portfolio.reduce((s, h) => s + (h.currentValue || 0), 0).toLocaleString()}
+
+=== NEPSE MARKET ===
+NEPSE Index: ${marketData?.data?.nepseIndex || 'N/A'}
+Market Change: ${marketData?.data?.changePercent || 0}%
+
+Analyze this portfolio and respond in JSON:
+{
+  "overallHealth": "EXCELLENT|GOOD|FAIR|POOR",
+  "healthScore": <0-100>,
+  "diversificationScore": <0-100>,
+  "riskScore": <0-100>,
+  "topHolding": "<symbol>",
+  "sectorConcentration": "<analysis>",
+  "recommendations": [
+    {"action": "BUY|SELL|HOLD", "symbol": "<symbol>", "reason": "<reason>", "urgency": "HIGH|MEDIUM|LOW"}
+  ],
+  "rebalancingSuggestions": ["<suggestion1>", "<suggestion2>"],
+  "portfolioStrengths": ["<strength1>", "<strength2>"],
+  "portfolioWeaknesses": ["<weakness1>", "<weakness2>"],
+  "expectedAnnualReturn": "<percentage range>",
+  "overallAdvice": "<2-3 sentence portfolio summary>"
+}`;
+}
+
+function buildMarketPrompt(marketData, indices, topGainers, topLosers) {
+  return `You are GURU AI, NEPSE market analyst.
+
+=== LIVE NEPSE MARKET DATA ===
+NEPSE Index: ${marketData?.data?.nepseIndex || 'N/A'}
+Change: ${marketData?.data?.changePercent || 0}%
+Total Turnover: NPR ${((marketData?.data?.totalTurnover || 0) / 1e9).toFixed(2)}B
+Total Transactions: ${marketData?.data?.totalTransactions?.toLocaleString() || 'N/A'}
+Listed Scrips: ${marketData?.data?.totalScrips || 'N/A'}
+
+Top Gainers Today: ${topGainers?.slice(0, 5).map(s => `${s.symbol}(+${s.percentageChange?.toFixed(1)}%)`).join(', ') || 'N/A'}
+Top Losers Today: ${topLosers?.slice(0, 5).map(s => `${s.symbol}(${s.percentageChange?.toFixed(1)}%)`).join(', ') || 'N/A'}
+
+Provide NEPSE market outlook in JSON:
+{
+  "marketSentiment": "VERY_BULLISH|BULLISH|NEUTRAL|BEARISH|VERY_BEARISH",
+  "weeklyOutlook": "UP|SIDEWAYS|DOWN",
+  "confidence": <0-100>,
+  "keyLevels": {
+    "nepseSupport": <number>,
+    "nepseResistance": <number>
+  },
+  "sectorsToWatch": ["<sector1>", "<sector2>", "<sector3>"],
+  "stocksToWatch": ["<symbol1>", "<symbol2>", "<symbol3>"],
+  "marketAnalysis": "<3-4 sentence market analysis>",
+  "investorAdvice": "<specific advice for current market>",
+  "riskFactors": ["<risk1>", "<risk2>"],
+  "opportunities": ["<opportunity1>", "<opportunity2>"]
+}`;
+}
+
+// ── GURU RESPONSE RENDERER ─────────────────────────────────────
+const GuruResponse = ({ data, type }) => {
+  if (!data) return null;
+
+  let parsed = data;
+  if (typeof data === 'string') {
+    try {
+      const match = data.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else parsed = { analysis: data, raw: true };
+    } catch {
+      parsed = { analysis: data, raw: true };
     }
-  });
-  if (inList) processedLines.push('</ul>');
-  return processedLines.join('\n');
-};
+  }
 
-// ─── Sparkline SVG ────────────────────────────────────────────────────────────
-const Sparkline = ({ history, width = 120, height = 36 }) => {
-  if (!history || history.length < 2) return null;
-  const prices = history.map(h => h.close);
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-  const pts = prices.map((p, i) => {
-    const x = (i / (prices.length - 1)) * width;
-    const y = height - ((p - min) / range) * height;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const isUp = prices[prices.length - 1] >= prices[0];
-  const color = isUp ? '#10d98a' : '#ff4f6a';
+  if (parsed.raw) {
+    return (
+      <div style={{
+        background: '#f8fafc', borderRadius: 12,
+        padding: '16px 20px', border: '1px solid #e2e8f0',
+        lineHeight: 1.7, fontSize: '0.9rem'
+      }}>
+        {parsed.analysis}
+      </div>
+    );
+  }
+
+  const recColor = {
+    BUY: '#16a34a', ACCUMULATE: '#16a34a',
+    SELL: '#dc2626', REDUCE: '#dc2626',
+    HOLD: '#d97706'
+  };
+
+  const sentColor = {
+    VERY_BULLISH: '#15803d', BULLISH: '#16a34a',
+    NEUTRAL: '#d97706', BEARISH: '#dc2626', VERY_BEARISH: '#991b1b'
+  };
+
   return (
-    <svg width={width} height={height} style={{ display: 'block' }}>
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="1.5"
-        points={pts}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Main Signal */}
+      {(parsed.recommendation || parsed.marketSentiment || parsed.overallHealth) && (
+        <div style={{
+          background: parsed.recommendation === 'BUY' || parsed.recommendation === 'ACCUMULATE'
+            ? '#f0fff4' : parsed.recommendation === 'SELL' || parsed.recommendation === 'REDUCE'
+            ? '#fff5f5' : '#fffbeb',
+          border: `2px solid ${recColor[parsed.recommendation] || sentColor[parsed.marketSentiment] || '#d97706'}`,
+          borderRadius: 14, padding: '18px 22px', textAlign: 'center'
+        }}>
+          <div style={{
+            fontSize: '2rem', fontWeight: 900,
+            color: recColor[parsed.recommendation] || sentColor[parsed.marketSentiment] || '#d97706',
+            marginBottom: 6
+          }}>
+            {parsed.recommendation === 'BUY' || parsed.recommendation === 'ACCUMULATE' ? '🟢' :
+              parsed.recommendation === 'SELL' || parsed.recommendation === 'REDUCE' ? '🔴' : '🟡'}{' '}
+            {parsed.recommendation || parsed.marketSentiment || parsed.overallHealth}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap', marginTop: 8 }}>
+            {parsed.confidence !== undefined && (
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Confidence</div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{parsed.confidence}%</div>
+              </div>
+            )}
+            {parsed.riskLevel && (
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Risk</div>
+                <div style={{
+                  fontWeight: 800, fontSize: '1.1rem',
+                  color: parsed.riskLevel === 'LOW' ? '#16a34a' : parsed.riskLevel === 'HIGH' || parsed.riskLevel === 'VERY_HIGH' ? '#dc2626' : '#d97706'
+                }}>
+                  {parsed.riskLevel}
+                </div>
+              </div>
+            )}
+            {parsed.healthScore !== undefined && (
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Health Score</div>
+                <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{parsed.healthScore}/100</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Price Targets */}
+      {parsed.targetPrice && (
+        <div style={{
+          background: '#f8fafc', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 10, fontSize: '0.9rem' }}>🎯 Price Targets</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {[
+              { label: '1 Month', value: parsed.targetPrice.oneMonth },
+              { label: '3 Months', value: parsed.targetPrice.threeMonths },
+              { label: '6 Months', value: parsed.targetPrice.sixMonths },
+            ].map(item => (
+              <div key={item.label} style={{ textAlign: 'center', background: '#fff', padding: '10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{item.label}</div>
+                <div style={{ fontWeight: 800, color: '#16a34a', fontSize: '1rem' }}>
+                  NPR {item.value?.toLocaleString() || 'N/A'}
+                </div>
+              </div>
+            ))}
+          </div>
+          {parsed.stopLoss && (
+            <div style={{
+              marginTop: 8, padding: '8px 12px',
+              background: '#fff5f5', borderRadius: 8, textAlign: 'center'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Stop Loss: </span>
+              <span style={{ fontWeight: 800, color: '#dc2626' }}>NPR {parsed.stopLoss?.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analysis */}
+      {(parsed.analysis || parsed.marketAnalysis || parsed.overallAdvice) && (
+        <div style={{
+          background: '#f8fafc', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: '0.9rem' }}>📊 Analysis</div>
+          <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.7, color: '#374151' }}>
+            {parsed.analysis || parsed.marketAnalysis || parsed.overallAdvice}
+          </p>
+        </div>
+      )}
+
+      {/* Key Reasons / Recommendations */}
+      {(parsed.keyReasons || parsed.recommendations || parsed.portfolioStrengths) && (
+        <div style={{
+          background: '#f0fff4', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #86efac'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: '0.9rem', color: '#15803d' }}>
+            ✅ {parsed.keyReasons ? 'Key Reasons' : parsed.recommendations ? 'Recommendations' : 'Strengths'}
+          </div>
+          {(parsed.keyReasons || parsed.portfolioStrengths || []).map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+              <span style={{ color: '#16a34a', marginTop: 1 }}>●</span>
+              <span style={{ fontSize: '0.85rem', color: '#374151' }}>{r}</span>
+            </div>
+          ))}
+          {parsed.recommendations?.map((rec, i) => (
+            <div key={i} style={{
+              display: 'flex', gap: 10, marginBottom: 8,
+              alignItems: 'center', background: '#fff',
+              padding: '8px 12px', borderRadius: 8
+            }}>
+              <span style={{
+                padding: '2px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
+                background: rec.action === 'BUY' ? '#dcfce7' : rec.action === 'SELL' ? '#fee2e2' : '#fef9c3',
+                color: rec.action === 'BUY' ? '#15803d' : rec.action === 'SELL' ? '#b91c1c' : '#713f12'
+              }}>
+                {rec.action}
+              </span>
+              <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rec.symbol}</span>
+              <span style={{ fontSize: '0.82rem', color: '#64748b', flex: 1 }}>{rec.reason}</span>
+              <span style={{
+                fontSize: '0.7rem', fontWeight: 600,
+                color: rec.urgency === 'HIGH' ? '#dc2626' : '#d97706'
+              }}>
+                {rec.urgency}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Risks */}
+      {(parsed.risks || parsed.riskFactors || parsed.portfolioWeaknesses) && (
+        <div style={{
+          background: '#fff5f5', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #fca5a5'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: '0.9rem', color: '#dc2626' }}>
+            ⚠️ {parsed.risks ? 'Risks' : parsed.riskFactors ? 'Risk Factors' : 'Weaknesses'}
+          </div>
+          {(parsed.risks || parsed.riskFactors || parsed.portfolioWeaknesses || []).map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+              <span style={{ color: '#dc2626', marginTop: 1 }}>●</span>
+              <span style={{ fontSize: '0.85rem', color: '#374151' }}>{r}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Nepal Specific */}
+      {(parsed.nepseSpecific || parsed.investorAdvice || parsed.investmentTips) && (
+        <div style={{
+          background: '#fefce8', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #fde68a'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: '0.9rem', color: '#92400e' }}>
+            🇳🇵 Nepal Market Insight
+          </div>
+          <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.7, color: '#374151' }}>
+            {parsed.nepseSpecific || parsed.investorAdvice || parsed.investmentTips}
+          </p>
+        </div>
+      )}
+
+      {/* Sectors to Watch */}
+      {parsed.sectorsToWatch && (
+        <div style={{
+          background: '#f0f9ff', borderRadius: 12,
+          padding: '14px 18px', border: '1px solid #bae6fd'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 10, fontSize: '0.9rem', color: '#0369a1' }}>
+            🔭 Sectors to Watch
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {parsed.sectorsToWatch.map((s, i) => (
+              <span key={i} style={{
+                padding: '4px 14px', borderRadius: 20,
+                background: '#dbeafe', color: '#1d4ed8',
+                fontSize: '0.82rem', fontWeight: 600
+              }}>
+                {s}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stocks to Watch */}
+      {parsed.stocksToWatch && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.82rem', color: '#64748b', alignSelf: 'center' }}>
+            👁️ Watch:
+          </span>
+          {parsed.stocksToWatch.map((s, i) => (
+            <span key={i} style={{
+              padding: '4px 12px', borderRadius: 20,
+              background: '#f1f5f9', color: '#475569',
+              fontSize: '0.82rem', fontWeight: 700,
+              border: '1px solid #e2e8f0'
+            }}>
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
-// ─── Verdict Badge ────────────────────────────────────────────────────────────
-const VerdictBadge = ({ verdict }) => {
-  const v = (verdict || '').toUpperCase();
-  const isBuy = v.includes('BUY');
-  const isSell = v.includes('SELL');
-  const bg = isBuy ? 'var(--bull)' : isSell ? 'var(--bear)' : '#f5a623';
-  const icon = isBuy ? <TrendingUp size={13} /> : isSell ? <TrendingDown size={13} /> : <Minus size={13} />;
-  const label = isBuy ? 'BUY' : isSell ? 'SELL' : 'HOLD';
+// ── CHAT MESSAGE ──────────────────────────────────────────────
+const ChatMessage = ({ msg }) => {
+  const isUser = msg.role === 'user';
+
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      background: bg, color: '#fff', fontWeight: 800, fontSize: 11,
-      padding: '4px 10px', borderRadius: 20, letterSpacing: 0.5,
-      boxShadow: `0 0 12px ${bg}55`
+    <div style={{
+      display: 'flex',
+      justifyContent: isUser ? 'flex-end' : 'flex-start',
+      marginBottom: 16, alignItems: 'flex-start', gap: 10
     }}>
-      {icon} {label}
-    </span>
+      {!isUser && (
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+          display: 'flex', alignItems: 'center',
+          justifyContent: 'center', fontSize: '1.1rem',
+          flexShrink: 0, marginTop: 2
+        }}>
+          🤖
+        </div>
+      )}
+
+      <div style={{ maxWidth: '85%' }}>
+        {isUser ? (
+          <div style={{
+            background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
+            color: 'white', padding: '12px 16px',
+            borderRadius: '18px 18px 4px 18px',
+            fontSize: '0.9rem', lineHeight: 1.5
+          }}>
+            {msg.content}
+          </div>
+        ) : msg.isLoading ? (
+          <div style={{
+            background: 'white', border: '1px solid #e2e8f0',
+            padding: '14px 18px', borderRadius: '4px 18px 18px 18px',
+            display: 'flex', alignItems: 'center', gap: 10
+          }}>
+            <div style={{
+              display: 'flex', gap: 4
+            }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: '#3b82f6',
+                  animation: `bounce 1.2s ${i * 0.2}s infinite`
+                }} />
+              ))}
+            </div>
+            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+              GURU is analyzing real NEPSE data...
+            </span>
+          </div>
+        ) : msg.guruData ? (
+          <div style={{
+            background: 'white', border: '1px solid #e2e8f0',
+            borderRadius: '4px 18px 18px 18px', padding: '16px 20px'
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginBottom: 14, paddingBottom: 10,
+              borderBottom: '1px solid #f1f5f9'
+            }}>
+              <span style={{ fontWeight: 700, color: '#1d4ed8' }}>GURU AI Analysis</span>
+              <span style={{
+                padding: '2px 8px', borderRadius: 20,
+                background: '#dcfce7', color: '#15803d',
+                fontSize: '0.7rem', fontWeight: 600
+              }}>
+                Real NEPSE Data
+              </span>
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginLeft: 'auto' }}>
+                {msg.timestamp}
+              </span>
+            </div>
+            <GuruResponse data={msg.guruData} type={msg.analysisType} />
+          </div>
+        ) : (
+          <div style={{
+            background: 'white', border: '1px solid #e2e8f0',
+            padding: '12px 16px', borderRadius: '4px 18px 18px 18px',
+            fontSize: '0.88rem', lineHeight: 1.6, color: '#374151'
+          }}>
+            {msg.content}
+          </div>
+        )}
+
+        {msg.role !== 'user' && !msg.isLoading && (
+          <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: 4, paddingLeft: 4 }}>
+            {msg.timestamp}
+          </div>
+        )}
+      </div>
+
+      {isUser && (
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: '#f1f5f9', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          fontSize: '1.1rem', flexShrink: 0
+        }}>
+          👤
+        </div>
+      )}
+    </div>
   );
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function AiAnalyst({ marketStocks, initialStock, onClearInitialStock }) {
-  const [activeTab, setActiveTab] = useState('suggestions');
-  const [showAllOpps, setShowAllOpps] = useState(false);
-  const [portfolioTxs, setPortfolioTxs] = useState([]);
-
-  // API Keys — seed from env / default AI key, allow user override via localStorage
-  const [glmKey, setGlmKey] = useState(() => localStorage.getItem('nepse_hub_glm_api_key') || import.meta.env.VITE_GLM_API_KEY || DEFAULT_AI_KEY);
-  const [geminiKey, setGeminiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || '');
-  const [groqKey, setGroqKey] = useState(import.meta.env.VITE_GROQ_API_KEY || '');
-  const [preferredEngine, setPreferredEngine] = useState(() => localStorage.getItem('nepse_hub_preferred_ai_engine') || 'auto');
-
-  // Chat states
+// ── MAIN GURU AI COMPONENT ─────────────────────────────────────
+export default function AiAnalyst() {
   const [messages, setMessages] = useState([
     {
-      sender: 'guru',
-      text: "Namaste! 🙏 I am **NEPSE Guru**, your AI Stock Assistant powered by GLM-4 & Multi-Model Intelligence.\n\nI can:\n• Analyze any NEPSE stock in depth\n• Give BUY/HOLD/SELL verdict with reasoning\n• Check your portfolio health\n• Explain taxes & market concepts\n\nTry the **Stock Analyzer** tab or ask me anything!",
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      role: 'assistant',
+      content: null,
+      guruData: {
+        analysis: `Namaste! I am **GURU AI** — your intelligent NEPSE investment advisor powered by real market data.
+
+I analyze:
+📊 Live prices from nepalstock.com
+📐 Technical indicators (RSI, MACD, Bollinger Bands)
+💼 Company fundamentals (EPS, P/E, Book Value)
+🏛️ NEPSE market conditions
+📰 Nepal economic factors
+
+Ask me to analyze any NEPSE stock or your portfolio!`,
+        raw: true
+      },
+      timestamp: new Date().toLocaleTimeString()
     }
   ]);
-  const [userInput, setUserInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const chatEndRef = useRef(null);
 
-  // Stock Analyzer states
-  const [analyzerSymbol, setAnalyzerSymbol] = useState('');
-  const [analyzerQuery, setAnalyzerQuery] = useState('');
-  const [analyzerSuggestions, setAnalyzerSuggestions] = useState([]);
-  const [analyzerResult, setAnalyzerResult] = useState(null);
-  const [analyzerLoading, setAnalyzerLoading] = useState(false);
-  const [analyzerError, setAnalyzerError] = useState('');
-  const [analyzerHistory, setAnalyzerHistory] = useState([]);
-  const [showApiHelp, setShowApiHelp] = useState(false);
-  const [zoneFilter, setZoneFilter] = useState('ALL');
-  const [activeResultTab, setActiveResultTab] = useState('synthesis');
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('chat');
+  const [symbol, setSymbol] = useState('');
+  const [allSymbols, setAllSymbols] = useState([]);
+  const [portfolio, setPortfolio] = useState([]);
+  const [marketData, setMarketData] = useState(null);
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const bottomRef = useRef(null);
 
-  // ── Multi-Factor Operational Action Zones Radar dataset ──
-  const radarStocks = useMemo(() => {
-    const list = (marketStocks || []).map(s => {
-      const az = s.actionZone || classifyActionZone(s);
-      const gr = s.grahamIntrinsicValue ? { intrinsicValue: s.grahamIntrinsicValue, marginOfSafetyPct: s.marginOfSafetyPct, isUndervalued: s.isUndervalued, valuationStatus: s.valuationStatus } : calculateGrahamIntrinsicValue(s.eps, s.bookValue, s.ltp);
-      const zv = s.volumeZScore != null ? { zScore: s.volumeZScore, isVolumeShocker: s.isVolumeShocker } : calculateVolumeZScore(s.volume, s.avgVolume20D);
-      return {
-        ...s,
-        actionZone: az,
-        graham: gr,
-        zVol: zv
-      };
+  useEffect(() => {
+    // Load symbols for dropdown
+    fetchAllSecurities().then(r => {
+      if (r.success && r.data) {
+        setAllSymbols(r.data.map(s => s.symbol).sort());
+      }
     });
 
-    if (zoneFilter === 'ALL') return list;
-    return list.filter(s => (s.actionZone?.zone || '').toLowerCase().includes(zoneFilter.toLowerCase()));
-  }, [marketStocks, zoneFilter]);
+    // Load market data for context
+    fetchMarketSummary().then(r => {
+      if (r.success) setMarketData(r);
+    });
 
-
-  // ── Load persisted state ────────────────────────────────────────────────────
-  useEffect(() => {
-    const savedTxs = localStorage.getItem('nepse_hub_portfolio_transactions');
-    if (savedTxs) { try { setPortfolioTxs(JSON.parse(savedTxs)); } catch (e) {} }
-    const savedGlm = localStorage.getItem('nepse_hub_glm_api_key');
-    if (savedGlm !== null) setGlmKey(savedGlm);
-    const savedGemini = localStorage.getItem('nepse_hub_gemini_api_key');
-    if (savedGemini !== null) setGeminiKey(savedGemini);
-    const savedGroq = localStorage.getItem('nepse_hub_groq_api_key');
-    if (savedGroq !== null) setGroqKey(savedGroq);
+    // Load portfolio from localStorage
+    const saved = localStorage.getItem('nepse_portfolio');
+    if (saved) {
+      try { setPortfolio(JSON.parse(saved)); } catch { }
+    }
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  const saveGlmKey = (key) => { setGlmKey(key); localStorage.setItem('nepse_hub_glm_api_key', key); };
-  const saveGeminiKey = (key) => { setGeminiKey(key); localStorage.setItem('nepse_hub_gemini_api_key', key); };
-  const saveGroqKey = (key) => { setGroqKey(key); localStorage.setItem('nepse_hub_groq_api_key', key); };
+  const addMessage = useCallback((msg) => {
+    setMessages(prev => [...prev, {
+      ...msg,
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+  }, []);
 
-  // ── Portfolio helpers ───────────────────────────────────────────────────────
-  const getHoldings = () => {
-    const holdingsMap = {};
-    const chronologicalTxs = [...portfolioTxs].reverse();
-    chronologicalTxs.forEach(tx => {
-      if (!holdingsMap[tx.symbol]) holdingsMap[tx.symbol] = { symbol: tx.symbol, units: 0, totalInvestedCost: 0, wacc: 0 };
-      const holding = holdingsMap[tx.symbol];
-      if (tx.type === 'buy') {
-        const details = calculateBuyDetails(tx.quantity, tx.price);
-        holding.units += tx.quantity;
-        holding.totalInvestedCost += details.totalAmount;
-        holding.wacc = holding.units > 0 ? holding.totalInvestedCost / holding.units : 0;
-      } else {
-        const prevUnits = holding.units;
-        holding.units = Math.max(0, holding.units - tx.quantity);
-        if (prevUnits > 0) holding.totalInvestedCost = holding.units * holding.wacc;
-        else holding.totalInvestedCost = 0;
+  const callGuruAI = async (prompt, analysisType = 'general') => {
+    try {
+      const res = await fetch(`${PROXY}/api/guru/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, analysisType }),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
       }
-    });
-    const savedProfiles = localStorage.getItem('nepse_hub_meroshare_profiles') || localStorage.getItem('nepse_hub_guest_local_profiles');
-    if (savedProfiles) {
+
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      // Automatic client fallback to multi-provider AI if proxy endpoint is not available
       try {
-        const profiles = JSON.parse(savedProfiles);
-        profiles.forEach(p => {
-          const dematHoldings = (p.holdings && Array.isArray(p.holdings)) ? p.holdings : [];
-          dematHoldings.forEach(dh => {
-            if (!dh || !dh.symbol || !dh.units) return;
-            const sym = (dh.symbol || '').trim().toUpperCase();
-            const wacc = Number(dh.wacc) || 100;
-            const units = Number(dh.units) || 0;
-            if (!holdingsMap[sym]) holdingsMap[sym] = { symbol: sym, units: 0, totalInvestedCost: 0, wacc };
-            const holding = holdingsMap[sym];
-            const totalUnits = holding.units + units;
-            if (totalUnits > 0) {
-              holding.wacc = (holding.units * holding.wacc + units * wacc) / totalUnits;
-            }
-            holding.units += units;
-            holding.totalInvestedCost += units * wacc;
-          });
-        });
-      } catch (e) {}
-    }
-    return Object.values(holdingsMap).filter(h => h.units > 0);
-  };
-
-  const activeHoldings = getHoldings();
-
-  // ── Portfolio recommendations ───────────────────────────────────────────────
-  const getPortfolioRecommendations = () => {
-    return activeHoldings.map(h => {
-      const stock = marketStocks.find(s => s.symbol === h.symbol);
-      if (!stock) return null;
-      const gainLossPercent = ((stock.ltp - h.wacc) / h.wacc) * 100;
-      let recommendation = 'hold';
-      let reason = 'Market metrics are stable. Suggest holding and monitoring trend.';
-      if (stock.rsi < 36 && stock.ltp < h.wacc) {
-        recommendation = 'buy_more';
-        reason = `Oversold alert (RSI: ${stock.rsi.toFixed(0)}). Stock trading below your buying price (WACC: Rs. ${h.wacc.toFixed(1)}). Buying now reduces average cost.`;
-      } else if (stock.rsi > 70 && gainLossPercent > 12) {
-        recommendation = 'take_profit';
-        reason = `Overbought alert (RSI: ${stock.rsi.toFixed(0)}). You are sitting on a solid gain (+${gainLossPercent.toFixed(1)}%). Consider locking in profits.`;
-      } else if (stock.rsi > 75) {
-        recommendation = 'hold';
-        reason = `Stock approaching heavy overbought zone (RSI: ${stock.rsi.toFixed(0)}). High risk of correction. Avoid buying more right now.`;
-      }
-      return { symbol: h.symbol, units: h.units, wacc: h.wacc, ltp: stock.ltp, pChange: gainLossPercent, recommendation, reason };
-    }).filter(Boolean);
-  };
-
-  const portRecs = getPortfolioRecommendations();
-
-  // ── Market opportunities ────────────────────────────────────────────────────
-  const getMarketOpportunities = () => {
-    const opportunities = [];
-    marketStocks.forEach(stock => {
-      if (stock.rsi < 35) {
-        opportunities.push({ symbol: stock.symbol, name: stock.name, ltp: stock.ltp, rsi: stock.rsi, type: 'bullish_buy', description: `Oversold condition (RSI: ${stock.rsi.toFixed(0)}). Seller exhaustion signals. **Cheap entry point**.` });
-      } else if (stock.rsi > 72) {
-        opportunities.push({ symbol: stock.symbol, name: stock.name, ltp: stock.ltp, rsi: stock.rsi, type: 'bearish_sell', description: `Overbought levels (RSI: ${stock.rsi.toFixed(0)}). Saturated buy volume, correction likely. **Take Profit / Avoid buying**.` });
-      } else if (stock.macd?.line > stock.macd?.signal && stock.rsi > 45 && stock.rsi < 62 && stock.change > 0) {
-        opportunities.push({ symbol: stock.symbol, name: stock.name, ltp: stock.ltp, rsi: stock.rsi, type: 'momentum_buy', description: `Bullish MACD Crossover (RSI: ${stock.rsi.toFixed(0)}). Positive market momentum building. **Bullish trend starting**.` });
-      }
-    });
-    return opportunities;
-  };
-
-  const marketOpps = getMarketOpportunities();
-
-  // ── Local heuristic & Quantitative Smart Money engine fallback ────────────
-  const getHeuristicResponse = (query, explicitSymbol, newsPulse = null) => {
-    const q = (query || '').toLowerCase().trim();
-
-    // 1. Check for specific stock symbol inquiry
-    let target = explicitSymbol;
-    if (!target) {
-      const words = (query || '').toUpperCase().replace(/[^A-Z0-9]/g, ' ').split(/\s+/).filter(Boolean);
-      for (const w of words) {
-        if (marketStocks.some(s => s.symbol.toUpperCase() === w)) {
-          target = w;
-          break;
+        const { generateNepseAiContent } = await import('../services/aiService');
+        const text = await generateNepseAiContent(prompt, '');
+        if (text) {
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) {
+            try { return { success: true, data: JSON.parse(match[0]) }; } catch {}
+          }
+          return { success: true, data: text };
         }
-      }
+      } catch (_) {}
+      throw new Error(err.message);
     }
-
-    if (target) {
-      const stock = marketStocks.find(s => s.symbol.toUpperCase() === target.toUpperCase());
-      if (stock) {
-        const ltp = Number(stock.ltp) || 100;
-        const rsi = Number(stock.rsi) || 50;
-        const pChg = Number(stock.pChange) || 0;
-        const isOversold = rsi <= 38;
-        const isOverbought = rsi >= 68;
-
-        const entryLow = (ltp * 0.97).toFixed(1);
-        const entryHigh = ltp.toFixed(1);
-        const target1 = (ltp * 1.08).toFixed(1);
-        const target2 = (ltp * 1.18).toFixed(1);
-        const stopLoss = (ltp * 0.94).toFixed(1);
-
-        let intentHighlight = '';
-        if (q.includes('entry') || q.includes('point') || q.includes('buy') || q.includes('level') || q.includes('price')) {
-          intentHighlight = `### 🎯 Optimal Entry Strategy for **${stock.symbol}** (${stock.name}):\n\n` +
-            `• **Recommended Entry Zone**: **Rs. ${entryLow} – Rs. ${entryHigh}**\n` +
-            `• **Current LTP**: **Rs. ${ltp}** (${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%)\n` +
-            `• **Target 1 (Swing)**: **Rs. ${target1}** (+8.0%)\n` +
-            `• **Target 2 (Breakout)**: **Rs. ${target2}** (+18.0%)\n` +
-            `• **Stop-Loss Level**: **Rs. ${stopLoss}** (-6.0%)\n` +
-            `• **Current RSI**: **${rsi.toFixed(1)}** (${isOversold ? '🟢 Oversold / Buyer Interest' : isOverbought ? '🔴 Overbought / High Risk' : '⚪ Neutral Momentum'})\n\n` +
-            `> 💡 **Guru Strategy**: ${isOversold ? 'Stock is in a strong institutional accumulation pocket. Phased entry recommended.' : isOverbought ? 'Stock has extended upward. Wait for a pullback towards Rs. ' + entryLow + ' before opening fresh positions.' : 'Place limit orders in the Rs. ' + entryLow + ' – Rs. ' + entryHigh + ' range with strict stop-loss at Rs. ' + stopLoss + '.'}\n\n---\n\n`;
-        } else if (q.includes('target') || q.includes('exit') || q.includes('sell') || q.includes('resistance')) {
-          intentHighlight = `### 🎯 Target & Exit Levels for **${stock.symbol}**:\n\n` +
-            `• **Official Final Price (LTP)**: **Rs. ${ltp.toFixed(2)}** (${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%)\n` +
-            `• **Short-Term Target 1**: **Rs. ${target1}** (+8.0%)\n` +
-            `• **Major Resistance / Target 2**: **Rs. ${target2}** (+18.0%)\n` +
-            `• **Protective Stop-Loss Floor**: **Rs. ${stopLoss}** (-6.0%)\n\n---\n\n`;
-        }
-
-        const fullReport = generateOfflineStockReport(stock, newsPulse);
-        return intentHighlight + fullReport;
-      }
-    }
-
-    // 2. Political and macro news queries
-    if (q.includes('political') || q.includes('news') || q.includes('merolagani') || q.includes('government') || q.includes('nrb')) {
-      const p = newsPulse || { sentiment: 'Supportive Liquidity / Cautious Optimism', keyHighlights: [] };
-      return `### 🇳🇵 Merolagani Political & Market News Pulse\n\n` +
-        `• **Macro Policy Sentiment**: **${p.sentiment || 'Supportive Liquidity'}**\n\n` +
-        `**Latest Merolagani Political & Financial Headlines:**\n` +
-        `${(p.keyHighlights || []).map(h => `• ${h}`).join('\n')}\n\n` +
-        `**Institutional Market Interpretation:**\n` +
-        `Policy stability in the financial sector, combined with single-digit banking interest rates and healthy liquidity managed by Nepal Rastra Bank, creates strong tailwinds for accumulation in commercial banking, hydropower, and high-dividend fundamentally sound scrips.`;
-    }
-
-    // 2. Buy suggestions / opportunities
-    if (q.includes('suggest') || q.includes('buy') || q.includes('opportunity') || q.includes('recommend') || q.includes('which stock')) {
-      const bestBuys = marketStocks.filter(s => s.rsi < 38).slice(0, 4);
-      if (bestBuys.length > 0) {
-        let text = "### 🟢 Top Oversold Buying Opportunities (RSI < 38)\n\n";
-        bestBuys.forEach(s => {
-          text += `• **${s.symbol}** — LTP: Rs. ${s.ltp} | RSI: **${s.rsi.toFixed(0)}** (Oversold rebound zone. Entry: Rs. ${(s.ltp * 0.98).toFixed(1)}–${s.ltp}, Target: Rs. ${(s.ltp * 1.10).toFixed(1)})\n`;
-        });
-        text += "\n*Always ensure balanced sector allocation and check company EPS/WACC before entry.*";
-        return text;
-      }
-      return "The market is currently consolidating. No extreme oversold signals among blue-chip scrips. Monitor Banking and Hydropower sectors for swing setups!";
-    }
-
-    // 3. User Portfolio Analysis
-    if (q.includes('portfolio') || q.includes('holdings') || q.includes('my stock')) {
-      if (activeHoldings.length === 0) return "You haven't added any stocks to your Portfolio tab yet! Connect your MeroShare account or add transactions in the Portfolio tab to get an instant AI audit.";
-      let text = "### 💼 Active Portfolio Health Check\n\n";
-      activeHoldings.forEach(h => {
-        const stock = marketStocks.find(s => s.symbol === h.symbol);
-        if (stock) {
-          const diff = ((stock.ltp - h.wacc) / h.wacc) * 100;
-          text += `• **${h.symbol}**: ${h.units} units (WACC: Rs. ${h.wacc.toFixed(1)}, LTP: Rs. ${stock.ltp}) — Return: **${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%**. `;
-          if (stock.rsi < 36) text += "🟢 *Oversold! Attractive level to average down.*";
-          else if (stock.rsi > 70) text += "🔴 *Overbought! Consider booking partial profit.*";
-          else text += "⚪ *Holding steady.*";
-          text += "\n";
-        }
-      });
-      return text;
-    }
-
-    // 4. Taxes and Fees
-    if (q.includes('tax') || q.includes('cgt') || q.includes('commission') || q.includes('fee')) {
-      return "### 🇳🇵 NEPSE Trading Taxes & Fees Structure\n\n" +
-        "1. **Capital Gains Tax (CGT)**:\n" +
-        "   • **Individual Short-Term (<365 days)**: **7.5%** on net capital gains.\n" +
-        "   • **Individual Long-Term (>365 days)**: **5.0%** on net capital gains.\n" +
-        "   • **Corporate Entities**: 10% flat.\n\n" +
-        "2. **Broker Commission** (tiered by trade size):\n" +
-        "   • Up to Rs. 50,000: **0.40%**\n" +
-        "   • Rs. 50,000 – Rs. 5 Lakhs: **0.37%**\n" +
-        "   • Rs. 5 Lakhs – Rs. 20 Lakhs: **0.34%**\n" +
-        "   • Above Rs. 1 Crore: **0.27%**\n\n" +
-        "3. **Regulatory Charges**:\n" +
-        "   • **SEBON Fee**: **0.015%**\n" +
-        "   • **DP Charge**: **Rs. 25 flat** per sold company.\n\n" +
-        "💡 *The app's Calculator tab automatically computes your net profit after all these fees.*";
-    }
-
-    // 5. WACC Definition
-    if (q.includes('wacc')) {
-      return "### 📘 What is WACC in NEPSE?\n\n" +
-        "**WACC (Weighted Average Cost of Capital)** is your true average purchase price calculated as per SEBON guidelines.\n\n" +
-        "It includes:\n" +
-        "• Actual purchase price of shares\n" +
-        "• Broker commission paid\n" +
-        "• SEBON regulatory fee\n" +
-        "• DP transaction charges\n\n" +
-        "When selling, your broker deducts Capital Gains Tax (CGT) based on this WACC rate. You can calculate and submit your WACC directly through **MeroShare → My Purchase Source**.";
-    }
-
-    // 6. Default Guide
-    return "I am **NEPSE Guru**, your AI Stock Assistant! Here are some questions you can ask me:\n\n" +
-      "1. `'GLBSL entry point'` or `'NABIL target'` (Instant entry, target & stop-loss)\n" +
-      "2. `'Which stocks should I buy?'` (Top oversold market opportunities)\n" +
-      "3. `'Analyze my portfolio'` (Risk & return audit of your holdings)\n" +
-      "4. `'How are taxes calculated?'` (Complete CGT & broker fee breakdown)\n" +
-      "5. `'What is WACC?'` (Clear explanation of purchase cost base)";
   };
 
-  // ── Layer 1: Fetch NEPSE market data & 365-day price history ───────────────────────
-  const fetchStockContext = async (symbol) => {
-    const stock = marketStocks.find(s => s.symbol.toUpperCase() === symbol.toUpperCase());
-    if (!stock) return null;
+  const analyzeStock = async (sym) => {
+    if (!sym) return;
+    setLoading(true);
 
-    let historyData = [];
-    try {
-      const data = await servicesApi.fetchPriceHistory(stock.symbol, 365);
-      if (data && Array.isArray(data) && data.length > 0) {
-        historyData = data;
-      }
-    } catch (e) {
-      console.warn('[AiAnalyst] Price history fetch failed:', e.message);
-    }
+    addMessage({ role: 'user', content: `Analyze ${sym} stock for me` });
 
-    const ltp = Number(stock.ltp) || 100;
-    const eps = Number(stock.eps) || 0;
-    const bookValue = Number(stock.bookValue) || 100;
-    const pChg = Number(stock.pChange) || 0;
-
-    // 12-Month & 52-Week Range
-    const high52w = (stock.high52w && Number(stock.high52w) > 0)
-      ? Number(stock.high52w)
-      : (historyData.length > 0 ? Math.max(...historyData.map(h => Number(h.high || h.close || ltp))) : ltp * 1.25);
-    const low52w = (stock.low52w && Number(stock.low52w) > 0)
-      ? Number(stock.low52w)
-      : (historyData.length > 0 ? Math.min(...historyData.map(h => Number(h.low || h.close || ltp))) : ltp * 0.75);
-
-    const yearAgoClose = (historyData.length > 0 && historyData[0]?.close)
-      ? Number(historyData[0].close)
-      : (Number(stock.prevYearClose) || ltp);
-    const return12M = yearAgoClose > 0 ? Number((((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2)) : 0;
-
-    // Moving Averages
-    const closes = historyData.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
-    const sma50 = closes.length >= 10
-      ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(closes.length, 50)).toFixed(1))
-      : ltp;
-    const sma200 = closes.length >= 20
-      ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
-      : ltp;
-    const smaTrend = ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)';
-    const cyclePosition = high52w > low52w ? Math.round(((ltp - low52w) / (high52w - low52w)) * 100) : 50;
-
-    // Quant & Predictive Algorithms
-    const atr = calculateATR(historyData);
-    const wyckoff = detectWyckoffPhase(historyData, stock.volume);
-    const targets = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChg);
-    const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
-    const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp });
-    const zVol = calculateVolumeZScore(stock.volume, stock.avgVolume20D || stock.volume * 0.6);
-
-    const historyStr = historyData.length > 0
-      ? historyData.slice(-15)
-          .map(h => `  - ${h.date || 'Session'}: Close Rs.${h.close}, Vol ${(h.volume || 0).toLocaleString()}`)
-          .join('\n')
-      : '  - Verified daily trading records loading from NEPSE';
-
-    // Accumulation/Distribution
-    const recentVols = historyData.slice(-5).map(h => h.volume || 0);
-    const avgVol = recentVols.length > 0 ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0;
-    const adSignal = (stock.volume > 0 && avgVol > 0)
-      ? (stock.volume > avgVol * 1.1 ? 'Accumulation (above average volume)' : 'Distribution (below average volume)')
-      : 'Observation phase';
-
-    return {
-      stock,
-      historyData,
-      historyStr,
-      adSignal,
-      high52w,
-      low52w,
-      return12M,
-      sma50,
-      sma200,
-      smaTrend,
-      cyclePosition,
-      atr,
-      wyckoff,
-      targets,
-      graham,
-      actionZone,
-      zVol
-    };
-  };
-
-  // ── Layer 2a: Groq LLM ──────────────────────────────────────────────────────
-  const callGroq = async (prompt, apiKey) => {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are NEPSE Guru, an expert Nepali stock market AI. Always respond in clear Markdown with headers, bullet points, and bold text. Always include an explicit BUY, HOLD, or SELL recommendation.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.4,
-        max_tokens: 1200
-      }),
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `Groq error ${response.status}`);
-    }
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  };
-
-  // ── Layer 2b: Gemini LLM ────────────────────────────────────────────────────
-  const callGemini = async (prompt, apiKey) => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        signal: AbortSignal.timeout(20000)
-      }
-    );
-    if (!response.ok) throw new Error(`Gemini error ${response.status}`);
-    const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  };
-
-  // ── Layer 3: Pollinations free LLM ─────────────────────────────────────────
-  const callPollinations = async (prompt) => {
-    try {
-      const response = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai',
-          messages: [
-            { role: 'system', content: 'You are NEPSE Guru, an expert Nepali stock market AI. Always respond in Markdown with an explicit BUY, HOLD, or SELL verdict.' },
-            { role: 'user', content: prompt }
-          ]
-        }),
-        signal: AbortSignal.timeout(25000)
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content) return content;
-      }
-    } catch(e) {}
-    
-    // Fallback to plain text endpoint
-    const fallbackRes = await fetch(`https://text.pollinations.ai/prompt/${encodeURIComponent('You are NEPSE Guru, an expert Nepali stock market AI. Always respond in Markdown with an explicit BUY, HOLD, or SELL verdict. ' + prompt)}`, { signal: AbortSignal.timeout(25000) });
-    if (!fallbackRes.ok) throw new Error('Pollinations fallback failed');
-    return await fallbackRes.text() || '';
-  };
-
-  // ── Unified LLM call with layer priority ───────────────────────────────────
-  const callLLM = async (prompt) => {
-    const engines = [];
-
-    // Construct evaluation order based on preference
-    if (preferredEngine === 'glm') {
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, glmKey.trim()), key: glmKey, label: 'GLM-4 AI' });
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, geminiKey.trim()), key: geminiKey, label: 'Google Gemini 1.5 Flash' });
-      engines.push({ name: 'groq', call: () => callGroq(prompt, groqKey.trim()), key: groqKey, label: 'Groq LLaMA 3.3 70B' });
-    } else if (preferredEngine === 'gemini') {
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, geminiKey.trim()), key: geminiKey, label: 'Google Gemini 1.5 Flash' });
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, glmKey.trim()), key: glmKey, label: 'GLM-4 AI' });
-      engines.push({ name: 'groq', call: () => callGroq(prompt, groqKey.trim()), key: groqKey, label: 'Groq LLaMA 3.3 70B' });
-    } else if (preferredEngine === 'groq') {
-      engines.push({ name: 'groq', call: () => callGroq(prompt, groqKey.trim()), key: groqKey, label: 'Groq LLaMA 3.3 70B' });
-      engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, glmKey.trim()), key: glmKey, label: 'GLM-4 AI' });
-      engines.push({ name: 'gemini', call: () => callGemini(prompt, geminiKey.trim()), key: geminiKey, label: 'Google Gemini 1.5 Flash' });
-    } else { // 'auto' (preferred order: GLM-4 if configured, then Gemini, then Groq)
-      if (glmKey.trim()) {
-        engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, glmKey.trim()), key: glmKey, label: 'GLM-4 AI' });
-      }
-      if (geminiKey.trim()) {
-        engines.push({ name: 'gemini', call: () => callGemini(prompt, geminiKey.trim()), key: geminiKey, label: 'Google Gemini 1.5 Flash' });
-      }
-      if (groqKey.trim()) {
-        engines.push({ name: 'groq', call: () => callGroq(prompt, groqKey.trim()), key: groqKey, label: 'Groq LLaMA 3.3 70B' });
-      }
-      if (!glmKey.trim() && !geminiKey.trim() && !groqKey.trim()) {
-        engines.push({ name: 'glm', call: () => callGlmAi(prompt, undefined, DEFAULT_AI_KEY), key: DEFAULT_AI_KEY, label: 'GLM-4 AI' });
-        engines.push({ name: 'gemini', call: () => callGemini(prompt, geminiKey.trim()), key: geminiKey, label: 'Google Gemini 1.5 Flash' });
-        engines.push({ name: 'groq', call: () => callGroq(prompt, groqKey.trim()), key: groqKey, label: 'Groq LLaMA 3.3 70B' });
-      }
-    }
-
-    // Attempt preferred configured engines
-    for (const engine of engines) {
-      if (engine.key?.trim()) {
-        try {
-          const result = await engine.call();
-          if (result) return { text: result, source: engine.label };
-        } catch (e) {
-          console.warn(`${engine.label} failed, trying next layer:`, e.message);
-        }
-      }
-    }
-
-    // Layer 3: Pollinations (keyless)
-    try {
-      const result = await callPollinations(prompt);
-      if (result) return { text: result, source: 'Pollinations AI (Free)' };
-    } catch (e) {
-      console.warn('Pollinations failed, using heuristics:', e.message);
-    }
-    // Layer 4: Local heuristic
-    return { text: null, source: 'Local Heuristic' };
-  };
-
-  // ── Build detailed stock analysis prompt ────────────────────────────────────
-  const buildStockPrompt = (ctx, newsPulse = null) => {
-    const { stock, historyStr, adSignal } = ctx;
-    const macdSignal = stock.macd?.line > stock.macd?.signal ? 'Bullish crossover (MACD line above signal)' : 'Bearish crossover (MACD line below signal)';
-    const emaSignal = stock.ltp > stock.ema50 ? 'Price above EMA50 (bullish)' : 'Price below EMA50 (bearish)';
-    const chg = Number(stock.change || (stock.ltp * ((stock.pChange || 0) / 100))) || 0;
-    const pClose = Number(stock.prevClose || (stock.ltp - chg)) || stock.ltp;
-    const dayHigh = Number(stock.high || (stock.ltp * 1.015));
-    const dayLow = Number(stock.low || (stock.ltp * 0.985));
-
-    return `You are NEPSE GURU, the premier institutional quantitative stock market analyst and Smart Money strategist for the Nepal Stock Exchange (NEPSE).
-
-CRITICAL EXACT PRICE DATA (MUST BE STATED CLEARLY AT THE VERY TOP):
-- TARGET SCRIP: ${stock.symbol} (${stock.name})
-- OFFICIAL FINAL PRICE (LTP): Rs. ${Number(stock.ltp).toFixed(2)} (${chg >= 0 ? '+' : ''}${chg.toFixed(2)} / ${chg >= 0 ? '+' : ''}${Number(stock.pChange || stock.changePercent || 0).toFixed(2)}%)
-- PREVIOUS CLOSING PRICE: Rs. ${pClose.toFixed(2)}
-- TODAY'S INTRADAY SESSION RANGE: Low Rs. ${dayLow.toFixed(2)} — High Rs. ${dayHigh.toFixed(2)}
-- 52-WEEK RANGE: Low Rs. ${Number(stock.low52w || stock.ltp * 0.75).toFixed(1)} to High Rs. ${Number(stock.high52w || stock.ltp * 1.25).toFixed(1)}
-- TRADED VOLUME: ${(stock.volume || 0).toLocaleString()} shares | TURNOVER: Rs. ${(stock.turnover || (stock.volume * stock.ltp)).toLocaleString()}
-
-TECHNICAL & ORDER FLOW:
-- RSI (14): ${stock.rsi?.toFixed(1) || 'N/A'} (${stock.rsi < 38 ? 'Oversold / Institutional Accumulation' : stock.rsi > 68 ? 'Overbought / Distribution Risk' : 'Neutral Consolidation'})
-- MACD: ${macdSignal}
-- Moving Averages: EMA20: Rs. ${stock.ema20 || 'N/A'}, EMA50: Rs. ${stock.ema50 || 'N/A'} (${emaSignal})
-- Smart Money & Accumulation Signal: ${adSignal}
-
-PRICE ACTION & RECENT SESSIONS:
-${historyStr}
-
-FUNDAMENTALS:
-- EPS: Rs. ${stock.eps || 'N/A'} | P/E: ${stock.pe || 'N/A'} | P/B: ${stock.pb || 'N/A'} | Book Value: Rs. ${stock.bookValue || 'N/A'}
-
-🇳🇵 MEROLAGANI LIVE POLITICAL & MACRO NEWS PULSE:
-- Sentiment: ${newsPulse?.sentiment || 'Neutral / Supportive Policy'}
-${(newsPulse?.keyHighlights || []).map(h => `  • ${h}`).join('\n')}
-
-MANDATORY OUTPUT BLUEPRINT (Always start with the Official Final Price quote header):
-1. 📌 LIVE MARKET PRICE & QUOTE
-   - Official Final Price (LTP): Rs. ${Number(stock.ltp).toFixed(2)}
-   - Previous Close & Range
-2. ⚡ SMART MONEY ACTION VERDICT
-   - Suggested Action: [STRONG BUY / ACCUMULATE | BUY ON DIPS | HOLD | TAKE PROFIT / EXIT]
-   - Optimal Entry Zone: Rs. [Min] – Rs. [Max]
-   - Target 1 (Short-Term Swing Profit): Rs. [Price] (+[%])
-   - Target 2 (Major Breakout Target): Rs. [Price] (+[%])
-   - Hard Stop-Loss Floor: Rs. [Price] (-[%])
-   - Risk / Reward Ratio: 1 : [Ratio]
-3. 📜 SEE HISTORY: Historical Momentum & Buying/Selling Patterns
-4. 🔍 ANALYZE PRESENT: Technicals, Fundamentals & Merolagani Political/Macro Impact
-5. 🔮 PREDICT FUTURE: Tactical Trade Execution Plan for Maximum Profit`;
-  };
-
-  // ── Stock Analyzer: main handler ────────────────────────────────────────────
-  const handleAnalyze = async (symbol) => {
-    if (!symbol) return;
-    const sym = symbol.toUpperCase().trim();
-    setAnalyzerResult(null);
-    setAnalyzerError('');
-    setAnalyzerLoading(true);
-    setAnalyzerSuggestions([]);
+    const loadingId = Date.now();
+    setMessages(prev => [...prev, {
+      role: 'assistant', isLoading: true,
+      id: loadingId, timestamp: new Date().toLocaleTimeString()
+    }]);
 
     try {
-      // Layer 1: Fetch live market data & Merolagani political news in parallel
-      const [ctx, rawNews] = await Promise.all([
-        fetchStockContext(sym),
-        fetchMerolaganiNews().catch(() => [])
+      // Fetch all data in parallel
+      const [stockData, technical, financials] = await Promise.all([
+        fetchTodayPrice(sym),
+        fetchTechnicalAnalysis(sym),
+        fetchCompanyFinancials(sym)
       ]);
 
-      if (!ctx) {
-        setAnalyzerError(`Symbol "${sym}" not found in market data.`);
-        setAnalyzerLoading(false);
-        return;
+      const prompt = buildStockPrompt(sym, stockData, technical?.data, financials, marketData);
+      const result = await callGuruAI(prompt, 'stock');
+
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          guruData: result.data || result,
+          analysisType: 'stock',
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+
+    } catch (err) {
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          content: `❌ Analysis failed: ${err.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+
+      if (err.message.includes('API key') || err.message.includes('Gemini')) {
+        setApiKeyMissing(true);
       }
+    }
 
-      setAnalyzerHistory(ctx.historyData);
-      const newsPulse = analyzePoliticalAndMarketPulse(rawNews);
+    setLoading(false);
+  };
 
-      // Build expert prompt
-      const prompt = buildStockPrompt(ctx, newsPulse);
-
-      // Layer 2+3: LLM call
-      const { text: aiText, source } = await callLLM(prompt, GURU_AI_SYSTEM_PROMPT);
-
-      let finalText = aiText;
-      if (!finalText) {
-        finalText = getHeuristicResponse(`analyze ${sym}`, sym, newsPulse);
-      }
-
-      // Extract verdict from AI response
-      let verdict = 'HOLD';
-      const upperText = (finalText || '').toUpperCase();
-      if (upperText.includes('STRONG BUY') || upperText.includes('BUY /') || upperText.includes('RECOMMENDATION: BUY') || upperText.includes('VERDICT: BUY') || upperText.includes('BUY ON DIPS')) verdict = 'BUY';
-      else if (upperText.includes('VERDICT: SELL') || upperText.includes('TAKE PROFIT') || upperText.includes('RECOMMENDATION: SELL') || upperText.includes('EXIT')) verdict = 'SELL';
-
-      // Calculate full probabilistic matrix & predictive forecast
-      const probMatrix = calculateProbabilisticMatrix(ctx.stock, ctx.historyData, newsPulse);
-
-      setAnalyzerResult({
-        symbol: sym,
-        stock: ctx.stock,
-        aiText: finalText,
-        source: aiText ? source : '⚡ Multi-Horizon Quantitative Engine',
-        verdict,
-        adSignal: ctx.adSignal,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        targets: ctx.targets,
-        probMatrix,
-        graham: ctx.graham,
-        actionZone: ctx.actionZone,
-        zVol: ctx.zVol,
-        wyckoff: ctx.wyckoff,
-        return12M: ctx.return12M,
-        high52w: ctx.high52w,
-        low52w: ctx.low52w,
-        sma50: ctx.sma50,
-        sma200: ctx.sma200,
-        smaTrend: ctx.smaTrend,
-        cyclePosition: ctx.cyclePosition,
-        historyData: ctx.historyData,
-        newsPulse
+  const analyzePortfolio = async () => {
+    if (portfolio.length === 0) {
+      addMessage({
+        role: 'assistant',
+        content: '💼 No portfolio found. Add stocks to your portfolio first, then I can analyze it!'
       });
-    } catch (e) {
-      setAnalyzerError(`Analysis failed: ${e.message}`);
-    } finally {
-      setAnalyzerLoading(false);
-    }
-  };
-
-  // Auto-run analysis when navigated from Services Hub or external trigger
-  useEffect(() => {
-    if (initialStock) {
-      setActiveTab('analyzer');
-      setAnalyzerSymbol(initialStock);
-      setAnalyzerQuery(initialStock);
-      handleAnalyze(initialStock);
-      if (onClearInitialStock) onClearInitialStock();
-    }
-  }, [initialStock]);
-
-  // ── Chat submit ─────────────────────────────────────────────────────────────
-  const submitQuestion = useCallback(async (text) => {
-    setIsTyping(true);
-    const stockSummary = marketStocks.slice(0, 30).map(s => `${s.symbol}(LTP:Rs.${s.ltp},RSI:${s.rsi?.toFixed(0)})`).join(', ');
-    const portfolioSummary = activeHoldings.map(h => `${h.symbol}(${h.units}sh@WACC Rs.${h.wacc.toFixed(1)})`).join(', ');
-
-    const words = text.toUpperCase().replace(/[^A-Z0-9]/g, ' ').split(/\s+/).filter(Boolean);
-    let targetSymbol = null;
-    for (const w of words) {
-      if (marketStocks.some(s => s.symbol.toUpperCase() === w)) {
-        targetSymbol = w;
-        break;
-      }
+      return;
     }
 
-    // Fetch Merolagani political news in parallel
-    let newsPulse = null;
-    try {
-      const rawNews = await fetchMerolaganiNews();
-      newsPulse = analyzePoliticalAndMarketPulse(rawNews);
-    } catch (_) {}
+    setLoading(true);
+    addMessage({ role: 'user', content: 'Analyze my portfolio and give investment advice' });
 
-    let prompt;
-    if (targetSymbol) {
-      const ctx = await fetchStockContext(targetSymbol);
-      if (ctx) {
-        prompt = buildStockPrompt(ctx, newsPulse) + `\n\nUSER'S EXACT QUESTION: "${text}". Please answer this question directly (e.g. entry point, target levels, support/resistance, stop-loss) at the very top of your response.`;
-      }
-    }
-
-    if (!prompt) {
-      prompt = `You are NEPSE GURU, the premier institutional quantitative analyst, political-macro economist, and Smart Money strategist for the Nepal Stock Exchange (NEPSE).
-Market data: ${stockSummary}.
-User portfolio: ${portfolioSummary || 'Empty'}.
-Live Merolagani Political & Market Headlines:
-${(newsPulse?.keyHighlights || []).map(h => `• ${h}`).join('\n')}
-
-Answer concisely in clean Markdown. Help the Nepali retail investor make profit with clear entry, exit, target, and risk guidance.
-User question: ${text}`;
-    }
-
-    const { text: aiText, source } = await callLLM(prompt, GURU_AI_SYSTEM_PROMPT);
-    let finalText = aiText || getHeuristicResponse(text, targetSymbol, newsPulse);
-
-    if (targetSymbol) {
-      const s = marketStocks.find(st => st.symbol.toUpperCase() === targetSymbol.toUpperCase());
-      if (s) {
-        const ltp = Number(s.ltp).toFixed(2);
-        const chg = Number(s.change || (s.ltp * ((s.pChange || 0) / 100))) || 0;
-        const pChg = Number(s.pChange || 0).toFixed(2);
-        const pClose = Number(s.prevClose || (s.ltp - chg)).toFixed(2);
-        const dayHigh = Number(s.high || (s.ltp * 1.015)).toFixed(2);
-        const dayLow = Number(s.low || (s.ltp * 0.985)).toFixed(2);
-
-        const liveHeader = `### 📌 **${s.symbol}** (${s.name})\n` +
-          `• **Official Final Price (LTP)**: **Rs. ${ltp}** (${chg >= 0 ? '+' : ''}${chg.toFixed(2)} / ${chg >= 0 ? '+' : ''}${pChg}%)\n` +
-          `• **Previous Close**: Rs. ${pClose} | **Session Range**: Rs. ${dayLow} – Rs. ${dayHigh}\n\n---\n\n`;
-
-        if (!finalText.includes(`Rs. ${ltp}`) || (!finalText.startsWith('### 📌') && !finalText.startsWith('### 📊') && !finalText.startsWith('### 🎯'))) {
-          finalText = liveHeader + finalText;
-        }
-      }
-    }
-
-    const sourceNote = aiText 
-      ? `\n\n---\n*Powered by: ${source}*` 
-      : (targetSymbol 
-          ? `\n\n---\n*⚡ Quantitative Smart Money Engine (Live LTP + Merolagani News)*` 
-          : `\n\n---\n*⚡ NEPSE Guru Knowledge Base*`);
-
+    const loadingId = Date.now();
     setMessages(prev => [...prev, {
-      sender: 'guru',
-      text: finalText + sourceNote,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      role: 'assistant', isLoading: true, id: loadingId,
+      timestamp: new Date().toLocaleTimeString()
     }]);
-    setIsTyping(false);
-  }, [marketStocks, activeHoldings, groqKey, geminiKey]);
 
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!userInput.trim()) return;
-    const userText = userInput;
-    setMessages(prev => [...prev, { sender: 'user', text: userText, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-    setUserInput('');
-    submitQuestion(userText);
-  };
+    try {
+      // Get live prices for portfolio
+      const res = await fetch(`${PROXY}/api/portfolio/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings: portfolio })
+      });
+      const portfolioData = await res.json();
+      const livePortfolio = portfolioData.data?.holdings || portfolio;
 
-  const handleQuickPrompt = (text) => {
-    setMessages(prev => [...prev, { sender: 'user', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-    submitQuestion(text);
-  };
+      const prompt = buildPortfolioPrompt(livePortfolio, marketData);
+      const result = await callGuruAI(prompt, 'portfolio');
 
-  const handleAnalyzeFromScanner = (symbol) => {
-    setActiveTab('analyzer');
-    setAnalyzerSymbol(symbol);
-    setAnalyzerQuery(symbol);
-    handleAnalyze(symbol);
-  };
-
-  // Symbol autocomplete
-  const handleQueryChange = (val) => {
-    setAnalyzerQuery(val);
-    if (val.length >= 1) {
-      const matches = marketStocks.filter(s =>
-        s.symbol.toUpperCase().includes(val.toUpperCase()) ||
-        s.name.toUpperCase().includes(val.toUpperCase())
-      ).slice(0, 6);
-      setAnalyzerSuggestions(matches);
-    } else {
-      setAnalyzerSuggestions([]);
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          guruData: result.data || result,
+          analysisType: 'portfolio',
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+    } catch (err) {
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          content: `❌ Portfolio analysis failed: ${err.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
     }
+
+    setLoading(false);
   };
 
-  const selectSuggestion = (sym) => {
-    setAnalyzerSymbol(sym);
-    setAnalyzerQuery(sym);
-    setAnalyzerSuggestions([]);
+  const getMarketOutlook = async () => {
+    setLoading(true);
+    addMessage({ role: 'user', content: 'What is the current NEPSE market outlook?' });
+
+    const loadingId = Date.now();
+    setMessages(prev => [...prev, {
+      role: 'assistant', isLoading: true, id: loadingId,
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+
+    try {
+      const [gainers, losers] = await Promise.all([
+        fetch(`${PROXY}/api/market/top-gainers`).then(r => r.json()),
+        fetch(`${PROXY}/api/market/top-losers`).then(r => r.json())
+      ]);
+
+      const prompt = buildMarketPrompt(
+        marketData,
+        null,
+        gainers.data || [],
+        losers.data || []
+      );
+      const result = await callGuruAI(prompt, 'market');
+
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          guruData: result.data || result,
+          analysisType: 'market',
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+    } catch (err) {
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          content: `❌ Market analysis failed: ${err.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+    }
+
+    setLoading(false);
   };
 
-  // ── Active LLM indicator ────────────────────────────────────────────────────
-  const getActiveLLM = () => {
-    if (preferredEngine === 'glm' && glmKey?.trim()) return '🟣 GLM-4 AI (Active)';
-    if (preferredEngine === 'gemini' && geminiKey.trim()) return '🟡 Google Gemini 1.5 Flash';
-    if (preferredEngine === 'groq' && groqKey.trim()) return '🟢 Groq LLaMA 3.3 70B';
-    // auto
-    if (glmKey?.trim()) return '🟣 GLM-4 AI (Active)';
-    if (geminiKey.trim()) return '🟡 Google Gemini 1.5 Flash';
-    if (groqKey.trim()) return '🟢 Groq LLaMA 3.3 70B';
-    return '🔵 Pollinations AI (Free)';
+  const sendChat = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+
+    addMessage({ role: 'user', content: userMsg });
+
+    const loadingId = Date.now();
+    setMessages(prev => [...prev, {
+      role: 'assistant', isLoading: true, id: loadingId,
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+
+    setLoading(true);
+
+    try {
+      const contextPrompt = `You are GURU AI, a NEPSE investment advisor.
+Current NEPSE Index: ${marketData?.data?.nepseIndex || 'N/A'}
+Market Change: ${marketData?.data?.changePercent || 0}%
+
+User Question: ${userMsg}
+
+Answer concisely and helpfully. If about a specific stock, provide technical/fundamental insights.
+If you recommend buying or selling, always mention risks.
+Always provide Nepal-specific context.
+Keep response under 200 words unless analysis is requested.
+Format as plain text (not JSON) for this conversational response.`;
+
+      const result = await callGuruAI(contextPrompt, 'chat');
+
+      const responseText = typeof result === 'string' ? result :
+        result?.data?.analysis || result?.data || result?.text || JSON.stringify(result);
+
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          content: responseText,
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+    } catch (err) {
+      setMessages(prev => prev.map(m =>
+        m.id === loadingId ? {
+          role: 'assistant',
+          content: `❌ ${err.message}`,
+          timestamp: new Date().toLocaleTimeString()
+        } : m
+      ));
+    }
+
+    setLoading(false);
   };
-  const activeLLM = getActiveLLM();
 
-  // Dynamic greeting based on active engine
-  useEffect(() => {
-    setMessages(prev => {
-      if (prev.length === 1 && prev[0].sender === 'guru' && (prev[0].text.includes('powered by') || prev[0].text.includes('Namaste!'))) {
-        const engineName = activeLLM.split(' ').slice(1).join(' '); // remove emoji
-        return [
-          {
-            sender: 'guru',
-            text: `Namaste! 🙏 I am **NEPSE Guru**, your AI Stock Assistant powered by ${engineName}.\n\nI can:\n• Analyze any NEPSE stock in depth\n• Give BUY/HOLD/SELL verdict with reasoning\n• Check your portfolio health\n• Explain taxes & market concepts\n\nTry the **Stock Analyzer** tab or ask me anything!`,
-            time: prev[0].time
-          }
-        ];
-      }
-      return prev;
-    });
-  }, [activeLLM]);
+  const QUICK_ACTIONS = [
+    { label: '📊 Market Outlook', action: getMarketOutlook },
+    { label: '💼 My Portfolio', action: analyzePortfolio },
+    { label: '🚀 Top Stock Pick', action: () => { setInput('Which NEPSE stock should I buy right now?'); } },
+    { label: '⚠️ Market Risk', action: () => { setInput('What are the main risks in NEPSE market right now?'); } },
+  ];
 
-  // ── RENDER ──────────────────────────────────────────────────────────────────
+  const SAMPLE_QUESTIONS = [
+    'Should I buy NABIL bank stock now?',
+    'Analyze NICA using technical indicators',
+    'What sectors are performing well in NEPSE?',
+    'Explain the impact of NRB policy on banking stocks',
+    'Which hydropower stocks have good fundamentals?',
+    'How does dividend season affect NEPSE prices?',
+    'What is a good P/E ratio for NEPSE stocks?',
+    'Explain circuit breaker rules in NEPSE',
+  ];
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)' }}>
+    <div style={{
+      height: 'calc(100vh - 120px)',
+      display: 'flex', flexDirection: 'column',
+      background: '#f8fafc', fontFamily: 'system-ui, sans-serif'
+    }}>
+      {/* Header */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0f172a, #1d4ed8)',
+        padding: '14px 20px', color: 'white',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: '2rem' }}>🤖</div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>GURU AI</div>
+            <div style={{ fontSize: '0.72rem', color: '#93c5fd' }}>
+              Powered by real NEPSE data • Gemini AI
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{
+            padding: '3px 10px', borderRadius: 20,
+            background: '#064e3b', color: '#34d399',
+            fontSize: '0.7rem', fontWeight: 700
+          }}>
+            ✅ LIVE DATA
+          </span>
+          <span style={{
+            padding: '3px 10px', borderRadius: 20,
+            background: '#1e293b', color: '#64748b',
+            fontSize: '0.7rem'
+          }}>
+            NEPSE: {marketData?.data?.nepseIndex?.toFixed(2) || '...'}
+          </span>
+        </div>
+      </div>
 
-      {/* Tab Row */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '0 16px', flexShrink: 0, gap: 0, overflowX: 'auto' }}>
+      {/* API Key Warning */}
+      {apiKeyMissing && (
+        <div style={{
+          background: '#fef3c7', border: '1px solid #f59e0b',
+          padding: '10px 16px', fontSize: '0.82rem', color: '#92400e'
+        }}>
+          ⚠️ <strong>Gemini API key missing.</strong> Add GEMINI_API_KEY to Render environment variables.
+          Dashboard → nepse-proxy → Environment → Add Variable
+        </div>
+      )}
+
+      {/* Tab Bar */}
+      <div style={{
+        background: 'white', borderBottom: '1px solid #e2e8f0',
+        display: 'flex', padding: '0 16px'
+      }}>
         {[
-          { id: 'zones_radar', icon: <Zap size={14} />, label: 'Action Zones' },
-          { id: 'suggestions', icon: <ListFilter size={14} />, label: 'Market Scanner' },
-          { id: 'analyzer', icon: <BarChart2 size={14} />, label: 'Stock Analyzer' },
-          { id: 'guru', icon: <MessageSquare size={14} />, label: 'Guru AI Chat' },
+          { id: 'chat', label: '💬 Chat' },
+          { id: 'stock', label: '📊 Stock Analysis' },
+          { id: 'market', label: '🌐 Market Outlook' },
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             style={{
-              flex: 1, padding: '12px 6px', textAlign: 'center', fontWeight: 'bold', fontSize: 11,
-              border: 'none', borderBottom: `2.5px solid ${activeTab === tab.id ? 'var(--primary)' : 'transparent'}`,
-              background: 'transparent', cursor: 'pointer', transition: 'var(--transition)',
-              display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 5,
-              whiteSpace: 'nowrap',
-              color: activeTab === tab.id ? 'var(--primary-light)' : 'var(--text-muted)'
+              padding: '12px 20px', border: 'none', background: 'none',
+              cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
+              color: activeTab === tab.id ? '#1d4ed8' : '#64748b',
+              borderBottom: activeTab === tab.id ? '2px solid #1d4ed8' : '2px solid transparent',
+              transition: 'all 0.2s'
             }}
           >
-            {tab.icon} {tab.label}
+            {tab.label}
           </button>
         ))}
       </div>
 
-
-      {/* ── TAB: OPERATIONAL ACTION ZONES RADAR ───────────────────────────── */}
-      {activeTab === 'zones_radar' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Header Banner */}
-          <div style={{
-            background: 'linear-gradient(135deg, rgba(91,94,244,0.15), rgba(16,217,138,0.1))',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 'var(--radius-md)',
-            padding: 14
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Zap size={16} color="var(--primary-light)" /> Guru AI 5-Zone Momentum Radar
-                </h3>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Systematic classification across Technicals, Smart Money Delta, Graham Intrinsic Value & ATR
-                </p>
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary-light)', background: 'rgba(91,94,244,0.15)', padding: '3px 8px', borderRadius: 12 }}>
-                {radarStocks.length} Scrips
-              </span>
-            </div>
-
-            {/* Filter Pills */}
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginTop: 10, paddingBottom: 4 }}>
-              {[
-                { id: 'ALL', label: 'All Zones', color: '#ffffff' },
-                { id: 'Buying', label: '🟢 Buying Zone', color: '#10d98a' },
-                { id: 'Entry', label: '🚀 Entry Zone', color: '#10d98a' },
-                { id: 'Holding', label: '🔵 Holding Zone', color: '#38bdf8' },
-                { id: 'Exit', label: '🟡 Exit Zone', color: '#eab308' },
-                { id: 'Selling', label: '🔴 Selling Zone', color: '#ef4444' }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setZoneFilter(f.id)}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: 20,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    border: zoneFilter === f.id ? `1.5px solid ${f.color}` : '1px solid rgba(255,255,255,0.08)',
-                    background: zoneFilter === f.id ? `${f.color}22` : 'rgba(255,255,255,0.03)',
-                    color: zoneFilter === f.id ? f.color : 'var(--text-muted)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Scrip Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {radarStocks.slice(0, 35).map(s => {
-              const az = s.actionZone || classifyActionZone(s);
-              const gr = s.graham;
-              const isBull = (s.pChange || 0) >= 0;
-
-              return (
-                <div
-                  key={s.symbol}
-                  style={{
-                    background: '#0d1523',
-                    border: `1px solid ${az.zoneColor}33`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: 12,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8
-                  }}
-                >
-                  {/* Top Line */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>{s.symbol}</span>
-                        <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{s.sector}</span>
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{s.name}</div>
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 15, fontWeight: 900, color: isBull ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)' }}>
-                        Rs. {s.ltp}
-                      </div>
-                      <div style={{ fontSize: 10.5, fontWeight: 700, color: isBull ? 'var(--bull)' : '#ef4444' }}>
-                        {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Zone Badge & Rationale */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: '6px 10px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: az.zoneColor, display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Zap size={12} /> {az.zoneBadge}
-                    </span>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#8da2be' }}>
-                      MS: <strong style={{ color: az.momentumScore >= 0 ? 'var(--bull)' : '#ef4444' }}>{az.momentumScore >= 0 ? '+' : ''}{az.momentumScore}</strong> · RRR: <strong>1:{az.rrr}</strong>
-                    </span>
-                  </div>
-
-                  {/* 3 Parameter Pillars */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, fontSize: 10 }}>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '5px 8px', borderRadius: 6 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Entry Target:</span>
-                      <div style={{ fontWeight: 800, color: '#ffffff', marginTop: 1 }}>{az.entryTarget.split(' ')[1] || 'LTP'}</div>
-                    </div>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '5px 8px', borderRadius: 6 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Graham V*:</span>
-                      <div style={{ fontWeight: 800, color: gr?.isUndervalued ? 'var(--bull)' : '#38bdf8', marginTop: 1 }}>
-                        Rs.{gr?.intrinsicValue || '—'} {gr?.isUndervalued ? `(+${gr.marginOfSafetyPct}%)` : ''}
-                      </div>
-                    </div>
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '5px 8px', borderRadius: 6 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Stop-Loss:</span>
-                      <div style={{ fontWeight: 800, color: '#ef4444', marginTop: 1 }}>{az.stopLoss.split(' ')[1] || 'Stop'}</div>
-                    </div>
-                  </div>
-
-                  {/* Action Button */}
-                  <button
-                    onClick={() => handleAnalyzeFromScanner(s.symbol)}
-                    style={{
-                      marginTop: 2,
-                      width: '100%',
-                      padding: '7px 0',
-                      borderRadius: 8,
-                      background: 'rgba(91,94,244,0.12)',
-                      border: '1px solid rgba(91,94,244,0.3)',
-                      color: 'var(--primary-light)',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 5
-                    }}
-                  >
-                    <BarChart2 size={13} /> Deep AI Multi-Factor Analysis
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB: MARKET SCANNER ─────────────────────────────────────────────── */}
-      {activeTab === 'suggestions' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 8px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-
-          {/* Portfolio Alerts */}
-          <div>
-            <h3 className="section-title" style={{ marginBottom: 8 }}>My Portfolio Action Alerts</h3>
-            {portRecs.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {portRecs.map(rec => (
-                  <div key={rec.symbol} style={{
-                    padding: 12, border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
-                    ...(rec.recommendation === 'buy_more'
-                      ? { background: 'var(--bull-subtle)', borderColor: 'rgba(16,217,138,0.2)' }
-                      : rec.recommendation === 'take_profit'
-                        ? { background: 'var(--primary-subtle)', borderColor: 'rgba(91,94,244,0.2)', boxShadow: 'var(--shadow-glow)' }
-                        : { background: 'rgba(0,0,0,0.3)', borderColor: 'var(--border)' })
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>{rec.symbol}</span>
-                      <span className={`badge ${rec.recommendation === 'buy_more' ? 'badge-bull' : rec.recommendation === 'take_profit' ? 'badge-primary' : 'badge-gray'}`} style={{ padding: '2px 8px', fontSize: 9 }}>
-                        {rec.recommendation === 'buy_more' ? 'BUY MORE' : rec.recommendation === 'take_profit' ? 'TAKE PROFIT' : 'HOLD'}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: 11, color: 'var(--text-primary)', marginTop: 4, lineHeight: 1.5, opacity: 0.85 }}>{rec.reason}</p>
-                    <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 10, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 6 }}>
-                      <span>WACC: Rs.{rec.wacc.toFixed(1)}</span>
-                      <span>LTP: Rs.{rec.ltp}</span>
-                      <span style={{ color: rec.pChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 'bold' }}>
-                        Return: {rec.pChange >= 0 ? '+' : ''}{rec.pChange.toFixed(1)}%
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleAnalyzeFromScanner(rec.symbol)}
-                      style={{ marginTop: 8, background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 10px', fontSize: 10, cursor: 'pointer' }}
-                    >
-                      🔍 Deep AI Analysis
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="card" style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', padding: '16px 0' }}>
-                No active portfolio alerts. Log purchases in the Portfolio tab.
-              </div>
-            )}
-          </div>
-
-          {/* Market Opportunities */}
-          <div>
-            <h3 className="section-title" style={{ marginBottom: 8 }}>General Market Opportunities</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(showAllOpps ? marketOpps : marketOpps.slice(0, 5)).map(opp => (
-                <div key={opp.symbol} className="card" style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span style={{ fontWeight: 'bold', fontSize: 12, color: 'var(--text-primary)' }}>{opp.symbol}</span>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>{opp.name}</span>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 12, fontWeight: 800 }}>Rs. {opp.ltp}</div>
-                      <span className={`badge ${opp.type === 'bearish_sell' ? 'badge-bear' : 'badge-bull'}`} style={{ padding: '2px 6px', marginTop: 4, fontSize: 8.5 }}>
-                        {opp.type === 'bearish_sell' ? 'Sell Target' : 'Buy Alert'}
-                      </span>
-                    </div>
-                  </div>
-                  <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}
-                    dangerouslySetInnerHTML={{ __html: opp.description.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }}
-                  />
-                  <button
-                    onClick={() => handleAnalyzeFromScanner(opp.symbol)}
-                    style={{ marginTop: 6, background: 'linear-gradient(135deg,var(--primary),var(--primary-dark))', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 10px', fontSize: 10, cursor: 'pointer' }}
-                  >
-                    🔍 AI Analysis
-                  </button>
-                </div>
-              ))}
-              {marketOpps.length > 5 && (
-                <button type="button" onClick={() => setShowAllOpps(!showAllOpps)} className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 8 }}>
-                  {showAllOpps ? 'Show Less' : `Show All Opportunities (${marketOpps.length})`}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB: STOCK ANALYZER ─────────────────────────────────────────────── */}
-      {activeTab === 'analyzer' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-          {/* API Status Bar */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Active AI Engine: <strong style={{ color: 'var(--primary-light)' }}>{activeLLM}</strong></span>
-            <button
-              onClick={() => setShowApiHelp(!showApiHelp)}
-              style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+      {/* Stock Analysis Tab */}
+      {activeTab === 'stock' && (
+        <div style={{ padding: '16px 20px', background: 'white', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <select
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              style={{
+                flex: 1, padding: '10px 14px',
+                border: '1px solid #e2e8f0', borderRadius: 8,
+                fontSize: '0.9rem'
+              }}
             >
-              Configure {showApiHelp ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+              <option value="">Select stock to analyze...</option>
+              {allSymbols.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => analyzeStock(symbol)}
+              disabled={!symbol || loading}
+              style={{
+                padding: '10px 24px',
+                background: symbol && !loading ? '#1d4ed8' : '#e2e8f0',
+                color: symbol && !loading ? 'white' : '#94a3b8',
+                border: 'none', borderRadius: 8,
+                fontWeight: 700, cursor: symbol ? 'pointer' : 'not-allowed'
+              }}
+            >
+              {loading ? '⏳' : '🤖 Analyze'}
             </button>
           </div>
-
-          {showApiHelp && (
-            <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text-muted)' }}>🤖 Preferred AI Model</label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[
-                    { id: 'auto', label: '⚡ Auto-Select' },
-                    { id: 'gemini', label: '🟡 Gemini 1.5' },
-                    { id: 'groq', label: '🟢 Groq LLaMA' }
-                  ].map(engine => (
-                    <button
-                      key={engine.id}
-                      type="button"
-                      onClick={() => {
-                        setPreferredEngine(engine.id);
-                        localStorage.setItem('nepse_hub_preferred_ai_engine', engine.id);
-                      }}
-                      style={{
-                        flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 'bold',
-                        borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-                        background: preferredEngine === engine.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                        color: preferredEngine === engine.id ? '#fff' : 'var(--text-muted)',
-                        cursor: 'pointer', transition: 'var(--transition)'
-                      }}
-                    >
-                      {engine.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text-muted)' }}>🟢 Groq API Key (Fast & Free)</label>
-                  <a href="https://console.groq.com" target="_blank" rel="noreferrer" style={{ fontSize: 9, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    Get Free Key <ExternalLink size={8} />
-                  </a>
-                </div>
-                <input
-                  type="password"
-                  value={groqKey}
-                  onChange={e => saveGroqKey(e.target.value)}
-                  placeholder="Paste Groq API Key (gsk_...)"
-                  className="input"
-                  style={{ padding: '6px 12px', fontSize: 11, width: '100%' }}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text-muted)' }}>🟡 Gemini API Key (Highly Recommended)</label>
-                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ fontSize: 9, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    Get Free Key <ExternalLink size={8} />
-                  </a>
-                </div>
-                <input
-                  type="password"
-                  value={geminiKey}
-                  onChange={e => saveGeminiKey(e.target.value)}
-                  placeholder="Paste Gemini API Key (AIza... or AQ...)"
-                  className="input"
-                  style={{ padding: '6px 12px', fontSize: 11, width: '100%' }}
-                />
-              </div>
-
-              <p style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7 }}>
-                Keys are stored only in your browser's localStorage — never sent to our servers.
-              </p>
-            </div>
-          )}
-
-          {/* Search Box */}
-          <div style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-                <input
-                  type="text"
-                  value={analyzerQuery}
-                  onChange={e => handleQueryChange(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { handleAnalyze(analyzerSymbol || analyzerQuery); setAnalyzerSuggestions([]); } }}
-                  placeholder="Search symbol or company name (e.g. NABIL, EBL)..."
-                  className="input"
-                  style={{ paddingLeft: 32, fontSize: 12, width: '100%' }}
-                />
-              </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {['NABIL', 'NICA', 'ADBL', 'HBL', 'GBIME', 'NLIC', 'SCB', 'KBL'].map(s => (
               <button
-                onClick={() => { handleAnalyze(analyzerSymbol || analyzerQuery); setAnalyzerSuggestions([]); }}
-                disabled={analyzerLoading}
+                key={s}
+                onClick={() => { setSymbol(s); analyzeStock(s); }}
                 style={{
-                  padding: '8px 16px', background: analyzerLoading ? 'var(--text-muted)' : 'linear-gradient(135deg,var(--primary),var(--primary-dark))',
-                  color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 'bold', cursor: analyzerLoading ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap'
+                  padding: '4px 12px', borderRadius: 20,
+                  background: '#f1f5f9', border: '1px solid #e2e8f0',
+                  fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', color: '#475569'
                 }}
               >
-                {analyzerLoading ? <><Sparkles size={13} className="animate-spin" /> Analyzing...</> : <><BrainCircuit size={13} /> Analyze</>}
-              </button>
-            </div>
-
-            {/* Autocomplete dropdown */}
-            {analyzerSuggestions.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--card-bg)',
-                border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', zIndex: 100, marginTop: 4,
-                boxShadow: 'var(--shadow-lg)', overflow: 'hidden'
-              }}>
-                {analyzerSuggestions.map(s => (
-                  <button
-                    key={s.symbol}
-                    onClick={() => selectSuggestion(s.symbol)}
-                    style={{
-                      width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer',
-                      textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', fontSize: 12
-                    }}
-                  >
-                    <span><strong>{s.symbol}</strong> <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{s.name}</span></span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{s.sector}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Error */}
-          {analyzerError && (
-            <div style={{ background: 'rgba(255,79,106,0.1)', border: '1px solid rgba(255,79,106,0.3)', borderRadius: 'var(--radius-md)', padding: 12, fontSize: 12, color: 'var(--bear)' }}>
-              ⚠️ {analyzerError}
-            </div>
-          )}
-
-          {/* Loading State */}
-          {analyzerLoading && (
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-              padding: 32, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)'
-            }}>
-              <Sparkles size={28} style={{ color: 'var(--primary-light)', animation: 'spin 1s linear infinite' }} />
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: 4 }}>AI is analyzing {analyzerSymbol || analyzerQuery}...</p>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Fetching live data → Running LLM analysis → Generating verdict</p>
-              </div>
-              <div style={{ display: 'flex', gap: 6, fontSize: 10, color: 'var(--text-muted)' }}>
-                <span style={{ background: 'rgba(16,217,138,0.1)', padding: '2px 8px', borderRadius: 10 }}>Layer 1: NEPSE Data ✓</span>
-                <span style={{ background: 'rgba(91,94,244,0.1)', padding: '2px 8px', borderRadius: 10 }}>Layer 2: {activeLLM.split(' ').slice(1).join(' ')} ⟳</span>
-              </div>
-            </div>
-          )}
-
-          {/* Analysis Result Card */}
-          {analyzerResult && !analyzerLoading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-              {/* 1. Executive Scorecard Header */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(91,94,244,0.15), rgba(16,217,138,0.05), rgba(0,0,0,0.4))',
-                border: '1px solid rgba(91,94,244,0.35)', borderRadius: 'var(--radius-lg)', padding: 16,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{analyzerResult.symbol}</span>
-                      {analyzerResult.actionZone && (
-                        <span style={{
-                          fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 12,
-                          background: analyzerResult.actionZone.color ? `${analyzerResult.actionZone.color}22` : 'rgba(91,94,244,0.2)',
-                          color: analyzerResult.actionZone.color || 'var(--primary-light)',
-                          border: `1px solid ${analyzerResult.actionZone.color || 'var(--primary-light)'}44`
-                        }}>
-                          {analyzerResult.actionZone.zone}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{analyzerResult.stock.name} · {analyzerResult.stock.sector}</div>
-                  </div>
-                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <VerdictBadge verdict={analyzerResult.verdict} />
-                    <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {Number(analyzerResult.stock.ltp).toFixed(2)}</div>
-                    <span style={{ fontSize: 11, fontWeight: 'bold', color: (analyzerResult.stock.pChange || 0) >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
-                      {(analyzerResult.stock.pChange || 0) >= 0 ? '▲ +' : '▼ '}{Number(analyzerResult.stock.pChange || 0).toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-
-                {/* Probabilistic Outcome Bar */}
-                {analyzerResult.probMatrix && (
-                  <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(0,0,0,0.25)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11 }}>
-                      <span style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <Target size={13} style={{ color: '#10d98a' }} /> AI Outcome Probability
-                      </span>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                        Confidence: <strong style={{ color: '#10d98a' }}>{analyzerResult.probMatrix.confidence}</strong>
-                      </span>
-                    </div>
-
-                    {/* 3-Color Segmented Probability Bar */}
-                    <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', background: 'rgba(255,255,255,0.05)', marginBottom: 6 }}>
-                      <div style={{ width: `${analyzerResult.probMatrix.bullishPct}%`, background: '#10d98a' }} title={`Bullish: ${analyzerResult.probMatrix.bullishPct}%`} />
-                      <div style={{ width: `${analyzerResult.probMatrix.neutralPct}%`, background: '#eab308' }} title={`Neutral: ${analyzerResult.probMatrix.neutralPct}%`} />
-                      <div style={{ width: `${analyzerResult.probMatrix.bearishPct}%`, background: '#ff4f6a' }} title={`Bearish: ${analyzerResult.probMatrix.bearishPct}%`} />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
-                      <span style={{ color: '#10d98a', fontWeight: 700 }}>🟢 Bullish {analyzerResult.probMatrix.bullishPct}%</span>
-                      <span style={{ color: '#eab308', fontWeight: 700 }}>🟡 Neutral {analyzerResult.probMatrix.neutralPct}%</span>
-                      <span style={{ color: '#ff4f6a', fontWeight: 700 }}>🔴 Bearish {analyzerResult.probMatrix.bearishPct}%</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Quick key stat pills */}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                  {[
-                    { label: 'RSI (14)', value: analyzerResult.stock.rsi?.toFixed(1), color: analyzerResult.stock.rsi < 35 ? 'var(--bull)' : analyzerResult.stock.rsi > 70 ? 'var(--bear)' : 'var(--text-primary)' },
-                    { label: 'Volume RVOL', value: `${analyzerResult.probMatrix?.rvol || 1.0}x`, color: (analyzerResult.probMatrix?.rvol || 1) >= 1.5 ? '#eab308' : 'var(--text-primary)' },
-                    { label: 'P/E', value: `${analyzerResult.stock.pe || '—'}x` },
-                    { label: 'EPS', value: `Rs. ${analyzerResult.stock.eps || '—'}` },
-                    { label: '1Y Return', value: `${analyzerResult.return12M >= 0 ? '+' : ''}${analyzerResult.return12M}%`, color: analyzerResult.return12M >= 0 ? 'var(--bull)' : 'var(--bear)' },
-                    { label: 'RRR', value: `1 : ${analyzerResult.targets?.rrr1 || '2.5'}`, color: '#38bdf8' }
-                  ].map(stat => (
-                    <div key={stat.label} style={{
-                      background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-sm)', padding: '4px 8px',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 50
-                    }}>
-                      <span style={{ fontSize: 7.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{stat.label}</span>
-                      <span style={{ fontSize: 10.5, fontWeight: 'bold', color: stat.color || 'var(--text-primary)' }}>{stat.value || 'N/A'}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. Multi-Horizon Predictive Target Roadmap */}
-              {analyzerResult.targets && (
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Zap size={14} style={{ color: '#eab308' }} /> Predictive Target & Risk Ladder
-                    </span>
-                    <span style={{ fontSize: 10, color: analyzerResult.targets.isValidTradeSetup ? '#10d98a' : 'var(--text-muted)' }}>
-                      {analyzerResult.targets.isValidTradeSetup ? '✅ Institutional R:R Setup' : '⚠️ Defensive Sizing'}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
-                    {/* Stop Loss */}
-                    <div style={{ background: 'rgba(255,79,106,0.08)', border: '1px solid rgba(255,79,106,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
-                      <div style={{ fontSize: 8.5, color: '#ff4f6a', fontWeight: 800, textTransform: 'uppercase' }}>🛑 Invalidation Stop</div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: '#ff4f6a', marginTop: 2 }}>Rs. {analyzerResult.targets.stopLoss.price}</div>
-                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>-{analyzerResult.targets.stopLoss.pct}% Floor</div>
-                    </div>
-
-                    {/* Entry Zone */}
-                    <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
-                      <div style={{ fontSize: 8.5, color: '#38bdf8', fontWeight: 800, textTransform: 'uppercase' }}>🎯 Optimal Entry</div>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>{analyzerResult.targets.entryZone.min} – {analyzerResult.targets.entryZone.max}</div>
-                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Accumulation Band</div>
-                    </div>
-
-                    {/* Target 1 */}
-                    <div style={{ background: 'rgba(16,217,138,0.08)', border: '1px solid rgba(16,217,138,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
-                      <div style={{ fontSize: 8.5, color: '#10d98a', fontWeight: 800, textTransform: 'uppercase' }}>🚀 Target 1 (Swing)</div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: '#10d98a', marginTop: 2 }}>Rs. {analyzerResult.targets.target1.price}</div>
-                      <div style={{ fontSize: 9.5, color: '#10d98a' }}>+{analyzerResult.targets.target1.pct}% (1-2W)</div>
-                    </div>
-
-                    {/* Target 2 */}
-                    <div style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
-                      <div style={{ fontSize: 8.5, color: '#a855f7', fontWeight: 800, textTransform: 'uppercase' }}>💎 Target 2 (Breakout)</div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: '#a855f7', marginTop: 2 }}>Rs. {analyzerResult.targets.target2.price}</div>
-                      <div style={{ fontSize: 9.5, color: '#a855f7' }}>+{analyzerResult.targets.target2.pct}% (3-6W)</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 3. Multi-Horizon Deep-Dive Tab Switcher */}
-              <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.25)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
-                {[
-                  { id: 'synthesis', label: '🎯 AI Synthesis' },
-                  { id: 'past', label: '📜 Past 365D & Trend' },
-                  { id: 'present', label: '🔍 Graham V* & Live' },
-                  { id: 'future', label: '🔮 Trade Blueprint' }
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveResultTab(t.id)}
-                    style={{
-                      flex: 1, padding: '7px 4px', fontSize: 10.5, fontWeight: 800, borderRadius: 8,
-                      border: 'none', cursor: 'pointer', transition: 'all 0.2s',
-                      background: activeResultTab === t.id ? 'var(--primary)' : 'transparent',
-                      color: activeResultTab === t.id ? '#fff' : 'var(--text-muted)'
-                    }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab 1: AI Synthesis Report */}
-              {activeResultTab === 'synthesis' && (
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <BrainCircuit size={13} /> Guru AI Synthesis Report
-                  </div>
-                  <div
-                    className="markdown-content"
-                    style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-primary)' }}
-                    dangerouslySetInnerHTML={{ __html: parseMarkdown(analyzerResult.aiText) }}
-                  />
-                </div>
-              )}
-
-              {/* Tab 2: Past Anatomy & 365D History */}
-              {activeResultTab === 'past' && (
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <BarChart2 size={14} style={{ color: '#38bdf8' }} /> 365-Day Historical Memory & Wyckoff Phase
-                  </div>
-
-                  {analyzerHistory.length > 1 && (
-                    <div style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginBottom: 6 }}>365-DAY HISTORICAL OHLCV TREND</div>
-                      <Sparkline history={analyzerHistory} width={320} height={60} />
-                    </div>
-                  )}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>200-DAY MOVING AVERAGE</span>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.sma200}</div>
-                      <span style={{ fontSize: 10, color: analyzerResult.stock.ltp >= analyzerResult.sma200 ? '#10d98a' : '#ff4f6a' }}>
-                        {analyzerResult.smaTrend}
-                      </span>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>50-DAY MOVING AVERAGE</span>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.sma50}</div>
-                      <span style={{ fontSize: 10, color: analyzerResult.stock.ltp >= analyzerResult.sma50 ? '#10d98a' : '#ff4f6a' }}>
-                        {analyzerResult.stock.ltp >= analyzerResult.sma50 ? 'Above 50 SMA' : 'Below 50 SMA'}
-                      </span>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>52-WEEK CYCLE POSITION</span>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{analyzerResult.cyclePosition}%</div>
-                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
-                        Low Rs. {analyzerResult.low52w} — High Rs. {analyzerResult.high52w}
-                      </span>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>1-YEAR HISTORICAL RETURN</span>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: analyzerResult.return12M >= 0 ? '#10d98a' : '#ff4f6a' }}>
-                        {analyzerResult.return12M >= 0 ? '+' : ''}{analyzerResult.return12M}%
-                      </div>
-                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>From authentic 1Y ago candle</span>
-                    </div>
-                  </div>
-
-                  {analyzerResult.wyckoff && (
-                    <div style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', padding: 12, borderRadius: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#a855f7' }}>Wyckoff Cycle: {analyzerResult.wyckoff.phase}</div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>{analyzerResult.wyckoff.description}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab 3: Present Fundamentals & Graham Valuation */}
-              {activeResultTab === 'present' && (
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Award size={14} style={{ color: '#10d98a' }} /> Benjamin Graham Intrinsic Valuation & Fundamentals
-                  </div>
-
-                  {analyzerResult.graham && (
-                    <div style={{ background: 'rgba(16,217,138,0.06)', border: '1px solid rgba(16,217,138,0.2)', padding: 12, borderRadius: 8 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>GRAHAM INTRINSIC VALUE (V*)</span>
-                          <div style={{ fontSize: 18, fontWeight: 900, color: '#10d98a' }}>Rs. {analyzerResult.graham.intrinsicValue > 0 ? analyzerResult.graham.intrinsicValue : 'N/A'}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>MARGIN OF SAFETY</span>
-                          <div style={{ fontSize: 16, fontWeight: 900, color: analyzerResult.graham.marginOfSafetyPct >= 0 ? '#10d98a' : '#ff4f6a' }}>
-                            {analyzerResult.graham.marginOfSafetyPct >= 0 ? '+' : ''}{analyzerResult.graham.marginOfSafetyPct}%
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6 }}>{analyzerResult.graham.valuationStatus}</div>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
-                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>TTM EPS</span>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.stock.eps || '—'}</div>
-                    </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
-                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>BOOK VALUE</span>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>Rs. {analyzerResult.stock.bookValue || '—'}</div>
-                    </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6, textAlign: 'center' }}>
-                      <span style={{ fontSize: 8, color: 'var(--text-muted)' }}>P/E MULTIPLE</span>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)' }}>{analyzerResult.stock.pe || '—'}x</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab 4: Future Predictive Strategy */}
-              {activeResultTab === 'future' && (
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Shield size={14} style={{ color: '#eab308' }} /> Tactical Trade Execution Blueprint
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 11.5, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <strong style={{ color: '#38bdf8' }}>1. Entry Trigger Condition:</strong>
-                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Accumulate strictly within {analyzerResult.targets?.entryZone.label || 'the suggested buy band'}. Do not chase spikes above Target 1.</div>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <strong style={{ color: '#10d98a' }}>2. Profit Scaling Protocol:</strong>
-                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Book 50% initial profit at {analyzerResult.targets?.target1.label}, trail stop to Breakeven, and let the remainder ride to {analyzerResult.targets?.target2.label}.</div>
-                    </div>
-
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8 }}>
-                      <strong style={{ color: '#ff4f6a' }}>3. Invalidation Stop-Loss:</strong>
-                      <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>If a daily session closes below {analyzerResult.targets?.stopLoss.label}, trigger full capital protection exit.</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 4. Interactive Quick-Prompt Chips */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Ask Guru AI about {analyzerResult.symbol}:</span>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[
-                    `🎯 What is the exact buy order price for ${analyzerResult.symbol}?`,
-                    `📉 What if NEPSE drops 50 points tomorrow for ${analyzerResult.symbol}?`,
-                    `🏛️ Explain the Graham Intrinsic Value of ${analyzerResult.symbol}`,
-                    `🌊 What are top brokers doing with ${analyzerResult.symbol}?`
-                  ].map(q => (
-                    <button
-                      key={q}
-                      onClick={() => {
-                        setActiveTab('chat');
-                        submitQuestion(q);
-                      }}
-                      style={{
-                        background: 'rgba(91,94,244,0.1)', border: '1px solid rgba(91,94,244,0.25)',
-                        color: 'var(--primary-light)', borderRadius: 16, padding: '5px 10px',
-                        fontSize: 10.5, cursor: 'pointer', textAlign: 'left'
-                      }}
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Analyze Another Button */}
-              <button
-                onClick={() => { setAnalyzerResult(null); setAnalyzerQuery(''); setAnalyzerSymbol(''); setAnalyzerHistory([]); }}
-                className="btn btn-secondary btn-sm"
-                style={{ width: '100%', marginTop: 4 }}
-              >
-                🔍 Analyze Another Stock
-              </button>
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!analyzerResult && !analyzerLoading && !analyzerError && (
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-              padding: 32, background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--border)', borderRadius: 'var(--radius-lg)'
-            }}>
-              <BrainCircuit size={36} style={{ color: 'var(--primary-light)', opacity: 0.5 }} />
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: 4 }}>AI Stock Analyzer</p>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Search any NEPSE stock symbol above to get a complete AI analysis with BUY/HOLD/SELL verdict</p>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {['NABIL', 'EBL', 'NICA', 'SCB', 'CBBL', 'NLIC'].map(sym => (
-                  <button
-                    key={sym}
-                    onClick={() => { setAnalyzerQuery(sym); setAnalyzerSymbol(sym); handleAnalyze(sym); }}
-                    style={{ background: 'rgba(91,94,244,0.1)', border: '1px solid rgba(91,94,244,0.3)', color: 'var(--primary-light)', borderRadius: 20, padding: '4px 12px', fontSize: 11, cursor: 'pointer' }}
-                  >
-                    {sym}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── TAB: GURU AI CHAT ────────────────────────────────────────────────── */}
-      {activeTab === 'guru' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, background: 'rgba(6,8,16,0.5)', padding: '0 16px' }}>
-
-          {/* API Config (compact) */}
-          <div style={{ marginBottom: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}>
-            <details>
-              <summary style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--primary-light)', cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Cpu size={11} /> AI Engine: {activeLLM} — Click to configure
-              </summary>
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text-muted)' }}>🤖 Preferred AI Model</label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[
-                      { id: 'auto', label: '⚡ Auto' },
-                      { id: 'glm', label: '🟣 GLM-4' },
-                      { id: 'gemini', label: '🟡 Gemini' },
-                      { id: 'groq', label: '🟢 Groq' }
-                    ].map(engine => (
-                      <button
-                        key={engine.id}
-                        type="button"
-                        onClick={() => {
-                          setPreferredEngine(engine.id);
-                          localStorage.setItem('nepse_hub_preferred_ai_engine', engine.id);
-                        }}
-                        style={{
-                          flex: 1, padding: '5px 4px', fontSize: 9, fontWeight: 'bold',
-                          borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-                          background: preferredEngine === engine.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                          color: preferredEngine === engine.id ? '#fff' : 'var(--text-muted)',
-                          cursor: 'pointer', transition: 'var(--transition)'
-                        }}
-                      >
-                        {engine.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'bold' }}>🟣 GLM-4 / Zhipu AI Key (Integrated)</label>
-                    <span style={{ fontSize: 9, color: 'var(--bull)' }}>✓ Pre-Configured</span>
-                  </div>
-                  <input type="password" value={glmKey} onChange={e => saveGlmKey(e.target.value)} placeholder="0a3ba... (GLM-4 Key)" className="input" style={{ padding: '5px 10px', fontSize: 11 }} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'bold' }}>🟢 Groq Key (Fast & Free)</label>
-                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" style={{ fontSize: 9, color: 'var(--primary-light)' }}>Get Key ↗</a>
-                  </div>
-                  <input type="password" value={groqKey} onChange={e => saveGroqKey(e.target.value)} placeholder="gsk_..." className="input" style={{ padding: '5px 10px', fontSize: 11 }} />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'bold' }}>🟡 Gemini Key (Google AI)</label>
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ fontSize: 9, color: 'var(--primary-light)' }}>Get Key ↗</a>
-                  </div>
-                  <input type="password" value={geminiKey} onChange={e => saveGeminiKey(e.target.value)} placeholder="AIza... or AQ..." className="input" style={{ padding: '5px 10px', fontSize: 11 }} />
-                </div>
-                <p style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7 }}>Primary AI API is connected across the entire app with fallback protection.</p>
-              </div>
-            </details>
-          </div>
-
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12, paddingRight: 4 }}>
-            {messages.map((m, idx) => (
-              <div key={idx} style={{ display: 'flex', justifyContent: m.sender === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div style={{
-                  maxWidth: '88%', padding: 12, fontSize: 12, lineHeight: 1.5,
-                  ...(m.sender === 'user'
-                    ? { background: 'var(--primary)', color: '#fff', borderRadius: '16px 16px 0 16px' }
-                    : { background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '0 16px 16px 16px' })
-                }}>
-                  {m.sender === 'guru' ? (
-                    <div className="markdown-content" dangerouslySetInnerHTML={{ __html: parseMarkdown(m.text) }} style={{ fontWeight: 500 }} />
-                  ) : (
-                    <div>{m.text}</div>
-                  )}
-                  <div style={{ fontSize: 9, textAlign: 'right', color: m.sender === 'user' ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 4 }}>{m.time}</div>
-                </div>
-              </div>
-            ))}
-            {isTyping && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '0 16px 16px 16px', padding: 12, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Sparkles size={14} style={{ color: 'var(--primary-light)', animation: 'spin 1s linear infinite' }} /> Guru is analyzing...
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Quick Prompts */}
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '6px 0', scrollbarWidth: 'none', flexShrink: 0 }}>
-            {['Which stocks to buy?', 'Analyze NABIL', 'Analyze my portfolio', 'How are taxes calculated?', 'What is WACC?', 'Analyze EBL'].map(prompt => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => handleQuickPrompt(prompt)}
-                className="sector-pill"
-                style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', whiteSpace: 'nowrap', flexShrink: 0 }}
-              >
-                {prompt}
+                {s}
               </button>
             ))}
           </div>
-
-          {/* Input form */}
-          <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: 6, padding: '12px 0', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <input
-              type="text"
-              value={userInput}
-              onChange={e => setUserInput(e.target.value)}
-              placeholder="Ask Guru: 'Analyze NICA' or 'Which sectors are bullish?'..."
-              className="input"
-              style={{ padding: '8px 16px', fontSize: 12, flex: 1, borderRadius: 50 }}
-            />
-            <button type="submit" style={{ padding: 10, background: 'var(--primary)', color: '#fff', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <Send size={14} />
-            </button>
-          </form>
         </div>
       )}
+
+      {/* Market Outlook Tab */}
+      {activeTab === 'market' && (
+        <div style={{ padding: '12px 20px', background: 'white', borderBottom: '1px solid #e2e8f0' }}>
+          <button
+            onClick={getMarketOutlook}
+            disabled={loading}
+            style={{
+              padding: '10px 24px',
+              background: loading ? '#e2e8f0' : '#1d4ed8',
+              color: loading ? '#94a3b8' : 'white',
+              border: 'none', borderRadius: 8,
+              fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
+              marginRight: 10
+            }}
+          >
+            {loading ? '⏳ Analyzing...' : '🌐 Get Market Outlook'}
+          </button>
+          <button
+            onClick={analyzePortfolio}
+            disabled={loading || portfolio.length === 0}
+            style={{
+              padding: '10px 24px',
+              background: !loading && portfolio.length > 0 ? '#7c3aed' : '#e2e8f0',
+              color: !loading && portfolio.length > 0 ? 'white' : '#94a3b8',
+              border: 'none', borderRadius: 8,
+              fontWeight: 700, cursor: portfolio.length > 0 ? 'pointer' : 'not-allowed'
+            }}
+          >
+            💼 Analyze My Portfolio ({portfolio.length} stocks)
+          </button>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        {messages.map((msg, i) => (
+          <ChatMessage key={i} msg={msg} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Quick Actions */}
+      {activeTab === 'chat' && messages.length <= 2 && (
+        <div style={{
+          padding: '10px 20px', background: 'white',
+          borderTop: '1px solid #e2e8f0'
+        }}>
+          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 8 }}>
+            Quick Actions:
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            {QUICK_ACTIONS.map((qa, i) => (
+              <button
+                key={i}
+                onClick={qa.action}
+                disabled={loading}
+                style={{
+                  padding: '6px 14px', borderRadius: 20,
+                  background: '#eff6ff', border: '1px solid #bfdbfe',
+                  color: '#1d4ed8', fontSize: '0.78rem',
+                  fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                {qa.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SAMPLE_QUESTIONS.slice(0, 4).map((q, i) => (
+              <button
+                key={i}
+                onClick={() => setInput(q)}
+                style={{
+                  padding: '4px 12px', borderRadius: 20,
+                  background: '#f8fafc', border: '1px solid #e2e8f0',
+                  color: '#475569', fontSize: '0.75rem', cursor: 'pointer'
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <div style={{
+        padding: '12px 16px', background: 'white',
+        borderTop: '1px solid #e2e8f0',
+        display: 'flex', gap: 10, alignItems: 'flex-end'
+      }}>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              sendChat();
+            }
+          }}
+          placeholder="Ask GURU AI anything about NEPSE stocks..."
+          disabled={loading}
+          rows={2}
+          style={{
+            flex: 1, padding: '10px 14px',
+            border: '1px solid #e2e8f0', borderRadius: 10,
+            fontSize: '0.9rem', resize: 'none',
+            fontFamily: 'inherit', lineHeight: 1.5
+          }}
+        />
+        <button
+          onClick={sendChat}
+          disabled={!input.trim() || loading}
+          style={{
+            padding: '10px 20px', borderRadius: 10,
+            background: input.trim() && !loading ? '#1d4ed8' : '#e2e8f0',
+            color: input.trim() && !loading ? 'white' : '#94a3b8',
+            border: 'none', fontWeight: 700, cursor: 'pointer',
+            fontSize: '1.1rem', minWidth: 50
+          }}
+        >
+          {loading ? '⏳' : '↑'}
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-8px); }
+        }
+      `}</style>
     </div>
   );
 }

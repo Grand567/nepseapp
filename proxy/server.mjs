@@ -4305,6 +4305,65 @@ app.post('/api/watchlist/prices', async (req, res) => {
   }
 });
 
+// ============================================================
+// GURU AI ANALYSIS (Gemini / Multi-Provider AI)
+// ============================================================
+app.post('/api/guru/analyze', async (req, res) => {
+  try {
+    const { prompt, analysisType } = req.body;
+    if (!prompt) {
+      return res.status(400).json({ success: false, error: 'prompt is required' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '';
+    if (apiKey) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
+        const response = await axios.post(geminiUrl, {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: analysisType === 'chat' ? 'text/plain' : 'application/json'
+          }
+        }, { timeout: 35000 });
+
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          try {
+            const data = JSON.parse(text);
+            return res.json({ success: true, data });
+          } catch {
+            return res.json({ success: true, data: text });
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini API call failed:', geminiErr.message);
+      }
+    }
+
+    // Fallback via Pollinations or free AI generator
+    try {
+      const polUrl = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&seed=42`;
+      const pRes = await axios.get(polUrl, { timeout: 25000 });
+      if (pRes.data) {
+        let text = typeof pRes.data === 'string' ? pRes.data : JSON.stringify(pRes.data);
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          try {
+            const data = JSON.parse(match[0]);
+            return res.json({ success: true, data });
+          } catch {}
+        }
+        return res.json({ success: true, data: text });
+      }
+    } catch (_) {}
+
+    res.status(503).json({ success: false, error: 'AI service temporarily unavailable. Please set GEMINI_API_KEY.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', async () => {
     try {
         await initDB();

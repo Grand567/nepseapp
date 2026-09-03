@@ -1137,7 +1137,7 @@ export const fetchCompareStocks = async (symbol1, symbol2) => {
 const _callProxy = async (path, options = {}) => {
   try {
     const isNative = Capacitor.isNativePlatform();
-    const proxyUrl = getProxyBaseUrl();
+    const proxyUrl = getProxyBase();
     const url = `${proxyUrl}${path}`;
 
     if (isNative) {
