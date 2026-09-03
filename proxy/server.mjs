@@ -4341,6 +4341,38 @@ app.post('/api/guru/analyze', async (req, res) => {
       }
     }
 
+    // Provider 2: GLM-4 / Zhipu AI (Official Key)
+    const glmKey = process.env.GLM_API_KEY || process.env.ZHIPU_API_KEY || 'REMOVED_KEY';
+    if (glmKey) {
+      try {
+        const glmRes = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+          model: 'glm-4-flash',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${glmKey.trim()}`
+          },
+          timeout: 30000
+        });
+
+        const glmText = glmRes.data?.choices?.[0]?.message?.content;
+        if (glmText) {
+          const match = glmText.match(/\{[\s\S]*\}/);
+          if (match) {
+            try {
+              const data = JSON.parse(match[0]);
+              return res.json({ success: true, source: 'GLM-4 AI', data });
+            } catch {}
+          }
+          return res.json({ success: true, source: 'GLM-4 AI', data: glmText });
+        }
+      } catch (glmErr) {
+        console.warn('GLM API call failed:', glmErr.message);
+      }
+    }
+
     // Fallback via Pollinations or free AI generator
     try {
       const polUrl = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&seed=42`;

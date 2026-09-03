@@ -7,3 +7,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: GLM_API_KEY
+        value: REMOVED_KEY
