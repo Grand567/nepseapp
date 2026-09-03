@@ -4,6 +4,7 @@
   "type": "module",
   "version": "1.0.0",
   "scripts": {
+    "start": "node proxy/server.mjs",
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
     "preview": "vite preview",
@@ -26,9 +27,11 @@
     "firebase": "^12.13.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.395.0",
+    "node-cache": "^5.1.2",
     "pg": "^8.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "rss-parser": "^3.13.0",
     "tough-cookie": "^6.0.1"
   },
   "devDependencies": {
