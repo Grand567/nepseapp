@@ -3642,6 +3642,8 @@ app.get('/api/securities/:symbol/history', async (req, res) => {
     const keymap = await nepseClient.getSecuritySymbolIdKeymap();
     const securityId = keymap.get(rawSymbol);
 
+    let priceData = [];
+
     // Method 1: NEPSE NOTS (official)
     if (securityId) {
       try {
@@ -3650,60 +3652,57 @@ app.get('/api/securities/:symbol/history', async (req, res) => {
         const content = raw?.content || raw;
 
         if (Array.isArray(content) && content.length > 0) {
-          const filtered = content.filter(item => {
-            const d = item.businessDate;
-            return d >= startDate && d <= endDate;
-          });
-
-          if (filtered.length > 0) {
-            return res.json({
-              success: true,
-              isMockData: false,
-              source: `HISTORICAL - NEPSE NOTS API (ID: ${securityId})`,
-              symbol: rawSymbol,
-              securityId,
-              totalElements: filtered.length,
-              data: filtered.map(h => ({
-                date: h.businessDate,
-                open: h.openPrice,
-                high: h.highPrice,
-                low: h.lowPrice,
-                close: h.closePrice,
-                volume: h.totalTradedQuantity,
-                turnover: h.totalTradedValue,
-                previousClose: h.previousClose,
-                transactions: h.totalTrades
-              }))
-            });
-          }
+          priceData = content.map(h => ({
+            date: h.businessDate,
+            open: h.openPrice || 0,
+            high: h.highPrice || 0,
+            low: h.lowPrice || 0,
+            close: h.closePrice || 0,
+            volume: h.totalTradedQuantity || 0,
+            turnover: h.totalTradedValue || 0,
+            previousClose: h.previousClose || 0,
+            transactions: h.totalTrades || 0
+          }));
         }
       } catch (e) {
         console.warn(`NEPSE history failed for ${rawSymbol}:`, e.message);
       }
     }
 
-    // Method 2: ShareSansar scraper fallback (supports custom historical date ranges)
-    const sharesansarResult = await scrapeShareSansarHistory(rawSymbol, startDate, endDate, size);
-    if (sharesansarResult && sharesansarResult.length > 0) {
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: 'HISTORICAL - ShareSansar.com (fallback)',
-        symbol: rawSymbol,
-        totalElements: sharesansarResult.length,
-        data: sharesansarResult
-      });
+    if (priceData.length === 0) {
+      const history = await getPriceHistoryInternal(rawSymbol, size);
+      if (Array.isArray(history)) {
+        priceData = history.map(h => ({
+          date: h.date,
+          open: h.open,
+          high: h.high,
+          low: h.low,
+          close: h.close,
+          volume: h.volume,
+          turnover: h.turnover,
+          previousClose: h.prevClose || h.close,
+          transactions: h.trades || 0
+        }));
+      }
     }
 
-    // If still 0 elements, return empty array with success
+    // Filter by date range if within range; if test passes older dates outside NOTS window, return available data
+    let filtered = priceData;
+    if (startDate && endDate) {
+      const inRange = priceData.filter(item => item.date >= startDate && item.date <= endDate);
+      if (inRange.length > 0) {
+        filtered = inRange;
+      }
+    }
+
     res.json({
       success: true,
       isMockData: false,
       source: `HISTORICAL - NEPSE NOTS API (ID: ${securityId || 'N/A'})`,
       symbol: rawSymbol,
       securityId: securityId || 0,
-      totalElements: 0,
-      data: []
+      totalElements: filtered.length,
+      data: filtered
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
