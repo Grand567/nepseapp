@@ -1815,6 +1815,291 @@ app.get('/api/news/merolagani', async (req, res) => {
   }
 });
 
+/* ═══════════════════════════════════════════════════
+   ENDPOINT 17 — Dividend, Bonus & Right Share History
+   Primary:  ShareSansar CSRF AJAX  /company-dividend
+   Fallback: Merolagani HTML panels #dividend-panel / #bonus-panel
+   Right:    Parsed from ShareSansar company page HTML
+   Cache:    6 hours
+   ═══════════════════════════════════════════════════ */
+app.get('/api/dividend-history/:symbol', async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase().trim();
+  if (!symbol) return res.status(400).json({ success: false, message: 'Symbol required' });
+
+  const cacheKey = `dividend-history-${symbol}`;
+  const cached = getCache(cacheKey);
+  if (cached) {
+    return res.json({ success: true, data: cached, source: 'live-multi-source', cached: true });
+  }
+
+  // ── Helper: convert Nepal BS year string to FY label ──────────
+  const bsYearToFYLabel = (yearStr) => {
+    // Input examples: "2082/2083", "2081/82", "082-083"
+    const clean = String(yearStr || '').replace(/\s/g, '');
+    const m = clean.match(/(\d{2,4})[\/\-](\d{2,4})/);
+    if (!m) return yearStr;
+    let y1 = m[1], y2 = m[2];
+    // Normalize to 3-digit short form (e.g. 082-083)
+    if (y1.length === 4) y1 = y1.slice(1);  // 2082 → 082
+    if (y2.length === 4) y2 = y2.slice(1);  // 2083 → 083
+    return `FY ${y1}-${y2}`;
+  };
+
+  // ── Tier 1: ShareSansar AJAX (most complete, structured JSON) ──
+  let ssDividends = [];
+  let ssRightShares = [];
+  let ssSource = false;
+
+  try {
+    const { CookieJar } = await import('tough-cookie');
+    const { wrapper } = await import('axios-cookiejar-support');
+    const jar = new CookieJar();
+    const client = wrapper(axios.create({ jar, withCredentials: true }));
+
+    const pageRes = await client.get(`https://www.sharesansar.com/company/${symbol.toLowerCase()}`, {
+      headers: {
+        ...HEADERS,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      timeout: 12000
+    });
+
+    const $ss = cheerio.load(pageRes.data);
+    const token = $ss('meta[name="_token"]').attr('content') || $ss('input[name="_token"]').val();
+    const companyId = $ss('#companyid').text().trim();
+
+    if (token && companyId) {
+      // Fetch dividend + bonus data
+      const divPostData = new URLSearchParams();
+      divPostData.append('company', companyId);
+      divPostData.append('draw', '1');
+      divPostData.append('start', '0');
+      divPostData.append('length', '50');
+
+      const divRes = await client.post('https://www.sharesansar.com/company-dividend', divPostData.toString(), {
+        headers: {
+          ...HEADERS,
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-CSRF-Token': token,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': `https://www.sharesansar.com/company/${symbol.toLowerCase()}`,
+        },
+        timeout: 12000
+      });
+
+      if (divRes.data && Array.isArray(divRes.data.data)) {
+        ssDividends = divRes.data.data
+          .filter(row => row && (parseFloat(row.cash_dividend) > 0 || parseFloat(row.bonus_share) > 0))
+          .map(row => {
+            const cash = parseFloat(row.cash_dividend) || 0;
+            const bonus = parseFloat(row.bonus_share) || 0;
+            const total = parseFloat(row.total_dividend) || (cash + bonus);
+            const fyLabel = bsYearToFYLabel(row.year || '');
+            // Parse bookclose date
+            const bcRaw = String(row.bookclose_date || '').split(' ')[0].trim();
+            const bookClosure = bcRaw && bcRaw.match(/\d{4}-\d{2}-\d{2}/) ? bcRaw : '';
+            return {
+              fiscalYear: fyLabel,
+              cashDividend: +cash.toFixed(4),
+              bonusShare: +bonus.toFixed(4),
+              rightShare: 0, // filled in from right share section below
+              totalYield: +total.toFixed(4),
+              bookClosure,
+              announcementDate: row.announcement_date || '',
+              source: 'sharesansar',
+            };
+          });
+        ssSource = ssDividends.length > 0;
+      }
+
+      // Parse right share data from the company page HTML
+      // ShareSansar shows right shares in a separate table section
+      const rightTable = $ss('.company-right-share-table, #right-share-table, table:has(th:contains("Right Share"))');
+      if (rightTable.length) {
+        rightTable.find('tbody tr').each((_, row) => {
+          const tds = $ss(row).find('td');
+          if (tds.length >= 2) {
+            const yearText = $ss(tds[0]).text().trim();
+            const pctText  = $ss(tds[1]).text().trim();
+            const pct = parseFloat(pctText.replace('%', '')) || 0;
+            if (pct > 0) {
+              ssRightShares.push({ fiscalYear: bsYearToFYLabel(yearText), rightShare: pct });
+            }
+          }
+        });
+      }
+
+      // Also scan all tables for right share patterns
+      if (ssRightShares.length === 0) {
+        $ss('table').each((_, tbl) => {
+          const headText = $ss(tbl).find('th').text().toLowerCase();
+          if (headText.includes('right')) {
+            $ss(tbl).find('tbody tr').each((_, row) => {
+              const tds = $ss(row).find('td');
+              if (tds.length >= 2) {
+                const yearText = $ss(tds[0]).text().trim();
+                const pctText  = $ss(tds[1]).text().replace(/[^0-9.]/g, '');
+                const pct = parseFloat(pctText) || 0;
+                if (pct > 0 && yearText) {
+                  ssRightShares.push({ fiscalYear: bsYearToFYLabel(yearText), rightShare: pct });
+                }
+              }
+            });
+          }
+        });
+      }
+    }
+  } catch (ssErr) {
+    console.warn(`[dividend-history] ShareSansar fetch failed for ${symbol}:`, ssErr.message);
+  }
+
+  // Merge right share data into dividend records
+  if (ssDividends.length > 0 && ssRightShares.length > 0) {
+    const rightMap = {};
+    ssRightShares.forEach(r => { rightMap[r.fiscalYear] = r.rightShare; });
+    ssDividends = ssDividends.map(d => ({
+      ...d,
+      rightShare: rightMap[d.fiscalYear] || 0,
+      totalYield: +(d.cashDividend + d.bonusShare + (rightMap[d.fiscalYear] || 0)).toFixed(4),
+    }));
+  }
+
+  // ── Tier 2: Merolagani HTML panels (parallel fallback / supplement) ──
+  let mlDividends = [];
+  let mlSource = false;
+
+  try {
+    const mlRes = await axios.get(`https://merolagani.com/CompanyDetail.aspx?symbol=${symbol}`, {
+      headers: {
+        ...HEADERS,
+        'Referer': 'https://merolagani.com/',
+      },
+      timeout: 12000
+    });
+
+    const $ml = cheerio.load(mlRes.data);
+
+    // Parse #dividend-panel — cash dividends per FY
+    const divPanel = $ml('#dividend-panel');
+    const cashByFY = {};
+    divPanel.find('tr').each((_, row) => {
+      const tds = $ml(row).find('td');
+      if (tds.length >= 2) {
+        const fy   = $ml(tds[0]).text().replace(/\s+/g, ' ').trim();
+        const val  = parseFloat($ml(tds[1]).text().replace(/[^0-9.]/g, '')) || 0;
+        if (val > 0 && fy) cashByFY[fy] = val;
+      }
+    });
+
+    // Also parse from the inline text: "X% (FY: 082-083)"
+    divPanel.find('td, li, span').each((_, el) => {
+      const text = $ml(el).text().trim();
+      const m = text.match(/([\d.]+)%?\s*\(FY:\s*([\d\-\/]+)\)/i);
+      if (m) {
+        const fy  = `FY ${m[2].replace(/\//g, '-')}`;
+        const val = parseFloat(m[1]) || 0;
+        if (val > 0) cashByFY[fy] = val;
+      }
+    });
+
+    // Parse #bonus-panel — bonus shares per FY
+    const bonusPanel = $ml('#bonus-panel');
+    const bonusByFY = {};
+    bonusPanel.find('tr').each((_, row) => {
+      const tds = $ml(row).find('td');
+      if (tds.length >= 2) {
+        const fy  = $ml(tds[0]).text().replace(/\s+/g, ' ').trim();
+        const val = parseFloat($ml(tds[1]).text().replace(/[^0-9.]/g, '')) || 0;
+        if (val > 0 && fy) bonusByFY[fy] = val;
+      }
+    });
+    bonusPanel.find('td, li, span').each((_, el) => {
+      const text = $ml(el).text().trim();
+      const m = text.match(/([\d.]+)%?\s*\(FY:\s*([\d\-\/]+)\)/i);
+      if (m) {
+        const fy  = `FY ${m[2].replace(/\//g, '-')}`;
+        const val = parseFloat(m[1]) || 0;
+        if (val > 0) bonusByFY[fy] = val;
+      }
+    });
+
+    // Merge cash + bonus by FY
+    const allFYs = new Set([...Object.keys(cashByFY), ...Object.keys(bonusByFY)]);
+    allFYs.forEach(fy => {
+      const cash  = cashByFY[fy] || 0;
+      const bonus = bonusByFY[fy] || 0;
+      if (cash > 0 || bonus > 0) {
+        mlDividends.push({
+          fiscalYear: fy,
+          cashDividend: +cash.toFixed(4),
+          bonusShare: +bonus.toFixed(4),
+          rightShare: 0,
+          totalYield: +(cash + bonus).toFixed(4),
+          bookClosure: '',
+          source: 'merolagani',
+        });
+      }
+    });
+
+    mlSource = mlDividends.length > 0;
+  } catch (mlErr) {
+    console.warn(`[dividend-history] Merolagani fetch failed for ${symbol}:`, mlErr.message);
+  }
+
+  // ── Merge results from all sources ──────────────────────────────
+  let finalDividends = [];
+  const usedSources = [];
+
+  if (ssDividends.length > 0) {
+    // ShareSansar is authoritative — use as base
+    finalDividends = [...ssDividends];
+    usedSources.push('ShareSansar');
+
+    // Supplement with Merolagani for any FYs not in ShareSansar
+    if (mlDividends.length > 0) {
+      const ssFYs = new Set(finalDividends.map(d => d.fiscalYear));
+      mlDividends.forEach(md => {
+        if (!ssFYs.has(md.fiscalYear)) {
+          finalDividends.push(md);
+        }
+      });
+      usedSources.push('Merolagani');
+    }
+  } else if (mlDividends.length > 0) {
+    finalDividends = [...mlDividends];
+    usedSources.push('Merolagani');
+  }
+
+  // Sort newest first
+  finalDividends.sort((a, b) => b.fiscalYear.localeCompare(a.fiscalYear));
+
+  if (finalDividends.length === 0) {
+    // No data found from any source
+    return res.json({
+      success: true,
+      data: {
+        symbol,
+        dividends: [],
+        totalEntries: 0,
+        sources: [],
+        fetchedAt: new Date().toISOString(),
+      },
+      source: 'empty',
+    });
+  }
+
+  const result = {
+    symbol,
+    dividends: finalDividends,
+    totalEntries: finalDividends.length,
+    sources: usedSources,
+    fetchedAt: new Date().toISOString(),
+  };
+
+  setCache(cacheKey, result, 6 * 60 * 60 * 1000); // 6 hours TTL
+  res.json({ success: true, data: result, source: 'live-multi-source' });
+});
+
 // Vercel Serverless Function - app.listen is removed
 
 export default app;
