@@ -26,19 +26,19 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
 
     let passed = true;
 
-    // Test 1: Buyer Calculations (Broker Tier 1)
-    addLog('info', '🧪 Test 1: Buyer Calculations (Amount <= 50,000)');
+    // Test 1: Buyer Calculations (Broker Tier 1 - SEBON 2081 Rate: 0.36%)
+    addLog('info', '🧪 Test 1: Buyer Calculations (Amount <= 50,000, 0.36% commission)');
     try {
       const buy = calculateBuyDetails(100, 150);
       if (
-        buy.commission === 60 &&
+        buy.commission === 54 &&
         buy.sebonFee === 2.25 &&
         buy.dpFee === 25 &&
-        buy.totalAmount === 15087.25
+        buy.totalAmount === 15081.25
       ) {
-        addLog('success', '✅ Test 1 Passed: Buy calculations are exactly correct.');
+        addLog('success', '✅ Test 1 Passed: Buy calculations match SEBON 2081 rules.');
       } else {
-        throw new Error(`Calculation mismatch. Expected Total 15087.25, got ${buy.totalAmount}`);
+        throw new Error(`Calculation mismatch. Expected Total 15081.25, got ${buy.totalAmount}`);
       }
     } catch (err) {
       addLog('error', `❌ Test 1 Failed: ${err.message}`);
@@ -50,9 +50,8 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
     addLog('info', '🧪 Test 2: Seller Calculations (Short-term Individual 7.5%)');
     try {
       const sellShort = calculateSellDetails(100, 200, 150, 'short');
-      const expectedProfitBase = 4917;
-      const expectedCGT = 368.775;
-      const expectedReceivable = 19523.225;
+      const expectedCGT = 367.5;
+      const expectedReceivable = 19532.5;
 
       const tolerance = 0.01;
       const diffCGT = Math.abs(sellShort.cgt - expectedCGT);
@@ -77,7 +76,7 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
         { quantity: 50, price: 200 }   // Buy 2
       ];
       const waccResult = calculateWacc(txs);
-      const expectedWacc = 25153.75 / 150;
+      const expectedWacc = 25143.75 / 150;
       
       if (Math.abs(waccResult.wacc - expectedWacc) < 0.01 && waccResult.totalQuantity === 150) {
         addLog('success', `✅ Test 3 Passed: Combined WACC is correctly calculated at Rs. ${waccResult.wacc.toFixed(4)}.`);

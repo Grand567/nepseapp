@@ -1301,8 +1301,45 @@ app.post('/api/meroshare/apply', async (req, res) => {
   }
 });
 
-/* ENDPOINT 10 — Get IPO Result Companies */
+/* ENDPOINT 10 — Get IPO Result Companies (for Bulk Allotment Check dropdown) */
 app.get('/api/ipo-result/companies', async (req, res) => {
+  // CDSC iporesult.cdsc.com.np blocks server-to-server requests via WAF.
+  // Strategy: return all IPOs from our live-listings source (NepaliPaisa),
+  // filtered to Closed/Allotted status so users can identify the company.
+  // The actual CDSC companyShareId for the check must be entered manually
+  // or resolved via MeroShare auth.
+
+  try {
+    // Reuse the /api/ipo/live-listings data which already works
+    const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, {
+      timeout: 8000
+    }).catch(() => null);
+
+    let items = [];
+    if (liveRes && Array.isArray(liveRes.data?.data)) {
+      items = liveRes.data.data;
+    }
+
+    // Return Closed items (result may be published), Nearing, and Open for completeness
+    const resultCompanies = items
+      .filter(i => i && (i.status === 'Closed' || i.status === 'Alloted' || i.status === 'Nearing' || i.status === 'Open'))
+      .map(i => ({
+        id: i.id,                        // np-xxx id (for display reference)
+        name: i.name || i.companyName || 'Unknown',
+        scrip: i.scrip || '',
+        type: i.type || 'IPO',
+        closeDate: i.closeDate || '',
+        status: i.status || 'Closed'
+      }));
+
+    if (resultCompanies.length > 0) {
+      return res.json({ success: true, data: resultCompanies, source: 'live-listings' });
+    }
+  } catch (e) {
+    console.warn('[ipo-result/companies] live-listings reuse failed:', e.message);
+  }
+
+  // Fallback: try CDSC directly (usually WAF-blocked from server but worth trying)
   try {
     const response = await axios.get('https://iporesult.cdsc.com.np/api/ipo-result/companyShares/fileUploaded', {
       headers: {
@@ -1310,22 +1347,28 @@ app.get('/api/ipo-result/companies', async (req, res) => {
         'Accept': 'application/json, text/plain, */*',
         'Origin': 'https://iporesult.cdsc.com.np',
         'Referer': 'https://iporesult.cdsc.com.np/',
-      }
+      },
+      timeout: 10000
     });
     const rawData = Array.isArray(response.data?.body) ? response.data.body : (Array.isArray(response.data) ? response.data : []);
-    const normalized = rawData.map(item => ({
-      id: item.companyShareId ?? item.id,
-      name: item.companyName || item.name || 'Unknown',
-      scrip: item.scrip || String((item.companyShareId ?? item.id) || ''),
-      type: item.shareTypeName || 'IPO',
-      closeDate: item.issueCloseDate || '',
-    }));
-    res.json({ success: true, data: normalized });
+    if (rawData.length > 0) {
+      const normalized = rawData.map(item => ({
+        id: item.companyShareId ?? item.id,
+        name: item.companyName || item.name || 'Unknown',
+        scrip: item.scrip || String((item.companyShareId ?? item.id) || ''),
+        type: item.shareTypeName || 'IPO',
+        closeDate: item.issueCloseDate || '',
+        status: 'Alloted'
+      }));
+      return res.json({ success: true, data: normalized, source: 'cdsc' });
+    }
   } catch (error) {
-    console.error('[ipo-result/companies] Error:', error.message);
-    res.status(500).json({ success: false, message: 'Failed to fetch IPO companies' });
+    console.error('[ipo-result/companies] CDSC also failed:', error.message);
   }
+
+  res.status(500).json({ success: false, message: 'Could not fetch IPO result companies.' });
 });
+
 
 /* ENDPOINT 11 — Check IPO Result (single BOID) */
 app.post('/api/ipo-result/check', async (req, res) => {

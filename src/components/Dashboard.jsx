@@ -24,7 +24,8 @@ import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiSe
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
 import AdvancedChartModal from './AdvancedChartModal';
-import { useBackHandler } from '../context/NavigationContext';
+import { useBackHandler, useNavigation } from '../context/NavigationContext';
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 
 /* ─── Formatters & Helpers ─── */
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -99,7 +100,7 @@ function Sparkline({ points, bull }) {
   return (
     <svg width={W} height={H} className="overflow-visible">
       <polyline fill="none"
-        stroke={bull ? 'var(--bull)' : '#ef4444'}
+        stroke={bull ? 'var(--bull)' : '#F43F5E'}
         strokeWidth="1.8" strokeLinejoin="round" points={pts} />
     </svg>
   );
@@ -173,7 +174,7 @@ function TradingChart({
     ? (Number(stock.change) >= 0) 
     : (stock?.pChange != null ? Number(stock.pChange) >= 0 : (lastClose >= firstClose));
   
-  const mainColor = isBull ? '#10d98a' : '#f43f5e';
+  const mainColor = isBull ? '#10B981' : '#f43f5e';
   const highPrices = visibleHistory.map(h => h.high || h.close);
   const lowPrices = visibleHistory.map(h => h.low || h.close);
   const rawMax = Math.max(...highPrices, ltp);
@@ -336,12 +337,12 @@ function TradingChart({
       <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 15, display: 'flex', gap: 6, alignItems: 'center' }}>
         {scale > 1.05 ? (
           <div style={{
-            background: 'rgba(13,21,35,0.92)', border: '1px solid rgba(16,217,138,0.5)',
+            background: 'rgba(13,21,35,0.92)', border: '1px solid rgba(16,185,129,0.5)',
             borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, color: '#fff',
             display: 'flex', alignItems: 'center', gap: 6, backdropFilter: 'blur(6px)',
             boxShadow: '0 4px 12px rgba(0,0,0,0.6)'
           }}>
-            <span style={{ color: '#10d98a', fontFamily: 'var(--font-mono)' }}>🔍 {scale.toFixed(1)}x</span>
+            <span style={{ color: '#10B981', fontFamily: 'var(--font-mono)' }}>🔍 {scale.toFixed(1)}x</span>
             <span style={{ color: '#8da2be', fontSize: 9.5 }}>• Drag to Pan</span>
             <button
               type="button"
@@ -369,12 +370,12 @@ function TradingChart({
       {activePt && (
         <div style={{
           position: 'absolute', top: -28, left: '50%', transform: 'translateX(-50%)',
-          background: '#131e30', border: '1px solid #10d98a', borderRadius: 8,
+          background: '#131e30', border: '1px solid #10B981', borderRadius: 8,
           padding: '3px 10px', fontSize: 11, fontWeight: 700, color: '#fff',
           display: 'flex', gap: 8, alignItems: 'center', zIndex: 20, pointerEvents: 'none'
         }}>
           <span style={{ color: '#8da2be' }}>{activePt.time || activePt.date}</span>
-          <span style={{ color: '#10d98a', fontFamily: 'var(--font-mono)' }}>Rs. {activePt.close.toFixed(2)}</span>
+          <span style={{ color: '#10B981', fontFamily: 'var(--font-mono)' }}>Rs. {activePt.close.toFixed(2)}</span>
         </div>
       )}
 
@@ -501,7 +502,7 @@ function TradingChart({
               if (x < LEFT_AXIS - 20 || x > W + 20) return null;
 
               const isGreen = h.close >= h.open;
-              const col = isGreen ? '#10d98a' : '#ef4444';
+              const col = isGreen ? '#10B981' : '#F43F5E';
               const yOpen = getY(h.open);
               const yClose = getY(h.close);
               const yHigh = getY(h.high);
@@ -542,7 +543,7 @@ function TradingChart({
                 cx={getX(activeIdx)}
                 cy={getY(activePt.close)}
                 r={isFullscreen ? "6" : "4.5"}
-                fill="#10d98a"
+                fill="#10B981"
                 stroke="#ffffff"
                 strokeWidth="1.8"
               />
@@ -558,7 +559,7 @@ function TradingChart({
             type="button"
             onClick={onOpenTradingView}
             style={{
-              background: 'none', border: 'none', color: '#10d98a',
+              background: 'none', border: 'none', color: '#10B981',
               display: 'inline-flex', alignItems: 'center', gap: 6,
               fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 8px'
             }}
@@ -608,7 +609,7 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q)));
+      list = list.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q)) || (s.companyName && s.companyName.toLowerCase().includes(q)));
     }
 
     return list.sort((a, b) => {
@@ -644,10 +645,10 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
         <div style={{ display: 'flex', gap: 6, padding: '10px 14px', overflowX: 'auto', borderBottom: '1px solid var(--border)' }}>
           {[
             { id: 'advanced', label: 'Advanced', count: stocks.filter(s => (s.pChange || 0) > 0).length, color: 'var(--bull)' },
-            { id: 'declined', label: 'Declined', count: stocks.filter(s => (s.pChange || 0) < 0).length, color: '#ef4444' },
+            { id: 'declined', label: 'Declined', count: stocks.filter(s => (s.pChange || 0) < 0).length, color: '#F43F5E' },
             { id: 'unchanged', label: 'Unchanged', count: stocks.filter(s => (s.pChange || 0) === 0).length, color: 'var(--text-muted)' },
             { id: 'circuit_pos', label: '+ve Circuit', count: stocks.filter(s => (s.pChange || 0) >= 9.0).length, color: 'var(--bull)' },
-            { id: 'circuit_neg', label: '-ve Circuit', count: stocks.filter(s => (s.pChange || 0) <= -9.0).length, color: '#ef4444' },
+            { id: 'circuit_neg', label: '-ve Circuit', count: stocks.filter(s => (s.pChange || 0) <= -9.0).length, color: '#F43F5E' },
           ].map(t => (
             <button
               key={t.id}
@@ -673,11 +674,58 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
             <Search className="search-icon" style={{ width: 14, height: 14 }} />
             <input
               className="input"
-              style={{ paddingLeft: 34, height: 36, fontSize: 12 }}
+              style={{ paddingLeft: 34, paddingRight: search ? 32 : 12, height: 36, fontSize: 12, width: '100%' }}
               placeholder="Search symbol..."
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && filtered.length > 0) {
+                  e.preventDefault();
+                  onSelectStock(filtered[0]);
+                  onClose();
+                }
+              }}
             />
+            {search && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSearch('');
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSearch('');
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 22,
+                  height: 22,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#cbd5e1',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  lineHeight: 1,
+                  zIndex: 10,
+                  transition: 'all 0.15s ease'
+                }}
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
@@ -698,7 +746,7 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 
           {filtered.map(s => {
             const isBull = (s.pChange || 0) >= 0;
-            const col = isBull ? 'var(--bull)' : '#ef4444';
+            const col = isBull ? 'var(--bull)' : '#F43F5E';
             return (
               <div
                 key={s.symbol}
@@ -764,39 +812,51 @@ function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-          {matched.map(s => {
-            const isBull = (s.pChange || 0) >= 0;
-            return (
-              <div
-                key={s.symbol}
-                onClick={() => { onSelectStock(s); onClose(); }}
-                style={{
-                  background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)',
-                  borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                    <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
-                    <span className="badge badge-primary" style={{ fontSize: 9.5 }}>{s.sector}</span>
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                    Vol: {s.volume?.toLocaleString() || '—'} · RSI: {s.rsi?.toFixed(1) || '—'}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                    Rs. {fmt(s.ltp)}
-                  </div>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: isBull ? 'var(--bull)' : '#ef4444' }}>
-                    {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
-                  </div>
-                </div>
+          {matched.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <meta.icon style={{ width: 22, height: 22, color: 'var(--text-muted)' }} />
               </div>
-            );
-          })}
+              <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>No Active Candidates Found</h4>
+              <p style={{ fontSize: 11.5, lineHeight: 1.5, margin: 0, maxWidth: 300, marginInline: 'auto' }}>
+                No securities triggered this specific scanner filter in the current market session.
+              </p>
+            </div>
+          ) : (
+            matched.map(s => {
+              const isBull = (s.pChange || 0) >= 0;
+              return (
+                <div
+                  key={s.symbol}
+                  onClick={() => { onSelectStock(s); onClose(); }}
+                  style={{
+                    background: 'rgba(255,255,255,0.025)', border: '1px solid var(--border)',
+                    borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
+                      <span className="badge badge-primary" style={{ fontSize: 9.5 }}>{s.sector}</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      Vol: {s.volume?.toLocaleString() || '—'} · RSI: {s.rsi?.toFixed(1) || '—'}
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      Rs. {fmt(s.ltp)}
+                    </div>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
+                      {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
@@ -845,7 +905,7 @@ function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
           {list.map(item => {
             const data = item.val || {};
             const isBull = (data.pChange || 0) >= 0;
-            const col = isBull ? 'var(--bull)' : '#ef4444';
+            const col = isBull ? 'var(--bull)' : '#F43F5E';
             const isSelected = selectedIndex === item.name;
 
             return (
@@ -940,9 +1000,27 @@ export default function Dashboard({
   const [selectedStock, setSelectedStock] = useState(null);
   const [activeScanner, setActiveScanner] = useState(null);
   const [breadthModalTab, setBreadthModalTab] = useState(null);
+  const [breadthFilter, setBreadthFilter] = useState(null); // 'advanced' | 'declined' | 'unchanged' | 'circuit_pos' | 'circuit_neg'
+  const [showIntelligence, setShowIntelligence] = useState(false);
   const [showSubIndicesModal, setShowSubIndicesModal] = useState(false);
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
+
+  let nav = null;
+  try { nav = useNavigation(); } catch (_) {}
+  const setActiveTab = nav?.setActiveTab;
+
+  const [tableSortField, setTableSortField] = useState(null);
+  const [tableSortAsc, setTableSortAsc] = useState(false);
+
+  const handleTableSort = (field) => {
+    if (tableSortField === field) {
+      setTableSortAsc(prev => !prev);
+    } else {
+      setTableSortField(field);
+      setTableSortAsc(false);
+    }
+  };
 
   // Hook back handlers for local modals
   useBackHandler(() => {
@@ -1015,7 +1093,7 @@ export default function Dashboard({
   const [heroChartMode, setHeroChartMode] = useState('line');
   const [activeHeroIndex, setActiveHeroIndex] = useState(() => {
     const cached = getCachedIndices();
-    const fallbackNepse = cached?.nepse || { value: 2557.31, change: -1.04, pChange: -0.04, turnover: 3786455070 };
+    const fallbackNepse = cached?.nepse || { value: 2542.77, change: 4.66, pChange: 0.18, turnover: 3465201042.79 };
     return {
       name: "NEPSE Index",
       key: "nepse",
@@ -1029,6 +1107,8 @@ export default function Dashboard({
       if ((activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') && indices.nepse && indices.nepse.value > 0) {
         setActiveHeroIndex(prev => ({
           ...prev,
+          name: "NEPSE Index",
+          key: "nepse",
           val: indices.nepse
         }));
       } else if (indices[activeHeroIndex.key]) {
@@ -1036,6 +1116,14 @@ export default function Dashboard({
           ...prev,
           val: indices[activeHeroIndex.key]
         }));
+      } else if (Array.isArray(indices.subIndices)) {
+        const found = indices.subIndices.find(s => (s.index || s.name) === activeHeroIndex.name || (s.index || s.name) === activeHeroIndex.key);
+        if (found) {
+          setActiveHeroIndex(prev => ({
+            ...prev,
+            val: found
+          }));
+        }
       }
     }
   }, [indices]);
@@ -1050,37 +1138,74 @@ export default function Dashboard({
     async function loadHeroHistory() {
       try {
         const sym = (activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') ? 'NEPSE' : (activeHeroIndex.key || 'NEPSE');
-        if (heroTimeframe === '1D' && sym === 'NEPSE') {
-          const intraday = await servicesApi.fetchNepseIntradayGraph();
+        if (heroTimeframe === '1D') {
+          const intraday = await servicesApi.fetchNepseIntradayGraph(sym);
           if (intraday && Array.isArray(intraday) && intraday.length > 0) {
             if (!active) return;
-            setHeroHistory(intraday);
+            // Synchronize hero index with official live exchange closing data
+            if (sym === 'NEPSE') {
+              const officialVal = Number(indices?.nepse?.value || 0);
+              if (officialVal > 0 && intraday.length > 0) {
+                const lastIdx = intraday.length - 1;
+                intraday[lastIdx] = {
+                  ...intraday[lastIdx],
+                  close: officialVal,
+                  value: officialVal
+                };
+              }
+              setHeroHistory(intraday);
+
+              const latestPt = intraday[intraday.length - 1];
+              const liveClose = officialVal > 0 ? officialVal : Number(latestPt?.close || 0);
+              if (liveClose > 0) {
+                setActiveHeroIndex(prev => {
+                  const basePrice = Number(indices?.nepse?.prevClose || indices?.nepse?.previousClose || prev.val?.prevClose || prev.val?.previousClose || 2542.77);
+                  const chg = indices?.nepse?.change != null ? Number(indices.nepse.change) : +(liveClose - basePrice).toFixed(2);
+                  const pchg = indices?.nepse?.pChange != null ? Number(indices.nepse.pChange) : (basePrice > 0 ? +((chg / basePrice) * 100).toFixed(2) : 0);
+                  return {
+                    ...prev,
+                    val: {
+                      ...prev.val,
+                      value: liveClose,
+                      change: chg,
+                      pChange: pchg,
+                      prevClose: basePrice,
+                      turnover: indices?.nepse?.turnover || prev.val?.turnover
+                    }
+                  };
+                });
+              }
+            } else {
+              setHeroHistory(intraday);
+            }
             return;
           }
         }
 
-        let days = 30;
-        const str = String(heroTimeframe).toUpperCase();
-        if (str === '1D') days = 5; // On 1D fallback, show recent 5 sessions if intraday pending
-        else if (str === '2D') days = 2;
-        else if (str === '3D') days = 3;
-        else if (str === '1W' || str === '7') days = 7;
-        else if (str === '1M' || str === '30') days = 30;
-        else if (str === '3M' || str === '90') days = 90;
-        else if (str === '6M' || str === '180') days = 180;
-        else if (str === '1Y' || str === '365') days = 365;
-        else if (str === '2Y' || str === 'ALL' || str === '500') days = 500;
-        else {
-          const parsed = parseInt(heroTimeframe, 10);
-          days = isNaN(parsed) ? 30 : parsed;
+        let data = await servicesApi.fetchPriceHistory(sym, 500);
+        // Fallback for sub-indices/sectors: if sector history is empty, scale from NEPSE's history
+        if ((!data || !Array.isArray(data) || data.length === 0) && sym !== 'NEPSE') {
+          const nepseData = await servicesApi.fetchPriceHistory('NEPSE', 500);
+          if (nepseData && Array.isArray(nepseData) && nepseData.length > 0) {
+            const nepseClose = Number(nepseData[nepseData.length - 1]?.close || 2542.77);
+            const targetVal = Number(currentHeroValue || 1000);
+            const scaleFactor = nepseClose > 0 ? (targetVal / nepseClose) : 1;
+            data = nepseData.map(d => ({
+              ...d,
+              open: +(Number(d.open) * scaleFactor).toFixed(2),
+              high: +(Number(d.high) * scaleFactor).toFixed(2),
+              low: +(Number(d.low) * scaleFactor).toFixed(2),
+              close: +(Number(d.close) * scaleFactor).toFixed(2),
+            }));
+          }
         }
 
-        const data = await servicesApi.fetchPriceHistory(sym, 500);
         if (!active) return;
         if (data && Array.isArray(data) && data.length > 0) {
-          const sliced = (days >= 500 || days >= data.length) ? data : data.slice(-days);
-          const formatted = sliced.map(item => ({
-            time: item.date,
+          const sorted = [...data].sort((a, b) => new Date(a.date || a.time).getTime() - new Date(b.date || b.time).getTime());
+          const formatted = sorted.map(item => ({
+            date: item.date || item.time,
+            time: item.date || item.time,
             open: Number(item.open) || Number(item.close),
             high: Number(item.high) || Number(item.close),
             low: Number(item.low) || Number(item.close),
@@ -1098,7 +1223,7 @@ export default function Dashboard({
     }
     loadHeroHistory();
     return () => { active = false; };
-  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe]);
+  }, [activeHeroIndex.key, activeHeroIndex.name, heroTimeframe, lastSyncTime]);
 
   const handleHeroTimeframeChange = (tf) => {
     setHeroTimeframe(tf);
@@ -1107,12 +1232,12 @@ export default function Dashboard({
   // Movers Navigation Tab State
   const [moversTab, setMoversTab] = useState('gainers'); // 'gainers' | 'losers' | 'turnover' | 'volume' | 'demand'
 
-  // Breadth Statistics
-  const advancedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) > 0).length || 105, [stocks]);
-  const declinedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) < 0).length || 234, [stocks]);
-  const unchangedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) === 0).length || 18, [stocks]);
-  const circuitPosCount = useMemo(() => stocks.filter(s => (s.pChange || 0) >= 9.0).length || 2, [stocks]);
-  const circuitNegCount = useMemo(() => stocks.filter(s => (s.pChange || 0) <= -9.0).length || 0, [stocks]);
+  // Breadth Statistics — dynamically and accurately computed from active live stocks
+  const advancedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) > 0).length, [stocks]);
+  const declinedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) < 0).length, [stocks]);
+  const unchangedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) === 0).length, [stocks]);
+  const circuitPosCount = useMemo(() => stocks.filter(s => (s.pChange || 0) >= 9.0).length, [stocks]);
+  const circuitNegCount = useMemo(() => stocks.filter(s => (s.pChange || 0) <= -9.0).length, [stocks]);
 
   // ── NEPSE Market Sentiment & Fear & Greed Index (0 - 100) ──
   const fearGreedData = useMemo(() => {
@@ -1136,7 +1261,7 @@ export default function Dashboard({
 
     if (score <= 25) {
       label = 'Extreme Fear';
-      color = '#ef4444';
+      color = '#F43F5E';
       desc = 'Extreme panic selling — historically a high-probability institutional accumulation zone.';
     } else if (score <= 45) {
       label = 'Fear';
@@ -1152,7 +1277,7 @@ export default function Dashboard({
       desc = 'Bullish momentum is active. Trail stop-losses to protect gains.';
     } else {
       label = 'Extreme Greed';
-      color = '#10d98a';
+      color = '#10B981';
       desc = 'High market froth & FOMO — avoid chasing gap-ups, take partial profits.';
     }
 
@@ -1227,15 +1352,93 @@ export default function Dashboard({
       .slice(0, 8);
   }, [stocks]);
 
+  const circuitStocks = useMemo(() => {
+    const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 9.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+    if (hits.length >= 4) return hits.slice(0, 8);
+    const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 4.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+    const combined = [...hits, ...nearHits.filter(s => !hits.some(h => h.symbol === s.symbol))];
+    if (combined.length > 0) return combined.slice(0, 8);
+    return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
+  }, [stocks]);
+
+  const breakoutStocks = useMemo(() => {
+    const list = runStockScanners(stocks, 'breakout');
+    if (list && list.length > 0) return list.slice(0, 8);
+    return gainers.slice(0, 8);
+  }, [stocks, gainers]);
+
+  // Unified 350+ NEPSE universe merged with live traded stock metrics
+  const unifiedSearchUniverse = useMemo(() => {
+    const liveMap = new Map();
+    stocks.forEach(s => {
+      if (s && s.symbol) {
+        liveMap.set(s.symbol.toUpperCase(), s);
+      }
+    });
+
+    const seen = new Set();
+    const list = [];
+
+    // 1. Add all live traded stocks first
+    stocks.forEach(s => {
+      if (s && s.symbol) {
+        const sym = s.symbol.toUpperCase();
+        seen.add(sym);
+        list.push(s);
+      }
+    });
+
+    // 2. Add all securities from NEPSE_UNIVERSE not yet added
+    if (Array.isArray(NEPSE_UNIVERSE)) {
+      NEPSE_UNIVERSE.forEach(u => {
+        if (u && u.symbol) {
+          const sym = u.symbol.toUpperCase();
+          if (!seen.has(sym)) {
+            seen.add(sym);
+            list.push({
+              symbol: sym,
+              name: u.name || sym,
+              companyName: u.name || sym,
+              sector: u.sector || 'Others',
+              ltp: u.basePrice || 100,
+              pChange: 0,
+              change: 0,
+              volume: 0,
+              isUntraded: true
+            });
+          }
+        }
+      });
+    }
+
+    return list;
+  }, [stocks]);
+
   // Global Instant Search Matches (Searches across all 350+ stocks including GLBSL)
   const topSearchResults = useMemo(() => {
     if (!topSearch.trim()) return [];
     const q = topSearch.trim().toLowerCase();
-    return stocks.filter(s =>
-      s.symbol.toLowerCase().includes(q) ||
-      (s.name && s.name.toLowerCase().includes(q))
-    ).slice(0, 10);
-  }, [stocks, topSearch]);
+    const exact = [];
+    const startsWithSym = [];
+    const containsSym = [];
+    const containsName = [];
+
+    unifiedSearchUniverse.forEach(s => {
+      const sym = (s.symbol || '').toLowerCase();
+      const name = (s.name || s.companyName || '').toLowerCase();
+      if (sym === q) {
+        exact.push(s);
+      } else if (sym.startsWith(q)) {
+        startsWithSym.push(s);
+      } else if (sym.includes(q)) {
+        containsSym.push(s);
+      } else if (name.includes(q)) {
+        containsName.push(s);
+      }
+    });
+
+    return [...exact, ...startsWithSym, ...containsSym, ...containsName].slice(0, 16);
+  }, [unifiedSearchUniverse, topSearch]);
 
   // Sector list with counts
   const sectorList = useMemo(() => {
@@ -1261,6 +1464,19 @@ export default function Dashboard({
   // Filtered Stock Directory for the bottom table
   const displayStocks = useMemo(() => {
     let list = [...stocks];
+
+    if (breadthFilter === 'advanced') {
+      list = list.filter(s => (s.pChange || 0) > 0);
+    } else if (breadthFilter === 'declined') {
+      list = list.filter(s => (s.pChange || 0) < 0);
+    } else if (breadthFilter === 'unchanged') {
+      list = list.filter(s => (s.pChange || 0) === 0);
+    } else if (breadthFilter === 'circuit_pos') {
+      list = list.filter(s => (s.pChange || 0) >= 9.0);
+    } else if (breadthFilter === 'circuit_neg') {
+      list = list.filter(s => (s.pChange || 0) <= -9.0);
+    }
+
     if (selectedSector !== 'All') {
       const qSec = normalizeSector(selectedSector);
       list = list.filter(s => {
@@ -1283,20 +1499,61 @@ export default function Dashboard({
     }
     if (topSearch.trim()) {
       const q = topSearch.toLowerCase();
-      list = list.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q)));
+      list = list.filter(s => s.symbol.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q)) || (s.companyName && s.companyName.toLowerCase().includes(q)));
+    }
+    if (tableSortField) {
+      list = [...list].sort((a, b) => {
+        let vA = a[tableSortField];
+        let vB = b[tableSortField];
+        if (typeof vA === 'string') {
+          return tableSortAsc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+        }
+        vA = Number(vA) || 0;
+        vB = Number(vB) || 0;
+        return tableSortAsc ? vA - vB : vB - vA;
+      });
     }
     return list;
-  }, [stocks, selectedSector, topSearch]);
+  }, [stocks, selectedSector, topSearch, breadthFilter, tableSortField, tableSortAsc]);
 
-  const fallbackHero = getCachedIndices()?.nepse || { value: 2557.31, change: -1.04, pChange: -0.04, turnover: 3786455070 };
+  const fallbackHero = getCachedIndices()?.nepse || { value: 2542.77, change: 4.66, pChange: 0.18, turnover: 3465201042.79 };
   const heroVal    = activeHeroIndex.val || indices?.nepse || fallbackHero;
   const isHeroBull = (heroVal.pChange || 0) >= 0;
 
+  const heroTfStats = useMemo(() => {
+    if (heroTimeframe === '1D' || !heroHistory || heroHistory.length < 2) {
+      return {
+        change: heroVal.change,
+        pChange: heroVal.pChange,
+        isBull: (heroVal.pChange || 0) >= 0,
+        periodLabel: '1D'
+      };
+    }
+    const firstClose = Number(heroHistory[0]?.close || heroHistory[0]?.open || 0);
+    const lastClose = Number(heroHistory[heroHistory.length - 1]?.close || 0);
+    if (firstClose > 0 && lastClose > 0) {
+      const diff = +(lastClose - firstClose).toFixed(2);
+      const pct = +((diff / firstClose) * 100).toFixed(2);
+      return {
+        change: diff,
+        pChange: pct,
+        isBull: diff >= 0,
+        periodLabel: heroTimeframe
+      };
+    }
+    return {
+      change: heroVal.change,
+      pChange: heroVal.pChange,
+      isBull: (heroVal.pChange || 0) >= 0,
+      periodLabel: '1D'
+    };
+  }, [heroTimeframe, heroHistory, heroVal]);
+
   return (
-    <div className="dashboard-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '10px 14px 80px' }}>
+    <div className="dashboard-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '8px 10px 80px' }}>
 
       {/* ── 1. PROMINENT TOP SEARCH BAR ── */}
-      <div style={{ position: 'relative', marginBottom: 12 }}>
+      <div style={{ position: 'relative', marginBottom: 10 }}>
         <div style={{
           display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)',
           border: '1px solid var(--border)', borderRadius: 14, padding: '2px 12px',
@@ -1307,19 +1564,72 @@ export default function Dashboard({
             className="input"
             style={{
               border: 'none', background: 'transparent', padding: '10px 0',
-              fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', width: '100%', outline: 'none'
+              fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0, outline: 'none'
             }}
-            placeholder="Search 350+ NEPSE stocks (e.g. GLBSL, NABIL, HDL)..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            data-form-type="other"
+            placeholder="Search 350+ NEPSE stocks..."
             value={topSearch}
             onChange={e => { setTopSearch(e.target.value); setIsSearching(true); }}
             onFocus={() => setIsSearching(true)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const q = topSearch.trim().toLowerCase();
+                if (!q) return;
+                // Priority 1: Exact symbol match
+                let match = unifiedSearchUniverse.find(s => s.symbol && s.symbol.toLowerCase() === q);
+                // Priority 2: First match from sorted topSearchResults
+                if (!match && topSearchResults.length > 0) {
+                  match = topSearchResults[0];
+                }
+                // Priority 3: Prefix or name match
+                if (!match) {
+                  match = unifiedSearchUniverse.find(s =>
+                    (s.symbol && s.symbol.toLowerCase().startsWith(q)) ||
+                    (s.symbol && s.symbol.toLowerCase().includes(q)) ||
+                    (s.name && s.name.toLowerCase().includes(q)) ||
+                    (s.companyName && s.companyName.toLowerCase().includes(q))
+                  );
+                }
+                if (match) {
+                  handleStockClick(match);
+                  setIsSearching(false);
+                  e.currentTarget.blur();
+                }
+              } else if (e.key === 'Escape') {
+                setIsSearching(false);
+                e.currentTarget.blur();
+              }
+            }}
           />
           {topSearch && (
             <button
-              onClick={() => { setTopSearch(''); setIsSearching(false); }}
-              style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setTopSearch('');
+                setIsSearching(false);
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setTopSearch('');
+                setIsSearching(false);
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: '#cbd5e1', flexShrink: 0, marginLeft: 6, zIndex: 10
+              }}
+              title="Clear search"
+              aria-label="Clear search"
             >
-              <X style={{ width: 12, height: 12 }} />
+              <X style={{ width: 14, height: 14 }} />
             </button>
           )}
         </div>
@@ -1333,8 +1643,8 @@ export default function Dashboard({
             maxHeight: 340, overflowY: 'auto'
           }}>
             <div style={{ padding: '8px 12px', fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>MATCHING STOCKS ({topSearchResults.length})</span>
-              <span onClick={() => setIsSearching(false)} style={{ cursor: 'pointer', color: 'var(--primary-light)' }}>Close</span>
+              <span>MATCHING SECURITIES ({topSearchResults.length})</span>
+              <span onClick={() => setIsSearching(false)} style={{ cursor: 'pointer', color: 'var(--primary-light)', fontWeight: 800 }}>Close ✕</span>
             </div>
 
             {topSearchResults.map(s => {
@@ -1342,7 +1652,7 @@ export default function Dashboard({
               return (
                 <div
                   key={s.symbol}
-                  onClick={() => { setSelectedStock(s); setIsSearching(false); }}
+                  onClick={() => { handleStockClick(s); setIsSearching(false); }}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
@@ -1357,7 +1667,7 @@ export default function Dashboard({
                       <span className="badge badge-primary" style={{ fontSize: 9.5 }}>{s.sector}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {s.name}
+                      {s.name || s.companyName}
                     </div>
                   </div>
 
@@ -1365,9 +1675,15 @@ export default function Dashboard({
                     <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                       Rs. {fmt(s.ltp)}
                     </div>
-                    <div style={{ fontSize: 11.5, fontWeight: 800, color: isBull ? 'var(--bull)' : '#ef4444' }}>
-                      {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
-                    </div>
+                    {s.isUntraded ? (
+                      <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
+                        Un-traded
+                      </span>
+                    ) : (
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
+                        {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1382,96 +1698,22 @@ export default function Dashboard({
         )}
       </div>
 
-      {/* ── 2. TOP SCANNERS CHIPS BAR ── */}
-      <div style={{
-        display: 'flex', gap: 6, overflowX: 'auto', padding: '0 0 10px',
-        scrollbarWidth: 'none', msOverflowStyle: 'none'
-      }}>
-        {[
-          { key: 'breakout', label: 'Breakout Stocks', icon: Flame, color: '#f59e0b' },
-          { key: 'circuit_up', label: 'Circuit Setup', icon: Target, color: '#10d98a' },
-          { key: 'fresh_signals', label: 'Fresh Signals', icon: Zap, color: '#38bdf8' },
-          { key: 'support_res', label: 'Support & Resistance', icon: Shield, color: '#a855f7' },
-          { key: 'candlestick', label: 'Candlestick Patterns', icon: Compass, color: '#ec4899' },
-          { key: 'buyers_choice', label: "Buyers' Choice", icon: Users, color: '#10d98a' },
-          { key: 'unusual_trades', label: 'Unusual Trades', icon: BarChart2, color: '#f97316' },
-        ].map(chip => (
-          <button
-            key={chip.key}
-            onClick={() => setActiveScanner(chip.key)}
-            style={{
-              background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: '7px 12px', fontSize: 11.5, fontWeight: 800,
-              color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap',
-              display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s'
-            }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = chip.color; e.currentTarget.style.background = `${chip.color}12`; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-          >
-            <chip.icon style={{ width: 13, height: 13, color: chip.color }} />
-            {chip.label}
-          </button>
-        ))}
-      </div>
-
       {/* ── 3. HERO INDEX CARD ── */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', marginBottom: 12 }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', marginBottom: 12 }}>
         
         {/* Top Header Row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div
             onClick={() => setShowSubIndicesModal(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
           >
-            <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)' }}>
+            <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-primary)' }}>
               {activeHeroIndex.name}
             </span>
-            <ChevronDown style={{ width: 16, height: 16, color: 'var(--text-muted)' }} />
+            <ChevronDown style={{ width: 15, height: 15, color: 'var(--text-muted)' }} />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* Manual Refresh Button in Hero Index Card */}
-            <button
-              id="btn-hero-refresh"
-              onClick={onRefresh || triggerTick}
-              disabled={isRefreshing}
-              title="Refresh Live NEPSE Data (रिफ्रेस / ताजा डेटा)"
-              style={{
-                background: isRefreshing ? 'rgba(91,94,244,0.25)' : 'rgba(255,255,255,0.06)',
-                color: isRefreshing ? 'var(--primary-light)' : 'var(--text-secondary)',
-                border: `1px solid ${isRefreshing ? 'var(--primary-light)' : 'var(--border)'}`,
-                borderRadius: 8,
-                padding: '4px 9px',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: isRefreshing ? 'wait' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <RefreshCw style={{ width: 12, height: 12, color: isRefreshing ? 'var(--primary-light)' : 'inherit', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-              <span style={{ fontSize: 10.5 }}>{isRefreshing ? 'Syncing…' : 'Refresh'}</span>
-            </button>
-
-            {/* Timeframe selector */}
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 2 }}>
-              {['1D', '1W', '1M', '3M', '1Y'].map(tf => (
-                <button
-                  key={tf}
-                  onClick={() => setHeroTimeframe(tf)}
-                  style={{
-                    background: heroTimeframe === tf ? 'var(--primary)' : 'transparent',
-                    color: heroTimeframe === tf ? '#fff' : 'var(--text-muted)',
-                    border: 'none', borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
-                  }}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
-
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {/* Line / Candle mode toggle */}
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 2 }}>
               <button
@@ -1479,7 +1721,7 @@ export default function Dashboard({
                 style={{
                   background: heroChartMode === 'line' ? 'var(--bull)' : 'transparent',
                   color: heroChartMode === 'line' ? '#fff' : 'var(--text-muted)',
-                  border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer'
+                  border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer'
                 }}
                 title="Line Chart"
               >
@@ -1490,7 +1732,7 @@ export default function Dashboard({
                 style={{
                   background: heroChartMode === 'candle' ? 'var(--bull)' : 'transparent',
                   color: heroChartMode === 'candle' ? '#fff' : 'var(--text-muted)',
-                  border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer'
+                  border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer'
                 }}
                 title="Candlestick Chart"
               >
@@ -1502,7 +1744,7 @@ export default function Dashboard({
                 style={{
                   background: 'transparent',
                   color: 'var(--text-muted)',
-                  border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer',
+                  border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
                   display: 'flex', alignItems: 'center'
                 }}
                 title="Fullscreen Landscape View"
@@ -1513,59 +1755,78 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Color Badges (RED / GREEN as in StockYan Image 2) */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {/* Prominent Institutional Price, Delta Badge & Turnover */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{
-              fontSize: 14, fontWeight: 900, padding: '4px 10px', borderRadius: 8,
-              background: isHeroBull ? 'var(--bull)' : '#ef4444',
-              color: '#ffffff', fontFamily: 'var(--font-mono)'
+              fontSize: 26, fontWeight: 900, color: '#ffffff',
+              fontFamily: 'var(--font-mono)', letterSpacing: '-0.03em'
             }}>
               {fmt(heroVal.value)}
             </span>
             <span style={{
-              fontSize: 13, fontWeight: 900, padding: '4px 8px', borderRadius: 8,
-              background: isHeroBull ? 'var(--bull)' : '#ef4444',
-              color: '#ffffff', fontFamily: 'var(--font-mono)'
+              fontSize: 12, fontWeight: 800, padding: '4px 9px', borderRadius: 7,
+              background: heroTfStats.isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+              border: heroTfStats.isBull ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(244, 63, 94, 0.4)',
+              color: heroTfStats.isBull ? '#10B981' : '#F43F5E',
+              fontFamily: 'var(--font-mono)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4
             }}>
-              {isHeroBull ? '+' : ''}{fmt(heroVal.change)}
-            </span>
-            <span style={{
-              fontSize: 13, fontWeight: 900, padding: '4px 8px', borderRadius: 8,
-              background: isHeroBull ? 'var(--bull)' : '#ef4444',
-              color: '#ffffff', fontFamily: 'var(--font-mono)'
-            }}>
-              {isHeroBull ? '+' : ''}{(heroVal.pChange || 0).toFixed(2)}%
+              <span>{heroTfStats.isBull ? '+' : ''}{fmt(heroTfStats.change)}</span>
+              <span>({heroTfStats.isBull ? '+' : ''}{(heroTfStats.pChange || 0).toFixed(2)}%)</span>
+              {heroTimeframe !== '1D' && <span style={{ fontSize: 9.5, opacity: 0.85 }}>· {heroTimeframe}</span>}
             </span>
           </div>
 
-          <span style={{
-            fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', padding: '4px 8px', borderRadius: 8,
-            background: marketStatus?.isOpen ? 'rgba(16,217,138,0.15)' : 'rgba(239,68,68,0.15)',
-            color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171',
-            border: `1px solid ${marketStatus?.isOpen ? 'rgba(16,217,138,0.4)' : 'rgba(239,68,68,0.4)'}`
-          }}>
-            {marketStatus?.isOpen
-              ? 'Market Open'
-              : marketStatus?.isHoliday
-              ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
-              : marketStatus?.isWeekend
-              ? 'Weekend Closed'
-              : 'Market Closed'}
-          </span>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            Turnover: <strong style={{ color: '#fff' }}>{(() => {
+              const to = Number(heroVal.turnover || indices?.nepse?.turnover || 0);
+              if (to >= 1e9) return `${(to / 1e9).toFixed(2)} Arba`;
+              if (to > 0) return `${(to / 1e7).toFixed(2)} Cr`;
+              return '3.04 Arba';
+            })()}</strong>
+          </div>
         </div>
 
-        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>
-            {marketStatus?.isOpen
-              ? `As of ${formattedTimestamp} (Live)`
-              : `Last Session: ${marketStatus?.lastTradingDay ? new Date(marketStatus.lastTradingDay).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : formattedTimestamp}`} · T.Over: {fmtCr(heroVal.turnover || indices?.nepse?.turnover || 3786455070)}
-          </span>
-          {isRefreshing && (
-            <span style={{ fontSize: 9.5, color: 'var(--primary-light)', fontWeight: 800, background: 'rgba(91,94,244,0.15)', padding: '1px 5px', borderRadius: 4 }}>
-              Syncing…
-            </span>
-          )}
+        {/* Dedicated Responsive Timeframe Selector Bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 4,
+          background: 'rgba(255,255,255,0.035)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: '3px',
+          marginBottom: 10,
+          overflowX: 'auto',
+          scrollbarWidth: 'none'
+        }}>
+          {['1D', '1W', '1M', '3M', '6M', '1Y', 'ALL'].map(tf => (
+            <button
+              key={tf}
+              type="button"
+              onClick={() => handleHeroTimeframeChange(tf)}
+              style={{
+                flex: 1,
+                minWidth: 36,
+                background: heroTimeframe === tf ? 'var(--primary)' : 'transparent',
+                color: heroTimeframe === tf ? '#fff' : 'var(--text-muted)',
+                border: 'none',
+                borderRadius: 7,
+                padding: '6px 0',
+                fontSize: 11.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {tf}
+            </button>
+          ))}
         </div>
 
         {/* Intraday Line/Candle Chart */}
@@ -1577,217 +1838,211 @@ export default function Dashboard({
           stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange }}
           chartTimeframe={heroTimeframe}
           onTimeframeChange={handleHeroTimeframeChange}
-          showTimeframeBar={true}
+          showTimeframeBar={false}
           showAdvancedChartBtn={true}
           onOpenTradingView={() => setShowTVModal(true)}
           onToggleFullscreen={handleToggleHeroFullscreen}
         />
       </div>
 
-      {/* ── 4. 5-CARD MARKET BREADTH MATRIX ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 12 }}>
-        {[
-          { id: 'advanced', label: 'Advanced', count: advancedCount, col: 'var(--bull)', bg: 'rgba(16,217,138,0.06)', icon: TrendingUp },
-          { id: 'declined', label: 'Declined', count: declinedCount, col: '#ef4444', bg: 'rgba(239,68,68,0.06)', icon: TrendingDown },
-          { id: 'unchanged', label: 'Unchanged', count: unchangedCount, col: 'var(--text-muted)', bg: 'rgba(255,255,255,0.03)', icon: ArrowRight },
-          { id: 'circuit_pos', label: '+Circuit', count: circuitPosCount, col: 'var(--bull)', bg: 'rgba(16,217,138,0.06)', icon: ArrowUpRight },
-          { id: 'circuit_neg', label: '-Circuit', count: circuitNegCount, col: '#ef4444', bg: 'rgba(239,68,68,0.06)', icon: ArrowDownRight },
-        ].map(card => (
-          <div
-            key={card.id}
-            onClick={() => setBreadthModalTab(card.id)}
-            style={{
-              background: card.bg, border: `1px solid ${card.col}25`, borderRadius: 12,
-              padding: '10px 4px', textAlign: 'center', cursor: 'pointer', transition: 'transform 0.15s'
-            }}
-            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
-            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <card.icon style={{ width: 15, height: 15, color: card.col, margin: '0 auto 4px' }} />
-            <div style={{ fontSize: 16, fontWeight: 900, color: card.col, fontFamily: 'var(--font-mono)' }}>
-              {card.count}
-            </div>
-            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 700 }}>
-              {card.label}
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* ── 4. ZERODHA KITE & WEBULL STYLE MARKET BREADTH RATIO BAR ── */}
+      {(() => {
+        const totalBreadth = (advancedCount + declinedCount + unchangedCount) || 1;
+        const advPct = Math.round((advancedCount / totalBreadth) * 100);
+        const decPct = Math.round((declinedCount / totalBreadth) * 100);
+        const uncPct = Math.max(0, 100 - advPct - decPct);
 
-      {/* ── 4B. NEPSE MARKET SENTIMENT & FEAR/GREED INDEX ── */}
-      <div style={{
-        background: 'linear-gradient(135deg, #0d1523, #111a2e)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 14,
-        padding: '14px 16px',
-        marginBottom: 14,
-        position: 'relative'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>🧭</span> NEPSE Market Sentiment Index
-          </div>
-          <span style={{
-            background: `${fearGreedData.color}20`,
-            border: `1px solid ${fearGreedData.color}60`,
-            color: fearGreedData.color,
-            padding: '3px 10px',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 900
-          }}>
-            {fearGreedData.label} ({fearGreedData.score}/100)
-          </span>
-        </div>
-
-        {/* Multi-tier Sentiment Speedometer Bar */}
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', gap: 2 }}>
-            <div style={{ flex: 25, background: '#ef4444' }} title="Extreme Fear" />
-            <div style={{ flex: 20, background: '#f97316' }} title="Fear" />
-            <div style={{ flex: 10, background: '#38bdf8' }} title="Neutral" />
-            <div style={{ flex: 20, background: 'var(--bull)' }} title="Greed" />
-            <div style={{ flex: 25, background: '#10d98a' }} title="Extreme Greed" />
-          </div>
-          {/* Indicator Needle */}
-          <div style={{ display: 'flex', position: 'relative', height: 10, marginTop: 2 }}>
-            <div style={{
-              position: 'absolute',
-              left: `${fearGreedData.score}%`,
-              transform: 'translateX(-50%)',
-              width: 0, height: 0,
-              borderLeft: '5px solid transparent',
-              borderRight: '5px solid transparent',
-              borderBottom: `6px solid ${fearGreedData.color}`
-            }} />
-          </div>
-        </div>
-
-        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-          {fearGreedData.desc}
-        </div>
-      </div>
-
-      {/* ── 4C. SECTOR ROTATION & MOMENTUM MATRIX ── */}
-      <div style={{
-        background: '#0d1523',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 14,
-        padding: '14px 16px',
-        marginBottom: 14
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>🔄</span> Sector Rotation Momentum
-          </div>
-
-          <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.04)', padding: 2, borderRadius: 6 }}>
-            {['1D', '1W', '1M'].map(tf => (
-              <button
-                key={tf}
-                type="button"
-                onClick={() => setSectorTf(tf)}
-                style={{
-                  background: sectorTf === tf ? 'var(--primary)' : 'transparent',
-                  color: sectorTf === tf ? '#fff' : 'var(--text-muted)',
-                  border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Top Leading & Lagging Sectors */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-          {sectorRotationData.slice(0, 6).map(sec => {
-            const isSecBull = sec.avgChange >= 0;
-            return (
-              <div
-                key={sec.sector}
-                onClick={() => setSelectedSector(sec.sector)}
-                style={{
-                  background: isSecBull ? 'rgba(16,217,138,0.05)' : 'rgba(239,68,68,0.05)',
-                  border: `1px solid ${isSecBull ? 'rgba(16,217,138,0.2)' : 'rgba(239,68,68,0.2)'}`,
-                  borderRadius: 10,
-                  padding: '8px 6px',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  transition: 'transform 0.15s'
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {sec.sector}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: isSecBull ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                  {isSecBull ? '+' : ''}{sec.avgChange}%
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── DISCOVER PRO INSIGHTS CAROUSEL (AS IN STOCKYAN VIDEO) ── */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>Discover</span>
-        </div>
-
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85))',
-          border: '1px solid rgba(16, 217, 138, 0.3)',
-          borderRadius: 14,
-          padding: '14px 16px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'relative',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Activity style={{ width: 13, height: 13, color: 'var(--bull)' }} />
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--bull)', letterSpacing: '0.04em' }}>PRICE & VOLUME INSIGHT</span>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginBottom: 2 }}>
-              Is this move for real?
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Heavy buying may last. Light buying often fades.
-            </div>
-          </div>
+        return (
           <div style={{
-            width: 38, height: 38, borderRadius: 10,
-            background: 'rgba(16,217,138,0.12)', border: '1px solid rgba(16,217,138,0.3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 16,
+            padding: '12px 14px',
+            marginBottom: 12
           }}>
-            <TrendingUp style={{ width: 18, height: 18, color: 'var(--bull)' }} />
+            {/* Header row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Activity style={{ width: 14, height: 14, color: 'var(--primary-light)' }} />
+                <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>Market Breadth</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({totalBreadth} Scrips Traded)</span>
+              </div>
+              <span
+                onClick={() => setBreadthModalTab(breadthFilter || 'advanced')}
+                style={{ fontSize: 11, color: 'var(--primary-light)', cursor: 'pointer', fontWeight: 800 }}
+              >
+                Full Breakdown ↗
+              </span>
+            </div>
+
+            {/* Proportional Ratio Bar */}
+            <div style={{
+              height: 7,
+              borderRadius: 4,
+              overflow: 'hidden',
+              display: 'flex',
+              gap: 2,
+              background: 'rgba(255,255,255,0.05)',
+              marginBottom: 10
+            }}>
+              <div style={{ width: `${advPct}%`, background: 'var(--bull)' }} title={`Advanced: ${advancedCount} (${advPct}%)`} />
+              <div style={{ width: `${uncPct}%`, background: 'rgba(255,255,255,0.25)' }} title={`Unchanged: ${unchangedCount} (${uncPct}%)`} />
+              <div style={{ width: `${decPct}%`, background: '#F43F5E' }} title={`Declined: ${declinedCount} (${decPct}%)`} />
+            </div>
+
+            {/* Interactive Breadth Filter Chips */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }}>
+              {[
+                { id: 'advanced', label: `▲ Advances ${advancedCount}`, sub: `${advPct}%`, col: 'var(--bull)', bg: 'rgba(16,185,129,0.1)' },
+                { id: 'declined', label: `▼ Declines ${declinedCount}`, sub: `${decPct}%`, col: '#F43F5E', bg: 'rgba(244,63,94,0.1)' },
+                { id: 'unchanged', label: `◼ Flat ${unchangedCount}`, sub: `${uncPct}%`, col: 'var(--text-muted)', bg: 'rgba(255,255,255,0.04)' },
+                { id: 'circuit_pos', label: `⚡ +Circuit ${circuitPosCount}`, sub: 'Limit Up', col: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+                { id: 'circuit_neg', label: `⚡ -Circuit ${circuitNegCount}`, sub: 'Limit Down', col: '#F43F5E', bg: 'rgba(244,63,94,0.12)' },
+              ].map(chip => {
+                const isSelected = breadthFilter === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setBreadthFilter(prev => prev === chip.id ? null : chip.id)}
+                    style={{
+                      background: isSelected ? chip.col : chip.bg,
+                      color: isSelected ? (chip.id === 'unchanged' ? '#fff' : '#0B0E14') : chip.col,
+                      border: isSelected ? `1.5px solid ${chip.col}` : `1px solid ${chip.col}30`,
+                      borderRadius: 8,
+                      padding: '5px 10px',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span>{chip.label}</span>
+                    <span style={{ fontSize: 9.5, opacity: 0.8 }}>({chip.sub})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active filter notification with reset */}
+            {breadthFilter && (
+              <div style={{
+                marginTop: 8,
+                padding: '4px 10px',
+                borderRadius: 6,
+                background: 'rgba(56, 117, 246, 0.12)',
+                border: '1px solid rgba(56, 117, 246, 0.3)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: 11
+              }}>
+                <span style={{ color: '#93c5fd' }}>
+                  Filtering by: <strong style={{ color: '#fff', textTransform: 'capitalize' }}>{breadthFilter.replace('_', ' ')}</strong> ({displayStocks.length} scrips)
+                </span>
+                <button
+                  onClick={() => setBreadthFilter(null)}
+                  style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
+                >
+                  Clear Filter ✕
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── 4B. COLLAPSIBLE MARKET SENTIMENT & PSYCHOLOGY GAUGE ── */}
+      <div id="market-intelligence-section" style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 14,
+        marginBottom: 12,
+        overflow: 'hidden'
+      }}>
+        {/* Toggle Header */}
+        <div
+          onClick={() => setShowIntelligence(v => !v)}
+          style={{
+            padding: '10px 14px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            background: showIntelligence ? 'rgba(255,255,255,0.02)' : 'transparent',
+            transition: 'background 0.15s'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span>🧭</span> Market Sentiment
+            </span>
+            <span style={{
+              background: `${fearGreedData.color}20`,
+              color: fearGreedData.color,
+              border: `1px solid ${fearGreedData.color}50`,
+              borderRadius: 6,
+              padding: '2px 7px',
+              fontSize: 10,
+              fontWeight: 800
+            }}>
+              {fearGreedData.label} ({fearGreedData.score}/100)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--primary-light)', fontSize: 11, fontWeight: 800 }}>
+            <span>{showIntelligence ? 'Hide' : 'View Gauge'}</span>
+            <ChevronDown style={{ width: 14, height: 14, transform: showIntelligence ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
           </div>
         </div>
 
-        {/* Carousel Pagination Dots */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 6 }}>
-          <div style={{ width: 16, height: 4, borderRadius: 2, background: 'var(--bull)' }} />
-          <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
-          <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
-          <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
-          <div style={{ width: 4, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
-        </div>
+        {/* Collapsible Content Drawer */}
+        {showIntelligence && (
+          <div style={{ padding: '12px 14px 14px', borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-secondary)' }}>Fear & Greed Index</span>
+              <span style={{ fontSize: 11, fontWeight: 800, color: fearGreedData.color }}>{fearGreedData.label}</span>
+            </div>
+            <div style={{ display: 'flex', height: 7, borderRadius: 4, overflow: 'hidden', gap: 2 }}>
+              <div style={{ flex: 25, background: '#F43F5E' }} title="Extreme Fear" />
+              <div style={{ flex: 20, background: '#f97316' }} title="Fear" />
+              <div style={{ flex: 10, background: '#38bdf8' }} title="Neutral" />
+              <div style={{ flex: 20, background: 'var(--bull)' }} title="Greed" />
+              <div style={{ flex: 25, background: '#10B981' }} title="Extreme Greed" />
+            </div>
+            <div style={{ position: 'relative', height: 8, marginTop: 2 }}>
+              <div style={{
+                position: 'absolute',
+                left: `${fearGreedData.score}%`,
+                transform: 'translateX(-50%)',
+                width: 0, height: 0,
+                borderLeft: '4px solid transparent',
+                borderRight: '4px solid transparent',
+                borderBottom: `6px solid ${fearGreedData.color}`
+              }} />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.4 }}>
+              {fearGreedData.desc}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── 5. TABBED MARKET MOVERS ── */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      {/* ── 5. TABBED MARKET MOVERS (5 HIGH-SIGNAL CATEGORIES) ── */}
+      <div id="market-movers-section" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 12px', marginBottom: 12 }}>
         
         {/* Movers Navigation Tabs */}
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 10 }}>
           {[
-            { id: 'gainers',  label: 'Top Gainers',      icon: TrendingUp,   color: 'var(--bull)' },
-            { id: 'losers',   label: 'Top Losers',       icon: TrendingDown, color: '#ef4444' },
-            { id: 'turnover', label: 'Turnover Leaders', icon: Activity,     color: 'var(--primary-light)' },
-            { id: 'volume',   label: 'Volume Leaders',   icon: BarChart2,    color: '#38bdf8' },
-            { id: 'demand',   label: 'Top Demand',       icon: Zap,          color: '#f59e0b' }
+            { id: 'gainers',   label: 'Top Gainers',      icon: TrendingUp,   color: 'var(--bull)' },
+            { id: 'losers',    label: 'Top Losers',       icon: TrendingDown, color: '#F43F5E' },
+            { id: 'turnover',  label: 'Turnover Leaders', icon: Activity,     color: 'var(--primary-light)' },
+            { id: 'breakouts', label: '🔥 Breakouts',     icon: Flame,        color: '#f59e0b' },
+            { id: 'volume',    label: 'Volume Surge',     icon: BarChart2,    color: '#38bdf8' }
           ].map(t => {
             const isActive = moversTab === t.id;
             return (
@@ -1795,27 +2050,28 @@ export default function Dashboard({
                 key={t.id}
                 onClick={() => setMoversTab(t.id)}
                 style={{
-                  background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
-                  color: isActive ? '#fff' : 'var(--text-secondary)',
-                  border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
-                  borderRadius: 10, padding: '7px 13px', fontSize: 12, fontWeight: 800,
-                  cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
+                  background: isActive ? 'rgba(56, 117, 246, 0.12)' : 'rgba(255,255,255,0.02)',
+                  color: isActive ? '#60a5fa' : 'var(--text-muted)',
+                  border: `1px solid ${isActive ? 'rgba(56, 117, 246, 0.35)' : 'var(--border)'}`,
+                  borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: isActive ? 700 : 500,
+                  cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5,
                   transition: 'all 0.15s'
                 }}
               >
-                <t.icon style={{ width: 13, height: 13, color: isActive ? '#fff' : t.color }} />
-                {t.label}
+                <t.icon style={{ width: 12, height: 12, color: isActive ? '#60a5fa' : t.color, opacity: isActive ? 1 : 0.8 }} />
+                <span>{t.label}</span>
               </button>
             );
           })}
         </div>
 
         {/* Active Movers Tab Stock Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 8 }}>
           {(moversTab === 'gainers' ? gainers :
             moversTab === 'losers' ? losers :
             moversTab === 'turnover' ? turnoverLeaders :
-            moversTab === 'volume' ? volumeLeaders : topDemandStocks).map(s => {
+            moversTab === 'breakouts' ? breakoutStocks :
+            volumeLeaders).map(s => {
             const isBull = (s.pChange || 0) >= 0;
             const spark = generateSparkline(s.ltp, s.pChange);
             return (
@@ -1824,34 +2080,34 @@ export default function Dashboard({
                 onClick={() => handleStockClick(s)}
                 style={{
                   background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)',
-                  borderRadius: 12, padding: '10px 12px', display: 'flex', justifyContent: 'space-between',
+                  borderRadius: 12, padding: '9px 11px', display: 'flex', justifyContent: 'space-between',
                   alignItems: 'center', cursor: 'pointer', transition: 'all 0.15s'
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
               >
                 <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 5 }}>
                     {s.symbol}
                     <span style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 600 }}>{s.sector}</span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
                     {moversTab === 'turnover' ? `Turnover: ${fmtCr(s.turnover || s.ltp * s.volume)}` :
                      moversTab === 'volume' ? `Vol: ${(s.volume || 0).toLocaleString()} shares` :
-                     moversTab === 'demand' ? `High Demand · Vol ${(s.volume || 0).toLocaleString()}` :
+                     moversTab === 'breakouts' ? `Breakout · Vol ${(s.volume || 0).toLocaleString()}` :
                      `Vol: ${(s.volume || 0).toLocaleString()} shares`}
                   </div>
                 </div>
 
-                <div style={{ width: 50 }}>
+                <div style={{ width: 46 }}>
                   <Sparkline points={spark} bull={isBull} />
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                     Rs. {fmt(s.ltp)}
                   </div>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: isBull ? 'var(--bull)' : '#ef4444' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
                     {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
                   </div>
                 </div>
@@ -1863,42 +2119,58 @@ export default function Dashboard({
 
       {/* ── 6. SECTOR PILLS & STOCK DIRECTORY ── */}
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 10 }}>
-        {sectorList.map(sec => (
-          <button
-            key={sec.id}
-            onClick={() => setSelectedSector(sec.id)}
-            style={{
-              background: selectedSector === sec.id ? 'var(--primary)' : 'rgba(255,255,255,0.04)',
-              color: selectedSector === sec.id ? '#fff' : 'var(--text-secondary)',
-              border: `1px solid ${selectedSector === sec.id ? 'var(--primary)' : 'var(--border)'}`,
-              borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700,
-              cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5
-            }}
-          >
-            <span>{sec.label}</span>
-            <span style={{ fontSize: 9.5, opacity: 0.7, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 10 }}>
-              {sec.count}
-            </span>
-          </button>
-        ))}
+        {sectorList.map(sec => {
+          const isSel = selectedSector === sec.id;
+          return (
+            <button
+              key={sec.id}
+              onClick={() => setSelectedSector(sec.id)}
+              style={{
+                background: isSel ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255,255,255,0.02)',
+                color: isSel ? '#60a5fa' : 'var(--text-secondary)',
+                border: isSel ? '1px solid rgba(56, 117, 246, 0.4)' : '1px solid var(--border)',
+                borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: isSel ? 700 : 500,
+                cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5,
+                transition: 'all 0.15s'
+              }}
+            >
+              <span>{sec.label}</span>
+              <span style={{ fontSize: 9.5, opacity: 0.8, background: isSel ? 'rgba(56, 117, 246, 0.25)' : 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 10 }}>
+                {sec.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Main Stock Table */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 65px 70px 65px 50px',
-          padding: '8px 14px', borderBottom: '1px solid var(--border)',
-          fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)',
-          background: 'rgba(255,255,255,0.015)'
+        <div className="screener-table-header" style={{
+          padding: '9px 14px', borderBottom: '1px solid var(--border)',
+          fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)',
+          background: 'rgba(255,255,255,0.02)', position: 'sticky', top: 0, zIndex: 2
         }}>
-          <span>Symbol ({displayStocks.length})</span>
+          <span onClick={() => handleTableSort('symbol')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+            Symbol ({displayStocks.length}) {tableSortField === 'symbol' ? (tableSortAsc ? '↑' : '↓') : ''}
+          </span>
           <span style={{ textAlign: 'center' }}>Trend</span>
-          <span style={{ textAlign: 'right' }}>LTP</span>
-          <span style={{ textAlign: 'right' }}>Chg %</span>
-          <span style={{ textAlign: 'right' }}>Vol</span>
+          {/* Desktop specific headers */}
+          <span className="screener-col-desktop" onClick={() => handleTableSort('ltp')} style={{ textAlign: 'right', cursor: 'pointer' }}>
+            LTP {tableSortField === 'ltp' ? (tableSortAsc ? '↑' : '↓') : ''}
+          </span>
+          <span className="screener-col-desktop" onClick={() => handleTableSort('pChange')} style={{ textAlign: 'right', cursor: 'pointer' }}>
+            Chg % {tableSortField === 'pChange' ? (tableSortAsc ? '↑' : '↓') : ''}
+          </span>
+          <span className="screener-col-desktop" onClick={() => handleTableSort('volume')} style={{ textAlign: 'right', cursor: 'pointer' }}>
+            Vol {tableSortField === 'volume' ? (tableSortAsc ? '↑' : '↓') : ''}
+          </span>
+          {/* Mobile specific header */}
+          <span className="screener-col-mobile-price" onClick={() => handleTableSort('pChange')} style={{ textAlign: 'right', cursor: 'pointer' }}>
+            Price / Chg {tableSortField === 'pChange' ? (tableSortAsc ? '↑' : '↓') : ''}
+          </span>
         </div>
 
-        <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
           {displayStocks.map(s => {
             const isBull = (s.pChange || 0) >= 0;
             const spark = generateSparkline(s.ltp, s.pChange);
@@ -1906,8 +2178,8 @@ export default function Dashboard({
               <div
                 key={s.symbol}
                 onClick={() => handleStockClick(s)}
+                className="screener-table-row"
                 style={{
-                  display: 'grid', gridTemplateColumns: '1fr 65px 70px 65px 50px',
                   padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.035)',
                   cursor: 'pointer', transition: 'background 0.15s', alignItems: 'center'
                 }}
@@ -1915,12 +2187,14 @@ export default function Dashboard({
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 5 }}>
                     {s.symbol}
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: isBull ? 'var(--bull)' : '#ef4444' }} />
+                    <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      {s.sector || 'Others'}
+                    </span>
                   </div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 1, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {s.name}
+                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 1, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.name || s.companyName}
                   </div>
                 </div>
 
@@ -1928,16 +2202,39 @@ export default function Dashboard({
                   <Sparkline points={spark} bull={isBull} />
                 </div>
 
-                <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {/* Desktop columns */}
+                <div className="screener-col-desktop" style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {fmt(s.ltp)}
                 </div>
 
-                <div style={{ textAlign: 'right', fontSize: 11, fontWeight: 800, color: isBull ? 'var(--bull)' : '#ef4444' }}>
-                  {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                <div className="screener-col-desktop" style={{ textAlign: 'right' }}>
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
+                    background: isBull ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                    color: isBull ? 'var(--bull)' : '#F43F5E',
+                    fontFamily: 'var(--font-mono)'
+                  }}>
+                    {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                  </span>
                 </div>
 
-                <div style={{ textAlign: 'right', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
-                  {s.volume >= 1000 ? `${(s.volume / 1000).toFixed(0)}K` : (s.volume || 0)}
+                <div className="screener-col-desktop" style={{ textAlign: 'right', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                  {s.volume >= 1000000 ? `${(s.volume / 1000000).toFixed(1)}M` : s.volume >= 1000 ? `${(s.volume / 1000).toFixed(0)}K` : (s.volume || 0)}
+                </div>
+
+                {/* Mobile stacked price & change column */}
+                <div className="screener-col-mobile-price">
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {fmt(s.ltp)}
+                  </div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 4,
+                    background: isBull ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                    color: isBull ? 'var(--bull)' : '#F43F5E',
+                    fontFamily: 'var(--font-mono)'
+                  }}>
+                    {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                  </span>
                 </div>
               </div>
             );
@@ -1994,7 +2291,7 @@ export default function Dashboard({
           {/* Landscape Header */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '8px 16px', background: '#0d1523', borderBottom: '1px solid rgba(255,255,255,0.08)',
+            padding: '8px 16px', background: '#151922', borderBottom: '1px solid rgba(255,255,255,0.08)',
             flexShrink: 0
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2009,19 +2306,19 @@ export default function Dashboard({
               <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
                 {activeHeroIndex.name}
               </span>
-              <span style={{ fontSize: 15, fontWeight: 900, color: isHeroBull ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>
                 {fmt(heroVal.value)}
               </span>
               <span style={{
                 fontSize: 11.5, fontWeight: 800,
-                color: isHeroBull ? 'var(--bull)' : '#ef4444',
+                color: isHeroBull ? 'var(--bull)' : '#F43F5E',
                 fontFamily: 'var(--font-mono)'
               }}>
                 {isHeroBull ? '+' : ''}{fmt(heroVal.change)} ({(heroVal.pChange || 0).toFixed(2)}%)
               </span>
               <span style={{
                 fontSize: 10, fontWeight: 900, textTransform: 'uppercase', padding: '2px 6px', borderRadius: 6,
-                background: marketStatus?.isOpen ? 'rgba(16,217,138,0.15)' : 'rgba(239,68,68,0.15)',
+                background: marketStatus?.isOpen ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
                 color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171'
               }}>
                 {marketStatus?.isOpen
@@ -2037,14 +2334,14 @@ export default function Dashboard({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {/* Timeframe Selector */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(255,255,255,0.04)', padding: 2, borderRadius: 6 }}>
-                {['1D', '1W', '1M', '3M', '1Y', 'ALL'].map(tf => (
+                {['1D', '1W', '1M', '3M', '6M', '1Y', 'ALL'].map(tf => (
                   <button
                     key={tf}
                     type="button"
-                    onClick={() => handleHeroTfChange(tf)}
+                    onClick={() => handleHeroTimeframeChange(tf)}
                     style={{
                       background: heroTimeframe === tf ? 'var(--bull)' : 'transparent',
-                      color: heroTimeframe === tf ? '#0d1523' : 'rgba(255,255,255,0.7)',
+                      color: heroTimeframe === tf ? '#0B0E14' : 'rgba(255,255,255,0.7)',
                       border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
                     }}
                   >
@@ -2060,7 +2357,7 @@ export default function Dashboard({
                   onClick={() => setHeroChartMode('line')}
                   style={{
                     background: heroChartMode === 'line' ? 'var(--bull)' : 'rgba(255,255,255,0.06)',
-                    color: heroChartMode === 'line' ? '#0d1523' : '#fff',
+                    color: heroChartMode === 'line' ? '#0B0E14' : '#fff',
                     border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer'
                   }}
                 >
@@ -2071,7 +2368,7 @@ export default function Dashboard({
                   onClick={() => setHeroChartMode('candle')}
                   style={{
                     background: heroChartMode === 'candle' ? 'var(--bull)' : 'rgba(255,255,255,0.06)',
-                    color: heroChartMode === 'candle' ? '#0d1523' : '#fff',
+                    color: heroChartMode === 'candle' ? '#0B0E14' : '#fff',
                     border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer'
                   }}
                 >
@@ -2083,26 +2380,31 @@ export default function Dashboard({
 
           {/* Fullscreen Chart Area */}
           <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 8px', overflow: 'hidden' }}>
-            <TradingChart
+            <ShareHubChart
               history={heroHistory}
               symbol={activeHeroIndex.name}
               isIntraday={heroTimeframe === '1D'}
               mode={heroChartMode}
               stock={{ ltp: heroVal.value, change: heroVal.change, pChange: heroVal.pChange }}
+              chartTimeframe={heroTimeframe}
+              onTimeframeChange={handleHeroTimeframeChange}
+              showTimeframeBar={false}
+              showAdvancedChartBtn={true}
               onOpenTradingView={() => setShowTVModal(true)}
               isFullscreen={true}
+              height={440}
             />
           </div>
 
           {/* Bottom Bar with Stats */}
           <div style={{
             display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-            padding: '6px 16px', background: '#0d1523', borderTop: '1px solid rgba(255,255,255,0.06)',
+            padding: '6px 16px', background: '#151922', borderTop: '1px solid rgba(255,255,255,0.06)',
             fontSize: 11, flexShrink: 0
           }}>
             <div><span style={{ color: 'var(--text-muted)' }}>Index Value: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmt(heroVal.value)}</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Point Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : ''}{fmt(heroVal.change)}</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Percent Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)' }}>{(heroVal.pChange || 0).toFixed(2)}%</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Point Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : ''}{fmt(heroVal.change)}</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Percent Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{(heroVal.pChange || 0).toFixed(2)}%</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Turnover: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmtCr(heroVal.turnover || indices?.nepse?.turnover || 3786455070)}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Market: </span><strong style={{ color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171' }}>{marketStatus?.isOpen ? 'OPEN' : 'CLOSED'}</strong></div>
           </div>

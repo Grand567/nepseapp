@@ -23,9 +23,11 @@ import {
   calculateRiskRewardRatio
 } from '../utils/quantEngine';
 import { fetchStockFundamentals, fetchRealPriceHistory, fetchRealFloorsheet, fetchRealBrokerAnalysis, fetchMarketDepth, fetchDividendHistory, fetchCompareStocks } from '../utils/liveData';
+import { fetchNepseIntradayGraph } from '../utils/servicesApi';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import { useBackHandler } from '../context/NavigationContext';
+import { DividendHistoryPanel } from './DividendHistoryPanel';
 
 
 
@@ -40,7 +42,7 @@ const fmtCr = n => {
 
 export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [activeTab, setActiveTab] = useState('overview');
-  const [chartTimeframe, setChartTimeframe] = useState('1D');
+  const [chartTimeframe, setChartTimeframe] = useState('1M');
   const [chartMode, setChartMode] = useState('line');
   const [liveDetail, setLiveDetail] = useState(null);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -142,7 +144,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     return { pct: Number(pct.toFixed(2)), bull: pct >= 0 };
   }, [realPriceHistory]);
 
-  // Fetch real price history (500 trading days)
+  // Fetch real price history (500 trading days) & corporate dividend history
   useEffect(() => {
     let active = true;
     if (!d?.symbol) return;
@@ -151,7 +153,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       if (!active) return;
       if (data && data.length > 0) {
         setRealPriceHistory(data);
-        const chartData = data.slice(-30).map(item => ({
+        const chartData = data.map(item => ({
+          date: item.date,
           time: item.date,
           open: Number(item.open) || Number(item.close),
           high: Number(item.high) || Number(item.close),
@@ -170,6 +173,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         setHistory([]);
       }
     }).finally(() => { if (active) setRealHistoryLoading(false); });
+
+    // Eagerly fetch corporate dividend, bonus & rights history
+    setDividendLoading(true);
+    fetchDividendHistory(d.symbol).then(data => {
+      if (active && data) {
+        setDividendHistory(data);
+      }
+    }).catch(() => {}).finally(() => {
+      if (active) setDividendLoading(false);
+    });
+
     return () => { active = false; };
   }, [d?.symbol]);
 
@@ -226,33 +240,41 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       const peerSymbol = peers.length > 0 ? peers[0]?.symbol : null;
       if (peerSymbol) setCompareSymbol(peerSymbol);
     }
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
   }, [activeTab, d?.symbol]);
 
-  const handleTimeframeChange = (tf) => {
+  // Synchronize 1D intraday data whenever 1D timeframe is selected
+  useEffect(() => {
+    if (chartTimeframe === '1D' && d?.symbol) {
+      fetchNepseIntradayGraph(d.symbol).then(intraday => {
+        if (intraday && Array.isArray(intraday) && intraday.length > 0) {
+          setHistory(intraday);
+        }
+      }).catch(() => {});
+    }
+  }, [chartTimeframe, d?.symbol]);
+
+  const handleTimeframeChange = async (tf) => {
     setChartTimeframe(tf);
     if (!d?.symbol) return;
 
-    let days = 30;
-    const str = String(tf).toUpperCase();
-    if (str === '1D') days = 1;
-    else if (str === '2D') days = 2;
-    else if (str === '3D') days = 3;
-    else if (str === '1W' || str === '7') days = 7;
-    else if (str === '1M' || str === '30') days = 30;
-    else if (str === '3M' || str === '90') days = 90;
-    else if (str === '6M' || str === '180') days = 180;
-    else if (str === '1Y' || str === '365') days = 365;
-    else if (str === '2Y' || str === 'ALL' || str === '500') days = 500;
-    else {
-      const parsed = parseInt(tf, 10);
-      days = isNaN(parsed) ? 30 : parsed;
+    if (tf === '1D') {
+      try {
+        const intraday = await fetchNepseIntradayGraph(d.symbol);
+        if (intraday && Array.isArray(intraday) && intraday.length > 0) {
+          setHistory(intraday);
+          return;
+        }
+      } catch (err) {
+        console.warn('[StockDetailModal] Failed to fetch intraday for ' + d.symbol, err);
+      }
     }
 
     if (realPriceHistory && realPriceHistory.length > 0) {
-      const sliced = (days >= 500 || days >= realPriceHistory.length)
-        ? realPriceHistory
-        : realPriceHistory.slice(-days);
-      const formatted = sliced.map(item => ({
+      const formatted = realPriceHistory.map(item => ({
+        date: item.date,
         time: item.date,
         open: Number(item.open) || Number(item.close),
         high: Number(item.high) || Number(item.close),
@@ -434,7 +456,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     let rating = 'Stable Quality';
     let color = '#38bdf8';
     if (score >= 8) { rating = 'Strong Institutional Quality'; color = 'var(--bull)'; }
-    else if (score <= 4) { rating = 'High Speculative Risk'; color = '#ef4444'; }
+    else if (score <= 4) { rating = 'High Speculative Risk'; color = '#F43F5E'; }
 
     return { score, rating, color, criteria };
   }, [d, history12M]);
@@ -502,7 +524,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         position: 'fixed',
         inset: 0,
         zIndex: 500,
-        background: '#060810',
+        background: '#0B0E14',
         display: 'flex',
         flexDirection: 'column',
         animation: 'fadeIn 0.2s ease-out'
@@ -517,8 +539,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        background: '#0b111e'
+        borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+        background: '#0B0E14'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
@@ -559,37 +581,41 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         </div>
       </div>
 
-      {/* ── Scrollable 6 Tab Bar ── */}
+      {/* ── Eye-Friendly Pill-Style Tab Selector ── */}
       <div style={{
         display: 'flex',
         overflowX: 'auto',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        background: '#090e18',
-        padding: '0 8px'
+        gap: 6,
+        padding: '8px 12px',
+        background: '#0B0E14',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none'
       }}>
         {tabs.map(t => {
           const isActive = activeTab === t.id;
+          const Icon = t.icon;
           return (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
               style={{
-                fontSize: 12.5,
-                padding: '12px 14px',
+                fontSize: 12,
+                padding: '7px 14px',
                 whiteSpace: 'nowrap',
-                borderBottom: isActive ? '2.5px solid #10d98a' : '2.5px solid transparent',
-                color: isActive ? '#10d98a' : 'rgba(255,255,255,0.6)',
-                background: 'none',
-                borderTop: 'none',
-                borderLeft: 'none',
-                borderRight: 'none',
+                borderRadius: 20,
+                border: isActive ? '1px solid rgba(56, 117, 246, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+                color: isActive ? '#60a5fa' : '#94a3b8',
+                background: isActive ? 'rgba(56, 117, 246, 0.12)' : 'rgba(255,255,255,0.02)',
                 cursor: 'pointer',
-                fontWeight: isActive ? '800' : '600',
+                fontWeight: isActive ? '700' : '500',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5
+                gap: 6,
+                transition: 'all 0.15s ease'
               }}
             >
+              <Icon style={{ width: 13, height: 13, opacity: isActive ? 1 : 0.7 }} />
               {t.label}
             </button>
           );
@@ -602,113 +628,103 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '14px 16px 40px',
+          padding: '14px 16px calc(40px + env(safe-area-inset-bottom, 0px))',
           WebkitOverflowScrolling: 'touch'
         }}
       >
         {/* ════ TAB 1: STOCK INFORMATION (OVERVIEW) ════ */}
         {activeTab === 'overview' && (
           <div>
-            {/* Title & Badges */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 16.5, fontWeight: 800, color: '#ffffff', lineHeight: 1.3, marginBottom: 8 }}>
-                {d.name || d.symbol} ({d.symbol})
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{
-                  background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '3px 10px',
-                  fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5
-                }}>
-                  <Layers style={{ width: 12, height: 12, opacity: 0.7 }} /> {d.sector || 'Sector'}
-                </span>
-                <span style={{
-                  background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)',
-                  borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#38bdf8', fontWeight: 700
-                }}>
-                  Low Cap
-                </span>
-                <span style={{
-                  background: 'rgba(16, 217, 138, 0.12)', border: '1px solid rgba(16, 217, 138, 0.3)',
-                  borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#10d98a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4
-                }}>
-                  <CheckCircle2 style={{ width: 12, height: 12 }} /> Tradable
-                </span>
-                <span style={{
-                  background: `${actionZone.zoneColor}22`, border: `1px solid ${actionZone.zoneColor}55`,
-                  borderRadius: 6, padding: '3px 10px', fontSize: 11, color: actionZone.zoneColor, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4
-                }}>
-                  <Zap style={{ width: 12, height: 12 }} /> {actionZone.zone}
-                </span>
-                {graham.isUndervalued && (
-                  <span style={{
-                    background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)',
-                    borderRadius: 6, padding: '3px 10px', fontSize: 11, color: '#38bdf8', fontWeight: 800
-                  }}>
-                    🏛️ Undervalued ({graham.marginOfSafetyPct}% Margin)
+            {/* ── 1. Minimal Header Card ── */}
+            <div style={{
+              background: '#151922',
+              border: '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 16,
+              padding: '16px 18px',
+              marginBottom: 12
+            }}>
+              {/* Top Row: Symbol + Sector + Badges */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 24, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
+                    {d.symbol}
                   </span>
-                )}
-              </div>
-            </div>
+                  <span style={{
+                    background: 'rgba(56, 117, 246, 0.12)',
+                    border: '1px solid rgba(56, 117, 246, 0.25)',
+                    borderRadius: 20,
+                    padding: '2px 10px',
+                    fontSize: 11,
+                    color: '#60a5fa',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <Layers style={{ width: 11, height: 11, opacity: 0.8 }} /> {d.sector || 'Sector'}
+                  </span>
+                </div>
 
-            {/* ── Guru AI Action Zone & Quantitative Intelligence Bar ── */}
-            <div style={{
-              background: `linear-gradient(135deg, ${actionZone.zoneColor}12, #0d1523)`,
-              border: `1px solid ${actionZone.zoneColor}44`,
-              borderRadius: 14,
-              padding: '12px 14px',
-              marginBottom: 14
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: actionZone.zoneColor }}>
-                  <Zap style={{ width: 15, height: 15 }} />
-                  {actionZone.zoneBadge}
-                </div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#8da2be' }}>
-                  MS Score: <span style={{ color: actionZone.momentumScore >= 0 ? 'var(--bull)' : '#ef4444' }}>{actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}</span>
-                </div>
-              </div>
-              <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', lineHeight: 1.4, marginBottom: 8 }}>
-                {actionZone.triggerLogic}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
-                <div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Entry Target</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff' }}>{actionZone.entryTarget.split(' ')[1] || 'LTP'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Target 1 (ATR)</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--bull)' }}>{actionZone.profitTarget1.split(' ')[1] || 'Target'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Trailing Stop</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>{actionZone.stopLoss.split(' ')[1] || 'Stop'}</div>
-                </div>
-              </div>
-            </div>
-
-
-            {/* Price Box */}
-            <div style={{
-              background: '#0d1523',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 14,
-              padding: '14px 16px',
-              marginBottom: 16
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 24, fontWeight: 900, color: isBull ? '#10d98a' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      Rs {fmt(d.ltp)}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    borderRadius: 20,
+                    padding: '2px 9px',
+                    fontSize: 10.5,
+                    color: '#10B981',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3.5
+                  }}>
+                    <CheckCircle2 style={{ width: 11, height: 11 }} /> Tradable
+                  </span>
+                  {graham.isUndervalued && (
+                    <span style={{
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      borderRadius: 20,
+                      padding: '2px 9px',
+                      fontSize: 10.5,
+                      color: '#38bdf8',
+                      fontWeight: 700
+                    }}>
+                      🏛️ Undervalued ({graham.marginOfSafetyPct}%)
                     </span>
-                    <span style={{ fontSize: 18, color: isBull ? '#10d98a' : '#f43f5e' }}>
-                      {isBull ? '▲' : '▼'}
+                  )}
+                </div>
+              </div>
+
+              {/* Company Full Name */}
+              <div style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500, marginBottom: 14 }}>
+                {d.name || d.symbol}
+              </div>
+
+              {/* Price & Delta Row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 32, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', letterSpacing: '-0.03em' }}>
+                      Rs. {fmt(d.ltp)}
+                    </span>
+                    <span style={{
+                      background: isBull ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)',
+                      border: isBull ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)',
+                      borderRadius: 8,
+                      padding: '3px 9px',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      color: isBull ? '#10B981' : '#F43F5E',
+                      fontFamily: 'var(--font-mono)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3
+                    }}>
+                      {isBull ? '▲ +' : '▼ '}{fmt(Math.abs(d.change || 0))} ({isBull ? '+' : ''}{(d.pChange || 0).toFixed(2)}%)
                     </span>
                   </div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: isBull ? '#10d98a' : '#f43f5e', marginTop: 2 }}>
-                    {isBull ? '+' : ''}{fmt(d.change || 0)} ({isBull ? '+' : ''}{(d.pChange || 0).toFixed(2)}%)
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 5 }}>
                     {(() => {
                       const ms = getDetailedMarketStatus();
                       if (ms.isOpen) return `Last Traded: Today, ${ms.nptTime} NPT`;
@@ -719,52 +735,151 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>P. Close</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                    {fmt(d.prevClose || (d.ltp - (d.change || 0)))}
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Previous Close</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+                    Rs. {fmt(d.prevClose || (d.ltp - (d.change || 0)))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 2. 4-Card Minimal Metric Grid ── */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 10,
+              marginBottom: 14
+            }}>
+              {/* Card 1: 52W Range */}
+              <div style={{
+                background: '#151922',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 12,
+                padding: '11px 13px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>52W Range</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                  {fmt(d.low52w || d.ltp * 0.75)} - {fmt(d.high52w || d.ltp * 1.25)}
+                </div>
+                <div style={{ marginTop: 3 }}>
+                  <div style={{ height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.07)', position: 'relative', overflow: 'hidden' }}>
+                    {(() => {
+                      const low = Number(d.low52w || d.ltp * 0.75);
+                      const high = Number(d.high52w || d.ltp * 1.25);
+                      const span = Math.max(1, high - low);
+                      const pct = Math.min(100, Math.max(0, ((d.ltp - low) / span) * 100));
+                      return (
+                        <div style={{
+                          height: '100%',
+                          width: `${pct}%`,
+                          background: 'linear-gradient(90deg, #3875F6, #10B981)',
+                          borderRadius: 2
+                        }} />
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
 
-              {/* 6-Grid Stats Box */}
+              {/* Card 2: Volume */}
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 8,
-                paddingTop: 12,
-                borderTop: '1px solid rgba(255,255,255,0.06)'
+                background: '#151922',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 12,
+                padding: '11px 13px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
               }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Volume</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                  {(d.volume || 154353).toLocaleString()}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>Shares Traded</div>
+              </div>
+
+              {/* Card 3: Turnover */}
+              <div style={{
+                background: '#151922',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 12,
+                padding: '11px 13px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Turnover</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                  {fmtCr(d.turnover || (d.ltp * (d.volume || 150000)))}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>Day Gross Value</div>
+              </div>
+
+              {/* Card 4: Quant Signal */}
+              <div style={{
+                background: '#151922',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 12,
+                padding: '11px 13px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Quant Signal</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: actionZone.zoneColor || '#10B981', margin: '4px 0' }}>
+                  {actionZone.zone || 'Accumulate'}
+                </div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>
+                  MS Score: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
+                    {actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 3. Guru AI Action Zone & Quantitative Intelligence Bar ── */}
+            <div style={{
+              background: '#151922',
+              border: '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 14,
+              padding: '12px 14px',
+              marginBottom: 14
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: actionZone.zoneColor }}>
+                  <Zap style={{ width: 15, height: 15 }} />
+                  {actionZone.zoneBadge}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>
+                  Momentum: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E' }}>{actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.4, marginBottom: 8 }}>
+                {actionZone.triggerLogic}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
                 <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Turnover</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>{fmtCr(d.turnover || (d.ltp * (d.volume || 150000)))}</div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Entry Target</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{actionZone.entryTarget.split(' ')[1] || 'LTP'}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Traded QTY.</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>{(d.volume || 154353).toLocaleString()}</div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Target 1 (ATR)</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#10B981', fontFamily: 'var(--font-mono)' }}>{actionZone.profitTarget1.split(' ')[1] || 'Target'}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Trades</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>944</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Open</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>{fmt(d.open || d.ltp)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>High</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)' }}>{fmt(d.high || d.ltp * 1.02)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Low</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444' }}>{fmt(d.low || d.ltp * 0.98)}</div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Trailing Stop</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{actionZone.stopLoss.split(' ')[1] || 'Stop'}</div>
                 </div>
               </div>
             </div>
 
             {/* ── ShareHub Interactive Chart ── */}
             <div style={{
-              background: '#0d1523',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
               borderRadius: 14,
               padding: '14px 12px 10px',
               marginBottom: 16
@@ -825,8 +940,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     <div
                       key={idx}
                       style={{
-                        background: real?.isReal ? 'rgba(16,217,138,0.05)' : 'rgba(255,255,255,0.03)',
-                        border: real?.isReal ? '1px solid rgba(16,217,138,0.2)' : '1px solid rgba(255,255,255,0.07)',
+                        background: real?.isReal ? 'rgba(16, 185, 129,0.05)' : 'rgba(255,255,255,0.03)',
+                        border: real?.isReal ? '1px solid rgba(16, 185, 129,0.2)' : '1px solid rgba(255,255,255,0.07)',
                         borderRadius: 10,
                         padding: '8px 14px',
                         minWidth: 84,
@@ -834,9 +949,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                         flexShrink: 0
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 900, color: display.bull ? 'var(--bull)' : '#ef4444' }}>{display.val}</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: display.bull ? 'var(--bull)' : '#F43F5E' }}>{display.val}</div>
                       <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{p.label}</div>
-                      {real?.isReal && <div style={{ fontSize: 9, color: '#10d98a', marginTop: 1, fontWeight: 700 }}>● Live</div>}
+                      {real?.isReal && <div style={{ fontSize: 9, color: '#10B981', marginTop: 1, fontWeight: 700 }}>● Live</div>}
                     </div>
                   );
                 })
@@ -845,8 +960,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* ── Key Valuation Indicators ── */}
             <div style={{
-              background: '#0d1523',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
               borderRadius: 14,
               padding: '12px 16px',
               marginBottom: 16
@@ -858,9 +973,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   const val = yr ? yr.val : '-12.15%';
                   const bull = yr ? yr.bull : false;
                   return (
-                    <span style={{ fontSize: 13, fontWeight: 800, color: bull ? 'var(--bull)' : '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: bull ? 'var(--bull)' : '#F43F5E', display: 'flex', alignItems: 'center', gap: 4 }}>
                       {val}
-                      {yr?.isReal && <span style={{ fontSize: 9, color: '#10d98a', fontWeight: 700 }}>● Live</span>}
+                      {yr?.isReal && <span style={{ fontSize: 9, color: '#10B981', fontWeight: 700 }}>● Live</span>}
                     </span>
                   );
                 })()}
@@ -886,21 +1001,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* ── Shareholding Pattern Bar ── */}
             <div style={{
-              background: '#0d1523',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
               borderRadius: 14,
               padding: '14px',
               marginBottom: 16
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ color: '#3b82f6' }}>● Promoter Shares (60.0%)</span>
-                <span style={{ color: '#10d98a' }}>● Public Shares (35.0%)</span>
+                <span style={{ color: '#10B981' }}>● Public Shares (35.0%)</span>
                 <span style={{ color: '#eab308' }}>● Local Shares (5.0%)</span>
               </div>
 
               <div style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', fontWeight: 800, fontSize: 11, textAlign: 'center', lineHeight: '26px' }}>
                 <div style={{ width: '60%', background: '#3b82f6', color: '#ffffff' }}>60.0%</div>
-                <div style={{ width: '35%', background: '#10d98a', color: '#000000' }}>35.0%</div>
+                <div style={{ width: '35%', background: '#10B981', color: '#000000' }}>35.0%</div>
                 <div style={{ width: '5%', background: '#eab308', color: '#000000' }}>5%</div>
               </div>
 
@@ -912,8 +1027,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* ── General Information ── */}
             <div style={{
-              background: '#0d1523',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
               borderRadius: 14,
               padding: '14px'
             }}>
@@ -954,15 +1069,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {activeTab === 'technicals' && (
           <div>
             {/* 12-Month Accumulation & Distribution / Wyckoff Cycle Card */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
                   🏛️ 12-Month Accumulation & Distribution (Wyckoff)
                 </div>
                 <span style={{
-                  background: 'rgba(16, 217, 138, 0.15)',
-                  border: '1px solid rgba(16, 217, 138, 0.4)',
-                  color: '#10d98a',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: '#10B981',
                   padding: '2px 8px',
                   borderRadius: 6,
                   fontSize: 10.5,
@@ -1003,7 +1118,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Pivot Points */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', marginBottom: 10 }}>
                 Classic Pivot Points
               </div>
@@ -1012,15 +1127,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pivot Point (PP)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>Rs {fmt(pivot?.pp || pivot?.P || d.ltp)}</div>
                 </div>
-                <div style={{ padding: 8, background: 'rgba(16,217,138,0.06)', borderRadius: 8 }}>
+                <div style={{ padding: 8, background: 'rgba(16, 185, 129,0.06)', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: 'var(--bull)' }}>Resistance 1 (R1)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--bull)' }}>Rs {fmt(pivot?.r1 || pivot?.R1 || d.ltp * 1.03)}</div>
                 </div>
-                <div style={{ padding: 8, background: 'rgba(239,68,68,0.06)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, color: '#ef4444' }}>Support 1 (S1)</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444' }}>Rs {fmt(pivot?.s1 || pivot?.S1 || d.ltp * 0.97)}</div>
+                <div style={{ padding: 8, background: 'rgba(244, 63, 94,0.06)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: '#F43F5E' }}>Support 1 (S1)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#F43F5E' }}>Rs {fmt(pivot?.s1 || pivot?.S1 || d.ltp * 0.97)}</div>
                 </div>
-                <div style={{ padding: 8, background: 'rgba(16,217,138,0.06)', borderRadius: 8 }}>
+                <div style={{ padding: 8, background: 'rgba(16, 185, 129,0.06)', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: 'var(--bull)' }}>Resistance 2 (R2)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--bull)' }}>Rs {fmt(pivot?.r2 || pivot?.R2 || d.ltp * 1.06)}</div>
                 </div>
@@ -1028,7 +1143,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Fibonacci */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', marginBottom: 10 }}>
                 Fibonacci Retracement Levels
               </div>
@@ -1047,11 +1162,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               <button
                 onClick={() => setShowAdvancedModal(true)}
                 style={{
-                  background: 'rgba(16, 217, 138, 0.1)',
-                  border: '1px solid rgba(16, 217, 138, 0.3)',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
                   borderRadius: 12,
                   padding: '10px 20px',
-                  color: '#10d98a',
+                  color: '#10B981',
                   fontSize: 13,
                   fontWeight: 800,
                   cursor: 'pointer',
@@ -1070,13 +1185,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {activeTab === 'depth_broker' && (
           <div>
             {/* Market Depth Level 2 Order Book */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>Level-2 Market Depth Order Book</span>
                 <span style={{
                   fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
-                  background: marketDepth?.isDemandHigh ? 'rgba(16, 217, 138, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                  color: marketDepth?.isDemandHigh ? 'var(--bull)' : '#ef4444'
+                  background: marketDepth?.isDemandHigh ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                  color: marketDepth?.isDemandHigh ? 'var(--bull)' : '#F43F5E'
                 }}>
                   {marketDepth?.demandStatus || 'Balanced Flow'}
                 </span>
@@ -1111,7 +1226,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#F43F5E', marginBottom: 6 }}>
                     SELL ORDERS ({Number(marketDepth?.totalSellQty || 0).toLocaleString()})
                   </div>
                   <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
@@ -1125,7 +1240,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       {(marketDepth?.asks || marketDepth?.sellOrders || []).map((a, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                           <td style={{ padding: '6px 0', fontWeight: 800, color: '#ffffff' }}>{Number(a.price).toFixed(1)}</td>
-                          <td style={{ padding: '6px 0', textAlign: 'right', color: '#ef4444', fontWeight: 700 }}>{a.qty}</td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', color: '#F43F5E', fontWeight: 700 }}>{a.qty}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1140,7 +1255,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Broker Daily Institutional Flow Tracker */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
                   🤝 Institutional Net Broker Flow (Recent Sessions)
@@ -1155,7 +1270,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {broker12M.slice(0, 8).map((b, idx) => (
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, fontSize: 11.5, alignItems: 'center' }}>
                       <span style={{ fontWeight: 800, color: '#ffffff' }}>📅 {b.date || `Session ${idx + 1}`}</span>
-                      <span style={{ color: (b.netFlow || 0) >= 0 ? 'var(--bull)' : '#ef4444', fontWeight: 800 }}>
+                      <span style={{ color: (b.netFlow || 0) >= 0 ? 'var(--bull)' : '#F43F5E', fontWeight: 800 }}>
                         {(b.netFlow || 0) >= 0 ? '+' : ''}{(b.netFlow || 0).toLocaleString()} Net Qty
                       </span>
                     </div>
@@ -1170,10 +1285,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* Top Buyer & Seller Brokers */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-              <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
+              <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--bull)' }}>Top Buyers</div>
-                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(16,217,138,0.15)', color: '#10d98a', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
+                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(16, 185, 129,0.15)', color: '#10B981', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
                   {brokerAnalysisLoading && <RefreshCw style={{ width: 11, height: 11, color: 'var(--text-muted)', animation: 'spin 1s linear infinite' }} />}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1192,17 +1307,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
               </div>
 
-              <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
+              <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444' }}>Top Sellers</div>
-                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(239,68,68,0.12)', color: '#ef4444', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#F43F5E' }}>Top Sellers</div>
+                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(244, 63, 94,0.12)', color: '#F43F5E', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {(brokerAnalysis?.topSellers && brokerAnalysis.topSellers.length > 0) ? (
                     brokerAnalysis.topSellers.map((b, idx) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
                         <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
-                        <span style={{ color: '#ef4444', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
+                        <span style={{ color: '#F43F5E', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
                       </div>
                     ))
                   ) : (
@@ -1216,14 +1331,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* Real A/D summary from broker analysis */}
             {realBrokerAnalysis && (
-              <div style={{ background: '#0d1523', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+              <div style={{ background: '#151922', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff' }}>📊 Real Broker A/D Analysis (30 Days)</span>
-                  <span style={{ fontSize: 9, background: 'rgba(16,217,138,0.15)', color: '#10d98a', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>● LIVE NEPSE DATA</span>
+                  <span style={{ fontSize: 9, background: 'rgba(16, 185, 129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>● LIVE NEPSE DATA</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
                   {[
-                    { label: 'Signal', val: realBrokerAnalysis.adSignal, color: realBrokerAnalysis.adSignal === 'Accumulation' ? 'var(--bull)' : realBrokerAnalysis.adSignal === 'Distribution' ? '#ef4444' : '#eab308' },
+                    { label: 'Signal', val: realBrokerAnalysis.adSignal, color: realBrokerAnalysis.adSignal === 'Accumulation' ? 'var(--bull)' : realBrokerAnalysis.adSignal === 'Distribution' ? '#F43F5E' : '#eab308' },
                     { label: 'Strength', val: realBrokerAnalysis.adStrength, color: '#38bdf8' },
                     { label: 'Trades', val: (realBrokerAnalysis.totalTrades || 0).toLocaleString(), color: '#ffffff' },
                   ].map((item, i) => (
@@ -1244,11 +1359,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     ))}
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>Net Sellers (30D)</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#F43F5E', marginBottom: 4 }}>Net Sellers (30D)</div>
                     {(realBrokerAnalysis.topNetSellers || []).slice(0, 3).map((b, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                         <span style={{ color: 'rgba(255,255,255,0.8)' }}>#{b.broker}</span>
-                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{b.netQty?.toLocaleString()}</span>
+                        <span style={{ color: '#F43F5E', fontWeight: 700 }}>{b.netQty?.toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
@@ -1257,11 +1372,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             )}
 
             {/* Floorsheet Table with Whale Block Deals Filter */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 800, color: '#ffffff' }}>
                   📜 Floorsheet Transactions
-                  {realFloorsheet?.rows && <span style={{ fontSize: 9, background: 'rgba(16,217,138,0.15)', color: '#10d98a', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
+                  {realFloorsheet?.rows && <span style={{ fontSize: 9, background: 'rgba(16, 185, 129,0.15)', color: '#10B981', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
                   {floorsheetLoading && <RefreshCw style={{ width: 12, height: 12, color: 'var(--text-muted)', animation: 'spin 1s linear infinite' }} />}
                 </span>
                 
@@ -1312,10 +1427,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </thead>
                 <tbody>
                   {(filteredFloorsheet || []).slice(0, 20).map((r, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r.isReal ? 'rgba(16,217,138,0.02)' : 'transparent' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r.isReal ? 'rgba(16, 185, 129,0.02)' : 'transparent' }}>
                       <td style={{ padding: '8px', fontWeight: 800, color: '#ffffff' }}>{d.symbol}</td>
                       <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--bull)', fontWeight: 700 }}>{r.buyerBroker}</td>
-                      <td style={{ padding: '8px 4px', textAlign: 'center', color: '#ef4444', fontWeight: 700 }}>{r.sellerBroker}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: '#F43F5E', fontWeight: 700 }}>{r.sellerBroker}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700 }}>{(r.qty || r.quantity || 0).toLocaleString()}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontWeight: 800, color: '#ffffff' }}>{Number(r.rate || 0).toFixed(1)}</td>
                       <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{fmt(r.amount)}</td>
@@ -1331,8 +1446,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     onClick={() => fetchFloorsheetData(floorsheetPage + 1)}
                     disabled={floorsheetLoading}
                     style={{
-                      background: 'rgba(16,217,138,0.1)', border: '1px solid rgba(16,217,138,0.3)',
-                      color: '#10d98a', borderRadius: 8, padding: '6px 20px', fontSize: 12, fontWeight: 700,
+                      background: 'rgba(16, 185, 129,0.1)', border: '1px solid rgba(16, 185, 129,0.3)',
+                      color: '#10B981', borderRadius: 8, padding: '6px 20px', fontSize: 12, fontWeight: 700,
                       cursor: floorsheetLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, margin: '0 auto'
                     }}
                   >
@@ -1349,15 +1464,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {activeTab === 'history' && (
           <div>
             {/* 1-Year Summary Card */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
                 <div style={{ padding: 8, background: 'rgba(255,255,255,0.025)', borderRadius: 8 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>1Y Return</div>
                   {(() => {
                     const yr = performanceValues[5];
-                    return <div style={{ fontSize: 13, fontWeight: 900, color: yr ? (yr.bull ? 'var(--bull)' : '#ef4444') : 'var(--bull)' }}>
+                    return <div style={{ fontSize: 13, fontWeight: 900, color: yr ? (yr.bull ? 'var(--bull)' : '#F43F5E') : 'var(--bull)' }}>
                       {yr ? yr.val : '+14.8%'}
-                      {yr?.isReal && <span style={{ fontSize: 9, display: 'block', color: '#10d98a', fontWeight: 700 }}>● Live</span>}
+                      {yr?.isReal && <span style={{ fontSize: 9, display: 'block', color: '#10B981', fontWeight: 700 }}>● Live</span>}
                     </div>;
                   })()}
                 </div>
@@ -1367,7 +1482,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
                 <div style={{ padding: 8, background: 'rgba(255,255,255,0.025)', borderRadius: 8 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>52W Low</div>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: '#ef4444' }}>Rs {fmt(d.low52w || d.ltp * 0.75)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: '#F43F5E' }}>Rs {fmt(d.low52w || d.ltp * 0.75)}</div>
                 </div>
                 <div style={{ padding: 8, background: 'rgba(255,255,255,0.025)', borderRadius: 8 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>200 SMA</div>
@@ -1384,7 +1499,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   key={tf}
                   onClick={() => setHistoryTimeframe(tf)}
                   style={{
-                    background: historyTimeframe === tf ? '#10d98a' : 'rgba(255,255,255,0.05)',
+                    background: historyTimeframe === tf ? '#10B981' : 'rgba(255,255,255,0.05)',
                     color: historyTimeframe === tf ? '#000000' : 'rgba(255,255,255,0.7)',
                     border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
                   }}
@@ -1395,17 +1510,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Daily OHLCV Table */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden', maxHeight: '70vh', overflowY: 'auto' }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, overflow: 'hidden', maxHeight: '70vh', overflowY: 'auto' }}>
               <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)', position: 'sticky', top: 0, zIndex: 1 }}>
-                    <th style={{ padding: '10px 8px', textAlign: 'left', background: '#0d1523' }}>DATE</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>OPEN</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>HIGH</th>
-                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#0d1523' }}>LOW</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>CLOSE</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>200 SMA</th>
-                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#0d1523' }}>VOL</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left', background: '#151922' }}>DATE</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#151922' }}>OPEN</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#151922' }}>HIGH</th>
+                    <th style={{ padding: '10px 6px', textAlign: 'right', background: '#151922' }}>LOW</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#151922' }}>CLOSE</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#151922' }}>200 SMA</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'right', background: '#151922' }}>VOL</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1416,8 +1531,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                         <td style={{ padding: '8px', color: '#ffffff', fontWeight: 600 }}>{h.date}</td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--text-secondary)' }}>{fmt(h.open)}</td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--bull)' }}>{fmt(h.high)}</td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#ef4444' }}>{fmt(h.low)}</td>
-                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 800, color: rowBull ? 'var(--bull)' : '#ef4444' }}>{fmt(h.close)}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#F43F5E' }}>{fmt(h.low)}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 800, color: rowBull ? 'var(--bull)' : '#F43F5E' }}>{fmt(h.close)}</td>
                         <td style={{ padding: '8px', textAlign: 'right', color: '#a855f7', fontWeight: 700 }}>{fmt(h.sma200 || h.close * 0.95)}</td>
                         <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-muted)' }}>{(h.volume || 0).toLocaleString()}</td>
                       </tr>
@@ -1434,8 +1549,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           <div>
             {/* Benjamin Graham Classical Intrinsic Valuation Model Card */}
             <div style={{
-              background: 'linear-gradient(135deg, #0d1523, #152238)',
-              border: `1px solid ${graham.isUndervalued ? 'rgba(16, 217, 138, 0.4)' : 'rgba(56, 189, 248, 0.3)'}`,
+              background: 'linear-gradient(135deg, #151922, #152238)',
+              border: `1px solid ${graham.isUndervalued ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.3)'}`,
               borderRadius: 14,
               padding: 16,
               marginBottom: 16
@@ -1452,9 +1567,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
                 <div style={{ textAlign: 'right' }}>
                   <span style={{
-                    background: graham.isUndervalued ? 'rgba(16,217,138,0.15)' : 'rgba(239,68,68,0.15)',
-                    border: `1px solid ${graham.isUndervalued ? 'rgba(16,217,138,0.4)' : 'rgba(239,68,68,0.4)'}`,
-                    color: graham.isUndervalued ? 'var(--bull)' : '#ef4444',
+                    background: graham.isUndervalued ? 'rgba(16, 185, 129,0.15)' : 'rgba(244, 63, 94,0.15)',
+                    border: `1px solid ${graham.isUndervalued ? 'rgba(16, 185, 129,0.4)' : 'rgba(244, 63, 94,0.4)'}`,
+                    color: graham.isUndervalued ? 'var(--bull)' : '#F43F5E',
                     padding: '4px 10px',
                     borderRadius: 8,
                     fontSize: 12.5,
@@ -1485,7 +1600,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>P/E × P/B Multiple</div>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: graham.pePbProduct <= 22.5 ? 'var(--bull)' : '#ef4444', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: graham.pePbProduct <= 22.5 ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>
                     {graham.pePbProduct} <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>(Max: 22.5)</span>
                   </div>
                 </div>
@@ -1500,8 +1615,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
             {/* Piotroski 9-Point Financial Health Scorecard */}
             <div style={{
-              background: 'linear-gradient(135deg, #0d1523, #111e38)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'linear-gradient(135deg, #151922, #111e38)',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
               borderRadius: 14,
               padding: 16,
               marginBottom: 16
@@ -1540,13 +1655,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                 {piotroskiScore.criteria.map((c, idx) => (
                   <div key={idx} style={{
-                    background: c.pass ? 'rgba(16,217,138,0.06)' : 'rgba(239,68,68,0.06)',
-                    border: `1px solid ${c.pass ? 'rgba(16,217,138,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                    background: c.pass ? 'rgba(16, 185, 129,0.06)' : 'rgba(244, 63, 94,0.06)',
+                    border: `1px solid ${c.pass ? 'rgba(16, 185, 129,0.2)' : 'rgba(244, 63, 94,0.2)'}`,
                     borderRadius: 8,
                     padding: '6px 8px'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: c.pass ? 'var(--bull)' : '#ef4444' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: c.pass ? 'var(--bull)' : '#F43F5E' }}>
                         {c.pass ? '✓ Pass' : '✗ Risk'}
                       </span>
                       <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>{c.val}</span>
@@ -1560,7 +1675,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Financial Performance */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', marginBottom: 10 }}>
                 📊 Quarterly Financial Performance
               </div>
@@ -1597,10 +1712,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               )}
             </div>
 
-            {/* Dividend & Bonus History */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', marginBottom: 10 }}>
-                🎁 Dividend & Bonus Share History
+            {/* Dividend, Bonus & Right Share History */}
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>
+                  🎁 Corporate Actions & Dividends
+                </div>
+                <button
+                  onClick={() => setActiveTab('dividends')}
+                  style={{ background: 'transparent', border: 'none', color: '#10B981', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '2px 6px' }}
+                >
+                  View Full History →
+                </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {dividendLoading ? (
@@ -1608,15 +1731,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     Loading corporate dividend records...
                   </div>
                 ) : (dividendHistory?.dividends && dividendHistory.dividends.length > 0) ? (
-                  dividendHistory.dividends.map((div, idx) => (
+                  dividendHistory.dividends.slice(0, 5).map((div, idx) => (
                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.025)', borderRadius: 8, fontSize: 12 }}>
                       <div>
                         <div style={{ fontWeight: 800, color: '#ffffff' }}>{div.fiscalYear || div.fy}</div>
                         <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{div.bookClosure ? `Book Closure: ${div.bookClosure}` : 'Verified Exchange Filing'}</div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        {div.bonusShare ? <span style={{ color: 'var(--bull)', fontWeight: 800 }}>Bonus: {div.bonusShare}%</span> : null}
-                        {div.cashDividend ? <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Cash: {div.cashDividend}%</span> : null}
+                      <div style={{ textAlign: 'right', display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {div.bonusShare > 0 && <span style={{ color: '#a855f7', fontWeight: 800 }}>Bonus: {div.bonusShare}%</span>}
+                        {div.cashDividend > 0 && <span style={{ color: '#10B981', fontWeight: 800 }}>Cash: {div.cashDividend}%</span>}
+                        {div.rightShare > 0 && <span style={{ color: '#38bdf8', fontWeight: 800 }}>Right: {div.rightShare}%</span>}
                       </div>
                     </div>
                   ))
@@ -1626,9 +1750,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       <div style={{ fontWeight: 800, color: '#ffffff' }}>Latest Fiscal Distribution</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Annual General Meeting declared</div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      {d.bonusShare > 0 && <span style={{ color: 'var(--bull)', fontWeight: 800 }}>Bonus: {d.bonusShare}%</span>}
-                      {d.cashDiv > 0 && <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Cash: {d.cashDiv}%</span>}
+                    <div style={{ textAlign: 'right', display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {d.bonusShare > 0 && <span style={{ color: '#a855f7', fontWeight: 800 }}>Bonus: {d.bonusShare}%</span>}
+                      {d.cashDiv > 0 && <span style={{ color: '#10B981', fontWeight: 800 }}>Cash: {d.cashDiv}%</span>}
                     </div>
                   </div>
                 ) : (
@@ -1640,7 +1764,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Peer Comparison */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', marginBottom: 10 }}>
                 👥 Sector Peer Comparison ({d.sector || 'Sector'})
               </div>
@@ -1700,7 +1824,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           return (
             <div style={{ padding: '0 4px' }}>
               {/* Search Row */}
-              <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+              <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
                 <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', marginBottom: 10 }}>
                   📊 Compare: {d.symbol} vs. Peer
                 </div>
@@ -1708,13 +1832,18 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <input
                     value={compareSymbol}
                     onChange={e => setCompareSymbol(e.target.value.toUpperCase())}
-                    placeholder="Enter symbol (e.g. NICA)"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    data-form-type="other"
+                    placeholder="Enter peer symbol..."
                     style={{ flex: 1, background: '#0a1020', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, color: '#fff', fontSize: 13, padding: '8px 12px' }}
                   />
                   <button
                     onClick={handleCompare}
                     disabled={compareLoading}
-                    style={{ background: '#10d98a', color: '#000', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
+                    style={{ background: '#10B981', color: '#000', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
                   >
                     {compareLoading ? '...' : 'Compare'}
                   </button>
@@ -1723,11 +1852,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
               {/* Comparison Table */}
               {(s1 || s2) && (
-                <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
+                <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, overflow: 'hidden' }}>
                   {/* Header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: 'rgba(16,217,138,0.08)', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: 'rgba(16, 185, 129,0.08)', padding: '10px 14px', borderBottom: '1px solid rgba(255, 255, 255, 0.07)' }}>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>METRIC</div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: '#10d98a', textAlign: 'center' }}>{d.symbol}</div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#10B981', textAlign: 'center' }}>{d.symbol}</div>
                     <div style={{ fontSize: 12, fontWeight: 900, color: '#a855f7', textAlign: 'center' }}>{s2?.symbol || '—'}</div>
                   </div>
                   {metricsRows.map((row, i) => {
@@ -1739,10 +1868,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     return (
                       <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '9px 14px', borderBottom: i < metricsRows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
                         <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)' }}>{row.label}</div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: winner === 'left' ? '#10d98a' : '#fff', textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: winner === 'left' ? '#10B981' : '#fff', textAlign: 'center' }}>
                           {v1 != null ? row.fmt(v1) : '—'} {winner === 'left' && '✓'}
                         </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: winner === 'right' ? '#10d98a' : 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: winner === 'right' ? '#10B981' : 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
                           {v2 != null ? row.fmt(v2) : '—'} {winner === 'right' && '✓'}
                         </div>
                       </div>
@@ -1759,90 +1888,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           );
         })()}
 
-        {/* ════ TAB 7: DIVIDENDS ════ */}
-        {activeTab === 'dividends' && (() => {
-          const rawDivs = Array.isArray(dividendHistory?.dividends) ? dividendHistory.dividends : [];
-          const rows = rawDivs.filter(r => {
-            if (!r || !r.fiscalYear) return false;
-            const fy = String(r.fiscalYear).trim();
-            return !fy.includes('Value') && !fy.includes('#') && fy !== '1.' && fy !== '2.';
-          });
-
-          const count = rows.length || 1;
-          const totalCash = rows.reduce((s, r) => s + (Number(r.cashDividend) || 0), 0);
-          const totalBonus = rows.reduce((s, r) => s + (Number(r.bonusShare) || 0), 0);
-
-          return (
-            <div style={{ padding: '0 4px' }}>
-              {/* Header Stats */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
-                {[
-                  { label: 'Avg Cash Div', val: rows.length > 0 ? `${(totalCash / count).toFixed(2)}%` : '—', color: '#10d98a' },
-                  { label: 'Avg Bonus', val: rows.length > 0 ? `${(totalBonus / count).toFixed(2)}%` : '—', color: '#a855f7' },
-                  { label: 'Years Tracked', val: rows.length > 0 ? `${rows.length}` : '—', color: '#38bdf8' },
-                ].map(card => (
-                  <div key={card.label} style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: card.color }}>{card.val}</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>{card.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Dividend History Table */}
-              {dividendLoading ? (
-                <div style={{ textAlign: 'center', padding: 30, color: '#10d98a', fontSize: 13 }}>⏳ Loading official dividend records...</div>
-              ) : rows.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 36, color: 'rgba(255,255,255,0.5)', fontSize: 13, background: '#0d1523', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
-                  No dividend distribution history available for {d.symbol}
-                </div>
-              ) : (
-                <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', background: 'rgba(16,217,138,0.08)', padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    {['Fiscal Year', 'Cash Div', 'Bonus Share', 'Right Share'].map(h => (
-                      <div key={h} style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: 700 }}>{h}</div>
-                    ))}
-                  </div>
-                  {rows.map((row, i) => {
-                    const cleanFy = String(row.fiscalYear).replace(/[()]/g, '').trim();
-                    const fyLabel = cleanFy.startsWith('FY') ? cleanFy : `FY ${cleanFy}`;
-                    return (
-                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', padding: '10px 14px', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{fyLabel}</div>
-                        <div style={{ fontSize: 12, color: row.cashDividend > 0 ? '#10d98a' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                          {row.cashDividend > 0 ? `${Number(row.cashDividend).toFixed(2)}%` : '—'}
-                        </div>
-                        <div style={{ fontSize: 12, color: row.bonusShare > 0 ? '#a855f7' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                          {row.bonusShare > 0 ? `${Number(row.bonusShare).toFixed(2)}%` : '—'}
-                        </div>
-                        <div style={{ fontSize: 12, color: row.rightShare > 0 ? '#38bdf8' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
-                          {row.rightShare > 0 ? `${Number(row.rightShare).toFixed(2)}%` : '—'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Total Yield */}
-              {rows.length > 0 && (
-                <div style={{ background: 'rgba(16,217,138,0.06)', border: '1px solid rgba(16,217,138,0.2)', borderRadius: 12, padding: '12px 14px', marginTop: 14 }}>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>Total Cumulative Yield ({rows.length} fiscal years)</div>
-                  <div style={{ display: 'flex', gap: 20 }}>
-                    <span style={{ fontSize: 15, fontWeight: 900, color: '#10d98a' }}>Cash: {totalCash.toFixed(2)}%</span>
-                    <span style={{ fontSize: 15, fontWeight: 900, color: '#a855f7' }}>Bonus: {totalBonus.toFixed(2)}%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {/* ════ TAB 7: DIVIDENDS & CORPORATE ACTIONS ════ */}
+        {activeTab === 'dividends' && (
+          <div style={{ padding: '0 4px' }}>
+            <DividendHistoryPanel symbol={d.symbol} hideSearch={true} />
+          </div>
+        )}
 
         {/* ════ TAB 8: AI GURU & CALCULATOR ════ */}
 
         {activeTab === 'ai_calc' && (
           <div>
             {/* AI Assessment Card */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <BrainCircuit style={{ width: 16, height: 16, color: 'var(--primary-light)' }} /> AI Quantitative Assessment
@@ -1871,7 +1929,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             </div>
 
             {/* Instant Buy/Sell Calculator */}
-            <div style={{ background: '#0d1523', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14 }}>
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', marginBottom: 12 }}>
                 🧮 Instant Buy / Sell Profit Calculator
               </div>
@@ -1885,7 +1943,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </button>
                 <button
                   onClick={() => setCalcMode('sell')}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: calcMode === 'sell' ? '#ef4444' : 'rgba(255,255,255,0.05)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                  style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: calcMode === 'sell' ? '#F43F5E' : 'rgba(255,255,255,0.05)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
                 >
                   Sell / Profit Simulator
                 </button>
@@ -1938,12 +1996,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     <span style={{ color: 'var(--text-muted)' }}>SEBON Fee + DP:</span>
                     <span style={{ color: '#ffffff' }}>Rs. {fmt((calcResult.sebonFee || 0) + (calcResult.dpFee || 25))}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 13, fontWeight: 900 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.07)', fontSize: 13, fontWeight: 900 }}>
                     <span>{calcMode === 'buy' ? 'Total Cost Payable:' : 'Net Receivable:'}</span>
                     <span style={{ color: 'var(--bull)' }}>Rs. {fmt(calcResult.totalAmount || calcResult.netReceivable)}</span>
                   </div>
                   {calcMode === 'sell' && calcResult.profit != null && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: calcResult.profit >= 0 ? 'var(--bull)' : '#ef4444', fontWeight: 900 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: calcResult.profit >= 0 ? 'var(--bull)' : '#F43F5E', fontWeight: 900 }}>
                       <span>Net Profit / Loss:</span>
                       <span>Rs. {fmt(calcResult.profit)}</span>
                     </div>

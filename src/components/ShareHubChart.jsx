@@ -1,740 +1,888 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LineChart, BarChart2, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, LineStyle } from 'lightweight-charts';
+import { fetchRealPriceHistory } from '../utils/liveData';
+import { fetchNepseIntradayGraph, synthesizeIntradaySession } from '../utils/servicesApi';
+import { Activity, Maximize2, Minimize2, TrendingUp, BarChart2 } from 'lucide-react';
 
-/* ─── Moving Average Helper ─── */
-function calculateMA(data, period, key = 'close') {
-  const result = [];
-  for (let i = 0; i < data.length; i++) {
-    if (i < 0) {
-      result.push(null);
-      continue;
+const TIMEFRAMES = [
+  { id: '1D', label: '1D', days: 1 },
+  { id: '1W', label: '1W', days: 7 },
+  { id: '1M', label: '1M', days: 30 },
+  { id: '3M', label: '3M', days: 90 },
+  { id: '6M', label: '6M', days: 180 },
+  { id: '1Y', label: '1Y', days: 365 },
+  { id: 'ALL', label: 'All', days: 1000 },
+];
+
+/**
+ * Nepal Timezone Offset (UTC+5:45) in seconds = 20,700
+ */
+export const NPT_OFFSET_SEC = 5 * 3600 + 45 * 60;
+
+/**
+ * Helper: dynamically determine the session year, month (0-indexed), and day
+ * from dataset records or current Nepal Standard Time.
+ */
+function getDatasetSessionDate(points, rawHistory) {
+  if (Array.isArray(points) && points.length > 0) {
+    for (const pt of points) {
+      if (pt.date && /^\d{4}-\d{2}-\d{2}/.test(String(pt.date))) {
+        const parts = String(pt.date).split('-');
+        return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) - 1, day: parseInt(parts[2], 10) };
+      }
+      if (pt.timestamp && pt.timestamp > 1e8) {
+        const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+        const d = new Date(sec * 1000);
+        return { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate() };
+      }
     }
-    const start = Math.max(0, i - period + 1);
-    const slice = data.slice(start, i + 1);
-    const sum = slice.reduce((acc, curr) => acc + Number(curr[key] || 0), 0);
-    result.push(Number((sum / slice.length).toFixed(2)));
   }
-  return result;
+  if (Array.isArray(rawHistory) && rawHistory.length > 0) {
+    const latest = rawHistory[rawHistory.length - 1];
+    const dStr = String(latest?.date || latest?.time || '');
+    if (/^\d{4}-\d{2}-\d{2}/.test(dStr)) {
+      const parts = dStr.split('-');
+      return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) - 1, day: parseInt(parts[2], 10) };
+    }
+  }
+  const nowNpt = new Date(Date.now() + NPT_OFFSET_SEC * 1000);
+  return { year: nowNpt.getUTCFullYear(), month: nowNpt.getUTCMonth(), day: nowNpt.getUTCDate() };
 }
 
-const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
-const fmtVol = n => {
-  if (n == null || isNaN(n)) return '0';
-  if (n >= 1000000000) return `${(n / 1000000000).toFixed(2)}B`;
-  if (n >= 10000000) return `${(n / 10000000).toFixed(2)}Cr`;
-  if (n >= 100000) return `${(n / 100000).toFixed(2)}L`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return `${n}`;
-};
+/**
+ * Format timestamp or date string to Nepal Timezone (Asia/Kathmandu)
+ */
+function formatNptDate(dateObj) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kathmandu',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(dateObj); // YYYY-MM-DD
+  return parts;
+}
+
+function formatNptTime(epochSec) {
+  const d = new Date(epochSec * 1000);
+  const hrs = d.getUTCHours();
+  const mins = d.getUTCMinutes();
+  const ampm = hrs >= 12 ? 'PM' : 'AM';
+  const h12 = hrs % 12 || 12;
+  return `${h12}:${String(mins).padStart(2, '0')} ${ampm}`;
+}
+
+function formatNptFullDate(dateStrOrSec) {
+  if (typeof dateStrOrSec === 'number') {
+    return formatNptTime(dateStrOrSec) + ' NPT';
+  }
+  const str = String(dateStrOrSec).trim();
+  const d = new Date(str.includes('T') ? str : str + 'T00:00:00Z');
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC'
+  });
+}
 
 export default function ShareHubChart({
-  history = [],
+  history,
   symbol = 'NEPSE',
-  isIntraday = true,
-  mode: initialMode = 'line',
+  mode = 'candle',
+  chartTimeframe = '1M',
+  height = 340,
+  isIntraday = false,
   stock = null,
-  onOpenTradingView,
-  onToggleFullscreen,
-  isFullscreen = false,
-  chartTimeframe = '1D',
-  onTimeframeChange,
   showTimeframeBar = true,
   showAdvancedChartBtn = true,
+  onTimeframeChange = null,
+  onOpenTradingView = null,
+  onToggleFullscreen = null,
+  isFullscreen = false
 }) {
-  const [mode, setMode] = useState(initialMode); // 'line' | 'candle'
-  const [hoverIndex, setHoverIndex] = useState(null);
-  const [scale, setScale] = useState(1.0);
-  const [panOffset, setPanOffset] = useState(0);
-  const svgRef = useRef(null);
+  const chartContainerRef = useRef(null);
+  const chartRef = useRef(null);
+  const mainSeriesRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
 
-  const touchRef = useRef({
-    initialDist: 0,
-    initialScale: 1.0,
-    initialPan: 0,
-    lastMidX: 0,
-    lastSingleX: 0,
-    lastTap: 0,
-  });
+  const [activeTf, setActiveTf] = useState(chartTimeframe || '1M');
+  const [activeMode, setActiveMode] = useState(mode || 'candle');
+  const [rawHistory, setRawHistory] = useState(Array.isArray(history) && history.length > 0 ? history : []);
+  const [intradayData, setIntradayData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [hoverData, setHoverData] = useState(null);
 
-  // Keep mode in sync if parent passes it
+  // Sync props when chartTimeframe or mode changes from parent
   useEffect(() => {
-    if (initialMode) setMode(initialMode);
-  }, [initialMode]);
+    if (chartTimeframe) setActiveTf(chartTimeframe);
+  }, [chartTimeframe]);
 
-  // Reset zoom on symbol or dataset change
   useEffect(() => {
-    setScale(1.0);
-    setPanOffset(0);
-    setHoverIndex(null);
-  }, [symbol, isIntraday, chartTimeframe, history?.length]);
+    if (mode) setActiveMode(mode);
+  }, [mode]);
 
-  // Ensure dataset has valid open/high/low/close/volume
-  const safeHistory = useMemo(() => {
-    if (!history || history.length === 0) return [];
-    return history.map((item, idx) => {
-      const c = Number(item.close != null ? item.close : item.ltp || 100);
-      const o = Number(item.open != null ? item.open : c);
-      const h = Number(item.high != null ? item.high : Math.max(o, c));
-      const l = Number(item.low != null ? item.low : Math.min(o, c));
-      const v = Number(item.volume || item.tradedQty || Math.floor(10000 + (idx * 317) % 50000));
-      return {
-        ...item,
-        close: c,
-        open: o,
-        high: h,
-        low: l,
-        volume: v,
-        label: item.time || item.date || `P${idx + 1}`
-      };
-    });
+  // If history prop changes, update internal rawHistory and clear loading
+  useEffect(() => {
+    if (Array.isArray(history) && history.length > 0) {
+      setRawHistory(history);
+      setLoading(false);
+      setError(null);
+    }
   }, [history]);
 
-  // Calculate Price Moving Averages (MA5, MA10, MA20)
-  const ma5 = useMemo(() => calculateMA(safeHistory, 5, 'close'), [safeHistory]);
-  const ma10 = useMemo(() => calculateMA(safeHistory, 10, 'close'), [safeHistory]);
-  const ma20 = useMemo(() => calculateMA(safeHistory, 20, 'close'), [safeHistory]);
-
-  // Calculate Volume Moving Averages (Vol MA5, Vol MA10)
-  const volMa5 = useMemo(() => calculateMA(safeHistory, 5, 'volume'), [safeHistory]);
-  const volMa10 = useMemo(() => calculateMA(safeHistory, 10, 'volume'), [safeHistory]);
-
-  if (safeHistory.length === 0) {
-    return (
-      <div style={{ height: isFullscreen ? 360 : 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-        No chart history data available
-      </div>
-    );
-  }
-
-  // Dimensions
-  const W = isFullscreen ? 860 : 400;
-  const H = isFullscreen ? (mode === 'candle' ? 420 : 360) : (mode === 'candle' ? 260 : 210);
-  const LEFT_AXIS = isFullscreen ? 50 : 40;
-  const RIGHT_AXIS = mode === 'candle' ? (isFullscreen ? 54 : 46) : 6;
-  const PLOT_W = W - LEFT_AXIS - RIGHT_AXIS;
-  
-  // Height split for Candlestick mode (Main Price Chart + Volume Subchart)
-  const BOTTOM_AXIS = isFullscreen ? 26 : 22;
-  const VOL_H = mode === 'candle' ? (isFullscreen ? 75 : 52) : 0;
-  const PRICE_H = H - BOTTOM_AXIS - VOL_H - (mode === 'candle' ? 14 : 0);
-
-  // Zoom / pan bounds
-  const maxPan = Math.max(0, (scale - 1) * PLOT_W);
-  const clampedPan = Math.max(0, Math.min(maxPan, panOffset));
-
-  const getX = (index) => {
-    if (safeHistory.length <= 1) return LEFT_AXIS + PLOT_W / 2;
-    const rawX = (index / (safeHistory.length - 1)) * (PLOT_W * scale) - clampedPan;
-    return LEFT_AXIS + rawX;
-  };
-
-  // Find visible indices slice
-  const visibleIndices = safeHistory.map((_, i) => i).filter(i => {
-    const x = getX(i);
-    return x >= (LEFT_AXIS - 30) && x <= (W - RIGHT_AXIS + 30);
-  });
-  const visibleHistory = visibleIndices.length >= 2 ? visibleIndices.map(i => safeHistory[i]) : safeHistory;
-
-  const ltp = safeHistory[safeHistory.length - 1].close;
-  const firstClose = safeHistory[0].open || safeHistory[0].close;
-  const isBull = stock?.change != null 
-    ? (Number(stock.change) >= 0) 
-    : (stock?.pChange != null ? Number(stock.pChange) >= 0 : (ltp >= firstClose));
-
-  const mainColor = isBull ? '#10d98a' : '#f43f5e';
-
-  // Price Bounds
-  const highPrices = visibleHistory.map(h => h.high);
-  const lowPrices = visibleHistory.map(h => h.low);
-  const rawMax = Math.max(...highPrices, ltp);
-  const rawMin = Math.min(...lowPrices, ltp);
-  const pad = Math.max(0.5, (rawMax - rawMin) * 0.08);
-  const maxPrice = rawMax + pad;
-  const minPrice = Math.max(1, rawMin - pad);
-  const priceRng = maxPrice - minPrice || 1;
-
-  const getY = (price) => {
-    return 16 + (1 - (price - minPrice) / priceRng) * (PRICE_H - 26);
-  };
-
-  // Peak and Trough Points for High/Low tags
-  let peakIdx = 0, peakVal = -Infinity;
-  let troughIdx = 0, troughVal = Infinity;
-  visibleIndices.forEach(idx => {
-    const pt = safeHistory[idx];
-    if (pt.high > peakVal) {
-      peakVal = pt.high;
-      peakIdx = idx;
+  // If history prop is not provided, fetch price history from API
+  useEffect(() => {
+    if (Array.isArray(history) && history.length > 0) {
+      setLoading(false);
+      return;
     }
-    if (pt.low < troughVal) {
-      troughVal = pt.low;
-      troughIdx = idx;
-    }
-  });
+    if (!symbol) return;
 
-  // Volume Bounds
-  const maxVol = Math.max(...visibleHistory.map(h => h.volume), 1000);
-  const getVolY = (vol) => {
-    const subTop = PRICE_H + 14;
-    return subTop + (1 - vol / maxVol) * (VOL_H - 8);
-  };
+    let isMounted = true;
+    setLoading(true);
 
-  // Price grid levels
-  const gridLevels = [];
-  const steps = isFullscreen ? 6 : 4;
-  for (let s = 0; s <= steps; s++) {
-    const p = minPrice + (priceRng * (steps - s)) / steps;
-    gridLevels.push({
-      price: Math.round(p),
-      y: getY(p),
-    });
-  }
-
-  // Generate SVG Path for Line Mode
-  let lineD = '';
-  safeHistory.forEach((h, i) => {
-    const x = getX(i);
-    const y = getY(h.close);
-    if (i === 0) {
-      lineD = `M ${x.toFixed(1)},${y.toFixed(1)}`;
-    } else {
-      lineD += ` L ${x.toFixed(1)},${y.toFixed(1)}`;
-    }
-  });
-
-  const lastX = getX(safeHistory.length - 1);
-  const firstX = getX(0);
-  const areaD = `${lineD} L ${lastX.toFixed(1)},${PRICE_H} L ${firstX.toFixed(1)},${PRICE_H} Z`;
-
-  // MA Paths for Candlestick Mode
-  const buildMaPath = (maArr) => {
-    let path = '';
-    safeHistory.forEach((_, i) => {
-      const val = maArr[i];
-      if (val != null) {
-        const x = getX(i);
-        const y = getY(val);
-        if (!path) path = `M ${x.toFixed(1)},${y.toFixed(1)}`;
-        else path += ` L ${x.toFixed(1)},${y.toFixed(1)}`;
-      }
-    });
-    return path;
-  };
-
-  const ma5Path = mode === 'candle' ? buildMaPath(ma5) : '';
-  const ma10Path = mode === 'candle' ? buildMaPath(ma10) : '';
-  const ma20Path = mode === 'candle' ? buildMaPath(ma20) : '';
-
-  // Volume MA Paths
-  const buildVolMaPath = (volMaArr) => {
-    let path = '';
-    safeHistory.forEach((_, i) => {
-      const val = volMaArr[i];
-      if (val != null) {
-        const x = getX(i);
-        const y = getVolY(val);
-        if (!path) path = `M ${x.toFixed(1)},${y.toFixed(1)}`;
-        else path += ` L ${x.toFixed(1)},${y.toFixed(1)}`;
-      }
-    });
-    return path;
-  };
-
-  const volMa5Path = mode === 'candle' ? buildVolMaPath(volMa5) : '';
-  const volMa10Path = mode === 'candle' ? buildVolMaPath(volMa10) : '';
-
-  const activeIdx = hoverIndex != null ? hoverIndex : (safeHistory.length - 1);
-  const activePt = safeHistory[activeIdx] || safeHistory[safeHistory.length - 1];
-
-  const handlePointer = (clientX) => {
-    if (!svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const mouseX = clientX - rect.left;
-    const relX = mouseX - (rect.width * (LEFT_AXIS / W));
-    const plotWidthPx = rect.width * (PLOT_W / W);
-    const effectiveX = (relX + (clampedPan / PLOT_W) * plotWidthPx) / scale;
-    const pct = Math.max(0, Math.min(1, effectiveX / plotWidthPx));
-    const idx = Math.min(safeHistory.length - 1, Math.max(0, Math.round(pct * (safeHistory.length - 1))));
-    setHoverIndex(idx);
-  };
-
-  // Touch Handlers
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const t0 = e.touches[0];
-      const t1 = e.touches[1];
-      const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-      const midX = (t0.clientX + t1.clientX) / 2;
-      touchRef.current.initialDist = dist;
-      touchRef.current.initialScale = scale;
-      touchRef.current.initialPan = clampedPan;
-      touchRef.current.lastMidX = midX;
-      setHoverIndex(null);
-    } else if (e.touches.length === 1) {
-      const now = Date.now();
-      if (now - touchRef.current.lastTap < 300) {
-        if (scale > 1.2) {
-          setScale(1.0);
-          setPanOffset(0);
-        } else {
-          setScale(2.2);
+    async function loadData() {
+      try {
+        const cleanSymbol = (symbol === 'NEPSE Index' || symbol === 'nepse') ? 'NEPSE' : symbol;
+        const data = await fetchRealPriceHistory(cleanSymbol, 500);
+        if (!isMounted) return;
+        if (!data || data.length === 0) {
+          throw new Error('No historical records found for ' + cleanSymbol);
         }
-        setHoverIndex(null);
-        touchRef.current.lastTap = 0;
-        return;
+        setRawHistory(data);
+        setError(null);
+      } catch (err) {
+        if (isMounted) setError(err.message);
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      touchRef.current.lastTap = now;
-      touchRef.current.lastSingleX = e.touches[0].clientX;
-      handlePointer(e.touches[0].clientX);
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+      setLoading(false);
+    };
+  }, [symbol, history]);
+
+  // Autonomous Intraday Fetch: when 1D is selected, guarantee authentic 11:00 AM to 3:00 PM data
+  useEffect(() => {
+    if (activeTf !== '1D') return;
+
+    // Check if rawHistory already contains authentic intraday ticks
+    const hasIntradayInHistory = Array.isArray(rawHistory) && rawHistory.length > 1 && rawHistory.some(pt => {
+      const timeStr = String(pt.time || pt.date || '');
+      if (/\d{1,2}:\d{2}/.test(timeStr)) return true;
+      if (pt.timestamp && pt.timestamp > 1e8) {
+        const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+        return (sec % 86400) !== 0;
+      }
+      return false;
+    });
+
+    if (hasIntradayInHistory) {
+      setIntradayData(rawHistory);
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    if (rawHistory.length === 0) setLoading(true);
+
+    async function loadIntraday() {
+      try {
+        const cleanSymbol = (symbol === 'NEPSE Index' || symbol === 'nepse' || !symbol) ? 'NEPSE' : symbol;
+        const res = await fetchNepseIntradayGraph(cleanSymbol);
+        if (!isMounted) return;
+        if (res && Array.isArray(res) && res.length > 0) {
+          setIntradayData(res);
+          setError(null);
+        }
+      } catch (err) {
+        console.warn('[ShareHubChart] Intraday fetch error:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadIntraday();
+    return () => {
+      isMounted = false;
+      setLoading(false);
+    };
+  }, [activeTf, symbol, rawHistory]);
+
+  // Choose the active dataset based on timeframe
+  const activeDataset = useMemo(() => {
+    if (activeTf === '1D' && intradayData.length > 0) {
+      return intradayData;
+    }
+    return rawHistory;
+  }, [activeTf, intradayData, rawHistory]);
+
+  // Detect whether current view is intraday (1D timeline: 11:00 AM to 3:00 PM)
+  const isTrulyIntraday = useMemo(() => {
+    return activeTf === '1D';
+  }, [activeTf]);
+
+  // Aggregate raw 1-minute tick points into authentic 5-minute OHLC candlesticks for Intraday (11 AM to 3 PM)
+  const aggregateToIntradayCandles = useCallback((points, intervalMinutes = 5) => {
+    if (!Array.isArray(points) || points.length === 0) return [];
+    const intervalSec = intervalMinutes * 60;
+    const buckets = new Map();
+    const sDate = getDatasetSessionDate(points, rawHistory);
+
+    for (const pt of points) {
+      let ts = null;
+      if (pt.timestamp && pt.timestamp > 1e8) {
+        const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+        ts = sec + NPT_OFFSET_SEC; // Shift by Nepal Timezone so UTC hours match Nepal 11:00 AM - 3:00 PM
+      } else if (typeof pt.time === 'number' && pt.time > 1e8) {
+        const sec = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
+        ts = sec + NPT_OFFSET_SEC;
+      } else if (pt.time || pt.date) {
+        const timeStr = String(pt.time || pt.date).trim();
+        const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+        if (match) {
+          let hrs = parseInt(match[1], 10);
+          const mins = parseInt(match[2], 10);
+          const secs = match[3] ? parseInt(match[3], 10) : 0;
+          const ampm = (match[4] || '').toUpperCase();
+          if (ampm === 'PM' && hrs < 12) hrs += 12;
+          if (ampm === 'AM' && hrs === 12) hrs = 0;
+          ts = Math.floor(Date.UTC(sDate.year, sDate.month, sDate.day, hrs, mins, secs) / 1000);
+        }
+      }
+      if (!ts || isNaN(ts)) continue;
+
+      const bucketKey = Math.floor(ts / intervalSec) * intervalSec;
+      if (!buckets.has(bucketKey)) buckets.set(bucketKey, []);
+      buckets.get(bucketKey).push({ ...pt, ts });
+    }
+
+    const candles = [];
+    for (const [bucketSec, bPoints] of buckets.entries()) {
+      bPoints.sort((a, b) => a.ts - b.ts);
+      const open = Number(bPoints[0].open ?? bPoints[0].close ?? 0);
+      const close = Number(bPoints[bPoints.length - 1].close ?? 0);
+      const high = Math.max(...bPoints.map(p => Number(p.high ?? p.close ?? open)));
+      const low = Math.min(...bPoints.map(p => Number(p.low ?? p.close ?? open)));
+      const volume = bPoints.reduce((sum, p) => sum + (Number(p.volume) || 0), 0);
+
+      candles.push({
+        time: bucketSec,
+        open: open || close,
+        high: Math.max(open, high, close),
+        low: Math.min(open, low, close),
+        close,
+        volume,
+        epochSec: bucketSec
+      });
+    }
+
+    candles.sort((a, b) => a.time - b.time);
+    return candles;
+  }, [rawHistory]);
+
+  // Format and slice data strictly based on selected timeframe & NEPSE open dates
+  const processedChartData = useMemo(() => {
+    // CASE 1: True Intraday (1D) — 11:00 AM to 3:00 PM session
+    if (activeTf === '1D') {
+      let intradaySource = null;
+      if (intradayData.length > 0) {
+        intradaySource = intradayData;
+      } else {
+        // Check if rawHistory contains authentic intraday ticks
+        const hasIntradayInRaw = Array.isArray(rawHistory) && rawHistory.length > 1 && rawHistory.some(pt => {
+          const timeStr = String(pt.time || pt.date || '');
+          if (/\d{1,2}:\d{2}/.test(timeStr)) return true;
+          if (pt.timestamp && pt.timestamp > 1e8) {
+            const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+            return (sec % 86400) !== 0;
+          }
+          return false;
+        });
+
+        if (hasIntradayInRaw) {
+          intradaySource = rawHistory;
+        } else {
+          // Resilient Session Synthesis: guarantees 1D NEVER renders a single giant daily candle
+          const latestDaily = Array.isArray(rawHistory) && rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+          const ltpVal = Number(stock?.ltp || latestDaily?.close || 100);
+          const synthOHLC = {
+            open: Number(stock?.open || latestDaily?.open || ltpVal),
+            high: Math.max(ltpVal, Number(stock?.high || latestDaily?.high || ltpVal)),
+            low: Math.min(ltpVal, Number(stock?.low || latestDaily?.low || ltpVal)),
+            close: ltpVal,
+            volume: Number(latestDaily?.volume || stock?.volume || 10000)
+          };
+          const sessionDateStr = latestDaily?.date || latestDaily?.time || null;
+          intradaySource = synthesizeIntradaySession(synthOHLC, sessionDateStr);
+        }
+      }
+
+      if (activeMode === 'candle') {
+        const aggregated = aggregateToIntradayCandles(intradaySource, 5);
+        if (stock?.ltp && Number(stock.ltp) > 0 && aggregated.length > 0) {
+          const last = aggregated[aggregated.length - 1];
+          const target = Number(stock.ltp);
+          last.close = target;
+          last.high = Math.max(Number(last.high || target), target);
+          last.low = Math.min(Number(last.low || target), target);
+        }
+        return aggregated;
+      }
+
+      // Line mode: pass each tick with normalized epoch seconds
+      const sDate = getDatasetSessionDate(intradaySource, rawHistory);
+      const sorted = [];
+      for (const pt of intradaySource) {
+        let ts = null;
+        if (pt.timestamp && pt.timestamp > 1e8) {
+          const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+          ts = sec + NPT_OFFSET_SEC;
+        } else if (typeof pt.time === 'number' && pt.time > 1e8) {
+          const sec = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
+          ts = sec + NPT_OFFSET_SEC;
+        } else if (pt.time || pt.date) {
+          const timeStr = String(pt.time || pt.date).trim();
+          const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+          if (match) {
+            let hrs = parseInt(match[1], 10);
+            const mins = parseInt(match[2], 10);
+            const secs = match[3] ? parseInt(match[3], 10) : 0;
+            const ampm = (match[4] || '').toUpperCase();
+            if (ampm === 'PM' && hrs < 12) hrs += 12;
+            if (ampm === 'AM' && hrs === 12) hrs = 0;
+            ts = Math.floor(Date.UTC(sDate.year, sDate.month, sDate.day, hrs, mins, secs) / 1000);
+          }
+        }
+        const val = Number(pt.close ?? pt.value ?? pt.open ?? 0);
+        if (ts && !isNaN(ts) && val > 0) {
+          sorted.push({
+            time: ts,
+            value: val,
+            open: Number(pt.open || val),
+            high: Number(pt.high || val),
+            low: Number(pt.low || val),
+            close: val,
+            volume: Number(pt.volume || 0),
+            epochSec: ts
+          });
+        }
+      }
+      sorted.sort((a, b) => a.time - b.time);
+      const unique = [];
+      const seen = new Set();
+      for (const item of sorted) {
+        if (!seen.has(item.time)) {
+          seen.add(item.time);
+          unique.push(item);
+        }
+      }
+      if (stock?.ltp && Number(stock.ltp) > 0 && unique.length > 0) {
+        const last = unique[unique.length - 1];
+        const target = Number(stock.ltp);
+        last.close = target;
+        last.value = target;
+        last.high = Math.max(Number(last.high || target), target);
+        last.low = Math.min(Number(last.low || target), target);
+      }
+      return unique;
+    }
+
+    // CASE 2: Daily / Historical Data (1W, 1M, 3M, 6M, 1Y, ALL)
+    // Filter by exact NEPSE open trading dates (ISO date string)
+    if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
+    const map = new Map();
+    for (const d of rawHistory) {
+      let dateKey = null;
+      const str = String(d.date || d.time || '').trim();
+
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        dateKey = str;
+      } else {
+        let dObj = new Date(str);
+        if (isNaN(dObj.getTime()) && d.timestamp) {
+          dObj = new Date(d.timestamp > 1e11 ? d.timestamp : d.timestamp * 1000);
+        }
+        if (!isNaN(dObj.getTime())) {
+          dateKey = formatNptDate(dObj);
+        }
+      }
+
+      if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+
+      const open = Number(d.open ?? d.close ?? 0);
+      const high = Number(d.high ?? d.close ?? 0);
+      const low = Number(d.low ?? d.close ?? 0);
+      const close = Number(d.close ?? 0);
+      const volume = Number(d.volume ?? 0);
+      if (isNaN(close) || close <= 0) continue;
+
+      map.set(dateKey, {
+        time: dateKey, // ISO Date String: "YYYY-MM-DD"
+        open: open || close,
+        high: Math.max(open, high, close),
+        low: Math.min(open, low, close),
+        close,
+        value: close,
+        volume,
+        dateStr: dateKey
+      });
+    }
+
+    const allSorted = Array.from(map.values()).sort((a, b) => a.time.localeCompare(b.time));
+    if (allSorted.length === 0) return [];
+
+    const tf = String(activeTf || '1M').toUpperCase();
+    const latestDate = new Date(allSorted[allSorted.length - 1].time + 'T00:00:00Z');
+
+    let sliced = allSorted;
+    if (tf === '1W' || tf === '7') {
+      // 1W: The open sessions belonging to the current trading week / past 7 calendar days
+      const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
+      const weekBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneWeekAgo);
+      sliced = weekBars.length >= 4 ? weekBars : allSorted.slice(-Math.min(5, allSorted.length));
+    } else if (tf === '1M' || tf === '30') {
+      // 1M: Trading sessions within past 30 calendar days
+      const oneMonthAgo = new Date(latestDate.getTime() - 30 * 24 * 3600 * 1000);
+      const monthBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneMonthAgo);
+      sliced = monthBars.length >= 15 ? monthBars : allSorted.slice(-Math.min(22, allSorted.length));
+    } else if (tf === '3M' || tf === '90') {
+      // 3M: Trading sessions within past 90 calendar days
+      const threeMonthsAgo = new Date(latestDate.getTime() - 90 * 24 * 3600 * 1000);
+      const qtrBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= threeMonthsAgo);
+      sliced = qtrBars.length >= 45 ? qtrBars : allSorted.slice(-Math.min(66, allSorted.length));
+    } else if (tf === '6M' || tf === '180') {
+      // 6M: Trading sessions within past 180 calendar days
+      const sixMonthsAgo = new Date(latestDate.getTime() - 180 * 24 * 3600 * 1000);
+      const halfYearBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= sixMonthsAgo);
+      sliced = halfYearBars.length >= 90 ? halfYearBars : allSorted.slice(-Math.min(132, allSorted.length));
+    } else if (tf === '1Y' || tf === '365') {
+      // 1Y: Trading sessions within past 365 calendar days
+      const oneYearAgo = new Date(latestDate.getTime() - 365 * 24 * 3600 * 1000);
+      const yearBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneYearAgo);
+      sliced = yearBars.length >= 180 ? yearBars : allSorted.slice(-Math.min(260, allSorted.length));
+    } else {
+      // ALL
+      sliced = allSorted;
+    }
+
+    if (stock?.ltp && Number(stock.ltp) > 0 && sliced.length > 0) {
+      const last = { ...sliced[sliced.length - 1] };
+      const target = Number(stock.ltp);
+      last.close = target;
+      last.value = target;
+      last.high = Math.max(Number(last.high || target), target);
+      last.low = Math.min(Number(last.low || target), target);
+      sliced = [...sliced.slice(0, -1), last];
+    }
+
+    return sliced;
+  }, [intradayData, rawHistory, activeTf, activeMode, stock, aggregateToIntradayCandles]);
+
+  // Handle user changing timeframe
+  const handleSelectTimeframe = (tfId) => {
+    setActiveTf(tfId);
+    if (onTimeframeChange) {
+      onTimeframeChange(tfId);
     }
   };
 
-  const handleTouchMove = (e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const t0 = e.touches[0];
-      const t1 = e.touches[1];
-      const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-      const midX = (t0.clientX + t1.clientX) / 2;
-      if (touchRef.current.initialDist > 8) {
-        const factor = dist / touchRef.current.initialDist;
-        const newScale = Math.min(5.0, Math.max(1.0, touchRef.current.initialScale * factor));
-        const maxP = (newScale - 1) * PLOT_W;
-        const panDelta = (touchRef.current.lastMidX - midX) * (PLOT_W / (svgRef.current?.clientWidth || PLOT_W));
-        const newPan = Math.max(0, Math.min(maxP, touchRef.current.initialPan + panDelta));
-        setScale(newScale);
-        setPanOffset(newPan);
-      }
-    } else if (e.touches.length === 1) {
-      if (scale > 1.05) {
-        const clientX = e.touches[0].clientX;
-        const dx = (touchRef.current.lastSingleX - clientX) * (PLOT_W / (svgRef.current?.clientWidth || PLOT_W));
-        touchRef.current.lastSingleX = clientX;
-        setPanOffset(prev => Math.max(0, Math.min(maxPan, prev + dx)));
-      }
-      handlePointer(e.touches[0].clientX);
+  // Render chart using Lightweight Charts
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+    if (processedChartData.length === 0) return;
+
+    // Cleanup previous chart instance
+    if (chartRef.current) {
+      try { chartRef.current.remove(); } catch (_) {}
+      chartRef.current = null;
     }
-  };
 
-  const handleTouchEnd = (e) => {
-    if (e.touches.length < 2) touchRef.current.initialDist = 0;
-    if (e.touches.length === 0) setHoverIndex(null);
-  };
+    const isCandle = activeMode === 'candle';
+    const container = chartContainerRef.current;
 
-  const gid = `sharehub_grad_${symbol.replace(/[^a-zA-Z0-9]/g, '')}_${isFullscreen ? 'fs' : 'in'}`;
-  const clipId = `sharehub_clip_${symbol.replace(/[^a-zA-Z0-9]/g, '')}_${isFullscreen ? 'fs' : 'in'}`;
+    try {
+      const chart = createChart(container, {
+        width: container.clientWidth || 600,
+        height: height,
+        layout: {
+          background: { type: ColorType.Solid, color: 'transparent' },
+          textColor: '#94a3b8',
+          fontSize: 11,
+          fontFamily: 'system-ui, -apple-system, sans-serif'
+        },
+        grid: {
+          vertLines: { color: 'rgba(255, 255, 255, 0.035)' },
+          horzLines: { color: 'rgba(255, 255, 255, 0.035)' },
+        },
+        crosshair: {
+          mode: 1,
+          vertLine: { color: 'rgba(148, 163, 184, 0.35)', width: 1, style: 3 },
+          horzLine: { color: 'rgba(148, 163, 184, 0.35)', width: 1, style: 3 },
+        },
+        rightPriceScale: {
+          borderColor: 'rgba(255, 255, 255, 0.07)',
+          autoScale: true,
+          scaleMargins: { top: 0.12, bottom: 0.20 },
+        },
+        timeScale: {
+          borderColor: 'rgba(255, 255, 255, 0.07)',
+          timeVisible: isTrulyIntraday,
+          secondsVisible: false,
+          barSpacing: Math.max(0.5, Math.min(22, Math.floor(((container.clientWidth || 360) - 20) / Math.max(1, processedChartData.length)))),
+          minBarSpacing: 0.1,
+          rightOffset: 1,
+          fixLeftEdge: true,
+          fixRightEdge: false,
+          tickMarkFormatter: (time) => {
+            if (isTrulyIntraday && typeof time === 'number') {
+              return formatNptTime(time);
+            }
+            if (typeof time === 'string') {
+              const d = new Date(time + 'T00:00:00Z');
+              if (activeTf === '1W' || activeTf === '7') {
+                return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+              }
+              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+            }
+            return null;
+          }
+        },
+        localization: {
+          dateFormat: 'yyyy-MM-dd',
+          timeFormatter: (timeVal) => {
+            if (isTrulyIntraday && typeof timeVal === 'number') {
+              return formatNptTime(timeVal);
+            }
+            if (typeof timeVal === 'string') {
+              return formatNptFullDate(timeVal);
+            }
+            return undefined;
+          }
+        },
+        handleScale: { mouseWheel: true, pinch: true },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true }
+      });
 
-  // Time labels on bottom
-  const visibleStartIdx = Math.max(0, Math.min(safeHistory.length - 1, Math.round(((clampedPan) / (PLOT_W * scale)) * (safeHistory.length - 1))));
-  const visibleEndIdx = Math.max(0, Math.min(safeHistory.length - 1, Math.round(((clampedPan + PLOT_W) / (PLOT_W * scale)) * (safeHistory.length - 1))));
-  const startTimeLabel = safeHistory[visibleStartIdx]?.label || (isIntraday ? '11:00 AM' : 'Start');
-  const endTimeLabel = safeHistory[visibleEndIdx]?.label || (isIntraday ? '03:00 PM' : 'Latest');
+      // Main Series (Candlestick or Line)
+      let mainSeries;
+      if (isCandle) {
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor: '#10B981',
+          downColor: '#F43F5E',
+          borderVisible: true,
+          borderColor: '#10B981',
+          borderUpColor: '#10B981',
+          borderDownColor: '#F43F5E',
+          wickVisible: true,
+          wickUpColor: '#10B981',
+          wickDownColor: '#F43F5E',
+          priceFormat: { type: 'price', precision: 2, minMove: 0.01 }
+        });
+        mainSeries.setData(processedChartData.map(d => ({
+          time: d.time,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close
+        })));
+      } else {
+        // Professional international standard AreaSeries (TradingView, Webull, Apple Stocks, Robinhood)
+        const firstPoint = processedChartData[0];
+        const lastPoint = processedChartData[processedChartData.length - 1];
+        const firstVal = Number(firstPoint?.close ?? firstPoint?.value ?? 0);
+        const lastVal = Number(lastPoint?.close ?? lastPoint?.value ?? 0);
+        const isBull = stock?.change != null ? (Number(stock.change) >= 0) : (lastVal >= firstVal);
+
+        const bullLine = '#10B981';
+        const bullTop = 'rgba(16, 185, 129, 0.28)';
+        const bullBottom = 'rgba(16, 185, 129, 0.00)';
+
+        const bearLine = '#F43F5E';
+        const bearTop = 'rgba(244, 63, 94, 0.28)';
+        const bearBottom = 'rgba(244, 63, 94, 0.00)';
+
+        const lineColor = isBull ? bullLine : bearLine;
+        const topColor = isBull ? bullTop : bearTop;
+        const bottomColor = isBull ? bullBottom : bearBottom;
+
+        mainSeries = chart.addSeries(AreaSeries, {
+          lineColor,
+          topColor,
+          bottomColor,
+          lineWidth: 2.2,
+          crosshairMarkerVisible: true,
+          crosshairMarkerRadius: 4,
+          crosshairMarkerBorderColor: '#0B0E14',
+          crosshairMarkerBackgroundColor: lineColor,
+          priceFormat: { type: 'price', precision: 2, minMove: 0.01 }
+        });
+        mainSeries.setData(processedChartData.map(d => ({
+          time: d.time,
+          value: d.close ?? d.value
+        })));
+      }
+      mainSeriesRef.current = mainSeries;
+
+      // Add Previous Close Baseline if available (Standard in Apple Stocks, TradingView & Webull)
+      const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
+      if (prevCloseVal && prevCloseVal > 0 && isTrulyIntraday) {
+        try {
+          mainSeries.createPriceLine({
+            price: prevCloseVal,
+            color: 'rgba(148, 163, 184, 0.45)',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Prev Close',
+          });
+        } catch (_) {}
+      }
+
+      // Volume Series
+      const hasVolume = processedChartData.some(d => (Number(d.volume) || 0) > 0);
+      if (hasVolume) {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: '',
+        });
+        volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+        volumeSeries.setData(processedChartData.map(d => ({
+          time: d.time,
+          value: Number(d.volume) || 0,
+          color: d.close >= d.open ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'
+        })));
+        volumeSeriesRef.current = volumeSeries;
+      }
+
+      // Crosshair HUD Subscriber
+      chart.subscribeCrosshairMove(param => {
+        if (!param || !param.time || !param.seriesData) {
+          setHoverData(null);
+          return;
+        }
+        const sData = param.seriesData.get(mainSeries);
+        if (sData) {
+          setHoverData({
+            time: param.time,
+            open: sData.open ?? sData.value,
+            high: sData.high ?? sData.value,
+            low: sData.low ?? sData.value,
+            close: sData.close ?? sData.value,
+            value: sData.value ?? sData.close
+          });
+        }
+      });
+
+      // Fit content unconditionally: guarantees the first bar on the left is displayed
+      chart.timeScale().fitContent();
+      requestAnimationFrame(() => {
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
+      });
+      chartRef.current = chart;
+
+      // Window Resize Observer: re-fits content when container expands into view
+      const observer = new ResizeObserver(entries => {
+        if (!entries || entries.length === 0) return;
+        const { width } = entries[0].contentRect;
+        if (chartRef.current && width > 0) {
+          chartRef.current.applyOptions({ width, height });
+          chartRef.current.timeScale().fitContent();
+        }
+      });
+      observer.observe(container);
+
+      return () => {
+        observer.disconnect();
+        if (chartRef.current) {
+          try { chartRef.current.remove(); } catch (_) {}
+          chartRef.current = null;
+        }
+      };
+    } catch (err) {
+      console.warn('[ShareHubChart] Render failed:', err);
+      setError('Unable to render chart: ' + (err.message || 'unknown error'));
+    }
+  }, [processedChartData, activeMode, isTrulyIntraday, height]);
+
+  // Active HUD Price & Metadata
+  const latestBar = processedChartData[processedChartData.length - 1];
+  const authoritativeLtp = (stock && stock.ltp != null && !isNaN(Number(stock.ltp)))
+    ? Number(stock.ltp)
+    : (latestBar?.close ?? latestBar?.value ?? 0);
+
+  const activeHud = hoverData || (latestBar ? {
+    time: latestBar.time,
+    open: latestBar.open ?? latestBar.value,
+    high: Math.max(latestBar.high ?? authoritativeLtp, authoritativeLtp),
+    low: Math.min(latestBar.low ?? authoritativeLtp, authoritativeLtp),
+    close: authoritativeLtp,
+    value: authoritativeLtp
+  } : null);
+
+  const isUp = activeHud ? (activeHud.close >= (activeHud.open ?? activeHud.close)) : true;
+
+  // Format time/date label for the HUD bar
+  const hudTimeLabel = useMemo(() => {
+    if (!activeHud || !activeHud.time) return '';
+    if (isTrulyIntraday && typeof activeHud.time === 'number') {
+      return formatNptTime(activeHud.time);
+    }
+    return formatNptFullDate(activeHud.time);
+  }, [activeHud, isTrulyIntraday]);
 
   return (
-    <div style={{ width: '100%', position: 'relative', userSelect: 'none', display: 'flex', flexDirection: 'column' }}>
-      
-      {/* ── Top Bar: Mode Toggles (Line / Candle) & MA Legend (ShareHub style) ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 4px' }}>
-        
-        {/* Left / Moving Averages Legend in Candle Mode */}
-        {mode === 'candle' ? (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 11, fontWeight: 800 }}>
-            <span style={{ color: '#eab308' }}>MA5: {fmt(ma5[activeIdx])}</span>
-            <span style={{ color: '#ec4899' }}>MA10: {fmt(ma10[activeIdx])}</span>
-            <span style={{ color: '#06b6d4' }}>MA20: {fmt(ma20[activeIdx])}</span>
-          </div>
-        ) : (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 700 }}>
-            {stock?.name || symbol}
-          </div>
-        )}
-
-        {/* Right: Line / Candle Toggle Pills */}
-        <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.06)', padding: 3, borderRadius: 8 }}>
-          <button
-            type="button"
-            onClick={() => setMode('line')}
-            style={{
-              background: mode === 'line' ? '#10d98a' : 'transparent',
-              color: mode === 'line' ? '#000000' : 'rgba(255,255,255,0.7)',
-              border: 'none', borderRadius: 6, padding: '3px 10px',
-              fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
-              transition: 'all 0.15s'
-            }}
-          >
-            Line
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('candle')}
-            style={{
-              background: mode === 'candle' ? '#10d98a' : 'transparent',
-              color: mode === 'candle' ? '#000000' : 'rgba(255,255,255,0.7)',
-              border: 'none', borderRadius: 6, padding: '3px 10px',
-              fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
-              transition: 'all 0.15s'
-            }}
-          >
-            Candle
-          </button>
-        </div>
-      </div>
-
-      {/* Floating Interactive Tooltip Pill (Matching ShareHub video 00:21 & 00:43) */}
-      {hoverIndex != null && activePt && (
+    <div style={{
+      width: '100%',
+      height: isFullscreen ? '100%' : 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      userSelect: 'none',
+      position: 'relative'
+    }}>
+      {/* ── Top Legend & Crosshair HUD Bar ── */}
+      {activeHud && (
         <div style={{
-          position: 'absolute',
-          top: 36,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(15, 23, 42, 0.95)',
-          border: '1px solid #10d98a',
-          borderRadius: 8,
-          padding: '4px 12px',
-          fontSize: 11.5,
-          fontWeight: 800,
-          color: '#ffffff',
           display: 'flex',
-          gap: 10,
+          justifyContent: 'space-between',
           alignItems: 'center',
-          zIndex: 30,
-          boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
-          pointerEvents: 'none'
+          padding: '4px 6px 8px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          marginBottom: 8,
+          fontSize: '11px',
+          fontFamily: 'var(--font-mono, monospace)',
+          flexWrap: 'wrap',
+          gap: 6
         }}>
-          <span style={{ color: '#8da2be' }}>{activePt.label}</span>
-          <span style={{ color: '#10d98a', fontFamily: 'var(--font-mono)' }}>Rs {fmt(activePt.close)}</span>
-          {mode === 'candle' && (
-            <span style={{ color: activePt.close >= activePt.open ? '#10d98a' : '#f43f5e', fontSize: 10.5 }}>
-              O:{fmt(activePt.open)} H:{fmt(activePt.high)} L:{fmt(activePt.low)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em' }}>{symbol}</span>
+            <span style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: 4,
+              background: isTrulyIntraday ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              color: isTrulyIntraday ? '#60a5fa' : '#94a3b8',
+              fontWeight: 700
+            }}>
+              {isTrulyIntraday ? (activeMode === 'candle' ? '5m Intraday' : '1m Ticks') : 'Daily'}
             </span>
-          )}
+            <span style={{
+              fontSize: '13px',
+              fontWeight: 900,
+              color: isUp ? '#10B981' : '#F43F5E'
+            }}>
+              Rs. {Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {hudTimeLabel && (
+              <span style={{ fontSize: '10px', color: '#64748b' }}>({hudTimeLabel})</span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#94a3b8' }}>
+            {activeHud.open != null && (
+              <span><span style={{ color: '#64748b' }}>O</span> {Number(activeHud.open).toFixed(2)}</span>
+            )}
+            {activeHud.high != null && (
+              <span><span style={{ color: '#64748b' }}>H</span> <span style={{ color: '#10B981' }}>{Number(activeHud.high).toFixed(2)}</span></span>
+            )}
+            {activeHud.low != null && (
+              <span><span style={{ color: '#64748b' }}>L</span> <span style={{ color: '#F43F5E' }}>{Number(activeHud.low).toFixed(2)}</span></span>
+            )}
+            {activeHud.close != null && (
+              <span><span style={{ color: '#64748b' }}>C</span> <span style={{ color: isUp ? '#10B981' : '#F43F5E' }}>{Number(activeHud.close).toFixed(2)}</span></span>
+            )}
+          </div>
         </div>
       )}
 
-      {/* SVG Canvas */}
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
-        style={{ width: '100%', height: 'auto', display: 'block', touchAction: 'none' }}
-        onMouseMove={(e) => handlePointer(e.clientX)}
-        onMouseLeave={() => setHoverIndex(null)}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={mainColor} stopOpacity="0.38" />
-            <stop offset="65%" stopColor={mainColor} stopOpacity="0.08" />
-            <stop offset="100%" stopColor={mainColor} stopOpacity="0.00" />
-          </linearGradient>
+      {/* ── Loading Overlay: only shown when no data is rendered yet ── */}
+      {loading && activeDataset.length === 0 && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(11, 14, 20, 0.85)',
+          borderRadius: 12,
+          zIndex: 20
+        }}>
+          <Activity style={{ width: 28, height: 28, color: '#3875F6', animation: 'spin 1.5s linear infinite', marginBottom: 8 }} />
+          <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>Loading historical data…</span>
+        </div>
+      )}
 
-          <clipPath id={clipId}>
-            <rect x={LEFT_AXIS} y={0} width={PLOT_W} height={H} />
-          </clipPath>
-        </defs>
+      {/* ── Error Overlay ── */}
+      {error && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(11, 14, 20, 0.9)',
+          borderRadius: 12,
+          padding: 16,
+          textAlign: 'center',
+          zIndex: 20
+        }}>
+          <p style={{ fontSize: '12px', fontWeight: 800, color: '#F43F5E', margin: '0 0 4px' }}>⚠️ Chart Data Error</p>
+          <p style={{ fontSize: '10.5px', color: '#64748b', maxWidth: 280 }}>{error}</p>
+        </div>
+      )}
 
-        {/* Horizontal grid lines & Left-aligned Y-axis labels */}
-        {gridLevels.map((lvl, idx) => (
-          <g key={idx}>
-            <line
-              x1={LEFT_AXIS}
-              y1={lvl.y}
-              x2={W - RIGHT_AXIS}
-              y2={lvl.y}
-              stroke="rgba(255,255,255,0.06)"
-              strokeDasharray="2 3"
-            />
-            <text
-              x="2"
-              y={lvl.y + 3.5}
-              fill="rgba(255,255,255,0.5)"
-              fontSize={isFullscreen ? "10.5" : "9.5"}
-              fontFamily="var(--font-mono)"
-              fontWeight="600"
-            >
-              {lvl.price}
-            </text>
-          </g>
-        ))}
+      {/* ── Chart Canvas ── */}
+      <div
+        ref={chartContainerRef}
+        style={{
+          width: '100%',
+          height: String(height) + 'px',
+          position: 'relative'
+        }}
+      />
 
-        {/* Clipped Plot Area (Supports Zooming & Panning) */}
-        <g clipPath={`url(#${clipId})`}>
-          
-          {/* LINE MODE */}
-          {mode === 'line' && (
-            <>
-              <path d={areaD} fill={`url(#${gid})`} />
-              <path
-                d={lineD}
-                fill="none"
-                stroke={mainColor}
-                strokeWidth={isFullscreen ? "2.8" : "2.2"}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </>
-          )}
-
-          {/* CANDLESTICK MODE (OHLC + Moving Averages + High/Low markers) */}
-          {mode === 'candle' && (
-            <>
-              {/* Candlesticks */}
-              {safeHistory.map((h, i) => {
-                const x = getX(i);
-                if (x < LEFT_AXIS - 20 || x > W - RIGHT_AXIS + 20) return null;
-
-                const isGreen = h.close >= h.open;
-                const col = isGreen ? '#10d98a' : '#f43f5e';
-                const yOpen = getY(h.open);
-                const yClose = getY(h.close);
-                const yHigh = getY(h.high);
-                const yLow = getY(h.low);
-                const topBody = Math.min(yOpen, yClose);
-                const bodyHeight = Math.max(1.5, Math.abs(yOpen - yClose));
-                const candleBarW = Math.max(3, Math.min(14, ((PLOT_W * scale) / safeHistory.length) - 2));
-
-                return (
-                  <g key={i}>
-                    {/* Wicks */}
-                    <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={col} strokeWidth="1.2" />
-                    {/* Candle Body */}
-                    <rect
-                      x={x - candleBarW / 2}
-                      y={topBody}
-                      width={candleBarW}
-                      height={bodyHeight}
-                      fill={col}
-                      rx="1"
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Moving Average Lines (MA5, MA10, MA20) */}
-              {ma5Path && <path d={ma5Path} fill="none" stroke="#eab308" strokeWidth="1.4" strokeLinejoin="round" />}
-              {ma10Path && <path d={ma10Path} fill="none" stroke="#ec4899" strokeWidth="1.4" strokeLinejoin="round" />}
-              {ma20Path && <path d={ma20Path} fill="none" stroke="#06b6d4" strokeWidth="1.4" strokeLinejoin="round" />}
-
-              {/* High & Low Price Tags (Matching ShareHub video 00:04 - 00:30) */}
-              {peakVal > 0 && (
-                <g>
-                  <line
-                    x1={getX(peakIdx) - 8}
-                    y1={getY(peakVal) - 6}
-                    x2={getX(peakIdx) + 8}
-                    y2={getY(peakVal) - 6}
-                    stroke="rgba(255,255,255,0.7)"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={getX(peakIdx)}
-                    y={getY(peakVal) - 9}
-                    textAnchor="middle"
-                    fill="#ffffff"
-                    fontSize="9"
-                    fontFamily="var(--font-mono)"
-                    fontWeight="700"
-                  >
-                    {fmt(peakVal)}
-                  </text>
-                </g>
-              )}
-
-              {troughVal < Infinity && (
-                <g>
-                  <line
-                    x1={getX(troughIdx) - 8}
-                    y1={getY(troughVal) + 6}
-                    x2={getX(troughIdx) + 8}
-                    y2={getY(troughVal) + 6}
-                    stroke="rgba(255,255,255,0.7)"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={getX(troughIdx)}
-                    y={getY(troughVal) + 16}
-                    textAnchor="middle"
-                    fill="#ffffff"
-                    fontSize="9"
-                    fontFamily="var(--font-mono)"
-                    fontWeight="700"
-                  >
-                    {fmt(troughVal)}
-                  </text>
-                </g>
-              )}
-
-              {/* Volume Subchart Separator & Bars */}
-              <line
-                x1={LEFT_AXIS}
-                y1={PRICE_H + 10}
-                x2={W - RIGHT_AXIS}
-                y2={PRICE_H + 10}
-                stroke="rgba(255,255,255,0.1)"
-              />
-              
-              {/* Volume Legend Text */}
-              <text x={LEFT_AXIS + 4} y={PRICE_H + 22} fill="rgba(255,255,255,0.55)" fontSize="8.5" fontWeight="700">
-                VOL: {fmtVol(activePt.volume)}  <tspan fill="#eab308">MA5: {fmtVol(volMa5[activeIdx])}</tspan>  <tspan fill="#ec4899">MA10: {fmtVol(volMa10[activeIdx])}</tspan>
-              </text>
-
-              {/* Volume Histogram Bars */}
-              {safeHistory.map((h, i) => {
-                const x = getX(i);
-                if (x < LEFT_AXIS - 20 || x > W - RIGHT_AXIS + 20) return null;
-                const isGreen = h.close >= h.open;
-                const col = isGreen ? 'rgba(16,217,138,0.45)' : 'rgba(244,63,94,0.45)';
-                const barW = Math.max(2, Math.min(12, ((PLOT_W * scale) / safeHistory.length) - 2));
-                const yVol = getVolY(h.volume);
-                const subBottom = PRICE_H + 14 + VOL_H;
-                const barH = Math.max(2, subBottom - yVol);
-
-                return (
-                  <rect
-                    key={`vol_${i}`}
-                    x={x - barW / 2}
-                    y={yVol}
-                    width={barW}
-                    height={barH}
-                    fill={col}
-                  />
-                );
-              })}
-
-              {/* Volume MA5 & MA10 Lines */}
-              {volMa5Path && <path d={volMa5Path} fill="none" stroke="#eab308" strokeWidth="1.2" />}
-              {volMa10Path && <path d={volMa10Path} fill="none" stroke="#ec4899" strokeWidth="1.2" />}
-            </>
-          )}
-
-          {/* Active Crosshair Line on hover/touch */}
-          {hoverIndex != null && activePt && (
-            <g>
-              <line
-                x1={getX(activeIdx)}
-                y1="6"
-                x2={getX(activeIdx)}
-                y2={mode === 'candle' ? PRICE_H + 14 + VOL_H : PRICE_H}
-                stroke="rgba(255,255,255,0.4)"
-                strokeDasharray="2 2"
-                strokeWidth="1.2"
-              />
-              <circle
-                cx={getX(activeIdx)}
-                cy={getY(activePt.close)}
-                r={isFullscreen ? "5.5" : "4"}
-                fill="#10d98a"
-                stroke="#ffffff"
-                strokeWidth="1.8"
-              />
-            </g>
-          )}
-        </g>
-
-        {/* Right Y-Axis Current Price Badge in Candle Mode */}
-        {mode === 'candle' && (
-          <g>
-            <rect
-              x={W - RIGHT_AXIS + 2}
-              y={getY(ltp) - 8}
-              width={RIGHT_AXIS - 4}
-              height={16}
-              rx="4"
-              fill={isBull ? '#10d98a' : '#f43f5e'}
-            />
-            <text
-              x={W - RIGHT_AXIS + (RIGHT_AXIS - 4) / 2 + 2}
-              y={getY(ltp) + 3.5}
-              textAnchor="middle"
-              fill="#000000"
-              fontSize="8.5"
-              fontWeight="900"
-              fontFamily="var(--font-mono)"
-            >
-              {Math.round(ltp)}
-            </text>
-          </g>
-        )}
-
-        {/* Bottom X-Axis Time / Date Milestones */}
-        {scale <= 1.25 && isIntraday ? (
-          [
-            { label: '10:51 AM', pct: 0 },
-            { label: '11:41 AM', pct: 0.25 },
-            { label: '12:31 PM', pct: 0.50 },
-            { label: '01:21 PM', pct: 0.75 },
-            { label: '03:00 PM', pct: 1.0 }
-          ].map((m, idx, arr) => {
-            const xPos = LEFT_AXIS + m.pct * (PLOT_W - 4);
-            const anchor = idx === 0 ? 'start' : (idx === arr.length - 1 ? 'end' : 'middle');
-            return (
-              <text
-                key={idx}
-                x={xPos}
-                y={H - 4}
-                textAnchor={anchor}
-                fill="rgba(255,255,255,0.45)"
-                fontSize="8.5"
-                fontFamily="var(--font-mono)"
-              >
-                {m.label}
-              </text>
-            );
-          })
-        ) : (
-          <>
-            <text x={LEFT_AXIS + 2} y={H - 4} fill="rgba(255,255,255,0.45)" fontSize="8.5" fontFamily="var(--font-mono)">
-              {startTimeLabel}
-            </text>
-            <text x={W - RIGHT_AXIS - 2} y={H - 4} textAnchor="end" fill="rgba(255,255,255,0.45)" fontSize="8.5" fontFamily="var(--font-mono)">
-              {endTimeLabel}
-            </text>
-          </>
-        )}
-      </svg>
-
-      {/* ── Timeframe Selector Bar (ShareHub style: 1D | 1W | 1M | 3M | 6M | 1Y | All) ── */}
+      {/* ── Interactive Timeframe & Mode Control Bar ── */}
       {showTimeframeBar && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginTop: 12,
+          marginTop: 10,
           padding: '6px 8px',
-          background: 'rgba(255, 255, 255, 0.025)',
-          borderRadius: 12,
-          border: '1px solid rgba(255, 255, 255, 0.06)'
+          background: '#151922',
+          borderRadius: 10,
+          border: '1px solid rgba(255, 255, 255, 0.07)',
+          flexWrap: 'wrap',
+          gap: 6
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, overflowX: 'auto' }}>
-            {[
-              { id: '1D', label: '1D' },
-              { id: '2D', label: '2D' },
-              { id: '3D', label: '3D' },
-              { id: '7', label: '1W' },
-              { id: '30', label: '1M' },
-              { id: '90', label: '3M' },
-              { id: '180', label: '6M' },
-              { id: '365', label: '1Y' },
-              { id: 'all', label: 'All' },
-            ].map((tf, index) => {
-              const isActive = (chartTimeframe === tf.id) || (chartTimeframe === '1D' && tf.id === '1D');
+          {/* Timeframe Pills: 1D | 1W | 1M | 3M | 6M | 1Y | ALL */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {TIMEFRAMES.map(tf => {
+              const isActive = activeTf === tf.id;
               return (
                 <button
                   key={tf.id}
                   type="button"
-                  onClick={() => onTimeframeChange && onTimeframeChange(tf.id)}
+                  onClick={() => handleSelectTimeframe(tf.id)}
                   style={{
-                    background: isActive ? '#10d98a' : 'transparent',
-                    color: isActive ? '#000000' : 'rgba(255,255,255,0.65)',
+                    background: isActive ? '#3875F6' : 'transparent',
+                    color: isActive ? '#ffffff' : '#94a3b8',
                     border: 'none',
                     borderRadius: 6,
-                    padding: '4px 8px',
-                    fontSize: 11,
-                    fontWeight: 800,
+                    padding: '4px 9px',
+                    fontSize: '11px',
+                    fontWeight: isActive ? 900 : 700,
                     cursor: 'pointer',
-                    transition: 'all 0.15s'
+                    transition: 'all 0.15s ease',
+                    fontFamily: 'var(--font-mono, monospace)'
                   }}
                 >
                   {tf.label}
@@ -743,47 +891,95 @@ export default function ShareHubChart({
             })}
           </div>
 
-          {onToggleFullscreen && (
-            <button
-              type="button"
-              onClick={onToggleFullscreen}
-              title="Toggle Fullscreen View"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: 'none',
-                borderRadius: 6,
-                padding: '5px 8px',
-                color: 'rgba(255,255,255,0.8)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-            >
-              {isFullscreen ? <Minimize2 style={{ width: 14, height: 14 }} /> : <Maximize2 style={{ width: 14, height: 14 }} />}
-            </button>
-          )}
+          {/* Mode & Action Controls: Line | Candle | Fullscreen */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Mode Switcher */}
+            <div style={{
+              display: 'flex',
+              background: 'rgba(255, 255, 255, 0.04)',
+              borderRadius: 6,
+              padding: 2,
+              border: '1px solid rgba(255, 255, 255, 0.05)'
+            }}>
+              <button
+                type="button"
+                onClick={() => setActiveMode('line')}
+                title="Line Chart"
+                style={{
+                  background: activeMode === 'line' ? 'rgba(56, 117, 246, 0.25)' : 'transparent',
+                  color: activeMode === 'line' ? '#60a5fa' : '#64748b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '3px 6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <TrendingUp style={{ width: 12, height: 12 }} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveMode('candle')}
+                title="Candlestick Chart"
+                style={{
+                  background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.25)' : 'transparent',
+                  color: activeMode === 'candle' ? '#60a5fa' : '#64748b',
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '3px 6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <BarChart2 style={{ width: 12, height: 12 }} />
+              </button>
+            </div>
+
+            {/* Fullscreen Toggle */}
+            {onToggleFullscreen && (
+              <button
+                type="button"
+                onClick={onToggleFullscreen}
+                title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 6,
+                  padding: '4px 7px',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                {isFullscreen ? <Minimize2 style={{ width: 12, height: 12 }} /> : <Maximize2 style={{ width: 12, height: 12 }} />}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── View Advanced Chart Button (Matching ShareHub video 00:20 & 00:36) ── */}
+      {/* ── View Advanced Chart Button ── */}
       {showAdvancedChartBtn && onOpenTradingView && (
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
+        <div style={{ textAlign: 'center', marginTop: 10 }}>
           <button
             type="button"
             onClick={onOpenTradingView}
             style={{
-              background: 'rgba(16, 217, 138, 0.08)',
-              border: '1px solid rgba(16, 217, 138, 0.25)',
+              background: 'rgba(56, 117, 246, 0.08)',
+              border: '1px solid rgba(56, 117, 246, 0.25)',
               borderRadius: 20,
-              padding: '7px 20px',
-              color: '#10d98a',
-              fontSize: 12.5,
+              padding: '6px 18px',
+              color: '#60a5fa',
+              fontSize: '11.5px',
               fontWeight: 800,
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              transition: 'all 0.15s'
+              transition: 'all 0.15s ease'
             }}
           >
             <span>📊</span>

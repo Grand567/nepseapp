@@ -174,65 +174,31 @@ export default function IPOList() {
     setIsLoadingIpos(true);
     setError('');
 
-    try {
-      const publicList = await servicesApi.fetchIPOListings();
-      if (publicList && Array.isArray(publicList) && publicList.length > 0) {
-        setIpos(publicList);
-        setSelectedIpo(String(publicList[0].id));
-        setIsLoadingIpos(false);
-        return;
-      }
-    } catch (e) {
-      console.warn('Public IPO fetch failed, falling back to MeroShare', e);
-    }
-
     const local = loadLocalAccounts();
+
+    if (local.length === 0) {
+      setError('Please add at least one MeroShare account first to view and apply for active IPOs.');
+      setIsLoadingIpos(false);
+      return;
+    }
 
     try {
       if (isNative) {
         // Direct CDSC fetch on Android
-        if (local.length === 0) {
-          setError('Please add at least one MeroShare account first.');
-          setIsLoadingIpos(false);
-          return;
-        }
         const ipoList = await fetchIposDirectly(local[0]);
         setIpos(ipoList);
         if (ipoList.length > 0) setSelectedIpo(String(ipoList[0].id));
       } else {
-        // Web: use proxy server via POST (so passwords with special chars work correctly)
-        if (local.length === 0) {
-          setError('Please add at least one MeroShare account first.');
-          setIsLoadingIpos(false);
-          return;
-        }
-        const firstAccount = local[0];
-
+        // Web: use proxy to bypass CORS
+        const proxyBase = getProxyBase();
+        
         // Resolve DP code to clientId (using offline BOID prefix strategy first)
         let clientId = 101;
-        const boidStr = String(firstAccount.boid || '').trim();
+        const boidStr = String(local[0].boid || '').trim();
         if (boidStr.length === 16) {
           const resolved = parseInt(boidStr.substring(3, 6), 10);
           if (!isNaN(resolved) && resolved >= 100 && resolved <= 300) {
             clientId = resolved;
-          }
-        }
-
-        if (clientId === 101) {
-          try {
-            const dpRes = await fetch(`${proxyBase}/api/meroshare/dp-list`);
-            if (dpRes.ok) {
-              const dpJson = await dpRes.json();
-              const dpData = dpJson.data || dpJson;
-              if (Array.isArray(dpData)) {
-                const fullPrefix = boidStr.substring(0, 8);
-                const shortPrefix = boidStr.substring(3, 8);
-                const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix || (dp.code && dp.code.includes(shortPrefix)));
-                if (match) clientId = match.id;
-              }
-            }
-          } catch (e) {
-            console.warn('Failed to resolve DP list from backend:', e);
           }
         }
 
@@ -241,25 +207,18 @@ export default function IPOList() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            clientId,
-            username: firstAccount.username,
-            password: firstAccount.password,
-          }),
+            clientId: Number(clientId), username: local[0].username, password: local[0].password
+          })
         });
 
-        if (data.success && Array.isArray(data.data)) {
-          setIpos(data.data);
-          if (data.data.length > 0) setSelectedIpo(String(data.data[0].id));
-          if (data.data.length === 0) {
-            setError('No active IPO issues found. The market may have no open IPOs right now.');
-          }
-        } else {
-          throw new Error(data.message || 'Could not retrieve IPO list.');
-        }
+        // Normalize proxy response
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setIpos(list);
+        if (list.length > 0) setSelectedIpo(String(list[0].id));
       }
     } catch (err) {
-      console.error('Failed to load IPOs:', err);
-      setError(`Failed to load active IPOs: ${err.message}`);
+      console.warn('Failed to fetch active IPOs from MeroShare:', err);
+      setError(err.message || 'Failed to fetch active IPOs. Ensure your credentials are correct.');
     } finally {
       setIsLoadingIpos(false);
     }
@@ -270,14 +229,26 @@ export default function IPOList() {
     setError('');
     setCheckResults([]); // clear previous results on refresh
     try {
-      const url = isNative
-        ? 'https://iporesult.cdsc.com.np/api/ipo-result/companyShares/fileUploaded'
-        : `${proxyBase}/api/ipo-result/companies`;
+      let raw = [];
+      if (isNative) {
+        const { CapacitorHttp } = await import('@capacitor/core');
+        const res = await CapacitorHttp.request({
+          url: 'https://iporesult.cdsc.com.np/api/ipo-result/companyShares/fileUploaded',
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Origin': 'https://iporesult.cdsc.com.np',
+            'Referer': 'https://iporesult.cdsc.com.np/'
+          }
+        });
+        raw = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        raw = raw?.body || raw;
+      } else {
+        const url = `${getProxyBase()}/api/ipo-result/companies`;
+        const data = await safeFetch(url);
+        raw = data?.data || (Array.isArray(data) ? data : []);
+      }
 
-      const data = await safeFetch(url);
-
-      // Normalize: proxy returns { success, data: [...] }, native returns { body: [...] } or [...]
-      const raw = data?.data || data?.body || (Array.isArray(data) ? data : []);
       // Normalize each company so id is always set (CDSC uses companyShareId)
       const companies = raw.map(c => ({
         ...c,
@@ -490,12 +461,14 @@ export default function IPOList() {
         const acc = targetAccounts[i];
         if (i > 0) await sleep(1500);
         try {
-          const res = await fetch(IPO_RESULT_URL, {
+          const { CapacitorHttp } = await import('@capacitor/core');
+          const res = await CapacitorHttp.request({
+            url: IPO_RESULT_URL,
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Origin': 'https://iporesult.cdsc.com.np', 'Referer': 'https://iporesult.cdsc.com.np/' },
-            body: JSON.stringify({ companyShareId: Number(selectedResultCompany), boid: acc.boid }),
+            data: { companyShareId: Number(selectedResultCompany), boid: acc.boid },
           });
-          const data = await res.json().catch(() => ({}));
+          const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
           const msgStr = (data?.message || '').toLowerCase();
           const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
           const match = data.message ? data.message.match(/\d+/) : null;

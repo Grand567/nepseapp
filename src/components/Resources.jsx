@@ -4,7 +4,7 @@ import {
   Flame, Zap, Award, Crown, Radio, Compass, Layers, Activity,
   Shield, ArrowLeftRight, TrendingUp, Users, BarChart3, Building,
   Lock, PieChart, DollarSign, Table, CheckCircle2, ShoppingCart,
-  Check, Sparkles, Sliders, ChevronRight
+  Check, Sparkles, Sliders, ChevronRight, X
 } from 'lucide-react';
 
 export default function Resources({ onNavigateTab }) {
@@ -22,14 +22,14 @@ export default function Resources({ onNavigateTab }) {
     { name: 'Players Choices', desc: 'Scrips where top 3 brokers account for >55% of volume & absorb float', icon: Crown, color: '#8b5cf6', tag: 'Whale Accumulation' },
     { name: 'Unusual Trades', desc: 'High block trade frequency (>10,000 units) with high float impact', icon: ArrowLeftRight, color: '#f59e0b', tag: 'Smart Flow' },
     { name: 'Circuit Setup', desc: 'Stocks within 2-3% of ±10% limit with >80% buy/sell depth imbalance', icon: Radio, color: '#06b6d4', tag: 'Limit Radar' },
-    { name: 'Relative Strength', desc: 'Alpha score measuring stock outperformance relative to NEPSE index', icon: TrendingUp, color: '#10d98a', tag: 'Leaderboard' },
+    { name: 'Relative Strength', desc: 'Alpha score measuring stock outperformance relative to NEPSE index', icon: TrendingUp, color: '#10B981', tag: 'Leaderboard' },
     { name: 'Candlestick Patterns', desc: 'Automated recognition of Bullish Engulfing, Morning Star, Hammer', icon: Compass, color: '#ec4899', tag: 'Price Action' },
   ];
 
   // ── AD FREE + PREMIUM Features (Image 2) ──
   const premiumFeatures = [
     { name: 'Broker Analysis', desc: 'Broker 1-60 daily turnover, net buy/sell flow & top 5 scrips', icon: Users, color: '#6366f1', tag: 'Broker Flow' },
-    { name: 'Broker Favourites', desc: 'Stocks most heavily accumulated by top institutional brokerages', icon: Crown, color: '#ef4444', tag: 'Smart Money' },
+    { name: 'Broker Favourites', desc: 'Stocks most heavily accumulated by top institutional brokerages', icon: Crown, color: '#F43F5E', tag: 'Smart Money' },
     { name: 'Stockwise Analysis', desc: '360° deep dive technical, fundamental, and float absorption profile', icon: BarChart3, color: '#38bdf8', tag: 'Deep Dive' },
     { name: 'Hot Stocks', desc: 'High Float Turnover Rate + Bullish Momentum + Positive Net Flow', icon: Flame, color: '#f43f5e', tag: 'High Flow' },
     { name: 'Stocks By Market Cap', desc: 'Large Cap (>Rs 20B), Mid Cap (Rs 5B-20B), Small Cap (<Rs 5B)', icon: Building, color: '#3b82f6', tag: 'Cap Sizer' },
@@ -81,41 +81,51 @@ export default function Resources({ onNavigateTab }) {
         </span>
       </div>
 
-      {/* Main Suite Toggle Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
-        <button
-          onClick={() => setActiveSuite('traders_zone')}
-          style={{
-            flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
-            background: activeSuite === 'traders_zone' ? 'linear-gradient(135deg, #a855f7, #ec4899)' : 'transparent',
-            color: activeSuite === 'traders_zone' ? '#fff' : 'var(--text-secondary)', border: 'none', cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          🎯 Trader's Zone
-        </button>
-        <button
-          onClick={() => setActiveSuite('analytics')}
-          style={{
-            flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
-            background: activeSuite === 'analytics' || activeSuite === 'premium' ? 'linear-gradient(135deg, #38bdf8, #6366f1)' : 'transparent',
-            color: activeSuite === 'analytics' || activeSuite === 'premium' ? '#fff' : 'var(--text-secondary)', border: 'none', cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          📊 Market Analytics
-        </button>
-        <button
-          onClick={() => setActiveSuite('directory')}
-          style={{
-            flex: 0.8, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
-            background: activeSuite === 'directory' ? 'var(--primary)' : 'transparent',
-            color: activeSuite === 'directory' ? '#fff' : 'var(--text-secondary)', border: 'none', cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          📖 Portals
-        </button>
+      {/* Main Suite Toggle Tabs (Dashboard Pill Chips) */}
+      <div style={{
+        display: 'flex', gap: 8, overflowX: 'auto', padding: '0 0 12px',
+        scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', marginBottom: 16
+      }}>
+        {[
+          { id: 'traders_zone', label: "Trader's Zone", icon: '🎯', count: tradersZoneFeatures.length, color: '#ec4899' },
+          { id: 'analytics', label: 'Market Analytics', icon: '📊', count: premiumFeatures.length, color: '#38bdf8' },
+          { id: 'directory', label: 'Broker Portals', icon: '📖', count: brokers.length, color: 'var(--primary-light)' }
+        ].map(s => {
+          const isActive = activeSuite === s.id || (s.id === 'analytics' && activeSuite === 'premium');
+          return (
+            <button
+              key={s.id}
+              onClick={() => setActiveSuite(s.id)}
+              style={{
+                flex: '1 0 auto',
+                padding: '9px 16px',
+                borderRadius: 12,
+                fontSize: 12.5,
+                fontWeight: 800,
+                border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
+                boxShadow: isActive ? '0 0 16px rgba(79,70,229,0.3)' : 'none',
+                color: isActive ? '#fff' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 7
+              }}
+            >
+              <span>{s.icon}</span> {s.label}
+              <span style={{
+                fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+                color: isActive ? '#fff' : 'var(--text-muted)',
+                fontWeight: 800
+              }}>
+                {s.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* SUITE 1: TRADER'S ZONE (MATCHING IMAGE 1) */}
@@ -315,17 +325,46 @@ export default function Resources({ onNavigateTab }) {
             <h3 className="section-title" style={{ marginBottom: 4, color: 'var(--text-primary)' }}>Broker TMS Logins</h3>
             <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 12 }}>Direct links to Trade Management System (TMS) portals.</p>
             
-            {/* Search */}
+            {/* Search (Dashboard Styled) */}
             <div style={{ position: 'relative', marginBottom: 12 }}>
-              <input
-                type="text"
-                placeholder="Search by Broker Name or Number..."
-                value={searchBroker}
-                onChange={(e) => setSearchBroker(e.target.value)}
-                className="input"
-                style={{ paddingLeft: 36 }}
-              />
-              <Search style={{ width: 16, height: 16, color: 'var(--text-muted)', position: 'absolute', left: 12, top: 14 }} />
+              <div style={{
+                display: 'flex', alignItems: 'center',
+                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
+                borderRadius: 14, padding: '0 12px', height: 42
+              }}>
+                <Search style={{ width: 16, height: 16, color: 'var(--text-muted)', marginRight: 8, flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="Search Brokers by name or TMS # (e.g. Naasa, 58)..."
+                  value={searchBroker}
+                  onChange={(e) => setSearchBroker(e.target.value)}
+                  style={{ background: 'none', border: 'none', color: '#fff', fontSize: 13, flex: 1, minWidth: 0, outline: 'none' }}
+                />
+                {searchBroker && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSearchBroker('');
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSearchBroker('');
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                      width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: '#cbd5e1', flexShrink: 0, marginLeft: 6, zIndex: 10
+                    }}
+                    title="Clear search"
+                    aria-label="Clear search"
+                  >
+                    <X style={{ width: 14, height: 14 }} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* List of brokers */}

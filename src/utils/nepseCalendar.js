@@ -1,11 +1,11 @@
 /**
  * NEPSE Trading Calendar & Holiday Engine
- * Regulates trading days, weekend closures (Friday & Saturday),
+ * Regulates trading days, weekend closures (Saturday & Sunday),
  * and Nepal Public Holidays for accurate financial data processing.
  * 
  * NEPSE Trading Schedule:
- * - Trading Days: Sunday, Monday, Tuesday, Wednesday, Thursday
- * - Weekend Closed: Friday & Saturday
+ * - Trading Days: Monday, Tuesday, Wednesday, Thursday, Friday
+ * - Weekend Closed: Saturday & Sunday
  * - Hours: 11:00 AM – 3:00 PM NPT (UTC+5:45)
  */
 
@@ -103,8 +103,7 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-03-21': 'Eid-ul-Fitr',
   '2026-04-14': 'Nepali New Year 2083 (Baisakh 1)',
   '2026-04-26': 'Ram Navami',
-  '2026-05-01': 'International Labour Day',
-  '2026-05-01': 'Buddha Jayanti / Ubhauli',
+  '2026-05-01': 'International Labour Day / Buddha Jayanti',
   '2026-05-27': 'Bakra Eid',
   '2026-05-29': 'Republic Day (Ganatantra Diwas)',
   '2026-08-27': 'Janai Purnima / Raksha Bandhan',
@@ -179,7 +178,7 @@ export function isNepsePublicHoliday(date = new Date()) {
 }
 
 /**
- * Checks if a given date is a weekend closure for NEPSE (Friday=5 or Saturday=6)
+ * Checks if a given date is a weekend closure for NEPSE (Saturday=6 or Sunday=0)
  */
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
@@ -191,16 +190,17 @@ export function isNepseWeekend(date = new Date()) {
       weekday: 'short'
     });
     const dayStr = formatter.format(d);
-    if (dayStr === 'Fri') dayOfWeek = 5;
-    else if (dayStr === 'Sat') dayOfWeek = 6;
-    else if (dayStr === 'Sun') dayOfWeek = 0;
+    if (dayStr === 'Sun') dayOfWeek = 0;
     else if (dayStr === 'Mon') dayOfWeek = 1;
     else if (dayStr === 'Tue') dayOfWeek = 2;
     else if (dayStr === 'Wed') dayOfWeek = 3;
     else if (dayStr === 'Thu') dayOfWeek = 4;
+    else if (dayStr === 'Fri') dayOfWeek = 5;
+    else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+  // NEPSE weekend: Saturday (6) and Sunday (0). Active trading: Monday (1) through Friday (5)
+  const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
@@ -210,7 +210,7 @@ export function isNepseWeekend(date = new Date()) {
 
 /**
  * Checks if a given date is an official active NEPSE trading day.
- * Returns true ONLY for Sunday, Monday, Tuesday, Wednesday, Thursday when NOT a holiday.
+ * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
 export function isNepseTradingDay(date = new Date()) {
   const weekendCheck = isNepseWeekend(date);

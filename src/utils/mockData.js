@@ -177,9 +177,13 @@ export function runStockScanners(stocks = [], filterKey) {
   switch (filterKey) {
     // ── Trader's Zone & Subscription Features ──
     case 'breakout':
+    case 'breakouts':
     case 'breakout_stocks':
-    case 'trendline_breakout':
-      return stocks.filter(s => s.pChange >= 1.8 && (s.volumeSurgeRatio >= 1.4 || s.floatTurnoverPct >= 0.8 || s.isBreakout)).sort((a,b) => b.pChange - a.pChange).slice(0, 20);
+    case 'trendline_breakout': {
+      const bks = stocks.filter(s => (s.pChange || 0) >= 1.5 && (s.volumeSurgeRatio >= 1.2 || s.floatTurnoverPct >= 0.6 || s.isBreakout || (s.high52w && s.ltp >= s.high52w * 0.95))).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (bks.length >= 3) return bks.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) >= 1.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
+    }
     
     case 'volume_shockers':
       return stocks.filter(s => (s.volumeZScore >= 1.8 || s.isVolumeShocker || s.volumeSurgeRatio >= 1.8 || s.floatTurnoverPct >= 2.0)).sort((a,b) => (b.volumeZScore || b.volumeSurgeRatio || 0) - (a.volumeZScore || a.volumeSurgeRatio || 0)).slice(0, 20);
@@ -193,9 +197,33 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'broker_favourites':
       return stocks.filter(s => (s.turnover >= 12000000 || s.floatTurnoverPct >= 1.2) && s.pChange > 0).sort((a,b) => (b.floatTurnoverPct || 0) - (a.floatTurnoverPct || 0)).slice(0, 20);
 
+    case 'circuit_up':
+    case 'circuit_pos': {
+      const topCircuits = stocks.filter(s => (s.pChange || 0) >= 9.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (topCircuits.length > 0) return topCircuits.slice(0, 25);
+      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 4.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (nearCircuits.length > 0) return nearCircuits.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
+    }
+
+    case 'circuit_down':
+    case 'circuit_neg': {
+      const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -9.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      if (lowCircuits.length > 0) return lowCircuits.slice(0, 25);
+      const nearDown = stocks.filter(s => (s.pChange || 0) <= -4.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      if (nearDown.length > 0) return nearDown.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) < 0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0)).slice(0, 25);
+    }
+
+    case 'circuits':
     case 'circuit_setup':
-    case 'circuit_radar':
-      return stocks.filter(s => (s.pChange >= 6.0 && s.pChange <= 9.95) || (s.pChange <= -6.0 && s.pChange >= -9.95)).sort((a,b) => Math.abs(b.pChange) - Math.abs(a.pChange)).slice(0, 20);
+    case 'circuit_radar': {
+      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 6.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      if (hits.length > 0) return hits.slice(0, 25);
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 3.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      if (nearHits.length > 0) return nearHits.slice(0, 25);
+      return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
+    }
 
     case 'candlestick_patterns':
     case 'candlestick':
@@ -204,7 +232,6 @@ export function runStockScanners(stocks = [], filterKey) {
 
     case 'consolidating_stocks':
     case 'consolidating':
-    case 'consolidating_picks':
       return stocks.filter(s => Math.abs(s.pChange) <= 0.9 && (s.high - s.low) <= (s.ltp || 1) * 0.018 || s.isSqueeze).slice(0, 20);
 
     case 'fresh_indicator_signals':
@@ -252,14 +279,8 @@ export function runStockScanners(stocks = [], filterKey) {
 
     // ── StockYan Smart Money & Predictive Engine Screeners ──
     case 'stealth_accumulation':
-    case 'slow_accumulation':
       return stocks.filter(s => s.isStealthAccumulation || (s.bcr3 && s.bcr3 >= 0.35)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
 
-    case 'broker_dominance':
-    case 'aggressive_accumulators':
-      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.30) || s.floatTurnoverPct >= 1.5).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
-
-    case 'matching_trades':
     case 'matching_buy_sell':
       return stocks.filter(s => s.volume >= 25000 && (s.floatTurnoverPct >= 1.2 || s.volumeSurgeRatio >= 1.5)).slice(0, 20);
 
@@ -377,10 +398,6 @@ export function runStockScanners(stocks = [], filterKey) {
 
 
     // ── Fast Circuits & Signals ──
-    case 'circuit_up':
-      return stocks.filter(s => s.pChange >= 9.0).sort((a, b) => b.pChange - a.pChange);
-    case 'circuit_down':
-      return stocks.filter(s => s.pChange <= -9.0).sort((a, b) => a.pChange - b.pChange);
     case 'buyers_choice':
       return stocks.filter(s => s.volume > 50000 && s.pChange > 0).sort((a, b) => (b.turnover || 0) - (a.turnover || 0)).slice(0, 20);
     default:

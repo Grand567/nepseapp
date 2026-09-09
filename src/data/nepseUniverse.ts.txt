@@ -1,0 +1,56 @@
+// src/data/nepseUniverse.ts
+// Complete NEPSE data universe — stocks, sectors, brokers, indices
+
+export const NEPSE_UNIVERSE = {
+  stocks: [
+    { symbol: 'NABIL', name: 'Nabil Bank Limited', sector: 'Commercial Banks', ltp: 1050, pChange: 1.2, volume: 125000, turnover: 131250000, pe: 18.5, eps: 56.75, bookValue: 425 },
+    { symbol: 'NICA', name: 'NIC Asia Bank Ltd.', sector: 'Commercial Banks', ltp: 785, pChange: -0.8, volume: 98000, turnover: 76930000, pe: 15.2, eps: 51.64, bookValue: 380 },
+    { symbol: 'NMB', name: 'NMB Bank Limited', sector: 'Commercial Banks', ltp: 320, pChange: 2.1, volume: 245000, turnover: 78400000, pe: 12.8, eps: 25.00, bookValue: 195 },
+    { symbol: 'KBL', name: 'Kumari Bank Limited', sector: 'Commercial Banks', ltp: 285, pChange: 0.5, volume: 180000, turnover: 51300000, pe: 14.3, eps: 19.93, bookValue: 165 },
+    { symbol: 'GBIME', name: 'Global IME Bank Ltd.', sector: 'Commercial Banks', ltp: 295, pChange: -1.2, volume: 210000, turnover: 61950000, pe: 13.5, eps: 21.85, bookValue: 175 },
+    { symbol: 'NBL', name: 'Nepal Bank Limited', sector: 'Commercial Banks', ltp: 485, pChange: 3.5, volume: 165000, turnover: 80025000, pe: 11.2, eps: 43.30, bookValue: 320 },
+    { symbol: 'SBI', name: 'SBI Bank Nepal Ltd.', sector: 'Commercial Banks', ltp: 625, pChange: 0.8, volume: 142000, turnover: 88750000, pe: 16.8, eps: 37.20, bookValue: 385 },
+    { symbol: 'EBL', name: 'Everest Bank Limited', sector: 'Commercial Banks', ltp: 1450, pChange: 1.5, volume: 85000, turnover: 123250000, pe: 22.3, eps: 65.02, bookValue: 580 },
+    { symbol: 'SANIMA', name: 'Sanima Bank Limited', sector: 'Commercial Banks', ltp: 385, pChange: -0.5, volume: 195000, turnover: 75075000, pe: 15.6, eps: 24.68, bookValue: 245 },
+    { symbol: 'PCBL', name: 'Prime Commercial Bank', sector: 'Commercial Banks', ltp: 265, pChange: 2.8, volume: 225000, turnover: 59625000, pe: 14.9, eps: 17.79, bookValue: 195 },
+    { symbol: 'NIMB', name: 'Nabil Investment Banking', sector: 'Merchant Banking', ltp: 1820, pChange: 1.8, volume: 35000, turnover: 63700000, pe: 28.5, eps: 63.86, bookValue: 850 },
+    { symbol: 'ADBL', name: 'Agricultural Dev. Bank', sector: 'Commercial Banks', ltp: 412, pChange: 0.2, volume: 175000, turnover: 72100000, pe: 13.2, eps: 31.21, bookValue: 285 },
+    { symbol: 'HBL', name: 'Himalayan Bank Ltd.', sector: 'Commercial Banks', ltp: 355, pChange: -1.5, volume: 198000, turnover: 70290000, pe: 14.8, eps: 23.99, bookValue: 235 },
+    { symbol: 'SBL', name: 'Sunrise Bank Limited', sector: 'Commercial Banks', ltp: 245, pChange: 1.2, volume: 285000, turnover: 69825000, pe: 12.5, eps: 19.60, bookValue: 165 },
+    { symbol: 'JBBL', name: 'Jyoti Bikas Bank Ltd.', sector: 'Development Banks', ltp: 385, pChange: 0.9, volume: 125000, turnover: 48125000, pe: 16.2, eps: 23.77, bookValue: 285 },
+    { symbol: 'MBL', name: 'Machhapuchhre Bank Ltd.', sector: 'Commercial Banks', ltp: 565, pChange: -2.1, volume: 110000, turnover: 62150000, pe: 17.5, eps: 32.29, bookValue: 385 },
+    { symbol: 'PRVU', name: 'Prabhu Bank Limited', sector: 'Commercial Banks', ltp: 315, pChange: 0.6, volume: 215000, turnover: 67725000, pe: 14.2, eps: 22.18, bookValue: 225 },
+    { symbol: 'NHDL', name: 'Nepal Hydro Dev. Ltd.', sector: 'Hydropower', ltp: 785, pChange: 5.2, volume: 320000, turnover: 251200000, pe: 0, eps: -12.5, bookValue: 105 },
+    { symbol: 'NLIC', name: 'Nepal Life Insurance', sector: 'Life Insurance', ltp: 2150, pChange: 1.5, volume: 68000, turnover: 146200000, pe: 25.8, eps: 83.33, bookValue: 720 },
+    { symbol: 'HIDCL', name: 'Hyd. Investment Dev.', sector: 'Hydropower', ltp: 285, pChange: -0.8, volume: 185000, turnover: 52725000, pe: 0, eps: -8.5, bookValue: 95 },
+    { symbol: 'SICL', name: 'Shikhar Insurance Co.', sector: 'Non-Life Insurance', ltp: 1125, pChange: 2.5, volume: 95000, turnover: 106875000, pe: 22.5, eps: 50.00, bookValue: 520 },
+    { symbol: 'NIL', name: 'Nepal Insurance Ltd.', sector: 'Non-Life Insurance', ltp: 985, pChange: -1.2, volume: 72000, turnover: 70920000, pe: 18.5, eps: 53.24, bookValue: 485 },
+    { symbol: 'PIC', name: 'Premier Insurance Co.', sector: 'Non-Life Insurance', ltp: 725, pChange: 0.8, volume: 105000, turnover: 76125000, pe: 20.2, eps: 35.89, bookValue: 385 },
+    { symbol: 'NLG', name: 'NLG Insurance Company', sector: 'Non-Life Insurance', ltp: 685, pChange: 1.5, volume: 88000, turnover: 60280000, pe: 19.8, eps: 34.59, bookValue: 365 },
+    { symbol: 'CBBL', name: 'Chhimek Laghubitta', sector: 'Microfinance', ltp: 1485, pChange: 2.2, volume: 125000, turnover: 185625000, pe: 18.5, eps: 80.27, bookValue: 685 },
+    { symbol: 'NRN', name: 'NRN Infrastructure', sector: 'Hydropower', ltp: 485, pChange: -2.5, volume: 245000, turnover: 118825000, pe: 0, eps: -5.2, bookValue: 95 },
+    { symbol: 'CHCL', name: 'Chilime Hydropower', sector: 'Hydropower', ltp: 885, pChange: 3.2, volume: 185000, turnover: 163725000, pe: 12.8, eps: 69.14, bookValue: 385 },
+    { symbol: 'NTC', name: 'Nepal Telecom', sector: 'Others', ltp: 985, pChange: 0.5, volume: 215000, turnover: 211775000, pe: 24.5, eps: 40.20, bookValue: 485 },
+    { symbol: 'NRM', name: 'Nepal Reinsurance', sector: 'Non-Life Insurance', ltp: 1125, pChange: 1.8, volume: 85000, turnover: 95625000, pe: 22.5, eps: 50.00, bookValue: 520 },
+    { symbol: 'UPPER', name: 'Upper Tamakoshi', sector: 'Hydropower', ltp: 785, pChange: 4.5, volume: 385000, turnover: 302225000, pe: 15.2, eps: 51.64, bookValue: 285 },
+    { symbol: 'AKJCL', name: 'Arun Kabeli Jalvidyut', sector: 'Hydropower', ltp: 485, pChange: 2.8, volume: 265000, turnover: 128525000, pe: 0, eps: -8.5, bookValue: 100 },
+    { symbol: 'BPCL', name: 'Butwal Power Company', sector: 'Hydropower', ltp: 1185, pChange: 1.5, volume: 95000, turnover: 112575000, pe: 14.5, eps: 81.72, bookValue: 485 },
+    { symbol: 'SHIVM', name: 'Shivam Cements', sector: 'Manufacturing', ltp: 885, pChange: -1.8, volume: 165000, turnover: 146025000, pe: 18.5, eps: 47.84, bookValue: 520 },
+    { symbol: 'HDL', name: 'Himal Dolakha Hydropower', sector: 'Hydropower', ltp: 585, pChange: 5.5, volume: 425000, turnover: 248625000, pe: 0, eps: -15.2, bookValue: 95 },
+    { symbol: 'SHINE', name: 'Shine Resunga Dev. Bank', sector: 'Development Banks', ltp: 365, pChange: 0.8, volume: 185000, turnover: 67525000, pe: 15.8, eps: 23.10, bookValue: 285 },
+    { symbol: 'CGH', name: 'Chandragiri Hills Ltd.', sector: 'Hotels & Tourism', ltp: 685, pChange: 1.2, volume: 75000, turnover: 51375000, pe: 22.8, eps: 30.04, bookValue: 385 },
+    { symbol: 'RHPL', name: 'Ridi Hydropower Dev.', sector: 'Hydropower', ltp: 385, pChange: 2.5, volume: 285000, turnover: 109725000, pe: 0, eps: -6.5, bookValue: 85 },
+    { symbol: 'UNHPL', name: 'United IDI Mardi', sector: 'Hydropower', ltp: 285, pChange: 3.8, volume: 485000, turnover: 138225000, pe: 0, eps: -10.5, bookValue: 85 },
+    { symbol: 'MKHC', name: 'Mailung Khola Hydro', sector: 'Hydropower', ltp: 385, pChange: 1.5, volume: 265000, turnover: 102025000, pe: 0, eps: -5.8, bookValue: 95 },
+    { symbol: 'API', name: 'API Power Company', sector: 'Hydropower', ltp: 285, pChange: 4.2, volume: 525000, turnover: 149625000, pe: 0, eps: -8.5, bookValue: 85 },
+  ],
+  sectors: ['Commercial Banks', 'Development Banks', 'Finance', 'Microfinance', 'Life Insurance', 'Non-Life Insurance', 'Hydropower', 'Manufacturing', 'Hotels & Tourism', 'Mutual Fund', 'Others'],
+  brokers: Array.from({ length: 55 }, (_, i) => ({ id: i + 1, name: `Broker ${String(i + 1).padStart(2, '0')}` })),
+  indices: { NEPSE: 2085.43, Sensitive: 1285.62, SubIndex: 4525.85 },
+  marketStatus: 'OPEN',
+  lastUpdated: new Date().toISOString(),
+};
+
+export const NEPSE_STOCKS_LIST = NEPSE_UNIVERSE.stocks.map(s => s.symbol);
+
+export default NEPSE_UNIVERSE;

@@ -19,7 +19,7 @@ import {
 
 const PROXY_BASE = import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
 
-export const DEFAULT_AI_KEY = '';
+export const DEFAULT_AI_KEY = (import.meta.env.VITE_GLM_API_KEY || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r').trim();
 
 export const GURU_AI_SYSTEM_PROMPT = `You are NEPSE GURU, the institutional quantitative analyst, political-macro economist, and Smart Money momentum engine for the Nepal Stock Exchange (NEPSE).
 Empower Nepali retail and institutional investors with quantitative precision using the 5 Operational Action Zones & Graham Valuation Model.`;
@@ -28,11 +28,13 @@ Empower Nepali retail and institutional investors with quantitative precision us
 // NEVER call GLM/Gemini directly from frontend
 // Reason: API keys would be exposed to all users
 
-export async function callGuruAI(prompt, analysisType = 'stock') {
+export async function callGuruAI(prompt, analysisType = 'stock', options = {}) {
+  const apiKey = options.apiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : '');
+  const glmApiKey = options.glmApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
   const res = await fetch(`${PROXY_BASE}/api/guru/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, analysisType }),
+    body: JSON.stringify({ prompt, analysisType, apiKey, glmApiKey }),
     signal: AbortSignal.timeout(60000)
   });
 
@@ -92,7 +94,8 @@ export async function callGuruStockAnalysis(symbol, userQuestion = '') {
 // ── Backward Compatible Adapters (Route through proxy server) ──
 export async function callGlmAi(prompt, systemPrompt = '', apiKey = '') {
   const combined = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
-  const res = await callGuruAI(combined, 'chat');
+  const glmApiKey = apiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
+  const res = await callGuruAI(combined, 'chat', { glmApiKey });
   return res.data?.analysis || res.data || res.text || (typeof res === 'string' ? res : JSON.stringify(res));
 }
 

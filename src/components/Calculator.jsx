@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
+import { calculateBuyDetails, calculateSellDetails, adjustForBonusShare, adjustForRightShare } from '../utils/calculations';
 import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw } from 'lucide-react';
 
 export default function Calculator() {
@@ -101,13 +101,21 @@ export default function Calculator() {
     if (p0 <= 0) return null;
 
     const denominator = 1 + bRatio + rRatio;
-    const adjustedPrice = (p0 + (rRatio * pr)) / (denominator || 1);
     
-    const bonusUnits = Math.floor(qty * bRatio);
-    const rightUnits = Math.floor(qty * rRatio);
+    const bonusPctNum = parseFloat(bonusPct) || 0;
+    const rightRatioNum = (parseFloat(rightPct) || 0) / 100;
+    
+    // Wire to utils/calculations.js adjustForBonusShare and adjustForRightShare (which handles WACC)
+    // For raw price adjustment (P_close):
+    let adjustedPrice = p0;
+    if (bonusPctNum > 0) adjustedPrice = adjustedPrice / (1 + (bonusPctNum/100));
+    if (rightRatioNum > 0) adjustedPrice = (adjustedPrice + (rightRatioNum * pr)) / (1 + rightRatioNum);
+
+    const bonusUnits = Math.floor(qty * (bonusPctNum/100));
+    const rightUnits = Math.floor(qty * rightRatioNum);
     const totalNewUnits = qty + bonusUnits + rightUnits;
     const rightCost = rightUnits * pr;
-    const bonusTax = bonusUnits * 100 * 0.05; // 5% tax on par value of bonus shares
+    const bonusTax = bonusUnits * 100 * 0.05;
 
     return {
       adjustedPrice: Number(adjustedPrice.toFixed(2)),
@@ -152,22 +160,22 @@ export default function Calculator() {
 
   return (
     <div style={{ padding: '16px 14px 40px' }}>
-      {/* 5-Tab Selector */}
+      {/* 5-Tab Selector (Dashboard Pill Chips) */}
       <div style={{
         display: 'flex',
+        gap: 6,
         overflowX: 'auto',
+        scrollbarWidth: 'none',
         borderBottom: '1px solid var(--border)',
-        marginBottom: 16,
-        background: 'rgba(255,255,255,0.02)',
-        borderRadius: 12,
-        padding: 3
+        paddingBottom: 12,
+        marginBottom: 16
       }}>
         {[
-          { id: 'buy', label: 'Buy WACC', icon: '🛒' },
-          { id: 'sell', label: 'Sell Profit', icon: '💰' },
-          { id: 'breakeven', label: 'Break-Even', icon: '🎯' },
-          { id: 'adjustment', label: 'Bonus / Right', icon: '🎁' },
-          { id: 'sip', label: 'SIP Growth', icon: '📈' }
+          { id: 'buy', label: 'Buy WACC', icon: '🛒', color: 'var(--primary-light)' },
+          { id: 'sell', label: 'Sell Profit', icon: '💰', color: 'var(--bull)' },
+          { id: 'breakeven', label: 'Break-Even', icon: '🎯', color: '#f59e0b' },
+          { id: 'adjustment', label: 'Bonus / Right', icon: '🎁', color: '#ec4899' },
+          { id: 'sip', label: 'SIP Growth', icon: '📈', color: '#06b6d4' }
         ].map(t => {
           const isActive = activeTab === t.id;
           return (
@@ -175,21 +183,26 @@ export default function Calculator() {
               key={t.id}
               onClick={() => setActiveTab(t.id)}
               style={{
-                flex: 1,
-                padding: '10px 8px',
+                flex: '1 0 auto',
+                padding: '8px 14px',
                 textAlign: 'center',
-                fontWeight: isActive ? 800 : 600,
+                fontWeight: 800,
                 fontSize: 12,
                 whiteSpace: 'nowrap',
-                border: 'none',
-                borderRadius: 8,
-                background: isActive ? 'var(--primary)' : 'transparent',
+                border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                borderRadius: 12,
+                background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
+                boxShadow: isActive ? '0 0 16px rgba(79,70,229,0.3)' : 'none',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                color: isActive ? '#ffffff' : 'var(--text-muted)'
+                transition: 'all 0.15s ease',
+                color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6
               }}
             >
-              {t.icon} {t.label}
+              <span>{t.icon}</span> {t.label}
             </button>
           );
         })}

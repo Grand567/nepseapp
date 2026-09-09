@@ -79,7 +79,7 @@ const saveLocalUsers = (users) => {
   localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
 };
 
-const getLocalSession = () => {
+export const getLocalSession = () => {
   try {
     return JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || 'null');
   } catch { return null; }
@@ -243,6 +243,22 @@ export const signInLocal = (email, password) => {
 
   notifyLocalAuth(userObj);
   return userObj;
+};
+
+/**
+ * Sign in as a guest user (stored locally).
+ */
+export const signInGuest = () => {
+  const guestUser = {
+    uid: 'guest_local',
+    displayName: 'Guest User',
+    email: null,
+    photoURL: null,
+    isGuest: true,
+    isLocal: true,
+  };
+  notifyLocalAuth(guestUser);
+  return guestUser;
 };
 
 // ─── Sign Out ─────────────────────────────────────────────────────────────────

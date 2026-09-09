@@ -38,8 +38,8 @@ export function adToBS(date) {
   let year = startBsYear;
   let month = startBsMonth;
   
-  while (daysDiff >= bsDaysInMonths[year]?.[month] ?? 30) {
-    daysDiff -= bsDaysInMonths[year]?.[month] ?? 30;
+  while (daysDiff >= (bsDaysInMonths[year]?.[month] ?? 30)) {
+    daysDiff -= (bsDaysInMonths[year]?.[month] ?? 30);
     month++;
     if (month > 11) {
       month = 0;

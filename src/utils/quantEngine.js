@@ -480,7 +480,7 @@ export function classifyActionZone(stock, macroContext = {}) {
   // 1. ENTRY ZONE (Breakout Confirmation: MS > 0.65, Resistance Breach, Z_vol >= 1.5)
   if (MS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99)) {
     zone = 'Entry Zone';
-    zoneColor = '#10d98a';
+    zoneColor = '#10B981';
     zoneBadge = '🚀 ENTRY ZONE (BREAKOUT)';
     zoneIcon = 'Zap';
     triggerLogic = `MS Score (+${MS}) > 0.55 & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.`;
@@ -493,7 +493,7 @@ export function classifyActionZone(stock, macroContext = {}) {
   // 2. BUYING ZONE (Support Accumulation: MS in [0.20, 0.55], Near S1, Smart Money > 0.35)
   else if ((MS >= 0.15 && factors.iSmartMoney >= 0.30) || (rsi <= 38 && ltp <= s1 * 1.03)) {
     zone = 'Buying Zone';
-    zoneColor = '#10d98a';
+    zoneColor = '#10B981';
     zoneBadge = '🟢 BUYING ZONE (SUPPORT)';
     zoneIcon = 'Target';
     triggerLogic = `MS Score (+${MS}) in accumulation pocket with high institutional absorption (I_SmartMoney: +${factors.iSmartMoney}).`;
@@ -519,7 +519,7 @@ export function classifyActionZone(stock, macroContext = {}) {
   // 4. SELLING ZONE (Support Breakdown / Distribution: MS < -0.35 or LTP < S1)
   else if (MS < -0.30 || (ltp < s1 && factors.iSmartMoney < -0.20)) {
     zone = 'Selling Zone';
-    zoneColor = '#ef4444';
+    zoneColor = '#F43F5E';
     zoneBadge = '🔴 SELLING ZONE (CAPITAL PRESERVATION)';
     zoneIcon = 'AlertCircle';
     triggerLogic = `Negative Momentum Score (${MS}) and support breakdown below S1 floor (Rs. ${s1}).`;
@@ -760,10 +760,10 @@ export function calculateImpendingLiquidityShockIndex(expiringShares, publicFloa
   const supplyMultiple = Number((expiring / pubFloat).toFixed(2));
 
   let riskLevel = 'Low Supply Shock Risk';
-  let riskColor = '#10d98a';
+  let riskColor = '#10B981';
   if (ilsi >= 50) {
     riskLevel = '🚨 Extreme Supply Dilution Risk (ILSI >= 50%)';
-    riskColor = '#ef4444';
+    riskColor = '#F43F5E';
   } else if (ilsi >= 20) {
     riskLevel = '⚠️ Moderate Supply Expansion (ILSI: 20-50%)';
     riskColor = '#f59e0b';
@@ -811,11 +811,11 @@ export function calculateDecisionProbabilityIndex(stock, macroContext = {}) {
 
   if (boundedDPI >= 80) {
     decision = 'Strong Buy (Accumulate)';
-    badgeColor = '#10d98a';
+    badgeColor = '#10B981';
     actionDirective = 'Initiate Long Position with RRR >= 2.5';
   } else if (boundedDPI >= 60) {
     decision = 'Weak Buy / Hold';
-    badgeColor = '#10b98a';
+    badgeColor = '#10B981';
     actionDirective = 'Maintain open positions; buy dips above key 20 EMA';
   } else if (boundedDPI >= 40) {
     decision = 'Neutral / Hold';
@@ -827,7 +827,7 @@ export function calculateDecisionProbabilityIndex(stock, macroContext = {}) {
     actionDirective = 'Trim risk exposure by 50%; tighten stop-loss';
   } else {
     decision = 'Strong Sell (Exit / Avoid)';
-    badgeColor = '#ef4444';
+    badgeColor = '#F43F5E';
     actionDirective = 'Liquidate holdings; execute strict capital preservation';
   }
 
@@ -1103,6 +1103,121 @@ export function calculateBrokerDominanceIndex(buyVol = 0, sellVol = 0, totalVol 
     isDominant,
     classification: isDominant ? '🏛️ High Broker Dominance (>= 25%)' : 'Distributed Market Liquidity'
   };
+}
+
+/**
+ * 24. NEPSE Circuit-Breaker Proximity & Liquidity Guard
+ * Evaluates +/- 10% daily price bands and warns on discrete lower circuit execution freezes
+ */
+export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, turnover = 0, avgTurnover30D = 0) {
+  const p = Number(ltp) || 100;
+  const prev = Number(prevClose) || p;
+  const vol = Number(volume) || 0;
+  const tnov = Number(turnover) || (p * vol);
+  const avgTnov = Number(avgTurnover30D) || tnov;
+
+  const floor = +(prev * 0.90).toFixed(1);
+  const ceiling = +(prev * 1.10).toFixed(1);
+
+  const distToFloorPct = prev > 0 ? +(((p - floor) / prev) * 100).toFixed(2) : 10;
+  const distToCeilingPct = prev > 0 ? +(((ceiling - p) / prev) * 100).toFixed(2) : 10;
+
+  const isAtLowerCircuit = p <= floor;
+  const isAtUpperCircuit = p >= ceiling;
+  const isNearLowerCircuit = distToFloorPct <= 2.5 && !isAtLowerCircuit;
+  const isNearUpperCircuit = distToCeilingPct <= 2.5 && !isAtUpperCircuit;
+
+  const isIlliquid = (tnov > 0 && tnov < 3000000) || (vol > 0 && vol < 5000);
+  const turnoverCr = +(tnov / 10000000).toFixed(2);
+
+  let status = 'NORMAL_LIQUIDITY';
+  let severity = 'LOW';
+  let warningMessage = null;
+
+  if (isAtLowerCircuit) {
+    status = 'LOWER_CIRCUIT_LOCKED';
+    severity = 'CRITICAL';
+    warningMessage = `🚨 CRITICAL LOWER CIRCUIT FREEZE: Rs. ${p} is locked at -10% limit (Rs. ${floor}). Buy demand (bids) = 0. Market stop-loss orders will NOT execute.`;
+  } else if (isNearLowerCircuit) {
+    status = 'LOWER_CIRCUIT_PROXIMITY';
+    severity = 'HIGH';
+    warningMessage = `⚠️ CIRCUIT PROXIMITY RISK: Only ${distToFloorPct}% above -10% lower circuit (Rs. ${floor}). Stop-loss execution faces zero-bid liquidity freeze risk.`;
+  } else if (isAtUpperCircuit) {
+    status = 'UPPER_CIRCUIT_LOCKED';
+    severity = 'INFO';
+    warningMessage = `🔥 UPPER CIRCUIT LOCKED: Stock locked at +10% ceiling (Rs. ${ceiling}). Strong demand queue.`;
+  } else if (isNearUpperCircuit) {
+    status = 'UPPER_CIRCUIT_PROXIMITY';
+    severity = 'INFO';
+    warningMessage = `🚀 Approaching +10% circuit ceiling (Rs. ${ceiling}, ${distToCeilingPct}% headroom).`;
+  } else if (isIlliquid) {
+    status = 'THIN_LIQUIDITY';
+    severity = 'MEDIUM';
+    warningMessage = `⚠️ THIN LIQUIDITY WARNING: Daily turnover is Rs. ${turnoverCr} Cr (< Rs. 30L threshold). Expect high slippage and exit friction.`;
+  }
+
+  return {
+    floor,
+    ceiling,
+    distToFloorPct,
+    distToCeilingPct,
+    isAtLowerCircuit,
+    isAtUpperCircuit,
+    isNearLowerCircuit,
+    isNearUpperCircuit,
+    isIlliquid,
+    turnoverCr,
+    status,
+    severity,
+    warningMessage
+  };
+}
+
+/**
+ * 25. Corporate Action Price Normalization
+ * Detects sudden overnight step drops (>10%) in historical series that match bonus/rights book closures
+ * and scales preceding bars backwards to prevent false technical crashes (e.g. false RSI plunge).
+ */
+export function normalizeCorporateActionPrices(candles = []) {
+  if (!candles || candles.length < 5) return candles || [];
+
+  const sorted = [...candles].sort((a, b) => new Date(a.date || a.t || 0) - new Date(b.date || b.t || 0));
+  const normalized = [];
+
+  let adjFactor = 1.0;
+  let corporateActionCount = 0;
+  
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const curr = sorted[i];
+    const prev = i > 0 ? sorted[i - 1] : null;
+
+    const currClose = Number(curr.close ?? curr.c ?? curr.ltp ?? 100);
+    const prevClose = prev ? Number(prev.close ?? prev.c ?? prev.ltp ?? currClose) : currClose;
+
+    normalized.unshift({
+      ...curr,
+      rawClose: currClose,
+      close: Number((currClose * adjFactor).toFixed(2)),
+      open: Number((Number(curr.open ?? curr.o ?? currClose) * adjFactor).toFixed(2)),
+      high: Number((Number(curr.high ?? curr.h ?? currClose) * adjFactor).toFixed(2)),
+      low: Number((Number(curr.low ?? curr.l ?? currClose) * adjFactor).toFixed(2)),
+      isAdjusted: adjFactor !== 1.0
+    });
+
+    // If there is an overnight step drop matching bonus/rights book closures (8.5% to 52%),
+    // scale all preceding (older) historical bars backwards.
+    if (prev && prevClose > 0 && currClose > 0) {
+      const dropPct = ((prevClose - currClose) / prevClose) * 100;
+      if (dropPct >= 8.5 && dropPct <= 52.0) {
+        const expectedRatio = currClose / prevClose;
+        adjFactor *= expectedRatio;
+        corporateActionCount++;
+      }
+    }
+  }
+
+  normalized.corporateActionCount = corporateActionCount;
+  return normalized;
 }
 
 

@@ -329,9 +329,37 @@ export default function AccountManager({ userId = 'guest_local' }) {
           <div>
             <label className="input-label" style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Capital Depository Participant (DP)</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <input type="text" value={dpSearch} onChange={e => setDpSearch(e.target.value)}
-                placeholder="Type to search Capital (e.g. NIMB, Global, ABC)..." className="input"
-                style={{ padding: '10px 12px', fontSize: 14, color: '#ffffff', background: '#0b1120', border: '1.5px solid #334155' }} />
+              <div style={{ position: 'relative' }}>
+                <input type="text" value={dpSearch} onChange={e => setDpSearch(e.target.value)}
+                  placeholder="Type to search Capital (e.g. NIMB, Global, ABC)..." className="input"
+                  style={{ padding: '10px 32px 10px 12px', fontSize: 14, color: '#ffffff', background: '#0b1120', border: '1.5px solid #334155', width: '100%' }} />
+                {dpSearch && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDpSearch('');
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDpSearch('');
+                    }}
+                    style={{
+                      position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                      background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                      width: 22, height: 22, color: '#cbd5e1', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      zIndex: 10
+                    }}
+                    title="Clear search"
+                    aria-label="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
               <select value={dpCode} onChange={e => setDpCode(e.target.value)}
                 className="select-input" style={{ padding: '12px 14px', fontSize: 15, fontWeight: 700, color: '#ffffff', background: '#0b1120', border: '1.5px solid #334155' }} required>
                 <option value="">-- Choose Capital DP --</option>

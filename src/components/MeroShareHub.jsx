@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, CheckCircle2, ShieldCheck, ShieldAlert, HelpCircle, Loader2, Sparkles, 
   Copy, Check, ExternalLink, ArrowRight, Search, RefreshCw, TrendingUp, 
-  TrendingDown, User, Wallet, Lock, Edit3, AlertCircle
+  TrendingDown, User, Wallet, Lock, Edit3, AlertCircle, X
 } from 'lucide-react';
 import { 
   MEROSHARE_DP_LIST, 
@@ -23,7 +23,7 @@ import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
 // Mock function to simulate IPO application
-export function applyIpoMock(companyShareId, boid) {
+function applyIpoMock(companyShareId, boid) {
   const isAllotted = Math.random() < 0.6;
   return new Promise(resolve => {
     setTimeout(() => {
@@ -155,7 +155,7 @@ const getRealClientId = async (boid, dpCode) => {
       }
 
       // D. Fallback: match using name extraction from mock data
-      const mockDp = MOCK_DP_LIST.find(dp => dp.code === dpCode);
+      const mockDp = (MEROSHARE_DP_LIST || []).find(dp => dp.code === dpCode);
       if (mockDp) {
         const idMatch = mockDp.name.match(/\((\d+)\)/);
         const extractedId = idMatch ? idMatch[1] : null;
@@ -176,8 +176,8 @@ const getRealClientId = async (boid, dpCode) => {
     console.error("Failed to map DP list:", err);
   }
 
-  // 3. Mock Fallback
-  const mockDp = MOCK_DP_LIST.find(dp => dp.code === dpCode);
+  // 3. Fallback
+  const mockDp = (MEROSHARE_DP_LIST || []).find(dp => dp.code === dpCode);
   if (mockDp) {
     const idMatch = mockDp.name.match(/\((\d+)\)/);
     if (idMatch) return parseInt(idMatch[1]);
@@ -1445,28 +1445,43 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       {/* Sub Tab Navigation */}
       {!showWizard && (
-        <div className="tab-bar" style={{ marginBottom: 16 }}>
-          <button 
-            onClick={() => setActiveSubTab('accounts')} 
-            className={`tab-btn ${activeSubTab === 'accounts' ? 'active' : ''}`}
-            style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-          >
-            <User style={{ width: 13, height: 13 }} /> Accounts
-          </button>
-          <button 
-            onClick={() => setActiveSubTab('ipo')} 
-            className={`tab-btn ${activeSubTab === 'ipo' ? 'active' : ''}`}
-            style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-          >
-            <Sparkles style={{ width: 13, height: 13 }} /> Bulk IPO
-          </button>
-          <button 
-            onClick={() => setActiveSubTab('portfolio')} 
-            className={`tab-btn ${activeSubTab === 'portfolio' ? 'active' : ''}`}
-            style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-          >
-            <Wallet style={{ width: 13, height: 13 }} /> Demat Portfolio
-          </button>
+        <div style={{
+          display: 'flex', gap: 8, overflowX: 'auto', padding: '0 0 12px',
+          scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', marginBottom: 16
+        }}>
+          {[
+            { id: 'accounts', label: 'Demat Accounts', icon: User, count: profiles.length, color: 'var(--primary-light)' },
+            { id: 'ipo', label: 'Bulk IPO Portal', icon: Sparkles, count: Array.isArray(ipoCompanies) ? ipoCompanies.filter(i => i && i.status === 'Open').length : 0, color: '#f59e0b' },
+            { id: 'portfolio', label: 'Demat Portfolio', icon: Wallet, count: profiles.filter(p => p && p.holdings?.length > 0).length, color: 'var(--bull)' }
+          ].map(t => {
+            const isActive = activeSubTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveSubTab(t.id)}
+                style={{
+                  background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
+                  color: isActive ? '#fff' : 'var(--text-secondary)',
+                  border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                  borderRadius: 12, padding: '9px 16px', fontSize: 12.5, fontWeight: 800,
+                  cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7,
+                  boxShadow: isActive ? '0 0 16px rgba(79,70,229,0.3)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <t.icon style={{ width: 14, height: 14, color: isActive ? '#fff' : t.color }} />
+                {t.label}
+                <span style={{
+                  fontSize: 10, padding: '2px 7px', borderRadius: 10,
+                  background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+                  color: isActive ? '#fff' : 'var(--text-muted)',
+                  fontWeight: 800
+                }}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -1910,8 +1925,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               <div className="card">
                 <h3 className="section-title" style={{ marginBottom: 12, color: 'var(--text-primary)' }}>Bulk Tools</h3>
 
-                {/* Secondary Sub-Sub-Tabs Navigation */}
-                <div className="tab-bar" style={{ marginBottom: 20, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 'var(--radius-md)' }}>
+                {/* Secondary Sub-Sub-Tabs Navigation (Dashboard Pill Style) */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 18, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
                   <button 
                     onClick={() => {
                       setIpoSubTab('apply');
@@ -1921,8 +1936,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         setCustomAppliedKitta(openIpos[0].minKitta || 10);
                       }
                     }} 
-                    className={`tab-btn ${ipoSubTab === 'apply' ? 'active' : ''}`}
-                    style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, padding: '12px 0' }}
+                    style={{
+                      flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer',
+                      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
+                      background: ipoSubTab === 'apply' ? 'var(--primary)' : 'transparent',
+                      color: ipoSubTab === 'apply' ? '#fff' : 'var(--text-muted)',
+                      boxShadow: ipoSubTab === 'apply' ? '0 0 16px rgba(79,70,229,0.35)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
                   >
                     🚀 Bulk Apply
                   </button>
@@ -1936,8 +1957,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         setSelectedIpo(String(ipoCompanies[0].id || ''));
                       }
                     }} 
-                    className={`tab-btn ${ipoSubTab === 'check' ? 'active' : ''}`}
-                    style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 800, padding: '12px 0' }}
+                    style={{
+                      flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer',
+                      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
+                      background: ipoSubTab === 'check' ? 'var(--primary)' : 'transparent',
+                      color: ipoSubTab === 'check' ? '#fff' : 'var(--text-muted)',
+                      boxShadow: ipoSubTab === 'check' ? '0 0 16px rgba(79,70,229,0.35)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
                   >
                     🗳️ Bulk Allotment Check
                   </button>
@@ -2580,27 +2607,26 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 className="section-title" style={{ marginBottom: 0, color: 'var(--text-primary)' }}>Secure Demat Fetch</h3>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button 
-                      onClick={() => { setShowTokenInput(false); setShowCsvImport(false); }}
-                      className={`badge ${!showTokenInput && !showCsvImport ? 'badge-primary' : 'badge-gray'}`}
-                      style={{ border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: 10 }}
-                    >
-                      Auto
-                    </button>
-                    <button 
-                      onClick={() => { setShowTokenInput(true); setShowCsvImport(false); }}
-                      className={`badge ${showTokenInput ? 'badge-primary' : 'badge-gray'}`}
-                      style={{ border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: 10 }}
-                    >
-                      Token
-                    </button>
-                    <button 
-                      onClick={() => { setShowCsvImport(true); setShowTokenInput(false); }}
-                      className={`badge ${showCsvImport ? 'badge-primary' : 'badge-gray'}`}
-                      style={{ border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: 10 }}
-                    >
-                      CSV
-                    </button>
+                    {[
+                      { id: 'auto', label: '⚡ Auto API', active: !showTokenInput && !showCsvImport, onClick: () => { setShowTokenInput(false); setShowCsvImport(false); } },
+                      { id: 'token', label: '🔑 Token', active: showTokenInput, onClick: () => { setShowTokenInput(true); setShowCsvImport(false); } },
+                      { id: 'csv', label: '📁 CSV', active: showCsvImport, onClick: () => { setShowCsvImport(true); setShowTokenInput(false); } }
+                    ].map(btn => (
+                      <button 
+                        key={btn.id}
+                        type="button"
+                        onClick={btn.onClick}
+                        style={{
+                          background: btn.active ? 'var(--primary)' : 'rgba(255,255,255,0.04)',
+                          color: btn.active ? '#fff' : 'var(--text-secondary)',
+                          border: `1px solid ${btn.active ? 'var(--primary-light)' : 'var(--border)'}`,
+                          borderRadius: 8, padding: '4px 10px', fontSize: 11, fontWeight: 800,
+                          cursor: 'pointer', transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -2886,44 +2912,32 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
                 return (
                   <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {/* Valuation Mode Selector Bar */}
-                    <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.03)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <button
-                        type="button"
-                        onClick={() => setHubValuationMode('prevClose')}
-                        style={{
-                          flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-                          background: hubValuationMode === 'prevClose' ? 'var(--bull)' : 'transparent',
-                          color: hubValuationMode === 'prevClose' ? '#0a1914' : 'var(--text-muted)',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        MeroShare Prev Close (Default)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setHubValuationMode('ltp')}
-                        style={{
-                          flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-                          background: hubValuationMode === 'ltp' ? '#38bdf8' : 'transparent',
-                          color: hubValuationMode === 'ltp' ? '#0a1914' : 'var(--text-muted)',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        MeroShare LTP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setHubValuationMode('live')}
-                        style={{
-                          flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-                          background: hubValuationMode === 'live' ? 'var(--primary)' : 'transparent',
-                          color: hubValuationMode === 'live' ? '#ffffff' : 'var(--text-muted)',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        Live NEPSE
-                      </button>
+                    {/* Valuation Mode Selector Bar (Dashboard Pill Style) */}
+                    <div style={{ display: 'flex', gap: 6, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
+                      {[
+                        { id: 'prevClose', label: 'MeroShare Prev Close', color: 'var(--bull)' },
+                        { id: 'ltp', label: 'MeroShare LTP', color: '#38bdf8' },
+                        { id: 'live', label: 'Live NEPSE Market', color: 'var(--primary-light)' }
+                      ].map(m => {
+                        const isActive = hubValuationMode === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setHubValuationMode(m.id)}
+                            style={{
+                              flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
+                              background: isActive ? (m.id === 'prevClose' ? 'rgba(16,217,138,0.2)' : m.id === 'ltp' ? 'rgba(56,189,248,0.2)' : 'rgba(91,94,244,0.25)') : 'transparent',
+                              color: isActive ? '#ffffff' : 'var(--text-muted)',
+                              border: isActive ? `1px solid ${m.color}` : '1px solid transparent',
+                              boxShadow: isActive ? `0 0 10px ${m.color}30` : 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {/* Stat Cards */}
@@ -2979,7 +2993,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
                       {/* Search & Add Stock Row */}
                       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                        <div className="search-wrap" style={{ flex: 1, marginBottom: 0 }}>
+                        <div className="search-wrap" style={{ flex: 1, marginBottom: 0, position: 'relative' }}>
                           <Search className="search-icon" style={{ width: 15, height: 15 }} />
                           <input 
                             type="text" 
@@ -2987,7 +3001,33 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                             placeholder="Search stock by name or symbol..." 
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
+                            style={{ paddingRight: searchQuery ? 32 : undefined, width: '100%' }}
                           />
+                          {searchQuery && (
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSearchQuery('');
+                              }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSearchQuery('');
+                              }}
+                              style={{
+                                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                                background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                                width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', color: '#cbd5e1', zIndex: 10
+                              }}
+                              title="Clear search"
+                              aria-label="Clear search"
+                            >
+                              <X style={{ width: 13, height: 13 }} />
+                            </button>
+                          )}
                         </div>
                         <button 
                           onClick={() => {

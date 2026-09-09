@@ -15,11 +15,13 @@ import Resources      from './components/Resources';
 import LoginScreen    from './components/LoginScreen';
 import TestSuite      from './components/TestSuite';
 import StockDetailModal from './components/StockDetailModal';
+import PullToRefresh from './components/PullToRefresh';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 
-import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks } from './utils/liveData';
+import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices } from './utils/liveData';
+import { getDetailedMarketStatus } from './utils/nepseCalendar';
 import { MOCK_DATA_DISABLED } from './utils/mockData';
-import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud } from './utils/firebase';
+import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 
 // Real data only - No mock fallback
 const _cachedStocks = getCachedStocks() || [];
@@ -51,18 +53,18 @@ function AppInner() {
   }, [fontScale]);
 
   // ── Auth state ──
-  const [user,         setUser]         = useState(undefined); // undefined = checking, null = logged out, object = logged in
+  const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   // ── Market data state ──
   const [stocks,       setStocks]       = useState(initialStocks);
   const [indices,      setIndices]      = useState(defaultIndices);
   // 'live' | 'closing' | 'yesterday' | 'offline'
-  // 'yesterday' = real data from last session shown while current fetch is pending
-  const [apiStatus,    setApiStatus]    = useState(
-    (_cachedStocks && _cachedStocks.length > 0) ? 'yesterday' : 'offline'
-  );
-  const [marketStatus, setMarketStatus] = useState({ isOpen: false, nptTime: '', message: 'Loading...' });
+  const [apiStatus,    setApiStatus]    = useState(() => {
+    const s = getDetailedMarketStatus();
+    return s.isOpen ? 'live' : ((_cachedStocks && _cachedStocks.length > 0) ? 'yesterday' : 'offline');
+  });
+  const [marketStatus, setMarketStatus] = useState(() => getDetailedMarketStatus());
   const [aiTargetStock, setAiTargetStock] = useState(null);
 
   // Real live data reference
@@ -257,69 +259,120 @@ function AppInner() {
     return unsubscribe;
   }, []);
 
-  // ── Market data fetching (only when logged in) ──
+  // ── Market data fetching (Adaptive Polling with Market Hours & Backoff) ──
   useEffect(() => {
     if (!user) return; // Don't fetch if not logged in
     let isMounted = true;
+    let timerId = null;
+    let consecutiveErrors = 0;
+
+    const scheduleNext = (intervalMs) => {
+      if (!isMounted) return;
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(fetchMarket, intervalMs);
+    };
 
     const fetchMarket = async () => {
-      const statusObj = await fetchMarketStatus();
-      if (isMounted && statusObj) setMarketStatus(statusObj);
+      let isMarketOpen = false;
+      let hadError = false;
 
-      const [response, liveIndices] = await Promise.all([
-        fetchLiveMarketData(),
-        fetchMarketIndices()
-      ]);
+      try {
+        const rawStatus = await fetchMarketStatus();
+        const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
+        if (isMounted && status) {
+          setMarketStatus(status);
+          isMarketOpen = Boolean(status.isOpen);
+        }
+
+        const [response, liveIndices] = await Promise.all([
+          fetchLiveMarketData(),
+          fetchMarketIndices()
+        ]);
+
+        if (!isMounted) return;
+
+        let currentStocks = stocks;
+        let hasFreshData = false;
+
+        // 1. Process Stock Data if available
+        if (response && response.data && response.data.length > 0) {
+          // ✅ Real data only, no mock fallback
+          currentStocks = response.data;
+          liveStocksRef.current = currentStocks;
+          setStocks(currentStocks);
+          const isLive = status?.isOpen || response.source === 'live';
+          setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
+          saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
+          hasFreshData = true;
+        }
+
+        // 2. Process Indices — always prioritize real live exchange index from proxy/market
+        if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
+          setIndices(liveIndices);
+          saveCachedIndices(liveIndices);
+          hasFreshData = true;
+        } else if (currentStocks && currentStocks.length > 0) {
+          setIndices(calculateIndices(currentStocks));
+          hasFreshData = true;
+        }
+
+        if (hasFreshData) {
+          setLastSyncTime(new Date());
+          consecutiveErrors = 0;
+        }
+      } catch (err) {
+        hadError = true;
+        consecutiveErrors++;
+        console.warn('[Adaptive Poller] Sync error (attempt ' + consecutiveErrors + '):', err?.message);
+      }
 
       if (!isMounted) return;
 
-      let currentStocks = stocks;
-      let hasFreshData = false;
-
-      // 1. Process Stock Data if available
-      if (response && response.data && response.data.length > 0) {
-        // ✅ Real data only, no mock fallback
-        currentStocks = response.data;
-        liveStocksRef.current = currentStocks;
-        setStocks(currentStocks);
-        setApiStatus(response.source === 'live' ? 'live' : 'closing');
-        saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
-        hasFreshData = true;
+      // Adaptive intervals: 12s during active market trading (Sun-Thu 11am-3pm NPT), 120s when closed
+      const baseInterval = isMarketOpen ? 12000 : 120000;
+      let nextInterval = baseInterval;
+      if (hadError || consecutiveErrors > 0) {
+        // Exponential backoff up to 120s on network/server errors
+        nextInterval = Math.min(baseInterval * Math.pow(1.8, Math.min(consecutiveErrors, 5)), 120000);
       }
 
-      // 2. Process Indices — always prioritize real live exchange index from proxy/market
-      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
-        setIndices(liveIndices);
-        saveCachedIndices(liveIndices);
-        hasFreshData = true;
-      } else if (currentStocks && currentStocks.length > 0) {
-        setIndices(calculateIndices(currentStocks));
-        hasFreshData = true;
-      }
-
-      if (hasFreshData) {
-        setLastSyncTime(new Date());
-      }
+      scheduleNext(nextInterval);
     };
 
     fetchMarket();
-    const id = setInterval(fetchMarket, 20000);
 
     return () => {
       isMounted = false;
-      clearInterval(id);
+      if (timerId) clearTimeout(timerId);
     };
   }, [user]); // Re-run when user logs in/out
+
+  useEffect(() => {
+    const doScroll = () => {
+      try {
+        const mainEl = document.querySelector('main');
+        if (mainEl) mainEl.scrollTop = 0;
+        const scrollables = document.querySelectorAll('.overflow-y-auto');
+        scrollables.forEach(el => { el.scrollTop = 0; });
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      } catch (_) {}
+    };
+    doScroll();
+    requestAnimationFrame(doScroll);
+  }, [activeTab]);
 
   const triggerTick = async () => {
     setIsRefreshing(true);
     try {
-      const [statusObj, response, liveIndices] = await Promise.all([
+      const [rawStatus, response, liveIndices] = await Promise.all([
         fetchMarketStatus(),
         fetchLiveMarketData(),
         fetchMarketIndices()
       ]);
-      if (statusObj) setMarketStatus(statusObj);
+      const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
+      if (status) setMarketStatus(status);
 
       let currentStocks = stocks;
       let hasFreshData = false;
@@ -329,7 +382,8 @@ function AppInner() {
         currentStocks = response.data;
         liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
-        setApiStatus(response.source === 'live' ? 'live' : 'closing');
+        const isLive = status?.isOpen || response.source === 'live';
+        setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
         saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
         hasFreshData = true;
       }
@@ -402,7 +456,7 @@ function AppInner() {
     return <LoginScreen onLogin={setUser} />;
   }
 
-  const nepseChange = indices.nepse.change;
+  const nepseChange = indices?.nepse?.change ?? 0;
 
   // ── User avatar: photo or initial letter ──
   const renderAvatar = (size = 28) => {
@@ -440,29 +494,56 @@ function AppInner() {
             <img src="logo.png" alt="Drabyashree Nepse Hub" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
           <div>
-            <div className="header-title">Drabyashree</div>
-            <div className="header-sub" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800 }}>
-                {indices.nepse.value}&nbsp;
-                {nepseChange >= 0 ? '▲' : '▼'}{Math.abs(indices.nepse.pChange)}%
+            <div className="header-title">Drabyashree NEPSE</div>
+            <div className="header-sub" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+                {indices?.nepse?.value ?? 2542.77}&nbsp;
+                {nepseChange >= 0 ? '▲' : '▼'}{Math.abs(indices?.nepse?.pChange ?? 0.18)}%
               </span>
-              &nbsp;·&nbsp;
-              <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: marketStatus.isOpen ? 'var(--bull)' : 'var(--text-muted)' }}>
-                <Clock style={{ width: 10, height: 10 }} />
-                {marketStatus.isOpen ? 'Open' : 'Closed'} {marketStatus.nptTime && `(${marketStatus.nptTime})`}
+              <span style={{ color: 'var(--text-muted)' }}>·</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                {marketStatus.nptTime || '11:00 AM – 3:00 PM'}
               </span>
             </div>
           </div>
         </div>
 
         <div className="header-actions">
+          {/* Market Status Indicator */}
+          {(() => {
+            const isLive = Boolean(marketStatus?.isOpen || apiStatus === 'live');
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '4px 9px',
+                borderRadius: 50,
+                border: `1px solid ${isLive ? 'rgba(16,185,129,0.35)' : 'var(--border)'}`,
+                background: isLive ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)',
+              }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: isLive ? 'var(--bull)' : '#94a3b8'
+                }} />
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800,
+                  color: isLive ? 'var(--bull)' : 'var(--text-muted)'
+                }}>
+                  {isLive ? 'LIVE' : (marketStatus?.isWeekend ? 'WEEKEND' : marketStatus?.isHoliday ? 'HOLIDAY' : 'CLOSED')}
+                </span>
+              </div>
+            );
+          })()}
+
           {/* Refresh Live Data Button */}
           <button
             id="btn-refresh-market"
             className="icon-btn"
             onClick={triggerTick}
             disabled={isRefreshing}
-            title="Refresh Live NEPSE Data (ताजा डेटा अपडेट)"
+            title="Refresh Live Market Data"
             style={{
               padding: '0 8px',
               height: 32,
@@ -476,34 +557,10 @@ function AppInner() {
             }}
           >
             <RefreshCw style={{ width: 14, height: 14, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-            <span style={{ fontSize: 11, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
-              {isRefreshing ? 'Updating…' : 'Refresh'}
+            <span className="header-refresh-label" style={{ fontSize: 11, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
+              {isRefreshing ? '…' : 'Refresh'}
             </span>
           </button>
-
-          {/* API Status dot */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '4px 10px',
-            borderRadius: 50,
-            border: '1px solid var(--border)',
-            background: 'rgba(255,255,255,0.03)',
-          }}>
-            {apiStatus === 'live'
-              ? <Wifi style={{ width: 12, height: 12, color: 'var(--bull)' }} />
-              : apiStatus === 'closing'
-              ? <Clock style={{ width: 12, height: 12, color: 'var(--accent-cyan)' }} />
-              : apiStatus === 'yesterday'
-              ? <Clock style={{ width: 12, height: 12, color: 'var(--accent-amber)' }} />
-              : <WifiOff style={{ width: 12, height: 12, color: 'var(--accent-amber)' }} />
-            }
-            <span style={{ fontSize: 10, fontWeight: 700,
-              color: apiStatus === 'live' ? 'var(--bull)'
-                   : apiStatus === 'closing' ? 'var(--accent-cyan)'
-                   : 'var(--accent-amber)' }}>
-              {apiStatus === 'live' ? 'Live' : apiStatus === 'closing' ? 'Closing' : apiStatus === 'yesterday' ? 'Yesterday' : 'Offline'}
-            </span>
-          </div>
 
           {/* Text Size / Accessibility Font Enlarger for Weak Eyesight */}
           <button
@@ -735,21 +792,23 @@ function AppInner() {
       )}
 
       {/* ── Content ── */}
-      <main style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', paddingBottom: 'calc(40px + env(safe-area-inset-bottom))' }}>
+      <main style={{ flex: 1, overflowY: activeTab === 'dashboard' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', paddingBottom: 'calc(65px + env(safe-area-inset-bottom))' }}>
         <ErrorBoundary>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'dashboard'  && (
-              <Dashboard
-                stocks={stocks}
-                indices={indices}
-                onRefresh={triggerTick}
-                isRefreshing={isRefreshing}
-                triggerTick={triggerTick}
-                apiStatus={apiStatus}
-                marketStatus={marketStatus}
-                lastSyncTime={lastSyncTime}
-                onSelectStock={openStockDetail}
-              />
+              <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
+                <Dashboard
+                  stocks={stocks}
+                  indices={indices}
+                  onRefresh={triggerTick}
+                  isRefreshing={isRefreshing}
+                  triggerTick={triggerTick}
+                  apiStatus={apiStatus}
+                  marketStatus={marketStatus}
+                  lastSyncTime={lastSyncTime}
+                  onSelectStock={openStockDetail}
+                />
+              </PullToRefresh>
             )}
             {activeTab === 'portfolio'  && <Portfolio marketStocks={stocks} userId={user.uid} />}
             {activeTab === 'bulk_ipo'   && (

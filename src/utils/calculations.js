@@ -12,6 +12,49 @@
  * - Above Rs. 10,000,000: 0.24%
  * Note: Minimum broker commission is Rs. 10.
  */
+
+/**
+ * Formats a number to South Asian (Indian/Nepali) numbering system (Lakh/Crore)
+ */
+export function formatSouthAsian(number) {
+  if (number === null || number === undefined || isNaN(number)) return "0.00";
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(number);
+}
+
+/**
+ * Adjusts holdings after a Bonus Share distribution
+ * @param {number} units 
+ * @param {number} wacc 
+ * @param {number} bonusPercent 
+ */
+export function adjustForBonusShare(units, wacc, bonusPercent) {
+  const newUnits = units * (1 + (bonusPercent / 100));
+  const newWacc = (units * wacc) / newUnits;
+  return { newUnits: Number(newUnits.toFixed(2)), newWacc: Number(newWacc.toFixed(2)) };
+}
+
+/**
+ * Adjusts holdings after a Right Share issuance
+ * @param {number} units 
+ * @param {number} wacc 
+ * @param {number} rightRatio - E.g. 1:0.5 is 0.5
+ * @param {number} subscriptionPrice - Usually 100
+ */
+export function adjustForRightShare(units, wacc, rightRatio, subscriptionPrice = 100) {
+  const addedUnits = units * rightRatio;
+  const newUnits = units + addedUnits;
+  const newWacc = ((units * wacc) + (addedUnits * subscriptionPrice)) / newUnits;
+  return { newUnits: Number(newUnits.toFixed(2)), newWacc: Number(newWacc.toFixed(2)) };
+}
+
+/**
+ * Calculates Dividend Yield based on Cash Dividend and LTP
+ */
+export function calculateDividendYield(cashDivPerShare, ltp) {
+  if (!ltp || ltp <= 0) return 0;
+  return Number(((cashDivPerShare / ltp) * 100).toFixed(2));
+}
+
 export function calculateBrokerCommission(amount) {
   if (amount <= 0) return 0;
   let commission = 0;
@@ -68,7 +111,7 @@ export function calculateBuyDetails(quantity, price) {
  * @param {number} buyPriceWacc - Purchase price per share (WACC)
  * @param {string} holdingType - 'short' (<=365 days), 'long' (>365 days), or 'institutional'
  */
-export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingType = 'short') {
+export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingTypeOrPurchaseDate = 'short', sellDate = new Date()) {
   const sellValue = quantity * sellPrice;
   const commission = calculateBrokerCommission(sellValue);
   const sebonFee = calculateSebonFee(sellValue);
@@ -81,12 +124,30 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
   // Profit = Selling Value - Buying Cost - Selling Broker Commission - Selling SEBON Fee - DP Fee
   const netProfitBase = sellValue - totalBuyingCost - commission - sebonFee - dpFee;
   
-  let cgtRate = 0.075; // Short term individual (7.5%)
-  if (holdingType === 'long') {
-    cgtRate = 0.05; // Long term individual (5.0%)
-  } else if (holdingType === 'institutional') {
-    cgtRate = 0.10; // Institutional (10.0%)
+  let isLongTerm = false;
+  let isInstitutional = false;
+  
+  if (holdingTypeOrPurchaseDate === 'long') {
+    isLongTerm = true;
+  } else if (holdingTypeOrPurchaseDate === 'institutional') {
+    isInstitutional = true;
+  } else if (holdingTypeOrPurchaseDate === 'short') {
+    isLongTerm = false;
+  } else {
+    try {
+      const pDate = new Date(holdingTypeOrPurchaseDate);
+      const sDate = sellDate ? new Date(sellDate) : new Date();
+      const diffTime = Math.abs(sDate - pDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      isLongTerm = diffDays > 365;
+    } catch(e) {
+      isLongTerm = false;
+    }
   }
+
+  let cgtRate = 0.075;
+  if (isInstitutional) cgtRate = 0.10;
+  else if (isLongTerm) cgtRate = 0.05;
 
   const taxableProfit = Math.max(0, netProfitBase);
   const cgt = taxableProfit * cgtRate;
@@ -264,7 +325,7 @@ export {
   calculateDecisionProbabilityIndex,
   calculateTradeLabRankScore,
   calculateBrokerDominanceIndex
-} from './quantEngine';
+} from './quantEngine.js';
 
 
 

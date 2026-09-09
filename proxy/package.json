@@ -9,6 +9,7 @@
     "keepalive": "node keepalive.mjs"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@rumess/nepse-api": "^1.0.5",
     "axios": "^1.6.2",
     "axios-cookiejar-support": "^7.0.0",

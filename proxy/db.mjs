@@ -1,14 +1,38 @@
 import pg from 'pg';
 const { Pool } = pg;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/nepse'
-});
+let pool = null;
+if (process.env.DATABASE_URL) {
+  try {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL
+    });
+    pool.on('error', (err) => {
+      console.warn('[db] PostgreSQL pool error (non-fatal):', err.message);
+    });
+  } catch (err) {
+    console.warn('[db] Failed to create PostgreSQL pool:', err.message);
+    pool = null;
+  }
+}
 
-export const query = (text, params) => pool.query(text, params);
+export const query = (text, params) => {
+  if (!pool) return Promise.resolve({ rows: [] });
+  return pool.query(text, params);
+};
 
 export async function initDB() {
-  const client = await pool.connect();
+  if (!pool) {
+    console.log('[db] PostgreSQL disabled (no DATABASE_URL configured). Running proxy in lightweight memory mode.');
+    return;
+  }
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (connErr) {
+    console.warn('[db] Could not connect to PostgreSQL:', connErr.message);
+    return;
+  }
   try {
     await client.query('BEGIN');
     

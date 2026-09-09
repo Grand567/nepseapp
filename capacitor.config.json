@@ -3,7 +3,7 @@
   "appName": "Drabyashree NEPSE",
   "webDir": "dist",
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": false
   },
   "plugins": {
     "CapacitorHttp": {
@@ -14,7 +14,7 @@
     }
   },
   "server": {
-    "cleartext": true,
+    "cleartext": false,
     "allowNavigation": [
       "sharesansar.com",
       "*.sharesansar.com",
@@ -22,6 +22,7 @@
       "*.allorigins.win",
       "vercel.app",
       "*.vercel.app",
+      "drabyashree-nepse-hub6936.vercel.app",
       "cdsc.com.np",
       "*.cdsc.com.np",
       "corsproxy.io",
@@ -29,7 +30,26 @@
       "merolagani.com",
       "*.merolagani.com",
       "freeboard.io",
-      "*.freeboard.io"
+      "*.freeboard.io",
+      "nepseapp.onrender.com",
+      "*.onrender.com",
+      "render.com",
+      "*.render.com",
+      "open.bigmodel.cn",
+      "*.bigmodel.cn",
+      "z.ai",
+      "*.z.ai",
+      "drabyashree-nepse-hub-11ef9.firebaseapp.com",
+      "*.firebaseapp.com",
+      "firebaseapp.com",
+      "drabyashree-nepse-hub-11ef9.firebasestorage.app",
+      "*.firebasestorage.app",
+      "firebasestorage.app",
+      "*.googleapis.com",
+      "googleapis.com",
+      "accounts.google.com",
+      "identitytoolkit.googleapis.com",
+      "securetoken.googleapis.com"
     ]
   }
 }

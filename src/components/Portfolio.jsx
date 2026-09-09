@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, ArrowUpRight, ArrowDownRight, Briefcase, PlusCircle, MinusCircle, 
   ShieldCheck, Layers, BookOpen, Sparkles, X, Loader2, RefreshCw, Key, Lock, 
-  HelpCircle, ExternalLink, ArrowRight, ShieldAlert, CheckCircle2, Edit3, Check 
+  HelpCircle, ExternalLink, ArrowRight, ShieldAlert, CheckCircle2, Edit3, Check,
+  Search, TrendingUp, TrendingDown, Filter, Target, Activity
 } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
@@ -115,7 +116,7 @@ const getRealClientId = async (boid, dpCode) => {
   } catch (err) {
     console.error("Failed to map DP list:", err);
   }
-  const mockDp = MOCK_DP_LIST.find(dp => dp.code === dpCode);
+  const mockDp = (MEROSHARE_DP_LIST || []).find(dp => dp.code === dpCode);
   if (mockDp) {
     const idMatch = mockDp.name.match(/\((\d+)\)/);
     if (idMatch) return parseInt(idMatch[1]);
@@ -131,6 +132,8 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
   const [activeView, setActiveView] = useState('consolidated'); // 'consolidated', 'meroshare', 'manual'
   const [valuationMode, setValuationMode] = useState('prevClose'); // 'prevClose' (MeroShare Official default), 'ltp', 'live'
   const [allocationView, setAllocationView] = useState('stock'); // 'stock', 'sector'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterPnl, setFilterPnl] = useState('all'); // 'all', 'profit', 'loss'
   
   // Form fields
   const [type, setType] = useState('buy'); // 'buy' or 'sell'
@@ -1134,7 +1137,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
   };
 
   const getProcessedHoldings = (rawHoldings) => {
-    return rawHoldings.map(h => {
+    let list = rawHoldings.map(h => {
       const safeSym = (h.symbol || '').trim().toUpperCase();
       const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
       const { price: effectivePrice, value: currentValue } = resolveScripValuation(h, valuationMode);
@@ -1148,27 +1151,54 @@ Based on this data, provide a robust analysis using this exact markdown structur
         profitLoss,
         plPercent,
         stockChange: marketStock?.change || 0,
-        stockPchange: marketStock?.pChange || 0
+        stockPchange: marketStock?.pChange || 0,
+        sector: marketStock?.sector || 'Other'
       };
     }).filter(h => h.units > 0);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(h => (h.symbol || '').toLowerCase().includes(q) || (h.name || '').toLowerCase().includes(q));
+    }
+
+    if (filterPnl === 'profit') {
+      list = list.filter(h => h.profitLoss > 0);
+    } else if (filterPnl === 'loss') {
+      list = list.filter(h => h.profitLoss < 0);
+    }
+
+    return list;
   };
 
   const renderHoldingRow = (h) => {
     const isProfit = h.profitLoss >= 0;
+    const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === h.symbol) || {};
+    const sector = marketStock.sector || h.sector || 'Stock';
+
     return (
-      <div key={h.symbol} className="card-sm" style={{ 
-        padding: '10px 12px', 
-        marginBottom: 0,
-        background: isProfit ? 'var(--bull-subtle)' : 'var(--bear-subtle)',
-        borderColor: isProfit ? 'rgba(16,217,138,0.18)' : 'rgba(245,69,92,0.18)',
-        borderWidth: 1,
-        borderStyle: 'solid',
-        borderRadius: 'var(--radius-md)'
-      }}>
+      <div 
+        key={h.symbol} 
+        style={{ 
+          padding: '12px 14px', 
+          marginBottom: 0,
+          background: isProfit ? 'rgba(16,185,129,0.03)' : 'rgba(244,63,94,0.03)',
+          border: `1px solid ${isProfit ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
+          borderRadius: 14,
+          transition: 'all 0.15s ease',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)' }}>{h.symbol}</div>
-            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 900, fontSize: 14, color: 'var(--text-primary)' }}>{h.symbol}</span>
+              <span className="badge badge-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>{sector}</span>
+              {h.isCustomWacc && (
+                <span style={{ fontSize: 8.5, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>Custom WACC</span>
+              )}
+            </div>
+
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
               <span>{h.units} Units @ {formatRs(h.currentPrice)}</span>
               <span>•</span>
               <span>WACC: <strong style={{ color: (h.isCustomWacc || h.wacc !== 100) ? 'var(--text-primary)' : '#fbbf24', fontFamily: 'var(--font-mono)' }}>{formatRs(h.wacc)}</strong></span>
@@ -1183,9 +1213,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   background: h.wacc === 100 ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.06)', 
                   border: h.wacc === 100 ? '1px solid rgba(234,179,8,0.4)' : '1px solid rgba(255,255,255,0.1)', 
                   color: h.wacc === 100 ? '#fbbf24' : 'var(--text-secondary)', 
-                  borderRadius: 4, 
-                  padding: '1px 5px', 
-                  fontSize: 8.5, 
+                  borderRadius: 6, 
+                  padding: '1px 6px', 
+                  fontSize: 9, 
                   cursor: 'pointer', 
                   display: 'inline-flex', 
                   alignItems: 'center', 
@@ -1194,7 +1224,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 }}
                 title="Edit your real purchase rate / WACC"
               >
-                <Edit3 style={{ width: 9, height: 9 }} /> {h.wacc === 100 ? 'Fix Secondary WACC' : 'Edit'}
+                <Edit3 style={{ width: 9, height: 9 }} /> {h.wacc === 100 ? 'Fix Buy Rate' : 'Edit'}
               </button>
             </div>
 
@@ -1202,9 +1232,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {editingScrip === h.symbol && (
               <div 
                 onClick={e => e.stopPropagation()} 
-                style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--primary-light)' }}
+                style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0d131f', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--primary-light)', boxShadow: '0 4px 20px rgba(0,0,0,0.6)' }}
               >
-                <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -1212,13 +1242,13 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   value={quickWaccInput} 
                   onChange={e => setQuickWaccInput(e.target.value)} 
                   placeholder="e.g. 350"
-                  style={{ width: 75, height: 24, fontSize: 11, padding: '0 6px', background: '#0d1117', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
+                  style={{ width: 80, height: 26, fontSize: 12, padding: '0 6px', background: '#080c14', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
                 />
                 <button 
                   type="button" 
                   onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput)} 
                   className="btn-primary btn-xs" 
-                  style={{ padding: '2px 8px', fontSize: 9.5, height: 24 }}
+                  style={{ padding: '3px 8px', fontSize: 10, height: 26, borderRadius: 4 }}
                 >
                   Save
                 </button>
@@ -1226,25 +1256,39 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   type="button" 
                   onClick={() => setEditingScrip(null)} 
                   className="btn-secondary btn-xs" 
-                  style={{ padding: '2px 6px', fontSize: 9.5, height: 24 }}
+                  style={{ padding: '3px 6px', fontSize: 10, height: 26, borderRadius: 4 }}
                 >
                   ✕
                 </button>
               </div>
             )}
           </div>
+
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(h.currentValue)}</div>
-            <div style={{ fontSize: 9.5, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, color: isProfit ? 'var(--bull)' : 'var(--bear)' }}>
-              {isProfit ? '+' : ''}{Number(h.plPercent || 0).toFixed(2)}% ({formatRs(h.profitLoss)})
+            <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+              {formatRs(h.currentValue)}
             </div>
-            <button 
-              onClick={(e) => { e.stopPropagation(); handleAnalyzeSingleStock(h); }}
-              className="btn-secondary btn-xs"
-              style={{ marginTop: 6, fontSize: 8.5, padding: '2px 6px', display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(168,85,247,0.1)', borderColor: 'rgba(168,85,247,0.3)', color: '#d8b4fe' }}
-            >
-              <Sparkles style={{ width: 10, height: 10 }} /> Analyze
-            </button>
+            <div style={{ marginTop: 3 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                background: isProfit ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
+                border: `1px solid ${isProfit ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
+                color: isProfit ? 'var(--bull)' : '#f87171',
+                padding: '2px 7px', borderRadius: 6, fontSize: 10.5, fontWeight: 800
+              }}>
+                {isProfit ? <ArrowUpRight style={{ width: 11, height: 11 }} /> : <ArrowDownRight style={{ width: 11, height: 11 }} />}
+                {isProfit ? '+' : ''}{Number(h.plPercent || 0).toFixed(2)}% ({formatRs(h.profitLoss)})
+              </span>
+            </div>
+            <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleAnalyzeSingleStock(h); }}
+                className="btn-secondary btn-xs"
+                style={{ fontSize: 9.5, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe', borderRadius: 6, fontWeight: 700 }}
+              >
+                <Sparkles style={{ width: 10, height: 10 }} /> Guru AI
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1253,144 +1297,238 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
   return (
     <div style={{ padding: 16 }}>
-      
-      {/* Portfolio source view toggles */}
-      <div className="tab-bar" style={{ marginBottom: 16 }}>
-        <button 
-          onClick={() => setActiveView('consolidated')}
-          className={`tab-btn ${activeView === 'consolidated' ? 'active' : ''}`}
-          style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-        >
-          <Layers style={{ width: 14, height: 14 }} /> Consolidated
-        </button>
-        <button 
-          onClick={() => setActiveView('meroshare')}
-          className={`tab-btn ${activeView === 'meroshare' ? 'active' : ''}`}
-          style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-        >
-          <ShieldCheck style={{ width: 14, height: 14 }} /> MeroShare
-        </button>
-        <button 
-          onClick={() => setActiveView('manual')}
-          className={`tab-btn ${activeView === 'manual' ? 'active' : ''}`}
-          style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '8px 0' }}
-        >
-          <BookOpen style={{ width: 14, height: 14 }} /> Manual Ledger
-        </button>
+
+      {/* ── 1. PORTFOLIO TOP SEARCH BAR (Dashboard Styled) ── */}
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
+          borderRadius: 14, padding: '0 12px', height: 42
+        }}>
+          <Search style={{ width: 16, height: 16, color: 'var(--text-muted)', marginRight: 8, flexShrink: 0 }} />
+          <input
+            type="text"
+            style={{
+              background: 'none', border: 'none', color: '#fff', fontSize: 13,
+              flex: 1, minWidth: 0, outline: 'none'
+            }}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            data-form-type="other"
+            placeholder="Search holdings by scrip or company..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSearchQuery('');
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSearchQuery('');
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: '#cbd5e1', flexShrink: 0, marginLeft: 6, zIndex: 10
+              }}
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              <X style={{ width: 14, height: 14 }} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Portfolio overview card */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      {/* ── 2. PORTFOLIO SOURCE VIEW CHIPS (Dashboard Pill Style) ── */}
+      <div style={{
+        display: 'flex', gap: 8, overflowX: 'auto', padding: '0 0 12px',
+        scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', marginBottom: 14
+      }}>
+        {[
+          { id: 'consolidated', label: 'Consolidated', icon: Layers, count: holdings.length, color: 'var(--primary-light)' },
+          { id: 'meroshare', label: 'MeroShare Demat', icon: ShieldCheck, count: meroshareProfiles.reduce((acc, p) => acc + (p.holdings?.length || 0), 0), color: 'var(--bull)' },
+          { id: 'manual', label: 'Manual Ledger', icon: BookOpen, count: manualRaw.length, color: '#f59e0b' }
+        ].map(t => {
+          const isActive = activeView === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveView(t.id)}
+              style={{
+                background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
+                color: isActive ? '#fff' : 'var(--text-secondary)',
+                border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                borderRadius: 12, padding: '8px 14px', fontSize: 12, fontWeight: 800,
+                cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6,
+                boxShadow: isActive ? '0 0 16px rgba(79,70,229,0.3)' : 'none',
+                transition: 'all 0.15s'
+              }}
+            >
+              <t.icon style={{ width: 14, height: 14, color: isActive ? '#fff' : t.color }} />
+              {t.label}
+              <span style={{
+                fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
+                color: isActive ? '#fff' : 'var(--text-muted)',
+                fontWeight: 800
+              }}>
+                {t.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── 3. HERO NET WORTH CARD (Dashboard Index Style) ── */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, boxShadow: 'var(--shadow-card)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 0 }}>
-            <Briefcase style={{ width: 16, height: 16 }} /> {activeView === 'consolidated' ? 'Total Net Worth' : activeView === 'meroshare' ? 'MeroShare Net Worth' : 'Ledger Net Worth'}
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Briefcase style={{ width: 18, height: 18, color: 'var(--primary-light)' }} />
+            <h2 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
+              {activeView === 'consolidated' ? 'Consolidated Net Worth' : activeView === 'meroshare' ? 'MeroShare Demat Valuation' : 'Manual Ledger Portfolio'}
+            </h2>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button 
-              onClick={() => setShowAiModal(true)}
+              onClick={handleAnalyzePortfolio}
               className="btn-secondary btn-xs"
-              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'linear-gradient(90deg, rgba(91,94,244,0.1) 0%, rgba(168,85,247,0.1) 100%)', borderColor: 'rgba(168,85,247,0.3)', color: '#d8b4fe' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe', borderRadius: 8, padding: '5px 10px', fontWeight: 800 }}
             >
-              <Sparkles style={{ width: 14, height: 14 }} /> AI Analyst
+              <Sparkles style={{ width: 13, height: 13 }} /> Guru AI
             </button>
             {activeView !== 'meroshare' && (
               <button 
                 onClick={() => setShowAddForm(!showAddForm)}
                 className="btn-primary btn-xs"
-                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, borderRadius: 8, padding: '5px 10px', fontWeight: 800 }}
               >
-                <Plus style={{ width: 14, height: 14 }} /> Add Transaction
+                <Plus style={{ width: 13, height: 13 }} /> Add Trade
               </button>
             )}
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
           <div>
-            <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
               {formatRs(totalValue)}
             </div>
-            <div style={{ fontSize: 10, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : '#a855f7', fontWeight: 700, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : '#a855f7' }}></span>
-              Current Mode: {valuationMode === 'prevClose' ? 'MeroShare Official (Previous Close)' : valuationMode === 'ltp' ? 'MeroShare Official (LTP)' : 'Live NEPSE Market'}
+            <div style={{ fontSize: 11, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)', fontWeight: 800, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)' }} />
+              Active Feed: {valuationMode === 'prevClose' ? 'MeroShare Official (Previous Close)' : valuationMode === 'ltp' ? 'MeroShare Official (LTP)' : 'Live NEPSE Market'}
+            </div>
+          </div>
+          
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: totalPL >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+              border: `1px solid ${totalPL >= 0 ? 'rgba(16,185,129,0.4)' : 'rgba(244,63,94,0.4)'}`,
+              color: totalPL >= 0 ? 'var(--bull)' : '#f87171',
+              padding: '4px 10px', borderRadius: 8, fontSize: 13, fontWeight: 900
+            }}>
+              {totalPL >= 0 ? <ArrowUpRight style={{ width: 15, height: 15 }} /> : <ArrowDownRight style={{ width: 15, height: 15 }} />}
+              {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(2)}%
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontWeight: 700 }}>
+              {totalPL >= 0 ? 'Profit: ' : 'Loss: '}{formatRs(Math.abs(totalPL))}
             </div>
           </div>
         </div>
 
-        {/* 3-Way Valuation Mode Switcher */}
-        <div style={{ display: 'flex', gap: 4, margin: '10px 0 10px', background: 'rgba(255,255,255,0.04)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
-          <button
-            type="button"
-            onClick={() => setValuationMode('prevClose')}
-            style={{
-              flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: valuationMode === 'prevClose' ? 'var(--bull)' : 'transparent',
-              color: valuationMode === 'prevClose' ? '#0a1914' : 'var(--text-muted)',
-              transition: 'all 0.15s'
-            }}
-          >
-            MeroShare Prev Close
-          </button>
-          <button
-            type="button"
-            onClick={() => setValuationMode('ltp')}
-            style={{
-              flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: valuationMode === 'ltp' ? '#38bdf8' : 'transparent',
-              color: valuationMode === 'ltp' ? '#0a1914' : 'var(--text-muted)',
-              transition: 'all 0.15s'
-            }}
-          >
-            MeroShare LTP
-          </button>
-          <button
-            type="button"
-            onClick={() => setValuationMode('live')}
-            style={{
-              flex: 1, padding: '6px 4px', fontSize: 10, fontWeight: 800, borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: valuationMode === 'live' ? 'var(--primary)' : 'transparent',
-              color: valuationMode === 'live' ? '#ffffff' : 'var(--text-muted)',
-              transition: 'all 0.15s'
-            }}
-          >
-            Live NEPSE
-          </button>
+        {/* 3-Way Valuation Mode Switcher (Dashboard Pill Style) */}
+        <div style={{ display: 'flex', gap: 6, margin: '14px 0 12px', background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
+          {[
+            { id: 'prevClose', label: 'Prev Close', color: 'var(--bull)' },
+            { id: 'ltp', label: 'LTP', color: '#38bdf8' },
+            { id: 'live', label: 'Live Market', color: 'var(--primary-light)' }
+          ].map(m => {
+            const isActive = valuationMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setValuationMode(m.id)}
+                style={{
+                  flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
+                  background: isActive ? (m.id === 'prevClose' ? 'rgba(16,185,129,0.2)' : m.id === 'ltp' ? 'rgba(56,189,248,0.2)' : 'rgba(91,94,244,0.25)') : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-muted)',
+                  border: isActive ? `1px solid ${m.color}` : '1px solid transparent',
+                  boxShadow: isActive ? `0 0 10px ${m.color}30` : 'none',
+                  transition: 'all 0.15s',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {m.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Side-by-side comparison of all 3 standards */}
-        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '8px 10px', marginBottom: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
-          <div>
-            <span style={{ color: 'var(--text-muted)' }}>MeroShare Prev Close: </span>
-            <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 1 }}>{formatRs(totalMerosharePrevClose)}</strong>
+        {/* 4-Stat Breadth Matrix (Invested, Gain, Scrips, Balance) */}
+        <div className="portfolio-stat-grid" style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Invested</div>
+            <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 12.5, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{formatRs(totalCost)}</div>
           </div>
-          <div>
-            <span style={{ color: 'var(--text-muted)' }}>MeroShare LTP: </span>
-            <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 1 }}>{formatRs(totalMeroshareLtp)}</strong>
-          </div>
-          <div style={{ gridColumn: 'span 2', borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: 5, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: 'var(--text-muted)' }}>Live Market Valuation: </span>
-            <strong style={{ color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalLiveVal)}</strong>
-          </div>
-        </div>
-
-        {/* Helpful Explanation Note */}
-        <div style={{ fontSize: 9.5, color: 'var(--text-muted)', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.12)', borderRadius: 6, padding: '6px 8px', marginBottom: 12, lineHeight: 1.4 }}>
-          💡 <strong>Tip:</strong> Official MeroShare web portal (<em>meroshare.cdsc.com.np</em>) defaults to <strong>Previous Closing Price</strong>. If matching your web MeroShare account total, ensure <strong>MeroShare Prev Close</strong> is active.
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-          <div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>Invested Capital</div>
-            <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 14, fontFamily: 'var(--font-mono)' }}>{formatRs(totalCost)}</div>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>Total Profit / Loss</div>
-            <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 2, color: totalPL >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
-              {totalPL >= 0 ? <ArrowUpRight style={{ width: 14, height: 14 }} /> : <ArrowDownRight style={{ width: 14, height: 14 }} />}
-              {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(2)}% ({formatRs(Math.abs(totalPL))})
+          <div style={{ background: totalPL >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(244,63,94,0.06)', border: `1px solid ${totalPL >= 0 ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`, borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Total P&L</div>
+            <div style={{ fontWeight: 800, color: totalPL >= 0 ? 'var(--bull)' : '#F43F5E', fontSize: 12, fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+              {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(1)}%
             </div>
           </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Holdings</div>
+            <div style={{ fontWeight: 800, color: 'var(--primary-light)', fontSize: 13, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{holdings.length} Scrips</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Net Return</div>
+            <div style={{ fontWeight: 800, color: totalPL >= 0 ? 'var(--bull)' : '#F43F5E', fontSize: 11, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{formatRs(totalPL)}</div>
+          </div>
         </div>
+
+        {/* Mini Comparison Bar */}
+        <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5 }}>
+          <span style={{ color: 'var(--text-muted)' }}>
+            MeroShare Prev Close: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalMerosharePrevClose)}</strong>
+          </span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            Live Market: <strong style={{ color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalLiveVal)}</strong>
+          </span>
+        </div>
+      </div>
+
+      {/* ── 3B. P&L FILTER CHIPS ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        {[
+          { id: 'all', label: `All Scrips (${holdings.length})`, icon: Target, color: 'var(--primary-light)' },
+          { id: 'profit', label: `In Profit (${holdings.filter(h => h.profitLoss > 0).length})`, icon: TrendingUp, color: 'var(--bull)' },
+          { id: 'loss', label: `In Loss (${holdings.filter(h => h.profitLoss < 0).length})`, icon: TrendingDown, color: '#F43F5E' }
+        ].map(chip => (
+          <button
+            key={chip.id}
+            onClick={() => setFilterPnl(chip.id)}
+            style={{
+              background: filterPnl === chip.id ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${filterPnl === chip.id ? chip.color : 'var(--border)'}`,
+              color: filterPnl === chip.id ? '#ffffff' : 'var(--text-secondary)',
+              borderRadius: 10, padding: '6px 12px', fontSize: 11.5, fontWeight: 700,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s'
+            }}
+          >
+            <chip.icon style={{ width: 12, height: 12, color: chip.color }} />
+            {chip.label}
+          </button>
+        ))}
       </div>
 
       {/* Allocation breakdown chart */}
@@ -1419,7 +1557,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   let cumulativeOffset = 0;
                   const radius = 45;
                   const circumference = 2 * Math.PI * radius; // ~282.74
-                  const colors = ['#5b5ef4', '#06b6d4', '#a855f7', '#f59e0b', '#10d98a', '#8b92a8'];
+                  const colors = ['#5b5ef4', '#06b6d4', '#a855f7', '#f59e0b', '#10B981', '#8b92a8'];
                   
                   return chartHoldings.map((ch, idx) => {
                     const pct = ch.value / (totalValue || 1);
@@ -1452,7 +1590,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
             {/* Side Legend */}
             {(() => {
-              const colors = ['#5b5ef4', '#06b6d4', '#a855f7', '#f59e0b', '#10d98a', '#8b92a8'];
+              const colors = ['#5b5ef4', '#06b6d4', '#a855f7', '#f59e0b', '#10B981', '#8b92a8'];
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                   {chartHoldings.map((ch, idx) => {
@@ -1479,20 +1617,32 @@ Based on this data, provide a robust analysis using this exact markdown structur
         <form onSubmit={handleAddTransaction} className="card" style={{ marginBottom: 16 }}>
           <h3 className="section-title" style={{ marginBottom: 12 }}>Log Buy/Sell Transaction</h3>
 
-          <div className="tab-bar" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
             <button 
               type="button" 
               onClick={() => setType('buy')}
-              className={`tab-btn ${type === 'buy' ? 'active' : ''}`}
-              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, background: type === 'buy' ? 'var(--primary)' : '' }}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
+                border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6,
+                background: type === 'buy' ? 'var(--primary)' : 'transparent',
+                color: type === 'buy' ? '#ffffff' : 'var(--text-muted)',
+                boxShadow: type === 'buy' ? '0 0 16px rgba(79,70,229,0.4)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
             >
               <PlusCircle style={{ width: 14, height: 14 }} /> BUY
             </button>
             <button 
               type="button" 
               onClick={() => setType('sell')}
-              className={`tab-btn ${type === 'sell' ? 'active' : ''}`}
-              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, background: type === 'sell' ? 'var(--bear)' : '', boxShadow: type === 'sell' ? '0 2px 12px var(--bear-glow)' : '' }}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 8, fontSize: 12, fontWeight: 800,
+                border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6,
+                background: type === 'sell' ? 'var(--bear)' : 'transparent',
+                color: type === 'sell' ? '#ffffff' : 'var(--text-muted)',
+                boxShadow: type === 'sell' ? '0 0 16px rgba(244,63,94,0.4)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
             >
               <MinusCircle style={{ width: 14, height: 14 }} /> SELL
             </button>
@@ -1501,13 +1651,42 @@ Based on this data, provide a robust analysis using this exact markdown structur
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
             <div>
               <label className="input-label">Stock Symbol</label>
-              <input 
-                list="portfolio-stocks-list"
-                value={symbol} 
-                onChange={e => setSymbol(e.target.value)} 
-                className="input"
-                placeholder="Search symbol or name..."
-              />
+              <div style={{ position: 'relative' }}>
+                <input 
+                  list="portfolio-stocks-list"
+                  value={symbol} 
+                  onChange={e => setSymbol(e.target.value)} 
+                  className="input"
+                  placeholder="Search symbol or name..."
+                  style={{ paddingRight: symbol ? 28 : undefined }}
+                />
+                {symbol && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSymbol('');
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSymbol('');
+                    }}
+                    style={{
+                      position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                      background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                      width: 20, height: 20, color: '#cbd5e1', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      zIndex: 10
+                    }}
+                    title="Clear symbol"
+                    aria-label="Clear symbol"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
               <datalist id="portfolio-stocks-list">
                 {marketStocks.map(s => (
                   <option key={s.symbol} value={s.symbol}>{s.name !== s.symbol ? `${s.name} (${s.symbol})` : s.symbol}</option>
@@ -1552,11 +1731,14 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
           {/* 1. Manual Ledger Holdings (Shown if manual ledger selected or consolidated) */}
           {(activeView === 'manual' || activeView === 'consolidated') && manualRaw.length > 0 && (
-            <div className="card" style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                  <BookOpen style={{ width: 14, height: 14 }} /> Manual Ledger Portfolio
-                </h3>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <BookOpen style={{ width: 16, height: 16, color: '#f59e0b' }} />
+                  <h3 style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
+                    Manual Ledger Portfolio
+                  </h3>
+                </div>
                 {(() => {
                   const processed = getProcessedHoldings(manualRaw);
                   const subCost = processed.reduce((sum, h) => sum + h.units * h.wacc, 0);
@@ -1564,9 +1746,14 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   const subPL = subValue - subCost;
                   const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
                   return (
-                    <span style={{ fontSize: 10, fontWeight: 'bold', color: subPL >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
-                      {formatRs(subValue)} ({subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}%)
-                    </span>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                        {formatRs(subValue)}
+                      </span>
+                      <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                        {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}%
+                      </span>
+                    </div>
                   );
                 })()}
               </div>
@@ -1589,21 +1776,18 @@ Based on this data, provide a robust analysis using this exact markdown structur
             const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
 
             return (
-              <div key={p.id} className="card" style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
+              <div key={p.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 10 }}>
                   <div style={{ textAlign: 'left' }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                      <ShieldCheck style={{ width: 14, height: 14, color: 'var(--bull)' }} /> {p.name}
+                    <h3 style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                      <ShieldCheck style={{ width: 16, height: 16, color: 'var(--bull)' }} /> {p.name}
                     </h3>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>BOID: {p.boid}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>BOID: {p.boid}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: 12, fontWeight: 900, display: 'block', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(subValue)}</span>
-                      <span style={{ fontSize: 8.5, color: 'var(--text-muted)', display: 'block' }}>
-                        Prev Close: {formatRs(subCloseValue)} • LTP: {formatRs(subLtpValue)}
-                      </span>
-                      <span style={{ fontSize: 9.5, fontWeight: 'bold', color: subPL >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
+                      <span style={{ fontSize: 14, fontWeight: 900, display: 'block', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(subValue)}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
                         {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
                       </span>
                     </div>
@@ -1613,9 +1797,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       disabled={isRetrieving}
                       title="Pull Live MeroShare Holdings"
                       className="btn-secondary btn-xs"
-                      style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, borderRadius: 'var(--radius-sm)' }}
+                      style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, borderRadius: 8, fontWeight: 700 }}
                     >
-                      <RefreshCw style={{ width: 11, height: 11 }} className={isRetrieving ? 'animate-spin' : ''} />
+                      <RefreshCw style={{ width: 12, height: 12 }} className={isRetrieving ? 'animate-spin' : ''} />
                       Sync
                     </button>
                   </div>
@@ -1841,7 +2025,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 onClick={handleAutoSetAllLtp}
                 style={{
                   flex: 1, padding: '6px 8px', fontSize: 10.5, fontWeight: 800,
-                  background: 'rgba(16,217,138,0.12)', border: '1px solid rgba(16,217,138,0.3)',
+                  background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)',
                   color: 'var(--bull)', borderRadius: 6, cursor: 'pointer'
                 }}
               >
@@ -1905,7 +2089,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             </div>
 
             {waccSaveSuccess && (
-              <div style={{ fontSize: 11, color: 'var(--bull)', background: 'rgba(16,217,138,0.1)', border: '1px solid rgba(16,217,138,0.3)', borderRadius: 6, padding: '6px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
+              <div style={{ fontSize: 11, color: 'var(--bull)', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6, padding: '6px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
                 ✓ {waccSaveSuccess}
               </div>
             )}
@@ -1923,7 +2107,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 type="button"
                 onClick={handleSaveAllWacc}
                 className="btn-primary"
-                style={{ flex: 2, padding: '9px 0', fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #10d98a, #059669)', border: 'none', color: '#042f2e' }}
+                style={{ flex: 2, padding: '9px 0', fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #10B981, #059669)', border: 'none', color: '#042f2e' }}
               >
                 Save All WACCs Permanently
               </button>

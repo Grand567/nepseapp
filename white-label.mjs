@@ -279,7 +279,7 @@ try {
   
   if (proxy) {
     envContent += `# ─── Proxy Server URL ────────────────────────────────────────────────────────\n`;
-    envContent += `VITE_PROXY_URL=${proxy.viteProxyUrl || ''}\n`;
+    envContent += `VITE_PROXY_URL=${proxy.viteProxyUrl || 'https://nepseapp.onrender.com'}\n`;
   }
   
   fs.writeFileSync(envPath, envContent, 'utf8');

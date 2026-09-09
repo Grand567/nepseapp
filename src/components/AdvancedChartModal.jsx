@@ -36,19 +36,71 @@ export default function AdvancedChartModal({
     async function fetchData() {
       setLoading(true);
       try {
-        let days = 180;
-        if (timeframe === '1W') days = 7;
-        else if (timeframe === '1M') days = 30;
-        else if (timeframe === '3M') days = 90;
-        else if (timeframe === '6M') days = 180;
-        else if (timeframe === '1Y') days = 365;
+        let days = 66;
+        if (timeframe === '1D') days = 1;
+        else if (timeframe === '2D') days = 2;
+        else if (timeframe === '3D') days = 3;
+        else if (timeframe === '1W') days = 5;
+        else if (timeframe === '1M') days = 22;
+        else if (timeframe === '3M') days = 66;
+        else if (timeframe === '6M') days = 132;
+        else if (timeframe === '1Y') days = 260;
         else if (timeframe === '2Y' || timeframe === 'All') days = 500;
+
+        // Check for 1D intraday (11 AM to 3 PM)
+        if (timeframe === '1D') {
+          try {
+            const intraday = await servicesApi.fetchNepseIntradayGraph(symbol);
+            if (active && intraday && Array.isArray(intraday) && intraday.length > 0) {
+              const formattedIntraday = intraday.map(item => ({
+                time: item.time,
+                timestamp: item.timestamp,
+                open: Number(item.open) || Number(item.close),
+                high: Number(item.high) || Number(item.close),
+                low: Number(item.low) || Number(item.close),
+                close: Number(item.close),
+                volume: Number(item.volume) || 0
+              }));
+              setHistory(formattedIntraday);
+              return;
+            }
+          } catch (_) {}
+        }
 
         const data = await servicesApi.fetchPriceHistory(symbol, 500);
         if (!active) return;
         
         if (data && Array.isArray(data) && data.length > 0) {
-          const formatted = data.slice(-days).map(item => ({
+          const sorted = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          const latestDate = new Date(sorted[sorted.length - 1].date + 'T00:00:00Z');
+          let sliced = sorted;
+          if (timeframe === '2D') {
+            sliced = sorted.slice(-Math.min(2, sorted.length));
+          } else if (timeframe === '3D') {
+            sliced = sorted.slice(-Math.min(3, sorted.length));
+          } else if (timeframe === '1W' || timeframe === '7') {
+            const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
+            const weekBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneWeekAgo);
+            sliced = weekBars.length >= 4 ? weekBars : sorted.slice(-Math.min(5, sorted.length));
+          } else if (timeframe === '1M' || timeframe === '30') {
+            const oneMonthAgo = new Date(latestDate.getTime() - 30 * 24 * 3600 * 1000);
+            const monthBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneMonthAgo);
+            sliced = monthBars.length >= 15 ? monthBars : sorted.slice(-Math.min(22, sorted.length));
+          } else if (timeframe === '3M' || timeframe === '90') {
+            const threeMonthsAgo = new Date(latestDate.getTime() - 90 * 24 * 3600 * 1000);
+            const qtrBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= threeMonthsAgo);
+            sliced = qtrBars.length >= 45 ? qtrBars : sorted.slice(-Math.min(66, sorted.length));
+          } else if (timeframe === '6M' || timeframe === '180') {
+            const sixMonthsAgo = new Date(latestDate.getTime() - 180 * 24 * 3600 * 1000);
+            const halfYearBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= sixMonthsAgo);
+            sliced = halfYearBars.length >= 90 ? halfYearBars : sorted.slice(-Math.min(132, sorted.length));
+          } else if (timeframe === '1Y' || timeframe === '365') {
+            const oneYearAgo = new Date(latestDate.getTime() - 365 * 24 * 3600 * 1000);
+            const yearBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneYearAgo);
+            sliced = yearBars.length >= 180 ? yearBars : sorted.slice(-Math.min(260, sorted.length));
+          }
+
+          const formatted = sliced.map(item => ({
             time: item.date,
             open: Number(item.open) || Number(item.close),
             high: Number(item.high) || Number(item.close),
@@ -139,7 +191,8 @@ export default function AdvancedChartModal({
   const H_MAIN = 260;
   const H_VOL = showVolume ? 60 : 0;
   const H_RSI = showRSI ? 60 : 0;
-  const H_TOTAL = H_MAIN + H_VOL + H_RSI;
+  const H_XAXIS = 22;
+  const H_TOTAL = H_MAIN + H_VOL + H_RSI + H_XAXIS;
   const LEFT_AXIS = 45;
   const PLOT_W = W - LEFT_AXIS - 10;
 
@@ -167,6 +220,29 @@ export default function AdvancedChartModal({
     const rsiTop = H_MAIN + H_VOL;
     return rsiTop + H_RSI - (r / 100) * (H_RSI - 14) - 7;
   };
+
+  // Milestone date/time ticks along the X axis
+  const xTicks = useMemo(() => {
+    if (!technicalData || technicalData.length === 0) return [];
+    const count = Math.min(5, technicalData.length);
+    if (count <= 1) return [{ index: 0, label: technicalData[0]?.time || '' }];
+    const step = (technicalData.length - 1) / (count - 1);
+    const ticks = [];
+    for (let i = 0; i < count; i++) {
+      const idx = Math.min(technicalData.length - 1, Math.round(i * step));
+      const pt = technicalData[idx];
+      let label = pt?.time || '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+        const d = new Date(label + 'T00:00:00Z');
+        const weekday = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+        const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+        const day = d.getUTCDate();
+        label = (timeframe === '1W' || timeframe === '7') ? `${weekday} ${month} ${day}` : `${month} ${day}`;
+      }
+      ticks.push({ index: idx, label });
+    }
+    return ticks;
+  }, [technicalData, timeframe]);
 
   // Touch / Mouse Move Handlers
   const handleTouch = (clientX, targetRect) => {
@@ -196,7 +272,7 @@ export default function AdvancedChartModal({
         paddingBottom: '10px',
         paddingLeft: '16px',
         paddingRight: '16px',
-        background: '#0d131f',
+        background: '#0B0E14',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
         display: 'flex',
         alignItems: 'center',
@@ -223,8 +299,8 @@ export default function AdvancedChartModal({
               <span style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>{symbol}</span>
               <span style={{
                 fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
-                background: isBull ? 'rgba(16, 217, 138, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                color: isBull ? 'var(--bull)' : '#ef4444'
+                background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                color: isBull ? 'var(--bull)' : '#F43F5E'
               }}>
                 {isBull ? '▲ +' : '▼ '}{fmt(stock?.change || 0)} ({fmt(stock?.pChange || 0)}%)
               </span>
@@ -241,7 +317,7 @@ export default function AdvancedChartModal({
             <button
               onClick={() => setChartSource('native')}
               style={{
-                background: chartSource === 'native' ? '#10d98a' : 'transparent',
+                background: chartSource === 'native' ? '#10B981' : 'transparent',
                 color: chartSource === 'native' ? '#000000' : 'rgba(255,255,255,0.7)',
                 border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
               }}
@@ -251,7 +327,7 @@ export default function AdvancedChartModal({
             <button
               onClick={() => setChartSource('web')}
               style={{
-                background: chartSource === 'web' ? '#10d98a' : 'transparent',
+                background: chartSource === 'web' ? '#10B981' : 'transparent',
                 color: chartSource === 'web' ? '#000000' : 'rgba(255,255,255,0.7)',
                 border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
               }}
@@ -303,7 +379,7 @@ export default function AdvancedChartModal({
               <button
                 onClick={() => setChartMode('candle')}
                 style={{
-                  background: chartMode === 'candle' ? '#10d98a' : 'rgba(255,255,255,0.05)',
+                  background: chartMode === 'candle' ? '#10B981' : 'rgba(255,255,255,0.05)',
                   color: chartMode === 'candle' ? '#000' : '#fff',
                   border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer'
                 }}
@@ -313,7 +389,7 @@ export default function AdvancedChartModal({
               <button
                 onClick={() => setChartMode('line')}
                 style={{
-                  background: chartMode === 'line' ? '#10d98a' : 'rgba(255,255,255,0.05)',
+                  background: chartMode === 'line' ? '#10B981' : 'rgba(255,255,255,0.05)',
                   color: chartMode === 'line' ? '#000' : '#fff',
                   border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer'
                 }}
@@ -377,7 +453,7 @@ export default function AdvancedChartModal({
           {/* Interactive HUD / Crosshair Info Bar */}
           {activePoint && (
             <div style={{
-              background: '#090e18',
+              background: '#0B0E14',
               padding: '6px 14px',
               borderBottom: '1px solid rgba(255,255,255,0.05)',
               display: 'flex',
@@ -389,14 +465,14 @@ export default function AdvancedChartModal({
               <span style={{ color: '#fff', fontWeight: 800 }}>📅 {activePoint.time || activePoint.date}</span>
               <span style={{ color: 'var(--text-muted)' }}>O: <strong style={{ color: '#fff' }}>Rs {fmt(activePoint.open || activePoint.close)}</strong></span>
               <span style={{ color: 'var(--text-muted)' }}>H: <strong style={{ color: 'var(--bull)' }}>Rs {fmt(activePoint.high || activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>L: <strong style={{ color: '#ef4444' }}>Rs {fmt(activePoint.low || activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>C: <strong style={{ color: '#10d98a' }}>Rs {fmt(activePoint.close)}</strong></span>
+              <span style={{ color: 'var(--text-muted)' }}>L: <strong style={{ color: '#F43F5E' }}>Rs {fmt(activePoint.low || activePoint.close)}</strong></span>
+              <span style={{ color: 'var(--text-muted)' }}>C: <strong style={{ color: '#10B981' }}>Rs {fmt(activePoint.close)}</strong></span>
               <span style={{ color: 'var(--text-muted)' }}>Vol: <strong style={{ color: '#fff' }}>{(activePoint.volume || 0).toLocaleString()}</strong></span>
               {showSMA200 && activePoint.ma200 && (
                 <span style={{ color: '#a855f7' }}>200 SMA: Rs {fmt(activePoint.ma200)}</span>
               )}
               {showRSI && (
-                <span style={{ color: activePoint.rsi > 70 ? '#ef4444' : (activePoint.rsi < 30 ? 'var(--bull)' : '#ec4899') }}>
+                <span style={{ color: activePoint.rsi > 70 ? '#F43F5E' : (activePoint.rsi < 30 ? 'var(--bull)' : '#ec4899') }}>
                   RSI: {activePoint.rsi?.toFixed(1)}
                 </span>
               )}
@@ -422,7 +498,7 @@ export default function AdvancedChartModal({
             onMouseLeave={() => setHoverIndex(null)}
           >
             {loading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10d98a', fontSize: 13, fontWeight: 700 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10B981', fontSize: 13, fontWeight: 700 }}>
                 <RefreshCw style={{ width: 18, height: 18, animation: 'spin 1s linear infinite' }} />
                 <span>Loading verified NEPSE historical price data...</span>
               </div>
@@ -483,7 +559,7 @@ export default function AdvancedChartModal({
                   const hY = getY(d.high || d.close);
                   const lY = getY(d.low || d.close);
                   const candleBull = (d.close >= (d.open || d.close));
-                  const col = candleBull ? '#10d98a' : '#ef4444';
+                  const col = candleBull ? '#10B981' : '#F43F5E';
                   const topY = Math.min(oY, cY);
                   const bH = Math.max(2, Math.abs(cY - oY));
                   const bW = Math.max(2, Math.min(8, (PLOT_W / technicalData.length) * 0.7));
@@ -502,8 +578,8 @@ export default function AdvancedChartModal({
                   {/* Line Chart Gradient Area */}
                   <defs>
                     <linearGradient id="advChartGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10d98a" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#10d98a" stopOpacity="0.0" />
+                      <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
                   <polygon
@@ -515,7 +591,7 @@ export default function AdvancedChartModal({
                     `}
                   />
                   <polyline
-                    fill="none" stroke="#10d98a" strokeWidth="2" strokeLinejoin="round"
+                    fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round"
                     points={technicalData.map((d, i) => `${getX(i)},${getY(d.close)}`).join(' ')}
                   />
                 </>
@@ -570,7 +646,7 @@ export default function AdvancedChartModal({
                         y={y}
                         width={bW}
                         height={(H_MAIN + H_VOL) - y}
-                        fill={candleBull ? 'rgba(16, 217, 138, 0.4)' : 'rgba(239, 68, 68, 0.4)'}
+                        fill={candleBull ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}
                       />
                     );
                   })}
@@ -581,8 +657,8 @@ export default function AdvancedChartModal({
               {showRSI && (
                 <g>
                   <line x1={LEFT_AXIS} y1={H_MAIN + H_VOL} x2={W} y2={H_MAIN + H_VOL} stroke="rgba(255,255,255,0.12)" />
-                  <line x1={LEFT_AXIS} y1={getRsiY(70)} x2={W} y2={getRsiY(70)} stroke="rgba(239,68,68,0.3)" strokeDasharray="2 2" />
-                  <line x1={LEFT_AXIS} y1={getRsiY(30)} x2={W} y2={getRsiY(30)} stroke="rgba(16,217,138,0.3)" strokeDasharray="2 2" />
+                  <line x1={LEFT_AXIS} y1={getRsiY(70)} x2={W} y2={getRsiY(70)} stroke="rgba(244,63,94,0.3)" strokeDasharray="2 2" />
+                  <line x1={LEFT_AXIS} y1={getRsiY(30)} x2={W} y2={getRsiY(30)} stroke="rgba(16,185,129,0.3)" strokeDasharray="2 2" />
                   <text x={LEFT_AXIS - 6} y={getRsiY(50)} fill="rgba(236, 72, 153, 0.6)" fontSize="8" textAnchor="end">RSI</text>
                   <polyline
                     fill="none" stroke="#ec4899" strokeWidth="1.5"
@@ -590,6 +666,24 @@ export default function AdvancedChartModal({
                   />
                 </g>
               )}
+
+              {/* X-Axis Milestone Dates & Times */}
+              <g>
+                <line x1={LEFT_AXIS} y1={H_MAIN + H_VOL + H_RSI} x2={W} y2={H_MAIN + H_VOL + H_RSI} stroke="rgba(255,255,255,0.12)" />
+                {xTicks.map((t, i) => (
+                  <text
+                    key={i}
+                    x={getX(t.index)}
+                    y={H_MAIN + H_VOL + H_RSI + 15}
+                    fill="rgba(255,255,255,0.55)"
+                    fontSize="9.5"
+                    textAnchor="middle"
+                    fontFamily="var(--font-mono, monospace)"
+                  >
+                    {t.label}
+                  </text>
+                ))}
+              </g>
 
               {/* Interactive Crosshair Cursor */}
               {hoverIndex != null && (
@@ -600,7 +694,7 @@ export default function AdvancedChartModal({
                   />
                   <circle
                     cx={getX(hoverIndex)} cy={getY(technicalData[hoverIndex].close)}
-                    r="4" fill="#10d98a" stroke="#fff" strokeWidth="1.5"
+                    r="4" fill="#10B981" stroke="#fff" strokeWidth="1.5"
                   />
                 </g>
               )}
@@ -637,7 +731,7 @@ export default function AdvancedChartModal({
                   key={tf.id}
                   onClick={() => setTimeframe(tf.id)}
                   style={{
-                    background: isSelected ? '#10d98a' : 'transparent',
+                    background: isSelected ? '#10B981' : 'transparent',
                     color: isSelected ? '#000000' : 'rgba(255,255,255,0.65)',
                     border: 'none',
                     borderRadius: 6,

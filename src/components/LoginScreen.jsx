@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BarChart3, Mail, AlertCircle, Chrome, Loader2, User, Lock, UserPlus, LogIn, Eye, EyeOff, ArrowLeft } from 'lucide-react';
-import { signInWithGoogle, signInWithFacebook, signInLocal, registerLocal, isConfigured } from '../utils/firebase';
+import { signInWithGoogle, signInWithFacebook, signInLocal, registerLocal, signInGuest, isConfigured } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 // Facebook "F" icon
 const FacebookIcon = ({ size = 16 }) => (
@@ -140,11 +140,15 @@ export default function LoginScreen({ onLogin }) {
   const handleGuest = () => {
     setLoading('guest');
     setTimeout(() => {
-      onLogin({
-        uid: 'guest_local', displayName: 'Guest User',
-        email: null, photoURL: null, isGuest: true,
-      });
-    }, 400);
+      try {
+        const guestUser = signInGuest();
+        onLogin(guestUser);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(null);
+      }
+    }, 200);
   };
 
 

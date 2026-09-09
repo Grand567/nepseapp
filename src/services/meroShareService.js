@@ -13,6 +13,7 @@
  */
 
 import { Capacitor, CapacitorHttp, CapacitorCookies } from '@capacitor/core';
+import { getProxyBase } from '../utils/liveData';
 
 // ─── Platform Detection ────────────────────────────────────────────────────
 export const isNativeMobile = Capacitor.isNativePlatform();
@@ -952,16 +953,10 @@ export async function fetchIpoCompanyList() {
     } catch {}
   }
 
-  // Fallback verified recent allotment list so user always has options to check
-  return [
-    { id: '185', name: 'Reliance Spinning Mills Limited (Book Building)', scrip: 'RSML', status: 'Alloted', type: 'IPO' },
-    { id: '184', name: 'Sanima Middle Tamor Hydropower Ltd.', scrip: 'TAMOR', status: 'Alloted', type: 'IPO' },
-    { id: '183', name: 'Sonapur Minerals and Oil Limited', scrip: 'SONA', status: 'Alloted', type: 'IPO' },
-    { id: '182', name: 'Mid Solu Hydropower Limited', scrip: 'MSHL', status: 'Alloted', type: 'IPO' },
-    { id: '181', name: 'Upper Lohore Khola Hydropower Company', scrip: 'ULHC', status: 'Alloted', type: 'IPO' },
-    { id: '180', name: 'Sun Nepal Life Insurance Company Ltd.', scrip: 'SNLI', status: 'Alloted', type: 'IPO' }
-  ];
+  // All CDSC direct endpoints failed — already tried proxy above, return empty
+  return [];
 }
+
 
 // ─── Single BOID Allotment Check ───────────────────────────────────────────
 export async function checkSingleBoidAllotment(companyShareId, boid) {
@@ -1108,36 +1103,36 @@ export async function fetchOpenIpos(account = null) {
     }
   }
 
-  // Active verified open issues fallback
-  return [
-    {
-      id: '201',
-      name: 'Sanima Middle Tamor Hydropower Ltd. (Ordinary)',
-      scrip: 'TAMOR',
-      type: 'Ordinary (IPO)',
-      status: 'Open',
-      minKitta: 10,
-      maxKitta: 10000,
-      amountPerShare: 100,
-      openDate: new Date().toISOString(),
-      closeDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      shareId: '201'
-    },
-    {
-      id: '202',
-      name: 'Sonapur Minerals and Oil Limited',
-      scrip: 'SONA',
-      type: 'Ordinary (IPO)',
-      status: 'Open',
-      minKitta: 10,
-      maxKitta: 15000,
-      amountPerShare: 100,
-      openDate: new Date().toISOString(),
-      closeDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      shareId: '202'
+  // Fallback: fetch from the same real proxy endpoint used by the Services tab Live IPO list
+  try {
+    const pRes = await fetch(`${getProxyBase()}/api/ipo/live-listings`);
+    if (pRes.ok) {
+      const pData = await pRes.json();
+      const items = Array.isArray(pData) ? pData : (Array.isArray(pData?.data) ? pData.data : []);
+      const open = items.filter(i => i && i.status === 'Open');
+      if (open.length > 0) {
+        return open.map(item => ({
+          id: String(item.id),
+          name: item.name || item.companyName || 'Unknown',
+          scrip: item.scrip || '',
+          type: item.type || item.shareType || 'Ordinary (IPO)',
+          status: 'Open',
+          minKitta: item.minKitta || 10,
+          maxKitta: item.maxKitta || 10000,
+          amountPerShare: item.issuePrice || 100,
+          openDate: item.openDate || '',
+          closeDate: item.closeDate || '',
+          shareId: String(item.id)
+        }));
+      }
     }
-  ];
+  } catch (e) {
+    console.warn('[fetchOpenIpos] Live listings fallback failed:', e.message);
+  }
+
+  return []; // No open IPOs found — caller will show appropriate empty state
 }
+
 
 // ─── Check If BOID Has Already Applied ─────────────────────────────────────
 export async function checkBoidAlreadyApplied(account, companyShareId) {

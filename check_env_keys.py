@@ -6,7 +6,7 @@ import sys
 # Ensure UTF-8 output on Windows
 sys.stdout.reconfigure(encoding='utf-8')
 
-base_path = r"C:\Users\Hp\Desktop\Software\nepse app"
+base_path = os.path.dirname(os.path.abspath(__file__))
 
 print("="*70)
 print("API KEY CONFIGURATION CHECK")
