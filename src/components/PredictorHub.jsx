@@ -54,8 +54,8 @@ export default function PredictorHub({
   const [macroData, setMacroData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'momentum', 'volume', 'low_float', 'catalyst'
-  const [searchQuery, setSearchQuery] = useState('');
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [guideTab, setGuideTab] = useState('index');
 
   const fallbackStockScoring = React.useCallback(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return;
@@ -426,7 +426,10 @@ export default function PredictorHub({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              onClick={() => setShowGuideModal(true)}
+              onClick={() => {
+                setGuideTab(activeTab === 'nepse' ? 'index' : 'buy');
+                setShowGuideModal(true);
+              }}
               style={{
                 padding: '6px 12px',
                 borderRadius: 10,
@@ -533,6 +536,60 @@ export default function PredictorHub({
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'nepse' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Quick Index Decision Playbook Banner */}
+            <div
+              onClick={() => {
+                setGuideTab('index');
+                setShowGuideModal(true);
+              }}
+              style={{
+                cursor: 'pointer',
+                padding: '12px 16px',
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(59, 130, 246, 0.08))',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#818cf8',
+                  flexShrink: 0
+                }}>
+                  <BookOpen size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)' }}>
+                    🎯 इन्डेक्स हेरेर कसरी लगानी निर्णय लिने? (Index Decision Playbook)
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Market Regime, ५० EMA Ceiling, Target १/२ र दशैं/पुस/असार तरलता चक्र बुझ्न ट्याप गर्नुहोस् →
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: '#818cf8',
+                padding: '4px 10px',
+                borderRadius: 8,
+                background: 'rgba(99, 102, 241, 0.15)',
+                whiteSpace: 'nowrap'
+              }}>
+                गाइड हेर्नुहोस्
+              </span>
+            </div>
+
             {/* Primary Direction Card */}
             {indexPrediction && (
               <div style={{
@@ -1508,6 +1565,7 @@ export default function PredictorHub({
       <InvestorDecisionGuideModal
         isOpen={showGuideModal}
         onClose={() => setShowGuideModal(false)}
+        initialTab={guideTab}
       />
     </div>
   );

@@ -18,11 +18,19 @@ import {
   DollarSign,
   Scale,
   Sparkles,
-  Award
+  Award,
+  Activity,
+  BarChart3,
+  Calendar,
+  ShieldAlert
 } from 'lucide-react';
 
-export default function InvestorDecisionGuideModal({ isOpen, onClose }) {
-  const [activeTab, setActiveTab] = useState('buy'); // 'buy', 'sell', 'hold', 'avoid', 'strategy'
+export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab = 'index' }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'index');
+
+  React.useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   if (!isOpen) return null;
 
@@ -69,11 +77,11 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose }) {
               width: 40,
               height: 40,
               borderRadius: 12,
-              background: 'linear-gradient(135deg, #10B981, #059669)',
+              background: 'linear-gradient(135deg, #6366F1, #4F46E5)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 16px rgba(16, 185, 129, 0.35)'
+              boxShadow: '0 0 16px rgba(99, 102, 241, 0.35)'
             }}>
               <BookOpen size={22} color="#ffffff" />
             </div>
@@ -87,9 +95,9 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose }) {
                   fontWeight: 700,
                   padding: '2px 8px',
                   borderRadius: 12,
-                  background: 'rgba(16, 185, 129, 0.2)',
-                  color: '#34d399',
-                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  color: '#a5b4fc',
+                  border: '1px solid rgba(99, 102, 241, 0.3)'
                 }}>
                   सरल लगानी नियम
                 </span>
@@ -129,6 +137,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose }) {
           scrollbarWidth: 'none'
         }}>
           {[
+            { id: 'index', label: '🎯 इन्डेक्स हेरेर निर्णय', color: '#6366F1' },
             { id: 'buy', label: '🟢 कहिले किन्ने? (Buy)', color: '#10B981' },
             { id: 'sell', label: '🔴 कहिले बेच्ने? (Sell)', color: '#F43F5E' },
             { id: 'hold', label: '🔵 कहिले होल्ड? (Hold)', color: '#38BDF8' },
@@ -170,6 +179,126 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose }) {
           fontSize: 13,
           lineHeight: 1.6
         }}>
+          {/* TAB 0: HOW TO INVEST USING NEPSE INDEX PREDICTION */}
+          {activeTab === 'index' && (
+            <>
+              <div style={{
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                borderRadius: 14,
+                padding: '14px 16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 900, color: '#818cf8', fontSize: 14 }}>
+                  <Target size={18} />
+                  नेप्से इन्डेक्सको भविष्यवाणी हेरेर लगानी गर्ने सही तरिका
+                </div>
+                <p style={{ margin: '6px 0 0', color: '#cbd5e1', fontSize: 12 }}>
+                  नेप्सेमा ७५% सेयर समग्र बजार (Index) को दिशामै हिँड्छन्। व्यक्तिगत सेयर किन्नुअघि सधैं इन्डेक्सको अवस्था हेर्नुहोस्:
+                </p>
+              </div>
+
+              {/* 1. Market Regime & Capital Allocation */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Activity size={16} color="#818cf8" />
+                  १. बजारको अवस्था (Market Regime) अनुसार पुँजी व्यवस्थापन
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
+                  {/* Regime A: Bullish Expansion */}
+                  <div style={{ padding: 10, borderRadius: 8, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 800, color: '#34d399' }}>🟢 Bullish Expansion (५० EMA माथि र हरियो बजार)</span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#10b981', color: '#000', fontWeight: 800 }}>७०-८०% लगानी</span>
+                    </div>
+                    <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
+                      <strong>निर्णय: आक्रामक खरिद (Aggressive Buy).</strong> बजार बलियो अपट्रेन्डमा छ। २० वा २१ EMA मा आउने सानो गिरावट (Pullback) मा बजारका अगुवा सेक्टर (Banking/Hydro) का ७० भन्दा माथि स्कोर भएका सेयर ढुक्कसँग किन्नुहोस् र Target 1 र Target 2 सम्म नाफा बढ्न दिनुहोस्।
+                    </div>
+                  </div>
+
+                  {/* Regime B: Counter-Trend Bounce */}
+                  <div style={{ padding: 10, borderRadius: 8, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 800, color: '#fbbf24' }}>🟡 Counter-Trend Bounce (५० EMA मुनि १ दिनको उकालो)</span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f59e0b', color: '#000', fontWeight: 800 }}>६०-७०% नगद</span>
+                    </div>
+                    <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
+                      <strong>निर्णय: नयाँ खरिद नगर्नुहोस्, नाफा सुरक्षित गर्नुहोस् (Cautious / Exit Weak Stocks).</strong> जब इन्डेक्स ५० EMA भन्दा तल हुन्छ, बजार आधारभूत रूपमा घट्दो (Bearish) हुन्छ। १ दिन बजार हरियो हुनु 'ब्रेकआउट' होइन, 'पासो' (Bull Trap) हुन सक्छ। यो हरियो बजारलाई फसेका कमजोर सेयर बेचेर बाहिरिन (Exit) प्रयोग गर्नुहोस्।
+                    </div>
+                  </div>
+
+                  {/* Regime C: Bearish Retracement */}
+                  <div style={{ padding: 10, borderRadius: 8, background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 800, color: '#fb7185' }}>🔴 Bearish Retracement (५० र २०० EMA मुनि गिरावट)</span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f43f5e', color: '#fff', fontWeight: 800 }}>८०-९०% नगद</span>
+                    </div>
+                    <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
+                      <strong>निर्णय: पुँजी सुरक्षा (Capital Preservation / Cash is King).</strong> "धेरै सस्तो भयो" भनेर कहिल्यै खसिरहेको चक्कु नसमात्नुहोस् (Never catch a falling knife)। बजार ५० EMA माथि नफर्किएसम्म आफ्नो पैसा सुरक्षित राख्नुहोस् वा छोटो अवधिको मुद्दती/म्युचुअल फन्डमा राख्नुहोस्।
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. How to Use Target 1, Target 2 & Stop Floor */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Target size={16} color="#818cf8" />
+                  २. इन्डेक्सको Target 1, Target 2 र Stop Floor कसरी प्रयोग गर्ने?
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: '#cbd5e1' }}>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
+                    <strong style={{ color: '#38bdf8' }}>• Target 1 (पहिलो कडा अवरोध / ५० EMA):</strong> इन्डेक्स Target 1 नजिक पुगेपछि नयाँ खरिद रोक्नुहोस्। त्यहाँ बजार ठोक्किएर तल फर्किन सक्ने भएकाले कम्तिमा ५०% सेयरको नाफा सुरक्षित गर्नुहोस्।
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
+                    <strong style={{ color: '#34d399' }}>• Target 2 (ट्रेन्ड विस्तार):</strong> यदि इन्डेक्सले Target 1 लाई ठूलो कारोबार (Turnover &gt; 1.2x) सहित काटेर दिनभरि माथि स्थिर रह्यो भने मात्र बजार Target 2 तर्फ लम्किन्छ। त्यसपछि मात्र थप सेयर खरिद गर्नुहोस्।
+                  </div>
+                  <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.02)' }}>
+                    <strong style={{ color: '#f43f5e' }}>• Stop Floor (अन्तिम रक्षा रेखा):</strong> यदि इन्डेक्स Stop Floor भन्दा तल झर्छ भने, बजारमा ठूलो पहिरो जाने चेतावनी हो। आफ्ना सबै स्विङ वा अल्पकालीन सेयर तत्काल बेचेर घाटा रोक्नुहोस्।
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Turnover & Sector Breadth */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <BarChart3 size={16} color="#818cf8" />
+                  ३. टर्नओभर र सेक्टर ब्रोड्थको नियम (Volume & Sector Law)
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: '#cbd5e1' }}>
+                  <div>
+                    <strong style={{ color: '#fbbf24' }}>• टर्नओभर अनुपात (Turnover ≥ 1.2x):</strong> २० दिने औषत भन्दा बढी कारोबार सहित बजार बढेमा मात्र 'स्मार्ट मनी' (संस्थागत लगानीकर्ता) भित्रिएको पुष्टि हुन्छ। कम भोल्युममा बढेको बजारमा नफस्नुहोस्।
+                  </div>
+                  <div>
+                    <strong style={{ color: '#60a5fa' }}>• मुख्य सेक्टर (कमर्सियल बैंक ३२% र हाइड्रो २०%):</strong> नेप्सेको ५२% भार यी दुई सेक्टरमा छ। बैंक वा हाइड्रो रातो भएको दिन अन्य साना सेक्टर (होटेल, म्यानुफ्याक्चरिङ) बढे पनि समग्र इन्डेक्स टिक्न सक्दैन।
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Nepal Fiscal Cycle Strategy */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={16} color="#818cf8" />
+                  ४. नेपालको मौसमी तरलता चक्र अनुसार लगानी (Fiscal Cycle Timing)
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, color: '#cbd5e1' }}>
+                  <div>
+                    <strong style={{ color: '#34d399' }}>• असार-साउन (बजेट खर्च लहर):</strong> सरकारले विकास बजेट निकासा गर्दा बैंकहरूमा अर्बौं रूपैयाँ थपिन्छ। ब्याजदर घट्ने र तरलता उर्लिने भएकाले यो समय नेप्सेमा आक्रामक लगानी गरी ठूलो नाफा लिने समय हो।
+                  </div>
+                  <div>
+                    <strong style={{ color: '#f43f5e' }}>• पुस-माघ (अग्रिम कर खिचावट):</strong> कम्पनीहरूले ४०% अग्रिम कर तिर्दा बैंक प्रणालीबाट रु. ४०-६० अर्ब सरकारी खातामा जान्छ। बजारमा पैसा सुक्ने भएकाले मंसिरको अन्त्यमै नाफा बुक गरेर सुरक्षित हुनुपर्छ।
+                  </div>
+                  <div>
+                    <strong style={{ color: '#fbbf24' }}>• भदौ-असोज (दशैं-तिहार खर्च चक्र):</strong> चाडपर्वका कारण बैंकबाट नगद बाहिरिने हुँदा कारोबार सुस्त हुन्छ। यो बेला ब्रेकआउट खेल्दा फसिने सम्भावना धेरै हुन्छ।
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
           {/* TAB 1: WHEN TO BUY */}
           {activeTab === 'buy' && (
             <>
