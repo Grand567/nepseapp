@@ -24,6 +24,8 @@ import {
   normalizeCorporateActionPrices
 } from '../utils/quantEngine';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
+import { analyzePriceAction, analyzeCandlestickPattern, analyzeMarketStructure } from '../utils/priceActionEngine';
+
 import {
   getPaperState,
   executePaperBuy,
@@ -54,13 +56,42 @@ function synthesizeGuruQuantReport({
   const pe = Number(financials?.data?.pe || price.pe || (eps > 0 ? ltp / eps : 0));
   const rsi = Number(technical?.indicators?.rsi || 50);
 
+  // ── Candlestick & Market Structure Analysis ───────────────────────────────
+  // Use real OHLCV candles to detect pattern and market structure.
+  // These results are new — previously never surfaced in the Guru AI card.
+  let candlestickPattern = null;
+  let marketStructure = null;
+  let priceActionSummary = null;
+
+  if (Array.isArray(candles) && candles.length >= 5) {
+    try {
+      candlestickPattern = analyzeCandlestickPattern(candles);
+    } catch (_) {}
+    try {
+      marketStructure = analyzeMarketStructure(candles);
+    } catch (_) {}
+    try {
+      const rvolEst = volumeZ?.zScore ? Math.max(0.5, 1 + volumeZ.zScore * 0.3) : 1.0;
+      const paReport = analyzePriceAction(candles, rvolEst, atr);
+      priceActionSummary = paReport;
+    } catch (_) {}
+  }
+
   // Derive final recommendation based on quantitative convergence
   let rec = 'HOLD';
   let conf = 78;
   let riskLvl = 'MEDIUM';
   let sentiment = 'NEUTRAL';
 
-  if (zone.zone.includes('Buying') || (graham.marginOfSafetyPct > 15 && wyckoff.phase.includes('Spring'))) {
+  // Counter-Trend Bounce overrides confidence — never call it BUY
+  const isCounterTrendBounce = zone.zone === 'Counter-Trend Bounce';
+
+  if (isCounterTrendBounce) {
+    rec = 'AVOID / WAIT';
+    conf = 72;
+    riskLvl = 'HIGH';
+    sentiment = 'BEARISH';
+  } else if (zone.zone.includes('Buying') || (graham.marginOfSafetyPct > 15 && wyckoff.phase.includes('Spring'))) {
     rec = 'STRONG BUY';
     conf = 92;
     riskLvl = 'LOW';
@@ -87,6 +118,9 @@ function synthesizeGuruQuantReport({
   if (adi.trend) reasons.push(`Volume Flow: ${adi.trend}`);
   if (wyckoff.phase) reasons.push(`Wyckoff Cycle: ${wyckoff.phase} (${wyckoff.action})`);
   if (graham.valuationStatus) reasons.push(`Graham Intrinsic Value: Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% Margin of Safety)`);
+  if (candlestickPattern) reasons.push(`Last Candle: ${candlestickPattern.name} (${candlestickPattern.direction === 'bullish' ? '📈 Bullish' : candlestickPattern.direction === 'bearish' ? '📉 Bearish' : '➡️ Neutral'} · Strength: ${candlestickPattern.strength}/100) — ${candlestickPattern.description}`);
+  if (marketStructure) reasons.push(`Market Structure: ${marketStructure.description}`);
+  if (isCounterTrendBounce) reasons.push(`⚠️ Hard Trend Ceiling Active: Price is below 50 EMA — rallies into this zone are institutionally sold, not bought.`);
   if (rrr.isViable) reasons.push(`Favorable Risk-to-Reward Ratio: ${rrr.rrr}:1 (Reward exceeds risk)`);
   else reasons.push(`Momentum & Trend: ${zone.triggerLogic}`);
 
@@ -106,6 +140,10 @@ function synthesizeGuruQuantReport({
     sentiment,
     currentPrice: ltp,
     todayChange: pChg,
+    // Candlestick & Market Structure (NEW — previously missing entirely)
+    candlestickPattern,
+    marketStructure,
+    priceActionSummary,
     accumulationDistribution: {
       trend: adi.trend,
       wyckoffPhase: wyckoff.phase,
@@ -139,13 +177,16 @@ function synthesizeGuruQuantReport({
     analysis: `${symbol} is currently positioned in the ${zone.zone} with ${wyckoff.phase}. Quantitative analysis confirms ${adi.trend.toLowerCase()} at Rs. ${ltp}. Benjamin Graham valuation indicates an intrinsic baseline of Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% margin of safety). With an initial ATR swing target of ${targets.target1.label} against a capital risk floor of ${targets.stopLoss.label}, the calculated Risk-to-Reward ratio stands at ${rrr.rrr}:1.`,
     keyReasons: reasons,
     risks,
-    investmentTips: `Accumulate within ${targets.entryZone.label}. Place hard stop-loss at ${targets.stopLoss.label} and trail stops higher as targets are achieved.`,
+    investmentTips: isCounterTrendBounce
+      ? `Do NOT enter. Price is below the 50 EMA structural ceiling. Await a confirmed weekly close above EMA before any allocation.`
+      : `Accumulate within ${targets.entryZone.label}. Place hard stop-loss at ${targets.stopLoss.label} and trail stops higher as targets are achieved.`,
     nepseSpecific: `Keep circuit limits (±10%) in mind. In the Nepal market, volume spikes above 1.5x on flat price indicate silent institutional absorption prior to breakout notices.`,
     circuitMetrics: circuitMetrics || null,
     backtestResult: backtestResult || null,
     signalTriggers: signalTriggers || []
   };
 }
+
 
 // ── GURU AI PROMPTS ────────────────────────────────────────────
 function buildStockPrompt(symbol, stockData, technical, financials, marketData, quantMetrics) {

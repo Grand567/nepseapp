@@ -212,8 +212,8 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 ---
 
 ### 🎯 1. GURU AI OPERATIONAL ACTION ZONE: **${actionZone.zoneBadge}**
-• **Strategic Verdict**: ${actionZone.actionVerdict}
-• **Wyckoff Cycle Phase**: **${wyckoff.phase}** (${wyckoff.confidence}% Institutional Confidence)
+• **Strategic Verdict**: ${actionZone.zone} — ${actionZone.systematicStrategy}
+• **Wyckoff Cycle Phase**: **${wyckoff.phase}** (${wyckoff.action})
 • **Graham Intrinsic Value**: Rs. ${graham.grahamValue ? graham.grahamValue.toFixed(2) : 'N/A'} (Margin of Safety: ${graham.marginOfSafety ? graham.marginOfSafety.toFixed(1) + '%' : 'N/A'})
-• **Targets**: Target 1: Rs. ${targets.t1} | Target 2: Rs. ${targets.t2} | Stop-Loss: Rs. ${targets.stopLoss}`;
+• **Targets**: Target 1: Rs. ${targets.target1?.price ?? 'N/A'} (+${targets.target1?.pct ?? '—'}%) | Target 2: Rs. ${targets.target2?.price ?? 'N/A'} (+${targets.target2?.pct ?? '—'}%) | Stop-Loss: Rs. ${targets.stopLoss?.price ?? 'N/A'} (-${targets.stopLoss?.pct ?? '—'}%)`;
 }

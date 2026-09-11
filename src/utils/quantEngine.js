@@ -477,18 +477,49 @@ export function classifyActionZone(stock, macroContext = {}) {
   let profitTarget2 = '';
   let systematicStrategy = '';
 
-  // 1. ENTRY ZONE (Breakout Confirmation: MS > 0.65, Resistance Breach, Z_vol >= 1.5)
-  if (MS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99)) {
+  // ── EMA Structural Position (Physical Hard Gate) ─────────────────────────
+  // Read real ema50 / ema200 from the stock snapshot if available.
+  // These are passed from AiAnalyst.jsx when computing the zone for Guru AI.
+  const ema50 = Number(stock?.ema50 || stock?.sma50 || 0);
+  const ema200 = Number(stock?.ema200 || stock?.sma200 || 0);
+
+  // Determine structural position with 3-state logic: true / false / null (unknown)
+  const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
+  const isAbove200EMA = ema200 > 0 ? ltp >= ema200 : null;
+
+  // Hard Trend Ceiling: CONFIRMED below 50 EMA → cannot be a true breakout.
+  // Only fires when we have real EMA data (not the fallback 0.98x estimate).
+  const isConfirmedBearishStructure = isAbove50EMA === false;
+
+  // 1. ENTRY ZONE (True Breakout: MS > 0.55, Volume confirmed, AND price ABOVE 50 EMA)
+  if (MS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99) && !isConfirmedBearishStructure) {
     zone = 'Entry Zone';
     zoneColor = '#10B981';
     zoneBadge = '🚀 ENTRY ZONE (BREAKOUT)';
     zoneIcon = 'Zap';
-    triggerLogic = `MS Score (+${MS}) > 0.55 & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.`;
+    const emaNote = isAbove50EMA === true ? ` · Price is above 50 EMA (Rs. ${ema50.toFixed(1)}) confirming structural uptrend.` : '';
+    triggerLogic = `MS Score (+${MS}) > 0.55 & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.${emaNote}`;
     entryTarget = `Rs. ${ltp.toFixed(1)} – Rs. ${(ltp * 1.015).toFixed(1)} (Breakout Execution)`;
     profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
     profitTarget2 = `Rs. ${(r2).toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
     stopLoss = `Rs. ${(ltp - (1.2 * atr)).toFixed(1)} (-${(((1.2 * atr) / ltp) * 100).toFixed(1)}%)`;
     systematicStrategy = 'Execute market/limit buy orders as upward momentum expands with volume confirmation.';
+  }
+  // 1b. COUNTER-TREND BOUNCE (Price below 50 EMA but volume/MS temporarily positive)
+  // This catches the exact AHPC situation: single-day +2.96% bounce with RVOL > 1.25x
+  // but price trapped below structural moving averages.
+  else if (isConfirmedBearishStructure && MS > 0.20) {
+    zone = 'Counter-Trend Bounce';
+    zoneColor = '#f97316';
+    zoneBadge = '⚠️ COUNTER-TREND BOUNCE (RESISTANCE AHEAD)';
+    zoneIcon = 'ShieldAlert';
+    const resistanceNote = ema200 > 0 ? `Rs. ${ema200.toFixed(1)} (200 EMA)` : `Rs. ${r1.toFixed(1)} (R1 Pivot)`;
+    triggerLogic = `Price below 50 EMA (Rs. ${ema50 > 0 ? ema50.toFixed(1) : 'N/A'}) — bounce into overhead resistance. This is a bearish structure rally, NOT a confirmed breakout.`;
+    entryTarget = `Avoid Fresh Buys — Wait for confirmed close above 50 EMA (Rs. ${ema50 > 0 ? ema50.toFixed(1) : '?'})`;
+    profitTarget1 = `Resistance ceiling: ${resistanceNote}`;
+    profitTarget2 = `N/A — Exit on approach to EMA resistance`;
+    stopLoss = `Rs. ${(ltp - (1.0 * atr)).toFixed(1)} (Tight Stop — bearish structure)`;
+    systematicStrategy = `Do NOT buy this rally. Price is below the 50 EMA structural ceiling. Wait for a confirmed weekly close above Rs. ${ema50 > 0 ? ema50.toFixed(1) : 'the 50 EMA'} with expanding volume before considering any entry.`;
   }
   // 2. BUYING ZONE (Support Accumulation: MS in [0.20, 0.55], Near S1, Smart Money > 0.35)
   else if ((MS >= 0.15 && factors.iSmartMoney >= 0.30) || (rsi <= 38 && ltp <= s1 * 1.03)) {
@@ -661,7 +692,7 @@ export function calculateAccumulationDistributionIndex(candles = []) {
 export function calculateStealthAccumulationIndex(stock, brokerList = []) {
   const ltp = Number(stock?.ltp) || 100;
   const volume = Math.max(100, Number(stock?.volume) || 10000);
-  const priceHistory = Array.isArray(stock?.history) ? stock.history.map(h => h.close) : [ltp * 0.99, ltp, ltp * 1.005, ltp];
+  const priceHistory = Array.isArray(stock?.history) && stock.history.length > 0 ? stock.history.map(h => h.close) : [ltp * 0.99, ltp, ltp * 1.005, ltp];
 
   // Compute price volatility (standard deviation / mean)
   const meanPrice = priceHistory.reduce((a, b) => a + b, 0) / priceHistory.length;
