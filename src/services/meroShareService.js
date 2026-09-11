@@ -898,7 +898,6 @@ export async function fetchIpoCompanyList() {
   const ipoHeaders = {
     'Origin': 'https://iporesult.cdsc.com.np',
     'Referer': 'https://iporesult.cdsc.com.np/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*'
   };
 
@@ -934,28 +933,28 @@ export async function fetchIpoCompanyList() {
     } catch {}
   }
 
-  // If running on web with proxy server, try proxy fallback
-  if (!isNativeMobile) {
-    try {
-      const pRes = await fetch(`${getProxyBase()}/api/ipo-result/companies`);
-      if (pRes.ok) {
-        const pData = await pRes.json();
-        if (pData.success && Array.isArray(pData.data) && pData.data.length > 0) {
-          return pData.data.map(c => ({
-            id: String(c.id),
-            name: c.name,
-            scrip: c.scrip || '',
-            status: 'Alloted',
-            type: 'IPO (Result Published)'
-          }));
-        }
+  // Try proxy fallback if direct CDSC was blocked/timed out (works on both Native & Web)
+  try {
+    const pRes = await fetch(`${getProxyBase()}/api/ipo-result/companies`);
+    if (pRes.ok) {
+      const pData = await pRes.json();
+      if (pData.success && Array.isArray(pData.data) && pData.data.length > 0) {
+        return pData.data.map(c => ({
+          id: String(c.id),
+          name: c.name,
+          scrip: c.scrip || '',
+          status: 'Alloted',
+          type: 'IPO (Result Published)'
+        }));
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
-  // All CDSC direct endpoints failed — already tried proxy above, return empty
+  // If no live results from CDSC, return empty list (no mock data)
   return [];
 }
+
+
 
 
 // ─── Single BOID Allotment Check ───────────────────────────────────────────
@@ -978,7 +977,6 @@ export async function checkSingleBoidAllotment(companyShareId, boid) {
   const ipoHeaders = {
     'Origin': 'https://iporesult.cdsc.com.np',
     'Referer': 'https://iporesult.cdsc.com.np/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Content-Type': 'application/json'
   };
@@ -1062,6 +1060,7 @@ export async function checkSingleBoidAllotment(companyShareId, boid) {
 }
 
 // ─── Fetch Open IPOs from MeroShare ───────────────────────────────────────
+// ─── Fetch Open IPOs from MeroShare ───────────────────────────────────────
 export async function fetchOpenIpos(account = null) {
   let token = null;
   if (account && account.username && account.password) {
@@ -1070,14 +1069,19 @@ export async function fetchOpenIpos(account = null) {
   }
 
   if (token) {
+    const rawToken = token.trim().replace(/^Bearer\s+/i, '');
+    const authHeaders = {
+      'Authorization': `Bearer ${rawToken}`,
+      'Origin': 'https://meroshare.cdsc.com.np',
+      'Referer': 'https://meroshare.cdsc.com.np/'
+    };
+
+    // 1. Try companyShare/currentIssue
     try {
-      const rawToken = token.trim().replace(/^Bearer\s+/i, '');
       const res = await cdscRequest({
         url: `${MEROSHARE_BASE}/companyShare/currentIssue`,
         method: 'GET',
-        headers: {
-          'Authorization': rawToken
-        }
+        headers: authHeaders
       });
 
       if (res.ok && res.data) {
@@ -1099,43 +1103,99 @@ export async function fetchOpenIpos(account = null) {
         }
       }
     } catch (err) {
-      console.warn('[MeroShare] fetchOpenIpos error:', err.message);
+      console.warn('[MeroShare] fetchOpenIpos currentIssue error:', err.message);
     }
+
+    // 2. Try applicableIssue/open/
+    try {
+      const openRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/applicableIssue/open/`,
+        method: 'GET',
+        headers: authHeaders
+      });
+      if (openRes.ok && openRes.data) {
+        const issues = Array.isArray(openRes.data) ? openRes.data : (openRes.data.object || openRes.data.data || []);
+        if (Array.isArray(issues) && issues.length > 0) {
+          return issues.map(item => ({
+            id: String(item.companyShareId ?? item.id),
+            name: item.companyName || item.name || 'Unknown',
+            scrip: item.scrip || item.symbol || '',
+            type: item.shareTypeName || item.shareType || 'Ordinary (IPO)',
+            status: 'Open',
+            minKitta: item.minKitta || item.minUnits || 10,
+            maxKitta: item.maxKitta || item.maxUnits || 10000,
+            amountPerShare: item.amountPerShare || item.pricePerShare || 100,
+            openDate: item.issueOpenDate || '',
+            closeDate: item.issueCloseDate || '',
+            shareId: String(item.companyShareId ?? item.id)
+          }));
+        }
+      }
+    } catch (_) {}
   }
 
-  // Fallback: fetch from the same real proxy endpoint used by the Services tab Live IPO list
+  // Fallback: proxy endpoint (works on both Web and Native Mobile)
   try {
-    const pRes = await fetch(`${getProxyBase()}/api/ipo/live-listings`);
+    const pRes = await fetch(`${getProxyBase()}/api/ipo/live-listings?refresh=true`);
     if (pRes.ok) {
       const pData = await pRes.json();
-      const items = Array.isArray(pData) ? pData : (Array.isArray(pData?.data) ? pData.data : []);
-      const open = items.filter(i => i && i.status === 'Open');
-      if (open.length > 0) {
-        return open.map(item => ({
-          id: String(item.id),
+      const items = Array.isArray(pData?.data) ? pData.data : (Array.isArray(pData) ? pData : []);
+      const openItems = items.filter(item => item && (item.status === 'Open' || item.status === 'open'));
+      if (openItems.length > 0) {
+        return openItems.map(item => ({
+          id: String(item.id || item.companyShareId || ''),
+          shareId: String(item.id || item.companyShareId || ''),
+          companyShareId: String(item.id || item.companyShareId || ''),
           name: item.name || item.companyName || 'Unknown',
-          scrip: item.scrip || '',
+          scrip: item.scrip || item.stockSymbol || '',
           type: item.type || item.shareType || 'Ordinary (IPO)',
           status: 'Open',
-          minKitta: item.minKitta || 10,
-          maxKitta: item.maxKitta || 10000,
-          amountPerShare: item.issuePrice || 100,
-          openDate: item.openDate || '',
-          closeDate: item.closeDate || '',
-          shareId: String(item.id)
+          minKitta: Number(item.minKitta) || 10,
+          maxKitta: Number(item.maxUnits || item.maxKitta) || 10000,
+          amountPerShare: Number(item.issuePrice || item.pricePerUnit || item.amountPerShare || 100),
+          openDate: item.openDate || item.openingDateAD || '',
+          closeDate: item.closeDate || item.closingDateAD || ''
         }));
       }
     }
-  } catch (e) {
-    console.warn('[fetchOpenIpos] Live listings fallback failed:', e.message);
+  } catch (err) {
+    console.warn('[MeroShare] fetchOpenIpos proxy fallback error:', err.message);
   }
 
-  return []; // No open IPOs found — caller will show appropriate empty state
+  try {
+    const pRes2 = await fetch(`${getProxyBase()}/api/meroshare/ipos`);
+    if (pRes2.ok) {
+      const pData2 = await pRes2.json();
+      const items2 = Array.isArray(pData2?.data) ? pData2.data : (Array.isArray(pData2) ? pData2 : []);
+      const openItems2 = items2.filter(item => item && (item.status === 'Open' || item.status === 'open'));
+      if (openItems2.length > 0) {
+        return openItems2.map(item => ({
+          id: String(item.id || item.companyShareId || ''),
+          shareId: String(item.id || item.companyShareId || ''),
+          companyShareId: String(item.id || item.companyShareId || ''),
+          name: item.name || item.companyName || 'Unknown',
+          scrip: item.scrip || item.stockSymbol || '',
+          type: item.type || item.shareType || 'Ordinary (IPO)',
+          status: 'Open',
+          minKitta: Number(item.minKitta) || 10,
+          maxKitta: Number(item.maxKitta) || 10000,
+          amountPerShare: Number(item.amountPerShare || item.issuePrice || 100),
+          openDate: item.openDate || '',
+          closeDate: item.closeDate || ''
+        }));
+      }
+    }
+  } catch (_) {}
+
+  // If no live open issues from CDSC/MeroShare, return empty list (no mock data)
+  return [];
 }
+
 
 
 // ─── Check If BOID Has Already Applied ─────────────────────────────────────
 export async function checkBoidAlreadyApplied(account, companyShareId) {
+  const cleanCompanyShareId = Number(String(companyShareId || '').replace(/\D+/g, '')) || Number(companyShareId);
   const auth = await authenticateMeroShare(account);
   if (!auth.success) {
     return { success: false, applied: false, message: `Login failed: ${auth.messageEn}` };
@@ -1146,9 +1206,13 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
     const res = await cdscRequest({
       url: `${MEROSHARE_BASE}/applicantForm/active/search/`,
       method: 'POST',
-      headers: { 'Authorization': rawToken },
+      headers: { 
+        'Authorization': `Bearer ${rawToken}`,
+        'Origin': 'https://meroshare.cdsc.com.np',
+        'Referer': 'https://meroshare.cdsc.com.np/'
+      },
       data: {
-        companyShareId: Number(companyShareId),
+        companyShareId: cleanCompanyShareId,
         demat: account.boid
       }
     });
@@ -1171,12 +1235,20 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
 
 // ─── Direct C-ASBA IPO Apply ──────────────────────────────────────────────
 export async function applyIpoDirect(account, companyShareId, appliedKitta = 10) {
+  const cleanCompanyShareId = Number(String(companyShareId || '').replace(/\D+/g, '')) || Number(companyShareId);
   const auth = await authenticateMeroShare(account);
   if (!auth.success) {
-    return { success: false, message: `प्रमाणीकरण असफल (Auth Failed): ${auth.messageEn}` };
+    return { success: false, message: `प्रमाणीकरण असफल (Auth Failed): ${auth.messageEn || auth.messageNe || 'Invalid credentials'}` };
   }
 
   const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
+  const bearerToken = `Bearer ${rawToken}`;
+  const cdscHeaders = {
+    'Authorization': bearerToken,
+    'Origin': 'https://meroshare.cdsc.com.np',
+    'Referer': 'https://meroshare.cdsc.com.np/',
+    'Content-Type': 'application/json'
+  };
 
   try {
     // 1. Fetch user's registered C-ASBA bank details
@@ -1185,7 +1257,7 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       const bankRes = await cdscRequest({
         url: `${MEROSHARE_BASE}/bank/`,
         method: 'GET',
-        headers: { 'Authorization': rawToken }
+        headers: cdscHeaders
       });
       if (bankRes.ok && bankRes.data && Array.isArray(bankRes.data) && bankRes.data.length > 0) {
         bankInfo = bankRes.data[0];
@@ -1197,7 +1269,7 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
         const viewBankRes = await cdscRequest({
           url: `${MEROSHARE_VIEW_BASE}/bank/`,
           method: 'GET',
-          headers: { 'Authorization': rawToken }
+          headers: { ...cdscHeaders, 'Authorization': rawToken }
         });
         if (viewBankRes.ok && viewBankRes.data && Array.isArray(viewBankRes.data) && viewBankRes.data.length > 0) {
           bankInfo = viewBankRes.data[0];
@@ -1205,30 +1277,65 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       } catch {}
     }
 
-    // 2. Submit application
+    // 2. Fetch the ASBA applicable issue detail template (CRITICAL for CDSC!)
+    // CDSC requires customerId, shareGroupId, etc. from this template.
+    // Without this template, submitting to /applicantForm/ returns 403 Forbidden!
+    let template = null;
+    try {
+      const detailRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/applicableIssue/applicable/detail/${cleanCompanyShareId}`,
+        method: 'GET',
+        headers: cdscHeaders
+      });
+      if (detailRes.ok && detailRes.data) {
+        template = detailRes.data;
+      }
+    } catch (err) {
+      console.warn('[applyIpoDirect] applicable/detail fetch error:', err.message);
+    }
+
+    if (!template) {
+      try {
+        const viewDetailRes = await cdscRequest({
+          url: `${MEROSHARE_VIEW_BASE}/applicableIssue/applicable/detail/${cleanCompanyShareId}`,
+          method: 'GET',
+          headers: { ...cdscHeaders, 'Authorization': rawToken }
+        });
+        if (viewDetailRes.ok && viewDetailRes.data) {
+          template = viewDetailRes.data;
+        }
+      } catch {}
+    }
+
+    // 3. Construct submission payload
     const applyPayload = {
-      accountBranchId: Number(bankInfo?.accountBranchId || bankInfo?.branchId || 1),
-      accountNumber: String(bankInfo?.accountNumber || '').trim(),
+      ...(template || {}),
+      accountBranchId: Number(template?.accountBranchId || bankInfo?.accountBranchId || bankInfo?.branchId || 1),
+      accountNumber: String(template?.accountNumber || bankInfo?.accountNumber || '').trim(),
       appliedKitta: Number(appliedKitta),
-      boid: String(account.boid).trim(),
-      companyShareId: Number(companyShareId),
+      boid: String(account.boid || template?.boid || template?.demat || '').trim(),
+      companyShareId: cleanCompanyShareId,
       crnNumber: String(account.crn || '').trim(),
-      demat: String(account.boid).trim(),
+      demat: String(account.boid || template?.boid || template?.demat || '').trim(),
       transactionPin: String(account.pin || '').trim()
     };
 
+    // 4. Submit application
     let applyRes = await cdscRequest({
       url: `${MEROSHARE_BASE}/applicantForm/`,
       method: 'POST',
-      headers: { 'Authorization': rawToken },
+      headers: cdscHeaders,
       data: applyPayload
     });
 
-    if (applyRes.status === 401) {
+    if (applyRes.status === 401 || applyRes.status === 403) {
       applyRes = await cdscRequest({
         url: `${MEROSHARE_BASE}/applicantForm/`,
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${rawToken}` },
+        headers: {
+          ...cdscHeaders,
+          'Authorization': rawToken
+        },
         data: applyPayload
       });
     }
@@ -1237,13 +1344,17 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       const msg = applyRes.data.message || 'Share applied successfully (शेयर सफलतापूर्वक आवेदन भयो)!';
       return { success: true, message: msg };
     } else {
-      const errMsg = applyRes.data?.message || applyRes.data?.error || `CDSC rejected application (Status: ${applyRes.status})`;
-      return { success: false, message: errMsg };
+      let errMsg = applyRes.data?.message || applyRes.data?.error || applyRes.text;
+      if (applyRes.status === 403) {
+        errMsg = errMsg || 'CDSC Status 403: यो शेयर निष्कासन यस खाताको लागि खुला छैन वा पहिले नै आवेदन दिइसकिएको छ (Issue is closed, not open for this BOID, or already applied).';
+      }
+      return { success: false, message: errMsg || `CDSC rejected application (Status: ${applyRes.status})` };
     }
   } catch (err) {
     return { success: false, message: err.message || 'Network error during ASBA application' };
   }
 }
+
 
 // ─── IPO Allotment Result Checker ─────────────────────────────────────────
 export async function checkBulkIpoResults(

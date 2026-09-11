@@ -5,7 +5,7 @@ import {
   Search, Users, Coins, Calendar, Sparkles, ShieldAlert
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
 
 // Same key as AccountManager
@@ -33,13 +33,12 @@ async function safeFetch(url, options = {}) {
   let json;
   try { json = JSON.parse(text); } catch (_) {
     if (!res.ok) throw new Error(`Server error ${res.status}`);
-    throw new Error(`Non-JSON response (${res.status})`);
+    return text;
   }
-  if (!res.ok) throw new Error(json.message || `Request failed ${res.status}`);
   return json;
 }
 
-// Direct CDSC IPO list fetch (native Android)
+// Direct CDSC IPO list fetch (native Android via CapacitorHttp)
 async function fetchIposDirectly(account) {
   if (!account) return [];
 
@@ -58,47 +57,51 @@ async function fetchIposDirectly(account) {
 
   if (clientId === 101) {
     try {
-      const dpRes = await fetch(`${MEROSHARE_BASE}/capital/`);
-      if (dpRes.ok) {
-        const dpData = await dpRes.json();
-        if (Array.isArray(dpData)) {
-          const fullPrefix = boidStr.substring(0, 8);
-          const shortPrefix = boidStr.substring(3, 8);
-          const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix || (dp.code && dp.code.includes(shortPrefix)));
-          if (match) clientId = match.id;
-        }
+      const dpRes = await CapacitorHttp.request({
+        url: `${MEROSHARE_BASE}/capital/`,
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+      });
+      const dpData = typeof dpRes.data === 'string' ? JSON.parse(dpRes.data) : dpRes.data;
+      if (Array.isArray(dpData)) {
+        const fullPrefix = boidStr.substring(0, 8);
+        const shortPrefix = boidStr.substring(3, 8);
+        const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix || (dp.code && dp.code.includes(shortPrefix)));
+        if (match) clientId = match.id;
       }
     } catch (_) {}
   }
 
-  // 2. Login
-  const loginRes = await fetch(`${MEROSHARE_BASE}/auth/`, {
+  // 2. Login via native OkHttp (preserves custom Origin and Referer)
+  const loginRes = await CapacitorHttp.request({
+    url: `${MEROSHARE_BASE}/auth/`,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Origin': 'https://meroshare.cdsc.com.np',
       'Referer': 'https://meroshare.cdsc.com.np/',
     },
-    body: JSON.stringify({
+    data: {
       clientId: Number(clientId),
       username: account.username,
       password: account.password,
-    }),
+    },
   });
 
-  if (!loginRes.ok) {
-    const err = await loginRes.json().catch(() => ({}));
-    throw new Error(err.message || `Login failed (${loginRes.status})`);
+  const loginData = typeof loginRes.data === 'string' ? JSON.parse(loginRes.data) : loginRes.data;
+  if (loginRes.status < 200 || loginRes.status >= 300) {
+    throw new Error(loginData?.message || `Login failed (${loginRes.status})`);
   }
 
-  const loginData = await loginRes.json();
-  const authKey = [...loginRes.headers.keys()].find(k => k.toLowerCase() === 'authorization');
-  let token = loginData.token || loginData.accessToken || (authKey ? loginRes.headers.get(authKey) : null);
+  const authKey = Object.keys(loginRes.headers || {}).find(k => k.toLowerCase() === 'authorization');
+  let token = loginData?.token || loginData?.accessToken || (authKey ? loginRes.headers[authKey] : null);
   if (token && !token.startsWith('Bearer ')) token = `Bearer ${token}`;
   if (!token) throw new Error('Authentication succeeded but no token received.');
 
-  // 3. Fetch current issues
-  const issuesRes = await fetch(`${MEROSHARE_BASE}/companyShare/currentIssue`, {
+  // 3. Fetch current issues via native OkHttp
+  const issuesRes = await CapacitorHttp.request({
+    url: `${MEROSHARE_BASE}/companyShare/currentIssue`,
+    method: 'GET',
     headers: {
       'Authorization': token,
       'Origin': 'https://meroshare.cdsc.com.np',
@@ -106,8 +109,8 @@ async function fetchIposDirectly(account) {
     },
   });
 
-  if (!issuesRes.ok) throw new Error(`Failed to fetch IPOs (${issuesRes.status})`);
-  const issuesData = await issuesRes.json();
+  if (issuesRes.status < 200 || issuesRes.status >= 300) throw new Error(`Failed to fetch IPOs (${issuesRes.status})`);
+  const issuesData = typeof issuesRes.data === 'string' ? JSON.parse(issuesRes.data) : issuesRes.data;
 
   return (Array.isArray(issuesData) ? issuesData : []).map(item => ({
     id: item.companyShareId,

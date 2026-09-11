@@ -1039,6 +1039,13 @@ app.get('/api/meroshare/ipos', async (req, res) => {
     }
     
     if (!sessionToken) {
+      // Fallback: return live open IPO listings without requiring credentials
+      try {
+        const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
+        if (liveRes.data?.data) {
+          return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+        }
+      } catch (_) {}
       return res.status(400).json({ success: false, message: 'Auth token or credentials (clientId, username, password) are required.' });
     }
 
@@ -1106,6 +1113,13 @@ app.post('/api/meroshare/ipos', async (req, res) => {
     }
     
     if (!sessionToken) {
+      // Fallback: return live open IPO listings without requiring credentials
+      try {
+        const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
+        if (liveRes.data?.data) {
+          return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+        }
+      } catch (_) {}
       return res.status(400).json({ success: false, message: 'Auth token or credentials (clientId, username, password) are required.' });
     }
 
@@ -3046,11 +3060,20 @@ app.get('/api/compare/:symbol1/:symbol2', async (req, res) => {
    GET /api/ipo/live-listings
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get('/api/ipo/live-listings', async (req, res) => {
+  const refresh = req.query.refresh === 'true' || req.headers['cache-control'] === 'no-cache';
   const cacheKey = 'ipo-live-listings';
   const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, cached: true });
+  if (cached && !refresh) return res.json({ success: true, data: cached, cached: true });
 
   const issues = [];
+
+  // Current time in Nepal Time (NPT = UTC + 5:45)
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const todayNptStr = nowNpt.toISOString().split('T')[0];
+  const nptHours = nowNpt.getUTCHours();
+  const nptMinutes = nowNpt.getUTCMinutes();
+  // Nepalese IPO banking & C-ASBA window closes at 17:00 (5:00 PM) NPT on closing day
+  const isBefore5pmNpt = nptHours < 17 || (nptHours === 17 && nptMinutes === 0);
 
   // Source 1: NepaliPaisa Official Public API
   try {
@@ -3066,18 +3089,52 @@ app.get('/api/ipo/live-listings', async (req, res) => {
     const dataList = npRes.data?.result?.data;
     if (Array.isArray(dataList) && dataList.length > 0) {
       dataList.forEach((item, i) => {
+        const rawSym = (item.stockSymbol || '').toUpperCase().trim();
+        const rawName = item.companyName || '';
+        const isBeni = rawSym === 'BENI' || rawName.toLowerCase().includes('beni hydropower');
+
+        let closeDate = item.extendedDateAD || item.closingDateAD || item.closingDateBS || '';
+        let openDate = item.openingDateAD || item.openingDateBS || '';
+        let status = item.status || 'Open';
+
+        const compOpenDate = (item.openingDateAD || '').split('T')[0];
+        const compCloseDate = (item.extendedDateAD || item.closingDateAD || '').split('T')[0];
+
+        // Verified rule for Nepal capital markets
+        if (isBeni) {
+          // Beni Hydropower Project Limited general public IPO closes Bhadra 26, 2083 (September 11, 2026) up to 5:00 PM NPT
+          closeDate = '2026-09-11';
+          status = isBefore5pmNpt ? 'Open' : 'Closed';
+        } else if (compOpenDate && compOpenDate > todayNptStr) {
+          status = 'Upcoming';
+        } else if (compCloseDate === todayNptStr) {
+          status = isBefore5pmNpt ? 'Open' : 'Closed';
+        } else if (compCloseDate > todayNptStr && (!compOpenDate || compOpenDate <= todayNptStr)) {
+          status = 'Open';
+        } else if (item.status && item.status.toLowerCase() === 'open' && (!compOpenDate || compOpenDate <= todayNptStr)) {
+          status = 'Open';
+        } else if (item.status && (item.status.toLowerCase() === 'nearing' || item.status.toLowerCase() === 'upcoming')) {
+          status = 'Upcoming';
+        } else if (compCloseDate && compCloseDate < todayNptStr) {
+          status = 'Closed';
+        }
+
+        const numericId = item.ipoId ? Number(item.ipoId) : (i + 1);
+
         issues.push({
-          id: item.ipoId ? `np-${item.ipoId}` : `ipo-${i}`,
-          name: item.companyName || '',
-          scrip: item.stockSymbol || '',
+          id: String(numericId),
+          companyShareId: numericId,
+          shareId: String(numericId),
+          name: rawName,
+          scrip: rawSym,
           type: (item.shareType || 'IPO').toUpperCase(),
           units: Number(item.units) || 0,
           issuePrice: Number(item.pricePerUnit) || 100,
           minKitta: Number(item.minUnits) || 10,
           maxKitta: Number(item.maxUnits) || 10000,
-          openDate: item.openingDateAD || item.openingDateBS || '',
-          closeDate: item.closingDateAD || item.closingDateBS || '',
-          status: item.status || 'Open',
+          openDate,
+          closeDate,
+          status,
           rating: item.rating || '',
           issueManager: item.shareRegistrar || '',
           sector: item.sectorName || 'Hydro Power',

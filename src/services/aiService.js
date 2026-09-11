@@ -19,7 +19,8 @@ import {
 
 const PROXY_BASE = import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
 
-export const DEFAULT_AI_KEY = (import.meta.env.VITE_GLM_API_KEY || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r').trim();
+export const DEFAULT_AI_KEY = (import.meta.env.VITE_GLM_API_KEY || '').trim();
+export const DEFAULT_OPENROUTER_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY || '').trim();
 
 export const GURU_AI_SYSTEM_PROMPT = `You are NEPSE GURU, the institutional quantitative analyst, political-macro economist, and Smart Money momentum engine for the Nepal Stock Exchange (NEPSE).
 Empower Nepali retail and institutional investors with quantitative precision using the 5 Operational Action Zones & Graham Valuation Model.`;
@@ -31,10 +32,11 @@ Empower Nepali retail and institutional investors with quantitative precision us
 export async function callGuruAI(prompt, analysisType = 'stock', options = {}) {
   const apiKey = options.apiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : '');
   const glmApiKey = options.glmApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
+  const openrouterApiKey = options.openrouterApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_openrouter_api_key') || localStorage.getItem('openrouter_api_key') || '') : '') || DEFAULT_OPENROUTER_KEY;
   const res = await fetch(`${PROXY_BASE}/api/guru/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, analysisType, apiKey, glmApiKey }),
+    body: JSON.stringify({ prompt, analysisType, apiKey, glmApiKey, openrouterApiKey }),
     signal: AbortSignal.timeout(60000)
   });
 
@@ -62,8 +64,17 @@ export async function callGuruPortfolio(holdings, riskProfile = 'moderate') {
   return res.json();
 }
 
-export async function callGuruMarketOutlook() {
-  const res = await fetch(`${PROXY_BASE}/api/guru/market-outlook`, {
+export async function callGuruMarketOutlook(options = {}) {
+  const apiKey = options.apiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : '');
+  const glmApiKey = options.glmApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
+  const openrouterApiKey = options.openrouterApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_openrouter_api_key') || localStorage.getItem('openrouter_api_key') || '') : '') || DEFAULT_OPENROUTER_KEY;
+
+  const url = new URL(`${PROXY_BASE}/api/guru/market-outlook`);
+  if (openrouterApiKey) url.searchParams.set('openrouterApiKey', openrouterApiKey);
+  if (apiKey) url.searchParams.set('apiKey', apiKey);
+  if (glmApiKey) url.searchParams.set('glmApiKey', glmApiKey);
+
+  const res = await fetch(url.toString(), {
     signal: AbortSignal.timeout(60000)
   });
 
@@ -75,11 +86,15 @@ export async function callGuruMarketOutlook() {
   return res.json();
 }
 
-export async function callGuruStockAnalysis(symbol, userQuestion = '') {
+export async function callGuruStockAnalysis(symbol, userQuestion = '', options = {}) {
+  const apiKey = options.apiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : '');
+  const glmApiKey = options.glmApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || '') : '') || DEFAULT_AI_KEY;
+  const openrouterApiKey = options.openrouterApiKey || (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_openrouter_api_key') || localStorage.getItem('openrouter_api_key') || '') : '') || DEFAULT_OPENROUTER_KEY;
+
   const res = await fetch(`${PROXY_BASE}/api/guru/stock-analysis`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol, userQuestion }),
+    body: JSON.stringify({ symbol, userQuestion, apiKey, glmApiKey, openrouterApiKey }),
     signal: AbortSignal.timeout(60000)
   });
 

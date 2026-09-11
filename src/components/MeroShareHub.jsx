@@ -16,35 +16,10 @@ import {
   checkBoidAlreadyApplied,
   applyIpoDirect
 } from '../services/meroShareService';
-import { checkIpoAllotmentMock, generateMockDematPortfolio } from '../utils/mockData';
 import { getProxyBase } from '../utils/liveData';
 import { sanitizeMeroShareHoldings, guessScripBasePrice } from '../utils/calculations';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
-
-// Mock function to simulate IPO application
-function applyIpoMock(companyShareId, boid) {
-  const isAllotted = Math.random() < 0.6;
-  return new Promise(resolve => {
-    setTimeout(() => {
-      if (isAllotted) {
-        resolve({
-          success: true,
-          status: 'Allotted',
-          units: 10,
-          message: `BOID ${boid} successfully applied for IPO ${companyShareId}`
-        });
-      } else {
-        resolve({
-          success: true,
-          status: 'Not Allotted',
-          units: 0,
-          message: `BOID ${boid} applied for IPO ${companyShareId} but was not allotted`
-        });
-      }
-    }, 500);
-  });
-}
 
 const formatRs = (value) => {
   const num = Number(value);
@@ -382,12 +357,39 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       // 2. Fetch live currently open issues for apply
       const primaryProfile = profiles.length > 0 ? profiles[0] : null;
-      const liveOpenList = await fetchOpenIpos(primaryProfile);
+      let liveOpenList = await fetchOpenIpos(primaryProfile);
 
-      const allCompanies = [...liveOpenList, ...liveAllottedList];
+      // Defense in depth: if liveOpenList is empty, fetch directly from live-listings
+      if (!liveOpenList || liveOpenList.length === 0) {
+        try {
+          const res = await fetch(`${getProxyBase()}/api/ipo/live-listings?refresh=true`);
+          if (res.ok) {
+            const json = await res.json();
+            const items = Array.isArray(json?.data) ? json.data : [];
+            liveOpenList = items
+              .filter(i => i && (i.status === 'Open' || i.status === 'open'))
+              .map(i => ({
+                id: String(i.id || i.companyShareId || ''),
+                shareId: String(i.id || i.companyShareId || ''),
+                companyShareId: String(i.id || i.companyShareId || ''),
+                name: i.name || i.companyName,
+                scrip: i.scrip || '',
+                type: i.type || 'Ordinary (IPO)',
+                status: 'Open',
+                minKitta: Number(i.minKitta) || 10,
+                maxKitta: Number(i.maxKitta) || 10000,
+                amountPerShare: Number(i.issuePrice || i.amountPerShare) || 100,
+                openDate: i.openDate || '',
+                closeDate: i.closeDate || ''
+              }));
+          }
+        } catch (_) {}
+      }
+
+      const allCompanies = [...(liveOpenList || []), ...(liveAllottedList || [])];
       setIpoCompanies(allCompanies);
 
-      if (allCompanies.length > 0 && !selectedIpo) {
+      if (allCompanies.length > 0) {
         if (ipoSubTab === 'apply') {
           const firstOpen = allCompanies.find(i => i.status === 'Open') || allCompanies[0];
           setSelectedIpo(String(firstOpen.id));
@@ -399,7 +401,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       }
     } catch (e) {
       console.warn("Failed to load live CDSC IPOs:", e);
-      setIpoLoadError('Could not load live IPO list from CDSC. You can select sample issues or enter ID manually.');
+      setIpoLoadError('Could not load live IPO list.');
     } finally {
       setIsLoadingIpos(false);
     }
@@ -426,7 +428,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     if (activeSubTab === 'ipo') {
       loadIpoCompanies().catch(() => {});
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, profiles.length]);
+
 
   // Auto-fetch portfolio when switching to portfolio tab for a profile with no holdings
   useEffect(() => {
@@ -897,8 +900,13 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     }
 
     const activeIpo = getActiveIpo();
-    if (!activeIpo || activeIpo.name === 'Loading...' || activeIpo.status !== 'Open') {
-      showToast('Please select an open IPO issue to apply.', 'error');
+    if (!activeIpo || !String(activeIpo.id || selectedIpo || '').trim()) {
+      showToast('Please select an IPO issue to apply.', 'error');
+      return;
+    }
+    // Only block on status if we actually loaded the live list
+    if (ipoCompanies.length > 0 && activeIpo.status && activeIpo.status !== 'Open') {
+      showToast('Selected IPO is not currently open for applications.', 'error');
       return;
     }
 
@@ -931,7 +939,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Authenticating & Submitting C-ASBA...' }
       ]);
 
-      const res = await applyIpoDirect(profile, selectedIpo, totalKitta);
+      const targetCompanyId = String(activeIpo.id || selectedIpo || '').trim();
+      const res = await applyIpoDirect(profile, targetCompanyId, totalKitta);
       if (res.success) successCount++;
       else failCount++;
 
@@ -1061,7 +1070,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           clientId,
           username: profile.username,
           password: profile.password,
-          companyShareId: Number(selectedIpo),
+          companyShareId: Number(String(selectedIpo).replace(/\D+/g, '')) || Number(selectedIpo),
           appliedKitta: Number(customAppliedKitta),
           crnNumber: profile.crn,
           transactionPin: profile.pin,

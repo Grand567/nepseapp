@@ -103,7 +103,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
   }
 };
 
-export const fetchLiveStocks = () => _proxyFetch('/api/mero/market-summary', {}, 15000);
+export const fetchLiveStocks = () => _proxyFetch('/api/market-summary', {}, 15000);
 export const fetchFullIndex = () => _proxyFetch('/api/nepse/full-index', {}, 30000);
 export const fetchMarketIndices = () => _proxyFetch('/api/market-indices', {}, 30000);
 export const fetchTodayPrices = () => _proxyFetch('/api/today-prices', {}, 30000);
@@ -116,69 +116,6 @@ export const fetchFloorsheet = (symbol, page, size, date) => {
 };
 
 export const fetchPriceHistory = (symbol, length) => _proxyFetch('/api/price-history/' + symbol + '?length=' + (length || 365), {}, 7200000);
-
-/**
- * Synthesizes an authentic 11:00 AM to 3:00 PM (48 5-min intervals) intraday timeline
- * from a session candle's open, high, low, close, and volume.
- */
-export function synthesizeIntradaySession(ohlc, targetDateStr = null) {
-  const open = Number(ohlc?.open || ohlc?.close || 100);
-  const high = Math.max(open, Number(ohlc?.high || open));
-  const low = Math.min(open, Number(ohlc?.low || open));
-  const close = Number(ohlc?.close || open);
-  const totalVol = Number(ohlc?.volume || 10000);
-
-  // Determine session date in UTC
-  let sessionYear = 2026, sessionMonth = 8, sessionDay = 7; // Default Sep 7, 2026
-  if (targetDateStr) {
-    const parts = String(targetDateStr).split(/[-T\s]/);
-    if (parts.length >= 3) {
-      sessionYear = parseInt(parts[0], 10) || sessionYear;
-      sessionMonth = (parseInt(parts[1], 10) - 1) || sessionMonth;
-      sessionDay = parseInt(parts[2], 10) || sessionDay;
-    }
-  }
-
-  const points = [];
-  const totalIntervals = 48; // 11:00 AM to 3:00 PM (4 hours = 240 mins / 5 mins = 48 intervals)
-  
-  // Seeded progression curve matching open, high, low, close
-  for (let i = 0; i <= totalIntervals; i++) {
-    const totalMinutes = 11 * 60 + i * 5; // from 11:00 (660 mins) to 15:00 (900 mins)
-    const hrs = Math.floor(totalMinutes / 60);
-    const mins = totalMinutes % 60;
-    const ampm = hrs >= 12 ? 'PM' : 'AM';
-    const h12 = hrs % 12 || 12;
-    const timeStr = `${h12}:${String(mins).padStart(2, '0')} ${ampm}`;
-
-    // Timestamp representing Nepal Time (+05:45 from UTC):
-    // When shifted by NPT_OFFSET_SEC (20700s), its UTC time matches the Nepal hour
-    const ts = Math.floor(Date.UTC(sessionYear, sessionMonth, sessionDay, hrs, mins, 0) / 1000);
-
-    const progress = i / totalIntervals;
-    // Multi-harmonic natural price wave
-    const wave = Math.sin(progress * Math.PI) * 0.7 + Math.sin(progress * Math.PI * 3.5) * 0.3;
-    const priceRange = high - low || open * 0.02;
-    let pointVal = open + (close - open) * progress + wave * (priceRange * 0.35);
-    pointVal = Math.max(low, Math.min(high, pointVal));
-    if (i === 0) pointVal = open;
-    if (i === totalIntervals) pointVal = close;
-
-    const intervalVol = Math.round((totalVol / totalIntervals) * (0.6 + Math.random() * 0.8));
-
-    points.push({
-      time: timeStr,
-      timestamp: ts,
-      open: +pointVal.toFixed(2),
-      high: +Math.min(high, pointVal * 1.002).toFixed(2),
-      low: +Math.max(low, pointVal * 0.998).toFixed(2),
-      close: +pointVal.toFixed(2),
-      volume: intervalVol
-    });
-  }
-
-  return points;
-}
 
 export const fetchNepseIntradayGraph = async (symbol) => {
   const sym = (!symbol || symbol === 'NEPSE Index' || symbol === 'nepse' || symbol === 'NEPSE')
@@ -229,55 +166,30 @@ export const fetchNepseIntradayGraph = async (symbol) => {
     } catch (_) {}
   }
 
-  // Tier 3: If still empty, adapt NEPSE index intraday shape to the stock's last session price
-  if (sym !== 'NEPSE') {
-    try {
-      const nepseIntraday = await _proxyFetch('/api/nepse/intraday-graph', {}, 60000);
-      if (nepseIntraday && Array.isArray(nepseIntraday) && nepseIntraday.length > 0) {
-        const hist = await fetchPriceHistory(sym, 5);
-        if (hist && Array.isArray(hist) && hist.length > 0) {
-          const lastCandle = hist[hist.length - 1];
-          const basePrice = Number(lastCandle.close || lastCandle.ltp || 100);
-          const nepseStart = Number(nepseIntraday[0].close || 2500);
-          return nepseIntraday.map(pt => {
-            const ratio = nepseStart > 0 ? (Number(pt.close) / nepseStart) : 1;
-            const scaledPrice = +(basePrice * ratio).toFixed(2);
-            return {
-              time: pt.time,
-              timestamp: pt.timestamp,
-              open: scaledPrice,
-              high: scaledPrice,
-              low: scaledPrice,
-              close: scaledPrice,
-              volume: Number(pt.volume || 0)
-            };
-          });
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Tier 4: Resilient Session Synthesis fallback (guarantees 1D never breaks or shows a single candle)
-  try {
-    const hist = await fetchPriceHistory(sym, 5);
-    if (hist && Array.isArray(hist) && hist.length > 0) {
-      const latest = hist[hist.length - 1];
-      return synthesizeIntradaySession(latest, latest.date || latest.time);
-    }
-  } catch (_) {}
-
   return null;
 };
 
+
 export const fetchIPOListings = async () => {
-  const res = await _proxyFetch('/api/ipo/live-listings', {}, 1800000);
-  const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+  let list = [];
+  try {
+    const res = await _proxyFetch('/api/ipo/live-listings', {}, 300000);
+    list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+  } catch (_) {}
+
+  if (list.length === 0) {
+    try {
+      const res2 = await _proxyFetch('/api/meroshare/ipos', {}, 300000);
+      list = Array.isArray(res2) ? res2 : (Array.isArray(res2?.data) ? res2.data : []);
+    } catch (_) {}
+  }
+
   return list.map(item => ({
     ...item,
     companyName: item.name || item.companyName || item.scrip || '—',
     shareType: item.type || item.shareType || 'IPO',
     issuePrice: item.issuePrice || item.price || 100,
-    status: item.status || 'Active',
+    status: item.status || 'Open',
     units: item.units,
     openDate: item.openDate,
     closeDate: item.closeDate,
