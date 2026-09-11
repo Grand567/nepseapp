@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
+import { getHydroSeasonality } from '../utils/quantEngine';
+
 
 export default function PredictorHub({
   stocks = [],
@@ -107,9 +109,20 @@ export default function PredictorHub({
       if (isAbove200EMA === true) score += 5;
       if (isAbove200EMA === false) score -= 8;
 
+      // ── Hydro Dry Season Seasonality ─────────────────────────────────────
+      const hydroSeason = getHydroSeasonality(s.sector || s.sectorName || '');
+      if (hydroSeason.isHydro && hydroSeason.isDrySeason) {
+        score += hydroSeason.penaltyPoints; // e.g. -10 to -18 points
+      }
+
       // ── Apply Hard Trend Ceiling ──────────────────────────────────────────
       const rawScore = Math.max(10, Math.min(98, Math.round(score)));
-      const compositeScore = hardCeilingApplied ? Math.min(48, rawScore) : rawScore;
+      let compositeScore = hardCeilingApplied ? Math.min(48, rawScore) : rawScore;
+
+      // Deep dry season hydro stocks are also capped at 55 to prevent speculative traps
+      if (hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15) {
+        compositeScore = Math.min(55, compositeScore);
+      }
 
       // ── Reasoning (physically accurate) ──────────────────────────────────
       let reasoning = '';
@@ -119,6 +132,10 @@ export default function PredictorHub({
         trendWarning = `⚠️ Price below 50 EMA (Rs. ${ema50.toFixed(1)}) — counter-trend bounce, not a breakout. `;
       } else if (isAbove50EMA === null) {
         trendWarning = `ℹ️ EMA data pending — load stock detail for full analysis. `;
+      }
+
+      if (hydroSeason.isHydro && hydroSeason.isDrySeason) {
+        trendWarning += `❄️ [${hydroSeason.seasonLabel}]: RoR generation at winter low. `;
       }
 
       if (compositeScore >= 70) reasoning = `${trendWarning}Strong volume expansion (${vsr.toFixed(1)}x) with multi-factor momentum alignment above moving averages.`;
@@ -141,6 +158,7 @@ export default function PredictorHub({
         isAbove50EMA,
         isAbove200EMA,
         hardCeilingApplied,
+        hydroSeason,
         float_risk_flag: (Number(s.sharesOut) > 0 && Number(s.sharesOut) < 3) ? 'low_float' : 'normal',
         corporate_action_flag: Number(s.dividendYield || 0) > 5 ? 'dividend_announced' : null,
         composite_score: compositeScore,

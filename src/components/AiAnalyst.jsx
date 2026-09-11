@@ -21,10 +21,14 @@ import {
   calculateATR,
   calculateVolumeZScore,
   calculateCircuitAndLiquidityMetrics,
-  normalizeCorporateActionPrices
+  normalizeCorporateActionPrices,
+  calculateBrokerAccumulationScore,
+  getHydroSeasonality
 } from '../utils/quantEngine';
+import { fetchBrokerAnalysis } from '../utils/servicesApi';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
 import { analyzePriceAction, analyzeCandlestickPattern, analyzeMarketStructure } from '../utils/priceActionEngine';
+
 
 import {
   getPaperState,
@@ -46,7 +50,7 @@ const PROXY = getProxyBase();
 // ── QUANTITATIVE REPORT SYNTHESIZER ──────────────────────────────
 function synthesizeGuruQuantReport({
   symbol, price, technical, financials, candles, adi, wyckoff, graham, atr, targets, zone, rrr, volumeZ, marketData,
-  circuitMetrics, backtestResult, signalTriggers
+  circuitMetrics, backtestResult, signalTriggers, brokerAnalysis = null
 }) {
   const ltp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 100);
   const pChg = Number(price.percentageChange || price.pChange || 0);
@@ -83,13 +87,25 @@ function synthesizeGuruQuantReport({
   let riskLvl = 'MEDIUM';
   let sentiment = 'NEUTRAL';
 
-  // Counter-Trend Bounce overrides confidence — never call it BUY
+  // Hard gates: Counter-Trend Bounce, Hydro Dry Season, or Broker Dumping override bullish signals
   const isCounterTrendBounce = zone.zone === 'Counter-Trend Bounce';
+  const isSeasonalityCaution = zone.zone === 'Seasonality Caution';
+  const hasHeavyBrokerDumping = zone.brokerScore?.adSignal === 'Distribution' && (zone.brokerScore?.adStrength >= 40 || zone.brokerScore?.scoreDelta <= -15);
 
   if (isCounterTrendBounce) {
     rec = 'AVOID / WAIT';
     conf = 72;
     riskLvl = 'HIGH';
+    sentiment = 'BEARISH';
+  } else if (isSeasonalityCaution) {
+    rec = 'AVOID (WINTER HYDROLOGY)';
+    conf = 74;
+    riskLvl = 'HIGH';
+    sentiment = 'BEARISH';
+  } else if (hasHeavyBrokerDumping) {
+    rec = 'REDUCE / SMART MONEY EXIT';
+    conf = 86;
+    riskLvl = 'VERY_HIGH';
     sentiment = 'BEARISH';
   } else if (zone.zone.includes('Buying') || (graham.marginOfSafetyPct > 15 && wyckoff.phase.includes('Spring'))) {
     rec = 'STRONG BUY';
@@ -118,9 +134,24 @@ function synthesizeGuruQuantReport({
   if (adi.trend) reasons.push(`Volume Flow: ${adi.trend}`);
   if (wyckoff.phase) reasons.push(`Wyckoff Cycle: ${wyckoff.phase} (${wyckoff.action})`);
   if (graham.valuationStatus) reasons.push(`Graham Intrinsic Value: Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% Margin of Safety)`);
+
+  // Floorsheet broker accumulation reason
+  if (zone?.brokerScore?.label && zone.brokerScore.scoreDelta !== 0) {
+    reasons.push(`Floorsheet Broker Flow: ${zone.brokerScore.label} — ${zone.brokerScore.detail}`);
+  }
+  if (brokerAnalysis?.topAccumulator?.brokerName && brokerAnalysis.topAccumulator.netQty > 0) {
+    reasons.push(`Top Broker Accumulator: ${brokerAnalysis.topAccumulator.brokerName} (Net +${Number(brokerAnalysis.topAccumulator.netQty).toLocaleString()} units @ Rs. ${brokerAnalysis.topAccumulator.avgRate || 'N/A'})`);
+  }
+
   if (candlestickPattern) reasons.push(`Last Candle: ${candlestickPattern.name} (${candlestickPattern.direction === 'bullish' ? '📈 Bullish' : candlestickPattern.direction === 'bearish' ? '📉 Bearish' : '➡️ Neutral'} · Strength: ${candlestickPattern.strength}/100) — ${candlestickPattern.description}`);
   if (marketStructure) reasons.push(`Market Structure: ${marketStructure.description}`);
   if (isCounterTrendBounce) reasons.push(`⚠️ Hard Trend Ceiling Active: Price is below 50 EMA — rallies into this zone are institutionally sold, not bought.`);
+
+  // Hydro seasonality reason
+  if (zone?.hydroSeason?.isHydro && zone.hydroSeason.isDrySeason) {
+    reasons.push(`Hydrology Season: ${zone.hydroSeason.seasonLabel} — Run-of-River output depressed.`);
+  }
+
   if (rrr.isViable) reasons.push(`Favorable Risk-to-Reward Ratio: ${rrr.rrr}:1 (Reward exceeds risk)`);
   else reasons.push(`Momentum & Trend: ${zone.triggerLogic}`);
 
@@ -130,6 +161,13 @@ function synthesizeGuruQuantReport({
     `Capital invalidation floor at Rs. ${targets.stopLoss.price} (-${targets.stopLoss.pct}% ATR stop)`,
     `Daily circuit breaker limit of ±10% on NEPSE NOTS`
   ];
+
+  if (hasHeavyBrokerDumping && brokerAnalysis?.topDistributor?.brokerName) {
+    risks.push(`Top Broker Seller: ${brokerAnalysis.topDistributor.brokerName} (dumped ${Number(brokerAnalysis.topDistributor.netQty || 0).toLocaleString()} shares @ Rs. ${brokerAnalysis.topDistributor.avgRate || 'N/A'})`);
+  }
+  if (zone?.hydroSeason?.warning) {
+    risks.push(zone.hydroSeason.warning);
+  }
 
   return {
     recommendation: rec,
@@ -1276,12 +1314,13 @@ export default function AiAnalyst({
     }]);
 
     try {
-      // 1. Fetch real market feeds in parallel including historical OHLCV candles
-      const [stockData, technical, financials, historyRes] = await Promise.all([
+      // 1. Fetch real market feeds in parallel including historical OHLCV candles & floorsheet broker analysis
+      const [stockData, technical, financials, historyRes, brokerRes] = await Promise.all([
         fetchTodayPrice(sym),
         fetchTechnicalAnalysis(sym),
         fetchCompanyFinancials(sym),
-        fetchPriceHistory(sym, 365).catch(() => [])
+        fetchPriceHistory(sym, 365).catch(() => []),
+        fetchBrokerAnalysis(sym, 15).catch(() => null)
       ]);
 
       const rawCandles = Array.isArray(historyRes) ? historyRes : (historyRes?.data || []);
@@ -1295,13 +1334,30 @@ export default function AiAnalyst({
       const high52 = Number(price.fiftyTwoWeekHigh || price.high52w || (ltp * 1.3));
       const low52 = Number(price.fiftyTwoWeekLow || price.low52w || (ltp * 0.7));
 
+      // Floorsheet Smart Money Broker Data
+      const brokerData = brokerRes?.data || brokerRes || {};
+
       // 2. Compute Institutional Quantitative Models
       const adi = calculateAccumulationDistributionIndex(candles);
       const wyckoff = detectWyckoffPhase(candles, volume);
       const graham = calculateGrahamIntrinsicValue(eps, bvps, ltp);
       const atr = calculateATR(candles, 14);
       const targets = calculateMultiHorizonTargets(ltp, high52, low52, atr, pChg);
-      const zone = classifyActionZone({ ...price, eps, bookValue: bvps, bvps, ltp, high52w: high52, low52w: low52, rsi: technical?.data?.indicators?.rsi || 50 });
+      const zone = classifyActionZone({
+        ...price,
+        sector: price.sector || stockData?.data?.sector || financials?.data?.sector || '',
+        eps,
+        bookValue: bvps,
+        bvps,
+        ltp,
+        high52w: high52,
+        low52w: low52,
+        rsi: technical?.data?.indicators?.rsi || 50,
+        brokerAdRatio: brokerData.adRatio,
+        brokerAdSignal: brokerData.adSignal,
+        brokerAdStrength: brokerData.adStrength,
+        brokerTop3Pct: brokerData.concentrationPct ? brokerData.concentrationPct / 100 : null
+      });
       const rrr = calculateRiskRewardRatio(ltp, targets.target1.price, targets.stopLoss.price);
       const volumeZ = calculateVolumeZScore(volume, volume * 0.7, volume * 0.25);
 
@@ -1345,7 +1401,8 @@ export default function AiAnalyst({
         marketData,
         circuitMetrics,
         backtestResult,
-        signalTriggers
+        signalTriggers,
+        brokerAnalysis: brokerData
       });
 
       // 4. Hit POST /api/ai/predict with live quantitative payload
@@ -1367,10 +1424,13 @@ export default function AiAnalyst({
             atr,
           },
           smartMoney: {
-            dominantBrokers: [58, 45, 34],
+            dominantBrokers: brokerData.topNetBuyers?.length ? brokerData.topNetBuyers.map(b => b.brokerId || b.broker) : [58, 45, 34],
             wyckoffPhase: wyckoff.phase,
             stealthAccumulationIndex: adi.currentADI || 50,
             turnover: price.totalTurnover || (volume * ltp),
+            adRatio: brokerData.adRatio ?? 0,
+            adSignal: brokerData.adSignal ?? 'Neutral',
+            adStrength: brokerData.adStrength ?? 0
           },
           apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r'
         };

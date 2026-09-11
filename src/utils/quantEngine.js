@@ -439,6 +439,163 @@ export function calculateCompositeMomentumScore(stock, macroContext = {}) {
 }
 
 /**
+ * NEW — Floorsheet Broker Accumulation Score
+ *
+ * Converts real broker analysis data from /api/broker-analysis/:symbol
+ * into a score delta that is directly added to the composite action zone score.
+ *
+ * Physical basis: In NEPSE, institutional players operate through specific
+ * broker IDs (e.g., Broker 58, 45, 34, 49). When top 3 buying brokers
+ * absorb > 60% of daily turnover while selling is dispersed across retail
+ * brokers, smart money is accumulating BEFORE the price moves.
+ *
+ * @param {number}  adRatio    Raw A/D ratio: (netBuyerQty - netSellerQty) / totalBuyVol
+ * @param {string}  adSignal   'Accumulation' | 'Distribution' | 'Neutral'
+ * @param {number}  adStrength Percentage strength 0–100
+ * @param {number}  top3BuyPct (optional) Share of total turnover held by top 3 net buyers (0–1)
+ * @returns {{ scoreDelta: number, label: string, color: string, detail: string }}
+ */
+export function calculateBrokerAccumulationScore(adRatio = 0, adSignal = 'Neutral', adStrength = 0, top3BuyPct = null) {
+  const ratio = Number(adRatio) || 0;
+  const strength = Number(adStrength) || 0;
+  const signal = String(adSignal || 'Neutral');
+
+  let scoreDelta = 0;
+  let label = '';
+  let color = '#94a3b8';
+  let detail = '';
+
+  if (signal === 'Accumulation') {
+    // Strong broker accumulation: top 3 buyers absorbing most of the float
+    if (strength >= 70 || ratio >= 0.15) {
+      scoreDelta = +20;
+      label = '🟢 STRONG BROKER ACCUMULATION';
+      color = '#10B981';
+      detail = `Net ${(ratio * 100).toFixed(1)}% of daily volume absorbed by top accumulating brokers. Institutional markup imminent.`;
+    } else if (strength >= 35 || ratio >= 0.06) {
+      scoreDelta = +12;
+      label = '🟢 MODERATE BROKER ACCUMULATION';
+      color = '#34d399';
+      detail = `Steady institutional buying detected. ${strength.toFixed(0)}% accumulation strength across top brokers.`;
+    } else {
+      scoreDelta = +5;
+      label = '🔵 MILD ACCUMULATION';
+      color = '#60a5fa';
+      detail = `Light net buying from institutional brokers. Monitor for confirmation.`;
+    }
+
+    // Extra bonus if top 3 buyers control > 60% of turnover (high concentration = conviction)
+    if (top3BuyPct !== null && top3BuyPct >= 0.60) {
+      scoreDelta += 5;
+      detail += ` Top 3 brokers control ${(top3BuyPct * 100).toFixed(0)}% of turnover — high conviction accumulation.`;
+    }
+
+  } else if (signal === 'Distribution') {
+    // Broker distribution: smart money selling into retail buy orders
+    if (strength >= 70 || ratio <= -0.15) {
+      scoreDelta = -25;
+      label = '🔴 HEAVY BROKER DISTRIBUTION';
+      color = '#F43F5E';
+      detail = `Net ${Math.abs(ratio * 100).toFixed(1)}% of volume being dumped by top institutional brokers into retail demand. Exit or avoid.`;
+    } else if (strength >= 35 || ratio <= -0.06) {
+      scoreDelta = -15;
+      label = '🟡 MODERATE DISTRIBUTION';
+      color = '#f97316';
+      detail = `Institutional selling pressure building. ${strength.toFixed(0)}% distribution strength — caution warranted.`;
+    } else {
+      scoreDelta = -6;
+      label = '🟡 MILD SELLING PRESSURE';
+      color = '#fbbf24';
+      detail = `Minor broker-side selling. Not alarming but watch for escalation.`;
+    }
+
+  } else {
+    // Neutral — no significant directional bias from broker data
+    scoreDelta = 0;
+    label = '⚪ BROKER FLOW NEUTRAL';
+    color = '#94a3b8';
+    detail = `No dominant broker accumulation or distribution detected. Market in equilibrium.`;
+  }
+
+  return {
+    scoreDelta: Math.max(-25, Math.min(20, scoreDelta)),
+    label,
+    color,
+    detail,
+    adRatio: ratio,
+    adSignal: signal,
+    adStrength: strength,
+    top3BuyPct
+  };
+}
+
+/**
+ * NEW — Hydro Dry Season Kill-Switch (NEPSE-Specific)
+ *
+ * Run-of-River (RoR) hydropower plants in Nepal generate only 25–40% of their
+ * installed capacity during the dry Himalayan winter months (Mangsir–Chaitra,
+ * approximately November–April in Gregorian calendar).
+ *
+ * During this period, Q2/Q3 revenues collapse, making bullish thesis for hydros
+ * fundamentally unsound regardless of short-term technical signals.
+ *
+ * @param {string} sector  Stock sector string (e.g., 'Hydropower', 'Energy', etc.)
+ * @returns {{
+ *   isDrySeason: boolean,
+ *   penaltyPoints: number,
+ *   month: number,
+ *   seasonLabel: string,
+ *   warning: string
+ * }}
+ */
+export function getHydroSeasonality(sector = '') {
+  const sectorStr = String(sector || '').toLowerCase();
+  const isHydro = sectorStr.includes('hydro') || sectorStr.includes('energy') ||
+                  sectorStr.includes('power') || sectorStr.includes('electricity');
+
+  if (!isHydro) {
+    return { isDrySeason: false, penaltyPoints: 0, month: new Date().getMonth() + 1, seasonLabel: 'N/A (Non-Hydro)', warning: null };
+  }
+
+  const month = new Date().getMonth() + 1; // 1 = January … 12 = December
+
+  // DRY SEASON: November (11) → April (4)
+  // WET/PEAK SEASON: May (5) → October (10)
+  const isDry = month >= 11 || month <= 4;
+
+  // Deep dry months (Dec–Feb) are the worst for generation
+  const isDeepDry = month === 12 || month === 1 || month === 2;
+
+  let penaltyPoints = 0;
+  let seasonLabel = '';
+  let warning = null;
+
+  if (isDry && isDeepDry) {
+    penaltyPoints = -18;
+    seasonLabel = '🔴 DEEP DRY SEASON (Dec–Feb)';
+    warning = `⚠️ Hydropower Dry Season Alert: Peak winter months (Poush–Magh). RoR generation at 20–35% capacity. Q2/Q3 revenue severely impacted. Avoid new positions regardless of chart signals.`;
+  } else if (isDry) {
+    penaltyPoints = -10;
+    seasonLabel = '🟡 DRY SEASON (Nov or Mar–Apr)';
+    warning = `⚠️ Hydropower Seasonality Caution: Transitioning into / out of dry season. Generation 35–55% of capacity. Fundamentals weakening — reduce position size.`;
+  } else {
+    // WET SEASON: peak generation, strong revenues
+    penaltyPoints = 0;
+    seasonLabel = '🟢 WET/PEAK SEASON (May–Oct)';
+    warning = null;
+  }
+
+  return {
+    isDrySeason: isDry,
+    penaltyPoints,
+    month,
+    seasonLabel,
+    warning,
+    isHydro
+  };
+}
+
+/**
  * 10. Machine Learning Operational Zone Classification Engine
  * Classifies stocks into 5 systematic operational action zones:
  * - Buying Zone (Support Accumulation alongside Smart Money)
@@ -466,6 +623,25 @@ export function classifyActionZone(stock, macroContext = {}) {
   const { momentumScore: MS, factors } = calculateCompositeMomentumScore(stock, macroContext);
   const graham = calculateGrahamIntrinsicValue(stock?.eps, stock?.bookValue, ltp);
 
+  // ── Broker Accumulation Score (Floorsheet Smart Money Signal) ─────────────
+  // Read broker analysis data from stock object if pre-fetched by caller.
+  // AiAnalyst passes brokerData; PredictorHub passes it when available.
+  const brokerScore = calculateBrokerAccumulationScore(
+    stock?.brokerAdRatio ?? macroContext?.brokerAdRatio ?? 0,
+    stock?.brokerAdSignal ?? macroContext?.brokerAdSignal ?? 'Neutral',
+    stock?.brokerAdStrength ?? macroContext?.brokerAdStrength ?? 0,
+    stock?.brokerTop3Pct ?? macroContext?.brokerTop3Pct ?? null
+  );
+
+  // ── Hydro Dry Season Kill-Switch ─────────────────────────────────────────
+  const hydroSeason = getHydroSeasonality(stock?.sector || stock?.sectorName || '');
+
+  // Effective Momentum Score adjusted by broker flow evidence
+  // (range stays logically in the same [-1, +1] ballpark via the MS input,
+  //  but the score modifier works as a hard additive at the zone boundary)
+  const brokerMSBoost = brokerScore.scoreDelta / 100; // convert pts to MS scale
+  const effectiveMS = Math.max(-1.0, Math.min(1.0, MS + brokerMSBoost));
+
   let zone = 'Holding Zone';
   let zoneColor = '#38bdf8';
   let zoneBadge = 'HOLDING ZONE';
@@ -491,14 +667,18 @@ export function classifyActionZone(stock, macroContext = {}) {
   // Only fires when we have real EMA data (not the fallback 0.98x estimate).
   const isConfirmedBearishStructure = isAbove50EMA === false;
 
-  // 1. ENTRY ZONE (True Breakout: MS > 0.55, Volume confirmed, AND price ABOVE 50 EMA)
-  if (MS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99) && !isConfirmedBearishStructure) {
+  // 1. ENTRY ZONE (True Breakout: effectiveMS > 0.55, Volume confirmed, price ABOVE 50 EMA, NO heavy broker distribution, NO deep hydro dry season)
+  const hasHeavyBrokerDumping = brokerScore.adSignal === 'Distribution' && (brokerScore.adStrength >= 40 || brokerScore.adRatio <= -0.10);
+  const isDeepHydroDry = hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15;
+
+  if (effectiveMS > 0.55 && (zVol >= 1.4 || volSurge >= 1.4 || ltp >= r1 * 0.99) && !isConfirmedBearishStructure && !hasHeavyBrokerDumping && !isDeepHydroDry) {
     zone = 'Entry Zone';
     zoneColor = '#10B981';
     zoneBadge = '🚀 ENTRY ZONE (BREAKOUT)';
     zoneIcon = 'Zap';
     const emaNote = isAbove50EMA === true ? ` · Price is above 50 EMA (Rs. ${ema50.toFixed(1)}) confirming structural uptrend.` : '';
-    triggerLogic = `MS Score (+${MS}) > 0.55 & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.${emaNote}`;
+    const brokerNote = brokerScore.scoreDelta > 0 ? ` · ${brokerScore.label} (+${brokerScore.scoreDelta}pts)` : '';
+    triggerLogic = `Composite Momentum (+${effectiveMS.toFixed(2)}) & Volume Z-Score (${zVol}) >= 1.4 confirming institutional markup.${emaNote}${brokerNote}`;
     entryTarget = `Rs. ${ltp.toFixed(1)} – Rs. ${(ltp * 1.015).toFixed(1)} (Breakout Execution)`;
     profitTarget1 = `Rs. ${(ltp + (1.5 * atr)).toFixed(1)} (+${(((1.5 * atr) / ltp) * 100).toFixed(1)}%)`;
     profitTarget2 = `Rs. ${(r2).toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
@@ -508,65 +688,81 @@ export function classifyActionZone(stock, macroContext = {}) {
   // 1b. COUNTER-TREND BOUNCE (Price below 50 EMA but volume/MS temporarily positive)
   // This catches the exact AHPC situation: single-day +2.96% bounce with RVOL > 1.25x
   // but price trapped below structural moving averages.
-  else if (isConfirmedBearishStructure && MS > 0.20) {
+  else if (isConfirmedBearishStructure && effectiveMS > 0.15) {
     zone = 'Counter-Trend Bounce';
     zoneColor = '#f97316';
     zoneBadge = '⚠️ COUNTER-TREND BOUNCE (RESISTANCE AHEAD)';
     zoneIcon = 'ShieldAlert';
     const resistanceNote = ema200 > 0 ? `Rs. ${ema200.toFixed(1)} (200 EMA)` : `Rs. ${r1.toFixed(1)} (R1 Pivot)`;
-    triggerLogic = `Price below 50 EMA (Rs. ${ema50 > 0 ? ema50.toFixed(1) : 'N/A'}) — bounce into overhead resistance. This is a bearish structure rally, NOT a confirmed breakout.`;
+    const brokerNote = hasHeavyBrokerDumping ? ` · ⚠️ Institutional brokers are net sellers (${brokerScore.label}).` : '';
+    triggerLogic = `Price below 50 EMA (Rs. ${ema50 > 0 ? ema50.toFixed(1) : 'N/A'}) — bounce into overhead resistance. This is a bearish structure rally, NOT a confirmed breakout.${brokerNote}`;
     entryTarget = `Avoid Fresh Buys — Wait for confirmed close above 50 EMA (Rs. ${ema50 > 0 ? ema50.toFixed(1) : '?'})`;
     profitTarget1 = `Resistance ceiling: ${resistanceNote}`;
     profitTarget2 = `N/A — Exit on approach to EMA resistance`;
     stopLoss = `Rs. ${(ltp - (1.0 * atr)).toFixed(1)} (Tight Stop — bearish structure)`;
     systematicStrategy = `Do NOT buy this rally. Price is below the 50 EMA structural ceiling. Wait for a confirmed weekly close above Rs. ${ema50 > 0 ? ema50.toFixed(1) : 'the 50 EMA'} with expanding volume before considering any entry.`;
   }
-  // 2. BUYING ZONE (Support Accumulation: MS in [0.20, 0.55], Near S1, Smart Money > 0.35)
-  else if ((MS >= 0.15 && factors.iSmartMoney >= 0.30) || (rsi <= 38 && ltp <= s1 * 1.03)) {
+  // 1c. HYDRO DRY-SEASON REJECTION (Technical breakout blocked by winter hydrology)
+  else if (isDeepHydroDry && (MS > 0.40 || volSurge >= 1.4)) {
+    zone = 'Seasonality Caution';
+    zoneColor = '#f59e0b';
+    zoneBadge = '❄️ HYDRO DRY-SEASON OVERHANG';
+    zoneIcon = 'AlertTriangle';
+    triggerLogic = hydroSeason.warning || 'Hydropower RoR generation at winter low. Cash flows depressed.';
+    entryTarget = `Avoid Fresh Buys (Wait for Spring Snowmelt / Pre-Monsoon)`;
+    profitTarget1 = `Rs. ${r1.toFixed(1)} (Transient Swing Resistance)`;
+    profitTarget2 = `N/A`;
+    stopLoss = `Rs. ${(ltp - (1.2 * atr)).toFixed(1)}`;
+    systematicStrategy = 'Hold back aggressive capital. Winter hydrology reduces RoR power output by 60–80%, capping earnings power.';
+  }
+  // 2. BUYING ZONE (Support Accumulation: effectiveMS in [0.15, 0.55], Near S1, Smart Money > 0.30, NO heavy broker dumping)
+  else if (!hasHeavyBrokerDumping && ((effectiveMS >= 0.15 && factors.iSmartMoney >= 0.30) || (rsi <= 38 && ltp <= s1 * 1.03) || brokerScore.scoreDelta >= 15)) {
     zone = 'Buying Zone';
     zoneColor = '#10B981';
     zoneBadge = '🟢 BUYING ZONE (SUPPORT)';
     zoneIcon = 'Target';
-    triggerLogic = `MS Score (+${MS}) in accumulation pocket with high institutional absorption (I_SmartMoney: +${factors.iSmartMoney}).`;
+    const brokerNote = brokerScore.scoreDelta > 0 ? ` · ${brokerScore.label}` : '';
+    triggerLogic = `Composite Score (+${effectiveMS.toFixed(2)}) in accumulation pocket with institutional absorption (I_SmartMoney: +${factors.iSmartMoney})${brokerNote}.`;
     entryTarget = `Rs. ${s1.toFixed(1)} – Rs. ${(s1 * 1.015).toFixed(1)} (Support Floor)`;
     profitTarget1 = `Rs. ${(ltp * 1.08).toFixed(1)} (+8.0% Swing)`;
     profitTarget2 = `Rs. ${(ltp * 1.18).toFixed(1)} (+18.0% Expansion)`;
     stopLoss = `Rs. ${(s1 - (1.5 * atr)).toFixed(1)} (-${(((1.5 * atr) / s1) * 100).toFixed(1)}%)`;
     systematicStrategy = 'Accumulate positions quietly within the support range alongside institutional buyers.';
   }
-  // 3. EXIT ZONE (Overbought / Divergence / Distribution: RSI > 75 or Smart Money < -0.35)
-  else if (rsi >= 75 || factors.iSmartMoney <= -0.40 || (stock?.pChange >= 8.5 && rsi > 70)) {
+  // 3. EXIT ZONE (Overbought / Broker Distribution / Smart Money Dumping)
+  else if (rsi >= 75 || factors.iSmartMoney <= -0.40 || hasHeavyBrokerDumping || (stock?.pChange >= 8.5 && rsi > 70)) {
     zone = 'Exit Zone';
     zoneColor = '#eab308';
-    zoneBadge = '🟡 EXIT ZONE (TAKE PROFIT)';
+    zoneBadge = '🟡 EXIT ZONE (TAKE PROFIT / DISTRIBUTION)';
     zoneIcon = 'TrendingDown';
-    triggerLogic = `RSI (${rsi.toFixed(0)}) in overbought liquidity pool or institutional distribution detected (I_SmartMoney: ${factors.iSmartMoney}).`;
+    const brokerWarn = hasHeavyBrokerDumping ? ` · ⚠️ ${brokerScore.label}: ${brokerScore.detail}` : '';
+    triggerLogic = `Overbought or institutional distribution detected (RSI: ${rsi.toFixed(0)}, I_SmartMoney: ${factors.iSmartMoney})${brokerWarn}.`;
     entryTarget = `Avoid Fresh Buys (Pullback Target: Rs. ${(ltp * 0.90).toFixed(1)})`;
     profitTarget1 = `Rs. ${r2.toFixed(1)} (Major Pivot R2)`;
     profitTarget2 = `Rs. ${(high52w).toFixed(1)} (52W High Ceiling)`;
     stopLoss = `Rs. ${(ltp - (1.0 * atr)).toFixed(1)} (Tight Trailing Stop)`;
-    systematicStrategy = 'Scale out of positions to lock in gains as momentum slows or overbought conditions peak.';
+    systematicStrategy = 'Scale out of positions to lock in gains as momentum slows or institutional brokers offload into retail bids.';
   }
-  // 4. SELLING ZONE (Support Breakdown / Distribution: MS < -0.35 or LTP < S1)
-  else if (MS < -0.30 || (ltp < s1 && factors.iSmartMoney < -0.20)) {
+  // 4. SELLING ZONE (Support Breakdown / Distribution: effectiveMS < -0.30 or LTP < S1)
+  else if (effectiveMS < -0.30 || (ltp < s1 && factors.iSmartMoney < -0.20)) {
     zone = 'Selling Zone';
     zoneColor = '#F43F5E';
     zoneBadge = '🔴 SELLING ZONE (CAPITAL PRESERVATION)';
     zoneIcon = 'AlertCircle';
-    triggerLogic = `Negative Momentum Score (${MS}) and support breakdown below S1 floor (Rs. ${s1}).`;
+    triggerLogic = `Negative Momentum Score (${effectiveMS.toFixed(2)}) and support breakdown below S1 floor (Rs. ${s1}).`;
     entryTarget = `No Entry (Capital Preservation Mode)`;
     profitTarget1 = `N/A`;
     profitTarget2 = `N/A`;
     stopLoss = `Immediate Exit below Rs. ${(ltp * 0.98).toFixed(1)}`;
     systematicStrategy = 'Close positions completely to preserve capital and prevent further drawdowns.';
   }
-  // 5. HOLDING ZONE (Default Trend Following: MS in [0.10, 0.65], Price > 20 EMA)
+  // 5. HOLDING ZONE (Default Trend Following: effectiveMS in [0.05, 0.65], Price > 20 EMA)
   else {
     zone = 'Holding Zone';
     zoneColor = '#38bdf8';
     zoneBadge = '🔵 HOLDING ZONE (TREND TRAILING)';
     zoneIcon = 'Shield';
-    triggerLogic = `Healthy trend alignment above 20 EMA (Rs. ${ema20.toFixed(1)}) with balanced institutional flow.`;
+    triggerLogic = `Healthy trend alignment above 20 EMA (Rs. ${ema20.toFixed(1)}) with balanced flow.`;
     entryTarget = `Rs. ${(ema20 * 0.99).toFixed(1)} – Rs. ${(ema20 * 1.01).toFixed(1)} on Dips`;
     profitTarget1 = `Rs. ${r1.toFixed(1)} (+${(((r1 - ltp) / ltp) * 100).toFixed(1)}%)`;
     profitTarget2 = `Rs. ${r2.toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
@@ -588,6 +784,9 @@ export function classifyActionZone(stock, macroContext = {}) {
     zoneColor,
     zoneIcon,
     momentumScore: MS,
+    effectiveMomentumScore: +effectiveMS.toFixed(2),
+    brokerScore,
+    hydroSeason,
     factors,
     triggerLogic,
     entryTarget,
