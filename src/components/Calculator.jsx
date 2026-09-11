@@ -30,6 +30,15 @@ export default function Calculator() {
   const [sipReturnRate, setSipReturnRate] = useState(15);
   const [sipYears, setSipYears] = useState(10);
 
+  // ── 5. Margin Loan State (NRB Directive) ──
+  const [marginUnits, setMarginUnits] = useState(1000);
+  const [marginLtp, setMarginLtp] = useState(600);
+  const [marginAvg180, setMarginAvg180] = useState(550);
+  const [marginLtv, setMarginLtv] = useState(70);
+  const [marginRate, setMarginRate] = useState(9.5);
+  const [marginMaintenance, setMarginMaintenance] = useState(130);
+  const [borrowerType, setBorrowerType] = useState('individual');
+
   // Update Buy/Sell calculations
   useEffect(() => {
     if (buyQty > 0 && buyPrice > 0) {
@@ -158,9 +167,44 @@ export default function Calculator() {
     };
   }, [sipMonthly, sipReturnRate, sipYears]);
 
+  // ── NRB Margin Loan Calculation ──
+  const marginLoanResult = useMemo(() => {
+    if (marginUnits <= 0 || marginLtp <= 0) return null;
+    const avg = marginAvg180 > 0 ? marginAvg180 : marginLtp;
+    const valuationPrice = Math.min(marginLtp, avg);
+    const collateralValuation = marginUnits * valuationPrice;
+    const currentMarketValuation = marginUnits * marginLtp;
+    const effectiveLtv = Math.min(70, Math.max(10, marginLtv));
+    const calculatedLoan = collateralValuation * (effectiveLtv / 100);
+    const ceiling = borrowerType === 'individual' ? 150000000 : 200000000;
+    const approvedLoan = Math.min(calculatedLoan, ceiling);
+    const isCapped = calculatedLoan > ceiling;
+
+    const maintRatio = (parseFloat(marginMaintenance) || 130) / 100;
+    const callPrice = (approvedLoan * maintRatio) / marginUnits;
+    const cushion = ((marginLtp - callPrice) / marginLtp) * 100;
+
+    const annualInterest = approvedLoan * (parseFloat(marginRate) / 100);
+    const monthlyInterest = annualInterest / 12;
+
+    return {
+      valuationPrice,
+      effectiveLtv,
+      collateralValuation,
+      currentMarketValuation,
+      approvedLoan,
+      isCapped,
+      ceiling,
+      callPrice,
+      cushion,
+      annualInterest,
+      monthlyInterest
+    };
+  }, [marginUnits, marginLtp, marginAvg180, marginLtv, marginRate, marginMaintenance, borrowerType]);
+
   return (
     <div style={{ padding: '16px 14px 40px' }}>
-      {/* 5-Tab Selector (Dashboard Pill Chips) */}
+      {/* 6-Tab Selector (Dashboard Pill Chips) */}
       <div style={{
         display: 'flex',
         gap: 6,
@@ -175,7 +219,8 @@ export default function Calculator() {
           { id: 'sell', label: 'Sell Profit', icon: '💰', color: 'var(--bull)' },
           { id: 'breakeven', label: 'Break-Even', icon: '🎯', color: '#f59e0b' },
           { id: 'adjustment', label: 'Bonus / Right', icon: '🎁', color: '#ec4899' },
-          { id: 'sip', label: 'SIP Growth', icon: '📈', color: '#06b6d4' }
+          { id: 'sip', label: 'SIP Growth', icon: '📈', color: '#06b6d4' },
+          { id: 'margin_loan', label: 'Margin Loan (NRB)', icon: '🏛️', color: '#8b5cf6' }
         ].map(t => {
           const isActive = activeTab === t.id;
           return (
@@ -678,6 +723,159 @@ export default function Calculator() {
                     <span style={{ color: '#818cf8' }}>● Invested: {((sipResult.totalInvested / sipResult.maturity) * 100).toFixed(0)}%</span>
                     <span style={{ color: 'var(--bull)' }}>● Gains: {((sipResult.estReturns / sipResult.maturity) * 100).toFixed(0)}%</span>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 6: NRB MARGIN LENDING & MARGIN CALL ENGINE ── */}
+      {activeTab === 'margin_loan' && (
+        <div>
+          <div className="card">
+            <h3 className="section-title" style={{ marginBottom: 6 }}>NRB Share Collateral Loan Parameters</h3>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+              Statutory central bank rules: Max 70% LTV against lower of LTP and 180-day average. Single-obligor limit capped at Rs. 15 Cr (Individual) / Rs. 20 Cr (Institutional).
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label className="input-label">Share Quantity (Units)</label>
+                <input
+                  type="number"
+                  value={marginUnits}
+                  onChange={(e) => setMarginUnits(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="input"
+                  placeholder="e.g. 1000"
+                />
+              </div>
+
+              <div>
+                <label className="input-label">Borrower Category</label>
+                <select
+                  value={borrowerType}
+                  onChange={(e) => setBorrowerType(e.target.value)}
+                  className="input"
+                  style={{ background: 'var(--bg-input)' }}
+                >
+                  <option value="individual">Individual (Cap Rs. 15 Cr)</option>
+                  <option value="institutional">Institutional (Cap Rs. 20 Cr)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label className="input-label">Current Market Price (LTP Rs.)</label>
+                <input
+                  type="number"
+                  value={marginLtp}
+                  onChange={(e) => setMarginLtp(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="input"
+                  placeholder="e.g. 600"
+                />
+              </div>
+
+              <div>
+                <label className="input-label">180-Day VWAP / Avg (Rs.)</label>
+                <input
+                  type="number"
+                  value={marginAvg180}
+                  onChange={(e) => setMarginAvg180(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="input"
+                  placeholder="e.g. 550"
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 8 }}>
+              <div>
+                <label className="input-label">LTV Ratio (%)</label>
+                <input
+                  type="number"
+                  max="70"
+                  value={marginLtv}
+                  onChange={(e) => setMarginLtv(Math.min(70, Math.max(10, parseFloat(e.target.value) || 0)))}
+                  className="input"
+                  placeholder="Max 70"
+                />
+              </div>
+
+              <div>
+                <label className="input-label">Interest (% p.a.)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={marginRate}
+                  onChange={(e) => setMarginRate(parseFloat(e.target.value) || 0)}
+                  className="input"
+                  placeholder="9.5"
+                />
+              </div>
+
+              <div>
+                <label className="input-label">Maint. Margin (%)</label>
+                <input
+                  type="number"
+                  value={marginMaintenance}
+                  onChange={(e) => setMarginMaintenance(parseFloat(e.target.value) || 0)}
+                  className="input"
+                  placeholder="130"
+                />
+              </div>
+            </div>
+          </div>
+
+          {marginLoanResult && (
+            <div className="card">
+              <h3 className="section-title" style={{ marginBottom: 14 }}>Loan Approval &amp; Risk Metrics</h3>
+
+              <div className="card-sm" style={{
+                background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(16, 185, 129, 0.1))',
+                border: '1px solid rgba(79, 70, 229, 0.4)',
+                padding: 16, borderRadius: 12, textAlign: 'center', marginBottom: 14
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary-light)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Eligible Approved Margin Loan
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: '#38bdf8', margin: '6px 0 2px', fontFamily: 'var(--font-mono)' }}>
+                  {formatRs(marginLoanResult.approvedLoan)}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Valuation base: Rs. {marginLoanResult.valuationPrice.toFixed(2)} &times; {marginLoanResult.effectiveLtv}% LTV
+                </div>
+                {marginLoanResult.isCapped && (
+                  <div style={{ marginTop: 8, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '4px 8px', borderRadius: 6 }}>
+                    ⚠️ Capped at NRB Ceiling of Rs. {(marginLoanResult.ceiling / 10000000).toFixed(0)} Crores
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Collateral Market Valuation:</span>
+                  <span style={{ fontWeight: 700 }}>{formatRs(marginLoanResult.currentMarketValuation)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Margin Call Trigger Price:</span>
+                  <span style={{ fontWeight: 800, color: marginLoanResult.cushion > 20 ? 'var(--bull)' : 'var(--bear)' }}>
+                    Rs. {marginLoanResult.callPrice.toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Safety Drop Buffer:</span>
+                  <span style={{ fontWeight: 800, color: marginLoanResult.cushion > 20 ? 'var(--bull)' : '#f59e0b' }}>
+                    {marginLoanResult.cushion.toFixed(1)}% price decline cushion
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Estimated Monthly Interest:</span>
+                  <span style={{ fontWeight: 700, color: '#f59e0b' }}>{formatRs(marginLoanResult.monthlyInterest)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Estimated Annual Interest:</span>
+                  <span style={{ fontWeight: 700, color: '#f59e0b' }}>{formatRs(marginLoanResult.annualInterest)}</span>
                 </div>
               </div>
             </div>

@@ -22,3 +22,5 @@ android/
 .DS_Store
 
 .vercel
+.agents/
+launch-claude-code.*

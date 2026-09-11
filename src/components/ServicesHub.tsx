@@ -29,10 +29,11 @@ import {
   LiveFloorsheetService, SectorHeatmapService, BrokerAnalysisService,
 } from './services';
 import { useBackHandler } from '../context/NavigationContext';
-import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator } from './calculators';
+import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator } from './calculators';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
+import { RegulatoryHub } from './RegulatoryHub';
 
 // ── Shared colors (solid, no gradients) ──
 const COLORS: Record<string, { bg: string; border: string; text: string }> = {
@@ -57,15 +58,19 @@ const CATEGORY_MAP: Record<string, string> = {
   'live-data': 'market',
   'information': 'market',
   'smart-money': 'smart-money',
+  'regulatory': 'regulatory',
   'desk': 'desk',
   'system': 'market',
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
+  if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
+    return 'regulatory';
+  }
   if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance') {
     return 'smart-money';
   }
-  if (s.id === 'calculator' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
+  if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
     return 'calculators';
   }
   if (s.id === 'smart-portfolio' || s.id === 'target-alert' || s.id === 'credentials' || s.id === 'apply-history' || s.id === 'edit') {
@@ -76,6 +81,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
 
 const FILTER_TABS = [
   { id: 'all', label: 'All Tools', icon: Sparkles },
+  { id: 'regulatory', label: 'NRB & Regulatory', icon: Landmark },
   { id: 'trading', label: 'Trading', icon: TrendingUp },
   { id: 'valuation', label: 'Valuation', icon: Award },
   { id: 'calculators', label: 'Calculators', icon: Calculator },
@@ -85,9 +91,10 @@ const FILTER_TABS = [
 ];
 
 const CATEGORIES = [
+  { id: 'regulatory', title: 'NRB & SEBON Regulatory Hub', subtitle: 'Live NRB Forex rates & converter, central bank indicators, bullion benchmark & official circulars.' },
   { id: 'trading', title: 'Trading & Technical Setups', subtitle: 'Momentum indicators, pattern detection, breakout scanners & entry/exit analysis.' },
   { id: 'valuation', title: 'Valuation & Fundamentals', subtitle: 'Intrinsic value models, PE rankings, dividend kings & balance sheet scanners.' },
-  { id: 'calculators', title: 'Trading Calculators', subtitle: 'SEBON brokerage, dividend yield, bonus/right adjustments, risk-reward & SIP.' },
+  { id: 'calculators', title: 'Trading Calculators', subtitle: 'SEBON brokerage, NRB margin lending, dividend yield, bonus/right adjustments & SIP.' },
   { id: 'market', title: 'Market Data & Floats', subtitle: 'Live floor sheets, sector heatmaps, market depth, broker lists & IPO alerts.' },
   { id: 'smart-money', title: 'Smart Money Tracker', subtitle: 'Stealth accumulation tracking, broker dominance, aggressive buy/sell & block deals.' },
   { id: 'desk', title: 'Your Personal Desk', subtitle: 'Custom watchlists, portfolio tracker, trade journal notes & price alerts.' },
@@ -97,6 +104,7 @@ const CATEGORIES = [
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
+  { id: 'regulatory-hub', name: 'NRB Regulatory Hub', icon: Landmark, color: 'blue', cat: 'regulatory', star: true },
   { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'featured', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'featured', star: true },
   { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
@@ -168,6 +176,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'sip-in-stocks', name: 'SIP In Stocks', icon: PieChart, color: 'cyan', cat: 'trade-lab', star: true },
 
   { id: 'calculator', name: 'Brokerage Calc', icon: Calculator, color: 'orange', cat: 'trade-tools', star: true },
+  { id: 'margin-loan', name: 'Margin Loan (NRB)', icon: Scale, color: 'rose', cat: 'trade-tools', star: true },
   { id: 'bonus-adjustment', name: 'Bonus Adjustment', icon: Percent, color: 'emerald', cat: 'trade-tools', star: true },
   { id: 'right-adjustment', name: 'Right Adjustment', icon: Layers, color: 'blue', cat: 'trade-tools', star: true },
   { id: 'dividend-calculator', name: 'Dividend Calc', icon: Coins, color: 'yellow', cat: 'trade-tools', star: true },
@@ -178,6 +187,10 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'smart-portfolio', name: 'Smart Portfolio', icon: PieChart, color: 'purple', cat: 'trade-tools', star: true },
   { id: 'seasonality', name: 'Seasonality', icon: Calendar, color: 'cyan', cat: 'trade-tools', star: true },
   { id: 'target-alert', name: 'Target Alert', icon: Bell, color: 'rose', cat: 'trade-tools', star: true },
+
+  { id: 'nrb-forex', name: 'NRB Forex Rates', icon: Coins, color: 'emerald', cat: 'regulatory', star: true },
+  { id: 'bullion-rates', name: 'Gold & Silver Rates', icon: Gem, color: 'yellow', cat: 'regulatory', star: true },
+  { id: 'regulatory-circulars', name: 'NRB & SEBON Notices', icon: FileText, color: 'purple', cat: 'regulatory', star: true },
 
   { id: 'rsi-filter', name: 'RSI Filter', icon: Activity, color: 'purple', cat: 'scanner', star: true },
   { id: 'ema-scanner', name: 'EMA Scanner', icon: Activity, color: 'cyan', cat: 'scanner', star: true },
@@ -500,11 +513,19 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Trade tools
   'calculator': BrokerageCalculator,
+  'margin-loan': MarginLoanCalculator,
   'bonus-adjustment': BonusAdjustmentCalculator,
   'right-adjustment': RightAdjustmentCalculator,
   'dividend-calculator': DividendCalculator,
   'sip-calculator': SIPCalculator,
   'risk-reward': RiskRewardCalculator,
+
+  // Regulatory Telemetry Hub & Macro
+  'regulatory-hub': RegulatoryHub,
+  'nrb-forex': RegulatoryHub,
+  'bullion-rates': RegulatoryHub,
+  'regulatory-circulars': RegulatoryHub,
+  'nrb-indicators': RegulatoryHub,
   'compare-stocks': CompareStocks,
   'smart-portfolio': () => (
     <UniversalScreener filterFn={(s) => s.technicalScore > 60 && s.pe > 0 && s.pe < 25} sortFn={(a, b) => b.technicalScore - a.technicalScore}

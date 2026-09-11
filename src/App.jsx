@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
-  LayoutGrid, BrainCircuit, BookOpen,
+  LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
   BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw
 } from 'lucide-react';
 import Dashboard      from './components/Dashboard';
 import Portfolio      from './components/Portfolio';
 import MeroShareHub   from './components/MeroShareHub';
+import PortfolioHub   from './components/PortfolioHub';
+import PredictorHub   from './components/PredictorHub';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ServicesHub    from './components/ServicesHub';
 import Calculator     from './components/Calculator';
@@ -810,12 +812,20 @@ function AppInner() {
                 />
               </PullToRefresh>
             )}
-            {activeTab === 'portfolio'  && <Portfolio marketStocks={stocks} userId={user.uid} />}
-            {activeTab === 'bulk_ipo'   && (
-              <MeroShareHub
-                userId={user.uid}
+            {(activeTab === 'portfolio' || activeTab === 'bulk_ipo') && (
+              <PortfolioHub
                 marketStocks={stocks}
+                userId={user?.uid}
                 apiStatus={apiStatus}
+                initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
+                onSelectStock={openStockDetail}
+              />
+            )}
+            {activeTab === 'predictor'  && (
+              <PredictorHub
+                stocks={stocks}
+                indices={indices}
+                onSelectStock={openStockDetail}
               />
             )}
 
@@ -863,20 +873,23 @@ function AppInner() {
       <nav className="bottom-nav">
         {[
           { id: 'dashboard',  icon: LayoutDashboard, label: 'Market' },
-          { id: 'portfolio',  icon: Wallet,          label: 'Portfolio' },
-          { id: 'bulk_ipo',   icon: Layers,          label: 'Bulk IPO' },
+          { id: 'portfolio',  icon: Wallet,          label: 'Portfolio & IPO' },
+          { id: 'predictor',  icon: TrendingUp,      label: 'Predictor' },
           { id: 'services',   icon: LayoutGrid,      label: 'Services' },
           { id: 'ai',         icon: BrainCircuit,    label: 'Guru AI' },
-        ].map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            className={`nav-btn ${activeTab === id ? 'active' : ''}`}
-            onClick={() => setActiveTab(id)}
-          >
-            <Icon style={{ width: 20, height: 20, strokeWidth: 2.2 }} />
-            <span className="nav-label">{label}</span>
-          </button>
-        ))}
+        ].map(({ id, icon: Icon, label }) => {
+          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo');
+          return (
+            <button
+              key={id}
+              className={`nav-btn ${isActive ? 'active' : ''}`}
+              onClick={() => setActiveTab(id)}
+            >
+              <Icon style={{ width: 20, height: 20, strokeWidth: 2.2 }} />
+              <span className="nav-label">{label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {/* ── System Diagnostics Overlay Modal ── */}

@@ -212,6 +212,7 @@ function stdev(values) {
  * (Look-ahead safety: verified by Test F in analyzerValidation.js)
  */
 export function buildIndicatorSeries(candles, { minWarmup = 60 } = {}) {
+  if (!Array.isArray(candles)) return [];
   const series = new Array(candles.length).fill(null);
   const closes  = candles.map((c) => c.close);
   const volumes = candles.map((c) => c.volume);
@@ -238,8 +239,8 @@ export function buildIndicatorSeries(candles, { minWarmup = 60 } = {}) {
     const lo52    = Math.min(...win52);
     const pricePos52w = hi52 > lo52 ? ((price - lo52) / (hi52 - lo52)) * 100 : 50;
 
-    const ret5  = i >= 5  ? ((price - closes[i - 5])  / closes[i - 5])  * 100 : 0;
-    const ret20 = i >= 20 ? ((price - closes[i - 20]) / closes[i - 20]) * 100 : 0;
+    const ret5  = i >= 5 && closes[i - 5] > 0 ? ((price - closes[i - 5])  / closes[i - 5])  * 100 : 0;
+    const ret20 = i >= 20 && closes[i - 20] > 0 ? ((price - closes[i - 20]) / closes[i - 20]) * 100 : 0;
 
     const bbWindow    = closesToDate.slice(-20);
     const bbMid       = sma20 || price;
@@ -615,6 +616,7 @@ export function runAnalogBacktest(candles, options = {}) {
 // ══════════════════════════════════════════════════════════════════
 
 export function getStrategyTrackRecord(candlesAscending) {
+  if (!Array.isArray(candlesAscending)) return null;
   const closes = candlesAscending.map((c) => c.close);
   if (closes.length < 60) return null;
 

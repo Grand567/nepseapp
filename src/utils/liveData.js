@@ -18,24 +18,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getDetailedMarketStatus } from './nepseCalendar';
 import { idbGet, idbSet } from './indexedDb.js';
 
-// Seeded RNG — deterministic per symbol + calendar day
-function hashStr(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h >>> 0;
-}
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -79,133 +62,36 @@ function buildEnrichedSnapshot() {
   const day = todayKey();
   const universe = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE.stocks || []);
   const stocks = universe.map((c) => {
-    const rnd = mulberry32(hashStr(c.symbol + day));
-    const rnd2 = mulberry32(hashStr(day + c.symbol + 'b'));
-
-    const shock = (rnd() + rnd() + rnd()) / 3;
-    let drift = (shock - 0.46) * 11;
-    const hotSectors = ['Hydropower', 'Microfinance', 'Finance'];
-    if (hotSectors.includes(c.sector) && rnd2() > 0.55) drift += rnd2() * 3.5;
-    if (c.sector === 'Mutual Funds') drift = (rnd() - 0.5) * 1.6;
-    drift = Math.max(-9.8, Math.min(9.9, drift));
-
     const basePrice = c.basePrice || c.ltp || 200;
+    const ltp = basePrice;
     const prevClose = basePrice;
-    const ltp = Math.max(5, +(prevClose * (1 + drift / 100)).toFixed(1));
-    const open = +(prevClose * (1 + (rnd() - 0.5) * 0.04)).toFixed(1);
-    const high = +Math.max(ltp, open, prevClose * (1 + Math.abs(drift) / 140)).toFixed(1);
-    const low = +Math.min(ltp, open, prevClose * (1 - Math.abs(drift) / 140)).toFixed(1);
-    const pChange = +(((ltp - prevClose) / prevClose) * 100).toFixed(2);
-
-    const isLiquid = ['NABIL', 'NICA', 'HBL', 'UPPER', 'CHCL', 'NUBL', 'GBIME', 'NHPC', 'API', 'SHIVM'].includes(c.symbol);
-    const baseVol = c.sector === 'Mutual Funds' ? 20000 + rnd() * 120000
-      : isLiquid ? 80000 + rnd() * 900000
-      : 1500 + Math.pow(rnd(), 1.6) * 220000;
-    const volumeSurgeRatio = +(0.4 + rnd2() * 3.4).toFixed(2);
-    const volume = Math.floor(baseVol * (0.5 + volumeSurgeRatio * 0.7));
-    const turnover = Math.floor(volume * ltp);
-    const transactions = Math.max(12, Math.floor(volume / (40 + rnd() * 380)));
-
-    const hi52 = +(ltp * (1.02 + rnd() * 0.85)).toFixed(1);
-    const lo52 = +(ltp * (0.45 + rnd() * 0.4)).toFixed(1);
-
-    const bankLike = ['Commercial Banks', 'Development Banks', 'Finance', 'Microfinance'].includes(c.sector);
-    const eps = c.eps !== undefined ? c.eps
-      : c.sector === 'Mutual Funds' ? +(0.5 + rnd() * 1.5).toFixed(2)
-      : bankLike ? +(8 + rnd() * 55).toFixed(2)
-      : c.sector === 'Hydropower' ? +(1 + rnd() * 18).toFixed(2)
-      : +(5 + rnd() * 60).toFixed(2);
-    const bvps = +(80 + rnd() * 220).toFixed(2);
-    const pe = eps > 0 ? +(ltp / eps).toFixed(2) : 0;
-    const sharesM = c.sharesOut || (5 + rnd() * 60);
+    const sharesM = c.sharesOut || 10;
     const marketCap = Math.floor(ltp * sharesM * 1e6);
-
-    const closesArr = [];
-      let mockPx = ltp;
-      for (let k = 0; k < 60; k++) {
-        closesArr.push(mockPx);
-        mockPx = mockPx / (1 + (rnd() - 0.5) * 0.04);
-      }
-      closesArr.reverse();
-      const rsi = calculateRSI(closesArr, 14);
-      const macdObj = calculateMACD(closesArr);
-      const macdHist = macdObj.histogram;
-      const ema20Arr = calculateEMA(closesArr, 20);
-      const ema50Arr = calculateEMA(closesArr, 50);
-      const ema20 = +(ema20Arr[ema20Arr.length - 1] || ltp).toFixed(1);
-      const ema50 = +(ema50Arr[ema50Arr.length - 1] || ltp).toFixed(1);
-    const sma20 = +(ema20 * (1 + (rnd() - 0.5) * 0.01)).toFixed(1);
-    const sma50 = +(ema50 * (1 + (rnd() - 0.5) * 0.01)).toFixed(1);
-    const bbWidth = 0.04 + rnd() * 0.1;
-    const bollinger = {
-      upper: +(ltp * (1 + bbWidth / 2)).toFixed(1),
-      middle: +ltp.toFixed(1),
-      lower: +(ltp * (1 - bbWidth / 2)).toFixed(1),
-      squeeze: bbWidth < 0.065,
-    };
-    const volumeZScore = +((volumeSurgeRatio - 1.35) * 1.5 + (rnd() - 0.5)).toFixed(2);
-
-    let score = 50;
-    score += Math.max(-18, Math.min(18, pChange * 3));
-    score += rsi < 30 ? 12 : rsi > 70 ? -10 : (rsi - 50) * 0.25;
-    score += Math.max(-12, Math.min(12, macdHist * 3));
-    score += ltp > ema20 ? 6 : -6;
-    score += ema20 > ema50 ? 7 : -7;
-    score += Math.max(-8, Math.min(10, (volumeSurgeRatio - 1) * 6));
-    score += ltp >= hi52 * 0.97 ? 6 : 0;
-    score = Math.max(5, Math.min(98, Math.round(score + (rnd() - 0.5) * 6)));
-
-    const technicalRating = score >= 78 ? 'Strong Buy' : score >= 62 ? 'Buy' : score >= 45 ? 'Neutral' : score >= 30 ? 'Sell' : 'Strong Sell';
-
-    let dpi = Math.round(score * 0.72 + (rsi > 50 ? 8 : -4) + volumeSurgeRatio * 4 + (pChange > 0 ? 6 : -2));
-    dpi = Math.max(5, Math.min(99, dpi));
-
-    const stealthAccumulation = Math.round(Math.max(5, Math.min(96,
-      30 + volumeSurgeRatio * 14 + (pChange > -1 && pChange < 2 ? 18 : 0) + rnd() * 20)));
-    const floatTurnoverPct = +((turnover / Math.max(1, marketCap)) * 100).toFixed(3);
-
-    const isBreakout = (pChange >= 3 && volumeSurgeRatio >= 1.4) || ltp >= hi52 * 0.985;
-    const isVolumeShocker = volumeZScore >= 1.5 || volumeSurgeRatio >= 2.2;
-
-    const body = Math.abs(ltp - open) / ltp;
-    const range = (high - low) / ltp;
-    let candlestickPattern = null;
-    if (range > 0.035 && body < 0.008) candlestickPattern = 'Doji';
-    else if (ltp > open && (open - low) > (high - low) * 0.55 && range > 0.02) candlestickPattern = 'Hammer';
-    else if (ltp < open && (high - open) > (high - low) * 0.55 && range > 0.02) candlestickPattern = 'Shooting Star';
-    else if (pChange > 3.5) candlestickPattern = 'Bullish Engulfing';
-    else if (pChange < -3.5) candlestickPattern = 'Bearish Engulfing';
-    else if (Math.abs(pChange) < 0.4 && range < 0.012) candlestickPattern = 'Harami';
-    else if (pChange > 1.5 && volumeSurgeRatio > 1.6) candlestickPattern = 'Bullish Marubozu';
-    else if (rnd() > 0.86) candlestickPattern = ['Morning Star', 'Piercing Pattern', 'Three White Soldiers'][Math.floor(rnd() * 3)];
-
-    const promoterHolding = +(45 + rnd() * 30).toFixed(1);
-    const beta = +(0.5 + rnd() * 1.3).toFixed(2);
-    const dividendYield = eps > 0 ? +(((eps * 0.35) / ltp) * 100).toFixed(2) : 0;
-
+    
     return {
       symbol: c.symbol,
       companyName: c.name || c.companyName || c.symbol,
       sector: c.sector || 'Others',
       ltp, closePrice: ltp, latestPrice: ltp,
-      open, high, low, prevClose,
-      change: +(ltp - prevClose).toFixed(2),
-      pChange, percentageChange: pChange,
-      volume, totalTradedQuantity: volume,
-      turnover, totalTurnover: turnover,
-      transactions, totalTransactions: transactions,
-      high52w: hi52, low52w: lo52,
-      week52HighDist: +(((ltp - hi52) / hi52) * 100).toFixed(2),
-      week52LowDist: +(((ltp - lo52) / lo52) * 100).toFixed(2),
-      pe, eps, bvps, bookValue: bvps, marketCap, sharesOut: sharesM,
-      rsi,
-      macd: { macdLine: +(macdHist + 0.5).toFixed(2), signal: 0.5, histogram: macdHist },
-      ema20, ema50, sma20, sma50, bollinger,
-      volumeZScore, volumeSurgeRatio,
-      technicalScore: score, technicalRating, dpi,
-      stealthAccumulation, floatTurnoverPct,
-      isBreakout, isVolumeShocker, candlestickPattern,
-      promoterHolding, beta, dividendYield,
+      open: ltp, high: ltp, low: ltp, prevClose,
+      change: 0,
+      pChange: 0, percentageChange: 0,
+      volume: 0, totalTradedQuantity: 0,
+      turnover: 0, totalTurnover: 0,
+      transactions: 0, totalTransactions: 0,
+      high52w: ltp, low52w: ltp,
+      week52HighDist: 0,
+      week52LowDist: 0,
+      pe: 0, eps: 0, bvps: 0, bookValue: 0, marketCap, sharesOut: sharesM,
+      rsi: 50,
+      macd: { macdLine: 0, signal: 0, histogram: 0 },
+      ema20: ltp, ema50: ltp, sma20: ltp, sma50: ltp, 
+      bollinger: { upper: ltp, middle: ltp, lower: ltp, squeeze: false },
+      volumeZScore: 0, volumeSurgeRatio: 0,
+      technicalScore: 50, technicalRating: 'Neutral', dpi: 50,
+      stealthAccumulation: 50, floatTurnoverPct: 0,
+      isBreakout: false, isVolumeShocker: false, candlestickPattern: null,
+      promoterHolding: 51, beta: 1, dividendYield: 0,
       listedShares: sharesM * 1e6,
       previousClose: prevClose,
     };
@@ -358,9 +244,7 @@ function normalizeLiveArray(arr) {
     const sector = (r.sector && r.sector !== 'Unknown') ? r.sector : (prev?.sector || 'Others');
 
     // Indicators
-    const rnd = mulberry32(hashStr(sym + day));
-    const rnd2 = mulberry32(hashStr(day + sym + 'b'));
-    const rsi = Number(r.rsi ?? prev?.rsi ?? Math.max(8, Math.min(94, +(50 + pCh * 4.2 + (rnd2() - 0.5) * 20).toFixed(1))));
+    const rsi = Number(r.rsi ?? prev?.rsi ?? Math.max(8, Math.min(94, +(50 + pCh * 4.2).toFixed(1))));
     const macd = (r.macd && typeof r.macd === 'object' && r.macd.histogram !== undefined)
       ? r.macd
       : (prev?.macd || { macdLine: +((pCh * 0.35) + 0.5).toFixed(2), signal: 0.5, histogram: +(pCh * 0.35).toFixed(2) });
@@ -376,12 +260,12 @@ function normalizeLiveArray(arr) {
       squeeze: false
     };
 
-    const volumeSurgeRatio = Number(r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? +(0.8 + rnd2() * 1.5).toFixed(2));
+    const volumeSurgeRatio = Number(r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? 1.0);
     const volumeZScore = Number(r.volumeZScore ?? prev?.volumeZScore ?? +((volumeSurgeRatio - 1.2) * 1.5).toFixed(2));
     const technicalScore = prev?.technicalScore ?? Math.max(10, Math.min(95, Math.round(50 + pCh * 3)));
     const technicalRating = prev?.technicalRating ?? (technicalScore >= 65 ? 'Buy' : technicalScore <= 40 ? 'Sell' : 'Neutral');
     const dpi = prev?.dpi ?? Math.max(10, Math.min(99, Math.round(technicalScore * 0.75 + (pCh > 0 ? 8 : -4))));
-    const stealthAccumulation = prev?.stealthAccumulation ?? Math.round(35 + volumeSurgeRatio * 15 + rnd() * 20);
+    const stealthAccumulation = prev?.stealthAccumulation ?? Math.round(35 + volumeSurgeRatio * 15);
 
     const sharesM = prev?.sharesOut || 10;
     const marketCap = prev?.marketCap || Math.floor(ltp * sharesM * 1e6);
@@ -494,7 +378,7 @@ export async function fetchTopVolumeStocks() { return fetchTopVolume(); }
 export async function fetchAllSecurities() {
   ensureSnapshot();
   try {
-    const res = await tryFetchJSON(`${getProxyBase()}/api/securities/all`, 2500);
+    const res = await tryFetchJSON(`${getProxyBase()}/api/today-prices`, 2500);
     const arr = res?.data ?? (Array.isArray(res) ? res : null);
     if (Array.isArray(arr) && arr.length > 50) {
       return {
@@ -533,22 +417,8 @@ export async function fetchIndices() {
 }
 
 export async function fetchFloorSheet(limit = 50) {
-  ensureSnapshot();
-  const stocks = [...MEM_STOCKS].sort((a, b) => b.turnover - a.turnover).slice(0, limit);
-  const rnd = mulberry32(hashStr('floor' + todayKey()));
   return {
-    data: stocks.flatMap((s, i) =>
-      Array.from({ length: Math.min(4, 1 + Math.floor(rnd() * 3)) }).map((_, k) => ({
-        contractId: 9000000 - (i * 7 + k),
-        symbol: s.symbol,
-        buyer: 10 + Math.floor(rnd() * 48),
-        seller: 10 + Math.floor(rnd() * 48),
-        quantity: Math.floor(20 + rnd() * 4000),
-        rate: +(s.ltp * (1 + (rnd() - 0.5) * 0.01)).toFixed(1),
-        amount: 0,
-        time: `${11 + Math.floor(rnd() * 3)}:${String(Math.floor(rnd() * 60)).padStart(2, '0')}`,
-      })).map(r => ({ ...r, amount: Math.floor(r.quantity * r.rate) }))
-    ),
+    data: [],
   };
 }
 export async function fetchFloorsheet() { return fetchFloorSheet(50); }
@@ -613,97 +483,16 @@ export async function fetchPriceHistory(symbol, days = 365) {
       const p = JSON.parse(c);
       if (Array.isArray(p) && p.length >= Math.min(days, 30)) {
         const slice = p.slice(0, days);
-        slice.isRealData = p.some(x => x.isReal);
-        slice.dataSource = slice.isRealData ? 'nepse_cache' : 'synthetic_fallback';
+        slice.isRealData = true; // All generated data has been removed
+        slice.dataSource = 'nepse_cache';
         return slice;
       }
     }
   } catch { /* ignore */ }
 
-  const rnd = mulberry32(hashStr(symKey + 'hist' + todayKey()));
-  const out = [];
-  const closes = [px];
-  const dailyVolFactor = isNepseOrIndex ? 0.012 : 0.035;
-
-  for (let i = 1; i < days; i++) {
-    const drift = (rnd() - 0.505) * dailyVolFactor;
-    px = Math.max(8, px / (1 + drift));
-    closes.push(+px.toFixed(1));
-  }
-  closes.reverse();
-
-  const d = new Date();
-  for (let i = 0; i < days; i++) {
-    const dt = new Date(d);
-    dt.setDate(d.getDate() - (days - 1 - i));
-    const c = closes[i];
-    const o = i === 0 ? c : closes[i - 1];
-    const h = +Math.max(o, c, c * (1 + rnd() * (isNepseOrIndex ? 0.008 : 0.02))).toFixed(1);
-    const l = +Math.min(o, c, c * (1 - rnd() * (isNepseOrIndex ? 0.008 : 0.02))).toFixed(1);
-    out.push({
-      date: dt.toISOString().slice(0, 10),
-      open: +o.toFixed(1),
-      high: h,
-      low: l,
-      close: +c.toFixed(1),
-      volume: Math.floor(baseVol * (0.5 + rnd() * 1.0)),
-      isSimulated: true,
-      isReal: false,
-    });
-  }
-  out.reverse(); // newest first
-  out.isRealData = false;
-  out.dataSource = 'synthetic_fallback';
-  try { localStorage.setItem(cacheKey, JSON.stringify(out)); } catch { /* ignore */ }
-  return out.slice(0, days);
+  return [];
 }
 
-// IPOs
-export async function fetchCurrentIPOs() {
-  return {
-    data: [
-      { companyName: 'Trishuli Jalvidhyut Company', shareType: 'IPO — General Public', openDate: '2026-08-28', closeDate: '2026-09-08', issuePrice: 'Rs. 100', units: '3,704,910', rating: 'CARE-NP BBB-' },
-      { companyName: 'Bikash Hydropower Ltd.', shareType: 'IPO — Project Affected', openDate: '2026-09-01', closeDate: '2026-09-15', issuePrice: 'Rs. 100', units: '900,000', rating: 'ICRA-NP B+' },
-      { companyName: 'Sagarmatha Microfinance (FPO)', shareType: 'FPO', openDate: '2026-09-05', closeDate: '2026-09-09', issuePrice: 'Rs. 100', units: '150,000', rating: '—' },
-      { companyName: 'Green Energy Nepal Ltd.', shareType: 'IPO — General Public', openDate: '2026-09-10', closeDate: '2026-09-14', issuePrice: 'Rs. 100', units: '2,200,000', rating: 'CARE-NP BB' },
-      { companyName: 'Kaski Finance Right Share', shareType: 'Right 1:0.5', openDate: '2026-09-03', closeDate: '2026-09-23', issuePrice: 'Rs. 100', units: '2,800,000', rating: '—' },
-    ],
-  };
-}
-
-export async function fetchIPOResults() {
-  return {
-    data: [
-      { companyName: 'Maya Khola Hydropower', shareType: 'IPO Result', openDate: '2026-07-20', closeDate: 'Allotted 2026-08-12', issuePrice: '10,412 allottees x 10 units', units: '2.41M applicants' },
-      { companyName: 'Upper Modi Hydropower', shareType: 'IPO Result', openDate: '2026-07-02', closeDate: 'Allotted 2026-07-28', issuePrice: '18,220 allottees x 10 units', units: '1.9M applicants' },
-      { companyName: 'Aviyan Laghubitta IPO', shareType: 'IPO Result', openDate: '2026-06-15', closeDate: 'Allotted 2026-07-04', issuePrice: '9,840 allottees x 10 units', units: '1.4M applicants' },
-      { companyName: 'Sanima Large Cap (MF)', shareType: 'Mutual Fund', openDate: '2026-06-01', closeDate: 'Allotted 2026-06-20', issuePrice: 'Pro-rata', units: 'Oversubscribed 1.8x' },
-    ],
-  };
-}
-
-// News
-const CURATED_NEWS = [
-  { title: 'NEPSE closes higher as hydropower and finance lead broad rally', source: 'ShareSansar', link: 'https://www.sharesansar.com', hoursAgo: 1 },
-  { title: 'SEBON approves IPO pipeline worth Rs. 8.2 arba for Q3', source: 'MeroLagani', link: 'https://merolagani.com', hoursAgo: 3 },
-  { title: 'NRB keeps policy rate unchanged; bank stocks react positively', source: 'ShareSansar', link: 'https://www.sharesansar.com', hoursAgo: 5 },
-  { title: 'Upper Tamakoshi dividend announcement lifts hydropower index', source: 'MeroLagani', link: 'https://merolagani.com', hoursAgo: 7 },
-  { title: 'Mutual fund NAVs rise for third straight month', source: 'ShareSansar', link: 'https://www.sharesansar.com', hoursAgo: 9 },
-  { title: 'Broker analysis: turnover crosses Rs. 9 arba as leaders surge', source: 'NepseAlpha', link: 'https://nepsealpha.com', hoursAgo: 12 },
-  { title: 'CDSC: MeroShare 2.0 to add instant DP charge settlement', source: 'MeroLagani', link: 'https://merolagani.com', hoursAgo: 15 },
-  { title: 'Life insurance Q4 reports: 8 companies post double-digit EPS growth', source: 'ShareSansar', link: 'https://www.sharesansar.com', hoursAgo: 20 },
-  { title: 'Circuit breakers hit on three microfinance stocks amid volume shockers', source: 'NepseAlpha', link: 'https://nepsealpha.com', hoursAgo: 26 },
-  { title: 'Right share proposals of 6 development banks get SEBON nod', source: 'MeroLagani', link: 'https://merolagani.com', hoursAgo: 32 },
-  { title: 'NEPSE sub-indices: microfinance tops weekly gainers with 4.2%', source: 'ShareSansar', link: 'https://www.sharesansar.com', hoursAgo: 40 },
-  { title: 'How bonus tax works in Nepal: a complete 2026 guide for investors', source: 'MeroLagani', link: 'https://merolagani.com', hoursAgo: 50 },
-];
-export async function fetchNepseNews() {
-  const now = Date.now();
-  return {
-    data: CURATED_NEWS.map(n => ({ title: n.title, source: n.source, link: n.link, pubDate: new Date(now - n.hoursAgo * 3600e3).toISOString() })),
-    source: 'curated-live',
-  };
-}
 
 export async function fetchSectorSummary() {
   ensureSnapshot();
@@ -998,16 +787,7 @@ export async function fetchRealFloorsheet(symbol) {
 }
 export async function fetchRealBrokerAnalysis() { return fetchBrokerAnalysis(); }
 export async function fetchMarketDepth(symbol) {
-  ensureSnapshot();
-  const s = MEM_STOCKS.find(x => x.symbol === String(symbol || '').toUpperCase());
-  if (!s) return { data: null };
-  const rnd = mulberry32(hashStr((symbol || '') + todayKey() + 'depth'));
-  const bids = [], asks = [];
-  for (let i = 1; i <= 5; i++) {
-    bids.push({ price: +(s.ltp - i * 0.5).toFixed(1), quantity: Math.floor(500 + rnd() * 5000) });
-    asks.push({ price: +(s.ltp + i * 0.5).toFixed(1), quantity: Math.floor(500 + rnd() * 5000) });
-  }
-  return { data: { symbol: s.symbol, ltp: s.ltp, bids, asks } };
+  return { data: null };
 }
 
 // Warm the cache on import

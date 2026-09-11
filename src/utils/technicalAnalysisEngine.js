@@ -267,8 +267,8 @@ export function analyzeMomentum(closes, trendDirection = 'neutral') {
   const macd = calculateMACD(closes);
 
   // Multi-period returns
-  const ret5 = n >= 6 ? Number((((price - closes[n - 6]) / closes[n - 6]) * 100).toFixed(2)) : 0;
-  const ret20 = n >= 21 ? Number((((price - closes[n - 21]) / closes[n - 21]) * 100).toFixed(2)) : 0;
+  const ret5 = n >= 6 && closes[n - 6] > 0 ? Number((((price - closes[n - 6]) / closes[n - 6]) * 100).toFixed(2)) : 0;
+  const ret20 = n >= 21 && closes[n - 21] > 0 ? Number((((price - closes[n - 21]) / closes[n - 21]) * 100).toFixed(2)) : 0;
 
   const observations = [];
   let momentumScore = 50;

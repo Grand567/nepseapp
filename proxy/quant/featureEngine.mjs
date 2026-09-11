@@ -145,26 +145,26 @@ async function getIndexCloses(days = 60, memoryCloses = null) {
   }
 }
 
-async function getIndexTurnoverStats(memorySummary = null) {
+/**
+ * Computes rolling 20-day index turnover ratio rather than dividing by static 4.5 Arba.
+ */
+async function getIndexTurnoverStats(memorySummary = null, memoryHistory = null) {
+  if (Array.isArray(memoryHistory) && memoryHistory.length >= 5) {
+    const turnovers = memoryHistory.map(d => Number(d.turnover || d.turnoverValue || 0)).filter(t => t > 0);
+    if (turnovers.length >= 5) {
+      const today = turnovers[turnovers.length - 1];
+      const lookback = Math.min(20, turnovers.length);
+      const sma = turnovers.slice(-lookback).reduce((a, b) => a + b, 0) / lookback;
+      const ratio = sma > 0 ? +(today / sma).toFixed(2) : 1.0;
+      return { turnoverRatio: ratio, rollingAvgTurnover: sma, todayTurnover: today };
+    }
+  }
   if (memorySummary?.totalTurnover) {
-    return { turnoverRatio: +(memorySummary.totalTurnover / 4500000000).toFixed(2) || 1.12 };
+    // Normal NEPSE daily turnover ranges between 3.5B and 5.5B
+    const ratio = +(memorySummary.totalTurnover / 4200000000).toFixed(2);
+    return { turnoverRatio: Math.max(0.4, Math.min(2.5, ratio || 1.0)), rollingAvgTurnover: 4200000000, todayTurnover: memorySummary.totalTurnover };
   }
-  if (!pool) return { turnoverRatio: 1.15 };
-  try {
-    const { rows } = await pool.query(
-      `SELECT trade_date, turnover
-       FROM index_price_history
-       WHERE symbol = 'NEPSE'
-       ORDER BY trade_date DESC
-       LIMIT 6`
-    );
-    if (rows.length < 6) return { turnoverRatio: 1 };
-    const today = Number(rows[0].turnover);
-    const avg5 = rows.slice(1, 6).reduce((a, r) => a + Number(r.turnover), 0) / 5;
-    return { turnoverRatio: avg5 > 0 ? today / avg5 : 1 };
-  } catch (_) {
-    return { turnoverRatio: 1.15 };
-  }
+  return { turnoverRatio: 1.0, rollingAvgTurnover: 4000000000, todayTurnover: 4000000000 };
 }
 
 /** Advance/decline ratio from today's live-trading snapshot */
@@ -190,33 +190,145 @@ async function getAdvanceDeclineRatio(date, memorySummary = null) {
   }
 }
 
-/** Sector breadth: % of sub-indices that are up today */
+/**
+ * Market-Cap Weighted Sector Breadth
+ * Commercial Banks (32%), Hydropower (20%), Insurance (14%), etc.
+ */
+const SECTOR_MARKET_CAP_WEIGHTS = {
+  'banking': 0.32,
+  'commercial banks': 0.32,
+  'bank': 0.32,
+  'hydropower': 0.20,
+  'hydro': 0.20,
+  'life insurance': 0.08,
+  'non life insurance': 0.06,
+  'development bank': 0.06,
+  'development banks': 0.06,
+  'microfinance': 0.08,
+  'finance': 0.04,
+  'manufacturing': 0.04,
+  'manufacturing and processing': 0.04,
+  'hotels': 0.02,
+  'hotels and tourism': 0.02,
+  'investment': 0.04,
+  'others': 0.04,
+  'mutual fund': 0.02,
+  'trading': 0.01
+};
+
 async function getSectorBreadth(date, memoryIndices = null) {
   if (Array.isArray(memoryIndices) && memoryIndices.length > 0) {
     const sectors = {};
-    let up = 0;
+    let unweightedUp = 0;
+    let weightedScore = 0;
+    let totalWeightCounted = 0;
+    let positiveWeight = 0;
+
     memoryIndices.forEach((idx) => {
+      const name = String(idx.sector || idx.indexName || idx.name || '').toLowerCase().trim();
       const pChg = Number(idx.pChange ?? idx.percentageChange ?? 0);
       sectors[idx.sector || idx.indexName || idx.name] = pChg;
-      if (pChg > 0) up++;
+      if (pChg > 0) unweightedUp++;
+
+      let weight = 0.04;
+      for (const [k, w] of Object.entries(SECTOR_MARKET_CAP_WEIGHTS)) {
+        if (name.includes(k)) {
+          weight = w;
+          break;
+        }
+      }
+
+      totalWeightCounted += weight;
+      if (pChg > 0) positiveWeight += weight;
+      const cappedChange = Math.max(-3.0, Math.min(3.0, pChg));
+      weightedScore += (cappedChange / 3.0) * weight;
     });
-    return { breadthPct: +(up / memoryIndices.length).toFixed(2), sectors };
+
+    const normPositiveWeight = totalWeightCounted > 0 ? positiveWeight / totalWeightCounted : 0.5;
+    const normWeightedScore = totalWeightCounted > 0 ? weightedScore / totalWeightCounted : 0;
+
+    return {
+      breadthPct: +(unweightedUp / memoryIndices.length).toFixed(2),
+      weightedBreadthPct: +normPositiveWeight.toFixed(2),
+      weightedBreadthScore: +normWeightedScore.toFixed(3),
+      sectors
+    };
   }
-  if (!pool) {
-    return { breadthPct: 0, sectors: {} };
+  return { breadthPct: 0.5, weightedBreadthPct: 0.5, weightedBreadthScore: 0, sectors: {} };
+}
+
+/**
+ * Calendar & Fiscal Cycle Evaluation for Nepal Capital Market
+ */
+export function computeFiscalCycle(date = new Date()) {
+  const d = new Date(date);
+  const month = d.getMonth() + 1; // 1 = Jan ... 12 = Dec
+  const day = d.getDate();
+
+  // 1. Ashadh/Shrawan Wave (Mid-June to Mid-August): Massive Govt Development Budget Release
+  if ((month === 6 && day >= 15) || month === 7 || (month === 8 && day <= 15)) {
+    return {
+      phase: 'Ashadh-Shrawan Government Spending Wave',
+      scoreBonus: +0.25,
+      bias: 'bullish',
+      detail: 'Tens of billions of development budget released into banking accounts, lowering interbank rates and fueling post-fiscal liquidity surge.'
+    };
   }
-  try {
-    const { rows } = await pool.query(
-      `SELECT sector, change_pct FROM sector_index_snapshot WHERE trade_date = $1`,
-      [date]
-    );
-    if (rows.length === 0) throw new Error('No DB sector data');
-    const up = rows.filter((r) => Number(r.change_pct) > 0).length;
-    const sectors = Object.fromEntries(rows.map((r) => [r.sector, Number(r.change_pct)]));
-    return { breadthPct: +(up / rows.length).toFixed(2), sectors };
-  } catch (_) {
-    return { breadthPct: 0, sectors: {} };
+
+  // 2. Poush/Magh Q2 Corporate Tax Drain (Mid-Dec to Mid-Feb): 40% Advance Tax Paid
+  if ((month === 12 && day >= 15) || month === 1 || (month === 2 && day <= 10)) {
+    return {
+      phase: 'Q2 Advance Corporate Tax Liquidity Drain',
+      scoreBonus: -0.20,
+      bias: 'bearish',
+      detail: 'Corporates remit 40% advance tax to government treasury, temporarily withdrawing Rs. 40–60 Arba from bank deposits and tightening credit.'
+    };
   }
+
+  // 3. Festive Pre-Dashain Cash Withdrawal (Bhadra/Ashwin - approx Sept to Oct)
+  if (month === 9 || (month === 10 && day <= 20)) {
+    return {
+      phase: 'Festive Season Cash Outflow Cycle',
+      scoreBonus: -0.10,
+      bias: 'neutral_defensive',
+      detail: 'Public withdrawals for Dashain/Tihar festival bonuses and travel temporarily tighten banking reserves and reduce market turnover velocity.'
+    };
+  }
+
+  // 4. Spring / Pre-Monetary Review (April - May)
+  if (month === 4 || month === 5) {
+    return {
+      phase: 'Spring Capital Expansion Phase',
+      scoreBonus: +0.10,
+      bias: 'bullish',
+      detail: 'Commercial banks active in credit deployment; speculative pre-monetary policy positioning.'
+    };
+  }
+
+  return {
+    phase: 'Mid-Fiscal Consolidation Phase',
+    scoreBonus: 0.0,
+    bias: 'neutral',
+    detail: 'Balanced fiscal liquidity flows without seasonal tax or budget concentration.'
+  };
+}
+
+/**
+ * 14-day Average True Range (ATR) for the NEPSE Index
+ */
+export function computeIndexATR(history, period = 14) {
+  if (!Array.isArray(history) || history.length < period + 1) return 32.0;
+  const trs = [];
+  for (let i = 1; i < history.length; i++) {
+    const h = Number(history[i].high || history[i].close || 0);
+    const l = Number(history[i].low || history[i].close || 0);
+    const prevC = Number(history[i - 1].close || 0);
+    const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+    if (tr > 0) trs.push(tr);
+  }
+  if (trs.length < 5) return 32.0;
+  const recent = trs.slice(-period);
+  return +(recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);
 }
 
 /** Aggregate recent news sentiment + flag NRB/political news spikes
@@ -325,34 +437,61 @@ export async function getPoliticalEventFlag(date = new Date().toISOString().slic
  */
 export async function computeIndexFeatures(options = {}) {
   const date = options.date || new Date().toISOString().slice(0, 10);
-  const memoryCloses = options.memoryCloses || null;
+  const memoryHistory = options.memoryHistory || null;
+  let memoryCloses = options.memoryCloses || null;
+  if (!memoryCloses && Array.isArray(memoryHistory) && memoryHistory.length >= 10) {
+    memoryCloses = memoryHistory.map(d => Number(d.close || d.closePrice || 0)).filter(c => c > 0);
+  }
   const memorySummary = options.memorySummary || null;
   const memoryIndices = options.memoryIndices || null;
 
-  const closes = await getIndexCloses(60, memoryCloses);
+  // Request up to 220 closes for reliable 50 and 200 EMA
+  const closes = await getIndexCloses(220, memoryCloses);
+  const latestClose = closes.length > 0 ? closes[closes.length - 1] : 2650;
   const rsi14 = computeRSI(closes, 14);
   const ema20 = computeEMA(closes, 20);
-  const latestClose = closes[closes.length - 1];
-  const maDeviationPct = ema20 ? Number((((latestClose - ema20) / ema20) * 100).toFixed(2)) : 0;
+  const ema50 = computeEMA(closes, 50);
+  const ema200 = computeEMA(closes, 200);
+
+  const ma20DeviationPct = ema20 ? Number((((latestClose - ema20) / ema20) * 100).toFixed(2)) : 0;
+  const isAbove20EMA = ema20 ? latestClose >= ema20 : null;
+  const isAbove50EMA = ema50 ? latestClose >= ema50 : null;
+  const isAbove200EMA = ema200 ? latestClose >= ema200 : null;
+  const goldenCross = (ema50 && ema200) ? ema50 >= ema200 : null;
   const macdSignal = computeMACDSignal(closes);
 
-  const { turnoverRatio } = await getIndexTurnoverStats(memorySummary);
+  const turnoverStats = await getIndexTurnoverStats(memorySummary, memoryHistory);
   const advanceDeclineRatio = await getAdvanceDeclineRatio(date, memorySummary);
-  const { breadthPct, sectors } = await getSectorBreadth(date, memoryIndices);
+  const breadthStats = await getSectorBreadth(date, memoryIndices);
   const sentiment = await getSentimentFeatures(24);
   const macro = await getMacroFeatures();
   const politicalEvent = await getPoliticalEventFlag(date);
+  const fiscalCycle = computeFiscalCycle(date);
+  const indexAtr = computeIndexATR(memoryHistory, 14);
 
   return {
     date,
     latest_close: latestClose,
     rsi_14: rsi14,
-    ma_20_deviation_pct: maDeviationPct,
+    ema_20: ema20,
+    ema_50: ema50,
+    ema_200: ema200,
+    ma_20_deviation_pct: ma20DeviationPct,
+    is_above_20_ema: isAbove20EMA,
+    is_above_50_ema: isAbove50EMA,
+    is_above_200_ema: isAbove200EMA,
+    golden_cross: goldenCross,
     macd_signal: macdSignal,
-    turnover_ratio_vs_5d_avg: turnoverRatio,
+    turnover_ratio_vs_20d_avg: turnoverStats.turnoverRatio,
+    rolling_avg_turnover: turnoverStats.rollingAvgTurnover,
+    today_turnover: turnoverStats.todayTurnover,
     advance_decline_ratio: advanceDeclineRatio,
-    sector_breadth_pct: breadthPct,
-    sector_detail: sectors,
+    sector_breadth_pct: breadthStats.breadthPct,
+    weighted_breadth_pct: breadthStats.weightedBreadthPct,
+    weighted_breadth_score: breadthStats.weightedBreadthScore,
+    sector_detail: breadthStats.sectors,
+    fiscal_cycle: fiscalCycle,
+    index_atr: indexAtr,
     sentiment_24h_avg: sentiment.avgSentiment,
     nrb_policy_flag: sentiment.nrbPolicyFlag,
     political_news_volume: sentiment.politicalNewsVolume,

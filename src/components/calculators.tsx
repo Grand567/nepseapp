@@ -51,22 +51,36 @@ export function GrahamValuation() {
 }
 
 export function BrokerageCalculator() {
-  const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short' });
+  const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short', slabType: 'statutory' });
   const [result, setResult] = useState<any>(null);
   const [timeframe, setTimeframe] = useState('1D');
 
-  const getBrokerage = (amount: number) => {
-    if (amount <= 50000) return amount * 0.0036;
-    if (amount <= 500000) return amount * 0.0033;
-    if (amount <= 2000000) return amount * 0.0031;
-    if (amount <= 10000000) return amount * 0.0027;
-    return amount * 0.0024;
+  const getBrokerage = (amount: number, slab: string) => {
+    let fee = 0;
+    if (slab === 'jestha_2081') {
+      // Revised Slabs (effective Jestha 2081)
+      if (amount <= 50000) fee = amount * 0.0036;
+      else if (amount <= 500000) fee = amount * 0.0033;
+      else if (amount <= 2000000) fee = amount * 0.0031;
+      else if (amount <= 10000000) fee = amount * 0.0027;
+      else fee = amount * 0.0024;
+    } else {
+      // SEBON Statutory Base Regulation Slabs (0.40% down to 0.27%)
+      if (amount <= 50000) fee = amount * 0.0040;
+      else if (amount <= 500000) fee = amount * 0.0037;
+      else if (amount <= 2000000) fee = amount * 0.0034;
+      else if (amount <= 10000000) fee = amount * 0.0030;
+      else fee = amount * 0.0027;
+    }
+    return Math.max(10, fee);
   };
+
   const calc = () => {
     const buyPrice = parseFloat(form.buy), sellPrice = parseFloat(form.sell), qty = parseFloat(form.qty);
     if (!buyPrice || !sellPrice || !qty || buyPrice <= 0 || sellPrice <= 0 || qty <= 0) return;
     const buyTotal = buyPrice * qty, sellTotal = sellPrice * qty;
-    const buyBrok = getBrokerage(buyTotal), sellBrok = getBrokerage(sellTotal);
+    const buyBrok = getBrokerage(buyTotal, form.slabType);
+    const sellBrok = getBrokerage(sellTotal, form.slabType);
     const sebonBuy = buyTotal * 0.00015, sebonSell = sellTotal * 0.00015;
     const dpFee = 50; // NPR 25 buy + NPR 25 sell
     const totalCost = buyBrok + sellBrok + sebonBuy + sebonSell + dpFee;
@@ -76,8 +90,22 @@ export function BrokerageCalculator() {
     const cgt = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
     const netReturn = grossProfit - totalCost - cgt;
     const returnPct = (netReturn / buyTotal) * 100;
-    setResult({ buyTotal, sellTotal, buyBrok, sellBrok, sebonBuy, sebonSell, dpFee, totalCost, cgt, netReturn, returnPct });
+    
+    // Break-even calculation
+    let be = buyPrice;
+    for (let i = 0; i < 40; i++) {
+      const sVal = be * qty;
+      const sB = getBrokerage(sVal, form.slabType);
+      const sSebon = sVal * 0.00015;
+      const cost = buyBrok + sB + sebonBuy + sSebon + dpFee;
+      const profit = sVal - buyTotal - cost;
+      if (Math.abs(profit) < 0.5) break;
+      be += (cost - (sVal - buyTotal)) / qty;
+    }
+
+    setResult({ buyTotal, sellTotal, buyBrok, sellBrok, sebonBuy, sebonSell, dpFee, totalCost, cgt, netReturn, returnPct, breakEvenPrice: be });
   };
+
   return (
     <div className="space-y-4">
       <TimeframeFilterBar
@@ -85,32 +113,47 @@ export function BrokerageCalculator() {
         onSelectTimeframe={setTimeframe}
         title="SEBON Official Brokerage & CGT Calculator"
       />
-      <InfoBanner>Accurate SEBON tiered brokerage (0.24%–0.36%) + DP fee NPR 25/txn + 7.5% CGT for short term (&lt;365d).</InfoBanner>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <InfoBanner>
+        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.40% down to 0.27%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (7.5% short-term &le;365d, 5% long-term &gt;365d, 10% corporate).
+      </InfoBanner>
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <input type="number" placeholder="Buy Price NPR" value={form.buy} onChange={(e) => setForm((f) => ({ ...f, buy: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Sell Price NPR" value={form.sell} onChange={(e) => setForm((f) => ({ ...f, sell: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Quantity" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} className={inputCls} />
         <select value={form.holdingType} onChange={(e) => setForm((f) => ({ ...f, holdingType: e.target.value }))} className={inputCls}>
-          <option value="short">Individual Short &lt;365d — 7.5%</option>
-          <option value="long">Long &gt;365d — 5%</option>
-          <option value="institutional">Institutional — 10%</option>
+          <option value="short">Individual Short &le;365d — 7.5% CGT</option>
+          <option value="long">Individual Long &gt;365d — 5% CGT</option>
+          <option value="institutional">Institutional / Corporate — 10% CGT</option>
+        </select>
+        <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={inputCls}>
+          <option value="statutory">Statutory Slabs (0.40% – 0.27%)</option>
+          <option value="jestha_2081">Jestha 2081 Revision (0.36% – 0.24%)</option>
         </select>
       </div>
-      <button onClick={calc} className={btnCls}>Calculate Complete Return</button>
+      <button onClick={calc} className={btnCls}>Calculate Complete Net Return</button>
       {result && (
-        <div className="mt-5">
-          <div className={`mb-4 rounded-xl border p-5 text-center ${result.netReturn >= 0 ? 'border-emerald-800/60 bg-emerald-950/40' : 'border-red-800/60 bg-red-950/40'}`}>
-            <div className="text-[13px] text-slate-400">Net Profit / Loss</div>
-            <div className={`text-4xl font-black ${result.netReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{result.netReturn >= 0 ? '+' : ''}NPR {result.netReturn.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-            <div className={`text-lg font-bold ${result.returnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{result.returnPct >= 0 ? '+' : ''}{result.returnPct.toFixed(2)}% Return</div>
+        <div className="mt-5 space-y-3">
+          <div className={`rounded-xl border p-5 text-center ${result.netReturn >= 0 ? 'border-emerald-800/60 bg-emerald-950/40' : 'border-red-800/60 bg-red-950/40'}`}>
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Realized Net Profit / Loss</div>
+            <div className={`text-4xl font-black font-mono ${result.netReturn >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {result.netReturn >= 0 ? '+' : ''}Rs. {result.netReturn.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
+            </div>
+            <div className={`mt-1 text-sm font-bold ${result.returnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {result.returnPct >= 0 ? '▲ +' : '▼ '}{result.returnPct.toFixed(2)}% Net Yield
+            </div>
+            {result.breakEvenPrice && (
+              <div className="mt-2 text-xs text-slate-400 font-mono">
+                Break-even Sell Price: <span className="text-amber-400 font-bold">Rs. {result.breakEvenPrice.toFixed(2)}</span> per unit
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            <StatCard label="Buy Brokerage" value={`Rs. ${result.buyBrok.toFixed(2)}`} color="#F43F5E" />
-            <StatCard label="Sell Brokerage" value={`Rs. ${result.sellBrok.toFixed(2)}`} color="#F43F5E" />
-            <StatCard label="SEBON Fees" value={`Rs. ${(result.sebonBuy + result.sebonSell).toFixed(2)}`} color="#f59e0b" />
-            <StatCard label="DP Fee" value={`Rs. ${result.dpFee}`} color="#f59e0b" />
-            <StatCard label="CGT" value={`Rs. ${result.cgt.toFixed(2)}`} color="#F43F5E" />
-            <StatCard label="Total Cost" value={`Rs. ${result.totalCost.toFixed(2)}`} color="#F43F5E" />
+            <StatCard label="Buy Brokerage" value={`Rs. ${result.buyBrok.toFixed(2)}`} color="#f43f5e" />
+            <StatCard label="Sell Brokerage" value={`Rs. ${result.sellBrok.toFixed(2)}`} color="#f43f5e" />
+            <StatCard label="SEBON Regulatory Fee (0.015%)" value={`Rs. ${(result.sebonBuy + result.sebonSell).toFixed(2)}`} color="#f59e0b" />
+            <StatCard label="CDSC DP Fee (Rs. 25 × 2)" value={`Rs. ${result.dpFee}`} color="#f59e0b" />
+            <StatCard label="Capital Gains Tax (CGT)" value={`Rs. ${result.cgt.toFixed(2)}`} color="#f43f5e" />
+            <StatCard label="Total Transaction Costs" value={`Rs. ${result.totalCost.toFixed(2)}`} color="#f43f5e" />
           </div>
         </div>
       )}
@@ -423,6 +466,227 @@ export function RightAdjustmentCalculator() {
             <StatCard label="Right Subscription Cost" value={`Rs. ${result.subscriptionCost.toLocaleString()}`} color="#f43f5e" />
             <StatCard label="Total Shares If Applied" value={`${result.totalShares} Units`} big />
             <StatCard label="New Weighted Average Cost (WACC)" value={`Rs. ${result.adjustedWacc.toFixed(2)}`} color="#10b981" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── NRB Statutory Margin Lending & Margin Call Engine ──
+export function MarginLoanCalculator() {
+  const [form, setForm] = useState({
+    units: '1000',
+    ltp: '600',
+    avg180: '550',
+    ltvPct: '70',
+    interestRate: '9.5',
+    maintenanceMargin: '130',
+    borrowerType: 'individual',
+  });
+  const [result, setResult] = useState<any>(null);
+  const [timeframe, setTimeframe] = useState('1Y');
+
+  const calc = () => {
+    const qty = parseFloat(form.units);
+    const ltp = parseFloat(form.ltp);
+    const avg180 = parseFloat(form.avg180);
+    const ltv = parseFloat(form.ltvPct) || 70;
+    const rate = parseFloat(form.interestRate) || 9.5;
+    const maintMargin = parseFloat(form.maintenanceMargin) || 130;
+
+    if (!qty || !ltp || qty <= 0 || ltp <= 0) return;
+
+    // NRB Mandate: Collateral must be valued at lower of LTP or 180-Day VWAP
+    const effectiveAvg = avg180 > 0 ? avg180 : ltp;
+    const valuationPrice = Math.min(ltp, effectiveAvg);
+    const totalCollateralValuation = qty * valuationPrice;
+    const currentMarketValuation = qty * ltp;
+
+    // Max 70% LTV enforced by NRB
+    const effectiveLtv = Math.min(70, Math.max(10, ltv));
+    const calculatedLoan = totalCollateralValuation * (effectiveLtv / 100);
+
+    // Single-Obligor Ceilings
+    const ceiling = form.borrowerType === 'individual' ? 150000000 : 200000000;
+    const approvedLoan = Math.min(calculatedLoan, ceiling);
+    const isCeilingExceeded = calculatedLoan > ceiling;
+
+    // Margin Call Calculation:
+    // Maintenance Margin = (Collateral Market Value / Loan) * 100
+    // Trigger price when Collateral Value = Loan * (maintMargin / 100)
+    const marginCallPrice = (approvedLoan * (maintMargin / 100)) / qty;
+    const cushionPct = ((ltp - marginCallPrice) / ltp) * 100;
+
+    // Interest expenses
+    const annualInterest = approvedLoan * (rate / 100);
+    const monthlyInterest = annualInterest / 12;
+    const quarterlyInterest = annualInterest / 4;
+
+    setResult({
+      qty,
+      ltp,
+      effectiveAvg,
+      valuationPrice,
+      totalCollateralValuation,
+      currentMarketValuation,
+      effectiveLtv,
+      approvedLoan,
+      isCeilingExceeded,
+      ceiling,
+      marginCallPrice,
+      cushionPct,
+      annualInterest,
+      monthlyInterest,
+      quarterlyInterest,
+      maintMargin,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <TimeframeFilterBar
+        timeframe={timeframe}
+        onSelectTimeframe={setTimeframe}
+        title="NRB Statutory Margin Lending & Margin Call Engine"
+      />
+      <InfoBanner>
+        <strong>Nepal Rastra Bank (NRB) Directives:</strong> Max 70% LTV against the lower of current LTP or 180-day VWAP. Single-obligor lending limit is capped at <strong>Rs. 15 Crores (Individual)</strong> and <strong>Rs. 20 Crores (Institutional)</strong> across all BFIs.
+      </InfoBanner>
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">Share Quantity</label>
+          <input
+            type="number"
+            placeholder="e.g. 1000"
+            value={form.units}
+            onChange={(e) => setForm((f) => ({ ...f, units: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">Current Price (LTP)</label>
+          <input
+            type="number"
+            placeholder="e.g. 600"
+            value={form.ltp}
+            onChange={(e) => setForm((f) => ({ ...f, ltp: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">180-Day Avg (VWAP)</label>
+          <input
+            type="number"
+            placeholder="e.g. 550"
+            value={form.avg180}
+            onChange={(e) => setForm((f) => ({ ...f, avg180: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">Borrower Entity</label>
+          <select
+            value={form.borrowerType}
+            onChange={(e) => setForm((f) => ({ ...f, borrowerType: e.target.value }))}
+            className={inputCls}
+          >
+            <option value="individual">Individual (Cap: Rs. 15 Cr)</option>
+            <option value="institutional">Institutional (Cap: Rs. 20 Cr)</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">LTV Ratio (Max 70%)</label>
+          <input
+            type="number"
+            max="70"
+            placeholder="70"
+            value={form.ltvPct}
+            onChange={(e) => setForm((f) => ({ ...f, ltvPct: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-400">Interest Rate (% p.a.)</label>
+          <input
+            type="number"
+            step="0.1"
+            placeholder="9.5"
+            value={form.interestRate}
+            onChange={(e) => setForm((f) => ({ ...f, interestRate: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="mb-1 block text-xs font-semibold text-slate-400">Maintenance Margin (% of Loan)</label>
+          <input
+            type="number"
+            placeholder="130 (Standard BFI threshold)"
+            value={form.maintenanceMargin}
+            onChange={(e) => setForm((f) => ({ ...f, maintenanceMargin: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+      </div>
+      <button onClick={calc} className={btnCls}>Calculate NRB Margin Loan &amp; Risk</button>
+
+      {result && (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-5 text-center">
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Eligible Approved Margin Loan</div>
+            <div className="text-4xl font-black font-mono text-emerald-400">
+              Rs. {result.approvedLoan.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">
+              Evaluated at <span className="text-emerald-300 font-bold">Rs. {result.valuationPrice.toFixed(2)}</span> (Lower of LTP Rs. {result.ltp} &amp; 180-Day Avg Rs. {result.effectiveAvg}) &times; {result.effectiveLtv}% LTV
+            </div>
+            {result.isCeilingExceeded && (
+              <div className="mt-2 text-xs font-semibold text-amber-400 bg-amber-950/50 border border-amber-800/60 rounded-lg p-2">
+                ⚠️ Loan capped at NRB Single-Obligor Limit of Rs. {(result.ceiling / 10000000).toFixed(0)} Crores.
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <StatCard 
+              label="Collateral Valuation" 
+              value={`Rs. ${result.totalCollateralValuation.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} 
+              big 
+            />
+            <StatCard 
+              label="Margin Call Price" 
+              value={`Rs. ${result.marginCallPrice.toFixed(2)}`} 
+              color={result.cushionPct > 20 ? '#10b981' : result.cushionPct > 10 ? '#f59e0b' : '#f43f5e'} 
+              big 
+            />
+            <StatCard 
+              label="Safety Cushion Drop" 
+              value={`${result.cushionPct.toFixed(1)}%`} 
+              color={result.cushionPct > 20 ? '#10b981' : '#f43f5e'} 
+            />
+            <StatCard 
+              label="Monthly Interest" 
+              value={`Rs. ${Math.round(result.monthlyInterest).toLocaleString()}`} 
+              color="#f59e0b" 
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+            <div className="text-xs font-semibold uppercase text-slate-400">Compliance &amp; Servicing Breakdown</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300">
+              <div className="bg-slate-800/50 p-2.5 rounded-lg">
+                <span className="text-slate-400">Quarterly Interest:</span>
+                <div className="text-sm font-bold text-white mt-0.5">Rs. {Math.round(result.quarterlyInterest).toLocaleString()}</div>
+              </div>
+              <div className="bg-slate-800/50 p-2.5 rounded-lg">
+                <span className="text-slate-400">Annual Interest:</span>
+                <div className="text-sm font-bold text-white mt-0.5">Rs. {Math.round(result.annualInterest).toLocaleString()}</div>
+              </div>
+              <div className="bg-slate-800/50 p-2.5 rounded-lg">
+                <span className="text-slate-400">Maintenance Threshold:</span>
+                <div className="text-sm font-bold text-white mt-0.5">{result.maintMargin}% of Loan Balance</div>
+              </div>
+            </div>
           </div>
         </div>
       )}

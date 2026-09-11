@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2 } from 'lucide-react';
 import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
-  fetchTopVolume, fetchTopTurnover, fetchTopTransactions, fetchCurrentIPOs,
-  fetchIPOResults, fetchAllSecurities, fetchNepseNews, fetchPriceHistory,
+  fetchTopVolume, fetchTopTurnover, fetchTopTransactions,
+  fetchAllSecurities, fetchPriceHistory,
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks,
   type EnrichedStock,
 } from '../utils/liveData';
 import {
   fetchBrokersDirectory, fetchIPOPipeline, fetchMutualFunds,
-  fetchBrokerAnalysis, fetchIPOListings,
+  fetchBrokerAnalysis, fetchIPOListings, fetchMarketNews,
   fetchFloorsheet as fetchServicesFloorsheet,
   fetchSectorHeatmap as fetchServicesSectorHeatmap,
 } from '../utils/servicesApi';
@@ -779,17 +779,7 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
           return;
         }
       }
-      const fn = type === 'current' ? fetchCurrentIPOs : fetchIPOResults;
-      const r = await fn();
-      const list = r?.data || [];
-      setData(list.map((item: any) => ({
-        ...item,
-        companyName: item.companyName || item.name || item.scrip || '—',
-        shareType: item.shareType || item.type || 'IPO',
-        issuePrice: item.issuePrice || item.price || 100,
-        openDate: item.openDate || '—',
-        closeDate: item.closeDate || '—',
-      })));
+      setData([]);
     } catch (_) {}
     setLoading(false);
   };
@@ -920,8 +910,8 @@ export function NewsService() {
 
   const loadData = async () => {
     try {
-      const r = await fetchNepseNews();
-      setData(r?.data || []);
+      const liveNews = await fetchMarketNews();
+      setData(liveNews && Array.isArray(liveNews) ? liveNews : []);
     } catch (_) {}
     setLoading(false);
   };
@@ -960,9 +950,9 @@ export function NewsService() {
           <InfoBanner>Latest headlines from ShareSansar &amp; MeroLagani, refreshed regularly.</InfoBanner>
           <div className="flex flex-col gap-2.5">
             {data.slice(0, 30).map((n, i) => (
-              <a key={i} href={n.link} target="_blank" rel="noopener noreferrer" className="rounded-[10px] border border-slate-800 bg-slate-900/80 p-3.5 no-underline transition hover:border-blue-500 hover:bg-slate-900">
+              <a key={i} href={n.url || n.link} target="_blank" rel="noopener noreferrer" className="rounded-[10px] border border-slate-800 bg-slate-900/80 p-3.5 no-underline transition hover:border-blue-500 hover:bg-slate-900">
                 <div className="mb-1 text-sm font-bold text-white">{n.title}</div>
-                <div className="text-xs text-slate-400">{n.source} • {n.pubDate ? new Date(n.pubDate).toLocaleString() : ''}</div>
+                <div className="text-xs text-slate-400">MeroLagani {(n.date || n.pubDate) ? `• ${n.date || n.pubDate}` : ''}</div>
               </a>
             ))}
           </div>

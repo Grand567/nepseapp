@@ -57,14 +57,16 @@ interface EntryExitAnalyzerProps {
   stocks?: any[];
   indices?: any;
   onSelectStock?: (s: any) => void;
+  initialSymbol?: string;
 }
 
 export function EntryExitAnalyzer({
   stocks = [],
   indices,
   onSelectStock,
+  initialSymbol,
 }: EntryExitAnalyzerProps) {
-  const [symbol, setSymbol] = useState('');
+  const [symbol, setSymbol] = useState(initialSymbol || '');
   const [activeSubTab, setActiveSubTab] = useState<'setup' | 'chart' | 'signals' | 'history' | 'corporate'>('setup');
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -171,8 +173,18 @@ export function EntryExitAnalyzer({
     [analyze]
   );
 
+  const lastAnalyzedSymbolRef = React.useRef<string>('');
+
+  useEffect(() => {
+    if (initialSymbol && lastAnalyzedSymbolRef.current !== initialSymbol) {
+      lastAnalyzedSymbolRef.current = initialSymbol;
+      setSymbol(initialSymbol);
+      analyze(initialSymbol);
+    }
+  }, [initialSymbol, analyze]);
+
   // Derive active change metrics
-  const livePrice = stockInfo?.ltp || plan?.ltp || 0;
+  const livePrice = stockInfo?.ltp || stockInfo?.closePrice || plan?.ltp || plan?.levels?.entryZone?.low || 0;
   const pChange = Number(stockInfo?.pChange || stockInfo?.percentageChange || 0);
   const changeVal = Number(stockInfo?.change || 0);
   const companyName = stockInfo?.name || stockInfo?.companyName || symbol;
@@ -536,7 +548,7 @@ export function EntryExitAnalyzer({
           {onSelectStock && (
             <button
               type="button"
-              onClick={() => onSelectStock({ symbol: plan.symbol })}
+              onClick={() => onSelectStock({ symbol: plan.symbol || symbol })}
               style={{
                 width: '100%',
                 borderRadius: 14,

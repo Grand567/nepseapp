@@ -1450,5 +1450,76 @@ export function normalizeCorporateActionPrices(candles = []) {
   return normalized;
 }
 
+/**
+ * 26. Calendar & Fiscal Cycle Evaluation for Nepal Capital Market
+ */
+export function computeFiscalCycle(date = new Date()) {
+  const d = new Date(date);
+  const month = d.getMonth() + 1; // 1 = Jan ... 12 = Dec
+  const day = d.getDate();
 
+  // 1. Ashadh/Shrawan Wave (Mid-June to Mid-August): Massive Govt Development Budget Release
+  if ((month === 6 && day >= 15) || month === 7 || (month === 8 && day <= 15)) {
+    return {
+      phase: 'Ashadh-Shrawan Government Spending Wave',
+      scoreBonus: +0.25,
+      bias: 'bullish',
+      detail: 'Tens of billions of development budget released into banking accounts, lowering interbank rates and fueling post-fiscal liquidity surge.'
+    };
+  }
 
+  // 2. Poush/Magh Q2 Corporate Tax Drain (Mid-Dec to Mid-Feb): 40% Advance Tax Paid
+  if ((month === 12 && day >= 15) || month === 1 || (month === 2 && day <= 10)) {
+    return {
+      phase: 'Q2 Advance Corporate Tax Liquidity Drain',
+      scoreBonus: -0.20,
+      bias: 'bearish',
+      detail: 'Corporates remit 40% advance tax to government treasury, temporarily withdrawing Rs. 40–60 Arba from bank deposits and tightening credit.'
+    };
+  }
+
+  // 3. Festive Pre-Dashain Cash Withdrawal (Bhadra/Ashwin - approx Sept to Oct)
+  if (month === 9 || (month === 10 && day <= 20)) {
+    return {
+      phase: 'Festive Season Cash Outflow Cycle',
+      scoreBonus: -0.10,
+      bias: 'neutral_defensive',
+      detail: 'Public withdrawals for Dashain/Tihar festival bonuses and travel temporarily tighten banking reserves and reduce market turnover velocity.'
+    };
+  }
+
+  // 4. Spring / Pre-Monetary Review (April - May)
+  if (month === 4 || month === 5) {
+    return {
+      phase: 'Spring Capital Expansion Phase',
+      scoreBonus: +0.10,
+      bias: 'bullish',
+      detail: 'Commercial banks active in credit deployment; speculative pre-monetary policy positioning.'
+    };
+  }
+
+  return {
+    phase: 'Mid-Fiscal Consolidation Phase',
+    scoreBonus: 0.0,
+    bias: 'neutral',
+    detail: 'Balanced fiscal liquidity flows without seasonal tax or budget concentration.'
+  };
+}
+
+/**
+ * 27. 14-day Average True Range (ATR) for the NEPSE Index
+ */
+export function computeIndexATR(history, period = 14) {
+  if (!Array.isArray(history) || history.length < period + 1) return 32.0;
+  const trs = [];
+  for (let i = 1; i < history.length; i++) {
+    const h = Number(history[i].high || history[i].close || 0);
+    const l = Number(history[i].low || history[i].close || 0);
+    const prevC = Number(history[i - 1].close || 0);
+    const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
+    if (tr > 0) trs.push(tr);
+  }
+  if (trs.length < 5) return 32.0;
+  const recent = trs.slice(-period);
+  return +(recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);
+}

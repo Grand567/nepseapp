@@ -100,7 +100,7 @@ export function calculateBuyDetails(quantity, price) {
     sebonFee,
     dpFee,
     totalAmount,
-    costPerShare: totalAmount / quantity
+    costPerShare: quantity > 0 ? totalAmount / quantity : 0
   };
 }
 
@@ -175,6 +175,7 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
  * Transactions array format: [{ quantity: 100, price: 150 }, { quantity: 50, price: 200 }]
  */
 export function calculateWacc(buyTransactions) {
+  if (!Array.isArray(buyTransactions)) return { totalQuantity: 0, totalCost: 0, wacc: 0 };
   let totalQty = 0;
   let totalCost = 0;
 

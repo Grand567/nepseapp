@@ -6184,12 +6184,14 @@ app.get('/api/predict/nepse', async (req, res) => {
       enrichedSummary = { advances, declines, totalTurnover, stocks: stockList };
     }
 
-    // Fetch real NEPSE index close history directly
+    // Fetch real NEPSE index close history directly (220 days for 50/200 EMA and ATR)
     let memoryCloses = null;
+    let memoryHistory = null;
     try {
-      const nepseHistory = await getPriceHistoryInternal('NEPSE', 60);
+      const nepseHistory = await getPriceHistoryInternal('NEPSE', 220);
       if (Array.isArray(nepseHistory) && nepseHistory.length >= 15) {
-        memoryCloses = nepseHistory.map(d => Number(d.close)).filter(c => c > 0);
+        memoryHistory = nepseHistory;
+        memoryCloses = nepseHistory.map(d => Number(d.close || d.closePrice || 0)).filter(c => c > 0);
       }
     } catch (_) {}
 
@@ -6208,6 +6210,7 @@ app.get('/api/predict/nepse', async (req, res) => {
     const result = await predictIndexDirection({
       memorySummary: enrichedSummary,
       memoryCloses,
+      memoryHistory,
       memoryIndices,
     });
     res.json(result);

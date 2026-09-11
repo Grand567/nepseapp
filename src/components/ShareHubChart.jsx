@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, LineStyle } from 'lightweight-charts';
 import { fetchRealPriceHistory } from '../utils/liveData';
-import { fetchNepseIntradayGraph, synthesizeIntradaySession } from '../utils/servicesApi';
+import { fetchNepseIntradayGraph } from '../utils/servicesApi';
 import { Activity, Maximize2, Minimize2, TrendingUp, BarChart2 } from 'lucide-react';
 
 const TIMEFRAMES = [
@@ -307,18 +307,8 @@ export default function ShareHubChart({
         if (hasIntradayInRaw) {
           intradaySource = rawHistory;
         } else {
-          // Resilient Session Synthesis: guarantees 1D NEVER renders a single giant daily candle
-          const latestDaily = Array.isArray(rawHistory) && rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
-          const ltpVal = Number(stock?.ltp || latestDaily?.close || 100);
-          const synthOHLC = {
-            open: Number(stock?.open || latestDaily?.open || ltpVal),
-            high: Math.max(ltpVal, Number(stock?.high || latestDaily?.high || ltpVal)),
-            low: Math.min(ltpVal, Number(stock?.low || latestDaily?.low || ltpVal)),
-            close: ltpVal,
-            volume: Number(latestDaily?.volume || stock?.volume || 10000)
-          };
-          const sessionDateStr = latestDaily?.date || latestDaily?.time || null;
-          intradaySource = synthesizeIntradaySession(synthOHLC, sessionDateStr);
+          // If no intraday data is available, do not fake it.
+          intradaySource = [];
         }
       }
 
