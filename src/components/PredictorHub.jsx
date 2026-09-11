@@ -25,11 +25,13 @@ import {
   Info,
   RefreshCw,
   Landmark,
-  FileText
+  FileText,
+  BookOpen
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { getHydroSeasonality } from '../utils/quantEngine';
+import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
 
 
 export default function PredictorHub({
@@ -50,6 +52,7 @@ export default function PredictorHub({
   const [loading, setLoading] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'momentum', 'volume', 'low_float', 'catalyst'
   const [searchQuery, setSearchQuery] = useState('');
+  const [showGuideModal, setShowGuideModal] = useState(false);
 
   const fallbackStockScoring = React.useCallback(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return;
@@ -379,26 +382,49 @@ export default function PredictorHub({
             </div>
           </div>
 
-          <button
-            onClick={fetchPredictionData}
-            disabled={loading}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 10,
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <RefreshCw style={{ width: 13, height: 13, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-            <span>Sync</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={() => setShowGuideModal(true)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 10,
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                color: '#34d399',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              title="Investor Decision Guide: How to Buy, Sell & Hold for Profit"
+            >
+              <BookOpen style={{ width: 13, height: 13 }} />
+              <span>Guide</span>
+            </button>
+
+            <button
+              onClick={fetchPredictionData}
+              disabled={loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <RefreshCw style={{ width: 13, height: 13, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+              <span>Sync</span>
+            </button>
+          </div>
         </div>
 
         {/* ── Subtabs Controller ── */}
@@ -711,6 +737,45 @@ export default function PredictorHub({
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'stocks' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Quick Decision Banner */}
+            <div
+              onClick={() => setShowGuideModal(true)}
+              style={{
+                cursor: 'pointer',
+                padding: '12px 16px',
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.08))',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                boxShadow: '0 4px 14px rgba(0,0,0,0.2)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 34, height: 34, borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#34d399'
+                }}>
+                  <BookOpen size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                    📖 नयाँ लगानीकर्ताका लागि सरल नियम (Buy, Sell & Hold Guide)
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Tap to view the 4-step physical evidence checklist before buying
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399', whiteSpace: 'nowrap' }}>
+                गाइड हेर्नुहोस् →
+              </span>
+            </div>
+
             {/* Filter Chips & Search Bar */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{
@@ -1099,6 +1164,12 @@ export default function PredictorHub({
           </div>
         )}
       </div>
+
+      {/* Investor Decision Guide Modal */}
+      <InvestorDecisionGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+      />
     </div>
   );
 }

@@ -42,8 +42,10 @@ import { StockSearchSelect } from './ui';
 import {
   Bot, Send, Sparkles, TrendingUp, TrendingDown, ShieldAlert, Target,
   BarChart2, Briefcase, Globe, CheckCircle2, AlertTriangle, Layers,
-  Award, Activity, DollarSign, Clock, ShieldCheck, Wallet, RefreshCw, X, Check, ArrowUpRight, Key, Trash2
+  Award, Activity, DollarSign, Clock, ShieldCheck, Wallet, RefreshCw, X, Check, ArrowUpRight, Key, Trash2,
+  BookOpen
 } from 'lucide-react';
+import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
 
 const PROXY = getProxyBase();
 
@@ -1172,6 +1174,7 @@ export default function AiAnalyst({
   const [paperToast, setPaperToast] = useState(null);
   const [paperState, setPaperState] = useState(getPaperState);
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.meta.env.VITE_GLM_API_KEY || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r') : ''));
   const [geminiKey, setGeminiKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : ''));
   const [autoClearChat, setAutoClearChat] = useState(() => {
@@ -1803,6 +1806,25 @@ Format as plain text (not JSON) for this conversational response.`;
             }}>
               NEPSE: {marketData?.data?.nepseIndex ? Number(marketData.data.nepseIndex).toFixed(2) : '...'}
             </span>
+            <button
+              type="button"
+              onClick={() => setShowGuideModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                borderRadius: 20,
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                padding: '3px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#34d399',
+                cursor: 'pointer'
+              }}
+              title="Investor Decision Guide: When to Buy, Sell & Hold"
+            >
+              <BookOpen size={12} />
+              Decision Guide
+            </button>
             <button
               type="button"
               onClick={() => setShowKeyModal(true)}
@@ -2610,6 +2632,12 @@ Format as plain text (not JSON) for this conversational response.`;
           </div>
         </div>
       )}
+
+      {/* Investor Decision Guide Modal */}
+      <InvestorDecisionGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+      />
 
       {/* Floating Toast */}
       {paperToast && (
