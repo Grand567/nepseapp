@@ -263,6 +263,13 @@ router.delete('/accounts/:id', (req, res) => {
 router.get('/ipos', async (req, res) => {
   const accounts = loadAccounts();
   if (accounts.length === 0) {
+    // Fallback: return public live open IPO listings without requiring server accounts
+    try {
+      const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
+      if (liveRes.data?.data) {
+        return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+      }
+    } catch (_) {}
     return res.status(400).json({ success: false, error: 'Please add at least one MeroShare account on the server first.' });
   }
 
@@ -329,7 +336,12 @@ router.get('/ipos', async (req, res) => {
     if (error.response) {
       console.error(`[ipos/get] Error Response Data:`, error.response.data);
     }
-    console.error('[meroshare-bulk/ipos] Error fetching active IPOs:', error.message);
+    try {
+      const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
+      if (liveRes.data?.data) {
+        return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+      }
+    } catch (_) {}
     res.status(500).json({ success: false, error: 'Failed to fetch current IPOs: ' + error.message });
   }
 });
