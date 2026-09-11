@@ -133,6 +133,43 @@ const primeSession = async (client) => {
 // Mount multi-account router
 app.use('/api/meroshare', meroshareRouter);
 
+// Reverse proxy for CDSC endpoints called by meroShareService.js and web clients
+app.all(['/api/meroShare/*', '/api/meroShareView/*', '/cdsc-ipo/*'], async (req, res) => {
+  try {
+    let targetBase = 'https://backend.cdsc.com.np';
+    let targetPath = req.originalUrl;
+    if (req.originalUrl.startsWith('/cdsc-ipo')) {
+      targetBase = 'https://iporesult.cdsc.com.np';
+      targetPath = req.originalUrl.replace(/^\/cdsc-ipo/, '');
+    }
+    const targetUrl = `${targetBase}${targetPath}`;
+    const client = createMeroShareSession();
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Origin': req.originalUrl.startsWith('/cdsc-ipo') ? 'https://iporesult.cdsc.com.np' : 'https://meroshare.cdsc.com.np',
+      'Referer': req.originalUrl.startsWith('/cdsc-ipo') ? 'https://iporesult.cdsc.com.np/' : 'https://meroshare.cdsc.com.np/',
+    };
+    if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
+
+    const response = await client({
+      url: targetUrl,
+      method: req.method,
+      headers,
+      data: req.method !== 'GET' ? req.body : undefined,
+      validateStatus: () => true
+    });
+
+    if (response.headers['authorization']) {
+      res.setHeader('Authorization', response.headers['authorization']);
+    }
+    return res.status(response.status).send(response.data);
+  } catch (err) {
+    console.error('[CDSC Reverse Proxy Error]:', err.message);
+    return res.status(502).json({ success: false, error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.get('/api/ping', (req, res) => {

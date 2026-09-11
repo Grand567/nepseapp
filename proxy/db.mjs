@@ -16,6 +16,8 @@ if (process.env.DATABASE_URL) {
   }
 }
 
+export { pool };
+
 export const query = (text, params) => {
   if (!pool) return Promise.resolve({ rows: [] });
   return pool.query(text, params);
@@ -130,6 +132,105 @@ export async function initDB() {
           book_close_date DATE,
           announcement_date DATE
       );
+    `);
+
+    // ─────────────────────────────────────────────────────────────
+    // Prediction & Scoring Engine Tables
+    // ─────────────────────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS index_predictions (
+        id                    SERIAL PRIMARY KEY,
+        prediction_date       DATE NOT NULL,
+        direction             VARCHAR(20) NOT NULL,
+        confidence            NUMERIC(5,2) NOT NULL,
+        raw_score             NUMERIC(6,3),
+        contributing_factors  JSONB,
+        model_version         VARCHAR(20) NOT NULL DEFAULT 'rule-v1',
+        explanation           TEXT,
+        actual_close          NUMERIC(10,2),
+        actual_direction      VARCHAR(20),
+        is_correct            BOOLEAN,
+        created_at            TIMESTAMP DEFAULT NOW(),
+        UNIQUE(prediction_date, model_version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_index_predictions_date ON index_predictions(prediction_date DESC);
+
+      CREATE TABLE IF NOT EXISTS stock_scores (
+        id                    SERIAL PRIMARY KEY,
+        symbol                VARCHAR(20) NOT NULL,
+        score_date            DATE NOT NULL,
+        ltp                   NUMERIC(10,2),
+        volume_surge_ratio    NUMERIC(6,3),
+        momentum_5d           NUMERIC(6,3),
+        rsi_14                NUMERIC(5,2),
+        macd_signal           VARCHAR(10),
+        liquidity_score       NUMERIC(5,2),
+        float_risk_flag       VARCHAR(20),
+        obv_trend             VARCHAR(10),
+        corporate_action_flag VARCHAR(30),
+        composite_score       NUMERIC(5,2) NOT NULL,
+        reasoning             TEXT,
+        created_at            TIMESTAMP DEFAULT NOW(),
+        UNIQUE(symbol, score_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_stock_scores_date_score ON stock_scores(score_date DESC, composite_score DESC);
+
+      CREATE TABLE IF NOT EXISTS news_sentiment (
+        id                SERIAL PRIMARY KEY,
+        source            VARCHAR(50) NOT NULL,
+        headline          TEXT NOT NULL,
+        url               TEXT,
+        published_at      TIMESTAMP,
+        sentiment_score   NUMERIC(4,3),
+        category          VARCHAR(30),
+        related_symbols   TEXT[],
+        scored_by         VARCHAR(20),
+        created_at        TIMESTAMP DEFAULT NOW(),
+        UNIQUE(source, headline, published_at)
+      );
+      CREATE INDEX IF NOT EXISTS idx_news_sentiment_published ON news_sentiment(published_at DESC);
+
+      CREATE TABLE IF NOT EXISTS macro_indicators (
+        id            SERIAL PRIMARY KEY,
+        indicator     VARCHAR(40) NOT NULL,
+        value         NUMERIC(10,4) NOT NULL,
+        as_of_date    DATE NOT NULL,
+        source        VARCHAR(50),
+        created_at    TIMESTAMP DEFAULT NOW(),
+        UNIQUE(indicator, as_of_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_macro_indicators_lookup ON macro_indicators(indicator, as_of_date DESC);
+
+      CREATE TABLE IF NOT EXISTS political_event_flags (
+        id            SERIAL PRIMARY KEY,
+        event_date    DATE NOT NULL,
+        severity      SMALLINT NOT NULL CHECK (severity BETWEEN 1 AND 5),
+        description   TEXT,
+        created_at    TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_political_event_flags_date ON political_event_flags(event_date DESC);
+
+      CREATE TABLE IF NOT EXISTS corporate_actions (
+        id              SERIAL PRIMARY KEY,
+        symbol          VARCHAR(20) NOT NULL,
+        action_type     VARCHAR(20) NOT NULL,
+        announced_date  DATE NOT NULL,
+        details         JSONB,
+        created_at      TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_corporate_actions_symbol_date ON corporate_actions(symbol, announced_date DESC);
+    `);
+
+    // Seed initial macro baseline if none exists
+    await client.query(`
+      INSERT INTO macro_indicators (indicator, value, as_of_date, source)
+      VALUES
+        ('m2_growth_pct', 12.80, CURRENT_DATE, 'NRB Monthly Bulletin'),
+        ('interest_rate_pct', 5.50, CURRENT_DATE, 'NRB Policy Rate'),
+        ('cpi_inflation_pct', 4.25, CURRENT_DATE, 'NRB CPI Index'),
+        ('npr_usd_rate', 134.80, CURRENT_DATE, 'NRB Forex Rate'),
+        ('remittance_growth_pct', 16.40, CURRENT_DATE, 'NRB External Sector Report')
+      ON CONFLICT (indicator, as_of_date) DO NOTHING;
     `);
 
     await client.query('COMMIT');
