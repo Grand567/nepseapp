@@ -95,8 +95,8 @@ export async function cdscRequest(options) {
     return {
       status: isWafBlocked ? 403 : status,
       ok: (status >= 200 && status < 300) && !isWafBlocked,
-      data: isWafBlocked ? null : data,
-      text,
+      data: isWafBlocked ? { message: 'CDSC security firewall rejected the request (WAF). Please check bank details and credentials.' } : data,
+      text: isWafBlocked ? 'CDSC security firewall rejected the request (WAF). Please check bank details and credentials.' : text,
       headers: headersMap
     };
   } else {
@@ -134,8 +134,8 @@ export async function cdscRequest(options) {
     return {
       status: isWafBlocked ? 403 : fetchRes.status,
       ok: fetchRes.ok && !isWafBlocked,
-      data: isWafBlocked ? null : data,
-      text,
+      data: isWafBlocked ? { message: 'CDSC security firewall rejected the request (WAF). Please check bank details and credentials.' } : data,
+      text: isWafBlocked ? 'CDSC security firewall rejected the request (WAF). Please check bank details and credentials.' : text,
       headers: headersMap
     };
   }
@@ -1209,11 +1209,17 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
       headers: { 
         'Authorization': `Bearer ${rawToken}`,
         'Origin': 'https://meroshare.cdsc.com.np',
-        'Referer': 'https://meroshare.cdsc.com.np/'
+        'Referer': 'https://meroshare.cdsc.com.np/',
+        'Content-Type': 'application/json'
       },
       data: {
-        companyShareId: cleanCompanyShareId,
-        demat: account.boid
+        filterFieldParams: [
+          { key: "companyShare.id", condition: "EQUALS", value: cleanCompanyShareId }
+        ],
+        page: 1,
+        size: 20,
+        searchRoleViewConstants: "VIEW_APPLICANT_FORM_COMPLETE",
+        filterDateParams: []
       }
     });
 
@@ -1236,6 +1242,18 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
 // ─── Direct C-ASBA IPO Apply ──────────────────────────────────────────────
 export async function applyIpoDirect(account, companyShareId, appliedKitta = 10) {
   const cleanCompanyShareId = Number(String(companyShareId || '').replace(/\D+/g, '')) || Number(companyShareId);
+
+  // 1. Verify CRN and Transaction PIN are present
+  const crnNumber = String(account.crn || '').trim();
+  const transactionPIN = String(account.pin || '').trim();
+  if (!crnNumber) {
+    return { success: false, message: `CRN Number missing for ${account.name || 'this account'}. Please edit account and enter your C-ASBA CRN.` };
+  }
+  if (!transactionPIN) {
+    return { success: false, message: `Transaction PIN missing for ${account.name || 'this account'}. Please edit account and enter your 4-digit PIN.` };
+  }
+
+  // 2. Authenticate against CDSC
   const auth = await authenticateMeroShare(account);
   if (!auth.success) {
     return { success: false, message: `प्रमाणीकरण असफल (Auth Failed): ${auth.messageEn || auth.messageNe || 'Invalid credentials'}` };
@@ -1247,95 +1265,121 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
     'Authorization': bearerToken,
     'Origin': 'https://meroshare.cdsc.com.np',
     'Referer': 'https://meroshare.cdsc.com.np/',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/plain, */*'
   };
 
   try {
-    // 1. Fetch user's registered C-ASBA bank details
-    let bankInfo = null;
+    // 3. Resolve exact companyShareId directly from user's active applicable issues if possible
+    let targetCompanyShareId = cleanCompanyShareId;
+    try {
+      const issuesRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/companyShare/applicableIssue/`,
+        method: 'POST',
+        headers: cdscHeaders,
+        data: {
+          filterFieldParams: [],
+          page: 1,
+          size: 50,
+          searchRoleViewConstants: 'VIEW_APPLICABLE_SHARE',
+          filterDateParams: []
+        }
+      });
+      if (issuesRes.ok && issuesRes.data?.object && Array.isArray(issuesRes.data.object)) {
+        const list = issuesRes.data.object;
+        const match = list.find(item => 
+          Number(item.companyShareId) === cleanCompanyShareId ||
+          (item.scrip && String(item.scrip).toUpperCase() === 'BENI') ||
+          (item.companyName && item.companyName.toLowerCase().includes('beni'))
+        );
+        if (match && match.companyShareId) {
+          targetCompanyShareId = Number(match.companyShareId);
+        }
+      }
+    } catch (err) {
+      console.warn('[applyIpoDirect] applicableIssue auto-resolve note:', err.message);
+    }
+
+    // 4. Fetch user's registered C-ASBA bank list
+    let banks = [];
     try {
       const bankRes = await cdscRequest({
         url: `${MEROSHARE_BASE}/bank/`,
         method: 'GET',
         headers: cdscHeaders
       });
-      if (bankRes.ok && bankRes.data && Array.isArray(bankRes.data) && bankRes.data.length > 0) {
-        bankInfo = bankRes.data[0];
+      if (bankRes.ok && Array.isArray(bankRes.data) && bankRes.data.length > 0) {
+        banks = bankRes.data;
       }
     } catch {}
 
-    if (!bankInfo) {
-      try {
-        const viewBankRes = await cdscRequest({
-          url: `${MEROSHARE_VIEW_BASE}/bank/`,
-          method: 'GET',
-          headers: { ...cdscHeaders, 'Authorization': rawToken }
-        });
-        if (viewBankRes.ok && viewBankRes.data && Array.isArray(viewBankRes.data) && viewBankRes.data.length > 0) {
-          bankInfo = viewBankRes.data[0];
-        }
-      } catch {}
+    if (banks.length === 0) {
+      return { success: false, message: 'No registered C-ASBA bank account found on CDSC for this DEMAT account.' };
     }
 
-    // 2. Fetch the ASBA applicable issue detail template (CRITICAL for CDSC!)
-    // CDSC requires customerId, shareGroupId, etc. from this template.
-    // Without this template, submitting to /applicantForm/ returns 403 Forbidden!
-    let template = null;
+    const primaryBank = banks[0];
+    const bankId = primaryBank.id;
+
+    // 5. Fetch customer account details for this bank
+    let customer = null;
     try {
-      const detailRes = await cdscRequest({
-        url: `${MEROSHARE_BASE}/applicableIssue/applicable/detail/${cleanCompanyShareId}`,
+      const custRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/bank/${bankId}`,
         method: 'GET',
         headers: cdscHeaders
       });
-      if (detailRes.ok && detailRes.data) {
-        template = detailRes.data;
+      if (custRes.ok && Array.isArray(custRes.data) && custRes.data.length > 0) {
+        customer = custRes.data[0];
       }
-    } catch (err) {
-      console.warn('[applyIpoDirect] applicable/detail fetch error:', err.message);
+    } catch {}
+
+    if (!customer) {
+      return { success: false, message: `Could not retrieve linked bank account details for ${primaryBank.name || 'Bank'}.` };
     }
 
-    if (!template) {
-      try {
-        const viewDetailRes = await cdscRequest({
-          url: `${MEROSHARE_VIEW_BASE}/applicableIssue/applicable/detail/${cleanCompanyShareId}`,
-          method: 'GET',
-          headers: { ...cdscHeaders, 'Authorization': rawToken }
-        });
-        if (viewDetailRes.ok && viewDetailRes.data) {
-          template = viewDetailRes.data;
-        }
-      } catch {}
-    }
+    // 6. Fetch active company share details / criteria if required
+    let shareCriteriaId = null;
+    try {
+      const actRes = await cdscRequest({
+        url: `${MEROSHARE_BASE}/active/${targetCompanyShareId}`,
+        method: 'GET',
+        headers: cdscHeaders
+      });
+      if (actRes.ok && actRes.data?.shareCriteria?.id) {
+        shareCriteriaId = actRes.data.shareCriteria.id;
+      }
+    } catch {}
 
-    // 3. Construct submission payload
+    // 7. Construct official CDSC createApplicantModel payload
     const applyPayload = {
-      ...(template || {}),
-      accountBranchId: Number(template?.accountBranchId || bankInfo?.accountBranchId || bankInfo?.branchId || 1),
-      accountNumber: String(template?.accountNumber || bankInfo?.accountNumber || '').trim(),
+      companyShareId: Number(targetCompanyShareId),
+      bankId: Number(bankId),
+      accountNumber: String(customer.accountNumber || '').trim(),
+      accountBranchId: Number(customer.accountBranchId || 1),
+      accountTypeId: Number(customer.accountTypeId || 1),
+      customerId: Number(customer.id),
       appliedKitta: Number(appliedKitta),
-      boid: String(account.boid || template?.boid || template?.demat || '').trim(),
-      companyShareId: cleanCompanyShareId,
-      crnNumber: String(account.crn || '').trim(),
-      demat: String(account.boid || template?.boid || template?.demat || '').trim(),
-      transactionPin: String(account.pin || '').trim()
+      crnNumber: crnNumber,
+      transactionPIN: transactionPIN,
+      demat: String(account.boid || auth.boid || '').trim(),
+      boid: String(account.boid || auth.boid || '').trim(),
+      ...(shareCriteriaId ? { shareCriteriaId } : {})
     };
 
-    // 4. Submit application
+    // 8. Submit application to official CDSC endpoint: /applicantForm/share/apply
     let applyRes = await cdscRequest({
-      url: `${MEROSHARE_BASE}/applicantForm/`,
+      url: `${MEROSHARE_BASE}/applicantForm/share/apply`,
       method: 'POST',
       headers: cdscHeaders,
       data: applyPayload
     });
 
-    if (applyRes.status === 401 || applyRes.status === 403) {
+    // Fallback: If 404 on share/apply, try legacy endpoint
+    if (applyRes.status === 404) {
       applyRes = await cdscRequest({
         url: `${MEROSHARE_BASE}/applicantForm/`,
         method: 'POST',
-        headers: {
-          ...cdscHeaders,
-          'Authorization': rawToken
-        },
+        headers: cdscHeaders,
         data: applyPayload
       });
     }
@@ -1344,11 +1388,13 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       const msg = applyRes.data.message || 'Share applied successfully (शेयर सफलतापूर्वक आवेदन भयो)!';
       return { success: true, message: msg };
     } else {
-      let errMsg = applyRes.data?.message || applyRes.data?.error || applyRes.text;
-      if (applyRes.status === 403) {
-        errMsg = errMsg || 'CDSC Status 403: यो शेयर निष्कासन यस खाताको लागि खुला छैन वा पहिले नै आवेदन दिइसकिएको छ (Issue is closed, not open for this BOID, or already applied).';
+      let errMsg = applyRes.data?.message || applyRes.data?.error;
+      if (!errMsg && typeof applyRes.text === 'string' && (applyRes.text.includes('Request Rejected') || applyRes.text.includes('<html'))) {
+        errMsg = 'CDSC security firewall rejected the request (WAF). Please verify that your CRN, PIN, and bank details match CDSC records.';
+      } else if (applyRes.status === 403) {
+        errMsg = errMsg || 'CDSC Status 403: यो शेयर निष्कासन यस खाताको लागि खुला छैन वा पहिले नै आवेदन दिइसकिएको छ (Issue closed, not open for this BOID, or already applied).';
       }
-      return { success: false, message: errMsg || `CDSC rejected application (Status: ${applyRes.status})` };
+      return { success: false, message: errMsg || `CDSC application failed (Status: ${applyRes.status})` };
     }
   } catch (err) {
     return { success: false, message: err.message || 'Network error during ASBA application' };

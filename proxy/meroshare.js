@@ -69,7 +69,7 @@ function saveAccounts(accounts) {
 }
 
 // --- MeroShare Session & WAF Bypass logic ---
-const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
+const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
 const sharedJar = new CookieJar();
 
 const createMeroShareSession = () => {
@@ -431,7 +431,7 @@ router.post('/apply', async (req, res) => {
         demat: acc.boid,
       };
 
-      const submitResponse = await client.post(`${MEROSHARE_BASE}/applicantForm/`, payload, {
+      const submitResponse = await client.post(`${MEROSHARE_BASE}/applicantForm/share/apply`, payload, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': token,

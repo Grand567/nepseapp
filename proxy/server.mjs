@@ -64,8 +64,8 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // --- MeroShare Session & WAF Bypass logic ---
-const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
-const MEROSHARE_VIEW_BASE = 'https://backend.cdsc.com.np/api/meroShareView';
+const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
+const MEROSHARE_VIEW_BASE = 'https://webbackend.cdsc.com.np/api/meroShareView';
 const sharedJar = new CookieJar();
 
 const createMeroShareSession = () => {
@@ -137,7 +137,7 @@ app.use('/api/meroshare', meroshareRouter);
 // Reverse proxy for CDSC endpoints called by meroShareService.js and web clients
 const handleCdscReverseProxy = async (req, res) => {
   try {
-    let targetBase = 'https://backend.cdsc.com.np';
+    let targetBase = 'https://webbackend.cdsc.com.np';
     let targetPath = req.originalUrl;
     if (req.originalUrl.startsWith('/cdsc-ipo')) {
       targetBase = 'https://iporesult.cdsc.com.np';
@@ -1336,7 +1336,7 @@ app.post('/api/meroshare/apply', async (req, res) => {
     };
 
     // 4. Submit the IPO Application
-    const submitResponse = await client.post(`${MEROSHARE_BASE}/applicantForm/`, submissionPayload, {
+    const submitResponse = await client.post(`${MEROSHARE_BASE}/applicantForm/share/apply`, submissionPayload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': token,
