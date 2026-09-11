@@ -212,12 +212,62 @@ export default function IPOList() {
         });
 
         // Normalize proxy response
-        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        let list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+
+        // ✅ FIXED: If CDSC returns empty (no open issues or server has no accounts),
+        // fallback to live-listings from NepaliPaisa/ShareSansar scraping
+        if (list.length === 0) {
+          try {
+            const liveData = await safeFetch(`${proxyBase}/api/ipo/live-listings`);
+            const liveListing = Array.isArray(liveData?.data) ? liveData.data : [];
+            if (liveListing.length > 0) {
+              // Map live-listings format to IPO list format
+              list = liveListing.map(item => ({
+                id: item.id || item.companyShareId,
+                name: item.name || item.companyName,
+                scrip: item.scrip || '',
+                type: item.type || item.shareTypeName || 'IPO',
+                status: item.status || 'Open',
+                units: item.minKitta || item.units || 10,
+                minKitta: item.minKitta || 10,
+                maxKitta: item.maxKitta || 10000000,
+                amountPerShare: item.issuePrice || item.amountPerShare || 100,
+                openDate: item.openDate || item.issueOpenDate || '',
+                closeDate: item.closeDate || item.issueCloseDate || '',
+              }));
+            }
+          } catch (_) {}
+        }
+
         setIpos(list);
         if (list.length > 0) setSelectedIpo(String(list[0].id));
       }
     } catch (err) {
-      console.warn('Failed to fetch active IPOs from MeroShare:', err);
+      console.warn('Failed to fetch active IPOs from MeroShare, trying live-listings fallback:', err);
+      // ✅ FIXED: Always try live-listings as final fallback
+      try {
+        const liveData = await safeFetch(`${proxyBase}/api/ipo/live-listings`);
+        const liveListing = Array.isArray(liveData?.data) ? liveData.data : [];
+        if (liveListing.length > 0) {
+          const list = liveListing.map(item => ({
+            id: item.id || item.companyShareId,
+            name: item.name || item.companyName,
+            scrip: item.scrip || '',
+            type: item.type || 'IPO',
+            status: item.status || 'Open',
+            units: item.minKitta || 10,
+            minKitta: item.minKitta || 10,
+            maxKitta: item.maxKitta || 10000000,
+            amountPerShare: item.issuePrice || 100,
+            openDate: item.openDate || '',
+            closeDate: item.closeDate || '',
+          }));
+          setIpos(list);
+          if (list.length > 0) setSelectedIpo(String(list[0].id));
+          setError('');
+          return;
+        }
+      } catch (_) {}
       setError(err.message || 'Failed to fetch active IPOs. Ensure your credentials are correct.');
     } finally {
       setIsLoadingIpos(false);

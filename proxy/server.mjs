@@ -8,8 +8,12 @@ import { initDB, query } from './db.mjs';
 import { startWorkers } from './workers.mjs';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import meroshareRouter from './meroshare.js';
+import { predictIndexDirection, scoreAllStocks, getScoredNewsSentiment } from './quant/predictorEngine.mjs';
+import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.mjs';
+import { setNewsCache } from './quant/newsCache.mjs';
+import { setMacroCache } from './quant/macroCache.mjs';
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4836,63 +4840,102 @@ app.get('/api/analysis/:symbol/technical', async (req, res) => {
 // ============================================================
 app.get('/api/news/nepse', async (req, res) => {
   try {
-    let allNews = [];
-
-    try {
-      const Parser = (await import('rss-parser')).default;
-      const parser = new Parser({ timeout: 10000 });
-
-      const feeds = await Promise.allSettled([
-        parser.parseURL('https://www.sharesansar.com/feed'),
-        parser.parseURL('https://merolagani.com/rss.aspx'),
-        parser.parseURL('https://www.nepalinvestor.net/feed/'),
-      ]);
-
-      feeds.forEach((result, i) => {
-        const sources = ['ShareSansar', 'MeroLagani', 'NepalInvestor'];
-        if (result.status === 'fulfilled') {
-          result.value.items.forEach(item => {
-            allNews.push({
-              title: item.title,
-              link: item.link,
-              pubDate: item.pubDate,
-              content: item.contentSnippet || '',
-              source: sources[i]
-            });
-          });
-        }
-      });
-    } catch (_) {
-      const urls = [
-        { url: 'https://www.sharesansar.com/feed', src: 'ShareSansar' },
-        { url: 'https://merolagani.com/rss.aspx', src: 'MeroLagani' },
-        { url: 'https://www.nepalinvestor.net/feed/', src: 'NepalInvestor' }
-      ];
-      const results = await Promise.allSettled(urls.map(u => axios.get(u.url, { timeout: 8000, headers: HEADERS })));
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled' && r.value?.data) {
-          const $xml = cheerio.load(r.value.data, { xmlMode: true });
-          $xml('item').each((_, el) => {
-            const title = $xml(el).find('title').text().trim();
-            const link = $xml(el).find('link').text().trim();
-            const pubDate = $xml(el).find('pubDate').text().trim();
-            const desc = $xml(el).find('description').text().trim();
-            if (title) {
-              allNews.push({ title, link, pubDate, content: desc, source: urls[idx].src });
-            }
-          });
-        }
+    // Check 30-minute news cache
+    const cached = getCache('news-nepse');
+    if (cached && cached.length > 0) {
+      return res.json({
+        success: true,
+        isMockData: false,
+        source: 'CACHED - RSS feeds (ShareSansar, MeroLagani, NepalInvestor)',
+        count: cached.length,
+        data: cached
       });
     }
 
-    allNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    let allNews = [];
+    const sources = ['ShareSansar', 'MeroLagani', 'NepalInvestor'];
+    const feedUrls = [
+      'https://www.sharesansar.com/feed',
+      'https://merolagani.com/rss.aspx',
+      'https://www.nepalinvestor.net/feed/',
+    ];
+
+    // ✅ FIXED: Run rss-parser and axios/cheerio scraper in parallel (not as fallback)
+    // This ensures at least one method succeeds even if the other is blocked
+    const [rssResults, axiosResults] = await Promise.allSettled([
+      // Method 1: rss-parser
+      (async () => {
+        try {
+          const Parser = (await import('rss-parser')).default;
+          const parser = new Parser({ timeout: 12000 });
+          const feeds = await Promise.allSettled(feedUrls.map(u => parser.parseURL(u)));
+          const news = [];
+          feeds.forEach((result, i) => {
+            if (result.status === 'fulfilled') {
+              result.value.items.forEach(item => {
+                news.push({ title: item.title, link: item.link, pubDate: item.pubDate, content: item.contentSnippet || '', source: sources[i] });
+              });
+            }
+          });
+          return news;
+        } catch (_) { return []; }
+      })(),
+      // Method 2: axios + cheerio raw XML scraping
+      (async () => {
+        const news = [];
+        const results = await Promise.allSettled(feedUrls.map((u, i) =>
+          axios.get(u, { timeout: 12000, headers: { ...HEADERS, 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } })
+        ));
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled' && r.value?.data) {
+            const $xml = cheerio.load(r.value.data, { xmlMode: true });
+            $xml('item').each((_, el) => {
+              const title = $xml(el).find('title').text().replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+              const link = $xml(el).find('link').text().trim() || $xml(el).find('guid').text().trim();
+              const pubDate = $xml(el).find('pubDate').text().trim();
+              const desc = $xml(el).find('description').text().replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').trim().substring(0, 200);
+              if (title && title.length > 5) {
+                news.push({ title, link, pubDate, content: desc, source: sources[idx] });
+              }
+            });
+          }
+        });
+        return news;
+      })(),
+    ]);
+
+    // Merge and deduplicate by link
+    const rssNews = rssResults.status === 'fulfilled' ? rssResults.value : [];
+    const axiosNews = axiosResults.status === 'fulfilled' ? axiosResults.value : [];
+    const allRaw = [...rssNews, ...axiosNews];
+    const seenLinks = new Set();
+    for (const item of allRaw) {
+      if (item.link && !seenLinks.has(item.link)) {
+        seenLinks.add(item.link);
+        allNews.push(item);
+      } else if (!item.link) {
+        allNews.push(item);
+      }
+    }
+
+    allNews.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
+    const newsSlice = allNews.slice(0, 60);
+
+    // Cache for 30 minutes if we got data
+    if (newsSlice.length > 0) {
+      setCache('news-nepse', newsSlice, 30 * 60 * 1000);
+    }
+
+    const sourceLabel = newsSlice.length > 0
+      ? 'LIVE - RSS feeds (ShareSansar, MeroLagani, NepalInvestor)'
+      : 'RSS feeds unavailable - no articles fetched';
 
     res.json({
       success: true,
       isMockData: false,
-      source: 'LIVE - RSS feeds (ShareSansar, MeroLagani, NepalInvestor)',
-      count: allNews.length,
-      data: allNews.slice(0, 60)
+      source: sourceLabel,
+      count: newsSlice.length,
+      data: newsSlice
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
@@ -4957,12 +5000,14 @@ app.post('/api/watchlist/prices', async (req, res) => {
 const AI_KEYS = {
   gemini: (process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '').trim() || null,
   glm: (process.env.GLM_API_KEY || process.env.ZHIPU_API_KEY || '').trim() || null,
+  openrouter: (process.env.OPENROUTER_API_KEY || '').trim() || null,
 };
 
 // Log which providers are available (never log the actual keys)
 console.log('🤖 AI Providers configured:');
 console.log(`   Gemini: ${AI_KEYS.gemini ? '✅ Key set' : '❌ No key'}`);
 console.log(`   GLM-4:  ${AI_KEYS.glm ? '✅ Key set' : '❌ No key'}`);
+console.log(`   OpenRouter/Claude: ${AI_KEYS.openrouter ? '✅ Key set' : '❌ No key'}`);
 console.log(`   Pollinations: ✅ Always available (no key needed)`);
 
 // ── PROVIDER 1: GEMINI ────────────────────────────────────────
@@ -5053,6 +5098,60 @@ When asked for JSON, return ONLY valid JSON without any markdown.`
   }
 
   throw new Error(`All GLM models failed: ${lastError}`);
+}
+
+// ── PROVIDER 3: OPENROUTER (Claude / Free Models) ────────────
+async function callOpenRouter(prompt, analysisType = 'stock', customKey = null) {
+  const key = (customKey || AI_KEYS.openrouter || '').trim();
+  if (!key) throw new Error('OpenRouter key not configured');
+
+  // Attempt Claude 3 Haiku first, fallback to openrouter/free (which is 100% free with unlimited tokens)
+  const models = ['anthropic/claude-3-haiku', 'openrouter/free'];
+  let lastError = null;
+
+  for (const tryModel of models) {
+    try {
+      const response = await axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          model: tryModel,
+          messages: [
+            {
+              role: 'system',
+              content: `You are GURU AI, expert NEPSE (Nepal Stock Exchange) institutional analyst and investment advisor. Provide structured, actionable insights for Nepali equity investors.${analysisType !== 'chat' ? ' Return high-accuracy structured data.' : ''}`
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 1500
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${key}`,
+            'HTTP-Referer': 'https://nepseapp.onrender.com',
+            'X-Title': 'NEPSE Guru AI'
+          },
+          timeout: 25000
+        }
+      );
+
+      const text = response.data?.choices?.[0]?.message?.content;
+      if (!text) throw new Error('Empty response from OpenRouter');
+
+      return { text, provider: `openrouter:${tryModel}` };
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || err.message;
+      lastError = msg;
+      console.warn(`⚠️ OpenRouter model ${tryModel} failed: ${msg}`);
+      continue;
+    }
+  }
+
+  throw new Error(`OpenRouter failed: ${lastError}`);
 }
 
 // ── GURU LOCAL QUANTITATIVE & NEPSE EQUITY ENGINE ───────────────
@@ -5433,6 +5532,8 @@ app.post('/api/guru/analyze', async (req, res) => {
 
     const geminiKeyToUse = (apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
     const glmKeyToUse = (glmApiKey || AI_KEYS.glm || '').trim();
+    // ✅ FIXED: properly read openrouterApiKey from request body (client sends it from aiService.js)
+    const openrouterKeyToUse = (req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
 
     // ── Try Provider 1: Gemini ──────────────────────────────
     if (geminiKeyToUse) {
@@ -5447,7 +5548,20 @@ app.post('/api/guru/analyze', async (req, res) => {
       }
     }
 
-    // ── Try Provider 2: GLM-4 ───────────────────────────────
+    // ── Try Provider 2: OpenRouter (client key first, then server key) ──
+    if (!result && openrouterKeyToUse) {
+      try {
+        console.log('🤖 Trying OpenRouter / Claude...');
+        result = await callOpenRouter(prompt, analysisType, openrouterKeyToUse);
+        providerUsed = result.provider;
+        console.log(`✅ OpenRouter succeeded: ${result.provider}`);
+      } catch (err) {
+        providerError = err.message;
+        console.warn(`⚠️  OpenRouter failed: ${err.message}`);
+      }
+    }
+
+    // ── Try Provider 3: GLM-4 ───────────────────────────────
     if (!result && glmKeyToUse) {
       try {
         console.log('🤖 Trying GLM-4...');
@@ -5460,7 +5574,7 @@ app.post('/api/guru/analyze', async (req, res) => {
       }
     }
 
-    // ── Try Provider 3: Pollinations / Local Quant Engine ───
+    // ── Try Provider 4: Pollinations / Local Quant Engine ───
     if (!result) {
       try {
         console.log('🤖 Trying Pollinations / Quant Fallback...');
@@ -5727,19 +5841,32 @@ Provide market outlook in this exact JSON:
 }`;
 
     let result = null;
+    // ✅ FIXED: accept client-sent API keys from query/body params
+    const clientGeminiKey = (req.query.apiKey || req.body?.apiKey || '').trim();
+    const clientOpenRouterKey = (req.query.openrouterApiKey || req.body?.openrouterApiKey || '').trim();
+    const clientGlmKey = (req.query.glmApiKey || req.body?.glmApiKey || '').trim();
 
-    if (AI_KEYS.gemini) {
-      try { result = await callGemini(prompt, 'market'); } catch (e) {
+    const geminiKey = clientGeminiKey || AI_KEYS.gemini;
+    const openrouterKey = clientOpenRouterKey || AI_KEYS.openrouter;
+    const glmKey = clientGlmKey || AI_KEYS.glm;
+
+    if (geminiKey) {
+      try { result = await callGemini(prompt, 'market', geminiKey); } catch (e) {
         console.warn('Gemini market outlook failed:', e.message);
       }
     }
-    if (!result && AI_KEYS.glm) {
-      try { result = await callGLM(prompt); } catch (e) {
+    if (!result && openrouterKey) {
+      try { result = await callOpenRouter(prompt, 'market', openrouterKey); } catch (e) {
+        console.warn('OpenRouter market outlook failed:', e.message);
+      }
+    }
+    if (!result && glmKey) {
+      try { result = await callGLM(prompt, 'glm-4-flash', glmKey); } catch (e) {
         console.warn('GLM market outlook failed:', e.message);
       }
     }
     if (!result) {
-      try { result = await callPollinations(prompt); } catch (e) {
+      try { result = await callPollinations(prompt, 'market'); } catch (e) {
         return res.status(503).json({
           success: false,
           error: 'AI unavailable for market outlook',
@@ -5949,16 +6076,25 @@ Respond ONLY in this exact JSON format:
     let result = null;
     let lastErr = null;
 
-    if (AI_KEYS.gemini) {
-      try { result = await callGemini(prompt, 'stock'); }
+    // ✅ FIXED: use client-sent API keys (frontend sends them via request body)
+    const saGeminiKey = (req.body.apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
+    const saOpenRouterKey = (req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
+    const saGlmKey = (req.body.glmApiKey || AI_KEYS.glm || '').trim();
+
+    if (saGeminiKey) {
+      try { result = await callGemini(prompt, 'stock', saGeminiKey); }
       catch (e) { lastErr = e.message; console.warn('Gemini stock analysis failed:', e.message); }
     }
-    if (!result && AI_KEYS.glm) {
-      try { result = await callGLM(prompt); }
+    if (!result && saOpenRouterKey) {
+      try { result = await callOpenRouter(prompt, 'stock', saOpenRouterKey); }
+      catch (e) { lastErr = e.message; console.warn('OpenRouter stock analysis failed:', e.message); }
+    }
+    if (!result && saGlmKey) {
+      try { result = await callGLM(prompt, 'glm-4-flash', saGlmKey); }
       catch (e) { lastErr = e.message; console.warn('GLM stock analysis failed:', e.message); }
     }
     if (!result) {
-      try { result = await callPollinations(prompt); }
+      try { result = await callPollinations(prompt, 'stock'); }
       catch (e) {
         return res.status(503).json({
           success: false,
@@ -6004,6 +6140,404 @@ Respond ONLY in this exact JSON format:
   }
 });
 
+/* ═══════════════════════════════════════════════════
+   PREDICTION & QUANTITATIVE SCORING ENGINE ENDPOINTS
+   ═══════════════════════════════════════════════════ */
+
+// ✅ NEW: /api/market-indices alias — liveData.js expects this route
+app.get('/api/market-indices', async (req, res) => {
+  try {
+    const cached = getCache('market-indices');
+    if (cached) return res.json({ success: true, isMockData: false, source: 'CACHE', data: cached });
+    const indices = await getMarketIndicesInternal().catch(() => ({}));
+    res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: indices });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, isMockData: false });
+  }
+});
+
+// ✅ NEW: /api/ai/predict — AiAnalyst.jsx calls this endpoint for AI stock predictions
+app.post('/api/ai/predict', async (req, res) => {
+  try {
+    const { symbol, userQuestion, prompt: customPrompt } = req.body;
+    if (!symbol && !customPrompt) {
+      return res.status(400).json({ success: false, error: 'symbol or prompt required', isMockData: false });
+    }
+
+    const rawSymbol = symbol ? symbol.toUpperCase() : '';
+    const openrouterKey = (req.body.openrouterApiKey || AI_KEYS.openrouter || '').trim();
+    const geminiKey = (req.body.apiKey || req.body.geminiApiKey || AI_KEYS.gemini || '').trim();
+    const glmKey = (req.body.glmApiKey || AI_KEYS.glm || '').trim();
+
+    // Build prediction prompt from live data if symbol provided
+    let prompt = customPrompt || '';
+    if (rawSymbol && !customPrompt) {
+      const keymap = await nepseClient.getSecuritySymbolIdKeymap().catch(() => new Map());
+      const securityId = keymap.get(rawSymbol);
+      let priceData = {};
+      if (securityId) {
+        try {
+          priceData = await nepseClient.requestGETAPI(`/api/nots/today-price/${securityId}`);
+        } catch (_) {}
+      }
+      prompt = `You are GURU AI, NEPSE expert analyst.
+Predict short-term price direction for ${rawSymbol} based on:
+Current Price: NPR ${priceData.closePrice || priceData.lastTradedPrice || 'N/A'}
+Today Change: ${priceData.percentageChange || 0}%
+Volume: ${priceData.totalTradedQuantity?.toLocaleString() || 'N/A'}
+${userQuestion ? `User Question: ${userQuestion}` : ''}
+Respond in JSON: {"direction":"UP|DOWN|SIDEWAYS","confidence":<0-100>,"timeframe":"1W|2W|1M","targetPrice":<number>,"stopLoss":<number>,"reasoning":"<2 sentences>"}`;
+    }
+
+    let result = null;
+    if (geminiKey) {
+      try { result = await callGemini(prompt, 'stock', geminiKey); } catch (_) {}
+    }
+    if (!result && openrouterKey) {
+      try { result = await callOpenRouter(prompt, 'stock', openrouterKey); } catch (_) {}
+    }
+    if (!result && glmKey) {
+      try { result = await callGLM(prompt, 'glm-4-flash', glmKey); } catch (_) {}
+    }
+    if (!result) {
+      result = await callPollinations(prompt, 'stock').catch(() => ({ text: '{}', provider: 'guru-quant-engine' }));
+    }
+
+    const { parsed } = parseAIResponse(result.text, 'stock');
+    res.json({
+      success: true,
+      isMockData: false,
+      provider: result.provider,
+      symbol: rawSymbol,
+      data: parsed,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, isMockData: false });
+  }
+});
+
+// 1. NEPSE Index Direction Prediction
+app.get('/api/predict/nepse', async (req, res) => {
+  try {
+    // Use direct internal helpers instead of loopback HTTP (loopback fails on Render)
+    let stockList = [];
+    let cachedSummary = getCache('market-summary') || getCache('today-prices');
+    if (cachedSummary) {
+      stockList = Array.isArray(cachedSummary)
+        ? cachedSummary
+        : (cachedSummary?.data || cachedSummary?.stocks || []);
+    }
+    if (stockList.length === 0) {
+      // Direct internal call — no loopback needed
+      const meroSummary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
+      stockList = meroSummary?.stocks || [];
+    }
+
+    let enrichedSummary = cachedSummary;
+    if (stockList.length > 0) {
+      const advances = stockList.filter(s => Number(s.pChange || 0) > 0).length;
+      const declines = stockList.filter(s => Number(s.pChange || 0) < 0).length;
+      const totalTurnover = stockList.reduce((a, s) => a + Number(s.turnover || 0), 0);
+      enrichedSummary = { advances, declines, totalTurnover, stocks: stockList };
+    }
+
+    // Fetch real NEPSE index close history directly
+    let memoryCloses = null;
+    try {
+      const nepseHistory = await getPriceHistoryInternal('NEPSE', 60);
+      if (Array.isArray(nepseHistory) && nepseHistory.length >= 15) {
+        memoryCloses = nepseHistory.map(d => Number(d.close)).filter(c => c > 0);
+      }
+    } catch (_) {}
+
+    // Fetch market indices directly (no loopback)
+    let memoryIndices = null;
+    try {
+      const indicesRaw = getCache('market-indices');
+      if (indicesRaw) {
+        memoryIndices = indicesRaw.subIndices || [];
+      } else {
+        const indicesData = await getMarketIndicesInternal().catch(() => ({}));
+        memoryIndices = indicesData?.subIndices || [];
+      }
+    } catch (_) {}
+
+    const result = await predictIndexDirection({
+      memorySummary: enrichedSummary,
+      memoryCloses,
+      memoryIndices,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Stock Composite Scores & Screener
+app.get('/api/predict/stocks', async (req, res) => {
+  try {
+    // Use direct internal helpers instead of loopback HTTP (loopback fails on Render)
+    let cached = getCache('market-summary') || getCache('today-prices');
+    let stockList = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || []);
+    if (stockList.length === 0) {
+      const meroSummary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
+      stockList = meroSummary?.stocks || [];
+    }
+    const scored = await scoreAllStocks(stockList);
+    
+    // Optional filtering query params: filter=momentum | volume | catalyst
+    const filter = req.query.filter;
+    let filtered = scored;
+    if (filter === 'momentum') filtered = scored.filter(s => s.momentum_5d > 0);
+    else if (filter === 'volume') filtered = scored.filter(s => s.volume_surge_ratio >= 1.3);
+    else if (filter === 'catalyst') filtered = scored.filter(s => s.corporate_action_flag);
+
+    res.json({
+      success: true,
+      count: filtered.length,
+      asOf: new Date().toISOString(),
+      data: filtered
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. News Sentiment Feed
+app.get('/api/predict/sentiment', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const sentiment = await getScoredNewsSentiment(limit);
+    res.json({ success: true, count: sentiment.length, data: sentiment });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. NRB Macro Indicators
+app.get('/api/predict/macro', async (req, res) => {
+  try {
+    const macro = await getMacroFeatures();
+    res.json({ success: true, data: macro, asOf: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Political & Regulatory Event Flags
+app.get('/api/predict/events', async (req, res) => {
+  try {
+    const events = await getPoliticalEventFlag();
+    res.json({ success: true, data: events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+/* ═══════════════════════════════════════════════════
+   NEWS SCRAPER WORKER — runs on startup and every 2h
+   Scrapes headlines from ShareSansar and MeroLagani,
+   applies keyword NLP, stores in memory + DB (if available).
+   ═══════════════════════════════════════════════════ */
+
+const NEWS_POSITIVE_KEYWORDS = [
+  'profit', 'dividend', 'bonus', 'growth', 'increase', 'approve', 'launch',
+  'recover', 'bullish', 'surplus', 'gain', 'rally', 'expand', 'rise',
+  'success', 'strong', 'record', 'highest', 'positive', 'upgrade'
+];
+const NEWS_NEGATIVE_KEYWORDS = [
+  'loss', 'decline', 'decrease', 'fine', 'penalty', 'fraud', 'investigation',
+  'fall', 'weak', 'deficit', 'bankrupt', 'suspend', 'bearish', 'drop',
+  'crash', 'negative', 'downgrade', 'concern', 'risk', 'problem'
+];
+
+function scoreNewsHeadline(headline) {
+  const text = (headline || '').toLowerCase();
+  let score = 0;
+  let hits = 0;
+  for (const kw of NEWS_POSITIVE_KEYWORDS) {
+    if (text.includes(kw)) { score += 0.15; hits++; }
+  }
+  for (const kw of NEWS_NEGATIVE_KEYWORDS) {
+    if (text.includes(kw)) { score -= 0.15; hits++; }
+  }
+  // slight positive baseline (most NEPSE news is neutral-to-positive)
+  return Number(Math.max(-1, Math.min(1, hits === 0 ? 0.05 : score)).toFixed(3));
+}
+
+function classifyNewsCategory(headline) {
+  const t = (headline || '').toLowerCase();
+  if (/nrb|interest rate|policy rate|monetary|liquidity|inflation/.test(t)) return 'nrb_policy';
+  if (/ipo|right share|bonus share|fpo|debenture|issue/.test(t)) return 'ipo';
+  if (/government|minister|parliament|court|regulation|sebon/.test(t)) return 'political';
+  if (/quarter|earnings|profit|loss|eps|dividend|annual/.test(t)) return 'earnings';
+  return 'market';
+}
+
+export async function runNewsScraper() {
+  const sources = [
+    { url: 'https://www.sharesansar.com/category/latest', source: 'sharesansar' },
+    { url: 'https://merolagani.com/NewsList.aspx', source: 'merolagani' },
+  ];
+  const items = [];
+  let idCounter = Date.now();
+
+  for (const { url, source } of sources) {
+    try {
+      const res = await axios.get(url, { headers: HEADERS, timeout: 9000 });
+      const $ = cheerio.load(res.data);
+      const seen = new Set();
+
+      // Try various common headline selectors
+      const selectors = [
+        'a:has(h4)', 'a:has(h3)', 'a:has(h2)',
+        'h1 a', 'h2 a', 'h3 a', 'h4 a',
+        '.news-title a', '.article-title a', '.title a',
+        '.entry-title a', '.post-title a',
+        'td a', '.td-article-title a'
+      ];
+
+      for (const sel of selectors) {
+        $(sel).each((_, el) => {
+          const text = $(el).text().trim();
+          const href = $(el).attr('href') || url;
+          if (text.length >= 25 && text.length <= 300 && !seen.has(text)) {
+            seen.add(text);
+            const score = scoreNewsHeadline(text);
+            items.push({
+              id: idCounter++,
+              source,
+              headline: text,
+              url: href.startsWith('http') ? href : url,
+              published_at: new Date().toISOString(),
+              sentiment_score: score,
+              category: classifyNewsCategory(text),
+              related_symbols: [],
+              scored_by: 'keyword-nlp-v1',
+            });
+          }
+        });
+        if (items.filter(i => i.source === source).length >= 12) break;
+      }
+    } catch (err) {
+      console.warn(`[newsWorker] Scrape failed for ${source}:`, err.message);
+    }
+  }
+
+  if (items.length > 0) {
+    setNewsCache(items);
+    // Persist to DB using query
+    for (const item of items) {
+      try {
+        await query(
+          `INSERT INTO news_sentiment (source, headline, url, published_at, sentiment_score, category, related_symbols, scored_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT DO NOTHING`,
+          [item.source, item.headline, item.url, item.published_at,
+           item.sentiment_score, item.category, JSON.stringify(item.related_symbols), item.scored_by]
+        );
+      } catch (_) {}
+    }
+    console.log(`[newsWorker] ✅ Scraped and stored ${items.length} headlines from ${sources.length} sources`);
+  } else {
+    console.warn('[newsWorker] No headlines scraped — sites may be blocking or layout changed');
+  }
+}
+
+// Run immediately on startup, then every 2 hours
+runNewsScraper().catch(() => {});
+setInterval(() => runNewsScraper().catch(() => {}), 2 * 60 * 60 * 1000);
+
+/* ═══════════════════════════════════════════════════════════════════
+   MACRO INDICATOR SCRAPER — runs on startup and every 6 hours
+   Scrapes NRB interest rate from ShareSansar & MeroLagani pages,
+   updates the in-memory macroCache used by featureEngine.mjs.
+   ═══════════════════════════════════════════════════════════════════ */
+
+async function runMacroScraper() {
+  const updates = {};
+  
+  try {
+    const forexRes = await axios.get('https://nrb.org.np/api/forex/v1/app-rate', { timeout: 10000 });
+    if (Array.isArray(forexRes.data)) {
+      const usdObj = forexRes.data.find(d => d.iso3 === 'USD');
+      if (usdObj && usdObj.sell) {
+        updates.npr_usd_rate = parseFloat(usdObj.sell);
+      }
+    }
+  } catch (err) {
+    console.warn('[macroWorker] Scrape failed for NRB forex API:', err.message);
+  }
+
+  try {
+    const htmlRes = await axios.get('https://nrb.org.np/', { headers: HEADERS, timeout: 10000 });
+    const $ = cheerio.load(htmlRes.data);
+    const text = $('body').text().replace(/\s+/g, ' ');
+
+    // Extract CPI / inflation
+    const cpiMatch = text.match(/([0-9.]+)\s*%\s*National Consumer Price Inflation/i) 
+      || text.match(/(?:cpi|inflation)[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+    if (cpiMatch) {
+      const cpi = parseFloat(cpiMatch[1]);
+      if (cpi > 0 && cpi < 30) updates.cpi_inflation_pct = cpi;
+    }
+
+    // Extract policy rate
+    const rateMatch = text.match(/policy\s+rate[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+      || text.match(/bank\s+rate[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+    if (rateMatch) {
+      const rate = parseFloat(rateMatch[1]);
+      if (rate > 0 && rate < 30) updates.interest_rate_pct = rate;
+    }
+
+    // Extract M2 growth
+    const m2Match = text.match(/m2[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+      || text.match(/money\s+supply[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+    if (m2Match) {
+      const m2 = parseFloat(m2Match[1]);
+      if (m2 > 0 && m2 < 50) updates.m2_growth_pct = m2;
+    }
+    
+    // Extract USD rate as fallback if API failed
+    if (!updates.npr_usd_rate) {
+      const usdMatch = text.match(/(?:usd|dollar)[^0-9]*([0-9]+(?:\.[0-9]+)?)/i)
+        || text.match(/([0-9]{3}(?:\.[0-9]+)?)\s*(?:npr|nrs)/i);
+      if (usdMatch) {
+        const rate = parseFloat(usdMatch[1]);
+        if (rate > 100 && rate < 200) updates.npr_usd_rate = rate;
+      }
+    }
+  } catch (err) {
+    console.warn(`[macroWorker] Scrape failed for NRB HTML:`, err.message);
+  }
+
+  if (Object.keys(updates).length > 0) {
+    setMacroCache(updates);
+    console.log('[macroWorker] ✅ Updated macro indicators:', updates);
+    // Persist to DB if available
+    if (pool) {
+      const today = new Date().toISOString().slice(0, 10);
+      for (const [indicator, value] of Object.entries(updates)) {
+        try {
+          await pool.query(
+            `INSERT INTO macro_indicators (indicator, value, as_of_date)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (indicator, as_of_date) DO UPDATE SET value = EXCLUDED.value`,
+            [indicator, value, today]
+          );
+        } catch (_) {}
+      }
+    }
+  } else {
+    console.warn('[macroWorker] No macro data scraped — using cached/default values');
+  }
+}
+
+// Run immediately on startup, then every 6 hours
+runMacroScraper().catch(() => {});
+setInterval(() => runMacroScraper().catch(() => {}), 6 * 60 * 60 * 1000);
 
 app.listen(PORT, async () => {
     try {

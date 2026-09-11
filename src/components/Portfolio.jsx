@@ -84,16 +84,17 @@ const safeFetchJson = async (url, options = {}) => {
 const getRealClientId = async (boid, dpCode) => {
   try {
     const isNative = Capacitor.isNativePlatform();
-    const baseUrl = isNative ? 'https://backend.cdsc.com.np/api/meroShare' : getProxyBase();
-    const apiPath = isNative ? '/capital/' : '/api/meroshare/dp-list';
+    // ✅ FIXED: On web always use proxy to avoid CORS errors with CDSC
+    // On native, direct CDSC is fine (OkHttp/URLSession bypass CORS)
+    const proxyBase = getProxyBase();
 
     let dpData;
     if (isNative) {
-      const res = await fetch(`${baseUrl}${apiPath}`);
+      const res = await fetch('https://backend.cdsc.com.np/api/meroShare/capital/');
       const json = await res.json();
       dpData = json || [];
     } else {
-      const json = await safeFetchJson(`${baseUrl}${apiPath}`);
+      const json = await safeFetchJson(`${proxyBase}/api/meroshare/dp-list`);
       dpData = json.success ? json.data : [];
     }
 

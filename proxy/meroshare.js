@@ -557,4 +557,175 @@ router.post('/check-result', async (req, res) => {
   res.json({ success: true, results });
 });
 
+// ✅ NEW — 6. Get User Own Detail (MeroShare account profile)
+// Called by: MeroShareHub.jsx line 1213, Portfolio.jsx line 381
+router.get('/own-detail', async (req, res) => {
+  const authToken = req.headers['authorization'] || req.headers['Authorization'];
+  if (!authToken) {
+    return res.status(401).json({ success: false, error: 'Authorization token required. Please login to MeroShare first.' });
+  }
+  try {
+    const client = createMeroShareSession();
+    await primeSession(client).catch(() => {});
+    const response = await client.get(`${MEROSHARE_BASE}View/myDetail/`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`,
+      },
+    });
+    if (isWafBlocked(response)) {
+      return res.status(503).json({ success: false, error: 'CDSC firewall blocked the request. Please try again.' });
+    }
+    validateJsonResponse(response, 'Own Detail');
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error('[meroshare/own-detail] Error:', error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: error.response?.data?.message || error.message || 'Failed to fetch user detail from CDSC.'
+    });
+  }
+});
+
+// ✅ NEW — 7. Get User Portfolio Holdings
+// Called by: MeroShareHub.jsx line 1221, Portfolio.jsx line 389
+router.get('/portfolio', async (req, res) => {
+  const authToken = req.headers['authorization'] || req.headers['Authorization'];
+  if (!authToken) {
+    return res.status(401).json({ success: false, error: 'Authorization token required. Please login to MeroShare first.' });
+  }
+  try {
+    const client = createMeroShareSession();
+    await primeSession(client).catch(() => {});
+
+    const token = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+    const demat = req.query.demat || req.headers['x-demat'];
+    const clientCode = req.query.clientCode || req.headers['x-client-code'];
+
+    const body = {
+      sortBy: 'script',
+      demat: demat ? [demat] : [],
+      clientCode: clientCode || '',
+      page: 1,
+      size: 200,
+      sortAsc: true,
+    };
+
+    const response = await client.post(`${MEROSHARE_BASE}View/myPortfolio/`, body, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token,
+      },
+    });
+    if (isWafBlocked(response)) {
+      return res.status(503).json({ success: false, error: 'CDSC firewall blocked portfolio request.' });
+    }
+    validateJsonResponse(response, 'Portfolio');
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error('[meroshare/portfolio] Error:', error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: error.response?.data?.message || error.message || 'Failed to fetch portfolio from CDSC.'
+    });
+  }
+});
+
+// ✅ NEW — 8. Get Current Open IPO Issues (authenticated, user-specific)
+// Called by: MeroShareHub.jsx, ServicesHub.tsx, IPOList.jsx
+router.get('/current-issue', async (req, res) => {
+  try {
+    const client = createMeroShareSession();
+    await primeSession(client).catch(() => {});
+
+    const authToken = req.headers['authorization'] || req.headers['Authorization'] || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers['Authorization'] = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+    }
+
+    const response = await client.get(`${MEROSHARE_BASE}/companyShare/currentIssue`, { headers });
+    if (isWafBlocked(response)) {
+      return res.status(503).json({ success: false, error: 'CDSC firewall blocked request.' });
+    }
+    if (typeof response.data === 'string' && response.data.trim().startsWith('<')) {
+      return res.json({ success: true, data: [], message: 'No current IPO issues open.' });
+    }
+    const issues = Array.isArray(response.data) ? response.data : [];
+    const mapped = issues.map(item => ({
+      id: item.companyShareId,
+      name: item.companyName,
+      scrip: item.scrip || '',
+      type: item.shareTypeName || 'IPO',
+      status: 'Open',
+      units: item.minKitta || 10,
+      minKitta: item.minKitta || 10,
+      maxKitta: item.maxKitta || 10000,
+      amountPerShare: item.amountPerShare || 100,
+      openDate: item.issueOpenDate || '',
+      closeDate: item.issueCloseDate || '',
+    }));
+    res.json({ success: true, isMockData: false, source: 'LIVE - CDSC MeroShare', count: mapped.length, data: mapped });
+  } catch (error) {
+    console.error('[meroshare/current-issue] Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch current IPO issues from CDSC.',
+      data: []
+    });
+  }
+});
+
+// ✅ NEW — 9. Get User's Applied IPO List
+// Called by: MeroShareHub.jsx, IPOList.jsx
+router.get('/my-applied-ipo', async (req, res) => {
+  const authToken = req.headers['authorization'] || req.headers['Authorization'];
+  if (!authToken) {
+    return res.status(401).json({ success: false, error: 'Authorization token required. Please login to MeroShare first.', data: [] });
+  }
+  try {
+    const client = createMeroShareSession();
+    await primeSession(client).catch(() => {});
+
+    const token = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+    const page = parseInt(req.query.page) || 0;
+    const size = parseInt(req.query.size) || 20;
+
+    const response = await client.get(
+      `${MEROSHARE_BASE}View/myPurchase/applicantForm/?page=${page}&size=${size}`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token,
+        },
+      }
+    );
+    if (isWafBlocked(response)) {
+      return res.status(503).json({ success: false, error: 'CDSC firewall blocked request.', data: [] });
+    }
+    if (typeof response.data === 'string' && response.data.trim().startsWith('<')) {
+      return res.json({ success: true, data: [], totalCount: 0 });
+    }
+    const applications = Array.isArray(response.data) ? response.data : (response.data?.content || []);
+    const mapped = applications.map(item => ({
+      id: item.companyShareId || item.id,
+      name: item.companyName || item.name,
+      scrip: item.scrip || '',
+      type: item.shareTypeName || 'IPO',
+      appliedKitta: item.appliedKitta || item.quantity || 0,
+      status: item.statusDescription || item.status || 'Pending',
+      appliedDate: item.createdDate || item.appliedDate || '',
+      allotmentDate: item.allotmentDate || '',
+    }));
+    res.json({ success: true, isMockData: false, source: 'LIVE - CDSC MeroShare', count: mapped.length, data: mapped });
+  } catch (error) {
+    console.error('[meroshare/my-applied-ipo] Error:', error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: error.response?.data?.message || error.message || 'Failed to fetch applied IPOs from CDSC.',
+      data: []
+    });
+  }
+});
+
 export default router;
