@@ -9,6 +9,7 @@ import { startWorkers } from './workers.mjs';
 import fs from 'fs';
 import path from 'path';
 import meroshareRouter from './meroshare.js';
+import { getLiveIpoListings } from './ipoHelper.js';
 import { predictIndexDirection, scoreAllStocks, getScoredNewsSentiment } from './quant/predictorEngine.mjs';
 import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.mjs';
 import { setNewsCache } from './quant/newsCache.mjs';
@@ -1041,9 +1042,9 @@ app.get('/api/meroshare/ipos', async (req, res) => {
     if (!sessionToken) {
       // Fallback: return live open IPO listings without requiring credentials
       try {
-        const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
-        if (liveRes.data?.data) {
-          return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+        const liveData = await getLiveIpoListings();
+        if (liveData && liveData.length > 0) {
+          return res.json({ success: true, data: liveData, source: 'live-listings' });
         }
       } catch (_) {}
       return res.status(400).json({ success: false, message: 'Auth token or credentials (clientId, username, password) are required.' });
@@ -1115,9 +1116,9 @@ app.post('/api/meroshare/ipos', async (req, res) => {
     if (!sessionToken) {
       // Fallback: return live open IPO listings without requiring credentials
       try {
-        const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, { timeout: 8000 });
-        if (liveRes.data?.data) {
-          return res.json({ success: true, data: liveRes.data.data, source: 'live-listings' });
+        const liveData = await getLiveIpoListings();
+        if (liveData && liveData.length > 0) {
+          return res.json({ success: true, data: liveData, source: 'live-listings' });
         }
       } catch (_) {}
       return res.status(400).json({ success: false, message: 'Auth token or credentials (clientId, username, password) are required.' });
@@ -1369,15 +1370,11 @@ app.get('/api/ipo-result/companies', async (req, res) => {
   // or resolved via MeroShare auth.
 
   try {
-    // Reuse the /api/ipo/live-listings data which already works
-    const liveRes = await axios.get(`http://localhost:${process.env.PORT || 5000}/api/ipo/live-listings`, {
-      timeout: 8000
-    }).catch(() => null);
-
+    // Reuse the live-listings data which already works
     let items = [];
-    if (liveRes && Array.isArray(liveRes.data?.data)) {
-      items = liveRes.data.data;
-    }
+    try {
+      items = await getLiveIpoListings();
+    } catch (_) {}
 
     // Return Closed items (result may be published), Nearing, and Open for completeness
     const resultCompanies = items
@@ -3061,166 +3058,13 @@ app.get('/api/compare/:symbol1/:symbol2', async (req, res) => {
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get('/api/ipo/live-listings', async (req, res) => {
   const refresh = req.query.refresh === 'true' || req.headers['cache-control'] === 'no-cache';
-  const cacheKey = 'ipo-live-listings';
-  const cached = getCache(cacheKey);
-  if (cached && !refresh) return res.json({ success: true, data: cached, cached: true });
-
-  const issues = [];
-
-  // Current time in Nepal Time (NPT = UTC + 5:45)
-  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
-  const todayNptStr = nowNpt.toISOString().split('T')[0];
-  const nptHours = nowNpt.getUTCHours();
-  const nptMinutes = nowNpt.getUTCMinutes();
-  // Nepalese IPO banking & C-ASBA window closes at 17:00 (5:00 PM) NPT on closing day
-  const isBefore5pmNpt = nptHours < 17 || (nptHours === 17 && nptMinutes === 0);
-
-  // Source 1: NepaliPaisa Official Public API
   try {
-    const npRes = await axios.get('https://www.nepalipaisa.com/api/GetIpos?pageNo=1&itemsPerPage=25&pagePerDisplay=5', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': 'https://www.nepalipaisa.com/ipo'
-      },
-      timeout: 8000
-    });
-    const dataList = npRes.data?.result?.data;
-    if (Array.isArray(dataList) && dataList.length > 0) {
-      dataList.forEach((item, i) => {
-        const rawSym = (item.stockSymbol || '').toUpperCase().trim();
-        const rawName = item.companyName || '';
-        const isBeni = rawSym === 'BENI' || rawName.toLowerCase().includes('beni hydropower');
-
-        let closeDate = item.extendedDateAD || item.closingDateAD || item.closingDateBS || '';
-        let openDate = item.openingDateAD || item.openingDateBS || '';
-        let status = item.status || 'Open';
-
-        const compOpenDate = (item.openingDateAD || '').split('T')[0];
-        const compCloseDate = (item.extendedDateAD || item.closingDateAD || '').split('T')[0];
-
-        // Verified rule for Nepal capital markets
-        if (isBeni) {
-          // Beni Hydropower Project Limited general public IPO closes Bhadra 26, 2083 (September 11, 2026) up to 5:00 PM NPT
-          closeDate = '2026-09-11';
-          status = isBefore5pmNpt ? 'Open' : 'Closed';
-        } else if (compOpenDate && compOpenDate > todayNptStr) {
-          status = 'Upcoming';
-        } else if (compCloseDate === todayNptStr) {
-          status = isBefore5pmNpt ? 'Open' : 'Closed';
-        } else if (compCloseDate > todayNptStr && (!compOpenDate || compOpenDate <= todayNptStr)) {
-          status = 'Open';
-        } else if (item.status && item.status.toLowerCase() === 'open' && (!compOpenDate || compOpenDate <= todayNptStr)) {
-          status = 'Open';
-        } else if (item.status && (item.status.toLowerCase() === 'nearing' || item.status.toLowerCase() === 'upcoming')) {
-          status = 'Upcoming';
-        } else if (compCloseDate && compCloseDate < todayNptStr) {
-          status = 'Closed';
-        }
-
-        const numericId = item.ipoId ? Number(item.ipoId) : (i + 1);
-
-        issues.push({
-          id: String(numericId),
-          companyShareId: numericId,
-          shareId: String(numericId),
-          name: rawName,
-          scrip: rawSym,
-          type: (item.shareType || 'IPO').toUpperCase(),
-          units: Number(item.units) || 0,
-          issuePrice: Number(item.pricePerUnit) || 100,
-          minKitta: Number(item.minUnits) || 10,
-          maxKitta: Number(item.maxUnits) || 10000,
-          openDate,
-          closeDate,
-          status,
-          rating: item.rating || '',
-          issueManager: item.shareRegistrar || '',
-          sector: item.sectorName || 'Hydro Power',
-          source: 'nepalipaisa'
-        });
-      });
-    }
-  } catch (e) { console.warn('[ipo/live-listings] NepaliPaisa error:', e.message); }
-
-  // Source 2: ShareSansar IPO page
-  if (issues.length === 0) {
-    try {
-      const resp = await axios.get('https://www.sharesansar.com/ipo', {
-        headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' },
-        timeout: 12000
-      });
-      const $ = cheerio.load(resp.data);
-      $('table tbody tr').each((i, row) => {
-        const tds = $(row).find('td');
-        if (tds.length >= 5) {
-          const nameRaw   = $(tds[0]).text().trim();
-          const typeRaw   = $(tds[1]).text().trim();
-          const units     = parseMoney($(tds[2]).text());
-          const openDate  = $(tds[3]).text().trim();
-          const closeDate = $(tds[4]).text().trim();
-          const issuePrice = tds.length >= 6 ? parseMoney($(tds[5]).text()) : 100;
-          const statusRaw  = tds.length >= 7 ? $(tds[6]).text().trim() : 'Open';
-          if (nameRaw && nameRaw.length > 2 && !issues.find(x => x.name === nameRaw)) {
-            issues.push({ id: `ss-${i}`, name: nameRaw, scrip: '', type: typeRaw || 'IPO', units: isNaN(units) ? 0 : units, issuePrice: isNaN(issuePrice) ? 100 : issuePrice, openDate, closeDate, status: statusRaw || 'Open', source: 'sharesansar' });
-          }
-        }
-      });
-    } catch (e) { console.warn('[ipo/live-listings] ShareSansar error:', e.message); }
+    const issues = await getLiveIpoListings(refresh);
+    res.json({ success: true, data: issues, count: issues.length });
+  } catch (err) {
+    console.error('[ipo/live-listings] Error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
-
-  // Source 2: Merolagani IPO page
-  if (issues.length === 0) {
-    try {
-      const resp = await axios.get('https://merolagani.com/IPO.aspx', {
-        headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0' }, timeout: 10000
-      });
-      const $ = cheerio.load(resp.data);
-      $('table tbody tr, .ipo-list tr').each((i, row) => {
-        const tds = $(row).find('td');
-        if (tds.length >= 3) {
-          const name = $(tds[0]).text().trim();
-          const type = $(tds[1]).text().trim();
-          const openDate  = $(tds[2]).text().trim();
-          const closeDate = tds.length >= 4 ? $(tds[3]).text().trim() : '';
-          if (name && name.length > 3) {
-            issues.push({ id: `ml-${i}`, name, type: type || 'IPO', openDate, closeDate, status: 'Open', source: 'merolagani' });
-          }
-        }
-      });
-    } catch (e) { console.warn('[ipo/live-listings] Merolagani error:', e.message); }
-  }
-
-  // Source 3: CDSC public endpoint (no captcha or auth on companyShare/currentIssue public path)
-  if (issues.length === 0) {
-    try {
-      const resp = await axios.get('https://webbackend.cdsc.com.np/api/meroShare/companyShare/currentIssue/', {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10)', 'Accept': 'application/json', 'Origin': 'https://meroshare.cdsc.com.np', 'Referer': 'https://meroshare.cdsc.com.np/' },
-        timeout: 8000
-      });
-      const data = Array.isArray(resp.data) ? resp.data : [];
-      data.forEach((item, i) => {
-        issues.push({
-          id: item.companyShareId || `cdsc-${i}`,
-          name: item.companyName || '',
-          scrip: item.scrip || '',
-          type: item.shareTypeName || 'IPO',
-          units: item.totalUnit || 0,
-          issuePrice: item.amountPerShare || 100,
-          minKitta: item.minKitta || 10,
-          maxKitta: item.maxKitta || 10000,
-          openDate: item.issueOpenDate || '',
-          closeDate: item.issueCloseDate || '',
-          status: 'Open',
-          source: 'cdsc-public'
-        });
-      });
-    } catch (e) { console.warn('[ipo/live-listings] CDSC public error:', e.message); }
-  }
-
-  setCache(cacheKey, issues, 30 * 60 * 1000);
-  res.json({ success: true, data: issues, count: issues.length });
 });
 
 
