@@ -134,7 +134,7 @@ const primeSession = async (client) => {
 app.use('/api/meroshare', meroshareRouter);
 
 // Reverse proxy for CDSC endpoints called by meroShareService.js and web clients
-app.all(['/api/meroShare/*', '/api/meroShareView/*', '/cdsc-ipo/*'], async (req, res) => {
+const handleCdscReverseProxy = async (req, res) => {
   try {
     let targetBase = 'https://backend.cdsc.com.np';
     let targetPath = req.originalUrl;
@@ -168,7 +168,11 @@ app.all(['/api/meroShare/*', '/api/meroShareView/*', '/cdsc-ipo/*'], async (req,
     console.error('[CDSC Reverse Proxy Error]:', err.message);
     return res.status(502).json({ success: false, error: err.message });
   }
-});
+};
+
+app.use('/api/meroShare', handleCdscReverseProxy);
+app.use('/api/meroShareView', handleCdscReverseProxy);
+app.use('/cdsc-ipo', handleCdscReverseProxy);
 
 const PORT = process.env.PORT || 5000;
 
