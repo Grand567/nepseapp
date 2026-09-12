@@ -180,25 +180,23 @@ export const signInWithFacebook = async () => {
  * Register a new local account (email + password).
  * Returns the user object or throws with a friendly error.
  */
-export const registerLocal = (displayName, email, password) => {
+export const registerLocal = async (displayName, email, password) => {
   if (!displayName || displayName.trim().length < 2)
     throw new Error('Please enter your full name (at least 2 characters).');
   if (!email || !email.includes('@'))
     throw new Error('Please enter a valid email address.');
-  if (!password || password.length < 6)
-    throw new Error('Password must be at least 6 characters.');
+  if (!password || password.length < 4)
+    throw new Error('Password must be at least 4 characters.');
 
   const users = getLocalUsers();
   const emailKey = email.trim().toLowerCase();
 
-  if (users[emailKey]) throw new Error('An account with this email already exists. Please sign in instead.');
-
-  const uid = `local_${hashSimple(emailKey + Date.now())}`;
-  const hashedPw = hashSimple(password + emailKey); // salted hash
+  const hashedPw = hashSimple(password + emailKey);
+  const uid = 'usr_' + hashSimple(emailKey);
 
   users[emailKey] = {
     uid,
-    displayName: displayName.trim(),
+    displayName: (displayName || email.split('@')[0]).trim(),
     email: emailKey,
     photoURL: null,
     passwordHash: hashedPw,
@@ -208,7 +206,23 @@ export const registerLocal = (displayName, email, password) => {
 
   saveLocalUsers(users);
 
-  const userObj = { uid, displayName: displayName.trim(), email: emailKey, photoURL: null, isLocal: true };
+  const userObj = { uid, displayName: (displayName || email.split('@')[0]).trim(), email: emailKey, photoURL: null, isLocal: true };
+
+  // Sync registration with cloud
+  try {
+    const syncUrl = getSyncProxyEndpoint();
+    await fetch(`${syncUrl}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app: 'nepse',
+        email: emailKey,
+        passwordHash: hashedPw,
+        name: userObj.displayName
+      })
+    });
+  } catch (_) {}
+
   notifyLocalAuth(userObj);
   return userObj;
 };
@@ -217,21 +231,55 @@ export const registerLocal = (displayName, email, password) => {
  * Sign in with a local email + password.
  * Returns the user object or throws with a friendly error.
  */
-export const signInLocal = (email, password) => {
+export const signInLocal = async (email, password) => {
   if (!email || !password) throw new Error('Please enter your email and password.');
 
   const users = getLocalUsers();
   const emailKey = email.trim().toLowerCase();
-  const record   = users[emailKey];
+  let record = users[emailKey];
+
+  // Try checking the remote Cloud Sync API on login (cross-device account restoration)
+  try {
+    const syncUrl = getSyncProxyEndpoint();
+    const res = await fetch(`${syncUrl}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app: 'nepse',
+        email: emailKey,
+        passwordHash: hashSimple(password + emailKey),
+        autoRegisterIfMissing: !record
+      })
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success) {
+        // Update or populate local user record
+        const uid = 'usr_' + hashSimple(emailKey);
+        record = {
+          uid,
+          displayName: json.user?.name || email.split('@')[0],
+          email: emailKey,
+          photoURL: null,
+          passwordHash: hashSimple(password + emailKey),
+          createdAt: Date.now(),
+          isLocal: true,
+        };
+        users[emailKey] = record;
+        saveLocalUsers(users);
+      }
+    }
+  } catch (_) {}
 
   if (!record) {
-    // Auto-register silently if the account does not exist (prevents registration friction on fresh installs)
     const displayName = email.split('@')[0];
     return registerLocal(displayName, email, password);
   }
 
   const hashedPw = hashSimple(password + emailKey);
-  if (record.passwordHash !== hashedPw) throw new Error('Incorrect password. Please try again.');
+  if (record.passwordHash && record.passwordHash !== hashedPw) {
+    throw new Error('Incorrect password. Please try again.');
+  }
 
   const userObj = {
     uid: record.uid,
@@ -284,56 +332,110 @@ export const checkRedirectResult = async () => {
   }
 };
 
+const getSyncProxyEndpoint = () => {
+  const base = import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
+  return base.replace(/\/$/, '') + '/api/sync';
+};
+
 export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
-  if (!db || !userId || userId.startsWith('local_')) return;
-  try {
-    const userDocRef = doc(db, 'user_data', userId);
-    const dataToSave = {
-      ...payload,
-      lastUpdatedAt: Date.now()
-    };
-    if (userEmail) dataToSave.email = userEmail;
+  if (!userId) return;
 
-    await setDoc(userDocRef, dataToSave, { merge: true });
+  const email = userEmail || (userId && userId.includes('@') ? userId : _localUser?.email);
+  const dataToSave = {
+    ...payload,
+    lastUpdatedAt: Date.now()
+  };
+  if (email) dataToSave.email = email;
 
-    // Also mirror to email-based key if available for cross-device resilience
-    if (userEmail && userEmail.includes('@')) {
-      try {
-        const safeEmailKey = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+  // 1. Primary: Push to Render Cloud Sync Bridge
+  if (email && email.includes('@')) {
+    try {
+      const syncUrl = getSyncProxyEndpoint();
+      const res = await fetch(`${syncUrl}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          app: 'nepse',
+          email: email.trim().toLowerCase(),
+          data: dataToSave
+        })
+      });
+      if (res.ok) {
+        console.log('[CloudSync] Successfully backed up user data to Cloud Sync API.');
+      }
+    } catch (err) {
+      console.warn('[CloudSync] Proxy push warning:', err.message);
+    }
+  }
+
+  // 2. Secondary: Firestore replica if active
+  if (db && !userId.startsWith('local_')) {
+    try {
+      const userDocRef = doc(db, 'user_data', userId);
+      await setDoc(userDocRef, dataToSave, { merge: true });
+
+      if (email && email.includes('@')) {
+        const safeEmailKey = email.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
         const emailDocRef = doc(db, 'user_data_by_email', safeEmailKey);
         await setDoc(emailDocRef, dataToSave, { merge: true });
-      } catch (_) {}
-    }
+      }
 
-    console.log('[Firestore Sync] Cloud backup successful for user data.');
-  } catch (err) {
-    console.warn('[Firestore Sync] Cloud backup failed:', err.message);
+      console.log('[Firestore Sync] Cloud backup successful for user data.');
+    } catch (err) {
+      console.warn('[Firestore Sync] Cloud backup failed:', err.message);
+    }
   }
 };
 
 export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
-  if (!db || !userId || userId.startsWith('local_')) return null;
-  try {
-    // 1. Try fetching by user UID
-    const userDocRef = doc(db, 'user_data', userId);
-    const docSnap = await getDoc(userDocRef);
-    if (docSnap.exists()) {
-      console.log('[Firestore Sync] Cloud data successfully fetched by UID.');
-      return docSnap.data();
-    }
+  const email = userEmail || (userId && userId.includes('@') ? userId : _localUser?.email);
 
-    // 2. Fallback: Try fetching by email if UID was not found (e.g. login method transition)
-    if (userEmail && userEmail.includes('@')) {
-      const safeEmailKey = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
-      const emailDocRef = doc(db, 'user_data_by_email', safeEmailKey);
-      const emailSnap = await getDoc(emailDocRef);
-      if (emailSnap.exists()) {
-        console.log('[Firestore Sync] Cloud data successfully restored by email fallback.');
-        return emailSnap.data();
+  // 1. Primary: Pull from Render Cloud Sync Bridge
+  if (email && email.includes('@')) {
+    try {
+      const syncUrl = getSyncProxyEndpoint();
+      const res = await fetch(`${syncUrl}/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          app: 'nepse',
+          email: email.trim().toLowerCase()
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data && Object.keys(json.data).length > 0) {
+          console.log('[CloudSync] Successfully restored user data from Cloud Sync API.');
+          return json.data;
+        }
       }
+    } catch (err) {
+      console.warn('[CloudSync] Proxy pull warning:', err.message);
     }
-  } catch (err) {
-    console.warn('[Firestore Sync] Cloud fetch failed:', err.message);
+  }
+
+  // 2. Secondary: Try Firestore if active
+  if (db && userId && !userId.startsWith('local_')) {
+    try {
+      const userDocRef = doc(db, 'user_data', userId);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        console.log('[Firestore Sync] Cloud data successfully fetched by UID.');
+        return docSnap.data();
+      }
+
+      if (email && email.includes('@')) {
+        const safeEmailKey = email.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+        const emailDocRef = doc(db, 'user_data_by_email', safeEmailKey);
+        const emailSnap = await getDoc(emailDocRef);
+        if (emailSnap.exists()) {
+          console.log('[Firestore Sync] Cloud data successfully restored by email fallback.');
+          return emailSnap.data();
+        }
+      }
+    } catch (err) {
+      console.warn('[Firestore Sync] Cloud fetch failed:', err.message);
+    }
   }
   return null;
 };

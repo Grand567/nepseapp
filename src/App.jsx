@@ -646,6 +646,49 @@ function AppInner() {
                     </div>
                   </div>
 
+                  {/* Cloud Sync Manual Trigger */}
+                  <button
+                    id="btn-cloud-sync-now"
+                    onClick={async () => {
+                      try {
+                        const uid = user?.uid || 'local';
+                        const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
+                        const userTxKey = `nepse_transactions_${uid}`;
+                        const userProfileKey = `nepse_meroshare_profiles_${uid}`;
+                        const txs = JSON.parse(localStorage.getItem(userTxKey) || '[]');
+                        const profs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');
+
+                        await syncUserDataToCloud(uid, {
+                          profiles: profs,
+                          transactions: txs,
+                          watchlist: currentWatchlist
+                        }, user?.email);
+
+                        alert('✅ Cloud Sync Successful! Data backed up across devices.');
+                      } catch (err) {
+                        alert('Sync failed: ' + err.message);
+                      }
+                    }}
+                    style={{
+                      width: '100%', padding: '10px 16px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      color: 'var(--bull)', fontSize: 13, fontWeight: 700,
+                      textAlign: 'left',
+                      borderBottom: '1px solid var(--border)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--bull)', display: 'inline-block' }} />
+                      ☁️ Cloud Sync (डेटा सिङ्क)
+                    </span>
+                    <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(16,185,129,0.2)', color: 'var(--bull)', borderRadius: 4, fontWeight: 800 }}>
+                      SYNC NOW
+                    </span>
+                  </button>
+
                   {/* Font Size Accessibility Setting */}
                   <button
                     onClick={() => {

@@ -14,6 +14,7 @@ import { predictIndexDirection, scoreAllStocks, getScoredNewsSentiment } from '.
 import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.mjs';
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
+import syncRouter from './syncRouter.mjs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,7 +62,8 @@ const app = express();
 
 // Allow all origins — required for cloud deployment (Render/Railway)
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use('/api/sync', syncRouter);
 
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';

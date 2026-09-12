@@ -297,7 +297,7 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
     window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, newProfiles, null);
+      syncUserDataToCloud(userId, { profiles: newProfiles }, null);
     } catch (_) {}
   };
 
@@ -536,7 +536,7 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
     localStorage.setItem(txKey, JSON.stringify(newTxs));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, null, newTxs);
+      syncUserDataToCloud(userId, { transactions: newTxs }, null);
     } catch (_) {}
   };
 

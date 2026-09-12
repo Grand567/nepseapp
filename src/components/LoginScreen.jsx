@@ -115,10 +115,10 @@ export default function LoginScreen({ onLogin }) {
   };
 
   // ── Local email sign-in ─────────────────────────────────────────────────────
-  const handleSignIn = (e) => {
+  const handleSignIn = async (e) => {
     e.preventDefault(); clearErr(); setLoading('email');
     try {
-      const user = signInLocal(email, password);
+      const user = await signInLocal(email, password);
       onLogin(user);
     } catch (err) {
       setError(err.message);
@@ -126,10 +126,10 @@ export default function LoginScreen({ onLogin }) {
   };
 
   // ── Local registration ──────────────────────────────────────────────────────
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault(); clearErr(); setLoading('register');
     try {
-      const user = registerLocal(name, email, password);
+      const user = await registerLocal(name, email, password);
       onLogin(user);
     } catch (err) {
       setError(err.message);

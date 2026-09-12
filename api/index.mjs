@@ -11,11 +11,14 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import syncRouter from '../proxy/syncRouter.mjs';
+
 const app = express();
 
 // Allow all origins â€” required for cloud deployment (Render/Railway)
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use('/api/sync', syncRouter);
 
 const PORT = process.env.PORT || 5000;
 

@@ -24,3 +24,4 @@ android/
 .vercel
 .agents/
 launch-claude-code.*
+proxy/data/sync_vaults/
