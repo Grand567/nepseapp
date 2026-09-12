@@ -147,15 +147,16 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
   const ltp = Number(stock.ltp) || 100;
   const rsi = Number(stock.rsi) || 50;
   const pe = Number(stock.pe) || 0;
-  const pb = Number(stock.pb) || 0;
   const eps = Number(stock.eps) || 0;
-  const bookValue = Number(stock.bookValue) || 100;
+  const bookValue = Number(stock.bookValue || stock.bvps) || 0;
   const pChg = Number(stock.pChange) || 0;
   const volume = Number(stock.volume) || 5000;
   const turnover = Number(stock.turnover) || (ltp * volume);
 
   const hasRealHistory = Array.isArray(realPriceHistory) && realPriceHistory.length > 0;
-  const historyList = hasRealHistory ? realPriceHistory : [];
+  const historyList = hasRealHistory
+    ? realPriceHistory.slice().filter(c => c && (c.date || c.t || c.time)).sort((a, b) => new Date(a.date || a.t || a.time) - new Date(b.date || b.t || b.time))
+    : [];
 
   const high12M = (stock.high52w && Number(stock.high52w) > 0)
     ? Number(stock.high52w)
@@ -195,7 +196,7 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
   const probMatrix = calculateProbabilisticMatrix(stock, historyList, newsHighlight);
 
   const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
-  const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp });
+  const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp, candles: historyList, history: historyList });
   const zVol = calculateVolumeZScore(volume, stock.avgVolume20D || volume * 0.6);
 
   const chg = Number(stock.change || (ltp * (pChg / 100))) || 0;
@@ -214,6 +215,6 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 ### 🎯 1. GURU AI OPERATIONAL ACTION ZONE: **${actionZone.zoneBadge}**
 • **Strategic Verdict**: ${actionZone.zone} — ${actionZone.systematicStrategy}
 • **Wyckoff Cycle Phase**: **${wyckoff.phase}** (${wyckoff.action})
-• **Graham Intrinsic Value**: Rs. ${graham.grahamValue ? graham.grahamValue.toFixed(2) : 'N/A'} (Margin of Safety: ${graham.marginOfSafety ? graham.marginOfSafety.toFixed(1) + '%' : 'N/A'})
+• **Graham Intrinsic Value**: Rs. ${graham.intrinsicValue ? graham.intrinsicValue.toFixed(2) : 'N/A'} (Margin of Safety: ${graham.marginOfSafetyPct != null ? (graham.marginOfSafetyPct >= 0 ? '+' : '') + graham.marginOfSafetyPct.toFixed(1) + '%' : 'N/A'})
 • **Targets**: Target 1: Rs. ${targets.target1?.price ?? 'N/A'} (+${targets.target1?.pct ?? '—'}%) | Target 2: Rs. ${targets.target2?.price ?? 'N/A'} (+${targets.target2?.pct ?? '—'}%) | Stop-Loss: Rs. ${targets.stopLoss?.price ?? 'N/A'} (-${targets.stopLoss?.pct ?? '—'}%)`;
 }

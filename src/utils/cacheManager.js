@@ -180,13 +180,13 @@ export function segregatePromoterShares(stocks = []) {
 }
 
 /**
- * Evaluates +/- 10% circuit limit flag for live quotes.
+ * Evaluates +/- 15% circuit limit flag for live quotes (since April 20, 2026).
  */
 export function enrichWithCircuitFlags(stocks = []) {
   return stocks.map(stock => {
     const pChg = stock.pChange || stock.percentageChange || 0;
-    // Circuit limit in NEPSE is technically +/- 10%
-    const isCircuitHit = Math.abs(pChg) >= 9.9;
+    // Individual stock circuit limit in NEPSE is +/- 15% (effective April 20, 2026)
+    const isCircuitHit = Math.abs(pChg) >= 14.85;
     
     return {
       ...stock,

@@ -782,8 +782,8 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
 function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
   const meta = {
     breakout:       { title: "Breakout Stocks", icon: Flame, desc: "Stocks breaking above moving averages with high volume & momentum." },
-    circuit_up:     { title: "Circuit Setup (+ve)", icon: Target, desc: "Stocks hitting Upper 10% Circuit limit." },
-    circuit_down:   { title: "Circuit Setup (-ve)", icon: Target, desc: "Stocks hitting Lower 10% Circuit limit." },
+    circuit_up:     { title: "Circuit Setup (+ve)", icon: Target, desc: "Stocks hitting Upper 15% Circuit limit." },
+    circuit_down:   { title: "Circuit Setup (-ve)", icon: Target, desc: "Stocks hitting Lower 15% Circuit limit." },
     fresh_signals:  { title: "Fresh Indicator Signals", icon: Zap, desc: "RSI oversold rebound (<38) or MACD Bullish Golden Crossover." },
     support_res:    { title: "Support & Resistance Rebounds", icon: Shield, desc: "Stocks trading near 52-week support floors." },
     candlestick:    { title: "Candlestick Patterns", icon: Compass, desc: "Bullish Engulfing and Hammer candle setups." },

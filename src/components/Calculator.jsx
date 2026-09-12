@@ -15,7 +15,7 @@ export default function Calculator() {
   const [sellQty, setSellQty] = useState(100);
   const [sellPrice, setSellPrice] = useState(300);
   const [buyWacc, setBuyWacc] = useState(250);
-  const [holdingType, setHoldingType] = useState('short'); // 'short' (7.5%), 'long' (5%), 'institutional' (10%)
+  const [holdingType, setHoldingType] = useState('short'); // 'short' (10% - Finance Act 2083), 'long' (7.5%), 'institutional' (10%)
   const [sellResult, setSellResult] = useState(null);
 
   // ── 3. Bonus & Right Adjustment State ──
@@ -380,8 +380,8 @@ export default function Calculator() {
                 onChange={(e) => setHoldingType(e.target.value)}
                 className="select-input"
               >
-                <option value="short">Individual Short Term (≤ 365 Days, 7.5% CGT)</option>
-                <option value="long">Individual Long Term (&gt; 365 Days, 5.0% CGT)</option>
+                <option value="short">Individual Short Term (≤ 365 Days, 10.0% CGT — Final Tax)</option>
+                <option value="long">Individual Long Term (&gt; 365 Days, 7.5% CGT — Final Tax)</option>
                 <option value="institutional">Institutional Investor (10.0% CGT)</option>
               </select>
             </div>
@@ -472,8 +472,8 @@ export default function Calculator() {
                 onChange={(e) => setHoldingType(e.target.value)}
                 className="select-input"
               >
-                <option value="short">Individual Short Term (7.5% CGT)</option>
-                <option value="long">Individual Long Term (5.0% CGT)</option>
+                <option value="short">Individual Short Term (10.0% CGT — Final Tax)</option>
+                <option value="long">Individual Long Term (7.5% CGT — Final Tax)</option>
               </select>
             </div>
           </div>

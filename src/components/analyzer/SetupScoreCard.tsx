@@ -28,7 +28,10 @@ interface SetupScoreCardProps {
   confirmations?: string[];
 }
 
-function getVerdictColor(score: number) {
+function getVerdictColor(score: number, verdict?: string) {
+  if (verdict && verdict.toUpperCase().startsWith('NO TRADE')) {
+    return { bg: 'rgba(239, 68, 68, 0.16)', border: 'rgba(239, 68, 68, 0.5)', text: '#f87171', badge: 'bg-rose-500/20 text-rose-300' };
+  }
   if (score >= 85) return { bg: 'rgba(16, 185, 129, 0.16)', border: 'rgba(16, 185, 129, 0.5)', text: '#34d399', badge: 'bg-emerald-500/20 text-emerald-300' };
   if (score >= 70) return { bg: 'rgba(59, 130, 246, 0.16)', border: 'rgba(59, 130, 246, 0.5)', text: '#60a5fa', badge: 'bg-blue-500/20 text-blue-300' };
   if (score >= 58) return { bg: 'rgba(56, 189, 248, 0.16)', border: 'rgba(56, 189, 248, 0.5)', text: '#38bdf8', badge: 'bg-sky-500/20 text-sky-300' };
@@ -49,7 +52,7 @@ export function SetupScoreCard({
   warnings = [],
   confirmations = [],
 }: SetupScoreCardProps) {
-  const theme = getVerdictColor(score);
+  const theme = getVerdictColor(score, verdict);
   const confidenceLevel = confidence?.level || 'LOW';
 
   return (
@@ -65,7 +68,13 @@ export function SetupScoreCard({
               Technical Setup Score
             </span>
             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${theme.badge}`}>
-              {score >= 70 ? '🟢 BULLISH SETUP' : score <= 38 ? '🔴 BEARISH SETUP' : '🟡 NEUTRAL / WAIT'}
+              {verdict?.toUpperCase().startsWith('NO TRADE')
+                ? '🛑 NO TRADE / CAPITAL PRESERVATION'
+                : score >= 70
+                ? '🟢 BULLISH SETUP'
+                : score <= 38
+                ? '🔴 BEARISH SETUP'
+                : '🟡 NEUTRAL / WAIT'}
             </span>
           </div>
           <div className="text-2xl sm:text-3xl font-black mt-1" style={{ color: theme.text }}>

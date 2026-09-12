@@ -75,6 +75,11 @@ export async function predictIndexDirection(options = {}) {
     breadthScore -= 0.10; // thin volume penalty
   }
 
+  // Float Index & Sensitive Float Divergence modifier (Section 2.1 & 4.4 of NEPSE Predictor App Documentation)
+  if (features.float_divergence?.scoreModifier) {
+    breadthScore += features.float_divergence.scoreModifier;
+  }
+
   breadthScore = Math.max(-1, Math.min(1, breadthScore));
 
   // 3. Sentiment component (-1.0 to +1.0)
@@ -157,6 +162,34 @@ export async function predictIndexDirection(options = {}) {
     }
   }
 
+  // ── PROBABILISTIC EXPECTED RETURN RANGE (90% Confidence Interval) ─────
+  // NEPSE forecasts are modeled as probabilistic return distributions with
+  // uncertainty intervals, rather than rigid point forecasts.
+  const baselineVolPct = close > 0 ? (atr / close) * 100 : 1.2;
+  let uncertaintyMultiplier = 1.0;
+  if (features.political_event_flagged) {
+    uncertaintyMultiplier += (Number(features.political_event_severity || 1) * 0.25);
+  }
+  if (tRatio < 0.75) {
+    uncertaintyMultiplier += 0.20; // Thin liquidity tail risk
+  }
+  if (features.float_divergence?.divergenceDetected) {
+    uncertaintyMultiplier += 0.15; // Float divergence adds distribution dispersion
+  }
+
+  const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
+  const zScore90 = 1.645;
+  const margin90 = +(zScore90 * baselineVolPct * uncertaintyMultiplier).toFixed(2);
+  const expectedReturnRange = {
+    mean: expectedMeanPct,
+    lower90: +(expectedMeanPct - margin90).toFixed(2),
+    upper90: +(expectedMeanPct + margin90).toFixed(2),
+    intervalWidth: +(2 * margin90).toFixed(2),
+    confidenceLevel: 90,
+    uncertaintyMultiplier: +uncertaintyMultiplier.toFixed(2),
+    isEventWidened: Boolean(features.political_event_flagged || features.float_divergence?.divergenceDetected || tRatio < 0.75)
+  };
+
   // ── DYNAMIC TRUTHFUL EXPLANATION (No Contradictions) ───────────────────
   const explanationParts = [];
 
@@ -194,6 +227,14 @@ export async function predictIndexDirection(options = {}) {
     explanationParts.push(`[${features.fiscal_cycle.phase}]: ${features.fiscal_cycle.detail}`);
   }
 
+  // 5b. Float Index & Sensitive Float Divergence (Section 2.1 & 4.4)
+  if (features.float_divergence?.explanation) {
+    explanationParts.push(features.float_divergence.explanation);
+  }
+
+  // 5c. Expected Return Range (90% Confidence Interval)
+  explanationParts.push(`Expected 1-5 session return: ${expectedMeanPct >= 0 ? '+' : ''}${expectedMeanPct}% (90% CI: [${expectedReturnRange.lower90}%, ${expectedReturnRange.upper90}%]${expectedReturnRange.isEventWidened ? ' - widened for macro/float uncertainty' : ''}).`);
+
   // 6. Tactical actionable guidance with targets
   if (direction === 'up') {
     explanationParts.push(`Tactical upside target set at Rs. ${target1} (extension Rs. ${target2}) with trailing stop floor at Rs. ${stopFloor} (RRR ${rrr}:1).`);
@@ -215,6 +256,8 @@ export async function predictIndexDirection(options = {}) {
     confidence,
     raw_score: rawScore,
     market_regime: marketRegime,
+    expected_return_range: expectedReturnRange,
+    float_divergence: features.float_divergence || null,
     targets: {
       target1,
       target2,
@@ -462,9 +505,37 @@ export async function scoreAllStocks(stocksList = []) {
     // 6. Corporate Action / Catalyst (+6 pts)
     if (feat.corporate_action_flag) score += 6;
 
+    // 6b. Sector-Relative Valuation (Section 3.2 of NEPSE Predictor App Documentation)
+    const sec = String(s.sector || '').toLowerCase();
+    let medianPE = 22;
+    if (sec.includes('bank') && !sec.includes('dev')) medianPE = 14;
+    else if (sec.includes('hydro')) medianPE = 24;
+    else if (sec.includes('insurance')) medianPE = 25;
+    else if (sec.includes('microfinance')) medianPE = 26;
+    else if (sec.includes('hotel') || sec.includes('manufacturing')) medianPE = 28;
+
+    const pe = Number(s.pe || 0);
+    const eps = Number(s.eps || 0);
+
+    if (pe > 0) {
+      if (pe >= 40 && eps < 15) {
+        // Penalize speculative FOMO crowding
+        score -= 10;
+      } else if (pe < medianPE * 0.85 && eps > 12) {
+        // Value discount relative to sector
+        score += 8;
+      } else if (pe <= medianPE * 1.15) {
+        score += 4;
+      } else if (pe > medianPE * 1.8) {
+        score -= 6;
+      }
+    }
+
     // 7. Structural Hard Trend Ceiling (50 EMA)
-    const ema50 = Number(s.ema50 || s.sma50 || 0);
-    const isAbove50EMA = ema50 > 0 ? feat.ltp >= ema50 : null;
+    const ema50 = Number(feat.ema50 || s.ema50 || s.sma50 || 0);
+    const isAbove50EMA = (feat.is_above_50_ema !== undefined && feat.is_above_50_ema !== null)
+      ? feat.is_above_50_ema
+      : (ema50 > 0 ? feat.ltp >= ema50 : null);
     const hardCeilingApplied = isAbove50EMA === false;
     if (hardCeilingApplied) {
       score = Math.min(48, score);
@@ -474,8 +545,11 @@ export async function scoreAllStocks(stocksList = []) {
     const compositeScore = Math.max(8, Math.min(98, Math.round(score)));
 
     // Categorization
-    const liquidityScore = Math.min(99, Math.max(10, Math.round((s.turnover ? s.turnover / 500000 : 45))));
-    const floatRiskFlag = (s.sharesOut && s.sharesOut < 2.5) ? 'low_float'
+    const stockVolume = Number(s.volume || s.totalTradedQuantity || (feat.avg_turnover_5d && feat.ltp ? feat.avg_turnover_5d / feat.ltp : 0) || 0);
+    const stockTurnover = Number(s.turnover || s.totalTurnover || feat.avg_turnover_5d || 0);
+    const stockSharesOut = Number(s.sharesOut || s.shares || 0);
+    const liquidityScore = Math.min(99, Math.max(10, Math.round((stockTurnover ? stockTurnover / 500000 : 45))));
+    const floatRiskFlag = (stockSharesOut > 0 && stockSharesOut <= 5) ? 'low_float'
       : liquidityScore < 25 ? 'illiquid' : 'normal';
 
     // AI Reasoning
@@ -499,6 +573,18 @@ export async function scoreAllStocks(stocksList = []) {
       ltp: feat.ltp,
       change: s.change || 0,
       pChange: s.pChange || 0,
+      volume: stockVolume,
+      turnover: stockTurnover,
+      sharesOut: stockSharesOut,
+      high: Number(s.high || s.maxPrice || feat.ltp || 0),
+      low: Number(s.low || s.minPrice || feat.ltp || 0),
+      previousClose: Number(s.previousClose || s.prevClose || 0),
+      dividendYield: Number(s.dividendYield || s.divYield || 0),
+      bonusShare: Number(s.bonusShare || s.bonus || 0),
+      rightShare: Number(s.rightShare || 0),
+      pe: Number(s.pe || 0),
+      pb: Number(s.pb || 0),
+      eps: Number(s.eps || 0),
       volume_surge_ratio: feat.volume_surge_ratio,
       momentum_5d: feat.momentum_5d,
       rsi_14: feat.rsi_14,

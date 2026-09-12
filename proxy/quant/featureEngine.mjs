@@ -258,6 +258,76 @@ async function getSectorBreadth(date, memoryIndices = null) {
 }
 
 /**
+ * Evaluates Divergence between Headline NEPSE and Float / Sensitive Float Indices.
+ * Based on Section 2.1 & 4.4 of NEPSE Predictor App Documentation:
+ * Identifies whether an index move is genuine broad-market buying or skewed by locked promoter/state holdings.
+ */
+export function computeFloatDivergence(memoryIndices = [], headlinePChange = 0) {
+  if (!Array.isArray(memoryIndices) || memoryIndices.length === 0) {
+    return {
+      divergenceDetected: false,
+      signal: 'neutral',
+      scoreModifier: 0.0,
+      headlinePChange,
+      floatPChange: null,
+      sensitiveFloatPChange: null,
+      explanation: 'Float index data currently syncing.'
+    };
+  }
+
+  let floatIdx = null;
+  let sensFloatIdx = null;
+
+  for (const idx of memoryIndices) {
+    const name = String(idx.indexName || idx.name || idx.index || idx.sector || '').toLowerCase().trim();
+    const pChg = Number(idx.pChange ?? idx.percentageChange ?? idx.changePercent ?? 0);
+    if (name.includes('sensitive float') || name.includes('senfloat')) {
+      sensFloatIdx = { name: idx.name || 'Sensitive Float', pChange: pChg, value: Number(idx.value || idx.currentValue || 0) };
+    } else if (name.includes('float')) {
+      floatIdx = { name: idx.name || 'Float Index', pChange: pChg, value: Number(idx.value || idx.currentValue || 0) };
+    }
+  }
+
+  const fChg = floatIdx ? floatIdx.pChange : null;
+  const sfChg = sensFloatIdx ? sensFloatIdx.pChange : null;
+
+  let divergenceDetected = false;
+  let signal = 'neutral';
+  let scoreModifier = 0.0;
+  let explanation = '';
+
+  if (headlinePChange > 0.4 && fChg !== null && fChg <= 0.05) {
+    // Bearish / Promoter Distortion Divergence
+    divergenceDetected = true;
+    signal = 'promoter_distortion_drag';
+    scoreModifier = -0.20;
+    explanation = `Promoter Skew Divergence: Headline NEPSE gained +${headlinePChange.toFixed(2)}%, but Float Index was flat (${fChg.toFixed(2)}%). Rally is skewed by locked large-caps rather than broad market accumulation.`;
+  } else if (headlinePChange > 0.3 && fChg !== null && fChg >= headlinePChange * 0.8 && sfChg !== null && sfChg >= 0.3) {
+    // Confirmed Institutional Accumulation
+    signal = 'institutional_accumulation_confirmed';
+    scoreModifier = +0.15;
+    explanation = `Institutional Accumulation Confirmed: Sensitive Float (+${sfChg.toFixed(2)}%) and Float Index (+${fChg.toFixed(2)}%) confirm genuine broad-market buying.`;
+  } else if (headlinePChange < -0.4 && fChg !== null && fChg >= -0.05) {
+    // Selective Float Resilience
+    signal = 'promoter_drag_cushion';
+    scoreModifier = +0.10;
+    explanation = `Selective Float Resilience: Despite headline index drop (-${Math.abs(headlinePChange).toFixed(2)}%), free-float equities displayed relative strength (${fChg >= 0 ? '+' : ''}${fChg.toFixed(2)}%).`;
+  } else {
+    explanation = `Headline NEPSE and free-float index are moving in normal correlation (Float: ${fChg !== null ? `${fChg >= 0 ? '+' : ''}${fChg.toFixed(2)}%` : 'N/A'}).`;
+  }
+
+  return {
+    divergenceDetected,
+    signal,
+    scoreModifier,
+    headlinePChange: +headlinePChange.toFixed(2),
+    floatPChange: fChg !== null ? +fChg.toFixed(2) : null,
+    sensitiveFloatPChange: sfChg !== null ? +sfChg.toFixed(2) : null,
+    explanation
+  };
+}
+
+/**
  * Calendar & Fiscal Cycle Evaluation for Nepal Capital Market
  */
 export function computeFiscalCycle(date = new Date()) {
@@ -467,7 +537,10 @@ export async function computeIndexFeatures(options = {}) {
   const macro = await getMacroFeatures();
   const politicalEvent = await getPoliticalEventFlag(date);
   const fiscalCycle = computeFiscalCycle(date);
-  const indexAtr = computeIndexATR(memoryHistory, 14);
+  const prevClose = closes.length > 1 ? closes[closes.length - 2] : latestClose;
+  const headlinePChange = prevClose > 0 ? ((latestClose - prevClose) / prevClose) * 100 : Number(memorySummary?.percentageChange || memorySummary?.pChange || 0);
+  const floatDivergence = computeFloatDivergence(memoryIndices, headlinePChange);
+  const indexAtr = computeIndexATR(memoryHistory || closes.map(c => ({ high: c, low: c, close: c })), 14);
 
   return {
     date,
@@ -490,6 +563,7 @@ export async function computeIndexFeatures(options = {}) {
     weighted_breadth_pct: breadthStats.weightedBreadthPct,
     weighted_breadth_score: breadthStats.weightedBreadthScore,
     sector_detail: breadthStats.sectors,
+    float_divergence: floatDivergence,
     fiscal_cycle: fiscalCycle,
     index_atr: indexAtr,
     sentiment_24h_avg: sentiment.avgSentiment,
@@ -546,6 +620,23 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
     const momentum5d = +(pChange * 2.2 + (volumeSurgeRatio > 1.5 ? 3 : 0)).toFixed(2);
     const avgTurnover5d = Number(stockData.turnover || (ltp * volume));
 
+    // ── EMA 50 Structural Calculation ──────────────────────────────────────
+    let ema50 = Number(stockData.ema50 || stockData.sma50 || 0);
+    if (!ema50 && pool) {
+      try {
+        const { rows: histRows } = await pool.query(
+          `SELECT close_price FROM stock_price_history
+           WHERE symbol = $1 ORDER BY trade_date DESC LIMIT 60`,
+          [sym]
+        );
+        if (histRows.length >= 15) {
+          const closes = histRows.reverse().map(r => Number(r.close_price));
+          ema50 = computeEMA(closes, Math.min(50, closes.length));
+        }
+      } catch (_) {}
+    }
+    const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
+
     return {
       symbol: sym,
       ltp,
@@ -555,7 +646,10 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
       macd_signal: macdSignal,
       obv_trend: obvTrend,
       avg_turnover_5d: avgTurnover5d,
-      corporate_action_flag: stockData.corporateAction || null,
+      corporate_action_flag: stockData.corporateAction || stockData.corporate_action_flag ||
+        (Number(stockData.dividendYield || stockData.divYield || 0) > 0 || Number(stockData.bonusShare || stockData.bonus || 0) > 0 || Number(stockData.rightShare || 0) > 0 ? 'dividend_or_bonus' : null),
+      ema50,
+      is_above_50_ema: isAbove50EMA,
     };
   }
 
@@ -568,7 +662,7 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
        WHERE symbol = $1
        ORDER BY trade_date DESC
        LIMIT $2`,
-      [sym, days]
+      [sym, Math.max(days, 60)]
     );
     if (rows.length < 5) return null;
 
@@ -595,6 +689,18 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
     const avgTurnover5d =
       ordered.slice(-5).reduce((a, r) => a + Number(r.close_price) * Number(r.volume), 0) / 5;
 
+    const ema50 = computeEMA(closes, Math.min(50, closes.length));
+    const isAbove50EMA = ema50 > 0 ? (closes[closes.length - 1] >= ema50) : null;
+
+    let corporateAction = null;
+    try {
+      const { rows: caRows } = await pool.query(
+        `SELECT action_type FROM corporate_actions WHERE symbol = $1 ORDER BY announced_date DESC LIMIT 1`,
+        [sym]
+      );
+      if (caRows.length > 0) corporateAction = caRows[0].action_type;
+    } catch (_) {}
+
     return {
       symbol: sym,
       ltp: closes[closes.length - 1],
@@ -604,7 +710,9 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
       macd_signal: macdSignal,
       obv_trend: obvTrend,
       avg_turnover_5d: avgTurnover5d,
-      corporate_action_flag: null,
+      corporate_action_flag: corporateAction,
+      ema50,
+      is_above_50_ema: isAbove50EMA,
     };
   } catch (_) {
     return null;

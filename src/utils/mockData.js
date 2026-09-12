@@ -199,18 +199,18 @@ export function runStockScanners(stocks = [], filterKey) {
 
     case 'circuit_up':
     case 'circuit_pos': {
-      const topCircuits = stocks.filter(s => (s.pChange || 0) >= 9.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      const topCircuits = stocks.filter(s => (s.pChange || 0) >= 13.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
       if (topCircuits.length > 0) return topCircuits.slice(0, 25);
-      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 4.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 7.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
       if (nearCircuits.length > 0) return nearCircuits.slice(0, 25);
       return stocks.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
     }
 
     case 'circuit_down':
     case 'circuit_neg': {
-      const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -9.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -13.5).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
       if (lowCircuits.length > 0) return lowCircuits.slice(0, 25);
-      const nearDown = stocks.filter(s => (s.pChange || 0) <= -4.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      const nearDown = stocks.filter(s => (s.pChange || 0) <= -7.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
       if (nearDown.length > 0) return nearDown.slice(0, 25);
       return stocks.filter(s => (s.pChange || 0) < 0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0)).slice(0, 25);
     }
@@ -218,9 +218,9 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuits':
     case 'circuit_setup':
     case 'circuit_radar': {
-      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 6.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 10.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (hits.length > 0) return hits.slice(0, 25);
-      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 3.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 5.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (nearHits.length > 0) return nearHits.slice(0, 25);
       return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
     }

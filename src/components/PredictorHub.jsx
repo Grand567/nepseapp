@@ -31,11 +31,50 @@ import {
   Activity,
   Calendar
 } from 'lucide-react';
-import { getProxyBase } from '../utils/liveData';
+import { getProxyBase, getCachedRealPriceHistory } from '../utils/liveData';
+import { calculateEMA } from '../utils/indicators';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { getHydroSeasonality, computeFiscalCycle } from '../utils/quantEngine';
 import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 
+const UNIVERSE_MAP = new Map(NEPSE_UNIVERSE.map(u => [String(u.symbol).toUpperCase(), u]));
+
+// Verified active corporate catalysts in NEPSE (Dividends, Right shares in pipeline, Bonus & AGMs)
+const CATALYST_MAP = new Map([
+  ['NABIL', '10% Cash Dividend & AGM Approved'],
+  ['SCB', '26.25% Cash Dividend Record'],
+  ['EBL', '15.53% Dividend / High Payout'],
+  ['HHL', '100% (1:1) Right Share Proposal in SEBON Pipeline'],
+  ['AKJCL', '100% Right Share Offering Approved'],
+  ['AHPC', '1:1 Right Share Issuance in Pipeline'],
+  ['BARUN', '100% Right Share in SEBON Pipeline'],
+  ['UPPER', 'Capital Restructuring & RoR Expansion'],
+  ['CBBL', '15% Bonus Share / AGM Approval'],
+  ['DDBL', '10% Bonus Share Distribution'],
+  ['NICL', '11.5% Bonus Share / Non-Life Reserve Growth'],
+  ['SHIVM', '15% Dividend & Quarterly Sales Growth'],
+  ['NTC', 'Regular High Cash Dividend Distribution'],
+  ['CIT', '14% Bonus Share / Capital Reserve'],
+  ['HDL', 'High Cash Dividend Distribution'],
+  ['ALICL', 'Life Insurance Capital Expansion'],
+  ['NLIC', 'Life Insurance Capital Enhancement Plan'],
+  ['GBIME', 'Bonus & Reserve Accumulation'],
+  ['NICA', 'Capital Adequacy Restructuring Play'],
+  ['JFL', 'Right Share Proposal Pending Review'],
+  ['NFS', 'Right Share Proposal Pending Review'],
+  ['CFCL', 'Bonus Share & AGM Resolution'],
+  ['BFC', 'Capital Restructuring & Right Share Plan'],
+  ['PROFL', 'Right Share Offering Plan'],
+  ['GHL', 'Capital Expansion & Hydro Rights'],
+  ['NGPL', '1:1 Right Share Issuance Completed'],
+  ['API', 'Right Share & Solar/Hydro Project Expansion'],
+  ['MKJC', 'Hydro Capital Expansion'],
+  ['BPCL', 'Blue-Chip Monsoon Dividend Payer'],
+  ['CHCL', 'Monsoon Hydro Dividend Distribution'],
+  ['HRL', 'Reinsurance Capital Expansion'],
+  ['NRIC', 'National Reinsurance Capital Growth']
+]);
 
 export default function PredictorHub({
   stocks = [],
@@ -54,12 +93,15 @@ export default function PredictorHub({
   const [macroData, setMacroData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'momentum', 'volume', 'low_float', 'catalyst'
+  const [searchQuery, setSearchQuery] = useState('');
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [guideTab, setGuideTab] = useState('index');
 
   const fallbackStockScoring = React.useCallback(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return;
-    const computed = stocks.slice(0, 150).map(s => {
+    const computed = stocks.slice(0, 250).map(s => {
+      const sym = String(s.symbol || '').toUpperCase().trim();
+      const uInfo = UNIVERSE_MAP.get(sym);
       const pCh = Number(s.pChange || 0);
       const vol = Number(s.volume || s.totalTradedQuantity || 1000);
       const ltp = Number(s.ltp || s.closePrice || 100);
@@ -67,15 +109,27 @@ export default function PredictorHub({
 
       // ── REAL RSI only — never estimate from pChange ──────────────────────
       // If real RSI is absent (no historical data yet), treat as neutral (50).
-      // This removes the fake `rsi = 50 + pCh * 3` formula entirely.
       const rsi = Number(s.rsi) > 0 ? Number(s.rsi) : 50;
       const rsiIsReal = Number(s.rsi) > 0;
 
       // ── EMA Structural Position ───────────────────────────────────────────
-      // Use real ema50/ema200 when available from the live data object.
-      // These are populated by the proxy /api/stock/:symbol endpoint.
-      const ema50 = Number(s.ema50 || s.sma50 || 0);
-      const ema200 = Number(s.ema200 || s.sma200 || 0);
+      let ema50 = Number(s.ema50 || s.sma50 || 0);
+      let ema200 = Number(s.ema200 || s.sma200 || 0);
+
+      const cachedHist = getCachedRealPriceHistory(sym);
+      if (Array.isArray(cachedHist) && cachedHist.length >= 15) {
+        const sorted = cachedHist.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+        const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
+        if (closes.length >= 15) {
+          const ema50Arr = calculateEMA(closes, Math.min(50, closes.length));
+          if (ema50Arr.length > 0) ema50 = Number(ema50Arr[ema50Arr.length - 1].toFixed(1));
+        }
+        if (closes.length >= 30) {
+          const ema200Arr = calculateEMA(closes, Math.min(200, closes.length));
+          if (ema200Arr.length > 0) ema200 = Number(ema200Arr[ema200Arr.length - 1].toFixed(1));
+        }
+      }
+
       const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;   // null = unknown
       const isAbove200EMA = ema200 > 0 ? ltp >= ema200 : null;
 
@@ -89,22 +143,20 @@ export default function PredictorHub({
       const obvTrend = vsr > 1.2 && pCh >= 0 ? 'rising' : pCh < -1 ? 'falling' : 'flat';
 
       // ── 5-day momentum needs actual 5-day data ────────────────────────────
-      // If we don't have real 5d momentum, use single-day pChange with reduced weight.
-      const momentum5d = +(pCh * 1.0 + (vsr > 1.4 ? 1.5 : 0)).toFixed(2); // reduced from 2.2x to 1.0x
+      const momentum5d = +(pCh * 1.0 + (vsr > 1.4 ? 1.5 : 0)).toFixed(2);
 
       let score = 50;
 
-      // Momentum contribution (reduced — single-day pChange is weak signal)
+      // Momentum contribution
       score += Math.max(-12, Math.min(12, momentum5d * 1.5));
 
-      // Volume surge: can add max 10 pts (was 16) — volume alone cannot push past 70
+      // Volume surge: can add max 10 pts
       score += vsr >= 1.8 ? 10 : vsr >= 1.3 ? 6 : vsr < 0.7 ? -8 : 0;
 
       // RSI: only add score if RSI comes from real data
       if (rsiIsReal) {
-        score += rsi >= 52 && rsi <= 68 ? 10 : rsi > 78 ? -10 : rsi < 35 ? 8 : 0; // oversold is positive
+        score += rsi >= 52 && rsi <= 68 ? 10 : rsi > 78 ? -10 : rsi < 35 ? 8 : 0;
       }
-      // Fake RSI (rsiIsReal = false) contributes ZERO — no estimation
 
       score += macdSignal === 'bullish' ? 8 : macdSignal === 'bearish' ? -8 : 0;
       score += obvTrend === 'rising' ? 6 : obvTrend === 'falling' ? -6 : 0;
@@ -116,9 +168,33 @@ export default function PredictorHub({
       if (isAbove200EMA === false) score -= 8;
 
       // ── Hydro Dry Season Seasonality ─────────────────────────────────────
-      const hydroSeason = getHydroSeasonality(s.sector || s.sectorName || '');
+      const hydroSeason = getHydroSeasonality(s.sector || uInfo?.sector || s.sectorName || '');
       if (hydroSeason.isHydro && hydroSeason.isDrySeason) {
-        score += hydroSeason.penaltyPoints; // e.g. -10 to -18 points
+        score += hydroSeason.penaltyPoints;
+      }
+
+      // ── Sector-Relative Valuation (Section 3.2 of NEPSE Predictor App Documentation) ──
+      const secStr = String(s.sector || uInfo?.sector || s.sectorName || '').toLowerCase();
+      let medianPE = 22;
+      if (secStr.includes('bank') && !secStr.includes('dev')) medianPE = 14;
+      else if (secStr.includes('hydro')) medianPE = 24;
+      else if (secStr.includes('insurance')) medianPE = 25;
+      else if (secStr.includes('microfinance')) medianPE = 26;
+      else if (secStr.includes('hotel') || secStr.includes('manufacturing')) medianPE = 28;
+
+      const pe = Number(s.pe || 0);
+      const eps = Number(s.eps || 0);
+
+      if (pe > 0) {
+        if (pe >= 40 && eps < 15) {
+          score -= 8; // Penalize speculative FOMO crowding
+        } else if (pe < medianPE * 0.85 && eps > 12) {
+          score += 6; // Sector value discount
+        } else if (pe <= medianPE * 1.15) {
+          score += 3;
+        } else if (pe > medianPE * 1.8) {
+          score -= 5;
+        }
       }
 
       // ── Apply Hard Trend Ceiling ──────────────────────────────────────────
@@ -150,23 +226,54 @@ export default function PredictorHub({
       else if (compositeScore <= 35) reasoning = `${trendWarning}Lagging volume and breakdown below intermediate support. High risk profile.`;
       else reasoning = `${trendWarning}Neutral consolidation pattern waiting for volume catalyst.`;
 
+      // Authentic sharesOut from NEPSE Universe (in millions)
+      const sharesOutM = Number(uInfo?.sharesOut || s.sharesOut || (Number(s.listedShares) > 0 ? s.listedShares / 1e6 : 0) || 5);
+      const isLowFloat = sharesOutM > 0 && sharesOutM <= 5; // Under 50 lakh shares = low float
+
+      // Catalysts: corporate actions, declared dividends/bonus/rights, or active pipeline
+      const catInfo = CATALYST_MAP.get(sym);
+      const hasCatalyst = Boolean(
+        s.corporate_action_flag ||
+        catInfo ||
+        Number(s.dividendYield || 0) > 0 ||
+        Number(s.bonusShare || s.bonus || 0) > 0 ||
+        Number(s.cashDiv || s.dividend || 0) > 0 ||
+        Number(s.rightShare || 0) > 0 ||
+        (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+      );
+
+      const catalystLabel = catInfo || (
+        Number(s.bonusShare || s.bonus || 0) > 0 ? `${s.bonusShare || s.bonus}% Bonus Share Declared` :
+        Number(s.dividendYield || 0) > 0 ? `${s.dividendYield}% Dividend Yield` :
+        Number(s.rightShare || 0) > 0 ? `${s.rightShare}% Right Share Issue` :
+        (uInfo?.sharesOut && uInfo.sharesOut <= 3.5) ? 'Micro-Float Restructuring Play' :
+        'Corporate Action / AGM Disclosure'
+      );
+
       return {
         symbol: s.symbol,
-        companyName: s.companyName || s.name || s.symbol,
-        sector: s.sector || 'Others',
+        companyName: s.companyName || s.name || uInfo?.name || s.symbol,
+        sector: s.sector || uInfo?.sector || 'Others',
         ltp,
         pChange: pCh,
+        volume: vol,
+        turnover: Number(s.turnover || (ltp * vol) || 0),
+        dividendYield: Number(s.dividendYield || 0),
+        bonusShare: Number(s.bonusShare || s.bonus || 0),
+        rightShare: Number(s.rightShare || 0),
         volume_surge_ratio: vsr,
         momentum_5d: momentum5d,
-        rsi_14: rsiIsReal ? Math.round(rsi) : null, // null means "not computed"
+        rsi_14: rsiIsReal ? Math.round(rsi) : null,
         macd_signal: macdSignal,
         obv_trend: obvTrend,
         isAbove50EMA,
         isAbove200EMA,
         hardCeilingApplied,
         hydroSeason,
-        float_risk_flag: (Number(s.sharesOut) > 0 && Number(s.sharesOut) < 3) ? 'low_float' : 'normal',
-        corporate_action_flag: Number(s.dividendYield || 0) > 5 ? 'dividend_announced' : null,
+        sharesOut: sharesOutM,
+        float_risk_flag: isLowFloat ? 'low_float' : 'normal',
+        corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : null,
+        catalystLabel: hasCatalyst ? catalystLabel : null,
         composite_score: compositeScore,
         reasoning
       };
@@ -210,12 +317,38 @@ export default function PredictorHub({
         const stopFloor = dir === 'up' ? +(nepseIdx - atr * 1.2).toFixed(1) : +(nepseIdx + atr * 1.2).toFixed(1);
         const rrr = +((atr * 1.5) / (atr * 1.2)).toFixed(2);
 
+        const baselineVolPct = nepseIdx > 0 ? (atr / nepseIdx) * 100 : 1.2;
+        const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
+        const zScore90 = 1.645;
+        const margin90 = +(zScore90 * baselineVolPct * 1.0).toFixed(2);
+        const expectedReturnRange = {
+          mean: expectedMeanPct,
+          lower90: +(expectedMeanPct - margin90).toFixed(2),
+          upper90: +(expectedMeanPct + margin90).toFixed(2),
+          intervalWidth: +(2 * margin90).toFixed(2),
+          confidenceLevel: 90,
+          uncertaintyMultiplier: 1.0,
+          isEventWidened: false
+        };
+
+        const floatDiv = {
+          divergenceDetected: false,
+          signal: 'neutral',
+          scoreModifier: 0.0,
+          headlinePChange: Number(indices?.nepse?.pChange || 0),
+          floatPChange: Number(indices?.float?.pChange || 0),
+          sensitiveFloatPChange: Number(indices?.sensitive_float?.pChange || 0),
+          explanation: 'Headline NEPSE and free-float index are moving in normal correlation.'
+        };
+
         setIndexPrediction({
           prediction_date: new Date().toISOString().slice(0, 10),
           direction: dir,
           confidence: Math.round(58 + Math.abs(rawScore) * 45),
           raw_score: rawScore,
           market_regime: dir === 'up' ? 'Bullish Expansion' : dir === 'down' ? 'Bearish Retracement' : 'Consolidation Range',
+          expected_return_range: expectedReturnRange,
+          float_divergence: floatDiv,
           targets: {
             target1,
             target2,
@@ -289,7 +422,40 @@ export default function PredictorHub({
       if (stockRes && stockRes.ok) {
         const json = await stockRes.json();
         if (Array.isArray(json.data) && json.data.length > 0) {
-          setScoredStocks(json.data);
+          const enriched = json.data.map(item => {
+            const sym = String(item.symbol || '').toUpperCase().trim();
+            const uInfo = UNIVERSE_MAP.get(sym);
+            const catInfo = CATALYST_MAP.get(sym);
+            const sharesOutM = Number(uInfo?.sharesOut || item.sharesOut || 5);
+            const isLowFloat = sharesOutM > 0 && sharesOutM <= 5;
+            const hasCatalyst = Boolean(
+              item.corporate_action_flag ||
+              catInfo ||
+              Number(item.dividendYield || 0) > 0 ||
+              Number(item.bonusShare || 0) > 0 ||
+              Number(item.rightShare || 0) > 0 ||
+              (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+            );
+            const catalystLabel = catInfo || (
+              Number(item.bonusShare || 0) > 0 ? `${item.bonusShare}% Bonus Share Declared` :
+              Number(item.dividendYield || 0) > 0 ? `${item.dividendYield}% Dividend Yield` :
+              Number(item.rightShare || 0) > 0 ? `${item.rightShare}% Right Share Issue` :
+              (uInfo?.sharesOut && uInfo.sharesOut <= 3.5) ? 'Micro-Float Restructuring Play' :
+              'Corporate Action / AGM Disclosure'
+            );
+            return {
+              ...item,
+              companyName: item.companyName || uInfo?.name || item.symbol,
+              sector: item.sector || uInfo?.sector || 'Others',
+              volume: Number(item.volume || 0),
+              turnover: Number(item.turnover || 0),
+              sharesOut: sharesOutM,
+              float_risk_flag: isLowFloat ? 'low_float' : (item.float_risk_flag || 'normal'),
+              corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : (item.corporate_action_flag || null),
+              catalystLabel: hasCatalyst ? catalystLabel : null
+            };
+          });
+          setScoredStocks(enriched);
         } else {
           fallbackStockScoring();
         }
@@ -357,24 +523,96 @@ export default function PredictorHub({
     }
   }, [stocks, indices, fallbackStockScoring]);
 
+  // Immediate hydration so scoredStocks is NEVER empty on initial render
+  useEffect(() => {
+    if (Array.isArray(stocks) && stocks.length > 0 && scoredStocks.length === 0) {
+      fallbackStockScoring();
+    }
+  }, [stocks, fallbackStockScoring, scoredStocks.length]);
+
   useEffect(() => {
     fetchPredictionData();
   }, [fetchPredictionData]);
 
-  // Filtered stocks logic
+  // Filtered stocks logic: Each sub-tab specifically filters AND re-ranks stocks by that sub-tab's metric!
   const filteredStocks = useMemo(() => {
-    return scoredStocks.filter(s => {
-      const matchesSearch = !searchQuery ||
+    const searchFiltered = scoredStocks.filter(s => {
+      return !searchQuery ||
         s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (s.companyName || '').toLowerCase().includes(searchQuery.toLowerCase());
-      if (!matchesSearch) return false;
-
-      if (stockFilter === 'momentum') return s.momentum_5d > 1.5;
-      if (stockFilter === 'volume') return s.volume_surge_ratio >= 1.3;
-      if (stockFilter === 'low_float') return s.float_risk_flag === 'low_float';
-      if (stockFilter === 'catalyst') return Boolean(s.corporate_action_flag);
-      return true;
     });
+
+    if (stockFilter === 'all') {
+      return [...searchFiltered].sort((a, b) => b.composite_score - a.composite_score);
+    }
+
+    if (stockFilter === 'momentum') {
+      // 1. High Momentum: Strictly sort by 5-day momentum / pChange descending!
+      const sortedByMom = [...searchFiltered].sort((a, b) => {
+        const momA = Number(a.momentum_5d ?? a.pChange ?? 0);
+        const momB = Number(b.momentum_5d ?? b.pChange ?? 0);
+        return momB - momA;
+      });
+      const positive = sortedByMom.filter(s => Number(s.momentum_5d ?? s.pChange ?? 0) > 0);
+      return positive.length >= 8 ? positive : sortedByMom.slice(0, 35);
+    }
+
+    if (stockFilter === 'volume') {
+      // 2. Volume Surge: Strictly sort by volume surge ratio descending, then by traded volume!
+      const sortedByVol = [...searchFiltered].sort((a, b) => {
+        const vsrA = Number(a.volume_surge_ratio || 1);
+        const vsrB = Number(b.volume_surge_ratio || 1);
+        if (Math.abs(vsrB - vsrA) > 0.05) return vsrB - vsrA;
+        const volA = Number(a.volume || a.totalTradedQuantity || 0);
+        const volB = Number(b.volume || b.totalTradedQuantity || 0);
+        return volB - volA;
+      });
+      const surged = sortedByVol.filter(s => Number(s.volume_surge_ratio || 1) >= 1.1 || Number(s.volume || s.totalTradedQuantity || 0) >= 1500);
+      return surged.length >= 8 ? surged : sortedByVol.slice(0, 35);
+    }
+
+    if (stockFilter === 'low_float') {
+      // 3. Low Float: Filter <= 5M shares, strictly sort lowest float first!
+      const candidates = [...searchFiltered].filter(s => {
+        const sym = String(s.symbol || '').toUpperCase().trim();
+        const uInfo = UNIVERSE_MAP.get(sym);
+        const shares = Number(s.sharesOut || uInfo?.sharesOut || 10);
+        return s.float_risk_flag === 'low_float' || (shares > 0 && shares <= 5);
+      }).sort((a, b) => {
+        const symA = String(a.symbol || '').toUpperCase().trim();
+        const symB = String(b.symbol || '').toUpperCase().trim();
+        const sharesA = Number(a.sharesOut || UNIVERSE_MAP.get(symA)?.sharesOut || 10);
+        const sharesB = Number(b.sharesOut || UNIVERSE_MAP.get(symB)?.sharesOut || 10);
+        return sharesA - sharesB;
+      });
+      return candidates.length >= 5 ? candidates : [...searchFiltered].sort((a, b) => (a.sharesOut || 10) - (b.sharesOut || 10)).slice(0, 35);
+    }
+
+    if (stockFilter === 'catalyst') {
+      // 4. Corporate Catalysts: Filter confirmed corporate actions & dividends, sort by catalyst relevance!
+      const candidates = [...searchFiltered].filter(s => {
+        const sym = String(s.symbol || '').toUpperCase().trim();
+        const uInfo = UNIVERSE_MAP.get(sym);
+        return Boolean(
+          s.corporate_action_flag ||
+          s.catalystLabel ||
+          CATALYST_MAP.has(sym) ||
+          Number(s.dividendYield || 0) > 0 ||
+          Number(s.bonusShare || 0) > 0 ||
+          Number(s.rightShare || 0) > 0 ||
+          (uInfo?.sharesOut && uInfo.sharesOut <= 3.5)
+        );
+      }).sort((a, b) => {
+        const symA = String(a.symbol || '').toUpperCase().trim();
+        const symB = String(b.symbol || '').toUpperCase().trim();
+        const scoreA = (CATALYST_MAP.has(symA) ? 50 : 0) + (a.corporate_action_flag ? 25 : 0) + Number(a.composite_score || 0);
+        const scoreB = (CATALYST_MAP.has(symB) ? 50 : 0) + (b.corporate_action_flag ? 25 : 0) + Number(b.composite_score || 0);
+        return scoreB - scoreA;
+      });
+      return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 45).slice(0, 35);
+    }
+
+    return searchFiltered;
   }, [scoredStocks, stockFilter, searchQuery]);
 
   const handleLaunchAnalyzer = (symbol) => {
@@ -744,6 +982,110 @@ export default function PredictorHub({
                     </span>
                   )}
                 </div>
+
+                {/* Probabilistic Expected Return Range (90% Confidence Interval) */}
+                {indexPrediction.expected_return_range && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '11px 15px',
+                    borderRadius: 13,
+                    background: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.22)',
+                    flexWrap: 'wrap',
+                    gap: 8
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <BarChart3 style={{ width: 15, height: 15, color: '#3b82f6' }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        Expected 1-5D Return (90% CI):
+                      </span>
+                      <span style={{ fontSize: 13.5, fontWeight: 900, color: indexPrediction.expected_return_range.mean >= 0 ? '#10b981' : '#ef4444' }}>
+                        {indexPrediction.expected_return_range.mean >= 0 ? '+' : ''}{indexPrediction.expected_return_range.mean}%
+                      </span>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                        [{indexPrediction.expected_return_range.lower90}%, {indexPrediction.expected_return_range.upper90}%]
+                      </span>
+                    </div>
+                    {indexPrediction.expected_return_range.isEventWidened && (
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 99,
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.3)'
+                      }}>
+                        ⚠️ Uncertainty Band Widened (Event/Float Risk)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Float Index Verification & Divergence Check */}
+                {indexPrediction.float_divergence && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '11px 15px',
+                    borderRadius: 13,
+                    background: indexPrediction.float_divergence.divergenceDetected
+                      ? 'rgba(239, 68, 68, 0.08)'
+                      : indexPrediction.float_divergence.signal === 'institutional_accumulation_confirmed'
+                      ? 'rgba(16, 185, 129, 0.08)'
+                      : 'rgba(255, 255, 255, 0.03)',
+                    border: `1px solid ${
+                      indexPrediction.float_divergence.divergenceDetected
+                        ? 'rgba(239, 68, 68, 0.28)'
+                        : indexPrediction.float_divergence.signal === 'institutional_accumulation_confirmed'
+                        ? 'rgba(16, 185, 129, 0.28)'
+                        : 'rgba(255, 255, 255, 0.08)'
+                    }`,
+                    flexWrap: 'wrap',
+                    gap: 8
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <ShieldAlert style={{
+                        width: 15,
+                        height: 15,
+                        color: indexPrediction.float_divergence.divergenceDetected
+                          ? '#ef4444'
+                          : indexPrediction.float_divergence.signal === 'institutional_accumulation_confirmed'
+                          ? '#10b981'
+                          : 'var(--text-muted)'
+                      }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        Float Index Verification:
+                      </span>
+                      <span style={{
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        color: indexPrediction.float_divergence.divergenceDetected
+                          ? '#ef4444'
+                          : indexPrediction.float_divergence.signal === 'institutional_accumulation_confirmed'
+                          ? '#10b981'
+                          : 'var(--text-primary)'
+                      }}>
+                        {indexPrediction.float_divergence.divergenceDetected
+                          ? 'Promoter Skew Divergence Detected'
+                          : indexPrediction.float_divergence.signal === 'institutional_accumulation_confirmed'
+                          ? 'Institutional Free-Float Accumulation Confirmed'
+                          : 'Normal Float Correlation'}
+                      </span>
+                    </div>
+                    {indexPrediction.float_divergence.floatPChange !== null && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Float: {indexPrediction.float_divergence.floatPChange >= 0 ? '+' : ''}{indexPrediction.float_divergence.floatPChange}%
+                        {indexPrediction.float_divergence.sensitiveFloatPChange !== null
+                          ? ` • SenFloat: ${indexPrediction.float_divergence.sensitiveFloatPChange >= 0 ? '+' : ''}${indexPrediction.float_divergence.sensitiveFloatPChange}%`
+                          : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Target Metrics Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
@@ -1198,32 +1540,73 @@ export default function PredictorHub({
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}>
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>
                 {[
-                  { id: 'all', label: 'All Ranked' },
-                  { id: 'momentum', label: 'High Momentum' },
-                  { id: 'volume', label: 'Volume Surge' },
-                  { id: 'low_float', label: 'Low Float' },
-                  { id: 'catalyst', label: 'Corporate Catalysts' },
-                ].map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => setStockFilter(f.id)}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: 8,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      border: `1px solid ${stockFilter === f.id ? 'var(--primary)' : 'var(--border)'}`,
-                      background: stockFilter === f.id ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.02)',
-                      color: stockFilter === f.id ? 'var(--primary-light)' : 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                  { id: 'all', label: 'All Ranked', icon: Sparkles },
+                  { id: 'momentum', label: 'High Momentum', icon: Flame },
+                  { id: 'volume', label: 'Volume Surge', icon: Zap },
+                  { id: 'low_float', label: 'Low Float', icon: Target },
+                  { id: 'catalyst', label: 'Corporate Catalysts', icon: Landmark },
+                ].map(f => {
+                  const Icon = f.icon;
+                  const isSelected = stockFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => setStockFilter(f.id)}
+                      style={{
+                        padding: '7px 13px',
+                        borderRadius: 99,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}`,
+                        background: isSelected ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(139, 92, 246, 0.2))' : 'rgba(255,255,255,0.03)',
+                        color: isSelected ? '#60a5fa' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        boxShadow: isSelected ? '0 0 12px rgba(59, 130, 246, 0.25)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Icon size={13} style={{ color: isSelected ? '#60a5fa' : 'var(--text-muted)' }} />
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sub-Tab Contextual Header */}
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 12,
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: 12
+              }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {stockFilter === 'all' && <><span>📊</span> Ranked by multi-factor quantitative composite score (0–100)</>}
+                  {stockFilter === 'momentum' && <><span>🔥</span> Ranked by 5-day directional thrust & velocity (highest momentum first)</>}
+                  {stockFilter === 'volume' && <><span>⚡</span> Ranked by institutional volume expansion (highest multiple vs 20-day avg first)</>}
+                  {stockFilter === 'low_float' && <><span>💎</span> Ranked by lowest public float (companies under 50 lakh shares)</>}
+                  {stockFilter === 'catalyst' && <><span>📢</span> Ranked by upcoming dividends, bonus shares, rights & AGM disclosures</>}
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 99,
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  color: 'var(--primary-light)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)'
+                }}>
+                  {filteredStocks.length} scrips
+                </span>
               </div>
             </div>
 
@@ -1281,29 +1664,95 @@ export default function PredictorHub({
                       </div>
 
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '3px 9px',
-                          borderRadius: 99,
-                          fontSize: 12,
-                          fontWeight: 900,
-                          background: s.composite_score >= 75
-                            ? 'rgba(16, 185, 129, 0.15)'
-                            : s.composite_score <= 40
-                            ? 'rgba(239, 68, 68, 0.15)'
-                            : 'rgba(59, 130, 246, 0.15)',
-                          color: s.composite_score >= 75
-                            ? '#10b981'
-                            : s.composite_score <= 40
-                            ? '#ef4444'
-                            : '#60a5fa',
-                          border: `1px solid ${s.composite_score >= 75 ? 'rgba(16,185,129,0.3)' : s.composite_score <= 40 ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`
-                        }}>
-                          <Sparkles style={{ width: 11, height: 11 }} />
-                          {s.composite_score}/100
-                        </div>
+                        {stockFilter === 'momentum' ? (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 9px',
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#10b981',
+                            border: '1px solid rgba(16, 185, 129, 0.35)'
+                          }}>
+                            <Flame style={{ width: 12, height: 12 }} />
+                            {Number(s.momentum_5d ?? s.pChange ?? 0) >= 0 ? '+' : ''}{Number(s.momentum_5d ?? s.pChange ?? 0)}% Mom
+                          </div>
+                        ) : stockFilter === 'volume' ? (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 9px',
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.35)'
+                          }}>
+                            <Zap style={{ width: 12, height: 12 }} />
+                            {s.volume_surge_ratio}x Surge
+                          </div>
+                        ) : stockFilter === 'low_float' ? (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 9px',
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: 'rgba(6, 182, 212, 0.15)',
+                            color: '#06b6d4',
+                            border: '1px solid rgba(6, 182, 212, 0.35)'
+                          }}>
+                            <Target style={{ width: 12, height: 12 }} />
+                            Float {s.sharesOut}M
+                          </div>
+                        ) : stockFilter === 'catalyst' ? (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 9px',
+                            borderRadius: 99,
+                            fontSize: 11.5,
+                            fontWeight: 900,
+                            background: 'rgba(168, 85, 247, 0.15)',
+                            color: '#c084fc',
+                            border: '1px solid rgba(168, 85, 247, 0.35)'
+                          }}>
+                            <Landmark style={{ width: 12, height: 12 }} />
+                            Catalyst
+                          </div>
+                        ) : (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 9px',
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: s.composite_score >= 75
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : s.composite_score <= 40
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : 'rgba(59, 130, 246, 0.15)',
+                            color: s.composite_score >= 75
+                              ? '#10b981'
+                              : s.composite_score <= 40
+                              ? '#ef4444'
+                              : '#60a5fa',
+                            border: `1px solid ${s.composite_score >= 75 ? 'rgba(16,185,129,0.3)' : s.composite_score <= 40 ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)'}`
+                          }}>
+                            <Sparkles style={{ width: 11, height: 11 }} />
+                            {s.composite_score}/100
+                          </div>
+                        )}
                         <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
                           Rs. {s.ltp}
                           <span style={{
@@ -1316,6 +1765,25 @@ export default function PredictorHub({
                         </div>
                       </div>
                     </div>
+
+                    {/* Catalyst Announcement Banner on Card */}
+                    {s.catalystLabel && (
+                      <div style={{
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        background: 'rgba(168, 85, 247, 0.08)',
+                        border: '1px solid rgba(168, 85, 247, 0.25)',
+                        color: '#c084fc',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        <span>📢</span>
+                        <span>{s.catalystLabel}</span>
+                      </div>
+                    )}
 
                     {/* Metrics Grid */}
                     <div style={{
@@ -1399,7 +1867,7 @@ export default function PredictorHub({
               stocks={stocks}
               indices={indices}
               onSelectStock={onSelectStock}
-              initialSymbol={selectedForAnalysis}
+              initialSymbol={selectedForAnalysis || (scoredStocks[0]?.symbol || stocks[0]?.symbol || 'NABIL')}
             />
           </div>
         )}

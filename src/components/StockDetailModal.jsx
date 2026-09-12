@@ -22,7 +22,20 @@ import {
   calculateATR,
   calculateRiskRewardRatio
 } from '../utils/quantEngine';
-import { fetchStockFundamentals, fetchRealPriceHistory, fetchRealFloorsheet, fetchRealBrokerAnalysis, fetchMarketDepth, fetchDividendHistory, fetchCompareStocks } from '../utils/liveData';
+import {
+  fetchStockFundamentals,
+  fetchRealPriceHistory,
+  fetchRealFloorsheet,
+  fetchRealBrokerAnalysis,
+  fetchMarketDepth,
+  fetchDividendHistory,
+  fetchCompareStocks,
+  getLatestTradingDateStr,
+  getCachedRealPriceHistory,
+  getCachedRealBrokerAnalysis,
+  getCachedRealFloorsheet,
+  getCachedStockFundamentals
+} from '../utils/liveData';
 import { fetchNepseIntradayGraph } from '../utils/servicesApi';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
@@ -50,6 +63,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [historyTimeframe, setHistoryTimeframe] = useState('1Y');
   const scrollRef = useRef(null);
 
+  // ── Real data state (declared before useMemo/useCallback dependencies) ──
+  const [history, setHistory] = useState([]);
+  const [realPriceHistory, setRealPriceHistory] = useState(null);
+  const [realHistoryLoading, setRealHistoryLoading] = useState(false);
+  const [realFloorsheet, setRealFloorsheet] = useState(null);
+  const [floorsheetLoading, setFloorsheetLoading] = useState(false);
+  const [floorsheetPage, setFloorsheetPage] = useState(1);
+  const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(null);
+  const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(false);
+  const [realMarketDepth, setRealMarketDepth] = useState(null);
+  const [marketDepthLoading, setMarketDepthLoading] = useState(false);
+  const [dividendHistory, setDividendHistory] = useState(null);
+  const [dividendLoading, setDividendLoading] = useState(false);
+  const [compareSymbol, setCompareSymbol] = useState('');
+  const [compareData, setCompareData] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [comparePeer, setComparePeer] = useState(null);
+
   // Register mobile back gesture so Android back swipes close this modal smoothly
   useBackHandler(() => {
     onClose();
@@ -71,66 +102,63 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     return null;
   }, [stock, allStocks]);
 
-  // Derived stock merged with live fundamentals with complete null safety
+  // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
     const s = resolvedStock || { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
-    const ltp = Number(s.ltp) || 350;
-    if (!liveDetail) {
-      return {
-        ...s,
-        ltp,
-        pChange: Number(s.pChange) || 0,
-        change: Number(s.change) || 0,
-        open: Number(s.open) || ltp,
-        high: Number(s.high) || ltp * 1.02,
-        low: Number(s.low) || ltp * 0.98,
-        eps: Number(s.eps) || 18.5,
-        pe: Number(s.pe) || 22.4,
-        pb: Number(s.pb || s.pbv) || 1.8,
-        bookValue: Number(s.bookValue) || 185.0,
-        high52w: Number(s.high52w) || ltp * 1.25,
-        low52w: Number(s.low52w) || ltp * 0.75,
-        marketCap: Number(s.marketCap) || 1250,
-        listedShares: Number(s.listedShares) || 30.5,
-        paidUpCapital: Number(s.paidUpCapital) || 300,
-        bonusShare: Number(s.bonusShare) || 10.0,
-        cashDiv: Number(s.cashDiv || s.dividend) || 0.52,
-      };
+    const ltp = Number(liveDetail?.closePrice || liveDetail?.marketPrice || s.ltp || s.closePrice || 0);
+
+    // Derive 52W High / Low from real price history if not in liveDetail
+    let histHigh = 0;
+    let histLow = 0;
+    if (realPriceHistory && realPriceHistory.length > 0) {
+      histHigh = Math.max(...realPriceHistory.map(h => Number(h.high || h.close || 0)));
+      const lows = realPriceHistory.map(h => Number(h.low || h.close || 0)).filter(p => p > 0);
+      if (lows.length > 0) histLow = Math.min(...lows);
     }
+
+    const high52w = Number(liveDetail?.high52w || s.high52w || (histHigh > 0 ? histHigh : (ltp > 0 ? ltp : 0)));
+    const low52w = Number(liveDetail?.low52w || s.low52w || (histLow > 0 ? histLow : (ltp > 0 ? ltp : 0)));
+
+    const eps = Number(liveDetail?.eps > 0 ? liveDetail.eps : (s.eps > 0 ? s.eps : 0));
+    const bookValue = Number(liveDetail?.bookValue > 0 ? liveDetail.bookValue : (s.bookValue > 0 ? s.bookValue : 0));
+    const pe = Number(liveDetail?.pe > 0 ? liveDetail.pe : (s.pe > 0 ? s.pe : (eps > 0 && ltp > 0 ? +(ltp / eps).toFixed(2) : 0)));
+    const pb = Number(liveDetail?.pbv > 0 ? liveDetail.pbv : (liveDetail?.pb > 0 ? liveDetail.pb : (s.pb > 0 ? s.pb : (s.pbv > 0 ? s.pbv : (bookValue > 0 && ltp > 0 ? +(ltp / bookValue).toFixed(2) : 0)))));
+
+    const listedShares = Number(liveDetail?.listedShares || liveDetail?.sharesOutstanding || s.listedShares || 0);
+    const paidUpCapital = Number(liveDetail?.paidUpCapital || s.paidUpCapital || 0);
+    const marketCap = Number(liveDetail?.marketCap || s.marketCap || (listedShares > 0 && ltp > 0 ? listedShares * ltp : 0));
+
+    const promoterPercentage = Number(liveDetail?.promoterPercentage || s.promoterPercentage || 0);
+    const publicPercentage = Number(liveDetail?.publicPercentage || s.publicPercentage || (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0));
+
     return {
       ...s,
-      pe: Number(liveDetail?.pe || s.pe) || 0,
-      pbv: Number(liveDetail?.pbv || s.pbv) || 0,
-      eps: Number(liveDetail?.eps || s.eps) || 0,
-      bookValue: Number(liveDetail?.bookValue || s.bookValue) || 0,
-      high52w: (liveDetail?.high52w && liveDetail.high52w > 0) ? Number(liveDetail.high52w) : Number(s.high52w || 0),
-      low52w: (liveDetail?.low52w && liveDetail.low52w > 0) ? Number(liveDetail.low52w) : Number(s.low52w || 0),
-      marketCap: liveDetail?.marketCap ? Number(liveDetail.marketCap) / 1000000 : Number(s.marketCap || 0),
-      listedShares: liveDetail?.listedShares ? Number(liveDetail.listedShares) / 1000000 : Number(s.listedShares || 0),
-      paidUpCapital: liveDetail?.paidUpCapital ? Number(liveDetail.paidUpCapital) / 1000000 : Number(s.paidUpCapital || 0),
+      ltp: ltp > 0 ? ltp : Number(s.ltp || 0),
+      pChange: Number(liveDetail?.pChange !== undefined ? liveDetail.pChange : (s.pChange || 0)),
+      change: Number(liveDetail?.change !== undefined ? liveDetail.change : (s.change || 0)),
+      open: Number(liveDetail?.openPrice || s.open || ltp),
+      high: Number(liveDetail?.highPrice || s.high || ltp),
+      low: Number(liveDetail?.lowPrice || s.low || ltp),
+      prevClose: Number(liveDetail?.prevClose || s.prevClose || (ltp - (s.change || 0))),
+      eps,
+      pe,
+      pb,
+      bookValue,
+      high52w,
+      low52w,
+      marketCap,
+      listedShares,
+      paidUpCapital,
+      promoterPercentage,
+      publicPercentage,
       bonusShare: Number(liveDetail?.bonus || s.bonusShare || 0),
       cashDiv: Number(liveDetail?.dividend || s.cashDiv || 0),
+      companyName: liveDetail?.companyName || s.companyName || s.name || s.symbol,
+      sector: liveDetail?.sector || s.sector || 'Others',
+      isin: liveDetail?.isin || s.isin || '',
+      listingDate: liveDetail?.listingDate || s.listingDate || ''
     };
-  }, [resolvedStock, liveDetail]);
-
-  const [history, setHistory] = useState([]);
-
-  // ── Real data state ──────────────────────────────────────────────────
-  const [realPriceHistory, setRealPriceHistory] = useState(null);
-  const [realHistoryLoading, setRealHistoryLoading] = useState(false);
-  const [realFloorsheet, setRealFloorsheet] = useState(null);
-  const [floorsheetLoading, setFloorsheetLoading] = useState(false);
-  const [floorsheetPage, setFloorsheetPage] = useState(1);
-  const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(null);
-  const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(false);
-  const [realMarketDepth, setRealMarketDepth] = useState(null);
-  const [marketDepthLoading, setMarketDepthLoading] = useState(false);
-  const [dividendHistory, setDividendHistory] = useState(null);
-  const [dividendLoading, setDividendLoading] = useState(false);
-  const [compareSymbol, setCompareSymbol] = useState('');
-  const [compareData, setCompareData] = useState(null);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [comparePeer, setComparePeer] = useState(null);
+  }, [resolvedStock, liveDetail, realPriceHistory]);
 
   // Helper: compute performance return for N days using real price history
   const computePerformance = useCallback((days) => {
@@ -148,12 +176,89 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   useEffect(() => {
     let active = true;
     if (!d?.symbol) return;
-    setRealHistoryLoading(true);
+
+    // Keep real historical data intact by initializing from cache immediately
+    const cachedFund = getCachedStockFundamentals(d.symbol);
+    if (cachedFund) setLiveDetail(cachedFund);
+    else setLiveDetail(null);
+
+    fetchStockFundamentals(d.symbol).then(fund => {
+      if (!active) return;
+      if (fund) {
+        setLiveDetail(fund);
+        // If core valuation fundamentals are missing or zero, force fresh scrape from Merolagani/ShareSansar
+        if ((!fund.bookValue || fund.bookValue <= 0) || (!fund.pe || fund.pe <= 0)) {
+          fetchStockFundamentals(d.symbol, true).then(refreshed => {
+            if (active && refreshed && (refreshed.bookValue > 0 || refreshed.pe > 0)) {
+              setLiveDetail(refreshed);
+            }
+          }).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+
+    const cachedFloorsheet = getCachedRealFloorsheet(d.symbol);
+    if (cachedFloorsheet) setRealFloorsheet(cachedFloorsheet);
+    else setRealFloorsheet(null);
+
+    const cachedBroker = getCachedRealBrokerAnalysis(d.symbol);
+    if (cachedBroker) setRealBrokerAnalysis(cachedBroker);
+    else setRealBrokerAnalysis(null);
+
+    const cachedHist = getCachedRealPriceHistory(d.symbol);
+    if (cachedHist && cachedHist.length > 0) {
+      setRealPriceHistory(cachedHist);
+      setHistory(cachedHist.map(item => ({
+        date: item.date,
+        time: item.date,
+        open: Number(item.open) || Number(item.close),
+        high: Number(item.high) || Number(item.close),
+        low: Number(item.low) || Number(item.close),
+        close: Number(item.close),
+        volume: Number(item.volume) || 0
+      })));
+    }
+
+    setRealMarketDepth(null);
+    setFloorsheetPage(1);
+
+    setRealHistoryLoading(!cachedHist || cachedHist.length === 0);
     fetchRealPriceHistory(d.symbol, 500).then(data => {
       if (!active) return;
-      if (data && data.length > 0) {
-        setRealPriceHistory(data);
-        const chartData = data.map(item => ({
+      let fullHistory = (data && Array.isArray(data)) ? [...data] : [];
+
+      const todayLtp = Number(d.ltp || d.closePrice || 0);
+      const todayDate = d.businessDate || d.date || getLatestTradingDateStr();
+
+      if (todayLtp > 0 && fullHistory.length > 0) {
+        const last = fullHistory[fullHistory.length - 1];
+        const isLastToday = last && (last.date === todayDate || String(last.date).slice(0, 10) === todayDate);
+
+        const todayRecord = {
+          date: todayDate,
+          open: Number(d.open) || todayLtp,
+          high: Math.max(Number(d.high) || todayLtp, todayLtp),
+          low: Math.min(Number(d.low) || todayLtp, todayLtp),
+          close: todayLtp,
+          volume: Number(d.volume || d.totalTradedQuantity || 0),
+          turnover: Number(d.turnover || d.totalTradedValue || 0),
+          trades: Number(d.transactions || d.totalTrades || 0),
+          change: Number(d.change || 0),
+          pChange: Number(d.pChange || 0),
+          isToday: true,
+          isReal: true
+        };
+
+        if (isLastToday) {
+          fullHistory[fullHistory.length - 1] = { ...last, ...todayRecord };
+        } else {
+          fullHistory.push(todayRecord);
+        }
+      }
+
+      if (fullHistory.length > 0) {
+        setRealPriceHistory(fullHistory);
+        const chartData = fullHistory.map(item => ({
           date: item.date,
           time: item.date,
           open: Number(item.open) || Number(item.close),
@@ -310,7 +415,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   }, [realMarketDepth]);
 
   const graham = useMemo(() => calculateGrahamIntrinsicValue(d?.eps, d?.bookValue, d?.ltp), [d?.eps, d?.bookValue, d?.ltp]);
-  const actionZone = useMemo(() => classifyActionZone(d), [d]);
+  const actionZone = useMemo(() => {
+    return classifyActionZone({
+      ...d,
+      candles: realPriceHistory || [],
+      history: realPriceHistory || [],
+      brokerAdRatio: realBrokerAnalysis?.adRatio ?? 0,
+      brokerAdSignal: realBrokerAnalysis?.adSignal ?? 'Neutral',
+      brokerAdStrength: realBrokerAnalysis?.adStrength ?? 0
+    });
+  }, [d, realPriceHistory, realBrokerAnalysis]);
   const quantTech = useMemo(() => calculateCompositeTechnicalScore(d), [d]);
   const zVol = useMemo(() => calculateVolumeZScore(d?.volume || 0, d?.avgVolume20D || 0), [d?.volume, d?.avgVolume20D]);
 
@@ -365,6 +479,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           high: item.high,
           low: item.low,
           volume: item.volume,
+          isToday: Boolean(item.isToday),
           sma200: Number(sma200.toFixed(2))
         };
       });
@@ -741,6 +856,42 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   </div>
                 </div>
               </div>
+
+              {/* Fundamental Valuation Snapshot (P/E, Book Value, PBV, EPS) */}
+              <div style={{
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: '1px solid rgba(255, 255, 255, 0.07)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: 8,
+                textAlign: 'center'
+              }}>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '6px 4px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>P/E RATIO</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: d.pe > 0 ? '#38bdf8' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {d.pe > 0 ? `${fmt(d.pe)}x` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '6px 4px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>BOOK VALUE</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: d.bookValue > 0 ? '#10B981' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {d.bookValue > 0 ? `Rs. ${fmt(d.bookValue)}` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '6px 4px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>PBV (PEV)</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: d.pb > 0 ? '#a855f7' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {d.pb > 0 ? `${fmt(d.pb)}x` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '6px 4px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>EPS</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: d.eps > 0 ? '#ffffff' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {d.eps > 0 ? `Rs. ${fmt(d.eps)}` : '—'}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* ── 2. 4-Card Minimal Metric Grid ── */}
@@ -796,7 +947,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               }}>
                 <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Volume</div>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
-                  {(d.volume || 154353).toLocaleString()}
+                  {(Number(d.volume || (realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory[realPriceHistory.length - 1].volume : 0)) || 0).toLocaleString()}
                 </div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>Shares Traded</div>
               </div>
@@ -813,7 +964,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               }}>
                 <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Turnover</div>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
-                  {fmtCr(d.turnover || (d.ltp * (d.volume || 150000)))}
+                  {fmtCr(d.turnover || (realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory[realPriceHistory.length - 1].turnover : (d.ltp * (d.volume || 0))) || 0)}
                 </div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>Day Gross Value</div>
               </div>
@@ -829,8 +980,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 justifyContent: 'space-between'
               }}>
                 <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Quant Signal</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: actionZone.zoneColor || '#10B981', margin: '4px 0' }}>
-                  {actionZone.zone || 'Accumulate'}
+                <div style={{ fontSize: 13, fontWeight: 800, color: (realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? '#94a3b8' : (actionZone.zoneColor || '#10B981'), margin: '4px 0' }}>
+                  {(realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? 'Analyzing Structure…' : (actionZone.zone || 'Accumulate')}
                 </div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>
                   MS Score: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
@@ -848,32 +999,41 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               padding: '12px 14px',
               marginBottom: 14
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: actionZone.zoneColor }}>
-                  <Zap style={{ width: 15, height: 15 }} />
-                  {actionZone.zoneBadge}
+              {(realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 6px', color: '#94a3b8', fontSize: 12 }}>
+                  <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#38bdf8', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <span>Calculating authentic 50/200 EMA and structural action zone…</span>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>
-                  Momentum: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E' }}>{actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}</span>
-                </div>
-              </div>
-              <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.4, marginBottom: 8 }}>
-                {actionZone.triggerLogic}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
-                <div>
-                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Entry Target</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{actionZone.entryTarget.split(' ')[1] || 'LTP'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Target 1 (ATR)</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#10B981', fontFamily: 'var(--font-mono)' }}>{actionZone.profitTarget1.split(' ')[1] || 'Target'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Trailing Stop</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{actionZone.stopLoss.split(' ')[1] || 'Stop'}</div>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: actionZone.zoneColor }}>
+                      <Zap style={{ width: 15, height: 15 }} />
+                      {actionZone.zoneBadge}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>
+                      Momentum: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E' }}>{actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.4, marginBottom: 8 }}>
+                    {actionZone.triggerLogic}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                    <div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Entry Target</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{actionZone.entryTarget.split(' ')[1] || 'LTP'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Target 1 (ATR)</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#10B981', fontFamily: 'var(--font-mono)' }}>{actionZone.profitTarget1.split(' ')[1] || 'Target'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Trailing Stop</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{actionZone.stopLoss.split(' ')[1] || 'Stop'}</div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ── ShareHub Interactive Chart ── */}
@@ -983,47 +1143,65 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>💲 EPS</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>{fmt(d.eps || 18.5)} <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>(Q4/082-083)</span></span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                  {d.eps > 0 ? `Rs. ${fmt(d.eps)}` : '—'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>📊 P/E Ratio</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>{fmt(d.pe || (d.ltp / (d.eps || 18.5)))}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                  {d.pe > 0 ? `${fmt(d.pe)}x` : '—'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>📕 Book Value</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>Rs. {fmt(d.bookValue || 185.4)}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>📕 Book Value (BVPS)</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                  {d.bookValue > 0 ? `Rs. ${fmt(d.bookValue)}` : '—'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0' }}>
-                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>📉 PBV</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>{fmt(d.pb || (d.ltp / (d.bookValue || 185.4)))}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>📉 PBV (Price-to-Book)</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                  {d.pb > 0 ? `${fmt(d.pb)}x` : '—'}
+                </span>
               </div>
             </div>
 
             {/* ── Shareholding Pattern Bar ── */}
-            <div style={{
-              background: '#151922',
-              border: '1px solid rgba(255, 255, 255, 0.07)',
-              borderRadius: 14,
-              padding: '14px',
-              marginBottom: 16
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ color: '#3b82f6' }}>● Promoter Shares (60.0%)</span>
-                <span style={{ color: '#10B981' }}>● Public Shares (35.0%)</span>
-                <span style={{ color: '#eab308' }}>● Local Shares (5.0%)</span>
-              </div>
+            {(d.promoterPercentage > 0 || d.publicPercentage > 0 || d.listedShares > 0) && (
+              <div style={{
+                background: '#151922',
+                border: '1px solid rgba(255, 255, 255, 0.07)',
+                borderRadius: 14,
+                padding: '14px',
+                marginBottom: 16
+              }}>
+                {(d.promoterPercentage > 0 || d.publicPercentage > 0) && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ color: '#3b82f6' }}>● Promoter Shares ({d.promoterPercentage > 0 ? d.promoterPercentage.toFixed(1) : '—'}%)</span>
+                      <span style={{ color: '#10B981' }}>● Public Shares ({d.publicPercentage > 0 ? d.publicPercentage.toFixed(1) : '—'}%)</span>
+                    </div>
 
-              <div style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', fontWeight: 800, fontSize: 11, textAlign: 'center', lineHeight: '26px' }}>
-                <div style={{ width: '60%', background: '#3b82f6', color: '#ffffff' }}>60.0%</div>
-                <div style={{ width: '35%', background: '#10B981', color: '#000000' }}>35.0%</div>
-                <div style={{ width: '5%', background: '#eab308', color: '#000000' }}>5%</div>
-              </div>
+                    <div style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', fontWeight: 800, fontSize: 11, textAlign: 'center', lineHeight: '26px' }}>
+                      <div style={{ width: `${d.promoterPercentage > 0 ? d.promoterPercentage : 50}%`, background: '#3b82f6', color: '#ffffff' }}>
+                        {d.promoterPercentage > 0 ? `${d.promoterPercentage.toFixed(1)}%` : ''}
+                      </div>
+                      <div style={{ width: `${d.publicPercentage > 0 ? d.publicPercentage : 50}%`, background: '#10B981', color: '#000000' }}>
+                        {d.publicPercentage > 0 ? `${d.publicPercentage.toFixed(1)}%` : ''}
+                      </div>
+                    </div>
+                  </>
+                )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 10 }}>
-                <span>Total Listed Shares:</span>
-                <span style={{ fontWeight: 800, color: '#ffffff' }}>{fmt(d.listedShares ? d.listedShares * 1000000 : 30750500)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: 'var(--text-muted)', marginTop: (d.promoterPercentage > 0 || d.publicPercentage > 0) ? 10 : 0 }}>
+                  <span>Total Listed Shares:</span>
+                  <span style={{ fontWeight: 800, color: '#ffffff' }}>
+                    {d.listedShares > 0 ? Number(d.listedShares).toLocaleString() : '—'}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* ── General Information ── */}
             <div style={{
@@ -1038,15 +1216,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Market Cap</span>
-                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{fmtCr((d.marketCap || 1254) * 10000000)}</span>
+                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{d.marketCap > 0 ? fmtCr(d.marketCap) : '—'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Float Market Cap</span>
-                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{fmtCr((d.marketCap || 1254) * 3500000)}</span>
+                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{d.marketCap > 0 && d.publicPercentage > 0 ? fmtCr(d.marketCap * (d.publicPercentage / 100)) : '—'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Paid Up Cap</span>
-                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{fmtCr((d.paidUpCapital || 307) * 10000000)}</span>
+                  <span style={{ fontWeight: 800, color: '#ffffff' }}>{d.paidUpCapital > 0 ? fmtCr(d.paidUpCapital) : '—'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Face Value</span>
@@ -1054,12 +1232,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-secondary)' }}>52W H/L</span>
-                  <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs {fmt(d.high52w || d.ltp * 1.25)} / {fmt(d.low52w || d.ltp * 0.75)}</span>
+                  <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs {fmt(d.high52w)} / {fmt(d.low52w)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Avg 120D</span>
-                  <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs {fmt(d.avg120 || d.ltp * 0.96)}</span>
-                </div>
+                {d.listingDate && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Listing Date</span>
+                    <span style={{ fontWeight: 800, color: '#ffffff' }}>{d.listingDate}</span>
+                  </div>
+                )}
+                {d.isin && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>ISIN</span>
+                    <span style={{ fontWeight: 800, color: '#ffffff' }}>{d.isin}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1463,6 +1649,64 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {/* ════ TAB 4: PRICE HISTORY (6M / 1Y) ════ */}
         {activeTab === 'history' && (
           <div>
+            {/* Today / Latest Session Closing Detail Card */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(21, 25, 34, 0.95))',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: 14,
+              padding: '12px 14px',
+              marginBottom: 14
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                    📊 Latest / Today Closing Detail
+                  </span>
+                  <span style={{ fontSize: 10, background: '#10B981', color: '#000000', padding: '1px 6px', borderRadius: 4, fontWeight: 800 }}>
+                    LATEST CLOSE
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 700 }}>
+                  📅 {d.businessDate || d.date || getLatestTradingDateStr()}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
+                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Close (LTP)</div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: (d.pChange || 0) >= 0 ? 'var(--bull)' : '#F43F5E', marginTop: 2 }}>
+                    Rs. {fmt(d.ltp)}
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: (d.pChange || 0) >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                    {(d.pChange || 0) >= 0 ? '+' : ''}{Number(d.pChange || 0).toFixed(2)}%
+                  </div>
+                </div>
+                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Open</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                    Rs. {fmt(d.open || d.ltp)}
+                  </div>
+                </div>
+                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>High / Low</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>
+                    H: {fmt(d.high || d.ltp)}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#F43F5E' }}>
+                    L: {fmt(d.low || d.ltp)}
+                  </div>
+                </div>
+                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Volume</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                    {(d.volume || d.totalTradedQuantity || 0).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    Qty Traded
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 1-Year Summary Card */}
             <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
@@ -1524,11 +1768,27 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   </tr>
                 </thead>
                 <tbody>
+                  {(!history12M || history12M.length === 0) && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        {realHistoryLoading ? 'Loading official historical price records from NEPSE...' : 'No historical daily price records returned from NEPSE.'}
+                      </td>
+                    </tr>
+                  )}
                   {[...(history12M || [])].reverse().map((h, idx) => {
                     const rowBull = (h.close >= h.open);
                     return (
-                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={{ padding: '8px', color: '#ffffff', fontWeight: 600 }}>{h.date}</td>
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: h.isToday ? 'rgba(16, 185, 129, 0.08)' : 'transparent' }}>
+                        <td style={{ padding: '8px', color: '#ffffff', fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span>{h.date}</span>
+                            {h.isToday && (
+                              <span style={{ fontSize: 9, background: 'rgba(16, 185, 129, 0.25)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.5)', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
+                                LATEST CLOSE
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--text-secondary)' }}>{fmt(h.open)}</td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--bull)' }}>{fmt(h.high)}</td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', color: '#F43F5E' }}>{fmt(h.low)}</td>
@@ -1547,6 +1807,55 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {/* ════ TAB 5: FUNDAMENTALS & FINANCIAL REPORTS ════ */}
         {activeTab === 'fundamentals' && (
           <div>
+            {/* Key Valuation Multiples Strip (P/E, Book Value, PBV, EPS) */}
+            <div style={{
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
+              borderRadius: 14,
+              padding: '14px 16px',
+              marginBottom: 16
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📊</span> Valuation Multiples (PEV & Fundamentals)
+                </div>
+                <div style={{ fontSize: 10.5, color: '#10B981', fontWeight: 700 }}>
+                  ● Live Exchange Ratios
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '10px 6px', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>P/E RATIO</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: d.pe > 0 ? '#38bdf8' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+                    {d.pe > 0 ? `${fmt(d.pe)}x` : '—'}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 3 }}>Price/Earnings</div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '10px 6px', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>BOOK VALUE</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: d.bookValue > 0 ? '#10B981' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+                    {d.bookValue > 0 ? `Rs. ${fmt(d.bookValue)}` : '—'}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 3 }}>BVPS (Net Worth)</div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '10px 6px', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>PBV (PEV)</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: d.pb > 0 ? '#a855f7' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+                    {d.pb > 0 ? `${fmt(d.pb)}x` : '—'}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 3 }}>Price-to-Book</div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '10px 6px', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>EPS (TTM)</div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: d.eps > 0 ? '#ffffff' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
+                    {d.eps > 0 ? `Rs. ${fmt(d.eps)}` : '—'}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 3 }}>Earnings/Share</div>
+                </div>
+              </div>
+            </div>
+
             {/* Benjamin Graham Classical Intrinsic Valuation Model Card */}
             <div style={{
               background: 'linear-gradient(135deg, #151922, #152238)',

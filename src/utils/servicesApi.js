@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { idbGet, idbSet, idbDel } from './indexedDb.js';
+import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
 
 const getProxy = () => {
   try {
@@ -26,21 +27,29 @@ const _cache = new Map();
 const _getCache = (key) => { const item = _cache.get(key); if (item && item.expiresAt > Date.now()) return item.data; _cache.delete(key); return null; };
 const _setCache = (key, data, ttlMs = 60000) => { _cache.set(key, { data, expiresAt: Date.now() + ttlMs }); };
 
-const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
+const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = false) => {
   const cacheKey = path + (options.body ? JSON.stringify(options.body) : '');
   
-  // 1. Fast in-memory cache check
-  const cached = _getCache(cacheKey);
-  if (cached !== null) return cached;
+  if (forceRefresh) {
+    _cache.delete(cacheKey);
+    idbDel(cacheKey).catch(() => {});
+  } else {
+    // 1. Fast in-memory cache check
+    const cached = _getCache(cacheKey);
+    if (cached !== null) return cached;
 
-  // 2. Fast IndexedDB persistent cache check
-  try {
-    const idbCached = await idbGet(cacheKey, false);
-    if (idbCached !== null) {
-      _setCache(cacheKey, idbCached, ttlMs);
-      return idbCached;
-    }
-  } catch (_) {}
+    // 2. Fast IndexedDB persistent cache check
+    try {
+      const idbCached = await idbGet(cacheKey, false);
+      if (idbCached !== null) {
+        _setCache(cacheKey, idbCached, ttlMs);
+        return idbCached;
+      }
+    } catch (_) {}
+  }
+
+  // Dynamic persistent TTL: fast-updating data (news, live prices) expires in 10-15 mins max, not 24 hours
+  const idbTtl = ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000);
 
   try {
     const url = PROXY + path;
@@ -50,7 +59,11 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
       const res = await CapacitorHttp.request({
         url,
         method: options.body ? 'POST' : 'GET',
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
+          ...(options.headers || {})
+        },
         data: options.body || undefined,
         connectTimeout: options.timeout || 25000,
         readTimeout: options.timeout || 25000
@@ -60,7 +73,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
         if (json && json.success !== false) {
           const data = json.data ?? json.results ?? json;
           _setCache(cacheKey, data, ttlMs);
-          idbSet(cacheKey, data, Math.max(ttlMs, 24 * 3600 * 1000)).catch(() => {});
+          idbSet(cacheKey, data, idbTtl).catch(() => {});
           return data;
         }
       }
@@ -73,7 +86,11 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
     const method = options.body ? 'POST' : 'GET';
     const resp = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', ...options.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
+        ...options.headers
+      },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: AbortSignal.timeout(options.timeout || 25000),
     });
@@ -90,7 +107,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000) => {
     }
     const data = json.data ?? json.results ?? json;
     _setCache(cacheKey, data, ttlMs);
-    idbSet(cacheKey, data, Math.max(ttlMs, 24 * 3600 * 1000)).catch(() => {});
+    idbSet(cacheKey, data, idbTtl).catch(() => {});
     return data;
   } catch (err) {
     console.warn('[servicesApi] Request failed:', path, err.message);
@@ -246,7 +263,28 @@ export const fetchBrokersDirectory = (search, location) => {
   const qs = params.toString();
   return _proxyFetch('/api/brokers/directory' + (qs ? '?' + qs : ''), {}, 86400000);
 };
-export const fetchMarketNews = () => _proxyFetch('/api/news/merolagani', {}, 360000);
+export const fetchMarketNews = async (forceRefresh = false) => {
+  if (forceRefresh) {
+    invalidateCache('/api/news');
+  }
+  const qs = forceRefresh ? '?refresh=true' : '';
+
+  // 1. Try unified NEPSE news (ShareSansar + MeroLagani)
+  let news = await _proxyFetch('/api/news/nepse' + qs, {}, 180000, forceRefresh);
+  if (Array.isArray(news) && news.length > 0) return news;
+
+  // 2. Fallback to Merolagani endpoint
+  news = await _proxyFetch('/api/news/merolagani' + qs, {}, 180000, forceRefresh);
+  if (Array.isArray(news) && news.length > 0) return news;
+
+  // 3. Direct client-side web fallback
+  try {
+    const directNews = await fetchMerolaganiNews();
+    if (Array.isArray(directNews) && directNews.length > 0) return directNews;
+  } catch (_) {}
+
+  return [];
+};
 export const fetchMarketStatus = () => _proxyFetch('/api/status', {}, 10000);
 export const fetchMeroShareIPOs = (token) => _proxyFetch('/api/meroshare/current-issues?token=' + encodeURIComponent(token), {}, 900000);
 export const fetchApplicationReport = (creds) => _proxyFetch('/api/meroshare/application-report', { body: creds, timeout: 20000 }, 600000);

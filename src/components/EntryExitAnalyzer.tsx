@@ -195,7 +195,7 @@ export function EntryExitAnalyzer({
       <InfoBanner type="info">
         <strong>Entry / Exit Analyzer Workstation:</strong> Quantitative decision engine combining
         moving-average structures, momentum velocity, volume confirmation, S/R clustering, and
-        historical analog backtesting (net of SEBON brokerage & 7.5% CGT).
+        historical analog backtesting (net of SEBON brokerage & 10% CGT Final Tax per Finance Act 2083).
       </InfoBanner>
 
       {/* ── SECTION A: Stock Header & Search Bar ── */}

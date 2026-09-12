@@ -21,7 +21,7 @@ export default function Resources({ onNavigateTab }) {
     { name: 'Support and Resistance', desc: 'Automated Pivot Points (S1/S2/S3 & R1/R2/R3) with proximity %', icon: Shield, color: '#6366f1', tag: 'Key Levels' },
     { name: 'Players Choices', desc: 'Scrips where top 3 brokers account for >55% of volume & absorb float', icon: Crown, color: '#8b5cf6', tag: 'Whale Accumulation' },
     { name: 'Unusual Trades', desc: 'High block trade frequency (>10,000 units) with high float impact', icon: ArrowLeftRight, color: '#f59e0b', tag: 'Smart Flow' },
-    { name: 'Circuit Setup', desc: 'Stocks within 2-3% of ±10% limit with >80% buy/sell depth imbalance', icon: Radio, color: '#06b6d4', tag: 'Limit Radar' },
+    { name: 'Circuit Setup', desc: 'Stocks within 2-3% of ±15% limit with >80% buy/sell depth imbalance', icon: Radio, color: '#06b6d4', tag: 'Limit Radar' },
     { name: 'Relative Strength', desc: 'Alpha score measuring stock outperformance relative to NEPSE index', icon: TrendingUp, color: '#10B981', tag: 'Leaderboard' },
     { name: 'Candlestick Patterns', desc: 'Automated recognition of Bullish Engulfing, Morning Star, Hammer', icon: Compass, color: '#ec4899', tag: 'Price Action' },
   ];

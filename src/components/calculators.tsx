@@ -86,7 +86,7 @@ export function BrokerageCalculator() {
     const totalCost = buyBrok + sellBrok + sebonBuy + sebonSell + dpFee;
     const grossProfit = sellTotal - buyTotal;
     const taxableProfit = grossProfit - totalCost;
-    const cgtRate = form.holdingType === 'individual_short' || form.holdingType === 'short' ? 0.075 : form.holdingType === 'long' ? 0.05 : 0.10;
+    const cgtRate = form.holdingType === 'individual_short' || form.holdingType === 'short' ? 0.10 : form.holdingType === 'long' ? 0.075 : 0.10;
     const cgt = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
     const netReturn = grossProfit - totalCost - cgt;
     const returnPct = (netReturn / buyTotal) * 100;
@@ -114,20 +114,20 @@ export function BrokerageCalculator() {
         title="SEBON Official Brokerage & CGT Calculator"
       />
       <InfoBanner>
-        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.40% down to 0.27%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (7.5% short-term &le;365d, 5% long-term &gt;365d, 10% corporate).
+        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (10% short-term &le;365d, 7.5% long-term &gt;365d, 10% corporate — Final Withholding Tax per Finance Act 2083).
       </InfoBanner>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <input type="number" placeholder="Buy Price NPR" value={form.buy} onChange={(e) => setForm((f) => ({ ...f, buy: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Sell Price NPR" value={form.sell} onChange={(e) => setForm((f) => ({ ...f, sell: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Quantity" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} className={inputCls} />
         <select value={form.holdingType} onChange={(e) => setForm((f) => ({ ...f, holdingType: e.target.value }))} className={inputCls}>
-          <option value="short">Individual Short &le;365d — 7.5% CGT</option>
-          <option value="long">Individual Long &gt;365d — 5% CGT</option>
+          <option value="short">Individual Short &le;365d — 10% CGT (Final)</option>
+          <option value="long">Individual Long &gt;365d — 7.5% CGT (Final)</option>
           <option value="institutional">Institutional / Corporate — 10% CGT</option>
         </select>
         <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={inputCls}>
-          <option value="statutory">Statutory Slabs (0.40% – 0.27%)</option>
-          <option value="jestha_2081">Jestha 2081 Revision (0.36% – 0.24%)</option>
+          <option value="jestha_2081">Current Active Slabs (0.36% – 0.24%)</option>
+          <option value="statutory">Legacy Statutory Slabs (0.40% – 0.27%)</option>
         </select>
       </div>
       <button onClick={calc} className={btnCls}>Calculate Complete Net Return</button>

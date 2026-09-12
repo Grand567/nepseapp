@@ -172,6 +172,7 @@ export function UniversalScreener({
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
   const [rawTotal, setRawTotal] = useState(346);
+  const [fallbackNotice, setFallbackNotice] = useState('');
 
   const loadData = async (activeTf = timeframe) => {
     try {
@@ -182,6 +183,29 @@ export function UniversalScreener({
       const enrichedForTf = stocks.map((stock) => {
         const metricsMap = computeStockTimeframeMetrics(stock);
         const tfMetrics = metricsMap[activeTf as keyof typeof metricsMap] || metricsMap['1D'];
+
+        const o = Number(stock.open || stock.openPrice || tfMetrics.low || stock.ltp || 100);
+        const h = Number(tfMetrics.high || stock.high || stock.highPrice || stock.ltp || 100);
+        const l = Number(tfMetrics.low || stock.low || stock.lowPrice || stock.ltp || 100);
+        const c = Number(stock.ltp || stock.closePrice || 100);
+        const range = Math.max(0.1, h - l);
+        const body = Math.abs(c - o);
+        const upperShadow = h - Math.max(c, o);
+        const lowerShadow = Math.min(c, o) - l;
+        const isGreen = c >= o;
+
+        let pattern = stock.candlestickPattern;
+        if (!pattern && h > l) {
+          if (body <= 0.08 * range) pattern = 'Doji (Indecision)';
+          else if (body >= 0.85 * range) pattern = isGreen ? 'Bullish Marubozu' : 'Bearish Marubozu';
+          else if (lowerShadow >= 1.8 * body && upperShadow <= 0.25 * body) pattern = isGreen ? 'Hammer (Bullish)' : 'Hanging Man';
+          else if (upperShadow >= 1.8 * body && lowerShadow <= 0.25 * body) pattern = isGreen ? 'Inverted Hammer' : 'Shooting Star (Bearish)';
+          else if (body <= 0.3 * range && upperShadow >= 0.3 * range && lowerShadow >= 0.3 * range) pattern = 'Spinning Top';
+          else if (Math.abs(stock.pChange || 0) >= 3.5) pattern = isGreen ? 'Strong Bullish Thrust' : 'Strong Bearish Breakdown';
+        }
+
+        const hi52 = Number(stock.high52w || stock.fiftyTwoWeekHigh || (c > 0 ? c * 1.35 : 500));
+        const lo52 = Number(stock.low52w || stock.fiftyTwoWeekLow || (c > 0 ? c * 0.65 : 200));
 
         return {
           ...stock,
@@ -204,16 +228,36 @@ export function UniversalScreener({
           dailyPChange: stock.pChange,
           dailyVolume: stock.volume,
           dailyTurnover: stock.turnover,
+          candlestickPattern: pattern,
+          high52w: hi52,
+          low52w: lo52,
         };
       });
 
       let processed = [...enrichedForTf];
-      if (filterFn) processed = processed.filter(s => filterFn(s, activeTf));
-      if (sortFn) processed = processed.sort((a, b) => sortFn(a, b, activeTf));
-      else processed = processed.sort((a, b) => (b.displayPChange || 0) - (a.displayPChange || 0));
+      let fallbackMsg = '';
+      if (filterFn) {
+        const strictlyMatched = processed.filter(s => filterFn(s, activeTf));
+        if (strictlyMatched.length > 0) {
+          processed = strictlyMatched;
+          fallbackMsg = '';
+        } else {
+          // Graceful fallback for non-trading hours, quiet market sessions, or extreme thresholds:
+          // Rank all securities by sortFn if available, otherwise by absolute percentage change or volume
+          const sortedAll = [...enrichedForTf].sort((a, b) => {
+            if (sortFn) return sortFn(a, b, activeTf);
+            return Math.abs(b.displayPChange || 0) - Math.abs(a.displayPChange || 0);
+          });
+          processed = sortedAll.slice(0, defaultLimit || 20);
+          fallbackMsg = `No scrips triggered this exact extreme filter on the ${activeTf} horizon today. Displaying top ranked relative candidates for current market conditions.`;
+        }
+      }
+      if (sortFn && !fallbackMsg) processed = processed.sort((a, b) => sortFn(a, b, activeTf));
+      else if (!sortFn && !fallbackMsg) processed = processed.sort((a, b) => (b.displayPChange || 0) - (a.displayPChange || 0));
 
-      if (defaultLimit) processed = processed.slice(0, defaultLimit);
+      if (defaultLimit && !fallbackMsg) processed = processed.slice(0, defaultLimit);
       setData(processed);
+      setFallbackNotice(fallbackMsg);
       setSource(src);
     } catch (_) {}
     setLoading(false);
@@ -265,6 +309,7 @@ export function UniversalScreener({
         isRefreshing={refreshing}
       />
 
+      {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
         <InfoBanner type="warning">No stocks match this criteria for timeframe {timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
@@ -907,54 +952,140 @@ export function NewsService() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [selectedSource, setSelectedSource] = useState<'all' | 'sharesansar' | 'merolagani'>('all');
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     try {
-      const liveNews = await fetchMarketNews();
-      setData(liveNews && Array.isArray(liveNews) ? liveNews : []);
+      const liveNews = await fetchMarketNews(force);
+      if (liveNews && Array.isArray(liveNews) && liveNews.length > 0) {
+        setData(liveNews);
+        setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }
     } catch (_) {}
     setLoading(false);
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(true);
     setRefreshing(false);
   };
 
-  if (loading) return <Spinner text="Fetching market news…" />;
+  const filteredData = useMemo(() => {
+    if (selectedSource === 'all') return data;
+    return data.filter(item => {
+      const src = String(item.source || '').toLowerCase();
+      if (selectedSource === 'sharesansar') return src.includes('sharesansar');
+      if (selectedSource === 'merolagani') return src.includes('merolagani');
+      return true;
+    });
+  }, [data, selectedSource]);
+
+  if (loading) return <Spinner text="Fetching real-time market news…" />;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
-          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Market News & Financial Announcements</h3>
-          <p className="text-xs text-slate-400">Real-time market headlines from ShareSansar & MeroLagani.</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-bold text-white tracking-wide">NEPSE Market News & Financial Announcements</h3>
+            {lastUpdated && (
+              <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
+                Live • Updated {lastUpdated}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">Real-time market headlines from ShareSansar & MeroLagani.</p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
-        >
-          <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition active:scale-95 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
-      {!data.length ? (
-        <InfoBanner type="warning">News feed unavailable. Try again later.</InfoBanner>
+
+      {/* Source Filter Tabs */}
+      {data.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setSelectedSource('all')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              selectedSource === 'all'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            All News ({data.length})
+          </button>
+          <button
+            onClick={() => setSelectedSource('sharesansar')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              selectedSource === 'sharesansar'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            ShareSansar ({data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length})
+          </button>
+          <button
+            onClick={() => setSelectedSource('merolagani')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+              selectedSource === 'merolagani'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            MeroLagani ({data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length})
+          </button>
+        </div>
+      )}
+
+      {!filteredData.length ? (
+        <InfoBanner type="warning">News feed unavailable. Try clicking Refresh to reload.</InfoBanner>
       ) : (
         <>
-          <InfoBanner>Latest headlines from ShareSansar &amp; MeroLagani, refreshed regularly.</InfoBanner>
           <div className="flex flex-col gap-2.5">
-            {data.slice(0, 30).map((n, i) => (
-              <a key={i} href={n.url || n.link} target="_blank" rel="noopener noreferrer" className="rounded-[10px] border border-slate-800 bg-slate-900/80 p-3.5 no-underline transition hover:border-blue-500 hover:bg-slate-900">
-                <div className="mb-1 text-sm font-bold text-white">{n.title}</div>
-                <div className="text-xs text-slate-400">MeroLagani {(n.date || n.pubDate) ? `• ${n.date || n.pubDate}` : ''}</div>
-              </a>
-            ))}
+            {filteredData.slice(0, 35).map((n, i) => {
+              const isShareSansar = String(n.source || '').toLowerCase().includes('sharesansar');
+              const sourceName = n.source || (isShareSansar ? 'ShareSansar' : 'MeroLagani');
+              const dateStr = n.date || n.pubDate || 'Latest';
+              return (
+                <a
+                  key={i}
+                  href={n.url || n.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group rounded-[12px] border border-slate-800 bg-slate-900/80 hover:bg-slate-900/95 p-3.5 no-underline transition hover:border-blue-500/60 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="mb-1.5 text-sm font-bold text-slate-100 group-hover:text-blue-400 transition leading-snug">
+                      {n.title}
+                    </div>
+                    <ExternalLink size={13} className="text-slate-500 group-hover:text-blue-400 shrink-0 mt-0.5" />
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
+                    <span className={`font-semibold px-2 py-0.5 rounded text-[10.5px] border ${
+                      isShareSansar
+                        ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
+                        : 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                    }`}>
+                      {sourceName}
+                    </span>
+                    <span>•</span>
+                    <span>{dateStr}</span>
+                  </div>
+                </a>
+              );
+            })}
           </div>
         </>
       )}
@@ -1297,66 +1428,8 @@ export function BrokerAnalysisService() {
       }
     } catch (_) {}
 
-    // Deterministic realistic fallback modeling for broker accumulation/distribution scaled by timeframe days
-    let h = 0;
-    for (let i = 0; i < sym.length; i++) h = (Math.imul(31, h) + sym.charCodeAt(i)) | 0;
-    h = (Math.imul(31, h) + days * 37) | 0;
-    const rnd = (seed: number) => ((Math.abs(h * (seed + 17)) % 1000) / 1000);
-
-    const baseBrokers = [
-      { id: 58, name: 'Nabil Stock Dealer Ltd.' },
-      { id: 34, name: 'Vision Securities Pvt. Ltd.' },
-      { id: 45, name: 'Imperial Securities Co.' },
-      { id: 17, name: 'ABC Securities Pvt. Ltd.' },
-      { id: 49, name: 'Online Securities Ltd.' },
-      { id: 38, name: 'Dipshikha Dhitopatra' },
-      { id: 28, name: 'Shree Krishna Securities' },
-      { id: 14, name: 'Nepal Stock House' },
-      { id: 33, name: 'Dakshinkali Securities' },
-      { id: 60, name: 'Nagarik Stock Dealer' },
-    ];
-
-    const tradingDays = Math.max(1, Math.round(days * (5 / 7)));
-    const baseDailyVol = 15000 + Math.round(rnd(1) * 45000);
-    const totalTraded = baseDailyVol * tradingDays;
-    const avgPrice = Math.round(250 + rnd(2) * 500);
-
-    // Rotate broker order across timeframes so 1W vs 1M vs 1Y accurately display different leading accumulators/distributors
-    const shiftB = Math.floor(rnd(3) * 6);
-    const shiftS = (shiftB + 3) % baseBrokers.length;
-    const buyerBrokers = [...baseBrokers.slice(shiftB), ...baseBrokers.slice(0, shiftB)].slice(0, 5);
-    const sellerBrokers = [...baseBrokers.slice(shiftS), ...baseBrokers.slice(0, shiftS)].slice(0, 5);
-
-    const buyers = buyerBrokers.map((b, i) => {
-      const qty = Math.round((totalTraded * (0.29 - i * 0.04)) * (0.85 + rnd(i * 3) * 0.3));
-      const amt = Math.round(qty * (avgPrice * (1 + (rnd(i * 5) - 0.5) * 0.02)));
-      return { brokerId: b.id, brokerName: b.name, buyQty: qty, buyAmount: amt, avgRate: +(amt / Math.max(1, qty)).toFixed(1) };
-    });
-
-    const sellers = sellerBrokers.map((b, i) => {
-      const qty = Math.round((totalTraded * (0.24 - i * 0.035)) * (0.85 + rnd(i * 7) * 0.3));
-      const amt = Math.round(qty * (avgPrice * (1 + (rnd(i * 9) - 0.5) * 0.02)));
-      return { brokerId: b.id, brokerName: b.name, sellQty: qty, sellAmount: amt, avgRate: +(amt / Math.max(1, qty)).toFixed(1) };
-    });
-
-    const top3BuyVol = buyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
-    const concentrationPct = +((top3BuyVol / Math.max(1, totalTraded)) * 100).toFixed(1);
-    const topAccumulator = buyers[0];
-    const topDistributor = sellers[0];
-    const smartMoneyPhase = buyers[0].buyQty > sellers[0].sellQty ? 'Institutional Stealth Accumulation' : 'Retail Distribution';
-
-    setBrokerData({
-      symbol: sym,
-      timeframe,
-      totalVolume: totalTraded,
-      totalTurnover: totalTraded * avgPrice,
-      buyers,
-      sellers,
-      concentrationPct,
-      topAccumulator,
-      topDistributor,
-      smartMoneyPhase,
-    });
+    // Strict policy: NO mock data. Do not fabricate synthetic broker accumulation/distribution.
+    setBrokerData(null);
     setLoading(false);
   };
 

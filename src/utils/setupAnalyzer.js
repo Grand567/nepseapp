@@ -65,7 +65,7 @@ import { analyzePriceAction } from './priceActionEngine.js';
 // 0.  CONSTANTS
 // ══════════════════════════════════════════════════════════════════
 
-const NEPSE_DAILY_CIRCUIT_PCT = 5;   // ±5% max intraday move
+const NEPSE_DAILY_CIRCUIT_PCT = 15;  // ±15% max intraday move (since April 20, 2026; previously ±10%)
 const MIN_HISTORY_DAYS        = 80;  // minimum candles for analysis
 
 // ══════════════════════════════════════════════════════════════════
@@ -487,11 +487,12 @@ export function simulateForwardOutcome(candles, signalIdx, {
 
   const returnPct = +((exitPrice - entryPrice) / entryPrice * 100).toFixed(2);
 
-  // NEPSE friction: 0.40% brokerage + 0.015% SEBON each way, plus 7.5% CGT on net profit
-  const buyCost = entryPrice * 1.00415;
-  const sellGross = exitPrice * (1 - 0.00415);
+  // NEPSE friction: 0.36%-0.33% brokerage + 0.015% SEBON each way (~0.375%), plus 10.0% CGT on net profit (Finance Act 2083)
+  const feeRate = 0.00375;
+  const buyCost = entryPrice * (1 + feeRate);
+  const sellGross = exitPrice * (1 - feeRate);
   const grossDiff = sellGross - buyCost;
-  const cgt = grossDiff > 0 ? grossDiff * 0.075 : 0;
+  const cgt = grossDiff > 0 ? grossDiff * 0.10 : 0;
   const netSell = sellGross - cgt;
   const netReturnPct = +(((netSell - buyCost) / buyCost) * 100).toFixed(2);
 
@@ -729,7 +730,20 @@ function computeEffectiveWeights(availabilityMap) {
   return { effectiveWeights, unavailableFactors: unavailable };
 }
 
-function scoreToVerdict(score) {
+export function scoreToVerdict(score, riskGate = {}) {
+  if (riskGate.isCircuitTrap) {
+    return 'NO TRADE (CIRCUIT CEILING TRAP)';
+  }
+  if (riskGate.isSubFriction) {
+    return 'NO TRADE (UPSIDE < TRANSACTION FRICTION)';
+  }
+  if (riskGate.isUnfavorableRRR) {
+    return 'NO TRADE (UNFAVORABLE RISK/REWARD)';
+  }
+  if (riskGate.isHardCeilingDowntrend) {
+    return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
+  }
+
   if (score >= 85) return 'VERY STRONG SETUP';
   if (score >= 70) return 'STRONG ENTRY ZONE';
   if (score >= 58) return 'BUY / ACCUMULATE';
@@ -742,11 +756,15 @@ function scoreToVerdict(score) {
 // 10. RATIONALE BUILDER (Stage 3: data-source disclosure added)
 // ══════════════════════════════════════════════════════════════════
 
-function buildRationale({ analogResult, strategyTrackRecord, technicalScore, momentumScore100, levels, dataSource }) {
+function buildRationale({ analogResult, strategyTrackRecord, technicalScore, momentumScore100, levels, dataSource, riskGate }) {
   const lines = [];
 
   if (!dataSource?.real) {
     lines.push('⚠️ Price history is estimated (live data unavailable). Backtest results are based on simulated data and should not be relied upon.');
+  }
+
+  if (riskGate?.warning) {
+    lines.push(`🛑 EXECUTION RISK GATE: ${riskGate.warning}`);
   }
 
   if (analogResult?.stats) {
@@ -774,7 +792,7 @@ function buildRationale({ analogResult, strategyTrackRecord, technicalScore, mom
   lines.push(`Entry: ${levels.entryZone.label} · T1: ${levels.target1.label} · Stop: ${levels.stopLoss.label} · R:R = ${levels.rrr1}:1.`);
 
   if (levels.target1?.capped || levels.target2?.capped) {
-    lines.push('⚠️ One or more targets were capped to remain within NEPSE ±5% circuit limits for the stated holding period.');
+    lines.push('⚠️ One or more targets were capped to remain within NEPSE ±15% circuit limits for the stated holding period.');
   }
 
   return lines;
@@ -1019,9 +1037,31 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   } catch (_) { /* keep default */ }
 
   // ── Missing-data-aware combined score ────────────────────────
+  // ── Missing-data-aware combined score ────────────────────────
   const sampleSize = analogResult?.stats?.sampleSize ?? 0;
   const analogWinRate = analogResult?.stats?.winRate ?? null;
   const strategyWinRate = strategyTrackRecord?.winRate ?? null;
+
+  const marketCtx = options.marketContext || options.marketRegime || null;
+  const sectorCtx = options.sectorContext || options.sectorPerformance || null;
+  const hasMarketContext = Boolean(marketCtx);
+  const hasSectorContext = Boolean(sectorCtx);
+
+  let marketScore = null;
+  if (hasMarketContext) {
+    if (typeof marketCtx === 'number') marketScore = marketCtx;
+    else if (marketCtx?.regime === 'bull' || marketCtx === 'bull' || marketCtx?.direction === 'up') marketScore = 80;
+    else if (marketCtx?.regime === 'bear' || marketCtx === 'bear' || marketCtx?.direction === 'down') marketScore = 25;
+    else marketScore = 50;
+  }
+
+  let sectorScore = null;
+  if (hasSectorContext) {
+    if (typeof sectorCtx === 'number') sectorScore = sectorCtx;
+    else if (sectorCtx?.pChange > 0.5 || sectorCtx?.score > 60) sectorScore = 75;
+    else if (sectorCtx?.pChange < -0.5 || sectorCtx?.score < 40) sectorScore = 35;
+    else sectorScore = 50;
+  }
 
   const availabilityMap = {
     trend:             techDataAvailable,
@@ -1032,8 +1072,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     volume:            candles.some((c) => c.volume > 0),
     historicalAnalogs: analogWinRate !== null,
     strategyRecord:    strategyWinRate !== null,
-    marketContext:     false,
-    sectorContext:     false,
+    marketContext:     hasMarketContext,
+    sectorContext:     hasSectorContext,
   };
 
   const { effectiveWeights, unavailableFactors } = computeEffectiveWeights(availabilityMap);
@@ -1048,8 +1088,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     volume:            technicalReport?.volume?.score ?? (candles.some((c) => c.volume > 0) ? Math.min(100, 50 + ((stock?.volumeSurgeRatio ?? 1) - 1) * 30) : null),
     historicalAnalogs: analogWinRate !== null ? analogWinRate            : null,
     strategyRecord:    strategyWinRate !== null ? strategyWinRate        : null,
-    marketContext:     null,
-    sectorContext:     null,
+    marketContext:     marketScore,
+    sectorContext:     sectorScore,
   };
 
   // Weighted sum using only available factors
@@ -1219,10 +1259,39 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     ...(technicalReport?.volume?.rvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${technicalReport.volume.rvol.toFixed(2)}x) — risk of exit slippage`] : []),
   ];
 
+  // ── Risk & Execution Gate (Section 1, 6.2, 6.3) ───────────────
+  const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
+  const upperCeiling = +(prevClose * 1.15).toFixed(1);
+  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
+  const isCircuitTrap = distToCeilingPct <= 1.5; // Within 1.5% of +15% ceiling
+
+  const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
+  // Round-trip fee friction requires ~0.8-0.9% gain to clear commission, SEBON fee & CGT
+  const isSubFriction = target1UpsidePct > 0 && target1UpsidePct < 0.90;
+
+  const isUnfavorableRRR = levels.rrr1 > 0 && levels.rrr1 < 1.4;
+
+  const ema50Val = technicalReport?.trend?.ema?.ema50 || 0;
+  const isBelow50EMA = ema50Val > 0 && ltp < ema50Val;
+  const isBearMarket = marketScore !== null && marketScore <= 35;
+  const isHardCeilingDowntrend = isBelow50EMA && isBearMarket;
+
+  const riskGate = {
+    isCircuitTrap,
+    isSubFriction,
+    isUnfavorableRRR,
+    isHardCeilingDowntrend,
+    warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
+           : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
+           : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
+           : isHardCeilingDowntrend ? 'Asset is below 50 EMA during a broader market bear regime.'
+           : null
+  };
+
   // Evidence confidence from analog engine
   const evidenceConfidence = analogResult?.confidence?.level ?? 'LOW';
-  const verdict = scoreToVerdict(combinedScore)
-    + (sampleSize < 3 ? ' (Low Evidence Confidence)' : '');
+  const verdict = scoreToVerdict(combinedScore, riskGate)
+    + (sampleSize < 3 && !riskGate.warning ? ' (Low Evidence Confidence)' : '');
 
   // ── Data quality ─────────────────────────────────────────────
   const dataQuality = buildDataQuality({
@@ -1230,8 +1299,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     technicalDataAvailable: techDataAvailable,
     analogSampleSize:      sampleSize,
     strategyTradeCount:    strategyTrackRecord?.totalTrades ?? 0,
-    marketContextAvailable: false,
-    sectorContextAvailable: false,
+    marketContextAvailable: hasMarketContext,
+    sectorContextAvailable: hasSectorContext,
     corporateActionEvents:  caEvents.length,
     score:                 combinedScore,
   });
@@ -1244,6 +1313,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     momentumScore100,
     levels,
     dataSource,
+    riskGate,
   });
 
   // ── Final output ──────────────────────────────────────────────
@@ -1264,6 +1334,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     setupType,
     dataSource,
     dataQuality,
+    riskGate,
 
     // ── Levels (circuit-aware) ──
     levels,
@@ -1294,8 +1365,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     breakout:         priceActionReport?.breakout,
     candles:          adjustedCandles,
 
-    marketContext:    { available: false },
-    sectorContext:    { available: false },
+    marketContext:    { available: hasMarketContext, score: marketScore, raw: marketCtx },
+    sectorContext:    { available: hasSectorContext, score: sectorScore, raw: sectorCtx },
     signalAgreement,
     bullishFactors,
     bearishFactors,

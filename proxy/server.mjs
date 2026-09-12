@@ -378,10 +378,10 @@ const calcMACD = (pChange) => ({
 });
 
 const parseMoney = (str) => {
-  if (!str) return NaN;
-  const cleaned = str.replace(/[^\d.+\-]/g, '').trim();
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? 0 : val;
+  if (!str) return 0;
+  const cleaned = String(str).replace(/,/g, '').trim();
+  const match = cleaned.match(/[-+]?\d+(?:\.\d+)?/);
+  return match ? parseFloat(match[0]) : 0;
 };
 
 import { Nepse } from '@rumess/nepse-api';
@@ -1576,11 +1576,15 @@ app.post('/api/ipo-result/bulk-check', async (req, res) => {
    Available caching: 2 hours
    ═══════════════════════════════════════════════════ */
 // Internal helper for Stock Fundamental & Technical Detail
-export async function getStockDetailInternal(symbol) {
+export async function getStockDetailInternal(symbol, forceRefresh = false) {
   symbol = (symbol || '').toUpperCase().trim();
   const cacheKey = `stock-detail-${symbol}`;
-  const cached = getCache(cacheKey);
-  if (cached) return cached;
+  if (forceRefresh) {
+    cache.delete(cacheKey);
+  } else {
+    const cached = getCache(cacheKey);
+    if (cached && (cached.bookValue > 0 || cached.eps > 0 || cached.marketPrice > 0)) return cached;
+  }
 
   const detail = {
     symbol,
@@ -1655,7 +1659,7 @@ export async function getStockDetailInternal(symbol) {
 
     const rows = $('table.table-zeromargin tr, .company-info tr, .fundamental-info tr, table tr');
     rows.each((_, tr) => {
-      const cells = $(tr).find('td');
+      const cells = $(tr).find('td, th');
       let label = '', value = '';
       if (cells.length >= 2) {
         label = normalizeText($(cells[0]).text()).toLowerCase();
@@ -1672,17 +1676,38 @@ export async function getStockDetailInternal(symbol) {
       if (!label) return;
 
       if (!detail.sector && label.includes('sector')) detail.sector = value;
+      if (!detail.companyName && (label.includes('company name') || label.includes('name of company'))) detail.companyName = value;
+      if (!detail.marketPrice && (label.includes('market price') || label === 'ltp' || label.includes('last traded'))) {
+        detail.marketPrice = parseMoney(value);
+        if (!detail.closePrice) detail.closePrice = detail.marketPrice;
+      }
+      if (label.includes('shares outstanding') || label.includes('outstanding shares')) {
+        const shares = parseMoney(value);
+        if (shares > 0) {
+          detail.sharesOutstanding = shares;
+          if (!detail.listedShares) detail.listedShares = shares;
+        }
+      }
+      if (label.includes('listed shares') || label.includes('total shares')) {
+        const shares = parseMoney(value);
+        if (shares > 0) {
+          detail.listedShares = shares;
+          if (!detail.sharesOutstanding) detail.sharesOutstanding = shares;
+        }
+      }
       if (!detail.high52w && label.includes('52') && label.includes('high')) {
         const parts = value.split(/[-/]/);
         detail.high52w = parseMoney(parts[0]);
         if (parts.length > 1) detail.low52w = parseMoney(parts[1]);
       }
       if (label.includes('eps') || label.includes('earning per share')) detail.eps = parseMoney(value) || detail.eps;
-      if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price.*earning')) detail.pe = parseMoney(value) || detail.pe;
+      if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price.*earning') || label === 'pe') detail.pe = parseMoney(value) || detail.pe;
       if (label.includes('book value')) detail.bookValue = parseMoney(value) || detail.bookValue;
-      if (label === 'pbv' || label.includes('p/b') || label.includes('price.*book')) detail.pbv = parseMoney(value) || detail.pbv;
-      if (label.includes('% dividend') || (label.includes('dividend') && label.includes('%'))) detail.dividend = parseMoney(value.replace('%', '')) || detail.dividend;
-      if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%'))) detail.bonus = parseMoney(value.replace('%', '')) || detail.bonus;
+      if (label === 'pbv' || label.includes('p/b') || label.includes('price.*book') || label.includes('price to book')) detail.pbv = parseMoney(value) || detail.pbv;
+      if (label.includes('% dividend') || (label.includes('dividend') && label.includes('%')) || label === 'cash dividend') detail.dividend = parseMoney(value.replace('%', '')) || detail.dividend;
+      if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%')) || label === 'bonus share') detail.bonus = parseMoney(value.replace('%', '')) || detail.bonus;
+      if (label.includes('market cap') || label.includes('market capitalization')) detail.marketCap = parseMoney(value) || detail.marketCap;
+      if (label.includes('paid') && label.includes('capital')) detail.paidUpCapital = parseMoney(value) || detail.paidUpCapital;
     });
 
     if (detail.eps === 0 || detail.bookValue === 0) {
@@ -1692,14 +1717,15 @@ export async function getStockDetailInternal(symbol) {
           timeout: 8000
         });
         const $ss = cheerio.load(ssRes.data);
-        $ss('.company-detail-table tr, .fundamentals tr').each((_, tr) => {
-          const tds = $ss(tr).find('td');
+        $ss('.company-detail-table tr, .fundamentals tr, table tr').each((_, tr) => {
+          const tds = $ss(tr).find('td, th');
           if (tds.length >= 2) {
             const label = $ss(tds[0]).text().replace(/\s+/g, ' ').trim().toLowerCase();
             const val   = $ss(tds[1]).text().replace(/\s+/g, ' ').trim();
             if (detail.eps === 0 && (label.includes('eps') || label.includes('earning per share'))) detail.eps = parseMoney(val);
             if (detail.bookValue === 0 && label.includes('book value')) detail.bookValue = parseMoney(val);
             if (detail.pe === 0 && label.includes('p/e')) detail.pe = parseMoney(val);
+            if (detail.pbv === 0 && (label === 'pbv' || label.includes('p/b'))) detail.pbv = parseMoney(val);
           }
         });
       } catch (_) {}
@@ -1725,8 +1751,9 @@ export async function getStockDetailInternal(symbol) {
 
 app.get('/api/stock-detail/:symbol', async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
+  const forceRefresh = req.query.refresh === 'true';
   try {
-    const detail = await getStockDetailInternal(symbol);
+    const detail = await getStockDetailInternal(symbol, forceRefresh);
     res.json({ success: true, data: detail });
   } catch (error) {
     console.error(`[stock-detail] Error for ${symbol}:`, error.message);
@@ -2028,8 +2055,12 @@ app.get('/api/mero/history/:symbol', async (req, res) => {
 /* ENDPOINT — Merolagani News Feed */
 app.get('/api/news/merolagani', async (req, res) => {
   const cacheKey = 'merolagani_news';
-  const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, fromCache: true });
+  if (req.query.refresh === 'true') {
+    cache.delete(cacheKey);
+  } else {
+    const cached = getCache(cacheKey);
+    if (cached) return res.json({ success: true, data: cached, fromCache: true });
+  }
 
   try {
     const response = await axios.get('https://merolagani.com/NewsList.aspx', {
@@ -2549,76 +2580,12 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     setCache(cacheKey, data, 30 * 60 * 1000);
     res.json({ success: true, data, source: 'nepse-api' });
   } catch (err) {
-    console.warn(`[broker-analysis] Live floorsheet unavailable for ${symbol}, computing multi-timeframe model (${days} days):`, err.message);
-    const baseBrokers = [
-      { id: 58, name: 'Nabil Stock Dealer Ltd.' },
-      { id: 34, name: 'Vision Securities Pvt. Ltd.' },
-      { id: 45, name: 'Imperial Securities Co.' },
-      { id: 17, name: 'ABC Securities Pvt. Ltd.' },
-      { id: 49, name: 'Online Securities Ltd.' },
-      { id: 38, name: 'Dipshikha Dhitopatra' },
-      { id: 28, name: 'Shree Krishna Securities' },
-      { id: 14, name: 'Nepal Stock House' },
-      { id: 33, name: 'Dakshinkali Securities' },
-      { id: 60, name: 'Nagarik Stock Dealer' },
-    ];
-    let h = 0;
-    for (let i = 0; i < symbol.length; i++) h = (Math.imul(31, h) + symbol.charCodeAt(i)) | 0;
-    h = (Math.imul(31, h) + days * 37) | 0;
-    const rnd = (seed) => ((Math.abs(h * (seed + 17)) % 1000) / 1000);
-
-    const tradingDays = Math.max(1, Math.round(days * (5 / 7)));
-    const baseDailyVol = 15000 + Math.round(rnd(1) * 45000);
-    const totalVolume = baseDailyVol * tradingDays;
-    const avgPrice = Math.round(250 + rnd(2) * 500);
-    const totalAmount = totalVolume * avgPrice;
-
-    // Timeframe-dependent broker rotation so different horizons highlight different market leaders
-    const shiftB = Math.floor(rnd(3) * 6);
-    const shiftS = (shiftB + 3) % baseBrokers.length;
-    const buyerBrokers = [...baseBrokers.slice(shiftB), ...baseBrokers.slice(0, shiftB)].slice(0, 5);
-    const sellerBrokers = [...baseBrokers.slice(shiftS), ...baseBrokers.slice(0, shiftS)].slice(0, 5);
-
-    const buyers = buyerBrokers.map((b, i) => {
-      const qty = Math.round((totalVolume * (0.29 - i * 0.04)) * (0.85 + rnd(i * 3) * 0.3));
-      const amt = Math.round(qty * (avgPrice * (1 + (rnd(i * 5) - 0.5) * 0.02)));
-      return { brokerId: b.id, brokerName: b.name, buyQty: qty, buyAmount: amt, avgRate: +(amt / Math.max(1, qty)).toFixed(1) };
+    console.warn(`[broker-analysis] Live floorsheet unavailable for ${symbol}:`, err.message);
+    res.status(503).json({
+      success: false,
+      message: `Floorsheet records unavailable from NEPSE for broker analysis: ${err.message}`,
+      data: null
     });
-    const sellers = sellerBrokers.map((b, i) => {
-      const qty = Math.round((totalVolume * (0.24 - i * 0.035)) * (0.85 + rnd(i * 7) * 0.3));
-      const amt = Math.round(qty * (avgPrice * (1 + (rnd(i * 9) - 0.5) * 0.02)));
-      return { brokerId: b.id, brokerName: b.name, sellQty: qty, sellAmount: amt, avgRate: +(amt / Math.max(1, qty)).toFixed(1) };
-    });
-
-    const top3Buy = buyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
-    const concentrationPct = +((top3Buy / Math.max(1, totalVolume)) * 100).toFixed(1);
-    const topAccumulator = buyers[0];
-    const topDistributor = sellers[0];
-    const smartMoneyPhase = buyers[0].buyQty > sellers[0].sellQty ? 'Institutional Stealth Accumulation' : 'Retail Distribution';
-
-    const fallbackData = {
-      symbol,
-      period: `${days} days`,
-      timeframe: days <= 7 ? '1W' : days <= 30 ? '1M' : days <= 90 ? '3M' : days <= 180 ? '6M' : '1Y',
-      tradingDays,
-      totalVolume,
-      totalAmount,
-      totalTurnover: totalAmount,
-      concentrationPct,
-      buyers,
-      sellers,
-      topAccumulator,
-      topDistributor,
-      smartMoneyPhase,
-      topBuyers: buyers.map(b => ({ broker: String(b.brokerId), name: b.brokerName, buyQty: b.buyQty, buyAmt: b.buyAmount, avgBuyRate: b.avgRate })),
-      topSellers: sellers.map(s => ({ broker: String(s.brokerId), name: s.brokerName, sellQty: s.sellQty, sellAmt: s.sellAmount, avgSellRate: s.avgRate })),
-      topNetBuyers: [topAccumulator],
-      topNetSellers: [topDistributor],
-      adSignal: smartMoneyPhase.includes('Accumulation') ? 'Accumulation' : 'Distribution',
-      adStrength: `${(concentrationPct * 1.5).toFixed(1)}%`
-    };
-    setCache(cacheKey, fallbackData, 15 * 60 * 1000);
-    res.json({ success: true, data: fallbackData, source: 'modeled-broker-flow' });
   }
 });
 
@@ -4778,99 +4745,95 @@ app.get('/api/analysis/:symbol/technical', async (req, res) => {
 });
 
 // ============================================================
-// 15: NEWS FROM RSS
+// 15: LIVE MULTI-SOURCE NEPSE NEWS (ShareSansar & MeroLagani)
 // ============================================================
 app.get('/api/news/nepse', async (req, res) => {
   try {
-    // Check 30-minute news cache
-    const cached = getCache('news-nepse');
-    if (cached && cached.length > 0) {
-      return res.json({
-        success: true,
-        isMockData: false,
-        source: 'CACHED - RSS feeds (ShareSansar, MeroLagani, NepalInvestor)',
-        count: cached.length,
-        data: cached
-      });
-    }
-
-    let allNews = [];
-    const sources = ['ShareSansar', 'MeroLagani', 'NepalInvestor'];
-    const feedUrls = [
-      'https://www.sharesansar.com/feed',
-      'https://merolagani.com/rss.aspx',
-      'https://www.nepalinvestor.net/feed/',
-    ];
-
-    // ✅ FIXED: Run rss-parser and axios/cheerio scraper in parallel (not as fallback)
-    // This ensures at least one method succeeds even if the other is blocked
-    const [rssResults, axiosResults] = await Promise.allSettled([
-      // Method 1: rss-parser
-      (async () => {
-        try {
-          const Parser = (await import('rss-parser')).default;
-          const parser = new Parser({ timeout: 12000 });
-          const feeds = await Promise.allSettled(feedUrls.map(u => parser.parseURL(u)));
-          const news = [];
-          feeds.forEach((result, i) => {
-            if (result.status === 'fulfilled') {
-              result.value.items.forEach(item => {
-                news.push({ title: item.title, link: item.link, pubDate: item.pubDate, content: item.contentSnippet || '', source: sources[i] });
-              });
-            }
-          });
-          return news;
-        } catch (_) { return []; }
-      })(),
-      // Method 2: axios + cheerio raw XML scraping
-      (async () => {
-        const news = [];
-        const results = await Promise.allSettled(feedUrls.map((u, i) =>
-          axios.get(u, { timeout: 12000, headers: { ...HEADERS, 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } })
-        ));
-        results.forEach((r, idx) => {
-          if (r.status === 'fulfilled' && r.value?.data) {
-            const $xml = cheerio.load(r.value.data, { xmlMode: true });
-            $xml('item').each((_, el) => {
-              const title = $xml(el).find('title').text().replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-              const link = $xml(el).find('link').text().trim() || $xml(el).find('guid').text().trim();
-              const pubDate = $xml(el).find('pubDate').text().trim();
-              const desc = $xml(el).find('description').text().replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').trim().substring(0, 200);
-              if (title && title.length > 5) {
-                news.push({ title, link, pubDate, content: desc, source: sources[idx] });
-              }
-            });
-          }
+    const forceRefresh = req.query.refresh === 'true';
+    if (forceRefresh) {
+      cache.delete('news-nepse');
+    } else {
+      const cached = getCache('news-nepse');
+      if (cached && cached.length > 0) {
+        return res.json({
+          success: true,
+          isMockData: false,
+          source: 'CACHED - ShareSansar & MeroLagani Live Feeds',
+          count: cached.length,
+          data: cached
         });
-        return news;
-      })(),
-    ]);
-
-    // Merge and deduplicate by link
-    const rssNews = rssResults.status === 'fulfilled' ? rssResults.value : [];
-    const axiosNews = axiosResults.status === 'fulfilled' ? axiosResults.value : [];
-    const allRaw = [...rssNews, ...axiosNews];
-    const seenLinks = new Set();
-    for (const item of allRaw) {
-      if (item.link && !seenLinks.has(item.link)) {
-        seenLinks.add(item.link);
-        allNews.push(item);
-      } else if (!item.link) {
-        allNews.push(item);
       }
     }
 
-    allNews.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
-    const newsSlice = allNews.slice(0, 60);
+    const allNews = [];
+    const seenTitles = new Set();
 
-    // Cache for 30 minutes if we got data
+    // 1. Scrape ShareSansar (English & Corporate Announcements)
+    try {
+      const resSS = await axios.get('https://www.sharesansar.com/category/latest', {
+        headers: HEADERS,
+        timeout: 9000
+      });
+      const $ss = cheerio.load(resSS.data);
+      $ss('a[href*="/newsdetail/"]').each((_, el) => {
+        const href = $ss(el).attr('href') || '';
+        const text = $ss(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !seenTitles.has(text)) {
+          seenTitles.add(text);
+          const parent = $ss(el).closest('.featured-news-list, .news-list, div');
+          const dateText = parent.find('.text-muted, .date, time, span').first().text().trim() || 'Latest';
+          allNews.push({
+            title: text,
+            link: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
+            url: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
+            source: 'ShareSansar',
+            pubDate: dateText,
+            date: dateText
+          });
+        }
+      });
+    } catch (errSS) {
+      console.warn('[news/nepse] ShareSansar fetch error:', errSS.message);
+    }
+
+    // 2. Scrape MeroLagani (Nepali Market Updates & Financial News)
+    try {
+      const resML = await axios.get('https://merolagani.com/NewsList.aspx', {
+        headers: HEADERS,
+        timeout: 9000
+      });
+      const $ml = cheerio.load(resML.data);
+      $ml('a[href*="NewsDetail.aspx"]').each((i, el) => {
+        const href = $ml(el).attr('href') || '';
+        const text = $ml(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 15 && !seenTitles.has(text)) {
+          seenTitles.add(text);
+          const parent = $ml(el).closest('.media-body, .media, div.panel-body, div');
+          const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
+          const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+          allNews.push({
+            id: href.match(/newsID=(\d+)/)?.[1] || String(i),
+            title: text,
+            link: fullUrl,
+            url: fullUrl,
+            source: 'MeroLagani',
+            pubDate: dateText,
+            date: dateText
+          });
+        }
+      });
+    } catch (errML) {
+      console.warn('[news/nepse] MeroLagani fetch error:', errML.message);
+    }
+
+    const newsSlice = allNews.slice(0, 45);
     if (newsSlice.length > 0) {
-      setCache('news-nepse', newsSlice, 30 * 60 * 1000);
+      setCache('news-nepse', newsSlice, 10 * 60 * 1000); // 10 minute cache
     }
 
     const sourceLabel = newsSlice.length > 0
-      ? 'LIVE - RSS feeds (ShareSansar, MeroLagani, NepalInvestor)'
-      : 'RSS feeds unavailable - no articles fetched';
+      ? 'LIVE - ShareSansar & MeroLagani'
+      : 'News feeds temporarily unavailable';
 
     res.json({
       success: true,
@@ -4880,7 +4843,7 @@ app.get('/api/news/nepse', async (req, res) => {
       data: newsSlice
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    res.status(500).json({ success: false, error: err.message, isMockData: false, data: [] });
   }
 });
 

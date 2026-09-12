@@ -145,9 +145,13 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
     }
   }
 
-  let cgtRate = 0.075;
+  // Capital Gains Tax (CGT) per Finance Act 2083 (effective Shrawan 1, 2083 / mid-July 2026):
+  // Short-Term (<= 365 days): 10.0% (Final Withholding Tax)
+  // Long-Term (> 365 days): 7.5% (Final Withholding Tax)
+  // Institutional / Corporate: 10.0%
+  let cgtRate = 0.10;
   if (isInstitutional) cgtRate = 0.10;
-  else if (isLongTerm) cgtRate = 0.05;
+  else if (isLongTerm) cgtRate = 0.075;
 
   const taxableProfit = Math.max(0, netProfitBase);
   const cgt = taxableProfit * cgtRate;
@@ -163,6 +167,7 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
     dpFee,
     cgt,
     cgtRate,
+    isFinalTax: true,
     totalExpenses,
     netReceivable,
     netProfitLoss,

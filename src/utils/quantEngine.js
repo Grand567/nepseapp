@@ -267,23 +267,67 @@ export function calculateFundamentalScore(stock) {
   const npl = Number(stock?.npl) || 2.5;
   const car = Number(stock?.car) || 12.8;
   const sector = (stock?.sector || '').toLowerCase();
-
   let score = 50;
+
+  // Sector-relative Valuation Benchmarks (NEPSE medians)
+  // Commercial banks trade 10-18x, Hydropower 15-30x, Insurance 20-30x, Microfinance 18-32x
+  let sectorMedianPE = 20;
+  let sectorMedianPB = 2.0;
+
+  if (sector.includes('commercial') || (sector.includes('bank') && !sector.includes('development'))) {
+    sectorMedianPE = 14;
+    sectorMedianPB = 1.25;
+  } else if (sector.includes('development') || sector.includes('finance')) {
+    sectorMedianPE = 18;
+    sectorMedianPB = 1.6;
+  } else if (sector.includes('hydro')) {
+    sectorMedianPE = 24;
+    sectorMedianPB = 2.2;
+  } else if (sector.includes('insurance') || sector.includes('life')) {
+    sectorMedianPE = 25;
+    sectorMedianPB = 2.6;
+  } else if (sector.includes('micro')) {
+    sectorMedianPE = 26;
+    sectorMedianPB = 3.0;
+  } else if (sector.includes('hotel') || sector.includes('tourism') || sector.includes('manufacturing')) {
+    sectorMedianPE = 28;
+    sectorMedianPB = 3.2;
+  }
 
   // EPS check
   if (eps >= 25) score += 12;
   else if (eps >= 15) score += 8;
   else if (eps <= 0) score -= 25;
 
-  // P/E valuation
-  if (pe > 0 && pe <= 15) score += 12;
-  else if (pe > 15 && pe <= 24) score += 8;
-  else if (pe > 45) score -= 12;
+  // Sector-Relative P/E Valuation (Never evaluate across sectors without relative baseline)
+  if (pe > 0) {
+    if (pe <= sectorMedianPE * 0.85) {
+      score += 12; // Undervalued relative to sector peer median
+    } else if (pe <= sectorMedianPE * 1.15) {
+      score += 8;  // Fair sector valuation
+    } else if (pe > sectorMedianPE * 1.75 || pe > 45) {
+      score -= 12; // Overextended valuation
+    }
 
-  // P/B valuation
-  if (pb > 0 && pb <= 1.8) score += 10;
-  else if (pb > 1.8 && pb <= 2.8) score += 5;
-  else if (pb > 5.0) score -= 10;
+    // Penalize momentum crowding / FOMO buying where P/E > 40 without supporting EPS growth
+    if (pe >= 40 && eps < 15) {
+      score -= 10;
+    }
+  }
+
+  // Sector-Relative P/B Valuation
+  if (pb > 0) {
+    // Bank specific: sub-1.0 P/BV indicates undervaluation if asset quality (NPL) is sound
+    if (sector.includes('bank') && pb < 1.0 && npl <= 3.0) {
+      score += 12;
+    } else if (pb <= sectorMedianPB * 0.85) {
+      score += 10;
+    } else if (pb <= sectorMedianPB * 1.25) {
+      score += 5;
+    } else if (pb > sectorMedianPB * 2.0) {
+      score -= 10;
+    }
+  }
 
   // ROE quality
   if (roe >= 15) score += 12;
@@ -294,7 +338,7 @@ export function calculateFundamentalScore(stock) {
   if (divYield >= 4.0) score += 8;
   else if (divYield >= 2.0) score += 4;
 
-  // Sector-specific adjustments for Banks & Microfinance (NPL & CAR rules)
+  // Sector-specific adjustments for Banks & Microfinance (NPL & CAR regulatory rules)
   if (sector.includes('bank') || sector.includes('finance') || sector.includes('micro')) {
     if (npl <= 2.0) score += 6;
     else if (npl > 5.0) score -= 15; // High Non-Performing Loan penalty
@@ -1337,7 +1381,9 @@ export function calculateBrokerDominanceIndex(buyVol = 0, sellVol = 0, totalVol 
 
 /**
  * 24. NEPSE Circuit-Breaker Proximity & Liquidity Guard
- * Evaluates +/- 10% daily price bands and warns on discrete lower circuit execution freezes
+ * Evaluates +/- 15% daily individual stock price bands (effective April 20, 2026 under
+ * Securities Trading Operation Fourth Amendment Regulations 2082; previously +/- 10%)
+ * and warns on discrete lower circuit execution freezes and upper circuit upside traps.
  */
 export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, turnover = 0, avgTurnover30D = 0) {
   const p = Number(ltp) || 100;
@@ -1346,16 +1392,18 @@ export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, 
   const tnov = Number(turnover) || (p * vol);
   const avgTnov = Number(avgTurnover30D) || tnov;
 
-  const floor = +(prev * 0.90).toFixed(1);
-  const ceiling = +(prev * 1.10).toFixed(1);
+  // Individual stock daily price band is +/- 15% from previous close (since April 20, 2026)
+  const floor = +(prev * 0.85).toFixed(1);
+  const ceiling = +(prev * 1.15).toFixed(1);
 
-  const distToFloorPct = prev > 0 ? +(((p - floor) / prev) * 100).toFixed(2) : 10;
-  const distToCeilingPct = prev > 0 ? +(((ceiling - p) / prev) * 100).toFixed(2) : 10;
+  const distToFloorPct = prev > 0 ? +(((p - floor) / prev) * 100).toFixed(2) : 15;
+  const distToCeilingPct = prev > 0 ? +(((ceiling - p) / prev) * 100).toFixed(2) : 15;
 
   const isAtLowerCircuit = p <= floor;
   const isAtUpperCircuit = p >= ceiling;
   const isNearLowerCircuit = distToFloorPct <= 2.5 && !isAtLowerCircuit;
   const isNearUpperCircuit = distToCeilingPct <= 2.5 && !isAtUpperCircuit;
+  const isCircuitCeilingTrap = distToCeilingPct <= 1.5; // Capped upside vs extreme downside risk
 
   const isIlliquid = (tnov > 0 && tnov < 3000000) || (vol > 0 && vol < 5000);
   const turnoverCr = +(tnov / 10000000).toFixed(2);
@@ -1367,19 +1415,23 @@ export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, 
   if (isAtLowerCircuit) {
     status = 'LOWER_CIRCUIT_LOCKED';
     severity = 'CRITICAL';
-    warningMessage = `🚨 CRITICAL LOWER CIRCUIT FREEZE: Rs. ${p} is locked at -10% limit (Rs. ${floor}). Buy demand (bids) = 0. Market stop-loss orders will NOT execute.`;
+    warningMessage = `🚨 CRITICAL LOWER CIRCUIT FREEZE: Rs. ${p} is locked at -15% limit (Rs. ${floor}). Buy demand (bids) = 0. Market stop-loss orders will NOT execute.`;
   } else if (isNearLowerCircuit) {
     status = 'LOWER_CIRCUIT_PROXIMITY';
     severity = 'HIGH';
-    warningMessage = `⚠️ CIRCUIT PROXIMITY RISK: Only ${distToFloorPct}% above -10% lower circuit (Rs. ${floor}). Stop-loss execution faces zero-bid liquidity freeze risk.`;
+    warningMessage = `⚠️ CIRCUIT PROXIMITY RISK: Only ${distToFloorPct}% above -15% lower circuit (Rs. ${floor}). Stop-loss execution faces zero-bid liquidity freeze risk.`;
   } else if (isAtUpperCircuit) {
     status = 'UPPER_CIRCUIT_LOCKED';
     severity = 'INFO';
-    warningMessage = `🔥 UPPER CIRCUIT LOCKED: Stock locked at +10% ceiling (Rs. ${ceiling}). Strong demand queue.`;
+    warningMessage = `🔥 UPPER CIRCUIT LOCKED: Stock locked at +15% ceiling (Rs. ${ceiling}). Strong demand queue.`;
+  } else if (isCircuitCeilingTrap) {
+    status = 'UPPER_CIRCUIT_CEILING_TRAP';
+    severity = 'HIGH';
+    warningMessage = `⚠️ CIRCUIT CEILING TRAP: Stock is within ${distToCeilingPct}% of +15% ceiling (Rs. ${ceiling}). Risk/reward is heavily unfavorable for new buys.`;
   } else if (isNearUpperCircuit) {
     status = 'UPPER_CIRCUIT_PROXIMITY';
     severity = 'INFO';
-    warningMessage = `🚀 Approaching +10% circuit ceiling (Rs. ${ceiling}, ${distToCeilingPct}% headroom).`;
+    warningMessage = `🚀 Approaching +15% circuit ceiling (Rs. ${ceiling}, ${distToCeilingPct}% headroom).`;
   } else if (isIlliquid) {
     status = 'THIN_LIQUIDITY';
     severity = 'MEDIUM';
@@ -1395,6 +1447,7 @@ export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, 
     isAtUpperCircuit,
     isNearLowerCircuit,
     isNearUpperCircuit,
+    isCircuitCeilingTrap,
     isIlliquid,
     turnoverCr,
     status,
@@ -1405,14 +1458,26 @@ export function calculateCircuitAndLiquidityMetrics(ltp, prevClose, volume = 0, 
 
 /**
  * 25. Corporate Action Price Normalization
- * Detects sudden overnight step drops (>10%) in historical series that match bonus/rights book closures
- * and scales preceding bars backwards to prevent false technical crashes (e.g. false RSI plunge).
+ * Normalizes historical series for Bonus Share distribution and Rights Offerings.
+ * Uses theoretical adjustment formulas when metadata is provided:
+ *   - Bonus Share: P_adj = (P_market * 100) / (100 + %_bonus)
+ *   - Rights Share: P_adj = (P_market + (P_issue * %_right)) / (1 + %_right)
+ * Falls back to overnight step-drop detection (>8.5% to 52%) when exact metadata is absent.
  */
-export function normalizeCorporateActionPrices(candles = []) {
+export function normalizeCorporateActionPrices(candles = [], corporateActions = []) {
   if (!candles || candles.length < 5) return candles || [];
 
   const sorted = [...candles].sort((a, b) => new Date(a.date || a.t || 0) - new Date(b.date || b.t || 0));
   const normalized = [];
+
+  // Map known corporate actions by ISO date if provided
+  const caMap = new Map();
+  if (Array.isArray(corporateActions)) {
+    corporateActions.forEach(ca => {
+      const d = (ca.date || ca.bookClosureDate || ca.announcedDate || '').slice(0, 10);
+      if (d) caMap.set(d, ca);
+    });
+  }
 
   let adjFactor = 1.0;
   let corporateActionCount = 0;
@@ -1420,6 +1485,7 @@ export function normalizeCorporateActionPrices(candles = []) {
   for (let i = sorted.length - 1; i >= 0; i--) {
     const curr = sorted[i];
     const prev = i > 0 ? sorted[i - 1] : null;
+    const currDate = (curr.date || curr.t || '').slice(0, 10);
 
     const currClose = Number(curr.close ?? curr.c ?? curr.ltp ?? 100);
     const prevClose = prev ? Number(prev.close ?? prev.c ?? prev.ltp ?? currClose) : currClose;
@@ -1434,7 +1500,31 @@ export function normalizeCorporateActionPrices(candles = []) {
       isAdjusted: adjFactor !== 1.0
     });
 
-    // If there is an overnight step drop matching bonus/rights book closures (8.5% to 52%),
+    // Check for explicit corporate action metadata matching this book closure
+    const explicitCA = caMap.get(currDate);
+    if (explicitCA && prevClose > 0) {
+      if (explicitCA.type === 'bonus' || explicitCA.bonusPct > 0) {
+        const bPct = Number(explicitCA.bonusPct || explicitCA.ratio || 0);
+        if (bPct > 0) {
+          const ratio = 100 / (100 + bPct);
+          adjFactor *= ratio;
+          corporateActionCount++;
+          continue;
+        }
+      } else if (explicitCA.type === 'rights' || explicitCA.rightPct > 0) {
+        const rPct = Number(explicitCA.rightPct || explicitCA.ratio || 0) / 100;
+        const issuePrice = Number(explicitCA.issuePrice || 100);
+        if (rPct > 0 && prevClose > 0) {
+          const theoreticalEx = (prevClose + (issuePrice * rPct)) / (1 + rPct);
+          const ratio = theoreticalEx / prevClose;
+          adjFactor *= ratio;
+          corporateActionCount++;
+          continue;
+        }
+      }
+    }
+
+    // Heuristic: If overnight step drop matches bonus/rights book closures (8.5% to 52%),
     // scale all preceding (older) historical bars backwards.
     if (prev && prevClose > 0 && currClose > 0) {
       const dropPct = ((prevClose - currClose) / prevClose) * 100;

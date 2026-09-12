@@ -93,10 +93,11 @@ function synthesizeGuruQuantReport({
   const isCounterTrendBounce = zone.zone === 'Counter-Trend Bounce';
   const isSeasonalityCaution = zone.zone === 'Seasonality Caution';
   const hasHeavyBrokerDumping = zone.brokerScore?.adSignal === 'Distribution' && (zone.brokerScore?.adStrength >= 40 || zone.brokerScore?.scoreDelta <= -15);
+  const isSeverelyOvervalued = graham.marginOfSafetyPct <= -50; // Price > 50% above intrinsic value
 
   if (isCounterTrendBounce) {
-    rec = 'AVOID / WAIT';
-    conf = 72;
+    rec = 'REDUCE / AVOID NEW ENTRY';
+    conf = 78;
     riskLvl = 'HIGH';
     sentiment = 'BEARISH';
   } else if (isSeasonalityCaution) {
@@ -109,16 +110,28 @@ function synthesizeGuruQuantReport({
     conf = 86;
     riskLvl = 'VERY_HIGH';
     sentiment = 'BEARISH';
-  } else if (zone.zone.includes('Buying') || (graham.marginOfSafetyPct > 15 && wyckoff.phase.includes('Spring'))) {
-    rec = 'STRONG BUY';
-    conf = 92;
-    riskLvl = 'LOW';
-    sentiment = 'VERY_BULLISH';
-  } else if (zone.zone.includes('Entry') || adi.trend.includes('Accumulation') || wyckoff.phase.includes('Markup')) {
+  } else if (zone.zone.includes('Buying') && !isCounterTrendBounce && !isSeverelyOvervalued) {
+    if (graham.marginOfSafetyPct > 15 && wyckoff.phase.includes('Spring')) {
+      rec = 'STRONG BUY';
+      conf = 88;
+      riskLvl = 'LOW';
+      sentiment = 'VERY_BULLISH';
+    } else {
+      rec = 'BUY / ACCUMULATE';
+      conf = 80;
+      riskLvl = 'MEDIUM';
+      sentiment = 'BULLISH';
+    }
+  } else if (zone.zone.includes('Entry') && !isCounterTrendBounce) {
     rec = 'BUY / ACCUMULATE';
-    conf = 85;
-    riskLvl = 'LOW';
+    conf = 82;
+    riskLvl = 'MEDIUM';
     sentiment = 'BULLISH';
+  } else if (isSeverelyOvervalued) {
+    rec = 'REDUCE / AVOID NEW ENTRY';
+    conf = 80;
+    riskLvl = 'HIGH';
+    sentiment = 'BEARISH';
   } else if (zone.zone.includes('Exit') || rsi > 72 || adi.trend.includes('Bearish Distribution')) {
     rec = 'REDUCE / TAKE PROFIT';
     conf = 84;
@@ -130,6 +143,28 @@ function synthesizeGuruQuantReport({
     riskLvl = 'VERY_HIGH';
     sentiment = 'VERY_BEARISH';
   }
+
+  // Dynamic Three-Pillar Quantitative Scores (1–10 scale)
+  let fundScore = 5;
+  if (graham.marginOfSafetyPct > 20) fundScore = 9;
+  else if (graham.marginOfSafetyPct > 5) fundScore = 8;
+  else if (graham.marginOfSafetyPct >= -10) fundScore = 6;
+  else if (graham.marginOfSafetyPct >= -30) fundScore = 5;
+  else if (graham.marginOfSafetyPct >= -100) fundScore = 4;
+  else if (graham.marginOfSafetyPct >= -300) fundScore = 3;
+  else fundScore = 2; // e.g. -649% margin of safety gives 2/10
+
+  let techScore = 5;
+  if (zone.zone === 'Entry Zone') techScore = 8;
+  else if (zone.zone === 'Buying Zone') techScore = 7;
+  else if (isCounterTrendBounce) techScore = 3; // Price below 50 EMA in downtrend
+  else if (zone.zone === 'Exit Zone') techScore = 4;
+  else if (zone.zone === 'Selling Zone') techScore = 2;
+
+  let smartScore = 5;
+  if (zone.brokerScore?.adSignal === 'Accumulation') smartScore = Math.min(9, 6 + Math.round(zone.brokerScore.adStrength / 25));
+  else if (hasHeavyBrokerDumping) smartScore = 2;
+  else if (vol < 1000 || (volumeZ?.zScore && volumeZ.zScore < -1.0)) smartScore = 3; // Thin volume participation
 
   // Key institutional reasons
   const reasons = [];
@@ -161,7 +196,7 @@ function synthesizeGuruQuantReport({
   const risks = [
     `Broad NEPSE Index sensitivity (${marketData?.data?.changePercent ? `Market ${marketData.data.changePercent}%` : 'Market consolidation'})`,
     `Capital invalidation floor at Rs. ${targets.stopLoss.price} (-${targets.stopLoss.pct}% ATR stop)`,
-    `Daily circuit breaker limit of ±10% on NEPSE NOTS`
+    `Daily individual stock circuit band of ±15% on NEPSE NOTS`
   ];
 
   if (hasHeavyBrokerDumping && brokerAnalysis?.topDistributor?.brokerName) {
@@ -171,15 +206,29 @@ function synthesizeGuruQuantReport({
     risks.push(zone.hydroSeason.warning);
   }
 
+  let actionZoneBadge = zone.zoneBadge;
+  if (isCounterTrendBounce) {
+    actionZoneBadge = '⚠️ COUNTER-TREND BOUNCE (RESISTANCE AHEAD)';
+  } else if (zone.zone.includes('Downtrend') || zone.isConfirmedBearishStructure) {
+    actionZoneBadge = '🔴 BEARISH STRUCTURE (BELOW 50 EMA)';
+  } else if (isSeverelyOvervalued && (zone.zone.includes('Holding') || zone.zone.includes('Buying') || zone.zone.includes('Entry'))) {
+    actionZoneBadge = '⚠️ VALUATION RISK (REDUCE / HOLD)';
+  }
+
   return {
     recommendation: rec,
     actionZone: zone.zone,
-    actionZoneBadge: zone.zoneBadge,
+    actionZoneBadge,
     confidence: conf,
     riskLevel: riskLvl,
     sentiment,
     currentPrice: ltp,
     todayChange: pChg,
+    scores: {
+      fundamental: fundScore,
+      technical: techScore,
+      smartMoney: smartScore
+    },
     // Candlestick & Market Structure (NEW — previously missing entirely)
     candlestickPattern,
     marketStructure,
@@ -220,7 +269,7 @@ function synthesizeGuruQuantReport({
     investmentTips: isCounterTrendBounce
       ? `Do NOT enter. Price is below the 50 EMA structural ceiling. Await a confirmed weekly close above EMA before any allocation.`
       : `Accumulate within ${targets.entryZone.label}. Place hard stop-loss at ${targets.stopLoss.label} and trail stops higher as targets are achieved.`,
-    nepseSpecific: `Keep circuit limits (±10%) in mind. In the Nepal market, volume spikes above 1.5x on flat price indicate silent institutional absorption prior to breakout notices.`,
+    nepseSpecific: `Keep individual stock circuit limits (±15%) and index halt rules in mind. In the Nepal market, volume spikes above 1.5x on flat price indicate silent institutional absorption prior to breakout notices.`,
     circuitMetrics: circuitMetrics || null,
     backtestResult: backtestResult || null,
     signalTriggers: signalTriggers || []
@@ -519,16 +568,16 @@ const CircuitAndLiquidityShield = ({ circuit }) => {
           <ShieldAlert size={14} className={isSevere ? 'text-rose-400 animate-pulse' : 'text-amber-400'} />
           <span>NEPSE Circuit-Breaker & Liquidity Guard</span>
         </span>
-        <span className="font-mono text-[10px] text-slate-400">Daily ±10% Limits</span>
+        <span className="font-mono text-[10px] text-slate-400">Daily ±15% Limits</span>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Lower Floor (-10%)</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase">Lower Floor (-15%)</div>
           <div className="font-mono font-bold text-rose-400 mt-0.5">Rs. {circuit.floor}</div>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Upper Ceiling (+10%)</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase">Upper Ceiling (+15%)</div>
           <div className="font-mono font-bold text-emerald-400 mt-0.5">Rs. {circuit.ceiling}</div>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2">
@@ -552,7 +601,7 @@ const CircuitAndLiquidityShield = ({ circuit }) => {
       )}
 
       <div className="text-[11px] text-slate-400 leading-tight">
-        <span className="font-semibold text-slate-300">Stop-Loss Execution Advisory:</span> In discrete circuit sell-offs (-10%), total buy demand drops to 0. Stop-losses will not execute via market orders during circuit locks.
+        <span className="font-semibold text-slate-300">Stop-Loss Execution Advisory:</span> In discrete circuit sell-offs (-15%), total buy demand drops to 0. Stop-losses will not execute via market orders during circuit locks.
       </div>
     </div>
   );
@@ -1308,13 +1357,29 @@ export default function AiAnalyst({
     if (!sym) return;
     setLoading(true);
 
-    addMessage({ role: 'user', content: `Analyze ${sym}: Price History, Accumulation/Distribution, Fundamentals, and Targets` });
+    const userMsg = {
+      role: 'user',
+      content: `Analyze ${sym}: Price History, Accumulation/Distribution, Fundamentals, and Targets`,
+      timestamp: new Date().toLocaleTimeString()
+    };
 
     const loadingId = Date.now();
-    setMessages(prev => [...prev, {
-      role: 'assistant', isLoading: true,
-      id: loadingId, timestamp: new Date().toLocaleTimeString()
-    }]);
+    const loadingMsg = {
+      role: 'assistant',
+      isLoading: true,
+      id: loadingId,
+      timestamp: new Date().toLocaleTimeString()
+    };
+
+    // When next stock analyzed is done, delete previous stock's result
+    setMessages(prev => {
+      const nonStock = prev.filter(m =>
+        !m.guruData?.isWelcome &&
+        m.analysisType !== 'stock' &&
+        !(m.role === 'user' && typeof m.content === 'string' && m.content.startsWith('Analyze '))
+      );
+      return [...nonStock, userMsg, loadingMsg];
+    });
 
     try {
       // 1. Fetch real market feeds in parallel including historical OHLCV candles & floorsheet broker analysis
@@ -1356,6 +1421,8 @@ export default function AiAnalyst({
         high52w: high52,
         low52w: low52,
         rsi: technical?.data?.indicators?.rsi || 50,
+        candles,
+        history: candles,
         brokerAdRatio: brokerData.adRatio,
         brokerAdSignal: brokerData.adSignal,
         brokerAdStrength: brokerData.adStrength,
@@ -1523,6 +1590,7 @@ export default function AiAnalyst({
         m.id === loadingId ? {
           role: 'assistant',
           content: `❌ Analysis failed: ${err.message}`,
+          analysisType: 'stock',
           timestamp: new Date().toLocaleTimeString()
         } : m
       ));

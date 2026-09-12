@@ -286,8 +286,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Follow smart-money turnover for consistent outperformance." />
   ),
   'circuit-setup': () => (
-    <UniversalScreener filterFn={(s) => Math.abs(s.pChange) >= 8} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
-      banner={{ type: 'warning', text: 'NEPSE circuit: ±10% daily limit. Wired to /today-price.' }}
+    <UniversalScreener filterFn={(s) => Math.abs(s.pChange) >= 12} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
+      banner={{ type: 'warning', text: 'NEPSE circuit: ±15% daily limit (since April 20, 2026). Wired to /today-price.' }}
       insight="Upper circuit = strong buying pressure. Wait for next-day confirmation — circuits often open gap-up then fade." />
   ),
   'candlestick-patterns': () => (
@@ -376,26 +376,26 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       tips={['Watch for promoter pledging disclosures', 'Track promoter buying/selling windows', 'High pledging + falling price = avoid']} />
   ),
   'dividend-kings': () => (
-    <UniversalScreener filterFn={(s) => s.eps > 25} sortFn={(a, b) => b.eps - a.eps}
-      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => `Rs. ${v?.toFixed(2)}` }]}
-      banner={{ type: 'success', text: 'Consistent high-EPS names — the dividend payer pool.' }}
+    <UniversalScreener filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
+      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
+      banner={{ type: 'success', text: 'Consistent dividend & earnings capacity names across all sectors.' }}
       insight="Dividend kings compound wealth silently for decades — reinvest payouts." />
   ),
   'dividend-leaders': () => (
-    <UniversalScreener filterFn={(s) => s.eps && s.eps > 20} sortFn={(a, b) => b.eps - a.eps}
-      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => `Rs. ${v?.toFixed(2)}` }]}
+    <UniversalScreener filterFn={(s) => ((s.eps && s.eps >= 12) || (s.dividendYield && s.dividendYield > 0))} sortFn={(a, b) => (b.eps || 0) - (a.eps || 0)}
+      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'High EPS = strong dividend capacity. Wired to /CompanyDetails fundamentals.' }}
       insight="High EPS + low P/E = value + income combo." />
   ),
   'fundamentals-pro': () => (
-    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe < 25 && s.eps > 15 && s.bookValue > 100} sortFn={(a, b) => a.pe - b.pe}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right' }, { key: 'eps', label: 'EPS', align: 'right' }]}
+    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 12 || s.bookValue >= 90)} sortFn={(a, b) => a.pe - b.pe}
+      customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'Pro-grade fundamental filter for long-term investors.' }}
       insight="Quality + reasonable price beats cheap + weak, every cycle." />
   ),
   'fundamental-scanner': () => (
-    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe < 20 && s.eps > 15} sortFn={(a, b) => a.pe - b.pe}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right' }, { key: 'eps', label: 'EPS', align: 'right' }]}
+    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 10 || s.bookValue >= 80)} sortFn={(a, b) => a.pe - b.pe}
+      customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'Fundamentally strong + undervalued. Wired to /fundamental-ratios.' }}
       insight="Low P/E + high EPS = value + growth combo." />
   ),

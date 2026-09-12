@@ -45,20 +45,20 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       passed = false;
     }
 
-    // Test 2: Seller Calculations (Short Term vs Long Term CGT)
+    // Test 2: Seller Calculations (Short Term vs Long Term CGT - Finance Act 2083)
     await new Promise(r => setTimeout(r, 300));
-    addLog('info', '🧪 Test 2: Seller Calculations (Short-term Individual 7.5%)');
+    addLog('info', '🧪 Test 2: Seller Calculations (Short-term Individual 10.0% Final Tax)');
     try {
       const sellShort = calculateSellDetails(100, 200, 150, 'short');
-      const expectedCGT = 367.5;
-      const expectedReceivable = 19532.5;
+      const expectedCGT = 490.0;
+      const expectedReceivable = 19410.0;
 
       const tolerance = 0.01;
       const diffCGT = Math.abs(sellShort.cgt - expectedCGT);
       const diffReceivable = Math.abs(sellShort.netReceivable - expectedReceivable);
 
       if (diffCGT < tolerance && diffReceivable < tolerance) {
-        addLog('success', '✅ Test 2 Passed: Short-term (7.5%) CGT and receivables match formulas.');
+        addLog('success', '✅ Test 2 Passed: Short-term (10.0%) CGT and receivables match Finance Act 2083.');
       } else {
         throw new Error(`Expected CGT: ${expectedCGT}, Got: ${sellShort.cgt}. Expected Net: ${expectedReceivable}, Got: ${sellShort.netReceivable}`);
       }

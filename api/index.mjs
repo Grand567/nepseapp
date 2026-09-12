@@ -58,10 +58,10 @@ const calcMACD = (pChange) => ({
 });
 
 const parseMoney = (str) => {
-  if (!str) return NaN;
-  const cleaned = str.replace(/[^\d.+\-]/g, '').trim();
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? 0 : val;
+  if (!str) return 0;
+  const cleaned = String(str).replace(/,/g, '').trim();
+  const match = cleaned.match(/[-+]?\d+(?:\.\d+)?/);
+  return match ? parseFloat(match[0]) : 0;
 };
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1298,13 +1298,17 @@ app.post('/api/ipo-result/bulk-check', async (req, res) => {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    ENDPOINT 12 â€” Stock Fundamental Detail (NEPSE Official + Merolagani/ShareSansar)
    Available caching: 2 hours
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */
 app.get('/api/stock-detail/:symbol', async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const cacheKey = `stock-detail-${symbol}`;
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return res.json({ success: true, data: cached, cached: true });
+  if (req.query.refresh === 'true') {
+    cache.delete(cacheKey);
+  } else {
+    const cached = getCache(cacheKey);
+    if (cached && (cached.bookValue > 0 || cached.eps > 0 || cached.marketPrice > 0)) {
+      return res.json({ success: true, data: cached, cached: true });
+    }
   }
 
   const detail = {
@@ -1370,7 +1374,7 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
 
     const rows = $('table.table-zeromargin tr, .company-info tr, .fundamental-info tr, table tr');
     rows.each((_, tr) => {
-      const cells = $(tr).find('td');
+      const cells = $(tr).find('td, th');
       let label = '', value = '';
       if (cells.length >= 2) {
         label = normalizeText($(cells[0]).text()).toLowerCase();
@@ -1387,22 +1391,37 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
       if (!label) return;
 
       if (!detail.sector && label.includes('sector')) detail.sector = value;
-      if (label.includes('shares outstanding') || label.includes('outstanding shares')) detail.sharesOutstanding = parseMoney(value) || detail.sharesOutstanding;
-      if (!detail.marketPrice && (label.includes('market price') || label === 'ltp' || label.includes('last traded'))) detail.marketPrice = parseMoney(value);
+      if (!detail.companyName && (label.includes('company name') || label.includes('name of company'))) detail.companyName = value;
+      if (!detail.marketPrice && (label.includes('market price') || label === 'ltp' || label.includes('last traded'))) {
+        detail.marketPrice = parseMoney(value);
+        if (!detail.closePrice) detail.closePrice = detail.marketPrice;
+      }
+      if (label.includes('shares outstanding') || label.includes('outstanding shares')) {
+        const shares = parseMoney(value);
+        if (shares > 0) {
+          detail.sharesOutstanding = shares;
+          if (!detail.listedShares) detail.listedShares = shares;
+        }
+      }
+      if (label.includes('listed shares') || label.includes('total shares')) {
+        const shares = parseMoney(value);
+        if (shares > 0) {
+          detail.listedShares = shares;
+          if (!detail.sharesOutstanding) detail.sharesOutstanding = shares;
+        }
+      }
       if (!detail.high52w && label.includes('52') && label.includes('high')) {
         const parts = value.split(/[-/]/);
         detail.high52w = parseMoney(parts[0]);
         if (parts.length > 1) detail.low52w = parseMoney(parts[1]);
       }
       if (label.includes('eps') || label.includes('earning per share')) detail.eps = parseMoney(value) || detail.eps;
-      if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price.*earning')) detail.pe = parseMoney(value) || detail.pe;
+      if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price.*earning') || label === 'pe') detail.pe = parseMoney(value) || detail.pe;
       if (label.includes('book value')) detail.bookValue = parseMoney(value) || detail.bookValue;
-      if (label === 'pbv' || label.includes('p/b') || label.includes('price.*book')) detail.pbv = parseMoney(value) || detail.pbv;
-      if (label.includes('% dividend') || (label.includes('dividend') && label.includes('%'))) detail.dividend = parseMoney(value.replace('%', '')) || detail.dividend;
-      if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%'))) detail.bonus = parseMoney(value.replace('%', '')) || detail.bonus;
-      if (label.includes('market cap')) detail.marketCap = parseMoney(value) || detail.marketCap;
-      if (!detail.companyName && (label.includes('company name') || label.includes('name of company'))) detail.companyName = value;
-      if (label.includes('listed shares') || label.includes('total shares')) detail.listedShares = parseMoney(value) || detail.listedShares;
+      if (label === 'pbv' || label.includes('p/b') || label.includes('price.*book') || label.includes('price to book')) detail.pbv = parseMoney(value) || detail.pbv;
+      if (label.includes('% dividend') || (label.includes('dividend') && label.includes('%')) || label === 'cash dividend') detail.dividend = parseMoney(value.replace('%', '')) || detail.dividend;
+      if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%')) || label === 'bonus share') detail.bonus = parseMoney(value.replace('%', '')) || detail.bonus;
+      if (label.includes('market cap') || label.includes('market capitalization')) detail.marketCap = parseMoney(value) || detail.marketCap;
       if (label.includes('paid') && label.includes('capital')) detail.paidUpCapital = parseMoney(value) || detail.paidUpCapital;
     });
 
@@ -1413,14 +1432,15 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
           timeout: 8000
         });
         const $ss = cheerio.load(ssRes.data);
-        $ss('.company-detail-table tr, .fundamentals tr').each((_, tr) => {
-          const tds = $ss(tr).find('td');
+        $ss('.company-detail-table tr, .fundamentals tr, table tr').each((_, tr) => {
+          const tds = $ss(tr).find('td, th');
           if (tds.length >= 2) {
             const label = $ss(tds[0]).text().replace(/\s+/g, ' ').trim().toLowerCase();
             const val   = $ss(tds[1]).text().replace(/\s+/g, ' ').trim();
             if (detail.eps === 0 && (label.includes('eps') || label.includes('earning per share'))) detail.eps = parseMoney(val);
             if (detail.bookValue === 0 && label.includes('book value')) detail.bookValue = parseMoney(val);
             if (detail.pe === 0 && label.includes('p/e')) detail.pe = parseMoney(val);
+            if (detail.pbv === 0 && (label === 'pbv' || label.includes('p/b'))) detail.pbv = parseMoney(val);
           }
         });
       } catch (_) {}
@@ -1433,19 +1453,18 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
       detail.pbv = Number((detail.marketPrice / detail.bookValue).toFixed(2));
     }
 
-    setCache(cacheKey, detail, 2 * 60 * 60 * 1000); // 2 hours TTL
-    res.json({ success: true, data: detail });
+    setCache(cacheKey, detail, 2 * 60 * 60 * 1000);
+    return res.json({ success: true, data: detail });
   } catch (error) {
     if (detail.marketPrice > 0 || detail.high52w > 0) {
       setCache(cacheKey, detail, 2 * 60 * 60 * 1000);
       return res.json({ success: true, data: detail });
     }
-    console.error(`[stock-detail] Error for ${symbol}:`, error.message);
-    res.status(500).json({ success: false, message: `Failed to fetch stock detail for ${symbol}.`, error: error.message });
+    res.status(500).json({ success: false, message: `Failed to fetch stock detail for ${symbol}`, error: error.message });
   }
 });
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
    ENDPOINT 13 â€” Stock Historical Prices (ShareSansar CSRF/AJAX Scraper)
    Available caching: 1 hour
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
@@ -1893,17 +1912,25 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     setCache(cacheKey, result, 30 * 60 * 1000); // 30 min TTL
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error(`[broker-analysis] Error for ${symbol}:`, error.message);
-    res.status(500).json({ success: false, message: `Failed to fetch broker analysis for ${symbol}.`, error: error.message });
+    console.warn(`[broker-analysis] Live floorsheet unavailable for ${symbol}:`, error.message);
+    res.status(503).json({
+      success: false,
+      message: `Failed to fetch broker analysis for ${symbol}: ${error.message}`,
+      data: null
+    });
   }
 });
 
-/* ENDPOINT 16 â€” Merolagani News & Political Sentiment Portal */
+/* ENDPOINT 16 — Merolagani News & Political Sentiment Portal */
 app.get('/api/news/merolagani', async (req, res) => {
   const cacheKey = 'merolagani-news-list';
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return res.json({ success: true, data: cached, cached: true });
+  if (req.query.refresh === 'true') {
+    cache.delete(cacheKey);
+  } else {
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached, cached: true });
+    }
   }
 
   try {
@@ -1927,18 +1954,117 @@ app.get('/api/news/merolagani', async (req, res) => {
         articles.push({
           id: href.match(/newsID=(\d+)/)?.[1] || String(i),
           title,
+          source: 'Merolagani',
           url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
           date: dateText
         });
       }
     });
 
-    const topArticles = articles.slice(0, 15);
+    const topArticles = articles.slice(0, 20);
     setCache(cacheKey, topArticles, 10 * 60 * 1000); // 10 minutes cache
     return res.json({ success: true, data: topArticles });
   } catch (error) {
     console.error('[news/merolagani] Error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to fetch Merolagani news', error: error.message });
+  }
+});
+
+/* ENDPOINT 16B — Unified NEPSE News (ShareSansar + MeroLagani) */
+app.get('/api/news/nepse', async (req, res) => {
+  const cacheKey = 'news-nepse';
+  if (req.query.refresh === 'true') {
+    cache.delete(cacheKey);
+  } else {
+    const cached = getCache(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return res.json({
+        success: true,
+        isMockData: false,
+        source: 'Cache - ShareSansar & MeroLagani',
+        count: cached.length,
+        data: cached
+      });
+    }
+  }
+
+  const allNews = [];
+  const seenTitles = new Set();
+
+  try {
+    // 1. Scrape ShareSansar
+    try {
+      const resSS = await axios.get('https://www.sharesansar.com/category/latest', {
+        headers: HEADERS,
+        timeout: 9000
+      });
+      const $ss = cheerio.load(resSS.data);
+      $ss('a[href*="/newsdetail/"]').each((i, el) => {
+        const href = $ss(el).attr('href') || '';
+        const text = $ss(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 15 && !seenTitles.has(text)) {
+          seenTitles.add(text);
+          const parent = $ss(el).closest('.featured-news-list, .news-list, div, tr');
+          const dateText = parent.find('.text-muted, .date, time, span').first().text().trim() || 'Latest';
+          allNews.push({
+            id: href.match(/newsdetail\/(\d+)/)?.[1] || String(i),
+            title: text,
+            link: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
+            url: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
+            source: 'ShareSansar',
+            pubDate: dateText,
+            date: dateText
+          });
+        }
+      });
+    } catch (errSS) {
+      console.warn('[news/nepse] ShareSansar fetch error:', errSS.message);
+    }
+
+    // 2. Scrape MeroLagani
+    try {
+      const resML = await axios.get('https://merolagani.com/NewsList.aspx', {
+        headers: HEADERS,
+        timeout: 9000
+      });
+      const $ml = cheerio.load(resML.data);
+      $ml('a[href*="NewsDetail.aspx"]').each((i, el) => {
+        const href = $ml(el).attr('href') || '';
+        const text = $ml(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 15 && !seenTitles.has(text)) {
+          seenTitles.add(text);
+          const parent = $ml(el).closest('.media-body, .media, div.panel-body, div');
+          const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
+          const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+          allNews.push({
+            id: href.match(/newsID=(\d+)/)?.[1] || String(i),
+            title: text,
+            link: fullUrl,
+            url: fullUrl,
+            source: 'MeroLagani',
+            pubDate: dateText,
+            date: dateText
+          });
+        }
+      });
+    } catch (errML) {
+      console.warn('[news/nepse] MeroLagani fetch error:', errML.message);
+    }
+
+    const newsSlice = allNews.slice(0, 45);
+    if (newsSlice.length > 0) {
+      setCache(cacheKey, newsSlice, 10 * 60 * 1000);
+    }
+
+    return res.json({
+      success: true,
+      isMockData: false,
+      source: newsSlice.length > 0 ? 'LIVE - ShareSansar & MeroLagani' : 'News feeds temporarily unavailable',
+      count: newsSlice.length,
+      data: newsSlice
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, isMockData: false, data: [] });
   }
 });
 
