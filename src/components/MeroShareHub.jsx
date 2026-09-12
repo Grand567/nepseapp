@@ -160,7 +160,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local' }) {
+export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '' }) {
   // Profiles state
   const [profiles, setProfiles] = useState([]);
   
@@ -331,10 +331,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
     loadAndMerge();
 
-    // Listen for updates dispatched by AccountManager (same-tab CustomEvent)
+    // Listen for updates dispatched by AccountManager (same-tab CustomEvent) and Cloud Sync
     const handleBulkAccountsChanged = () => loadAndMerge();
     window.addEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
-    return () => window.removeEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
+    window.addEventListener('nepse_cloud_data_restored', handleBulkAccountsChanged);
+    return () => {
+      window.removeEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
+      window.removeEventListener('nepse_cloud_data_restored', handleBulkAccountsChanged);
+    };
   }, [userId]);
 
   // Sync selected account IDs with loaded profiles by default
@@ -481,7 +485,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, newProfiles, null);
+      syncUserDataToCloud(userId, { profiles: newProfiles }, userEmail);
     } catch (_) {}
   };
 

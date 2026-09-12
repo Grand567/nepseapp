@@ -227,6 +227,46 @@ export const registerLocal = async (displayName, email, password) => {
   return userObj;
 };
 
+let _cachedCloudData = null;
+
+export const getCachedCloudData = () => _cachedCloudData;
+
+export const resolveUserEmail = (userId, userEmail) => {
+  if (userEmail && typeof userEmail === 'string' && userEmail.includes('@')) {
+    return userEmail.trim().toLowerCase();
+  }
+  if (userId && typeof userId === 'string' && userId.includes('@')) {
+    return userId.trim().toLowerCase();
+  }
+  if (_localUser?.email && _localUser.email.includes('@')) {
+    return _localUser.email.trim().toLowerCase();
+  }
+  try {
+    const session = getLocalSession();
+    if (session?.email && session.email.includes('@')) {
+      return session.email.trim().toLowerCase();
+    }
+  } catch (_) {}
+  try {
+    const raw = localStorage.getItem(LOCAL_USERS_KEY);
+    if (raw) {
+      const users = JSON.parse(raw);
+      if (userId) {
+        for (const k of Object.keys(users)) {
+          if (users[k]?.uid === userId && users[k]?.email) {
+            return users[k].email.trim().toLowerCase();
+          }
+        }
+      }
+      const emails = Object.keys(users);
+      if (emails.length === 1 && emails[0].includes('@')) {
+        return emails[0].trim().toLowerCase();
+      }
+    }
+  } catch (_) {}
+  return null;
+};
+
 /**
  * Sign in with a local email + password.
  * Returns the user object or throws with a friendly error.
@@ -254,6 +294,9 @@ export const signInLocal = async (email, password) => {
     if (res.ok) {
       const json = await res.json();
       if (json.success) {
+        if (json.data && typeof json.data === 'object' && Object.keys(json.data).length > 0) {
+          _cachedCloudData = json.data;
+        }
         // Update or populate local user record
         const uid = 'usr_' + hashSimple(emailKey);
         record = {
@@ -340,9 +383,23 @@ const getSyncProxyEndpoint = () => {
 export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
   if (!userId) return;
 
-  const email = userEmail || (userId && userId.includes('@') ? userId : _localUser?.email);
+  const email = resolveUserEmail(userId, userEmail);
+
+  let normalizedPayload = payload;
+  if (Array.isArray(payload)) {
+    if (payload.length > 0 && (payload[0]?.dmat || payload[0]?.boid || payload[0]?.dpCode)) {
+      normalizedPayload = { profiles: payload };
+    } else if (payload.length > 0 && (payload[0]?.symbol || payload[0]?.type || payload[0]?.quantity)) {
+      normalizedPayload = { transactions: payload };
+    } else {
+      normalizedPayload = { profiles: payload };
+    }
+  } else if (!payload || typeof payload !== 'object') {
+    normalizedPayload = {};
+  }
+
   const dataToSave = {
-    ...payload,
+    ...normalizedPayload,
     lastUpdatedAt: Date.now()
   };
   if (email) dataToSave.email = email;
@@ -388,7 +445,15 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
 };
 
 export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
-  const email = userEmail || (userId && userId.includes('@') ? userId : _localUser?.email);
+  // 0. Check instantaneous cloud data cached from login response if available
+  if (_cachedCloudData && typeof _cachedCloudData === 'object' && Object.keys(_cachedCloudData).length > 0) {
+    const data = _cachedCloudData;
+    _cachedCloudData = null;
+    console.log('[CloudSync] Using instantaneous cloud data from login response.');
+    return data;
+  }
+
+  const email = resolveUserEmail(userId, userEmail);
 
   // 1. Primary: Pull from Render Cloud Sync Bridge
   if (email && email.includes('@')) {

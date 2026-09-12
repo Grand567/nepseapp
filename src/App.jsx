@@ -225,36 +225,50 @@ function AppInner() {
           localStorage.setItem('nepse_credentials_vault', JSON.stringify(cloudCredentials));
         }
 
-        // 11. Push comprehensive multi-device backup to Firestore
-        try {
-          const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
-          const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
-          const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
-          const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');
-          const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');
-          const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');
-          const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');
-          const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');
-
-          await syncUserDataToCloud(uid, {
+        // Broadcast dedicated custom event so active tabs (Portfolio, MeroShareHub) immediately refresh state
+        window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored', {
+          detail: {
+            uid,
             profiles: mergedProfiles,
             transactions: mergedTxs,
             bulkAccounts: mergedBulk,
-            watchlist: currentWatchlist,
-            tradeNotes: currentNotes,
-            stockAlerts: currentAlerts,
-            tradeJournal: currentJournal,
-            paperTrading: {
-              balance: currentPaperBal,
-              positions: currentPaperPos,
-              orders: currentPaperOrd
-            },
-            credentials: currentCreds
-          }, email);
+            watchlist: cloudWatchlist
+          }
+        }));
 
-          console.log(`[Firebase Sync] Cloud restoration & sync complete for Gmail account: ${email || uid}.`);
-        } catch (syncErr) {
-          console.warn('[Firebase Sync] Realtime cloud backup push failed:', syncErr.message);
+        // 11. Push comprehensive multi-device backup to cloud ONLY if there is real data
+        const hasDataToPreserve = mergedProfiles.length > 0 || mergedTxs.length > 0 || mergedBulk.length > 0;
+        if (hasDataToPreserve) {
+          try {
+            const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
+            const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
+            const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
+            const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');
+            const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');
+            const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');
+            const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');
+            const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');
+
+            await syncUserDataToCloud(uid, {
+              profiles: mergedProfiles,
+              transactions: mergedTxs,
+              bulkAccounts: mergedBulk,
+              watchlist: currentWatchlist,
+              tradeNotes: currentNotes,
+              stockAlerts: currentAlerts,
+              tradeJournal: currentJournal,
+              paperTrading: {
+                balance: currentPaperBal,
+                positions: currentPaperPos,
+                orders: currentPaperOrd
+              },
+              credentials: currentCreds
+            }, email);
+
+            console.log(`[Firebase Sync] Cloud restoration & sync complete for account: ${email || uid}.`);
+          } catch (syncErr) {
+            console.warn('[Firebase Sync] Realtime cloud backup push failed:', syncErr.message);
+          }
         }
       }
     });
@@ -652,19 +666,67 @@ function AppInner() {
                     onClick={async () => {
                       try {
                         const uid = user?.uid || 'local';
+                        const email = user?.email || '';
                         const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
-                        const userTxKey = `nepse_transactions_${uid}`;
-                        const userProfileKey = `nepse_meroshare_profiles_${uid}`;
-                        const txs = JSON.parse(localStorage.getItem(userTxKey) || '[]');
-                        const profs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');
+                        const userTxKey = `nepse_hub_${uid}_transactions`;
+                        const userProfileKey = `nepse_hub_${uid}_profiles`;
+                        const bulkKey = 'nepse_hub_bulk_ipo_accounts';
 
+                        // 1. Pull latest remote cloud data
+                        let pulledProfiles = [];
+                        let pulledTxs = [];
+                        let pulledWatchlist = [];
+                        try {
+                          const cloudData = await fetchUserDataFromCloud(uid, email);
+                          if (cloudData) {
+                            if (Array.isArray(cloudData.profiles)) pulledProfiles = cloudData.profiles;
+                            if (Array.isArray(cloudData.transactions)) pulledTxs = cloudData.transactions;
+                            if (Array.isArray(cloudData.watchlist)) pulledWatchlist = cloudData.watchlist;
+                          }
+                        } catch (_) {}
+
+                        // 2. Merge local and remote
+                        const localTxs = JSON.parse(localStorage.getItem(userTxKey) || '[]');
+                        const localProfs = JSON.parse(localStorage.getItem(userProfileKey) || '[]');
+                        const localBulk = JSON.parse(localStorage.getItem(bulkKey) || '[]');
+
+                        const mergedProfs = [...localProfs];
+                        pulledProfiles.forEach(p => {
+                          const idx = mergedProfs.findIndex(mp => mp.boid === p.boid || mp.id === p.id);
+                          if (idx === -1) mergedProfs.push(p);
+                          else if (p.holdings?.length > 0 && (!mergedProfs[idx].holdings || mergedProfs[idx].holdings.length === 0)) {
+                            mergedProfs[idx] = { ...mergedProfs[idx], ...p };
+                          }
+                        });
+
+                        const mergedTxs = [...localTxs];
+                        pulledTxs.forEach(t => {
+                          if (!mergedTxs.find(mt => mt.id === t.id)) mergedTxs.push(t);
+                        });
+
+                        const mergedWatchlist = [...new Set([...currentWatchlist, ...pulledWatchlist])];
+
+                        // 3. Save locally
+                        localStorage.setItem(userProfileKey, JSON.stringify(mergedProfs));
+                        localStorage.setItem(userTxKey, JSON.stringify(mergedTxs));
+                        localStorage.setItem('nepse_user_watchlist', JSON.stringify(mergedWatchlist));
+
+                        // 4. Push combined snapshot to cloud
                         await syncUserDataToCloud(uid, {
-                          profiles: profs,
-                          transactions: txs,
-                          watchlist: currentWatchlist
-                        }, user?.email);
+                          profiles: mergedProfs,
+                          transactions: mergedTxs,
+                          bulkAccounts: localBulk,
+                          watchlist: mergedWatchlist
+                        }, email);
 
-                        alert('✅ Cloud Sync Successful! Data backed up across devices.');
+                        // 5. Notify UI components to refresh
+                        window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored', {
+                          detail: { uid, profiles: mergedProfs, transactions: mergedTxs, watchlist: mergedWatchlist }
+                        }));
+                        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { profiles: mergedProfs } }));
+
+                        setShowUserMenu(false);
+                        alert(`✅ Cloud Sync Successful!\n• ${mergedProfs.length} Account(s)\n• ${mergedTxs.length} Transaction(s)\n• ${mergedWatchlist.length} Watchlist Scrip(s)\nSynchronized across all your devices.`);
                       } catch (err) {
                         alert('Sync failed: ' + err.message);
                       }
@@ -859,6 +921,7 @@ function AppInner() {
               <PortfolioHub
                 marketStocks={stocks}
                 userId={user?.uid}
+                userEmail={user?.email}
                 apiStatus={apiStatus}
                 initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
                 onSelectStock={openStockDetail}

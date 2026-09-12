@@ -10,6 +10,7 @@ import MeroShareHub from './MeroShareHub';
 export default function PortfolioHub({
   marketStocks = [],
   userId,
+  userEmail = '',
   apiStatus = 'live',
   initialSubTab = 'portfolio',
   onSelectStock
@@ -105,11 +106,13 @@ export default function PortfolioHub({
           <Portfolio
             marketStocks={marketStocks}
             userId={userId}
+            userEmail={userEmail}
             onSelectStock={onSelectStock}
           />
         ) : (
           <MeroShareHub
             userId={userId}
+            userEmail={userEmail}
             marketStocks={marketStocks}
             apiStatus={apiStatus}
           />

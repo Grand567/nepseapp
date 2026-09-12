@@ -125,7 +125,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function Portfolio({ marketStocks, userId = 'local' }) {
+export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock }) {
 
   const [transactions, setTransactions] = useState([]);
   const [meroshareProfiles, setMeroshareProfiles] = useState([]);
@@ -276,11 +276,18 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
       } catch (_) {}
     };
 
+    const handleCloudRestored = () => {
+      loadData();
+      mergeBulkAccounts();
+    };
+
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
+    window.addEventListener('nepse_cloud_data_restored', handleCloudRestored);
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('bulkAccountsChanged', handleBulkAccountsChanged);
+      window.removeEventListener('nepse_cloud_data_restored', handleCloudRestored);
     };
   }, [userId]);  // Re-load whenever the logged-in user changes
 
@@ -297,7 +304,7 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
     window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, { profiles: newProfiles }, null);
+      syncUserDataToCloud(userId, { profiles: newProfiles }, userEmail);
     } catch (_) {}
   };
 
@@ -536,7 +543,7 @@ export default function Portfolio({ marketStocks, userId = 'local' }) {
     localStorage.setItem(txKey, JSON.stringify(newTxs));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, { transactions: newTxs }, null);
+      syncUserDataToCloud(userId, { transactions: newTxs }, userEmail);
     } catch (_) {}
   };
 

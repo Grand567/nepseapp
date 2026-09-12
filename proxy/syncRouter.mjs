@@ -225,7 +225,7 @@ router.post('/push', (req, res) => {
         email: cleanEmail,
         name: (name || cleanEmail.split('@')[0]).trim(),
         passwordHash: passwordHash || '',
-        data: data || {},
+        data: (data && typeof data === 'object' && !Array.isArray(data)) ? { ...data } : (data || {}),
         createdAt: now,
         updatedAt: now,
         syncVersion: 1
@@ -236,9 +236,27 @@ router.post('/push', (req, res) => {
         return res.status(401).json({ success: false, message: 'Invalid credentials.' });
       }
 
-      // Update data snapshot
+      // Update data snapshot with safe intelligent merge
       if (data !== undefined && data !== null) {
-        vault.data = data;
+        if (typeof data === 'object' && !Array.isArray(data) && typeof vault.data === 'object' && !Array.isArray(vault.data)) {
+          const merged = { ...vault.data };
+          for (const [k, val] of Object.entries(data)) {
+            if (Array.isArray(val)) {
+              // Safety: Never let an empty array overwrite an existing populated array!
+              if (val.length === 0 && Array.isArray(merged[k]) && merged[k].length > 0) {
+                continue;
+              }
+              merged[k] = val;
+            } else if (val !== null && typeof val === 'object') {
+              merged[k] = { ...(merged[k] || {}), ...val };
+            } else if (val !== undefined) {
+              merged[k] = val;
+            }
+          }
+          vault.data = merged;
+        } else {
+          vault.data = data;
+        }
       }
       if (name) vault.name = name.trim();
       vault.updatedAt = now;
