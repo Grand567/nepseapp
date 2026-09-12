@@ -258,35 +258,70 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 
   const qs = forceRefresh ? '?refresh=true' : '';
 
+  let detail = null;
+
+  // 1. Fetch official stock details (market price, shares, high/low, etc.)
   try {
     const res = await fetchFromBackend(`/api/stock-detail/${encodeURIComponent(sym)}${qs}`, 7000);
     if (res && res.success && res.data) {
-      const d = { ...res.data };
-      d.data = d;
-      setCachedStockFundamentals(sym, d);
-      return d;
+      detail = { ...res.data };
     }
   } catch (_) {}
 
-  try {
-    const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 7000);
-    if (res2 && res2.success && res2.data) {
-      const d2 = { ...res2.data };
-      d2.data = d2;
-      setCachedStockFundamentals(sym, d2);
-      return d2;
-    }
-  } catch (_) {}
+  // 2. If Book Value, PE, or EPS is missing or 0, always enrich from /api/mero/stock-details
+  if (!detail || !detail.bookValue || detail.bookValue <= 0 || !detail.pe || detail.pe <= 0 || !detail.eps || detail.eps <= 0) {
+    try {
+      const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 7000);
+      if (res2 && res2.success && res2.data) {
+        const m = res2.data;
+        detail = {
+          ...(detail || {}),
+          symbol: sym,
+          ...m,
+          eps: m.eps > 0 ? m.eps : (detail?.eps || 0),
+          bookValue: m.bookValue > 0 ? m.bookValue : (detail?.bookValue || 0),
+          pe: m.pe > 0 ? m.pe : (detail?.pe || 0),
+          pbv: m.pbv > 0 ? m.pbv : (detail?.pbv || 0),
+          sharesOutstanding: m.sharesOutstanding || detail?.sharesOutstanding || 0,
+          marketCap: m.marketCap || detail?.marketCap || 0,
+          sector: m.sector || detail?.sector || ''
+        };
+      }
+    } catch (_) {}
+  }
 
-  try {
-    const res3 = await fetchFromBackend(`/api/company/${encodeURIComponent(sym)}${qs}`, 7000);
-    if (res3 && res3.success && res3.data) {
-      const d3 = { ...res3.data };
-      d3.data = d3;
-      setCachedStockFundamentals(sym, d3);
-      return d3;
+  // 3. Fallback to /api/company/:symbol if Book Value is still missing
+  if (!detail || !detail.bookValue || detail.bookValue <= 0) {
+    try {
+      const res3 = await fetchFromBackend(`/api/company/${encodeURIComponent(sym)}${qs}`, 7000);
+      if (res3 && res3.success && res3.data) {
+        const c = res3.data;
+        detail = {
+          ...(detail || {}),
+          ...c,
+          bookValue: c.bookValue > 0 ? c.bookValue : (detail?.bookValue || 0),
+          eps: c.eps > 0 ? c.eps : (detail?.eps || 0),
+          pe: c.pe > 0 ? c.pe : (detail?.pe || 0),
+          pbv: c.pbv > 0 ? c.pbv : (detail?.pbv || 0)
+        };
+      }
+    } catch (_) {}
+  }
+
+  if (detail) {
+    const ltp = Number(detail.marketPrice || detail.closePrice || detail.ltp || 0);
+    if ((!detail.pe || detail.pe <= 0) && detail.eps > 0 && ltp > 0) {
+      detail.pe = +(ltp / detail.eps).toFixed(2);
     }
-  } catch (_) {}
+    if ((!detail.pbv || detail.pbv <= 0) && detail.bookValue > 0 && ltp > 0) {
+      detail.pbv = +(ltp / detail.bookValue).toFixed(2);
+    }
+    detail.data = detail;
+    if (detail.bookValue > 0 || detail.pe > 0 || detail.eps > 0) {
+      setCachedStockFundamentals(sym, detail);
+    }
+    return detail;
+  }
 
   if (cached) {
     cached.data = cached;
