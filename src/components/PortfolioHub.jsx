@@ -16,86 +16,58 @@ export default function PortfolioHub({
   onSelectStock
 }) {
   const [subTab, setSubTab] = useState(() => {
-    return initialSubTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio';
+    if (initialSubTab === 'bulk_ipo') return 'bulk_ipo';
+    if (initialSubTab === 'accounts') return 'accounts';
+    return 'portfolio';
   });
 
   useEffect(() => {
-    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio') {
+    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio' || initialSubTab === 'accounts') {
       setSubTab(initialSubTab);
     }
   }, [initialSubTab]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
-      {/* ── Unified Top Segmented Switcher ── */}
+      {/* ── Institutional Segmented Navigation Switcher ── */}
       <div style={{
         position: 'sticky',
         top: 0,
         zIndex: 50,
-        background: 'rgba(11, 15, 25, 0.95)',
+        background: 'rgba(11, 14, 20, 0.95)',
         backdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border)',
-        padding: '10px 16px',
+        padding: '10px 14px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center'
       }}>
-        <div style={{
-          display: 'flex',
-          background: 'rgba(255, 255, 255, 0.05)',
-          border: '1px solid var(--border)',
-          borderRadius: 14,
-          padding: 4,
-          width: '100%',
-          maxWidth: 480,
-          gap: 6
-        }}>
+        <div className="segmented-bar" style={{ width: '100%', maxWidth: 500 }}>
           <button
             onClick={() => setSubTab('portfolio')}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: '10px 14px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              background: subTab === 'portfolio' ? 'var(--primary)' : 'transparent',
-              color: subTab === 'portfolio' ? '#fff' : 'var(--text-secondary)',
-              boxShadow: subTab === 'portfolio' ? '0 2px 10px rgba(59, 130, 246, 0.35)' : 'none',
-              transition: 'all 0.18s ease'
-            }}
+            className={`segmented-pill ${subTab === 'portfolio' ? 'active' : ''}`}
+            title="Consolidated Demat & Manual Portfolio"
           >
-            <Wallet style={{ width: 16, height: 16 }} />
-            <span>Demat Portfolio</span>
+            <Wallet style={{ width: 15, height: 15 }} />
+            <span>My Portfolio</span>
           </button>
 
           <button
             onClick={() => setSubTab('bulk_ipo')}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: '10px 14px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              background: subTab === 'bulk_ipo' ? 'var(--primary)' : 'transparent',
-              color: subTab === 'bulk_ipo' ? '#fff' : 'var(--text-secondary)',
-              boxShadow: subTab === 'bulk_ipo' ? '0 2px 10px rgba(59, 130, 246, 0.35)' : 'none',
-              transition: 'all 0.18s ease'
-            }}
+            className={`segmented-pill ${subTab === 'bulk_ipo' ? 'active' : ''}`}
+            title="Bulk Apply and Verify Allotment Results"
           >
-            <Layers style={{ width: 16, height: 16 }} />
-            <span>Bulk IPO (MeroShare)</span>
+            <Sparkles style={{ width: 15, height: 15 }} />
+            <span>Bulk IPO Portal</span>
+          </button>
+
+          <button
+            onClick={() => setSubTab('accounts')}
+            className={`segmented-pill ${subTab === 'accounts' ? 'active' : ''}`}
+            title="Manage MeroShare BOID Credentials & DP Profiles"
+          >
+            <Layers style={{ width: 15, height: 15 }} />
+            <span>Demat Accounts</span>
           </button>
         </div>
       </div>
@@ -108,6 +80,7 @@ export default function PortfolioHub({
             userId={userId}
             userEmail={userEmail}
             onSelectStock={onSelectStock}
+            onSwitchToAccounts={() => setSubTab('accounts')}
           />
         ) : (
           <MeroShareHub
@@ -115,6 +88,8 @@ export default function PortfolioHub({
             userEmail={userEmail}
             marketStocks={marketStocks}
             apiStatus={apiStatus}
+            initialTab={subTab === 'bulk_ipo' ? 'ipo' : 'accounts'}
+            onSwitchToPortfolio={() => setSubTab('portfolio')}
           />
         )}
       </div>

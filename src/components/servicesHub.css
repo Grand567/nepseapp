@@ -191,23 +191,23 @@
 .bg-slate-900 { background-color: #0f172a; }
 .bg-slate-900\/60 { background-color: rgba(15, 23, 42, 0.6); }
 .bg-slate-800 { background-color: #1e293b; }
-.bg-slate-100 { background-color: #f1f5f9; }
-.bg-slate-50 { background-color: #f8fafc; }
-.bg-white { background-color: #ffffff; }
+.bg-slate-100 { background-color: #1e293b; }
+.bg-slate-50 { background-color: #0f172a; }
+.bg-white { background-color: #1e293b; }
 .bg-amber-400 { background-color: #fbbf24; }
 .bg-amber-400\/15 { background-color: rgba(251, 191, 36, 0.15); }
 .bg-amber-400\/30 { background-color: rgba(251, 191, 36, 0.3); }
-.bg-blue-50 { background-color: #eff6ff; }
-.bg-blue-100 { background-color: #dbeafe; }
+.bg-blue-50 { background-color: rgba(59, 130, 246, 0.10); }
+.bg-blue-100 { background-color: rgba(59, 130, 246, 0.18); }
 .bg-blue-500\/15 { background-color: rgba(59, 130, 246, 0.15); }
 .bg-blue-600 { background-color: #2563eb; }
-.bg-green-50 { background-color: #f0fdf4; }
-.bg-green-100 { background-color: #dcfce7; }
+.bg-green-50 { background-color: rgba(16, 185, 129, 0.10); }
+.bg-green-100 { background-color: rgba(16, 185, 129, 0.18); }
 .bg-green-600 { background-color: #16a34a; }
-.bg-red-50 { background-color: #fef2f2; }
-.bg-yellow-100 { background-color: #fef9c3; }
-.bg-cyan-100 { background-color: #cffafe; }
-.bg-emerald-100 { background-color: #d1fae5; }
+.bg-red-50 { background-color: rgba(244, 63, 94, 0.10); }
+.bg-yellow-100 { background-color: rgba(245, 158, 11, 0.18); }
+.bg-cyan-100 { background-color: rgba(6, 182, 212, 0.18); }
+.bg-emerald-100 { background-color: rgba(16, 185, 129, 0.18); }
 
 /* ── Borders & Shapes ── */
 .border { border-width: 1px; border-style: solid; }
@@ -254,10 +254,10 @@
 .hover\:text-slate-200:hover { color: #e2e8f0; }
 .focus\:border-blue-500:focus { border-color: #3b82f6; }
 .focus\:border-blue-400:focus { border-color: #60a5fa; }
-.focus\:bg-white:focus { background-color: #ffffff; }
+.focus\:bg-white:focus { background-color: rgba(59, 130, 246, 0.08); }
 
-.disabled\:bg-slate-200:disabled { background-color: #e2e8f0; }
-.disabled\:text-slate-400:disabled { color: #94a3b8; }
+.disabled\:bg-slate-200:disabled { background-color: #1e293b; }
+.disabled\:text-slate-400:disabled { color: #64748b; }
 .disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
 
 .transition {
@@ -288,7 +288,8 @@
 
 /* Global dark input insurance in Services Hub */
 .services-hub-wrap input,
-.services-hub-wrap select {
+.services-hub-wrap select,
+.services-hub-wrap option {
   background-color: #0f172a !important;
   color: #f8fafc !important;
   border-color: #334155 !important;

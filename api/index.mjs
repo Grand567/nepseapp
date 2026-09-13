@@ -12,6 +12,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import syncRouter from '../proxy/syncRouter.mjs';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
+import { 
+  adToBs, 
+  bsToAd, 
+  fetchLiveCalendarMonth, 
+  getHolidaysForMonth, 
+  getUpcomingHolidays,
+  getBikramSambatHoliday,
+  NEPALI_MONTH_NAMES_NP,
+  NEPALI_MONTH_NAMES_EN,
+  NEPALI_DAYS_NP,
+  NEPALI_DAYS_EN,
+  toNepaliDigits
+} from '../src/utils/bikramSambat.js';
 
 const app = express();
 
@@ -291,56 +305,132 @@ app.get('/api/today-prices', async (req, res) => {
    ENDPOINT 3 â€” Market Status check
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 app.get('/api/status', (req, res) => {
-  const cacheKey = 'market-status';
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return res.json(cached);
-  }
+  const statusData = getDetailedMarketStatus();
+  setCache('market-status', statusData, 10000); // 10s TTL
+  res.json({ success: true, ...statusData, data: statusData });
+});
 
-  const now = new Date();
-  let nptDay, nptMinutes;
+/* ═══════════════════════════════════════════════════
+   ENDPOINT — NEPSE Holidays & Bikram Sambat Calendar
+   ═══════════════════════════════════════════════════ */
+
+// Fetch NEPSE and Nepal public holidays (monthly or upcoming)
+app.get('/api/holidays', async (req, res) => {
   try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kathmandu',
-      hour12: false,
-      year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: 'numeric', minute: 'numeric'
+    const yearParam = req.query.year ? parseInt(req.query.year, 10) : null;
+    const monthParam = req.query.month ? parseInt(req.query.month, 10) : null;
+    const upcomingCount = Math.min(Math.max(parseInt(req.query.upcoming || '10', 10), 1), 50);
+
+    // If month is specified (1–12), return all holidays in that BS month
+    if (monthParam && monthParam >= 1 && monthParam <= 12) {
+      const nowBs = adToBs(new Date());
+      const bsYear = (yearParam && yearParam >= 2000 && yearParam <= 2090) ? yearParam : nowBs.year;
+      const cacheKey = `holidays_${bsYear}_${monthParam}`;
+      const cached = getCache(cacheKey);
+      if (cached) {
+        return res.json({ success: true, ...cached, cached: true });
+      }
+
+      const monthData = await fetchLiveCalendarMonth(bsYear, monthParam);
+      const responseData = {
+        bsYear,
+        bsMonth: monthParam,
+        monthNameNp: monthData.monthNameNp,
+        monthNameEn: monthData.monthNameEn,
+        totalHolidays: monthData.holidays.length,
+        holidays: monthData.holidays
+      };
+
+      setCache(cacheKey, responseData, 3600000); // 1 hour cache
+      return res.json({ success: true, ...responseData });
+    }
+
+    // Default: Return upcoming NEPSE holidays starting from today
+    const upcoming = getUpcomingHolidays(new Date(), upcomingCount);
+    const nowBs = adToBs(new Date());
+
+    return res.json({
+      success: true,
+      currentBsYear: nowBs.year,
+      currentBsMonth: nowBs.month,
+      currentBsDay: nowBs.day,
+      totalUpcoming: upcoming.length,
+      holidays: upcoming
     });
-    const parts = formatter.formatToParts(now);
-    const val = type => parseInt(parts.find(p => p.type === type).value, 10);
-    const year = val('year');
-    const month = val('month') - 1;
-    const day = val('day');
-    const hour = val('hour') % 24;
-    const minute = val('minute');
-
-    const nptDate = new Date(year, month, day, hour, minute);
-    nptDay = nptDate.getDay();
-    nptMinutes = hour * 60 + minute;
-  } catch (e) {
-    // Fallback to manual offset arithmetic if Intl is unsupported
-    const nptOffset = 5 * 60 + 45; // minutes
-    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-    nptMinutes = (utcMinutes + nptOffset) % (24 * 60);
-    nptDay = (now.getUTCDay() + Math.floor((utcMinutes + nptOffset) / (24 * 60))) % 7;
+  } catch (err) {
+    console.error('[api] /api/holidays error:', err.message);
+    res.status(500).json({ success: false, error: err.message, holidays: [] });
   }
+});
 
-  // NEPSE trading days: Sunday (0) to Thursday (4)
-  const isWeekday = nptDay >= 0 && nptDay <= 4;
-  const isMarketHours = nptMinutes >= 11 * 60 && nptMinutes < 15 * 60;
-  const isOpen = isWeekday && isMarketHours;
+// Fetch complete Bikram Sambat monthly calendar with tithi, festival, weekend & trading day info
+app.get('/api/calendar/month', async (req, res) => {
+  try {
+    const nowBs = adToBs(new Date());
+    const year = req.query.year ? parseInt(req.query.year, 10) : nowBs.year;
+    const month = req.query.month ? parseInt(req.query.month, 10) : nowBs.month;
 
-  const hh = String(Math.floor(nptMinutes / 60)).padStart(2, '0');
-  const mm = String(nptMinutes % 60).padStart(2, '0');
-  const statusData = {
-    isOpen,
-    nptTime: `${hh}:${mm}`,
-    nptDay,
-    message: isOpen ? 'Market is OPEN' : 'Market is CLOSED'
-  };
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      return res.status(400).json({ success: false, error: 'Invalid year or month parameter. Month must be 1 to 12.' });
+    }
 
-  setCache(cacheKey, statusData, 10000); // 10s TTL
-  res.json(statusData);
+    const cacheKey = `calendar_month_${year}_${month}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.json({ success: true, ...cached, cached: true });
+    }
+
+    const monthData = await fetchLiveCalendarMonth(year, month);
+    setCache(cacheKey, monthData, 3600000); // 1 hour cache
+
+    return res.json({ success: true, ...monthData });
+  } catch (err) {
+    console.error('[api] /api/calendar/month error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Today's Bikram Sambat calendar, holiday, weekend and market status overview
+app.get('/api/calendar/today', (req, res) => {
+  try {
+    const now = new Date();
+    const bs = adToBs(now);
+    const marketStatus = getDetailedMarketStatus(now);
+
+    res.json({
+      success: true,
+      adDate: now.toISOString().split('T')[0],
+      adTimeUtc: now.toISOString(),
+      nptTime: marketStatus.currentTime,
+      bs: {
+        year: bs.year,
+        month: bs.month,
+        day: bs.day,
+        monthNameNp: NEPALI_MONTH_NAMES_NP[bs.month - 1],
+        monthNameEn: NEPALI_MONTH_NAMES_EN[bs.month - 1],
+        dayOfWeek: bs.dayOfWeek,
+        dayOfWeekNp: NEPALI_DAYS_NP[bs.dayOfWeek],
+        dayOfWeekEn: NEPALI_DAYS_EN[bs.dayOfWeek],
+        digitsDay: toNepaliDigits(bs.day),
+        formattedNp: `${toNepaliDigits(bs.day)} ${NEPALI_MONTH_NAMES_NP[bs.month - 1]} ${toNepaliDigits(bs.year)} (${NEPALI_DAYS_NP[bs.dayOfWeek]})`,
+        formattedEn: `${bs.day} ${NEPALI_MONTH_NAMES_EN[bs.month - 1]} ${bs.year} (${NEPALI_DAYS_EN[bs.dayOfWeek]})`
+      },
+      schedule: {
+        isWeekend: marketStatus.isWeekend,
+        isPublicHoliday: marketStatus.isHoliday,
+        holidayName: marketStatus.holidayName,
+        isTradingDay: marketStatus.isTradingDay,
+        isOpen: marketStatus.isOpen,
+        session: marketStatus.session,
+        tradingHours: '11:00 AM – 3:00 PM NPT (Monday – Friday)',
+        nationalWeekend: 'Saturday & Sunday (Friday market is open)'
+      },
+      marketStatus
+    });
+  } catch (err) {
+    console.error('[api] /api/calendar/today error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

@@ -160,7 +160,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '' }) {
+export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'guest_local', userEmail = '', initialTab = 'accounts', onSwitchToPortfolio }) {
   // Profiles state
   const [profiles, setProfiles] = useState([]);
   
@@ -240,8 +240,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   const [isWizardApplying, setIsWizardApplying] = useState(false);
 
   // Sub Tabs & Portfolio state
-  const [activeSubTab, setActiveSubTab] = useState('accounts'); // 'accounts', 'ipo', 'portfolio'
+  const [activeSubTab, setActiveSubTab] = useState(() => initialTab || 'accounts'); // 'accounts', 'ipo', 'portfolio'
   const [ipoSubTab, setIpoSubTab] = useState('apply'); // 'apply' | 'check'
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveSubTab(initialTab);
+    }
+  }, [initialTab]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [syncedProfileIds, setSyncedProfileIds] = useState([]);
   const [isRetrieving, setIsRetrieving] = useState(false);
@@ -322,8 +328,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       const combinedSynced = [...new Set([...savedSyncedIds, ...idsWithHoldings])];
       setSyncedProfileIds(combinedSynced);
       if (parsed.length > 0) {
-        setSelectedProfileId(parsed[0].id);
-        setActiveSubTab('portfolio');
+        setSelectedProfileId(prev => prev || parsed[0].id);
       } else {
         setSelectedProfileId('');
       }
@@ -1458,43 +1463,45 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       {/* Sub Tab Navigation */}
       {!showWizard && (
-        <div style={{
-          display: 'flex', gap: 8, overflowX: 'auto', padding: '0 0 12px',
-          scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', marginBottom: 16
-        }}>
-          {[
-            { id: 'accounts', label: 'Demat Accounts', icon: User, count: profiles.length, color: 'var(--primary-light)' },
-            { id: 'ipo', label: 'Bulk IPO Portal', icon: Sparkles, count: Array.isArray(ipoCompanies) ? ipoCompanies.filter(i => i && i.status === 'Open').length : 0, color: '#f59e0b' },
-            { id: 'portfolio', label: 'Demat Portfolio', icon: Wallet, count: profiles.filter(p => p && p.holdings?.length > 0).length, color: 'var(--bull)' }
-          ].map(t => {
-            const isActive = activeSubTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveSubTab(t.id)}
-                style={{
-                  background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
-                  color: isActive ? '#fff' : 'var(--text-secondary)',
-                  border: `1px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
-                  borderRadius: 12, padding: '9px 16px', fontSize: 12.5, fontWeight: 800,
-                  cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7,
-                  boxShadow: isActive ? '0 0 16px rgba(79,70,229,0.3)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <t.icon style={{ width: 14, height: 14, color: isActive ? '#fff' : t.color }} />
-                {t.label}
-                <span style={{
-                  fontSize: 10, padding: '2px 7px', borderRadius: 10,
-                  background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
-                  color: isActive ? '#fff' : 'var(--text-muted)',
-                  fontWeight: 800
-                }}>
-                  {t.count}
-                </span>
-              </button>
-            );
-          })}
+        <div style={{ marginBottom: 16 }}>
+          <div className="segmented-bar">
+            {[
+              { id: 'accounts', label: 'Demat Accounts', icon: User, count: profiles.length, color: 'var(--primary-light)' },
+              { id: 'ipo', label: 'Bulk IPO Portal', icon: Sparkles, count: Array.isArray(ipoCompanies) ? ipoCompanies.filter(i => i && i.status === 'Open').length : 0, color: '#f59e0b' },
+              { id: 'portfolio', label: 'Demat Portfolio', icon: Wallet, count: profiles.filter(p => p && p.holdings?.length > 0).length, color: 'var(--bull)' }
+            ].map(t => {
+              const isActive = activeSubTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    if (t.id === 'portfolio' && onSwitchToPortfolio) {
+                      onSwitchToPortfolio();
+                    } else {
+                      setActiveSubTab(t.id);
+                    }
+                  }}
+                  className={`segmented-pill ${isActive ? 'active' : ''}`}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12.5,
+                    border: isActive ? '1px solid var(--primary)' : '1px solid transparent'
+                  }}
+                >
+                  <t.icon style={{ width: 14, height: 14, color: isActive ? '#ffffff' : t.color }} />
+                  <span>{t.label}</span>
+                  <span style={{
+                    fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                    background: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
+                    color: isActive ? '#ffffff' : 'var(--text-muted)',
+                    fontWeight: 800
+                  }}>
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1830,9 +1837,9 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   onClick={handleWizardApplyLive}
                   disabled={isWizardApplying}
                   className="btn-success"
-                  style={{ fontSize: 12, flex: 2, padding: '10px 0', minWidth: 140, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}
+                  style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', flex: 2, padding: '11px 0', minWidth: 140, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, borderRadius: 10, cursor: isWizardApplying ? 'wait' : 'pointer' }}
                 >
-                  {isWizardApplying ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : '⚡ Auto-Apply Live'}
+                  {isWizardApplying ? <Loader2 style={{ width: 15, height: 15 }} className="animate-spin" /> : '⚡ Auto-Apply Live'}
                 </button>
 
                 <a 
@@ -1938,8 +1945,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               <div className="card">
                 <h3 className="section-title" style={{ marginBottom: 12, color: 'var(--text-primary)' }}>Bulk Tools</h3>
 
-                {/* Secondary Sub-Sub-Tabs Navigation (Dashboard Pill Style) */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 18, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 12, border: '1px solid var(--border)' }}>
+                {/* Secondary Sub-Sub-Tabs Navigation (Segmented Pill Style) */}
+                <div className="segmented-bar" style={{ marginBottom: 18 }}>
                   <button 
                     onClick={() => {
                       setIpoSubTab('apply');
@@ -1949,14 +1956,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         setCustomAppliedKitta(openIpos[0].minKitta || 10);
                       }
                     }} 
-                    style={{
-                      flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer',
-                      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
-                      background: ipoSubTab === 'apply' ? 'var(--primary)' : 'transparent',
-                      color: ipoSubTab === 'apply' ? '#fff' : 'var(--text-muted)',
-                      boxShadow: ipoSubTab === 'apply' ? '0 0 16px rgba(79,70,229,0.35)' : 'none',
-                      transition: 'all 0.15s ease'
-                    }}
+                    className={`segmented-pill ${ipoSubTab === 'apply' ? 'active' : ''}`}
+                    style={{ padding: '9px 12px', fontSize: 13, border: ipoSubTab === 'apply' ? '1px solid var(--primary)' : '1px solid transparent' }}
                   >
                     🚀 Bulk Apply
                   </button>
@@ -1970,14 +1971,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         setSelectedIpo(String(ipoCompanies[0].id || ''));
                       }
                     }} 
-                    style={{
-                      flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer',
-                      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
-                      background: ipoSubTab === 'check' ? 'var(--primary)' : 'transparent',
-                      color: ipoSubTab === 'check' ? '#fff' : 'var(--text-muted)',
-                      boxShadow: ipoSubTab === 'check' ? '0 0 16px rgba(79,70,229,0.35)' : 'none',
-                      transition: 'all 0.15s ease'
-                    }}
+                    className={`segmented-pill ${ipoSubTab === 'check' ? 'active' : ''}`}
+                    style={{ padding: '9px 12px', fontSize: 13, border: ipoSubTab === 'check' ? '1px solid var(--primary)' : '1px solid transparent' }}
                   >
                     🗳️ Bulk Allotment Check
                   </button>

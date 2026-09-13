@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
   LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
-  BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw
+  BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw,
+  Calendar, X, Info
 } from 'lucide-react';
 import Dashboard      from './components/Dashboard';
 import Portfolio      from './components/Portfolio';
@@ -18,7 +19,9 @@ import LoginScreen    from './components/LoginScreen';
 import TestSuite      from './components/TestSuite';
 import StockDetailModal from './components/StockDetailModal';
 import PullToRefresh from './components/PullToRefresh';
-import { NavigationProvider, useNavigation } from './context/NavigationContext';
+import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
+import { fetchHolidays } from './utils/servicesApi.js';
+import { getUpcomingHolidays } from './utils/bikramSambat.js';
 
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices } from './utils/liveData';
 import { getDetailedMarketStatus } from './utils/nepseCalendar';
@@ -39,7 +42,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { activeTab, setActiveTab, selectedStock, closeStockDetail, openStockDetail } = useNavigation();
+  const { activeTab, setActiveTab, selectedStock, closeStockDetail, openStockDetail, exitToast } = useNavigation();
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -48,6 +51,49 @@ function AppInner() {
   // ── Accessibility & Font Scale State for Weak Eyesight ──
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');
   const [showFontModal, setShowFontModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [upcomingHolidaysList, setUpcomingHolidaysList] = useState([]);
+  const [loadingHolidays, setLoadingHolidays] = useState(false);
+
+  // Register Back handlers for modals
+  useBackHandler(() => {
+    setShowDiagnostics(false);
+    return true;
+  }, showDiagnostics, 50);
+
+  useBackHandler(() => {
+    setShowCalendarModal(false);
+    return true;
+  }, showCalendarModal, 45);
+
+  useBackHandler(() => {
+    setShowFontModal(false);
+    return true;
+  }, showFontModal, 40);
+
+  useBackHandler(() => {
+    setShowUserMenu(false);
+    return true;
+  }, showUserMenu, 30);
+
+  // Load upcoming holidays when calendar modal is opened
+  useEffect(() => {
+    if (showCalendarModal) {
+      setLoadingHolidays(true);
+      fetchHolidays(null, null, 15)
+        .then(res => {
+          if (res?.holidays && Array.isArray(res.holidays) && res.holidays.length > 0) {
+            setUpcomingHolidaysList(res.holidays);
+          } else {
+            setUpcomingHolidaysList(getUpcomingHolidays(new Date(), 15));
+          }
+        })
+        .catch(() => {
+          setUpcomingHolidaysList(getUpcomingHolidays(new Date(), 15));
+        })
+        .finally(() => setLoadingHolidays(false));
+    }
+  }, [showCalendarModal]);
 
   useEffect(() => {
     document.body.className = `font-scale-${fontScale}`;
@@ -57,6 +103,14 @@ function AppInner() {
   // ── Auth state ──
   const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  // Safety timeout: if auth state hasn't resolved within 1.5s, unblock immediately so screen is never stuck
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setUser(u => u === undefined ? null : u);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // ── Market data state ──
   const [stocks,       setStocks]       = useState(initialStocks);
@@ -316,7 +370,7 @@ function AppInner() {
           currentStocks = response.data;
           liveStocksRef.current = currentStocks;
           setStocks(currentStocks);
-          const isLive = status?.isOpen || response.source === 'live';
+          const isLive = Boolean(status?.isOpen);
           setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
           saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
           hasFreshData = true;
@@ -398,7 +452,7 @@ function AppInner() {
         currentStocks = response.data;
         liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
-        const isLive = status?.isOpen || response.source === 'live';
+        const isLive = Boolean(status?.isOpen);
         setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
         saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
         hasFreshData = true;
@@ -511,45 +565,87 @@ function AppInner() {
           </div>
           <div>
             <div className="header-title">Drabyashree NEPSE</div>
-            <div className="header-sub" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div 
+              className="header-sub" 
+              style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+              onClick={() => setShowCalendarModal(true)}
+              title="Click to view NEPSE Calendar & Holidays"
+            >
               <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
                 {indices?.nepse?.value ?? 2542.77}&nbsp;
                 {nepseChange >= 0 ? '▲' : '▼'}{Math.abs(indices?.nepse?.pChange ?? 0.18)}%
               </span>
               <span style={{ color: 'var(--text-muted)' }}>·</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-                {marketStatus.nptTime || '11:00 AM – 3:00 PM'}
+              <span style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }} title={marketStatus.bsFormattedEn || ''}>
+                {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
               </span>
             </div>
           </div>
         </div>
 
         <div className="header-actions">
-          {/* Market Status Indicator */}
+          {/* Market Status Indicator Button */}
           {(() => {
-            const isLive = Boolean(marketStatus?.isOpen || apiStatus === 'live');
+            const isLive = Boolean(marketStatus?.isOpen);
+            const badgeColor = isLive 
+              ? 'var(--bull)' 
+              : marketStatus?.isHoliday 
+              ? '#c084fc' 
+              : marketStatus?.isWeekend 
+              ? '#fbbf24' 
+              : '#94a3b8';
+            const badgeBg = isLive 
+              ? 'rgba(16,185,129,0.1)' 
+              : marketStatus?.isHoliday 
+              ? 'rgba(192,132,252,0.12)' 
+              : marketStatus?.isWeekend 
+              ? 'rgba(251,191,36,0.12)' 
+              : 'rgba(255,255,255,0.03)';
+            const badgeBorder = isLive 
+              ? 'rgba(16,185,129,0.35)' 
+              : marketStatus?.isHoliday 
+              ? 'rgba(192,132,252,0.35)' 
+              : marketStatus?.isWeekend 
+              ? 'rgba(251,191,36,0.35)' 
+              : 'var(--border)';
+            const label = isLive 
+              ? 'LIVE' 
+              : marketStatus?.isHoliday 
+              ? (marketStatus.holidayName ? `HOLIDAY: ${marketStatus.holidayName}` : 'HOLIDAY') 
+              : marketStatus?.isWeekend 
+              ? 'WEEKEND' 
+              : 'CLOSED';
+
             return (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: '4px 9px',
-                borderRadius: 50,
-                border: `1px solid ${isLive ? 'rgba(16,185,129,0.35)' : 'var(--border)'}`,
-                background: isLive ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)',
-              }}>
+              <button 
+                type="button"
+                onClick={() => setShowCalendarModal(true)}
+                title={`${marketStatus?.message || label} — Tap to view full Calendar & Holidays`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 9px',
+                  borderRadius: 50,
+                  border: `1px solid ${badgeBorder}`,
+                  background: badgeBg,
+                  cursor: 'pointer',
+                  outline: 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
                 <span style={{
                   display: 'inline-block',
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: isLive ? 'var(--bull)' : '#94a3b8'
+                  background: badgeColor
                 }} />
                 <span style={{
                   fontSize: 10.5, fontWeight: 800,
-                  color: isLive ? 'var(--bull)' : 'var(--text-muted)'
+                  color: badgeColor
                 }}>
-                  {isLive ? 'LIVE' : (marketStatus?.isWeekend ? 'WEEKEND' : marketStatus?.isHoliday ? 'HOLIDAY' : 'CLOSED')}
+                  {label}
                 </span>
-              </div>
+              </button>
             );
           })()}
 
@@ -914,6 +1010,7 @@ function AppInner() {
                   marketStatus={marketStatus}
                   lastSyncTime={lastSyncTime}
                   onSelectStock={openStockDetail}
+                  onOpenCalendar={() => setShowCalendarModal(true)}
                 />
               </PullToRefresh>
             )}
@@ -935,39 +1032,39 @@ function AppInner() {
               />
             )}
 
-          {activeTab === 'services'   && (
-            <ServicesHub
-              stocks={stocks}
-              indices={indices}
-              apiStatus={apiStatus}
-              userId={user?.uid}
-              onNavigateTab={setActiveTab}
-              onSelectStock={openStockDetail}
-              onAskGuruAi={(stockOrSymbol) => {
-                const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-                setAiTargetStock(sym);
-                setActiveTab('ai');
-              }}
-            />
-          )}
-          {activeTab === 'calculator' && <Calculator />}
-          {activeTab === 'ai'         && (
-            <AiAnalyst
-              marketStocks={stocks}
-              initialStock={aiTargetStock}
-              onClearInitialStock={() => setAiTargetStock(null)}
-            />
-          )}
-          {activeTab === 'resources'  && <Resources />}
+            {activeTab === 'services'   && (
+              <ServicesHub
+                stocks={stocks}
+                indices={indices}
+                apiStatus={apiStatus}
+                userId={user?.uid}
+                onNavigateTab={setActiveTab}
+                onSelectStock={openStockDetail}
+                onAskGuruAi={(stockOrSymbol) => {
+                  const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                  setAiTargetStock(sym);
+                  setActiveTab('ai');
+                }}
+              />
+            )}
+            {activeTab === 'calculator' && <Calculator />}
+            {activeTab === 'ai'         && (
+              <AiAnalyst
+                marketStocks={stocks}
+                initialStock={aiTargetStock}
+                onClearInitialStock={() => setAiTargetStock(null)}
+              />
+            )}
+            {activeTab === 'resources'  && <Resources />}
 
-          {/* ── Global ShareHub-Style Stock Detail Modal ── */}
-          {selectedStock && (
-            <StockDetailModal
-              stock={selectedStock}
-              allStocks={stocks}
-              onClose={closeStockDetail}
-            />
-          )}
+            {/* ── Global ShareHub-Style Stock Detail Modal ── */}
+            {selectedStock && (
+              <StockDetailModal
+                stock={selectedStock}
+                allStocks={stocks}
+                onClose={closeStockDetail}
+              />
+            )}
           </div>
         </ErrorBoundary>
         <div style={{ textAlign: 'center', padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -1048,6 +1145,296 @@ function AppInner() {
               apiStatus={apiStatus}
               setApiStatus={setApiStatus}
             />
+          </div>
+        </div>
+      )}
+
+      {/* ── NEPSE Market Calendar & Holidays Modal ── */}
+      {showCalendarModal && (
+        <div 
+          onClick={() => setShowCalendarModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(5, 7, 13, 0.85)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex', alignItems: 'flex-end',
+            justifyContent: 'center',
+            animation: 'fadeIn 0.25s ease'
+          }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#0D111A',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '24px 24px 0 0',
+              width: '100%',
+              maxWidth: 580,
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -10px 40px rgba(0,0,0,0.7)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between',
+              alignItems: 'center', background: 'rgba(255,255,255,0.02)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 38, height: 38,
+                  background: 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(59,130,246,0.2))',
+                  border: '1px solid rgba(16,185,129,0.4)',
+                  borderRadius: 12, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', boxShadow: '0 0 20px rgba(16,185,129,0.15)'
+                }}>
+                  <Calendar style={{ width: 20, height: 20, color: '#10b981' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                    NEPSE Market Calendar & Holidays
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    नेप्से क्यालेन्डर तथा सार्वजनिक बिदाहरू
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCalendarModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '50%', width: 32, height: 32,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--text-muted)', cursor: 'pointer'
+                }}
+              >
+                <X style={{ width: 16, height: 16 }} />
+              </button>
+            </div>
+
+            {/* Scrollable Modal Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Today's Status Banner */}
+              <div style={{
+                background: 'linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 16, padding: 16
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Today's Nepali Date (वि.सं.)
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
+                      {marketStatus?.bsFormattedNp || '२८ भाद्र २०८३ (आइतबार)'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                      {marketStatus?.bsFormattedEn || new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    padding: '6px 12px', borderRadius: 20,
+                    background: marketStatus?.isOpen ? 'rgba(16,185,129,0.15)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.15)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.15)' : 'rgba(244,63,94,0.15)',
+                    border: `1px solid ${marketStatus?.isOpen ? 'rgba(16,185,129,0.4)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.4)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.4)' : 'rgba(244,63,94,0.4)'}`,
+                    color: marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171',
+                    fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6
+                  }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171'
+                    }} />
+                    {marketStatus?.isOpen
+                      ? 'Market Open (खुल्ला)'
+                      : marketStatus?.isHoliday
+                      ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
+                      : marketStatus?.isWeekend
+                      ? 'Weekend Closed (शनिबार/आइतबार)'
+                      : 'Market Closed (बन्द)'}
+                  </div>
+                </div>
+
+                {/* Schedule Rules Grid */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Mon – Fri (सोम – शुक्र)</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Friday market is OPEN</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>11:00 AM – 3:00 PM</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Nepal Time (NPT)</div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Saturday & Sunday</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>National weekend off</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upcoming Public Holidays Section */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                    Upcoming NEPSE Holidays
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 7px', borderRadius: 10 }}>
+                      {upcomingHolidaysList.length}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Bikram Sambat (वि.सं.)
+                  </div>
+                </div>
+
+                {loadingHolidays ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                    <RefreshCw style={{ width: 18, height: 18, animation: 'spin 1s linear infinite', margin: '0 auto 8px', color: 'var(--primary)' }} />
+                    Fetching latest Nepali calendar holidays...
+                  </div>
+                ) : upcomingHolidaysList.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12, background: 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
+                    No upcoming market holidays scheduled.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {upcomingHolidaysList.map((h, idx) => {
+                      const isWeekendOff = (h.dayOfWeek === 6 || h.dayOfWeek === 0);
+                      return (
+                        <div
+                          key={`${h.bsYear}_${h.bsMonth}_${h.bsDay}_${idx}`}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            borderRadius: 12,
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {/* BS Date Badge */}
+                            <div style={{
+                              minWidth: 54, textAlign: 'center',
+                              padding: '5px 8px', borderRadius: 8,
+                              background: 'rgba(192,132,252,0.1)',
+                              border: '1px solid rgba(192,132,252,0.25)'
+                            }}>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: '#c084fc', lineHeight: 1.1 }}>
+                                {h.digitsDay || toNepaliDigits(h.bsDay)}
+                              </div>
+                              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600 }}>
+                                {h.dayOfWeekNp || ''}
+                              </div>
+                            </div>
+
+                            {/* Holiday Info */}
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {h.nameNp || h.festival || 'सार्वजनिक बिदा'}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                                {h.nameEn || h.adDate || ''}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Day tag */}
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700,
+                              padding: '3px 8px', borderRadius: 6,
+                              background: isWeekendOff ? 'rgba(251,191,36,0.12)' : 'rgba(244,63,94,0.12)',
+                              color: isWeekendOff ? '#fbbf24' : '#f87171',
+                              border: `1px solid ${isWeekendOff ? 'rgba(251,191,36,0.25)' : 'rgba(244,63,94,0.25)'}`
+                            }}>
+                              {h.dayOfWeekEn || ''}
+                            </span>
+                            {h.adDate && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                                {h.adDate}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.02)',
+              display: 'flex', justifyContent: 'flex-end'
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowCalendarModal(false)}
+                className="btn-primary"
+                style={{ padding: '8px 24px', fontSize: 13, fontWeight: 700, borderRadius: 10 }}
+              >
+                Close Calendar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kharcha Tracker Style Exit Toast */}
+      {exitToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 'calc(80px + env(safe-area-inset-bottom))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(16, 185, 129, 0.4)',
+          borderRadius: 16,
+          padding: '12px 20px',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(16, 185, 129, 0.2)',
+          color: '#ffffff',
+          pointerEvents: 'none',
+          animation: 'fadeInUp 0.2s ease',
+          maxWidth: '90vw',
+          width: 'max-content'
+        }}>
+          <div style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: '#10b981',
+            boxShadow: '0 0 10px #10b981',
+            flexShrink: 0
+          }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+              {exitToast.title}
+            </div>
+            {exitToast.desc && (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, fontWeight: 500 }}>
+                {exitToast.desc}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1743,9 +1743,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   key={tf}
                   onClick={() => setHistoryTimeframe(tf)}
                   style={{
-                    background: historyTimeframe === tf ? '#10B981' : 'rgba(255,255,255,0.05)',
-                    color: historyTimeframe === tf ? '#000000' : 'rgba(255,255,255,0.7)',
-                    border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
+                    background: historyTimeframe === tf ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                    color: historyTimeframe === tf ? '#ffffff' : 'rgba(255,255,255,0.7)',
+                    border: historyTimeframe === tf ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                    boxShadow: historyTimeframe === tf ? '0 0 12px rgba(79,70,229,0.35)' : 'none',
+                    transition: 'all 0.15s ease'
                   }}
                 >
                   {tf}
@@ -2246,13 +2249,29 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
                 <button
                   onClick={() => setCalcMode('buy')}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: calcMode === 'buy' ? 'var(--bull)' : 'rgba(255,255,255,0.05)', color: calcMode === 'buy' ? '#000' : '#fff', fontWeight: 800, cursor: 'pointer' }}
+                  style={{
+                    flex: 1, padding: '9px 12px', borderRadius: 10,
+                    border: calcMode === 'buy' ? '1px solid var(--bull)' : '1px solid rgba(255,255,255,0.08)',
+                    background: calcMode === 'buy' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.04)',
+                    color: calcMode === 'buy' ? 'var(--bull)' : 'var(--text-secondary)',
+                    fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                    boxShadow: calcMode === 'buy' ? '0 0 14px rgba(16, 185, 129, 0.25)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
                 >
                   Buy Simulator
                 </button>
                 <button
                   onClick={() => setCalcMode('sell')}
-                  style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: calcMode === 'sell' ? '#F43F5E' : 'rgba(255,255,255,0.05)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                  style={{
+                    flex: 1, padding: '9px 12px', borderRadius: 10,
+                    border: calcMode === 'sell' ? '1px solid #F43F5E' : '1px solid rgba(255,255,255,0.08)',
+                    background: calcMode === 'sell' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(255,255,255,0.04)',
+                    color: calcMode === 'sell' ? '#F43F5E' : 'var(--text-secondary)',
+                    fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                    boxShadow: calcMode === 'sell' ? '0 0 14px rgba(244, 63, 94, 0.25)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
                 >
                   Sell / Profit Simulator
                 </button>

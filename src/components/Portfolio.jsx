@@ -125,7 +125,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock }) {
+export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts }) {
 
   const [transactions, setTransactions] = useState([]);
   const [meroshareProfiles, setMeroshareProfiles] = useState([]);
@@ -1868,10 +1868,20 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
       {/* Empty State for MeroShare */}
       {activeView === 'meroshare' && meroshareProfiles.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '32px 0', border: '1px dashed var(--border)', borderRadius: 'var(--radius-md)' }}>
-          <ShieldCheck style={{ width: 32, height: 32, color: 'var(--text-muted)', margin: '0 auto 8px' }} />
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No MeroShare accounts linked.</p>
-          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Go to the MeroShare tab to link an account and sync your portfolio.</p>
+        <div style={{ textAlign: 'center', padding: '32px 16px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <ShieldCheck style={{ width: 32, height: 32, color: 'var(--text-muted)', margin: '0 auto 4px' }} />
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>No MeroShare Accounts Linked</p>
+          <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: 0, maxWidth: 320, lineHeight: 1.5 }}>Link your Demat profile to sync your live holdings, calculate accurate WACC, and track returns automatically.</p>
+          {onSwitchToAccounts && (
+            <button
+              type="button"
+              onClick={onSwitchToAccounts}
+              className="btn-primary btn-sm"
+              style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus style={{ width: 14, height: 14 }} /> Link Demat Account
+            </button>
+          )}
         </div>
       )}
 

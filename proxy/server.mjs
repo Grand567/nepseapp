@@ -15,6 +15,20 @@ import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.m
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
+import { 
+  adToBs, 
+  bsToAd, 
+  fetchLiveCalendarMonth, 
+  getHolidaysForMonth, 
+  getUpcomingHolidays,
+  getBikramSambatHoliday,
+  NEPALI_MONTH_NAMES_NP,
+  NEPALI_MONTH_NAMES_EN,
+  NEPALI_DAYS_NP,
+  NEPALI_DAYS_EN,
+  toNepaliDigits
+} from '../src/utils/bikramSambat.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -286,64 +300,12 @@ const NEPSE_HOLIDAYS_MAP = {
 };
 
 function getProxyMarketStatus() {
-  const now = new Date();
-  const nptFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kathmandu',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: 'numeric', minute: 'numeric', second: 'numeric',
-    hour12: false, weekday: 'short'
-  });
-  const parts = nptFormatter.formatToParts(now);
-  const findPart = (t) => parts.find(p => p.type === t)?.value;
-  const year = findPart('year');
-  const month = findPart('month');
-  const day = findPart('day');
-  const weekday = findPart('weekday');
-  const hours = parseInt(findPart('hour') || '0', 10) % 24;
-  const mins = parseInt(findPart('minute') || '0', 10);
-  const isoDate = `${year}-${month}-${day}`;
-  const totalMins = hours * 60 + mins;
-
-  // Trading days: Monday (1) through Friday (5). Weekend: Saturday (6) and Sunday (0)
-  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
-  const holidayName = NEPSE_HOLIDAYS_MAP[isoDate] || null;
-  const isHoliday = Boolean(holidayName);
-  const isWithinHours = totalMins >= 11 * 60 && totalMins < 15 * 60; // 11:00 AM - 3:00 PM NPT
-  const isOpen = !isWeekend && !isHoliday && isWithinHours;
-
-  let statusLabel = 'Market Closed';
-  let message = 'Market Closed';
-  if (isHoliday) {
-    statusLabel = 'Holiday Closed';
-    message = `Market Closed — ${holidayName}`;
-  } else if (isWeekend) {
-    statusLabel = 'Weekend Closed';
-    message = `Market Closed — ${weekday} Weekend`;
-  } else if (isOpen) {
-    statusLabel = 'Market Open';
-    message = 'Market is OPEN (Live Trading)';
-  } else if (totalMins < 11 * 60) {
-    statusLabel = 'Pre-Open / Closed';
-    message = 'Market Closed — Opens at 11:00 AM NPT';
-  } else {
-    statusLabel = 'Market Closed';
-    message = 'Market Closed — Closed at 3:00 PM NPT';
-  }
-
-  return {
-    isOpen,
-    isHoliday,
-    isWeekend,
-    holidayName,
-    nptTime: `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`,
-    isoDate,
-    statusLabel,
-    message
-  };
+  return getDetailedMarketStatus();
 }
 
 app.get(['/api/market-status', '/api/status'], (req, res) => {
-  res.json({ success: true, data: getProxyMarketStatus() });
+  const status = getProxyMarketStatus();
+  res.json({ success: true, ...status, data: status });
 });
 
 const HEADERS = {
@@ -685,106 +647,132 @@ app.get('/api/today-prices', async (req, res) => {
    ENDPOINT 3 — Market Status check
    ═══════════════════════════════════════════════════ */
 app.get('/api/status', (req, res) => {
-  const cacheKey = 'market-status';
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return res.json(cached);
-  }
+  const statusData = getDetailedMarketStatus();
+  setCache('market-status', statusData, 10000); // 10s TTL
+  res.json({ success: true, ...statusData, data: statusData });
+});
 
-  const now = new Date();
-  let nptDay, nptMinutes, isoDate;
+/* ═══════════════════════════════════════════════════
+   ENDPOINT — NEPSE Holidays & Bikram Sambat Calendar
+   ═══════════════════════════════════════════════════ */
+
+// Fetch NEPSE and Nepal public holidays (monthly or upcoming)
+app.get('/api/holidays', async (req, res) => {
   try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Kathmandu',
-      hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: 'numeric', minute: 'numeric'
+    const yearParam = req.query.year ? parseInt(req.query.year, 10) : null;
+    const monthParam = req.query.month ? parseInt(req.query.month, 10) : null;
+    const upcomingCount = Math.min(Math.max(parseInt(req.query.upcoming || '10', 10), 1), 50);
+
+    // If month is specified (1–12), return all holidays in that BS month
+    if (monthParam && monthParam >= 1 && monthParam <= 12) {
+      const nowBs = adToBs(new Date());
+      const bsYear = (yearParam && yearParam >= 2000 && yearParam <= 2090) ? yearParam : nowBs.year;
+      const cacheKey = `holidays_${bsYear}_${monthParam}`;
+      const cached = getCache(cacheKey);
+      if (cached) {
+        return res.json({ success: true, ...cached, cached: true });
+      }
+
+      const monthData = await fetchLiveCalendarMonth(bsYear, monthParam);
+      const responseData = {
+        bsYear,
+        bsMonth: monthParam,
+        monthNameNp: monthData.monthNameNp,
+        monthNameEn: monthData.monthNameEn,
+        totalHolidays: monthData.holidays.length,
+        holidays: monthData.holidays
+      };
+
+      setCache(cacheKey, responseData, 3600000); // 1 hour cache
+      return res.json({ success: true, ...responseData });
+    }
+
+    // Default: Return upcoming NEPSE holidays starting from today
+    const upcoming = getUpcomingHolidays(new Date(), upcomingCount);
+    const nowBs = adToBs(new Date());
+
+    return res.json({
+      success: true,
+      currentBsYear: nowBs.year,
+      currentBsMonth: nowBs.month,
+      currentBsDay: nowBs.day,
+      totalUpcoming: upcoming.length,
+      holidays: upcoming
     });
-    const parts = formatter.formatToParts(now);
-    const val = type => parts.find(p => p.type === type)?.value;
-    const year = parseInt(val('year'), 10);
-    const month = parseInt(val('month'), 10) - 1;
-    const day = parseInt(val('day'), 10);
-    const hour = parseInt(val('hour'), 10) % 24;
-    const minute = parseInt(val('minute'), 10);
-
-    const nptDate = new Date(year, month, day, hour, minute);
-    nptDay = nptDate.getDay();
-    nptMinutes = hour * 60 + minute;
-    isoDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  } catch (e) {
-    const nptOffset = 5 * 60 + 45; // minutes
-    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-    nptMinutes = (utcMinutes + nptOffset) % (24 * 60);
-    nptDay = (now.getUTCDay() + Math.floor((utcMinutes + nptOffset) / (24 * 60))) % 7;
-    const nptDate = new Date(now.getTime() + nptOffset * 60000);
-    isoDate = nptDate.toISOString().split('T')[0];
+  } catch (err) {
+    console.error('[proxy] /api/holidays error:', err.message);
+    res.status(500).json({ success: false, error: err.message, holidays: [] });
   }
+});
 
-  // Official Nepal Public Holidays Database
-  const NEPSE_HOLIDAYS = {
-    '2024-01-11': 'Prithvi Jayanti', '2024-01-15': 'Maghe Sankranti', '2024-01-30': "Martyr's Day",
-    '2024-03-08': 'Maha Shivaratri', '2024-03-24': 'Fagu Purnima (Holi)', '2024-04-13': 'Nepali New Year 2081',
-    '2024-05-01': 'Labour Day', '2024-05-23': 'Buddha Jayanti', '2024-05-28': 'Republic Day',
-    '2024-09-19': 'Constitution Day', '2024-10-10': 'Dashain', '2024-11-01': 'Tihar',
-    '2025-01-11': 'Prithvi Jayanti', '2025-01-14': 'Maghe Sankranti', '2025-02-26': 'Maha Shivaratri',
-    '2025-03-13': 'Fagu Purnima (Holi)', '2025-04-14': 'Nepali New Year 2082', '2025-05-01': 'Labour Day',
-    '2025-05-12': 'Buddha Jayanti', '2025-05-29': 'Republic Day', '2025-09-19': 'Constitution Day',
-    '2025-09-29': 'Dashain', '2025-10-20': 'Tihar', '2025-10-27': 'Chhath Parva',
-    '2026-01-11': 'Prithvi Jayanti', '2026-01-15': 'Maghe Sankranti', '2026-01-30': "Martyr's Day",
-    '2026-02-15': 'Maha Shivaratri', '2026-02-19': 'Democracy Day', '2026-03-03': 'Fagu Purnima (Holi)',
-    '2026-04-14': 'Nepali New Year 2083', '2026-05-01': 'Labour Day', '2026-05-29': 'Republic Day',
-    '2026-08-27': 'Janai Purnima', '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej',
-    '2026-09-19': 'Constitution Day', '2026-10-17': 'Dashain', '2026-11-08': 'Tihar',
-    '2026-12-25': 'Christmas Day'
-  };
+// Fetch complete Bikram Sambat monthly calendar with tithi, festival, weekend & trading day info
+app.get('/api/calendar/month', async (req, res) => {
+  try {
+    const nowBs = adToBs(new Date());
+    const year = req.query.year ? parseInt(req.query.year, 10) : nowBs.year;
+    const month = req.query.month ? parseInt(req.query.month, 10) : nowBs.month;
 
-  const holidayName = NEPSE_HOLIDAYS[isoDate];
-  const isHoliday = Boolean(holidayName);
-  // NEPSE trading days: Monday (1) to Friday (5). Weekend: Saturday (6) and Sunday (0)
-  const isTradingDay = nptDay >= 1 && nptDay <= 5;
-  const isWeekend = nptDay === 0 || nptDay === 6;
-  const isMarketHours = nptMinutes >= 11 * 60 && nptMinutes < 15 * 60;
-  const isOpen = isTradingDay && isMarketHours && !isHoliday;
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      return res.status(400).json({ success: false, error: 'Invalid year or month parameter. Month must be 1 to 12.' });
+    }
 
-  const hh = String(Math.floor(nptMinutes / 60)).padStart(2, '0');
-  const mm = String(nptMinutes % 60).padStart(2, '0');
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const dayName = dayNames[nptDay] || '';
+    const cacheKey = `calendar_month_${year}_${month}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.json({ success: true, ...cached, cached: true });
+    }
 
-  let message = 'Market is CLOSED';
-  let statusLabel = 'Market Closed';
-  if (isOpen) {
-    message = 'Market is OPEN (11:00 AM – 3:00 PM NPT)';
-    statusLabel = 'Market Open';
-  } else if (isHoliday) {
-    message = `Market Closed — Public Holiday (${holidayName})`;
-    statusLabel = 'Holiday Closed';
-  } else if (isWeekend) {
-    message = `Market Closed — ${dayName} Weekend`;
-    statusLabel = 'Weekend Closed';
-  } else if (nptMinutes < 11 * 60) {
-    message = 'Market Closed — Pre-Open (Opens at 11:00 AM NPT)';
-    statusLabel = 'Pre-Open';
-  } else {
-    message = 'Market Closed — Session Ended at 3:00 PM NPT';
-    statusLabel = 'Market Closed';
+    const monthData = await fetchLiveCalendarMonth(year, month);
+    setCache(cacheKey, monthData, 3600000); // 1 hour cache
+
+    return res.json({ success: true, ...monthData });
+  } catch (err) {
+    console.error('[proxy] /api/calendar/month error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
+});
 
-  const statusData = {
-    isOpen,
-    isWeekend,
-    isHoliday,
-    holidayName: holidayName || null,
-    nptTime: `${hh}:${mm}`,
-    nptDay,
-    dayName,
-    statusLabel,
-    message
-  };
+// Today's Bikram Sambat calendar, holiday, weekend and market status overview
+app.get('/api/calendar/today', (req, res) => {
+  try {
+    const now = new Date();
+    const bs = adToBs(now);
+    const marketStatus = getDetailedMarketStatus(now);
 
-  setCache(cacheKey, statusData, 10000); // 10s TTL
-  res.json(statusData);
+    res.json({
+      success: true,
+      adDate: now.toISOString().split('T')[0],
+      adTimeUtc: now.toISOString(),
+      nptTime: marketStatus.currentTime,
+      bs: {
+        year: bs.year,
+        month: bs.month,
+        day: bs.day,
+        monthNameNp: NEPALI_MONTH_NAMES_NP[bs.month - 1],
+        monthNameEn: NEPALI_MONTH_NAMES_EN[bs.month - 1],
+        dayOfWeek: bs.dayOfWeek,
+        dayOfWeekNp: NEPALI_DAYS_NP[bs.dayOfWeek],
+        dayOfWeekEn: NEPALI_DAYS_EN[bs.dayOfWeek],
+        digitsDay: toNepaliDigits(bs.day),
+        formattedNp: `${toNepaliDigits(bs.day)} ${NEPALI_MONTH_NAMES_NP[bs.month - 1]} ${toNepaliDigits(bs.year)} (${NEPALI_DAYS_NP[bs.dayOfWeek]})`,
+        formattedEn: `${bs.day} ${NEPALI_MONTH_NAMES_EN[bs.month - 1]} ${bs.year} (${NEPALI_DAYS_EN[bs.dayOfWeek]})`
+      },
+      schedule: {
+        isWeekend: marketStatus.isWeekend,
+        isPublicHoliday: marketStatus.isHoliday,
+        holidayName: marketStatus.holidayName,
+        isTradingDay: marketStatus.isTradingDay,
+        isOpen: marketStatus.isOpen,
+        session: marketStatus.session,
+        tradingHours: '11:00 AM – 3:00 PM NPT (Monday – Friday)',
+        nationalWeekend: 'Saturday & Sunday (Friday market is open)'
+      },
+      marketStatus
+    });
+  } catch (err) {
+    console.error('[proxy] /api/calendar/today error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /* ═══════════════════════════════════════════════════

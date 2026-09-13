@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [react()],
   server: {
     port: 3000,
@@ -78,7 +79,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'esbuild',
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
         manualChunks: {
@@ -89,6 +90,6 @@ export default defineConfig({
     }
   },
   esbuild: {
-    drop: ['console', 'debugger'],
+    drop: ['debugger']
   }
 })

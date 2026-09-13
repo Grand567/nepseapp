@@ -106,11 +106,8 @@ function buildEnrichedSnapshot() {
   const avgChg = stocks.reduce((a, s) => a + s.pChange, 0) / stocks.length;
   const nepseIndex = 2542.77;
 
-  const nowUTC = new Date();
-  const npt = new Date(nowUTC.getTime() + (5.75 * 60 + nowUTC.getTimezoneOffset()) * 60000);
-  const dow = npt.getDay();
-  const mins = npt.getHours() * 60 + npt.getMinutes();
-  const isOpen = dow >= 0 && dow <= 4 && mins >= 660 && mins < 900;
+  const marketStatusObj = getDetailedMarketStatus();
+  const isOpen = marketStatusObj.isOpen;
 
   const summary = {
     nepseIndex, change: 4.66, changePercent: 0.18,
@@ -118,6 +115,8 @@ function buildEnrichedSnapshot() {
     advances, declines, unchanged,
     marketStatus: isOpen ? 'OPEN' : 'CLOSED',
     isOpen, asOf: new Date().toISOString(),
+    bsFormattedNp: marketStatusObj.bsFormattedNp,
+    statusLabel: marketStatusObj.statusLabel,
     floatMktCap: Math.floor(totalTurnover * 310),
     totalMktCap: Math.floor(stocks.reduce((a, s) => a + s.marketCap, 0)),
   };
@@ -514,14 +513,22 @@ function normalizeLiveArray(arr) {
 // PUBLIC API
 export async function fetchLiveMarket() {
   ensureSnapshot();
+  const marketStatus = getDetailedMarketStatus();
   const live = await attemptLiveMarket();
-  if (live && live.length) { persistStocks(live); LAST_SOURCE = 'live'; return { data: live, source: 'live' }; }
-  LAST_SOURCE = 'simulated-live';
-  return { data: MEM_STOCKS, source: LAST_SOURCE };
+  if (live && live.length) {
+    persistStocks(live);
+    LAST_SOURCE = marketStatus.isOpen ? 'live' : 'closing';
+    return { data: live, source: LAST_SOURCE, marketStatus };
+  }
+  LAST_SOURCE = marketStatus.isOpen ? 'simulated-live' : 'yesterday';
+  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus };
 }
 
 export async function fetchMarketSummary() {
   ensureSnapshot();
+  const marketStatus = getDetailedMarketStatus();
+  const defaultSource = marketStatus.isOpen ? 'live' : 'closing';
+
   // 1. Try local proxy /api/market/summary or /api/market-indices
   try {
     const pSum = await tryFetchJSON(`${getProxyBase()}/api/market/summary`, 2500);
@@ -535,10 +542,10 @@ export async function fetchMarketSummary() {
           totalTurnover: Number(d.totalTurnover || MEM_SUMMARY.totalTurnover),
           totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY.totalTradedShares),
           totalTransactions: Number(d.totalTransactions || MEM_SUMMARY.totalTransactions),
-          marketStatus: MEM_SUMMARY.marketStatus,
+          marketStatus: marketStatus.isOpen ? 'OPEN' : 'CLOSED',
           advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
         },
-        source: 'live',
+        source: defaultSource,
       };
     }
   } catch (_) {}
@@ -553,9 +560,9 @@ export async function fetchMarketSummary() {
         totalTurnover: Number(d.totalTurnover ?? d.turnover ?? MEM_SUMMARY.totalTurnover),
         totalTradedShares: Number(d.totalTradedShares ?? d.volume ?? MEM_SUMMARY.totalTradedShares),
         totalTransactions: Number(d.totalTransactions ?? MEM_SUMMARY.totalTransactions),
-        marketStatus: MEM_SUMMARY.marketStatus,
+        marketStatus: marketStatus.isOpen ? 'OPEN' : 'CLOSED',
         advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
-      }, source: 'live',
+      }, source: defaultSource,
     };
   }
   return { data: MEM_SUMMARY, source: LAST_SOURCE };

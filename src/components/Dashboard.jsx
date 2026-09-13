@@ -995,7 +995,8 @@ export default function Dashboard({
   apiStatus,
   marketStatus,
   lastSyncTime,
-  onSelectStock
+  onSelectStock,
+  onOpenCalendar
 }) {
   const [selectedStock, setSelectedStock] = useState(null);
   const [activeScanner, setActiveScanner] = useState(null);
@@ -2316,11 +2317,31 @@ export default function Dashboard({
               }}>
                 {isHeroBull ? '+' : ''}{fmt(heroVal.change)} ({(heroVal.pChange || 0).toFixed(2)}%)
               </span>
-              <span style={{
-                fontSize: 10, fontWeight: 900, textTransform: 'uppercase', padding: '2px 6px', borderRadius: 6,
-                background: marketStatus?.isOpen ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
-                color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171'
-              }}>
+              <button 
+                type="button"
+                onClick={onOpenCalendar}
+                title="Tap to view NEPSE Calendar & Holidays"
+                style={{
+                  fontSize: 10, fontWeight: 900, textTransform: 'uppercase', padding: '2px 7px', borderRadius: 6,
+                  border: 'none',
+                  cursor: onOpenCalendar ? 'pointer' : 'default',
+                  outline: 'none',
+                  background: marketStatus?.isOpen
+                    ? 'rgba(16,185,129,0.15)'
+                    : marketStatus?.isHoliday
+                    ? 'rgba(192,132,252,0.15)'
+                    : marketStatus?.isWeekend
+                    ? 'rgba(251,191,36,0.15)'
+                    : 'rgba(244,63,94,0.15)',
+                  color: marketStatus?.isOpen
+                    ? 'var(--bull)'
+                    : marketStatus?.isHoliday
+                    ? '#c084fc'
+                    : marketStatus?.isWeekend
+                    ? '#fbbf24'
+                    : '#f87171'
+                }}
+              >
                 {marketStatus?.isOpen
                   ? 'Market Open'
                   : marketStatus?.isHoliday
@@ -2328,7 +2349,22 @@ export default function Dashboard({
                   : marketStatus?.isWeekend
                   ? 'Weekend Closed'
                   : 'Market Closed'}
-              </span>
+              </button>
+              {marketStatus?.bsFormattedNp && (
+                <button 
+                  type="button"
+                  onClick={onOpenCalendar}
+                  title="Bikram Sambat Date — Tap to view full calendar"
+                  style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6,
+                    border: 'none', outline: 'none',
+                    cursor: onOpenCalendar ? 'pointer' : 'default',
+                    background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)'
+                  }}
+                >
+                  {marketStatus.bsFormattedNp}
+                </button>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

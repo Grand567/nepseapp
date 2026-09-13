@@ -286,6 +286,26 @@ export const fetchMarketNews = async (forceRefresh = false) => {
   return [];
 };
 export const fetchMarketStatus = () => _proxyFetch('/api/status', {}, 10000);
+
+export const fetchHolidays = (year, month, count) => {
+  const params = new URLSearchParams();
+  if (year) params.set('year', year);
+  if (month) params.set('month', month);
+  if (count) params.set('upcoming', count);
+  const qs = params.toString();
+  return _proxyFetch('/api/holidays' + (qs ? '?' + qs : ''), {}, 3600000);
+};
+
+export const fetchMonthCalendar = (year, month) => {
+  const params = new URLSearchParams();
+  if (year) params.set('year', year);
+  if (month) params.set('month', month);
+  const qs = params.toString();
+  return _proxyFetch('/api/calendar/month' + (qs ? '?' + qs : ''), {}, 3600000);
+};
+
+export const fetchTodayCalendar = () => _proxyFetch('/api/calendar/today', {}, 60000);
+
 export const fetchMeroShareIPOs = (token) => _proxyFetch('/api/meroshare/current-issues?token=' + encodeURIComponent(token), {}, 900000);
 export const fetchApplicationReport = (creds) => _proxyFetch('/api/meroshare/application-report', { body: creds, timeout: 20000 }, 600000);
 

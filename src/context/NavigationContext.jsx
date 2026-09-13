@@ -9,25 +9,37 @@ const NavigationContext = createContext({
   closeStockDetail: () => {},
   registerBackHandler: () => () => {},
   goBack: () => {},
+  exitToast: null,
+  setExitToast: () => {},
 });
 
 export function NavigationProvider({ children, initialTab = 'dashboard' }) {
   const [activeTab, setActiveTabState] = useState(initialTab);
   const [tabHistory, setTabHistory] = useState([initialTab]);
   const [selectedStock, setSelectedStock] = useState(null);
+  const [exitToast, setExitToast] = useState(null);
 
-  // Stack of back-button handlers (drawers, modals, sub-screens, etc.)
-  // Handlers are evaluated from top (most recently pushed) to bottom.
-  // A handler returning `true` signifies it has consumed the back event.
+  // Stack of custom back-button handlers (drawers, modals, sub-screens)
   const backHandlersRef = useRef([]);
+  const lastBackTimeRef = useRef(0);
+
+  // Auto-dismiss exit toast after 2.5 seconds
+  useEffect(() => {
+    if (exitToast) {
+      const timer = setTimeout(() => {
+        setExitToast(null);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [exitToast]);
 
   const registerBackHandler = useCallback((handler, priority = 0) => {
     const handlerObj = { id: Math.random().toString(36).substr(2, 9), handler, priority };
     backHandlersRef.current.push(handlerObj);
-    // Sort descending by priority so higher priority handlers run first
+    // Sort descending by priority so highest priority runs first
     backHandlersRef.current.sort((a, b) => b.priority - a.priority);
 
-    // Push a state into browser history to capture edge gestures / back button on web/mobile web
+    // Push state into browser history for mobile web gesture support
     try {
       window.history.pushState({ modalId: handlerObj.id }, '');
     } catch (_) {}
@@ -52,14 +64,18 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     const unregister = registerBackHandler(() => {
       setSelectedStock(null);
       return true; // Handled
-    }, 100); // Higher priority than sub-views
+    }, 100);
     return unregister;
   }, [selectedStock, registerBackHandler]);
 
   const setActiveTab = useCallback((tabId) => {
     setActiveTabState(prev => {
       if (prev === tabId) return prev;
-      setTabHistory(h => [...h, tabId]);
+      setTabHistory(h => {
+        // Prevent immediate duplicate
+        if (h[h.length - 1] === tabId) return h;
+        return [...h, tabId];
+      });
       try {
         window.history.pushState({ tab: tabId }, '');
       } catch (_) {}
@@ -67,10 +83,11 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     });
   }, []);
 
-  const goBack = useCallback(() => {
-    // 1. Run the topmost custom back handler if any (e.g. Stock detail, sub-service modal)
+  // Core back navigation handler (used by both hardware back & gestures)
+  const goBack = useCallback(async () => {
+    // 1. Run the topmost registered modal / drawer handler
     if (backHandlersRef.current.length > 0) {
-      const top = backHandlersRef.current[backHandlersRef.current.length - 1];
+      const top = backHandlersRef.current[0]; // Highest priority
       try {
         const handled = top.handler();
         if (handled) return true;
@@ -79,55 +96,78 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       }
     }
 
-    // 2. If no modal is open, check if we can navigate back in tab history
+    // 2. Dispatch custom event to allow child views (search dialogs, panels) to intercept
+    const backEvent = new CustomEvent('nepse-back-pressed', { cancelable: true });
+    const wasPrevented = !window.dispatchEvent(backEvent);
+    if (wasPrevented) {
+      return true;
+    }
+
+    // 3. Close stock detail modal if active
+    if (selectedStock) {
+      setSelectedStock(null);
+      return true;
+    }
+
+    // 4. Return to previous tab in history stack
     if (tabHistory.length > 1) {
       const newHistory = [...tabHistory];
-      newHistory.pop(); // Remove current
-      const prevTab = newHistory[newHistory.length - 1];
+      newHistory.pop(); // Remove current tab
+      const prevTab = newHistory[newHistory.length - 1] || 'dashboard';
       setTabHistory(newHistory);
       setActiveTabState(prevTab);
       return true;
     }
 
-    // 3. If on a non-dashboard tab, return to dashboard
+    // 5. If not on dashboard, return directly to dashboard
     if (activeTab !== 'dashboard') {
       setActiveTabState('dashboard');
       setTabHistory(['dashboard']);
       return true;
     }
 
-    return false; // Reached root, allowed to exit app
-  }, [tabHistory, activeTab]);
+    // 6. On navbar dashboard (root): double back within 2 seconds exits app (Kharcha Tracker pattern)
+    const now = Date.now();
+    if (now - lastBackTimeRef.current < 2000) {
+      try {
+        await CapacitorApp.exitApp();
+      } catch (_) {}
+      return true;
+    } else {
+      lastBackTimeRef.current = now;
+      setExitToast({
+        title: 'एप बन्द गर्न फेरि ब्याक गर्नुहोस्',
+        desc: 'Press back again within 2 seconds to exit'
+      });
+      return true;
+    }
+  }, [tabHistory, activeTab, selectedStock]);
 
-  // Hook into Capacitor Android Hardware / Gesture Back Button
+  // Hook into Capacitor Native Android Hardware Back Button & Swipe Gestures
   useEffect(() => {
-    let listener = null;
+    let listenerHandle = null;
 
     const setupCapacitor = async () => {
       try {
-        listener = await CapacitorApp.addListener('backButton', ({ canGoBack }) => {
-          const handled = goBack();
-          if (!handled) {
-            // At root of app, allow default exit or minimize
-            CapacitorApp.exitApp();
-          }
+        listenerHandle = await CapacitorApp.addListener('backButton', () => {
+          goBack();
         });
-      } catch (e) {
-        // Not in native Capacitor environment (e.g. running in standard browser)
+      } catch (_) {
+        // Web / non-Capacitor environment
       }
     };
 
     setupCapacitor();
 
-    // Hook into Web browser / PWA popstate (swipe-back gestures on mobile browser)
-    const handlePopState = (e) => {
+    // Hook into Web browser / PWA popstate (Android swipe gestures in WebView)
+    const handlePopState = () => {
       goBack();
     };
     window.addEventListener('popstate', handlePopState);
 
     return () => {
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
+      if (listenerHandle && typeof listenerHandle.remove === 'function') {
+        listenerHandle.remove();
       }
       window.removeEventListener('popstate', handlePopState);
     };
@@ -143,6 +183,8 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
         closeStockDetail,
         registerBackHandler,
         goBack,
+        exitToast,
+        setExitToast,
       }}
     >
       {children}

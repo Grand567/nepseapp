@@ -1,11 +1,13 @@
+import { getNepaliDate, getBikramSambatHoliday } from './bikramSambat.js';
+
 /**
  * NEPSE Trading Calendar & Holiday Engine
- * Regulates trading days, weekend closures (Saturday & Sunday),
- * and Nepal Public Holidays for accurate financial data processing.
+ * Regulates trading days, weekly closures (Saturday & Sunday),
+ * and official Nepal Bikram Sambat (BS) Public Holidays.
  * 
  * NEPSE Trading Schedule:
  * - Trading Days: Monday, Tuesday, Wednesday, Thursday, Friday
- * - Weekend Closed: Saturday & Sunday
+ * - Weekly Closed: Saturday & Sunday (National Weekend Holidays)
  * - Hours: 11:00 AM – 3:00 PM NPT (UTC+5:45)
  */
 
@@ -163,22 +165,43 @@ export function getIsoDateInNPT(date = new Date()) {
 }
 
 /**
- * Checks if a given date is a Public Holiday in Nepal
+ * Checks if a given date is a Public Holiday in Nepal (Bikram Sambat & Official NEPSE)
  */
 export function isNepsePublicHoliday(date = new Date()) {
+  const nepaliDate = getNepaliDate(date);
   const iso = getIsoDateInNPT(date);
+
+  // 1. Check Bikram Sambat official holiday database
+  if (nepaliDate.isHoliday) {
+    const holidayName = nepaliDate.holidayNameNp || nepaliDate.holidayNameEn;
+    return {
+      isHoliday: true,
+      holidayName,
+      holidayNameNp: nepaliDate.holidayNameNp,
+      holidayNameEn: nepaliDate.holidayNameEn,
+      nepaliDate,
+      dateStr: iso
+    };
+  }
+
+  // 2. Check Gregorian ISO mapping fallback
   if (NEPSE_PUBLIC_HOLIDAYS[iso]) {
     return {
       isHoliday: true,
       holidayName: NEPSE_PUBLIC_HOLIDAYS[iso],
+      holidayNameNp: NEPSE_PUBLIC_HOLIDAYS[iso],
+      holidayNameEn: NEPSE_PUBLIC_HOLIDAYS[iso],
+      nepaliDate,
       dateStr: iso
     };
   }
-  return { isHoliday: false, holidayName: null, dateStr: iso };
+
+  return { isHoliday: false, holidayName: null, nepaliDate, dateStr: iso };
 }
 
 /**
- * Checks if a given date is a weekend closure for NEPSE (Saturday=6 or Sunday=0)
+ * Checks if a given date is a weekly closure for NEPSE
+ * NEPSE national weekend holidays: Saturday (6) and Sunday (0). Friday is an open trading day.
  */
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
@@ -199,7 +222,7 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // NEPSE weekend: Saturday (6) and Sunday (0). Active trading: Monday (1) through Friday (5)
+  // National weekend holidays: Saturday (6) and Sunday (0). Friday is an open trading day
   const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
   return {
     isWeekend,
@@ -280,6 +303,7 @@ export function generateTradingDaysSequence(count = 365, referenceDate = new Dat
  * Calculates current NEPSE market status with exact Nepal time, weekend, and holiday detection.
  */
 export function getDetailedMarketStatus(now = new Date()) {
+  const nepaliDate = getNepaliDate(now);
   const holiday = isNepsePublicHoliday(now);
   const weekend = isNepseWeekend(now);
 
@@ -311,66 +335,81 @@ export function getDetailedMarketStatus(now = new Date()) {
   const nptTotalMinutes = nptHours * 60 + nptMinutes;
   const isWithinHours = (nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 15 * 60); // 11:00 to 15:00
 
-  // 1. Check Holiday
+  // Common metadata
+  const isTradingDay = !weekend.isWeekend && !holiday.isHoliday;
+  const baseData = {
+    bsDate: nepaliDate,
+    bsFormattedNp: nepaliDate.formattedNp,
+    bsFormattedEn: nepaliDate.formattedEn,
+    nptTime: nptTimeStr,
+    isTradingDay,
+  };
+
+  // 1. Check Holiday (Bikram Sambat public holiday)
   if (holiday.isHoliday) {
     return {
+      ...baseData,
       isOpen: false,
       isHoliday: true,
       isWeekend: false,
+      isCloseDay: true,
       holidayName: holiday.holidayName,
-      nptTime: nptTimeStr,
       statusLabel: 'Holiday Closed',
-      message: `Market Closed — ${holiday.holidayName}`,
+      message: `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp})`,
       lastTradingDay: getLastValidTradingDay(now)
     };
   }
 
-  // 2. Check Weekend
+  // 2. Check Weekly Close (Saturday, Sunday, Friday)
   if (weekend.isWeekend) {
     return {
+      ...baseData,
       isOpen: false,
       isHoliday: false,
       isWeekend: true,
+      isCloseDay: true,
       holidayName: null,
-      nptTime: nptTimeStr,
       statusLabel: 'Weekend Closed',
-      message: `Market Closed — ${weekend.dayName} Weekend`,
+      message: `Market Closed — ${weekend.dayName} Weekend (${nepaliDate.shortNp})`,
       lastTradingDay: getLastValidTradingDay(now)
     };
   }
 
-  // 3. Regular Trading Day (Sunday - Thursday)
+  // 3. Regular Trading Day (Monday - Friday)
   if (isWithinHours) {
     return {
+      ...baseData,
       isOpen: true,
       isHoliday: false,
       isWeekend: false,
+      isCloseDay: false,
       holidayName: null,
-      nptTime: nptTimeStr,
       statusLabel: 'Market Open',
-      message: 'Market is OPEN (Live Trading)',
+      message: `Market is OPEN (Live Trading) — ${nepaliDate.shortNp}`,
       lastTradingDay: now
     };
   } else if (nptTotalMinutes < 11 * 60) {
     return {
+      ...baseData,
       isOpen: false,
       isHoliday: false,
       isWeekend: false,
+      isCloseDay: false,
       holidayName: null,
-      nptTime: nptTimeStr,
       statusLabel: 'Pre-Open / Closed',
-      message: 'Market Closed — Opens at 11:00 AM NPT',
+      message: `Market Closed — Opens at 11:00 AM NPT (${nepaliDate.shortNp})`,
       lastTradingDay: getLastValidTradingDay(new Date(now.getTime() - 86400000))
     };
   } else {
     return {
+      ...baseData,
       isOpen: false,
       isHoliday: false,
       isWeekend: false,
+      isCloseDay: false,
       holidayName: null,
-      nptTime: nptTimeStr,
       statusLabel: 'Market Closed',
-      message: 'Market Closed — Closed at 3:00 PM NPT',
+      message: `Market Closed — Closed at 3:00 PM NPT (${nepaliDate.shortNp})`,
       lastTradingDay: now
     };
   }

@@ -28,6 +28,7 @@ import {
 import { fetchBrokerAnalysis } from '../utils/servicesApi';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
 import { analyzePriceAction, analyzeCandlestickPattern, analyzeMarketStructure } from '../utils/priceActionEngine';
+import { generateNepseAiContent } from '../services/aiService';
 
 
 import {
@@ -1339,7 +1340,6 @@ export default function AiAnalyst({
       return data;
     } catch (err) {
       try {
-        const { generateNepseAiContent } = await import('../services/aiService');
         const text = await generateNepseAiContent(prompt, '');
         if (text) {
           const match = text.match(/\{[\s\S]*\}/);
@@ -1916,7 +1916,7 @@ Format as plain text (not JSON) for this conversational response.`;
         </div>
 
         {/* Tab Navigation */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingTop: 10, paddingBottom: 2 }}>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingTop: 10, paddingBottom: 2, scrollbarWidth: 'none' }}>
           {[
             { id: 'stock', label: 'Stock Analysis', icon: BarChart2 },
             { id: 'sandbox', label: 'Virtual Sandbox', icon: Wallet },
@@ -1934,17 +1934,18 @@ Format as plain text (not JSON) for this conversational response.`;
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '6px 14px', borderRadius: 20,
-                  fontSize: 12, fontWeight: active ? 700 : 500,
+                  padding: '7px 14px', borderRadius: 12,
+                  fontSize: 12, fontWeight: active ? 800 : 600,
                   whiteSpace: 'nowrap',
-                  background: active ? 'rgba(56, 117, 246, 0.14)' : 'transparent',
-                  border: active ? '1px solid rgba(56, 117, 246, 0.35)' : '1px solid transparent',
-                  color: active ? '#60a5fa' : '#94a3b8',
+                  background: active ? 'var(--primary)' : 'rgba(255, 255, 255, 0.04)',
+                  border: active ? '1px solid var(--primary)' : '1px solid var(--border)',
+                  color: active ? '#ffffff' : 'var(--text-secondary)',
+                  boxShadow: active ? '0 0 14px rgba(79, 70, 229, 0.35)' : 'none',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
                 }}
               >
-                <Icon size={13} />
+                <Icon size={13} style={{ color: active ? '#ffffff' : 'var(--text-muted)' }} />
                 <span>{tab.label}</span>
               </button>
             );

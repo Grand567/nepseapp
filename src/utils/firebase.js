@@ -380,6 +380,15 @@ const getSyncProxyEndpoint = () => {
   return base.replace(/\/$/, '') + '/api/sync';
 };
 
+export const pingSyncServer = () => {
+  try {
+    const syncUrl = getSyncProxyEndpoint();
+    fetch(`${syncUrl}/health`, { method: 'GET', mode: 'cors' }).catch(() => {});
+  } catch (_) {}
+};
+// Trigger non-blocking warm-up ping
+pingSyncServer();
+
 export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
   if (!userId) return;
 
