@@ -18,7 +18,7 @@ import {
 } from '../services/meroShareService';
 import { getProxyBase } from '../utils/liveData';
 import { sanitizeMeroShareHoldings, guessScripBasePrice } from '../utils/calculations';
-import { syncUserDataToCloud } from '../utils/firebase';
+import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
 const formatRs = (value) => {
@@ -354,6 +354,21 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         setSelectedProfileId(prev => prev || parsed[0].id);
       } else {
         setSelectedProfileId('');
+        // Fallback: If local is empty, attempt immediate cloud pull
+        if (userId && !userId.startsWith('guest')) {
+          fetchUserDataFromCloud(userId).then(cloudData => {
+            if (cloudData && (Array.isArray(cloudData.profiles) || Array.isArray(cloudData.bulkAccounts))) {
+              const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
+              if (cloudAccs.length > 0) {
+                const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings) }));
+                localStorage.setItem(profileKey, JSON.stringify(sanitized));
+                localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(sanitized));
+                setProfiles(sanitized);
+                setSelectedProfileId(sanitized[0].id);
+              }
+            }
+          }).catch(() => {});
+        }
       }
     };
 

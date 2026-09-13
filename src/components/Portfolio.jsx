@@ -270,10 +270,16 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     // Listen for CustomEvent from AccountManager (same-tab, reliable)
     const handleBulkAccountsChanged = (e) => {
       try {
-        if (e.detail && e.detail.key === profileKey && Array.isArray(e.detail.profiles)) {
+        if (e.detail && Array.isArray(e.detail.profiles)) {
           setMeroshareProfiles(e.detail.profiles);
+        } else {
+          loadData();
+          mergeBulkAccounts();
         }
-      } catch (_) {}
+      } catch (_) {
+        loadData();
+        mergeBulkAccounts();
+      }
     };
 
     const handleCloudRestored = () => {

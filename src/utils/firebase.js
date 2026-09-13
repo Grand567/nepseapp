@@ -211,7 +211,7 @@ export const registerLocal = async (displayName, email, password) => {
   // Sync registration with cloud
   try {
     const syncUrl = getSyncProxyEndpoint();
-    await fetch(`${syncUrl}/register`, {
+    const regRes = await fetch(`${syncUrl}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -221,6 +221,19 @@ export const registerLocal = async (displayName, email, password) => {
         name: userObj.displayName
       })
     });
+    if (regRes.ok) {
+      const regJson = await regRes.json();
+      if (regJson.data && typeof regJson.data === 'object') {
+        _cachedCloudData = regJson.data;
+        const userProfileKey = `nepse_hub_${uid}_profiles`;
+        const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+        const profiles = regJson.data.profiles || regJson.data.bulkAccounts || [];
+        if (Array.isArray(profiles) && profiles.length > 0) {
+          localStorage.setItem(userProfileKey, JSON.stringify(profiles));
+          localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
+        }
+      }
+    }
   } catch (_) {}
 
   notifyLocalAuth(userObj);
@@ -294,11 +307,32 @@ export const signInLocal = async (email, password) => {
     if (res.ok) {
       const json = await res.json();
       if (json.success) {
+        const uid = 'usr_' + hashSimple(emailKey);
         if (json.data && typeof json.data === 'object' && Object.keys(json.data).length > 0) {
           _cachedCloudData = json.data;
+          try {
+            const userProfileKey = `nepse_hub_${uid}_profiles`;
+            const userTxKey = `nepse_hub_${uid}_transactions`;
+            const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+
+            const profiles = json.data.profiles || json.data.bulkAccounts || [];
+            if (Array.isArray(profiles) && profiles.length > 0) {
+              localStorage.setItem(userProfileKey, JSON.stringify(profiles));
+              localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
+              window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles } }));
+            }
+            if (Array.isArray(json.data.transactions) && json.data.transactions.length > 0) {
+              localStorage.setItem(userTxKey, JSON.stringify(json.data.transactions));
+            }
+            if (Array.isArray(json.data.watchlist) && json.data.watchlist.length > 0) {
+              localStorage.setItem('nepse_user_watchlist', JSON.stringify(json.data.watchlist));
+            }
+            window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored'));
+          } catch (hydErr) {
+            console.warn('[CloudSync] Immediate hydration warning:', hydErr);
+          }
         }
         // Update or populate local user record
-        const uid = 'usr_' + hashSimple(emailKey);
         record = {
           uid,
           displayName: json.user?.name || email.split('@')[0],

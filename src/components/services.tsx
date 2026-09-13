@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft } from 'lucide-react';
+import { useBackHandler } from '../context/NavigationContext';
 import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
   fetchTopVolume, fetchTopTurnover, fetchTopTransactions,
@@ -954,6 +955,16 @@ export function NewsService() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<'all' | 'sharesansar' | 'merolagani'>('all');
+  const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
+
+  // Dedicated back gesture handler for open news article
+  useBackHandler(() => {
+    if (selectedArticle) {
+      setSelectedArticle(null);
+      return true; // Handled, keeps user inside News tab
+    }
+    return false;
+  }, !!selectedArticle, 80);
 
   const loadData = async (force = false) => {
     try {
@@ -1059,18 +1070,19 @@ export function NewsService() {
               const sourceName = n.source || (isShareSansar ? 'ShareSansar' : 'MeroLagani');
               const dateStr = n.date || n.pubDate || 'Latest';
               return (
-                <a
+                <div
                   key={i}
-                  href={n.url || n.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group rounded-[12px] border border-slate-800 bg-slate-900/80 hover:bg-slate-900/95 p-3.5 no-underline transition hover:border-blue-500/60 shadow-sm"
+                  onClick={() => setSelectedArticle(n)}
+                  className="group rounded-[12px] border border-slate-800 bg-slate-900/80 hover:bg-slate-900/95 p-3.5 cursor-pointer transition hover:border-blue-500/60 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="mb-1.5 text-sm font-bold text-slate-100 group-hover:text-blue-400 transition leading-snug">
                       {n.title}
                     </div>
-                    <ExternalLink size={13} className="text-slate-500 group-hover:text-blue-400 shrink-0 mt-0.5" />
+                    <div className="flex items-center gap-1 shrink-0 mt-0.5 text-slate-500 group-hover:text-blue-400">
+                      <span className="text-[10.5px] font-semibold hidden sm:inline">Read</span>
+                      <ExternalLink size={13} />
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
                     <span className={`font-semibold px-2 py-0.5 rounded text-[10.5px] border ${
@@ -1083,11 +1095,90 @@ export function NewsService() {
                     <span>•</span>
                     <span>{dateStr}</span>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>
         </>
+      )}
+
+      {/* ── In-App News Article Reader Modal (Handles Android Back Gesture) ── */}
+      {selectedArticle && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm"
+          onClick={() => setSelectedArticle(null)}
+          style={{ animation: 'fadeIn 0.2s ease' }}
+        >
+          <div
+            className="w-full max-w-xl max-h-[85vh] bg-slate-900 border border-slate-700/80 rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto flex flex-col gap-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <button
+                type="button"
+                onClick={() => setSelectedArticle(null)}
+                className="flex items-center gap-1.5 text-slate-300 hover:text-white text-xs font-bold py-1.5 px-3 rounded-lg bg-slate-800/80 border border-slate-700/60 cursor-pointer"
+              >
+                <ChevronLeft size={16} />
+                <span>Back to News</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedArticle(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800/80 border border-slate-700/60 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Source & Date Badge */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`font-semibold px-2.5 py-0.5 rounded text-xs border ${
+                String(selectedArticle.source || '').toLowerCase().includes('sharesansar')
+                  ? 'bg-blue-950/80 text-blue-300 border-blue-800'
+                  : 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+              }`}>
+                {selectedArticle.source || 'Financial News'}
+              </span>
+              <span className="text-xs text-slate-400">
+                {selectedArticle.date || selectedArticle.pubDate || 'Latest'}
+              </span>
+            </div>
+
+            {/* Title */}
+            <h2 className="text-base sm:text-lg font-bold text-white leading-snug">
+              {selectedArticle.title}
+            </h2>
+
+            {/* Description / Excerpt if available */}
+            {selectedArticle.description && (
+              <p className="text-sm text-slate-300 leading-relaxed bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                {String(selectedArticle.description).replace(/<[^>]+>/g, '')}
+              </p>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              <a
+                href={selectedArticle.url || selectedArticle.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition shadow-md cursor-pointer no-underline"
+              >
+                <span>Open Full Story on {selectedArticle.source || 'Source Portal'}</span>
+                <ExternalLink size={14} />
+              </a>
+              <button
+                type="button"
+                onClick={() => setSelectedArticle(null)}
+                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer border border-slate-700/60"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -6,15 +6,33 @@ import {
 import { getProxyBase } from '../utils/liveData';
 import { MEROSHARE_DP_LIST, pullMeroShareLivePortfolio } from '../services/meroShareService';
 import { sanitizeMeroShareHoldings } from '../utils/calculations';
+import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
 // localStorage key for bulk IPO accounts
 const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
 
-function loadLocalAccounts() {
+function loadLocalAccounts(userId = null) {
   try {
-    const raw = localStorage.getItem(BULK_ACCOUNTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const bulkRaw = localStorage.getItem(BULK_ACCOUNTS_KEY);
+    const userProfileKey = userId ? `nepse_hub_${userId}_profiles` : null;
+    const userRaw = userProfileKey ? localStorage.getItem(userProfileKey) : null;
+    const bulk = bulkRaw ? JSON.parse(bulkRaw) : [];
+    const userAccs = userRaw ? JSON.parse(userRaw) : [];
+
+    const merged = Array.isArray(bulk) ? [...bulk] : [];
+    if (Array.isArray(userAccs)) {
+      userAccs.forEach(acc => {
+        if (!acc) return;
+        const idx = merged.findIndex(m => (acc.boid && m.boid === acc.boid) || (acc.id && m.id === acc.id));
+        if (idx === -1) {
+          merged.push(acc);
+        } else if (acc.holdings?.length > 0 && (!merged[idx].holdings || merged[idx].holdings.length === 0)) {
+          merged[idx] = { ...merged[idx], ...acc };
+        }
+      });
+    }
+    return merged;
   } catch {
     return [];
   }
@@ -48,48 +66,28 @@ export default function AccountManager({ userId = 'guest_local' }) {
   const isNative = Capacitor.isNativePlatform();
   const proxyBase = getProxyBase();
 
+  const fetchAccounts = () => {
+    setIsLoading(true);
+    setError('');
+    const local = loadLocalAccounts(userId);
+    setAccounts(local);
+    setIsLoading(false);
+  };
+
   useEffect(() => {
     fetchAccounts();
     fetchDpList();
-  }, []);
 
-  const fetchAccounts = async () => {
-    setIsLoading(true);
-    setError('');
-
-    // On native Android, always use localStorage
-    if (isNative) {
-      const local = loadLocalAccounts();
-      setAccounts(local);
-      setIsLoading(false);
-      return;
-    }
-
-    // On web, try proxy server first, fall back to localStorage
-    try {
-      const res = await fetch(`${proxyBase}/api/meroshare/accounts`);
-      const text = await res.text().catch(() => '');
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (_) {
-        throw new Error('Server returned invalid response format.');
-      }
-
-      if (res.ok && data.success) {
-        setAccounts(data.accounts || []);
-      } else {
-        throw new Error(data.error || data.message || 'Failed to load accounts from proxy.');
-      }
-    } catch (err) {
-      console.warn('[AccountManager] Proxy unavailable, using localStorage:', err.message);
-      const local = loadLocalAccounts();
-      setAccounts(local);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const handleRefresh = () => fetchAccounts();
+    window.addEventListener('bulkAccountsChanged', handleRefresh);
+    window.addEventListener('nepse_cloud_data_restored', handleRefresh);
+    window.addEventListener('storage', handleRefresh);
+    return () => {
+      window.removeEventListener('bulkAccountsChanged', handleRefresh);
+      window.removeEventListener('nepse_cloud_data_restored', handleRefresh);
+      window.removeEventListener('storage', handleRefresh);
+    };
+  }, [userId]);
 
   const fetchDpList = async () => {
     try {
@@ -153,23 +151,31 @@ export default function AccountManager({ userId = 'guest_local' }) {
 
     try {
       // Always save to localStorage first (works on native + web)
-      const existing = loadLocalAccounts();
+      const existing = loadLocalAccounts(userId);
       const filtered = existing.filter(a => a.boid !== boid);
       const updated = [...filtered, newAccount];
       saveLocalAccounts(updated);
       setAccounts(updated);
 
       // Also sync with Portfolio tab profiles
+      let updatedProfiles = updated;
       try {
         const profileKey = `nepse_hub_${userId}_profiles`;
         const saved = localStorage.getItem(profileKey) || '[]';
         const existingProfiles = JSON.parse(saved);
-        const updatedProfiles = [...existingProfiles.filter(p => p.boid !== boid), newAccount];
+        updatedProfiles = [...existingProfiles.filter(p => p.boid !== boid), newAccount];
         localStorage.setItem(profileKey, JSON.stringify(updatedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
       } catch (localErr) {
         console.warn('[AccountManager Sync]:', localErr.message);
+      }
+
+      // Sync with cloud vault
+      if (userId && !userId.startsWith('guest')) {
+        try {
+          syncUserDataToCloud(userId, { profiles: updatedProfiles, bulkAccounts: updated });
+        } catch (_) {}
       }
 
       setSuccess('Account saved successfully! Auto-syncing live portfolio...');
@@ -205,7 +211,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
         };
 
         // Update bulk accounts
-        const existing = loadLocalAccounts();
+        const existing = loadLocalAccounts(userId);
         const updatedAccounts = existing.map(a => a.id === acc.id ? updatedAccount : a);
         saveLocalAccounts(updatedAccounts);
         setAccounts(updatedAccounts);
@@ -218,6 +224,13 @@ export default function AccountManager({ userId = 'guest_local' }) {
         localStorage.setItem(profileKey, JSON.stringify(updatedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
+
+        // Sync with cloud vault
+        if (userId && !userId.startsWith('guest')) {
+          try {
+            syncUserDataToCloud(userId, { profiles: updatedProfiles, bulkAccounts: updatedAccounts });
+          } catch (_) {}
+        }
 
         setSuccess(`⚡ Live Portfolio Synced! Retrieved ${parsedHoldings.length} scrips for ${updatedAccount.name}.`);
       } else {
@@ -236,11 +249,12 @@ export default function AccountManager({ userId = 'guest_local' }) {
     setSuccess('');
 
     // Remove from localStorage
-    const updated = loadLocalAccounts().filter(a => a.id !== id);
+    const updated = loadLocalAccounts(userId).filter(a => a.id !== id);
     saveLocalAccounts(updated);
     setAccounts(updated);
 
     // Sync Portfolio profiles — remove the deleted account
+    let filteredProfiles = updated;
     try {
       const profileKey = `nepse_hub_${userId}_profiles`;
       const saved = localStorage.getItem(profileKey);
@@ -248,13 +262,20 @@ export default function AccountManager({ userId = 'guest_local' }) {
         const acc = accounts.find(a => a.id === id);
         if (acc) {
           const existing = JSON.parse(saved);
-          const filtered = existing.filter(p => p.boid !== acc.boid);
-          localStorage.setItem(profileKey, JSON.stringify(filtered));
-          window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(filtered) }));
-          window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: filtered } }));
+          filteredProfiles = existing.filter(p => p.boid !== acc.boid);
+          localStorage.setItem(profileKey, JSON.stringify(filteredProfiles));
+          window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(filteredProfiles) }));
+          window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: filteredProfiles } }));
         }
       }
     } catch (_) {}
+
+    // Sync with cloud vault
+    if (userId && !userId.startsWith('guest')) {
+      try {
+        syncUserDataToCloud(userId, { profiles: filteredProfiles, bulkAccounts: updated });
+      } catch (_) {}
+    }
 
     setSuccess('Account deleted.');
   };

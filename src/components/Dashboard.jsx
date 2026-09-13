@@ -171,9 +171,9 @@ function TradingChart({
   const ltp = Number(stock?.ltp || history[history.length - 1]?.close || 100);
   const firstClose = history[0]?.open || history[0]?.close || ltp;
   const lastClose = history[history.length - 1]?.close || ltp;
-  const isBull = stock?.change != null 
-    ? (Number(stock.change) >= 0) 
-    : (stock?.pChange != null ? Number(stock.pChange) >= 0 : (lastClose >= firstClose));
+  const isBull = isIntraday 
+    ? (stock?.change != null ? (Number(stock.change) >= 0) : (stock?.pChange != null ? Number(stock.pChange) >= 0 : (lastClose >= firstClose)))
+    : (lastClose >= firstClose);
   
   const mainColor = isBull ? '#10B981' : '#f43f5e';
   const highPrices = visibleHistory.map(h => h.high || h.close);
@@ -2130,114 +2130,6 @@ export default function Dashboard({
         )}
       </div>
 
-      {/* ── 4C. NEPSE SCHEDULE & CALENDAR STATUS STRIP ── */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.02)',
-        border: '1px solid var(--border)',
-        borderRadius: 14,
-        padding: '10px 14px',
-        marginBottom: 12,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 10,
-        flexWrap: 'wrap'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: marketStatus?.isOpen
-              ? 'rgba(16, 185, 129, 0.12)'
-              : marketStatus?.isHoliday
-              ? 'rgba(192, 132, 252, 0.15)'
-              : marketStatus?.isWeekend
-              ? 'rgba(251, 191, 36, 0.15)'
-              : 'rgba(255, 255, 255, 0.05)',
-            border: `1px solid ${
-              marketStatus?.isOpen
-                ? 'rgba(16, 185, 129, 0.3)'
-                : marketStatus?.isHoliday
-                ? 'rgba(192, 132, 252, 0.3)'
-                : marketStatus?.isWeekend
-                ? 'rgba(251, 191, 36, 0.3)'
-                : 'rgba(255, 255, 255, 0.1)'
-            }`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0
-          }}>
-            <Calendar style={{
-              width: 16,
-              height: 16,
-              color: marketStatus?.isOpen
-                ? 'var(--bull)'
-                : marketStatus?.isHoliday
-                ? '#c084fc'
-                : marketStatus?.isWeekend
-                ? '#fbbf24'
-                : 'var(--text-muted)'
-            }} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff' }}>
-                {marketStatus?.bsFormattedNp || marketStatus?.bsFormattedEn || 'NEPSE Market Schedule'}
-              </span>
-              <span style={{
-                fontSize: 10,
-                fontWeight: 800,
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: marketStatus?.isOpen
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : marketStatus?.isHoliday
-                  ? 'rgba(192, 132, 252, 0.18)'
-                  : marketStatus?.isWeekend
-                  ? 'rgba(251, 191, 36, 0.18)'
-                  : 'rgba(255, 255, 255, 0.08)',
-                color: marketStatus?.isOpen
-                  ? 'var(--bull)'
-                  : marketStatus?.isHoliday
-                  ? '#c084fc'
-                  : marketStatus?.isWeekend
-                  ? '#fbbf24'
-                  : 'var(--text-muted)'
-              }}>
-                {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Market Closed')}
-              </span>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-              {marketStatus?.message || 'Trading Hours: Sun – Thu 11:00 AM – 3:00 PM NPT (Fri & Sat Weekend)'}
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onOpenCalendar}
-          style={{
-            background: 'rgba(56, 117, 246, 0.12)',
-            border: '1px solid rgba(56, 117, 246, 0.3)',
-            borderRadius: 8,
-            padding: '5px 10px',
-            color: '#60a5fa',
-            fontSize: 11,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <span>View Holidays</span>
-          <ArrowRight style={{ width: 12, height: 12 }} />
-        </button>
-      </div>
-
       {/* ── 5. TABBED MARKET MOVERS (5 HIGH-SIGNAL CATEGORIES) ── */}
       <div id="market-movers-section" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 12px', marginBottom: 12 }}>
         
@@ -2442,69 +2334,26 @@ export default function Dashboard({
           paddingTop: 8,
           borderTop: '1px solid rgba(255, 255, 255, 0.05)'
         }}>
-          {/* Filter Pills */}
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => { setTableFilterMode('all'); setSelectedSector('All'); }}
-              style={{
-                background: tableFilterMode === 'all' && selectedSector === 'All' ? 'rgba(56, 117, 246, 0.18)' : 'rgba(255,255,255,0.03)',
-                color: tableFilterMode === 'all' && selectedSector === 'All' ? '#60a5fa' : 'var(--text-secondary)',
-                border: `1px solid ${tableFilterMode === 'all' && selectedSector === 'All' ? 'rgba(56, 117, 246, 0.45)' : 'var(--border)'}`,
-                borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.15s'
-              }}
-            >
-              <span>📋 All Scrips</span>
-              <span style={{ fontSize: 9.5, opacity: 0.8 }}>({stocks.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setTableFilterMode('watchlist'); }}
-              style={{
-                background: tableFilterMode === 'watchlist' ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.03)',
-                color: tableFilterMode === 'watchlist' ? '#fbbf24' : 'var(--text-secondary)',
-                border: `1px solid ${tableFilterMode === 'watchlist' ? 'rgba(251, 191, 36, 0.45)' : 'var(--border)'}`,
-                borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.15s'
-              }}
-            >
-              <Star style={{ width: 12, height: 12, fill: tableFilterMode === 'watchlist' ? '#fbbf24' : 'none' }} />
-              <span>⭐ Watchlist</span>
-              <span style={{ fontSize: 9.5, opacity: 0.9, background: 'rgba(251, 191, 36, 0.2)', padding: '1px 5px', borderRadius: 8 }}>
-                {watchlist.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setTableFilterMode('gainers'); }}
-              style={{
-                background: tableFilterMode === 'gainers' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.03)',
-                color: tableFilterMode === 'gainers' ? 'var(--bull)' : 'var(--text-secondary)',
-                border: `1px solid ${tableFilterMode === 'gainers' ? 'rgba(16, 185, 129, 0.4)' : 'var(--border)'}`,
-                borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.15s'
-              }}
-            >
-              <span>🚀 Gainers</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setTableFilterMode('turnover'); }}
-              style={{
-                background: tableFilterMode === 'turnover' ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255,255,255,0.03)',
-                color: tableFilterMode === 'turnover' ? '#60a5fa' : 'var(--text-secondary)',
-                border: `1px solid ${tableFilterMode === 'turnover' ? 'rgba(56, 117, 246, 0.4)' : 'var(--border)'}`,
-                borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.15s'
-              }}
-            >
-              <span>💰 Turnover</span>
-            </button>
-          </div>
+          {/* Watchlist Filter Toggle Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setTableFilterMode(prev => prev === 'watchlist' ? 'all' : 'watchlist');
+            }}
+            style={{
+              background: tableFilterMode === 'watchlist' ? 'rgba(251, 191, 36, 0.18)' : 'rgba(255,255,255,0.03)',
+              color: tableFilterMode === 'watchlist' ? '#fbbf24' : 'var(--text-secondary)',
+              border: `1px solid ${tableFilterMode === 'watchlist' ? 'rgba(251, 191, 36, 0.45)' : 'var(--border)'}`,
+              borderRadius: 20, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s'
+            }}
+          >
+            <Star style={{ width: 13, height: 13, fill: tableFilterMode === 'watchlist' ? '#fbbf24' : 'none' }} />
+            <span>{tableFilterMode === 'watchlist' ? 'Showing Watchlist' : 'Filter by Watchlist'}</span>
+            <span style={{ fontSize: 9.5, opacity: 0.9, background: 'rgba(251, 191, 36, 0.2)', padding: '1px 6px', borderRadius: 8 }}>
+              {watchlist.length}
+            </span>
+          </button>
 
           {/* Compact Sector Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2683,6 +2532,115 @@ export default function Dashboard({
             );
           }))}
         </div>
+      </div>
+
+      {/* ── 8. NEPSE MARKET SCHEDULE & WEEKEND STATUS (Placed cleanly at bottom) ── */}
+      <div style={{
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid var(--border)',
+        borderRadius: 14,
+        padding: '12px 14px',
+        marginTop: 14,
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 34,
+            height: 34,
+            borderRadius: 9,
+            background: marketStatus?.isOpen
+              ? 'rgba(16, 185, 129, 0.12)'
+              : marketStatus?.isHoliday
+              ? 'rgba(192, 132, 252, 0.15)'
+              : marketStatus?.isWeekend
+              ? 'rgba(251, 191, 36, 0.15)'
+              : 'rgba(255, 255, 255, 0.05)',
+            border: `1px solid ${
+              marketStatus?.isOpen
+                ? 'rgba(16, 185, 129, 0.3)'
+                : marketStatus?.isHoliday
+                ? 'rgba(192, 132, 252, 0.3)'
+                : marketStatus?.isWeekend
+                ? 'rgba(251, 191, 36, 0.3)'
+                : 'rgba(255, 255, 255, 0.1)'
+            }`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Calendar style={{
+              width: 17,
+              height: 17,
+              color: marketStatus?.isOpen
+                ? 'var(--bull)'
+                : marketStatus?.isHoliday
+                ? '#c084fc'
+                : marketStatus?.isWeekend
+                ? '#fbbf24'
+                : 'var(--text-muted)'
+            }} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                {marketStatus?.bsFormattedNp || marketStatus?.bsFormattedEn || 'NEPSE Market Schedule'}
+              </span>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '1px 7px',
+                borderRadius: 4,
+                background: marketStatus?.isOpen
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : marketStatus?.isHoliday
+                  ? 'rgba(192, 132, 252, 0.18)'
+                  : marketStatus?.isWeekend
+                  ? 'rgba(251, 191, 36, 0.18)'
+                  : 'rgba(255, 255, 255, 0.08)',
+                color: marketStatus?.isOpen
+                  ? 'var(--bull)'
+                  : marketStatus?.isHoliday
+                  ? '#c084fc'
+                  : marketStatus?.isWeekend
+                  ? '#fbbf24'
+                  : 'var(--text-muted)'
+              }}>
+                {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Market Closed')}
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              {marketStatus?.message || 'Trading Hours: Sun – Thu 11:00 AM – 3:00 PM NPT (Fri & Sat Weekend)'}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenCalendar}
+          style={{
+            background: 'rgba(56, 117, 246, 0.12)',
+            border: '1px solid rgba(56, 117, 246, 0.3)',
+            borderRadius: 8,
+            padding: '6px 12px',
+            color: '#60a5fa',
+            fontSize: 11.5,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <span>View Holidays</span>
+          <ArrowRight style={{ width: 13, height: 13 }} />
+        </button>
       </div>
 
       {/* ── MODALS & DRAWERS ── */}

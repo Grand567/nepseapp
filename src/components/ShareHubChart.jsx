@@ -586,7 +586,9 @@ export default function ShareHubChart({
         const lastPoint = processedChartData[processedChartData.length - 1];
         const firstVal = Number(firstPoint?.close ?? firstPoint?.value ?? 0);
         const lastVal = Number(lastPoint?.close ?? lastPoint?.value ?? 0);
-        const isBull = stock?.change != null ? (Number(stock.change) >= 0) : (lastVal >= firstVal);
+        const isBull = isTrulyIntraday
+          ? (stock?.change != null ? (Number(stock.change) >= 0) : (lastVal >= firstVal))
+          : (lastVal >= firstVal);
 
         const bullLine = '#10B981';
         const bullTop = 'rgba(16, 185, 129, 0.28)';

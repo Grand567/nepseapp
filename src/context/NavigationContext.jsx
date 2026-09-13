@@ -14,7 +14,13 @@ const NavigationContext = createContext({
 });
 
 export function NavigationProvider({ children, initialTab = 'dashboard' }) {
-  const [activeTab, setActiveTabState] = useState(initialTab);
+  const [activeTab, setActiveTabState] = useState(() => {
+    try {
+      return sessionStorage.getItem('nepse_active_tab') || initialTab;
+    } catch {
+      return initialTab;
+    }
+  });
   const [tabHistory, setTabHistory] = useState([initialTab]);
   const [selectedStock, setSelectedStock] = useState(null);
   const [exitToast, setExitToast] = useState(null);
@@ -22,6 +28,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
   // Stack of custom back-button handlers (drawers, modals, sub-screens)
   const backHandlersRef = useRef([]);
   const lastBackTimeRef = useRef(0);
+  const lastGoBackTimeRef = useRef(0);
 
   // Auto-dismiss exit toast after 2.5 seconds
   useEffect(() => {
@@ -69,11 +76,20 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
   }, [selectedStock, registerBackHandler]);
 
   const setActiveTab = useCallback((tabId) => {
+    try {
+      sessionStorage.setItem('nepse_active_tab', tabId);
+    } catch (_) {}
     setActiveTabState(tabId);
   }, []);
 
   // Core back navigation handler (used by both hardware back & gestures)
   const goBack = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastGoBackTimeRef.current < 280) {
+      return true; // Debounce rapid multiple firings (e.g. Capacitor backButton + window popstate)
+    }
+    lastGoBackTimeRef.current = now;
+
     // 1. Run the topmost registered modal / drawer handler
     if (backHandlersRef.current.length > 0) {
       const top = backHandlersRef.current[0]; // Highest priority
@@ -99,7 +115,6 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     }
 
     // 4. On any navbar screen: double back within 2 seconds exits app (Kharcha Tracker pattern)
-    const now = Date.now();
     if (now - lastBackTimeRef.current < 2000) {
       try {
         await CapacitorApp.exitApp();
