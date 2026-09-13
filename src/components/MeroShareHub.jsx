@@ -284,26 +284,45 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         }));
       } catch (_) { parsed = []; }
 
-      // Merge any accounts from the Bulk Account Manager key not already in profiles
+      // 1. Scan all possible local storage keys for demat accounts
+      const candidateKeys = [
+        'nepse_hub_bulk_ipo_accounts',
+        'nepse_hub_guest_local_profiles',
+        'nepse_hub_profiles'
+      ];
+
+      // Add any key in localStorage matching nepse_hub_.*_profiles
       try {
-        const bulkRaw = localStorage.getItem('nepse_hub_bulk_ipo_accounts');
-        if (bulkRaw) {
-          const bulkAccounts = JSON.parse(bulkRaw);
-          if (Array.isArray(bulkAccounts) && bulkAccounts.length > 0) {
-            let changed = false;
-            bulkAccounts.forEach(acc => {
-              const existing = parsed.find(p => p.boid === acc.boid);
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('nepse_hub_') && k.endsWith('_profiles') && k !== profileKey) {
+            candidateKeys.push(k);
+          }
+        }
+      } catch (_) {}
+
+      let changed = false;
+
+      candidateKeys.forEach(candKey => {
+        try {
+          const rawVal = localStorage.getItem(candKey);
+          if (!rawVal) return;
+          const candAccounts = JSON.parse(rawVal);
+          if (Array.isArray(candAccounts) && candAccounts.length > 0) {
+            candAccounts.forEach(acc => {
+              if (!acc || (!acc.boid && !acc.id && !acc.name)) return;
+              const existing = parsed.find(p => (acc.boid && p.boid === acc.boid) || (acc.id && p.id === acc.id));
               if (!existing) {
                 parsed.push({
-                  id: acc.id,
-                  name: acc.name,
-                  boid: acc.boid,
-                  username: acc.username,
-                  dpCode: acc.dpCode,
-                  dpId: acc.dpId,
+                  id: acc.id || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
+                  name: acc.name || 'Demat Account',
+                  boid: acc.boid || '',
+                  username: acc.username || '',
+                  dpCode: acc.dpCode || '',
+                  dpId: acc.dpId || '',
                   dpName: acc.dpName || 'Capital DP',
-                  password: acc.password,
-                  crn: acc.crn,
+                  password: acc.password || '',
+                  crn: acc.crn || '',
                   pin: String(acc.pin || ''),
                   holdings: sanitizeMeroShareHoldings(acc.holdings),
                   lastSyncedAt: acc.lastSyncedAt || null
@@ -315,12 +334,16 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 changed = true;
               }
             });
-            if (changed) {
-              localStorage.setItem(profileKey, JSON.stringify(parsed));
-            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      });
+
+      if (changed || (parsed.length > 0 && !saved)) {
+        try {
+          localStorage.setItem(profileKey, JSON.stringify(parsed));
+          localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(parsed));
+        } catch (_) {}
+      }
 
       setProfiles(parsed);
       const savedSyncedIds = JSON.parse(localStorage.getItem(syncKey) || '[]');
@@ -486,11 +509,13 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     setProfiles(newProfiles);
     const profileKey = `nepse_hub_${userId}_profiles`;
     localStorage.setItem(profileKey, JSON.stringify(newProfiles));
-    // Dispatch storage event so Portfolio tab picks up the change immediately
+    localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(newProfiles));
+    // Dispatch storage event so Portfolio tab and other components pick up the change immediately
     window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
+    window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, { profiles: newProfiles }, userEmail);
+      syncUserDataToCloud(userId, { profiles: newProfiles, bulkAccounts: newProfiles }, userEmail);
     } catch (_) {}
   };
 

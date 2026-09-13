@@ -69,18 +69,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
   }, [selectedStock, registerBackHandler]);
 
   const setActiveTab = useCallback((tabId) => {
-    setActiveTabState(prev => {
-      if (prev === tabId) return prev;
-      setTabHistory(h => {
-        // Prevent immediate duplicate
-        if (h[h.length - 1] === tabId) return h;
-        return [...h, tabId];
-      });
-      try {
-        window.history.pushState({ tab: tabId }, '');
-      } catch (_) {}
-      return tabId;
-    });
+    setActiveTabState(tabId);
   }, []);
 
   // Core back navigation handler (used by both hardware back & gestures)
@@ -109,24 +98,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       return true;
     }
 
-    // 4. Return to previous tab in history stack
-    if (tabHistory.length > 1) {
-      const newHistory = [...tabHistory];
-      newHistory.pop(); // Remove current tab
-      const prevTab = newHistory[newHistory.length - 1] || 'dashboard';
-      setTabHistory(newHistory);
-      setActiveTabState(prevTab);
-      return true;
-    }
-
-    // 5. If not on dashboard, return directly to dashboard
-    if (activeTab !== 'dashboard') {
-      setActiveTabState('dashboard');
-      setTabHistory(['dashboard']);
-      return true;
-    }
-
-    // 6. On navbar dashboard (root): double back within 2 seconds exits app (Kharcha Tracker pattern)
+    // 4. On any navbar screen: double back within 2 seconds exits app (Kharcha Tracker pattern)
     const now = Date.now();
     if (now - lastBackTimeRef.current < 2000) {
       try {
@@ -141,7 +113,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       });
       return true;
     }
-  }, [tabHistory, activeTab, selectedStock]);
+  }, [selectedStock]);
 
   // Hook into Capacitor Native Android Hardware Back Button & Swipe Gestures
   useEffect(() => {

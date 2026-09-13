@@ -219,6 +219,33 @@ function AppInner() {
           });
         }
 
+        // Also merge any existing accounts created in guest mode or other local keys
+        const localCandidateKeys = ['nepse_hub_guest_local_profiles', 'nepse_hub_profiles'];
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('nepse_hub_') && k.endsWith('_profiles') && k !== userProfileKey) {
+              localCandidateKeys.push(k);
+            }
+          }
+        } catch (_) {}
+
+        localCandidateKeys.forEach(candKey => {
+          try {
+            const raw = localStorage.getItem(candKey);
+            if (!raw) return;
+            const parsedList = JSON.parse(raw);
+            if (Array.isArray(parsedList)) {
+              parsedList.forEach(cp => {
+                const idx = mergedProfiles.findIndex(mp => (cp.boid && mp.boid === cp.boid) || (cp.id && mp.id === cp.id));
+                if (idx === -1) {
+                  mergedProfiles.push(cp);
+                }
+              });
+            }
+          } catch (_) {}
+        });
+
         mergedBulk.forEach(mb => {
           const idx = mergedProfiles.findIndex(mp => mp.boid === mb.boid || mp.id === mb.id);
           if (idx === -1) {
@@ -228,6 +255,7 @@ function AppInner() {
 
         // Save merged profiles locally
         localStorage.setItem(userProfileKey, JSON.stringify(mergedProfiles));
+        localStorage.setItem(bulkAccountsKey, JSON.stringify(mergedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(mergedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles: mergedProfiles } }));
 
@@ -571,20 +599,20 @@ function AppInner() {
               onClick={() => setShowCalendarModal(true)}
               title="Click to view NEPSE Calendar & Holidays"
             >
-              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
                 {indices?.nepse?.value ?? 2542.77}&nbsp;
-                {nepseChange >= 0 ? '▲' : '▼'}{Math.abs(indices?.nepse?.pChange ?? 0.18)}%
+                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 4.66).toFixed(2)} pts ({Math.abs(indices?.nepse?.pChange ?? 0.18)}%)
               </span>
               <span style={{ color: 'var(--text-muted)' }}>·</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }} title={marketStatus.bsFormattedEn || ''}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 10.5, fontFamily: 'var(--font-mono)' }} title={marketStatus.bsFormattedEn || ''}>
                 {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="header-actions">
-          {/* Market Status Indicator Button */}
+        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {/* Compact Market Status Indicator Button */}
           {(() => {
             const isLive = Boolean(marketStatus?.isOpen);
             const badgeColor = isLive 
@@ -611,7 +639,7 @@ function AppInner() {
             const label = isLive 
               ? 'LIVE' 
               : marketStatus?.isHoliday 
-              ? (marketStatus.holidayName ? `HOLIDAY: ${marketStatus.holidayName}` : 'HOLIDAY') 
+              ? 'HOLIDAY' 
               : marketStatus?.isWeekend 
               ? 'WEEKEND' 
               : 'CLOSED';
@@ -620,28 +648,30 @@ function AppInner() {
               <button 
                 type="button"
                 onClick={() => setShowCalendarModal(true)}
-                title={`${marketStatus?.message || label} — Tap to view full Calendar & Holidays`}
+                title={`${marketStatus?.message || label}${marketStatus?.holidayName ? ` (${marketStatus.holidayName})` : ''} — Tap to view NEPSE Calendar & Holidays`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '4px 9px',
-                  borderRadius: 50,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 7px',
+                  borderRadius: 20,
                   border: `1px solid ${badgeBorder}`,
                   background: badgeBg,
                   cursor: 'pointer',
                   outline: 'none',
+                  flexShrink: 0,
                   transition: 'all 0.15s ease'
                 }}
               >
                 <span style={{
                   display: 'inline-block',
-                  width: 6,
-                  height: 6,
+                  width: 5.5,
+                  height: 5.5,
                   borderRadius: '50%',
                   background: badgeColor
                 }} />
                 <span style={{
-                  fontSize: 10.5, fontWeight: 800,
-                  color: badgeColor
+                  fontSize: 10, fontWeight: 800,
+                  color: badgeColor,
+                  letterSpacing: '0.02em'
                 }}>
                   {label}
                 </span>

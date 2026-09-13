@@ -41,6 +41,7 @@ import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import { useBackHandler } from '../context/NavigationContext';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
+import { toggleWatchlist, isWatched } from '../utils/watchlist';
 
 
 
@@ -58,7 +59,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [chartTimeframe, setChartTimeframe] = useState('1M');
   const [chartMode, setChartMode] = useState('line');
   const [liveDetail, setLiveDetail] = useState(null);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const initialSym = (stock?.symbol || (typeof stock === 'string' ? stock : '')).toUpperCase();
+  const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
   const [showAdvancedModal, setShowAdvancedModal] = useState(false);
   const [historyTimeframe, setHistoryTimeframe] = useState('1Y');
   const scrollRef = useRef(null);
@@ -101,6 +103,23 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     }
     return null;
   }, [stock, allStocks]);
+
+  // Sync watchlist status dynamically
+  useEffect(() => {
+    const sym = resolvedStock?.symbol;
+    if (sym) {
+      setIsFavorite(isWatched(sym));
+    }
+    const onWatchlistChange = () => {
+      if (sym) setIsFavorite(isWatched(sym));
+    };
+    window.addEventListener('nepse_watchlist_updated', onWatchlistChange);
+    window.addEventListener('watchlist_updated', onWatchlistChange);
+    return () => {
+      window.removeEventListener('nepse_watchlist_updated', onWatchlistChange);
+      window.removeEventListener('watchlist_updated', onWatchlistChange);
+    };
+  }, [resolvedStock]);
 
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
@@ -682,16 +701,32 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => setIsFavorite(v => !v)}
+            type="button"
+            onClick={() => {
+              const sym = d.symbol;
+              if (sym) {
+                const res = toggleWatchlist(sym);
+                setIsFavorite(res.isWatched);
+              }
+            }}
+            title={isFavorite ? 'Remove from Watchlist' : 'Add to Watchlist'}
             style={{
-              background: 'none',
-              border: 'none',
-              color: isFavorite ? '#eab308' : 'rgba(255,255,255,0.6)',
+              background: isFavorite ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255,255,255,0.06)',
+              border: `1px solid ${isFavorite ? 'rgba(251, 191, 36, 0.45)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: 8,
+              color: isFavorite ? '#fbbf24' : 'rgba(255,255,255,0.7)',
               cursor: 'pointer',
-              padding: 4
+              padding: '5px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 12,
+              fontWeight: 700,
+              transition: 'all 0.15s'
             }}
           >
-            <Star style={{ width: 19, height: 19, fill: isFavorite ? '#eab308' : 'none' }} />
+            <Star style={{ width: 15, height: 15, fill: isFavorite ? '#fbbf24' : 'none' }} />
+            <span>{isFavorite ? 'Watched' : 'Watch'}</span>
           </button>
         </div>
       </div>

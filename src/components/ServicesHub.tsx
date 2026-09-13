@@ -770,7 +770,7 @@ export default function ServicesHub({
       return true;
     }
     return false;
-  }, !!selectedService, 20);
+  }, !!selectedService, 60);
 
   useEffect(() => {
     scrollToTop();
