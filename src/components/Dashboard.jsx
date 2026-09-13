@@ -1007,9 +1007,7 @@ export default function Dashboard({
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
 
-  let nav = null;
-  try { nav = useNavigation(); } catch (_) {}
-  const setActiveTab = nav?.setActiveTab;
+  const { setActiveTab } = useNavigation();
 
   const [tableSortField, setTableSortField] = useState(null);
   const [tableSortAsc, setTableSortAsc] = useState(false);

@@ -48,6 +48,10 @@ function AppInner() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(new Date());
 
+  // ── Auth state ──
+  const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
   // ── Accessibility & Font Scale State for Weak Eyesight ──
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');
   const [showFontModal, setShowFontModal] = useState(false);
@@ -99,10 +103,6 @@ function AppInner() {
     document.body.className = `font-scale-${fontScale}`;
     localStorage.setItem('nepse_font_scale', fontScale);
   }, [fontScale]);
-
-  // ── Auth state ──
-  const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
-  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // Safety timeout: if auth state hasn't resolved within 1.5s, unblock immediately so screen is never stuck
   useEffect(() => {
