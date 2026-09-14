@@ -1060,24 +1060,36 @@ export function NewsService() {
       setArticleLoading(false);
       return;
     }
-    const targetUrl = selectedArticle.url || selectedArticle.link;
-    if (!targetUrl) return;
+    const targetUrl = selectedArticle.url || selectedArticle.link || '';
+    const initialParas = Array.isArray(selectedArticle.paragraphs) && selectedArticle.paragraphs.length > 0
+      ? selectedArticle.paragraphs
+      : (selectedArticle.description ? [String(selectedArticle.description).replace(/<[^>]+>/g, '').trim()] : [selectedArticle.title || 'Market story details loaded.']);
+
+    setArticleDetail({
+      title: selectedArticle.title || selectedArticle.headline || 'Market Announcement',
+      date: selectedArticle.date || selectedArticle.pubDate || 'Today',
+      source: selectedArticle.source || 'Financial News',
+      url: targetUrl,
+      paragraphs: initialParas
+    });
+
+    if (!targetUrl) {
+      setArticleLoading(false);
+      return;
+    }
 
     let isMounted = true;
-    setArticleDetail({
-      title: selectedArticle.title,
-      date: selectedArticle.date || selectedArticle.pubDate,
-      source: selectedArticle.source,
-      url: targetUrl,
-      paragraphs: selectedArticle.description ? [String(selectedArticle.description).replace(/<[^>]+>/g, '')] : []
-    });
     setArticleLoading(true);
     fetchNewsArticle(targetUrl)
       .then((res: any) => {
         if (!isMounted) return;
         const d = res?.data || res;
         if (d && (d.paragraphs || d.content)) {
-          setArticleDetail(d);
+          setArticleDetail((prev: any) => ({
+            ...prev,
+            ...d,
+            paragraphs: Array.isArray(d.paragraphs) && d.paragraphs.length > 0 ? d.paragraphs : prev?.paragraphs
+          }));
         }
       })
       .catch((err) => {

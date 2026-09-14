@@ -988,7 +988,83 @@ export default function ServicesHub({
             </span>
           </div>
 
-          {/* Section 1: Matching Analytical Tools */}
+          {/* Section 1: Matching NEPSE Stocks (Prioritized for instant discovery) */}
+          {matchingStocks.length > 0 && (
+            <div className="services-search-panel" style={{ margin: '0 0 20px 0' }}>
+              <div className="services-search-panel-title">
+                <span>Matching NEPSE Stocks ({matchingStocks.length})</span>
+                <span style={{ fontSize: 10.5, textTransform: 'none', color: '#64748b' }}>Live NEPSE Universe</span>
+              </div>
+              <div className="services-stock-results-grid">
+                {matchingStocks.map((stk) => {
+                  const isUp = (stk.pChange ?? 0) > 0;
+                  const isDown = (stk.pChange ?? 0) < 0;
+                  const isExact = stk.symbol.toLowerCase() === search.trim().toLowerCase();
+                  return (
+                    <div
+                      key={stk.symbol}
+                      onClick={() => {
+                        if (onSelectStock) {
+                          onSelectStock(stk);
+                        } else {
+                          const svc = ALL_SERVICES.find((s) => s.id === 'stock-momentum');
+                          if (svc) setSelectedService(svc);
+                        }
+                      }}
+                      className="services-stock-result-row"
+                    >
+                      <div style={{ minWidth: 0, flex: 1, paddingRight: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                            {stk.symbol}
+                          </span>
+                          {isExact && (
+                            <span style={{ fontSize: 9, fontWeight: 900, padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
+                              EXACT MATCH
+                            </span>
+                          )}
+                          <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8', fontWeight: 600 }}>
+                            {stk.sector}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                          {stk.name}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        {stk.ltp != null ? (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
+                              Rs. {stk.ltp.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              color: isUp ? '#34d399' : isDown ? '#f87171' : '#94a3b8',
+                              fontFamily: 'var(--font-mono, monospace)',
+                            }}>
+                              {isUp ? '+' : ''}{(stk.pChange ?? 0).toFixed(2)}%
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#64748b' }}>
+                              Un-traded
+                            </span>
+                          </div>
+                        )}
+
+                        <span style={{ color: 'var(--primary-light, #60a5fa)', fontSize: 12, fontWeight: 800 }}>→</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Section 2: Matching Analytical Tools */}
           {matchingTools.length > 0 && (
             <div className="services-search-panel" style={{ margin: '0 0 20px 0' }}>
               <div className="services-search-panel-title">
@@ -1037,99 +1113,6 @@ export default function ServicesHub({
             </div>
           )}
 
-          {/* Section 2: Matching NEPSE Stocks (All 350+ Universe) */}
-          {matchingStocks.length > 0 && (
-            <div className="services-search-panel" style={{ margin: '0 0 20px 0' }}>
-              <div className="services-search-panel-title">
-                <span>Matching NEPSE Stocks ({matchingStocks.length})</span>
-                <span style={{ fontSize: 10.5, textTransform: 'none', color: '#64748b' }}>Live NEPSE Universe</span>
-              </div>
-              <div className="services-stock-results-grid">
-                {matchingStocks.map((stk) => {
-                  const isUp = (stk.pChange ?? 0) > 0;
-                  const isDown = (stk.pChange ?? 0) < 0;
-                  return (
-                    <div
-                      key={stk.symbol}
-                      onClick={() => {
-                        if (onSelectStock) {
-                          onSelectStock(stk);
-                        } else {
-                          const svc = ALL_SERVICES.find((s) => s.id === 'stock-momentum');
-                          if (svc) setSelectedService(svc);
-                        }
-                      }}
-                      className="services-stock-result-row"
-                    >
-                      <div style={{ minWidth: 0, flex: 1, paddingRight: 10 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
-                            {stk.symbol}
-                          </span>
-                          <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8', fontWeight: 600 }}>
-                            {stk.sector}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                          {stk.name}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                        {stk.ltp != null ? (
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
-                              Rs. {stk.ltp.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
-                            </div>
-                            <div style={{
-                              fontSize: 10.5,
-                              fontWeight: 700,
-                              color: isUp ? '#34d399' : isDown ? '#f87171' : '#94a3b8',
-                              fontFamily: 'var(--font-mono, monospace)',
-                            }}>
-                              {isUp ? '+' : ''}{(stk.pChange ?? 0).toFixed(2)}%
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#64748b' }}>
-                              Un-traded
-                            </span>
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onSelectStock) {
-                              onSelectStock(stk);
-                            } else {
-                              const svc = ALL_SERVICES.find((s) => s.id === 'stock-momentum');
-                              if (svc) setSelectedService(svc);
-                            }
-                          }}
-                          style={{
-                            background: 'rgba(59, 130, 246, 0.12)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            color: '#60a5fa',
-                            borderRadius: 8,
-                            padding: '6px 10px',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          Analyze →
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {matchingTools.length === 0 && matchingStocks.length === 0 && (
             <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8' }}>

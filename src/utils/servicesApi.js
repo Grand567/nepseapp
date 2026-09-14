@@ -317,12 +317,12 @@ export const fetchMarketNews = async (forceRefresh = false) => {
   }
   const qs = forceRefresh ? '?refresh=true' : '';
 
-  // 1. Try unified NEPSE news (ShareSansar + MeroLagani)
-  let news = await _proxyFetch('/api/news/nepse' + qs, {}, 180000, forceRefresh);
+  // 1. Try unified NEPSE news (ShareSansar + MeroLagani) with 8s timeout
+  let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 8000 }, 180000, forceRefresh).catch(() => null);
   if (Array.isArray(news) && news.length > 0) return news;
 
-  // 2. Fallback to Merolagani endpoint
-  news = await _proxyFetch('/api/news/merolagani' + qs, {}, 180000, forceRefresh);
+  // 2. Fallback to Merolagani endpoint with 8s timeout
+  news = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 8000 }, 180000, forceRefresh).catch(() => null);
   if (Array.isArray(news) && news.length > 0) return news;
 
   // 3. Direct client-side web fallback
@@ -337,7 +337,11 @@ export const fetchMarketNews = async (forceRefresh = false) => {
 export const fetchNewsArticle = async (articleUrl) => {
   if (!articleUrl) return null;
   const path = '/api/news/read?url=' + encodeURIComponent(articleUrl);
-  return _proxyFetch(path, {}, 3600000);
+  try {
+    const res = await _proxyFetch(path, { timeout: 8000 }, 3600000);
+    if (res && (res.paragraphs || res.content || res.body)) return res;
+  } catch (_) {}
+  return null;
 };
 
 export const fetchMarketStatus = () => _proxyFetch('/api/status', {}, 10000);

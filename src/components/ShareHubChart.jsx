@@ -586,8 +586,10 @@ export default function ShareHubChart({
         const lastPoint = processedChartData[processedChartData.length - 1];
         const firstVal = Number(firstPoint?.close ?? firstPoint?.value ?? 0);
         const lastVal = Number(lastPoint?.close ?? lastPoint?.value ?? 0);
+        const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
+
         const isBull = isTrulyIntraday
-          ? (stock?.change != null ? (Number(stock.change) >= 0) : (lastVal >= firstVal))
+          ? (stock?.change != null ? (Number(stock.change) >= 0) : (prevCloseVal > 0 ? lastVal >= prevCloseVal : lastVal >= firstVal))
           : (lastVal >= firstVal);
 
         const bullLine = '#10B981';
@@ -718,7 +720,29 @@ export default function ShareHubChart({
     value: authoritativeLtp
   } : null);
 
-  const isUp = activeHud ? (activeHud.close >= (activeHud.open ?? activeHud.close)) : true;
+  // Compute authentic session change and percentage for the HUD
+  const hudMetrics = useMemo(() => {
+    if (!activeHud) return { change: 0, pChange: 0, isBull: true };
+    const currentVal = Number(activeHud.close ?? activeHud.value ?? authoritativeLtp ?? 0);
+    const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
+    const firstPointVal = Number(processedChartData[0]?.close ?? processedChartData[0]?.value ?? 0);
+
+    const baseline = isTrulyIntraday
+      ? (prevCloseVal > 0 ? prevCloseVal : (firstPointVal > 0 ? firstPointVal : null))
+      : (firstPointVal > 0 ? firstPointVal : prevCloseVal);
+
+    if (baseline && baseline > 0) {
+      const diff = +(currentVal - baseline).toFixed(2);
+      const pct = +((diff / baseline) * 100).toFixed(2);
+      return { change: diff, pChange: pct, isBull: diff >= 0 };
+    }
+
+    const fallbackChange = Number(stock?.change ?? 0);
+    const fallbackPct = Number(stock?.pChange ?? 0);
+    return { change: fallbackChange, pChange: fallbackPct, isBull: fallbackChange >= 0 };
+  }, [activeHud, authoritativeLtp, stock, processedChartData, isTrulyIntraday]);
+
+  const isUp = hudMetrics.isBull;
 
   // Format time/date label for the HUD bar
   const hudTimeLabel = useMemo(() => {
@@ -752,7 +776,7 @@ export default function ShareHubChart({
           flexWrap: 'wrap',
           gap: 6
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em' }}>{symbol}</span>
             <span style={{
               fontSize: '10px',
@@ -770,6 +794,21 @@ export default function ShareHubChart({
               color: isUp ? '#10B981' : '#F43F5E'
             }}>
               Rs. {Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 800,
+              padding: '2px 7px',
+              borderRadius: 6,
+              background: isUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+              border: isUp ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(244, 63, 94, 0.35)',
+              color: isUp ? '#10B981' : '#F43F5E',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3
+            }}>
+              <span>{isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)} pts</span>
+              <span>({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)</span>
             </span>
             {hudTimeLabel && (
               <span style={{ fontSize: '10px', color: '#64748b' }}>({hudTimeLabel})</span>
