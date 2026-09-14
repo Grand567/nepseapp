@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, TrendingUp, TrendingDown, Clock, Sun, CloudRain, Sparkles, Award } from 'lucide-react';
+import { fetchSeasonalityAnalytics } from '../utils/servicesApi';
 import { StatCard, InfoBanner, Insight } from './ui';
 
 interface MonthStat {
@@ -30,20 +31,31 @@ const HISTORICAL_SEASONALITY_DATA: MonthStat[] = [
 
 export function SeasonalityAnalyticsService() {
   const [calendarMode, setCalendarMode] = useState<'BS' | 'AD'>('BS');
+  const [seasonalityData, setSeasonalityData] = useState<MonthStat[]>(HISTORICAL_SEASONALITY_DATA);
   const [selectedMonth, setSelectedMonth] = useState<MonthStat>(HISTORICAL_SEASONALITY_DATA[3]); // Shrawan default
 
-  const bestMonth = useMemo(() => {
-    return [...HISTORICAL_SEASONALITY_DATA].sort((a, b) => b.avgReturn - a.avgReturn)[0];
+  useEffect(() => {
+    fetchSeasonalityAnalytics().then(res => {
+      const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : null);
+      if (data && data.length > 0) {
+        setSeasonalityData(data);
+        setSelectedMonth(data[3] || data[0]);
+      }
+    }).catch(() => {});
   }, []);
+
+  const bestMonth = useMemo(() => {
+    return [...seasonalityData].sort((a, b) => b.avgReturn - a.avgReturn)[0] || seasonalityData[0];
+  }, [seasonalityData]);
 
   const worstMonth = useMemo(() => {
-    return [...HISTORICAL_SEASONALITY_DATA].sort((a, b) => a.avgReturn - b.avgReturn)[0];
-  }, []);
+    return [...seasonalityData].sort((a, b) => a.avgReturn - b.avgReturn)[0] || seasonalityData[0];
+  }, [seasonalityData]);
 
   const overallWinRate = useMemo(() => {
-    const totalWin = HISTORICAL_SEASONALITY_DATA.reduce((acc, m) => acc + m.winRate, 0);
-    return (totalWin / HISTORICAL_SEASONALITY_DATA.length).toFixed(0);
-  }, []);
+    const totalWin = seasonalityData.reduce((acc, m) => acc + m.winRate, 0);
+    return (totalWin / (seasonalityData.length || 1)).toFixed(0);
+  }, [seasonalityData]);
 
   return (
     <div className="space-y-4">
@@ -83,7 +95,7 @@ export function SeasonalityAnalyticsService() {
           Monthly Performance &amp; Win Rate Heatmap
         </h4>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {HISTORICAL_SEASONALITY_DATA.map((m) => {
+          {seasonalityData.map((m) => {
             const isPos = m.avgReturn >= 0;
             const isSelected = selectedMonth.bsMonth === m.bsMonth;
             return (

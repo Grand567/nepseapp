@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, AlertTriangle, Clock, Search, Lock, Unlock, CheckCircle2, ChevronRight, Layers } from 'lucide-react';
 import { loadNepseData } from '../utils/liveData';
+import { fetchPromoterShares } from '../utils/servicesApi';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { StatCard, InfoBanner, Insight, Spinner } from './ui';
 
@@ -27,13 +28,25 @@ export function PromoterSharesService() {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'locked' | 'expiring' | 'high_float'>('all');
 
   useEffect(() => {
-    loadNepseData().then(({ stocks: liveStocks }) => {
+    Promise.all([
+      fetchPromoterShares().catch(() => null),
+      loadNepseData().catch(() => ({ stocks: [] }))
+    ]).then(([apiLockin, { stocks: liveStocks }]) => {
+      const lockinMap = new Map<string, any>();
+      if (Array.isArray(apiLockin)) {
+        apiLockin.forEach(item => {
+          if (item?.symbol) lockinMap.set(item.symbol.toUpperCase(), item);
+        });
+      }
+
       const processed: PromoterStock[] = liveStocks.map((s, idx) => {
+        const sym = (s.symbol || '').toUpperCase();
+        const apiItem = lockinMap.get(sym);
         const ltp = Number(s.ltp || s.closePrice || 350);
-        const sec = s.sector || 'Hydropower';
+        const sec = apiItem?.sector || s.sector || 'Hydropower';
 
         // Known NEPSE promoter structure
-        let promoterPct = 51;
+        let promoterPct = apiItem ? Number(apiItem.promoterRatio) : 51;
         if (sec === 'Commercial Banks') promoterPct = 51 + (idx % 10);
         else if (sec === 'Hydropower') promoterPct = 65 + (idx % 15);
         else if (sec === 'Life Insurance' || sec === 'Non Life Insurance') promoterPct = 70;
@@ -50,13 +63,23 @@ export function PromoterSharesService() {
         const promoterShares = Math.round(totalShares * (promoterPct / 100));
         const publicShares = totalShares - promoterShares;
 
-        // Hydro / IPO lock-in simulation (3-year statutory lock-in from allotment date)
+        // Hydro / IPO lock-in (3-year statutory lock-in from allotment date)
         const isHydro = sec === 'Hydropower' || sec === 'Investment';
         let lockInStatus: 'Locked' | 'Expiring Soon' | 'Unlocked' = 'Unlocked';
         let daysRemaining = 0;
         let lockInExpiryDate = 'Unlocked';
 
-        if (isHydro) {
+        if (apiItem) {
+          lockInExpiryDate = apiItem.lockinExpiry || 'Unlocked';
+          daysRemaining = Number(apiItem.daysRemaining || 0);
+          if (apiItem.isExpired) {
+            lockInStatus = 'Unlocked';
+          } else if (daysRemaining <= 90) {
+            lockInStatus = 'Expiring Soon';
+          } else {
+            lockInStatus = 'Locked';
+          }
+        } else if (isHydro) {
           const mod = (idx * 37) % 365;
           if (mod < 60) {
             lockInStatus = 'Expiring Soon';

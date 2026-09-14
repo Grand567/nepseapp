@@ -321,6 +321,8 @@ export const fetchMacroIndicators = () => _proxyFetch('/api/macro/nrb-indicators
 export const fetchBullionRates = () => _proxyFetch('/api/commodities/bullion', {}, 1800000);
 export const fetchNrbCirculars = () => _proxyFetch('/api/regulatory/nrb-circulars', {}, 3600000);
 export const fetchSebonCirculars = () => _proxyFetch('/api/regulatory/sebon-circulars', {}, 3600000);
+export const fetchPromoterShares = () => _proxyFetch('/api/market/promoter-shares', {}, 3600000);
+export const fetchSeasonalityAnalytics = () => _proxyFetch('/api/market/seasonality', {}, 86400000);
 
 export const invalidateCache = (path) => { 
   for (const key of _cache.keys()) { 
