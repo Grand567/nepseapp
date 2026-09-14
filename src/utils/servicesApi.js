@@ -285,6 +285,13 @@ export const fetchMarketNews = async (forceRefresh = false) => {
 
   return [];
 };
+
+export const fetchNewsArticle = async (articleUrl) => {
+  if (!articleUrl) return null;
+  const path = '/api/news/read?url=' + encodeURIComponent(articleUrl);
+  return _proxyFetch(path, {}, 3600000);
+};
+
 export const fetchMarketStatus = () => _proxyFetch('/api/status', {}, 10000);
 
 export const fetchHolidays = (year, month, count) => {

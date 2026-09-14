@@ -27,6 +27,7 @@ import {
   StaticInfoService, PortfolioTool, WatchlistTool, TradeNotesTool, AlertsTool,
   ApiStatusService, BrokersDirectoryService, IPOPipelineService, MutualFundsService,
   LiveFloorsheetService, SectorHeatmapService, BrokerAnalysisService,
+  BrokerHeatmapService, BrokerFavouritesService,
 } from './services';
 import { useBackHandler } from '../context/NavigationContext';
 import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator } from './calculators';
@@ -399,11 +400,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'success', text: 'Fundamentally strong + undervalued. Wired to /fundamental-ratios.' }}
       insight="Low P/E + high EPS = value + growth combo." />
   ),
-  'broker-favourites': () => (
-    <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover} filterFn={(s) => s.turnover > 5000000} defaultLimit={20}
-      banner={{ text: 'Most-traded stocks by brokers — institutionally approved names.' }}
-      insight="Broker favorites offer liquidity for clean entries and exits." />
-  ),
+  'broker-favourites': BrokerFavouritesService,
   'hot-stocks': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 3 && s.volumeSurgeRatio > 1.5} sortFn={(a, b) => b.pChange - a.pChange}
       banner={{ type: 'warning', text: 'Hottest stocks today — momentum + volume surge.' }}
@@ -454,7 +451,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'sector-heatmap': SectorHeatmapService,
   'sector-rotation': SectorHeatmapService,
   'sector-wise-ad': SectorHeatmapService,
-  'broker-heatmap': SectorHeatmapService,
+  'broker-heatmap': BrokerHeatmapService,
   'top-gainers': () => <TopPerformersService type="gainers" />,
   'top-losers': () => <TopPerformersService type="losers" />,
   'volume-leaders': () => <TopPerformersService type="volume" />,
