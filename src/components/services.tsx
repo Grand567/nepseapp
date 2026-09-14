@@ -234,6 +234,7 @@ export function UniversalScreener({
           candlestickPattern: pattern,
           high52w: hi52,
           low52w: lo52,
+          floatTurnoverPct: Number(stock.floatTurnoverPct) || +((Number(tfMetrics.turnover || stock.turnover || 0) / Math.max(1000000, (Number(stock.marketCap) || (c * 12 * 1e6)) * 0.45)) * 100).toFixed(2),
         };
       });
 
@@ -1337,6 +1338,10 @@ export function SectorHeatmapService() {
   const topSector = sectors[0];
   const bottomSector = sectors[sectors.length - 1];
   const totalTurnover = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.turnover) || 0), 0), [sectors]);
+  const totalAdvancers = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.advancers) || 0), 0), [sectors]);
+  const totalDecliners = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.decliners) || 0), 0), [sectors]);
+  const totalUnchanged = useMemo(() => sectors.reduce((sum, s) => sum + (Number(s.unchanged) || 0), 0), [sectors]);
+  const adRatio = totalDecliners > 0 ? +(totalAdvancers / totalDecliners).toFixed(2) : totalAdvancers;
 
   if (loading) return <Spinner text="Loading Sector Rotation & Heatmap Analytics…" />;
   if (!sectors.length) return <InfoBanner type="warning">No sector data available right now.</InfoBanner>;
@@ -1355,7 +1360,25 @@ export function SectorHeatmapService() {
         <StatCard label="Leading Sector" value={topSector ? `${topSector.sector}` : '—'} subtitle={topSector ? `+${Number(topSector.pChange).toFixed(2)}%` : undefined} color="#10b981" />
         <StatCard label="Lagging Sector" value={bottomSector ? `${bottomSector.sector}` : '—'} subtitle={bottomSector ? `${Number(bottomSector.pChange).toFixed(2)}%` : undefined} color="#f43f5e" />
         <StatCard label="Sector Turnover" value={`Rs. ${(totalTurnover / 1e7).toFixed(1)} Cr`} big color="#3b82f6" />
-        <StatCard label="Total Sectors" value={sectors.length} />
+        <StatCard label="A/D Breadth Ratio" value={`${adRatio}x`} subtitle={`${totalAdvancers} Adv / ${totalDecliners} Dec`} color={adRatio >= 1 ? '#10b981' : '#f43f5e'} />
+      </div>
+
+      {/* Advance / Decline Breadth Visualizer */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold">
+          <span className="text-white flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${adRatio >= 1 ? 'bg-emerald-400' : 'bg-rose-400'} animate-pulse`}></span>
+            Market Breadth: {adRatio >= 1.5 ? 'Strong Bullish Breadth' : adRatio >= 1.0 ? 'Mild Net Advancing' : 'Bearish Distribution'}
+          </span>
+          <span className="font-mono text-slate-300">
+            <strong className="text-emerald-400">{totalAdvancers} Advancing</strong> &bull; <strong className="text-rose-400">{totalDecliners} Declining</strong> &bull; <span className="text-slate-500">{totalUnchanged} Unchanged</span>
+          </span>
+        </div>
+        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+          <div className="bg-emerald-500 h-full transition-all" style={{ width: `${(totalAdvancers / Math.max(1, totalAdvancers + totalDecliners + totalUnchanged)) * 100}%` }} title={`Advancers: ${totalAdvancers}`} />
+          <div className="bg-slate-600 h-full transition-all" style={{ width: `${(totalUnchanged / Math.max(1, totalAdvancers + totalDecliners + totalUnchanged)) * 100}%` }} title={`Unchanged: ${totalUnchanged}`} />
+          <div className="bg-rose-500 h-full transition-all" style={{ width: `${(totalDecliners / Math.max(1, totalAdvancers + totalDecliners + totalUnchanged)) * 100}%` }} title={`Decliners: ${totalDecliners}`} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -1468,7 +1491,7 @@ export function LiveFloorsheetService() {
     setRefreshing(false);
   };
 
-  const tfMultiplier = timeframe === '1W' ? 4.8 : timeframe === '1M' ? 21.0 : timeframe === '3M' ? 64.0 : timeframe === '1Y' ? 245.0 : 1.0;
+  const tfMultiplier = 1.0;
 
   const filtered = useMemo(() => {
     if (!query.trim()) return data;
@@ -1487,8 +1510,8 @@ export function LiveFloorsheetService() {
     filtered.forEach((r) => {
       const b = String(r.buyerBroker || r.buyer || '');
       const s = String(r.sellerBroker || r.seller || '');
-      const q = (Number(r.quantity) || 0) * tfMultiplier;
-      const a = (Number(r.amount) || 0) * tfMultiplier;
+      const q = Number(r.quantity) || 0;
+      const a = Number(r.amount) || 0;
 
       if (b) {
         if (!map[b]) map[b] = { broker: b, name: r.buyerBrokerName || `Broker #${b}`, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, tradesCount: 0 };
@@ -1521,10 +1544,10 @@ export function LiveFloorsheetService() {
         status: netAmt > 0 ? 'Accumulating' : netAmt < 0 ? 'Distributing' : 'Balanced'
       };
     }).sort((a, b) => b.netAmt - a.netAmt);
-  }, [filtered, tfMultiplier]);
+  }, [filtered]);
 
-  const totalQty = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.quantity) || 0), 0) * tfMultiplier), [filtered, tfMultiplier]);
-  const totalAmt = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.amount) || 0), 0) * tfMultiplier), [filtered, tfMultiplier]);
+  const totalQty = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.quantity) || 0), 0)), [filtered]);
+  const totalAmt = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.amount) || 0), 0)), [filtered]);
   const topAccumulator = useMemo(() => brokerLedger[0] || null, [brokerLedger]);
   const topDistributor = useMemo(() => [...brokerLedger].reverse()[0] || null, [brokerLedger]);
 

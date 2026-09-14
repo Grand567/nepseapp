@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { InfoBanner, StatCard, TimeframeFilterBar } from './ui';
+import { InfoBanner, StatCard } from './ui';
 
 const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base sm:text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 box-border';
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
@@ -7,7 +7,6 @@ const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base
 export function GrahamValuation() {
   const [form, setForm] = useState({ eps: '', bvps: '', price: '' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1Y');
 
   const calc = () => {
     if (!form.eps || !form.bvps) return;
@@ -54,7 +53,6 @@ export function GrahamValuation() {
 export function BrokerageCalculator() {
   const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short', slabType: 'statutory' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1D');
 
   const getBrokerage = (amount: number, slab: string) => {
     let fee = 0;
@@ -166,7 +164,6 @@ export function BrokerageCalculator() {
 export function DividendCalculator() {
   const [form, setForm] = useState({ shares: '', fv: '100', cash: '', bonus: '' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1Y');
 
   const calc = () => {
     const s = parseFloat(form.shares), fv = parseFloat(form.fv);

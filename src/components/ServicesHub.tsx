@@ -24,7 +24,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   UniversalScreener, StockMomentumAnalyzer, MarketSummaryService, TopPerformersService,
   IPOTracker, NewsService, SectorHeatmap, FloorSheetService, CompareStocks,
-  StaticInfoService, PortfolioTool, WatchlistTool, TradeNotesTool, AlertsTool,
+  PortfolioTool, WatchlistTool, TradeNotesTool, AlertsTool,
   ApiStatusService, BrokersDirectoryService, IPOPipelineService, MutualFundsService,
   LiveFloorsheetService, SectorHeatmapService, BrokerAnalysisService,
   BrokerHeatmapService, BrokerFavouritesService, MarketDepthService,
@@ -36,6 +36,14 @@ import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { RegulatoryHub } from './RegulatoryHub';
+import { TradingViewChartService } from './TradingViewChartService';
+import { FibonacciCalculatorService } from './FibonacciCalculatorService';
+import { SeasonalityAnalyticsService } from './SeasonalityAnalyticsService';
+import { PromoterSharesService } from './PromoterSharesService';
+import { StrategyLabService } from './StrategyLabService';
+import { PreferencesSettingsService } from './PreferencesSettingsService';
+import { GlossaryGuideService } from './GlossaryGuideService';
+import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
 
 // ── Shared colors (solid, no gradients) ──
 const COLORS: Record<string, { bg: string; border: string; text: string }> = {
@@ -240,12 +248,10 @@ const ALL_SERVICES: ServiceDef[] = [
 const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'stock-momentum': StockMomentumAnalyzer,
   'price-history': StockMomentumAnalyzer,
-  'advanced-charts': StockMomentumAnalyzer,
+  'advanced-charts': TradingViewChartService,
   'entry-exit-analyzer': EntryExitAnalyzer,
   'dividend-history': DividendHistoryPanel as ComponentType,
-  'advanced-chart': () => (
-    <StaticInfoService title="Advanced Chart — how to use" content={'Open any stock in Multi-Timeframe Analyzer for 1Y OHLC history.\n\nReading guide:\n• Price above EMA-20 + RSI 55-70 = healthy uptrend\n• Bollinger squeeze (narrow bands) + volume surge = expansion coming\n• MACD histogram flipping positive = momentum turning up'} tips={['Use daily timeframe for swing trading', 'Volume must confirm every breakout', 'Never chase more than 4% above EMA-20']} />
-  ),
+  'advanced-chart': TradingViewChartService,
   'api-status': ApiStatusService,
 
   // Trader's Zone
@@ -372,11 +378,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ text: 'Capitalization ladder — from NTC giants to micro-caps.' }}
       insight="Allocate core to large caps, satellite to vetted small caps." />
   ),
-  'promoter-shares': () => (
-    <StaticInfoService title="Promoter Shares — what to check"
-      content={'High promoter holding (above 50%) signals management confidence and governance stability.\n\nWhere to verify:\n• NEPSE company disclosures + annual reports\n• CDSC corporate action notices\n• Broker research notes\n\nRed flags: rising promoter pledging, frequent promoter selling, holding below 40% in banks.'}
-      tips={['Watch for promoter pledging disclosures', 'Track promoter buying/selling windows', 'High pledging + falling price = avoid']} />
-  ),
+  'promoter-shares': PromoterSharesService,
   'dividend-kings': () => (
     <UniversalScreener filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
       customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
@@ -467,11 +469,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'info', text: 'VSA — Volume Spread Analysis. Wide spread + high volume + close near high = bullish.' }}
       insight="Narrow spread + high volume = absorption. Wide spread + low volume = markup risk." />
   ),
-  'broker-flow': () => (
-    <UniversalScreener filterFn={(s) => s.turnover > 5000000} sortFn={(a, b) => b.turnover - a.turnover}
-      banner={{ type: 'info', text: 'Follow institutional money flow. Wired to /floorsheet.' }}
-      insight="Sustained broker flow in one direction for 3+ days = real trend." />
-  ),
+  'broker-flow': () => <BrokerFlowDominanceService mode="flow" />,
 
   // Trade lab
   'support-setups': () => (
@@ -521,16 +519,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'regulatory-circulars': () => <RegulatoryHub initialTab="circulars" />,
   'nrb-indicators': () => <RegulatoryHub initialTab="macro" />,
   'compare-stocks': CompareStocks,
-  'smart-portfolio': () => (
-    <UniversalScreener filterFn={(s) => s.technicalScore > 60 && s.pe > 0 && s.pe < 25} sortFn={(a, b) => b.technicalScore - a.technicalScore}
-      banner={{ type: 'success', text: 'AI shortlist: technical strength + reasonable valuation.' }}
-      insight="Rebalance monthly; cut anything falling below score 45." />
-  ),
-  'seasonality': () => (
-    <StaticInfoService title="NEPSE Seasonality (observed)"
-      content={'Best windows (observed 2015–2025):\n• Feb–Apr: post-budget + year-end closing rally\n• Sep–Nov: post-monsoon / festive liquidity return\n\nSoft windows:\n• May–Aug: monsoon + dividend-adjustment drift\n• Late Dec: book-closing profit booking\n\nUse seasonality as a tailwind — never as a standalone buy signal.'}
-      tips={['Scale in during soft months', 'Take partial profits into euphoric months', 'Pair seasonality with RSI under 40 for entries']} />
-  ),
+  'smart-portfolio': PortfolioTool,
+  'seasonality': SeasonalityAnalyticsService,
   'target-alert': AlertsTool,
 
   // Information
@@ -546,38 +536,18 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'warning', text: 'Within 5% of 52-week lows — value or value-trap?' }}
       insight="Check fundamentals first: falling knife vs coiled value." />
   ),
-  'mero-share': () => (
-    <StaticInfoService title="MeroShare Portal — meroshare.cdsc.com.np"
-      content={'Your single window for:\n• IPO / FPO / Rights applications (My ASBA)\n• Allotment + refund status\n• Dividend + bonus credit statements\n• Demat portfolio + WACC reports\n\nKeep CRN + Demat + bank details mapped to the same mobile number.'}
-      tips={['Apply for IPOs before 3 PM on closing day', 'Check allotment within 24 hrs of result', 'Download CAS every quarter']} />
-  ),
-  'credentials': () => (
-    <StaticInfoService title="Credentials Security"
-      content={'Protect Demat + TMS + MeroShare logins:\n• Unique 14+ char passwords per portal\n• Never share OTP / CRN screenshots\n• Log out on shared devices\n• Verify broker bank accounts before fund transfer'}
-      tips={['Enable 2FA where available', 'Rotate passwords quarterly', 'Beware Telegram “tips” scams']} />
-  ),
-  'apply-history': () => (
-    <StaticInfoService title="IPO Application History"
-      content={'Track every application in MeroShare → My ASBA → Application Report.\n\nShows: applied units, allotted units, refund amount + date.\nKeep allotment letters for tax filing (cost base proof).'}
-      tips={['Screenshot every application', 'Reconcile refunds within T+3', 'Save allotment PDFs yearly']} />
-  ),
+  'mero-share': () => <IPOList initialTab="apply" />,
+  'credentials': PreferencesSettingsService,
+  'apply-history': () => <IPOList initialTab="my-applications" />,
   'brokers': BrokersDirectoryService,
   'ipo-result': () => <IPOList initialTab="result" />,
   'ipo-results': () => <IPOList initialTab="result" />,
   'ipo-current': () => <IPOTracker type="current" />,
-  'ipo-fpo-alert': () => (
-    <StaticInfoService title="IPO / FPO Alerts"
-      content={'Upcoming issues are announced on SEBON + CDSC + MeroShare notices.\n\nTypical cadence: 5–15 IPOs per quarter. Hydropower + microfinance dominate the queue.\nEnable alerts in the Target Alert tab for issue-open reminders.'}
-      tips={['Check MeroShare notices weekly', 'Read the prospectus EPS + NAV section', 'Compare peer P/E before applying']} />
-  ),
+  'ipo-fpo-alert': () => <IPOTracker type="current" />,
   'ipo-pipeline': IPOPipelineService,
   'news': NewsService,
   'nepse-news': NewsService,
-  'beginners-guide': () => (
-    <StaticInfoService title="Beginner's Guide to NEPSE"
-      content={'1. Open Demat + trading account via any licensed broker (citizenship + photo + bank).\n2. Get MeroShare + TMS logins; link bank for ASBA.\n3. Fund TMS (min ~Rs. 10,000 to start).\n4. Buy diversified quality (3–5 sectors); hold 1+ years.\n5. Never invest borrowed or emergency money.'}
-      tips={['Start with Rs. 25,000+', 'Diversify across 3–5 sectors', 'Read annual reports before buying']} />
-  ),
+  'beginners-guide': GlossaryGuideService,
 
   // Scanner
   'rsi-filter': () => (
@@ -624,11 +594,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ text: 'MACD bullish regime — histogram above zero.' }}
       insight="Rising positive histogram = momentum building; flattening = take partial." />
   ),
-  'fibonacci-levels': () => (
-    <StaticInfoService title="Fibonacci Levels — quick reference"
-      content={'Retracements: 23.6% (shallow) • 38.2% (healthy) • 50% (neutral) • 61.8% golden ratio (high-probability) • 78.6% (deep).\n\nDraw from swing low → swing high in uptrends. Confluence of 61.8% + prior support + RSI 30–40 = prime entry zone.'}
-      tips={['61.8% is the golden-ratio level', 'Combine with volume + RSI', 'Place stops beyond 78.6%']} />
-  ),
+  'fibonacci-levels': FibonacciCalculatorService,
   'dow-signals': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 1 && s.technicalScore > 55}
       banner={{ text: 'Dow Theory confirmation: higher highs + higher lows.' }}
@@ -655,11 +621,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ text: 'Peer valuation ladder — cheapest earnings first.' }}
       insight="Compare strictly within sectors for true relative value." />
   ),
-  'strategy-lab': () => (
-    <StaticInfoService title="Strategy Lab"
-      content={'Backtest checklist before risking capital:\n1. Define entry + stop + target in numbers.\n2. Test on 100+ past trades (use Price History tab).\n3. Require win-rate × R:R to beat 1.0 expectancy.\n4. Forward-test 20 paper trades.\n5. Risk max 2% per position.'}
-      tips={['Backtest before going live', 'Never risk more than 2% per trade', 'Journal every setup']} />
-  ),
+  'strategy-lab': StrategyLabService,
   'smart-money': () => (
     <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover} filterFn={(s) => s.turnover > 10000000}
       banner={{ text: 'Where smart money flowed today — Rs. 1 Cr+ turnover names.' }}
@@ -671,11 +633,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'watchlist': WatchlistTool,
   'trade-notes': TradeNotesTool,
   'stock-alerts': AlertsTool,
-  'edit': () => (
-    <StaticInfoService title="Preferences"
-      content={'Personalize your desk:\n• Star services to pin them in Featured\n• Watchlist + alerts persist on this device\n• Use search + category tabs to navigate 100+ tools\n\nTip: bookmark this page for one-tap NEPSE access during 11–3 NPT.'}
-      tips={['Enable browser notifications for alerts', 'Review watchlist every Sunday', 'Export notes monthly']} />
-  ),
+  'edit': PreferencesSettingsService,
 
   // Smart money
   'stealth-accumulation-tracker': () => (
@@ -694,21 +652,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'warning', text: 'Distribution-phase names — heavy selling into weakness.' }}
       insight="Exit or avoid where distribution is confirmed; do not bottom-fish." />
   ),
-  'broker-dominance': () => (
-    <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover} defaultLimit={30}
-      banner={{ text: 'Broker-dominant stocks by turnover. Wired to /floorsheet.' }}
-      insight="Track which names brokers crowd into — liquidity follows." />
-  ),
+  'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
   'aggressive-holdings': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 2 && s.volumeSurgeRatio > 1.5}
       banner={{ type: 'success', text: 'High-conviction institutional holding pattern.' }}
       insight="Strong close + volume = institutions happy to hold overnight." />
   ),
-  'matching-buy-sell': () => (
-    <UniversalScreener filterFn={(s) => Math.abs(s.pChange) < 1 && s.volume > 15000}
-      banner={{ text: 'Matched buy/sell balance — consolidation before the next leg.' }}
-      insight="Balanced flow + tightening range = breakout watch." />
-  ),
+  'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
   'slow-accumulation': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 0 && s.pChange < 1 && s.volume > 10000}
       banner={{ text: 'Slow, silent accumulation — patient buyers building size.' }}
