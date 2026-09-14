@@ -549,15 +549,12 @@ export function auditCorporateActions(adjustFn, dividendHistory = []) {
 
 /**
  * NEPSE circuit rules:
- *   ±5%  for most stocks, with special ±10% in some sessions.
+ *   ±15% daily circuit limit for individual stocks under Securities Trading Operation
+ *   Fourth Amendment Regulations.
  * This audit checks that ATR-based T1 and T2 levels don't imply
  * daily moves beyond circuit limits within the target holding period.
- *
- * i.e. if T1 is +12% above entry and holding is 5 days, the implied
- * daily gain needed is 12%/5 = 2.4% — well within ±5% circuit.
- * But if T2 is +18% in 3 days → 6%/day → beyond ±5% → flag it.
  */
-export function auditCircuitBreakers(levels, expectedHoldingDays = 20, circuitLimitPct = 5) {
+export function auditCircuitBreakers(levels, expectedHoldingDays = 20, circuitLimitPct = 15) {
   const issues = [];
 
   if (!levels) return { auditName: 'Circuit-Breaker Audit', pass: false, summary: 'No levels provided' };

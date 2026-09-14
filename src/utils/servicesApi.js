@@ -187,6 +187,54 @@ export const fetchNepseIntradayGraph = async (symbol) => {
 };
 
 
+function computeIpoStatus(closeDateStr, openDateStr, defaultStatus = 'Open') {
+  let status = defaultStatus || 'Open';
+  const stUpper = String(status).toUpperCase();
+  if (stUpper.includes('CLOSE') || stUpper.includes('EXPIRE') || stUpper.includes('ENDED')) {
+    return 'Closed';
+  }
+  if (!closeDateStr) return status;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const match = String(closeDateStr).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+
+      let targetDate;
+      if (year > 2060) {
+        targetDate = new Date(year - 57, month, day);
+      } else {
+        targetDate = new Date(year, month, day);
+      }
+
+      if (targetDate < today) {
+        return 'Closed';
+      }
+      const diffMs = targetDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays <= 2 && diffDays >= 0) {
+        return 'Closing Soon';
+      }
+    }
+
+    if (openDateStr) {
+      const oMatch = String(openDateStr).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+      if (oMatch) {
+        const oYear = parseInt(oMatch[1], 10);
+        const oMonth = parseInt(oMatch[2], 10) - 1;
+        const oDay = parseInt(oMatch[3], 10);
+        const oDate = oYear > 2060 ? new Date(oYear - 57, oMonth, oDay) : new Date(oYear, oMonth, oDay);
+        if (oDate > today) return 'Upcoming';
+      }
+    }
+  } catch (_) {}
+  return status;
+}
+
 export const fetchIPOListings = async () => {
   let list = [];
   try {
@@ -206,7 +254,7 @@ export const fetchIPOListings = async () => {
     companyName: item.name || item.companyName || item.scrip || '—',
     shareType: item.type || item.shareType || 'IPO',
     issuePrice: item.issuePrice || item.price || 100,
-    status: item.status || 'Open',
+    status: computeIpoStatus(item.closeDate || item.issueCloseDate, item.openDate || item.issueOpenDate, item.status),
     units: item.units,
     openDate: item.openDate,
     closeDate: item.closeDate,

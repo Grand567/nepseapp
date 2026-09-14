@@ -74,39 +74,50 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
+  if (['entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
+    return 'flagship';
+  }
   if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
     return 'regulatory';
   }
-  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance') {
+  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
     return 'smart-money';
   }
   if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
     return 'calculators';
   }
-  if (s.id === 'smart-portfolio' || s.id === 'target-alert' || s.id === 'credentials' || s.id === 'apply-history' || s.id === 'edit') {
+  if (s.id === 'portfolio' || s.id === 'watchlist' || s.id === 'trade-notes' || s.id === 'stock-alerts' || s.id === 'smart-portfolio' || s.id === 'target-alert' || s.id === 'credentials' || s.id === 'apply-history' || s.id === 'edit') {
     return 'desk';
   }
-  return CATEGORY_MAP[s.cat] || 'trading';
+  if (['live-market', 'market-summary', 'sector-heatmap', 'market-indices', 'top-gainers', 'top-losers', 'volume-leaders', 'turnover-leaders', 'top-transactions', 'live-nepse', '52w-high', '52w-low', 'floor-sheet', 'market-depth', 'ipo-current', 'ipo-result', 'ipo-pipeline', 'news', 'brokers', 'mero-share'].includes(s.id)) {
+    return 'market';
+  }
+  if (['dividend-kings', 'fundamentals-pro', 'pe-ranking', 'float-analytics', 'dividend-leaders', 'fundamental-scanner', 'stock-capitalization', 'comparable-stock', 'investment-picks', 'stocks-by-market-cap', 'promoter-shares', 'mutual-funds-unlock'].includes(s.id)) {
+    return 'valuation';
+  }
+  return 'trading';
 };
 
 const FILTER_TABS = [
   { id: 'all', label: 'All Tools', icon: Sparkles },
-  { id: 'regulatory', label: 'NRB & Regulatory', icon: Landmark },
-  { id: 'trading', label: 'Trading', icon: TrendingUp },
-  { id: 'valuation', label: 'Valuation', icon: Award },
-  { id: 'calculators', label: 'Calculators', icon: Calculator },
-  { id: 'market', label: 'Market Data', icon: Activity },
+  { id: 'flagship', label: '⭐ Flagship Suites', icon: Sparkles },
   { id: 'smart-money', label: 'Smart Money', icon: Crown },
+  { id: 'trading', label: 'Trading & Setups', icon: TrendingUp },
+  { id: 'valuation', label: 'Valuation & Picks', icon: Award },
+  { id: 'regulatory', label: 'NRB & Regulatory', icon: Landmark },
+  { id: 'market', label: 'Market & Primary', icon: Activity },
+  { id: 'calculators', label: 'Calculators', icon: Calculator },
   { id: 'desk', label: 'My Desk', icon: Briefcase },
 ];
 
 const CATEGORIES = [
-  { id: 'regulatory', title: 'NRB & SEBON Regulatory Hub', subtitle: 'Live NRB Forex rates & converter, central bank indicators, bullion benchmark & official circulars.' },
-  { id: 'trading', title: 'Trading & Technical Setups', subtitle: 'Momentum indicators, pattern detection, breakout scanners & entry/exit analysis.' },
-  { id: 'valuation', title: 'Valuation & Fundamentals', subtitle: 'Intrinsic value models, PE rankings, dividend kings & balance sheet scanners.' },
+  { id: 'flagship', title: '⭐ Flagship Analytical Suites', subtitle: 'Core decision-making powerhouses: Multi-Timeframe Momentum, Entry/Exit Target Analyzer, Stealth Accumulation & Benjamin Graham Valuation.' },
+  { id: 'smart-money', title: 'Smart Money & Institutional Flow', subtitle: 'Stealth accumulation tracking, broker dominance, aggressive buy/sell & live contract flows.' },
+  { id: 'trading', title: 'Trading & Technical Setups', subtitle: 'Breakout scanners, AI momentum setups, pattern recognition, circuit radars & support/resistance.' },
+  { id: 'valuation', title: 'Valuation & Fundamental Picks', subtitle: 'Intrinsic value models, PE rankings, dividend kings, corporate dividend history & balance sheet scanners.' },
+  { id: 'regulatory', title: 'NRB & SEBON Regulatory Hub', subtitle: 'Live NRB Forex rates & converter, central bank monetary policy indicators, bullion benchmark & official circulars.' },
+  { id: 'market', title: 'Market Data & Primary Market', subtitle: 'Live floor sheets, sector heatmaps, market depth, active IPOs, pipeline queue & live market news.' },
   { id: 'calculators', title: 'Trading Calculators', subtitle: 'SEBON brokerage, NRB margin lending, dividend yield, bonus/right adjustments & SIP.' },
-  { id: 'market', title: 'Market Data & Floats', subtitle: 'Live floor sheets, sector heatmaps, market depth, broker lists & IPO alerts.' },
-  { id: 'smart-money', title: 'Smart Money Tracker', subtitle: 'Stealth accumulation tracking, broker dominance, aggressive buy/sell & block deals.' },
   { id: 'desk', title: 'Your Personal Desk', subtitle: 'Custom watchlists, portfolio tracker, trade journal notes & price alerts.' },
 ];
 
@@ -114,9 +125,14 @@ const CATEGORIES = [
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
+  { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
+  { id: 'stealth-accumulation-tracker', name: 'Stealth Accumulation', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'graham-intrinsic', name: 'Graham Intrinsic Value', icon: Award, color: 'blue', cat: 'flagship', star: true },
+  { id: 'decision-probability', name: 'Decision Probability', icon: Target, color: 'purple', cat: 'flagship', star: true },
+  { id: 'dividend-history', name: 'Dividend Track Record', icon: TrendingUp, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'seasonality', name: 'NEPSE Seasonality 10Y', icon: Calendar, color: 'cyan', cat: 'flagship', star: true },
   { id: 'regulatory-hub', name: 'NRB Regulatory Hub', icon: Landmark, color: 'blue', cat: 'regulatory', star: true },
-  { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'featured', star: true },
-  { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'featured', star: true },
   { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
 
   { id: 'decision-probability', name: 'Decision Probability', icon: Target, color: 'emerald', cat: 'traders', star: true },
@@ -171,7 +187,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'brokers', name: 'Brokers', icon: Building2, color: 'blue', cat: 'information', star: true },
   { id: 'ipo-result', name: 'IPO Result', icon: Award, color: 'emerald', cat: 'information', star: true },
   { id: 'ipo-current', name: 'Live IPOs', icon: Rocket, color: 'emerald', cat: 'information', star: true },
-  { id: 'ipo-fpo-alert', name: 'IPO/FPO Alert', icon: Bell, color: 'rose', cat: 'information', star: true },
   { id: 'ipo-pipeline', name: 'IPO Pipeline', icon: Layers, color: 'pink', cat: 'information', star: true },
   { id: 'floor-sheet', name: 'Floor Sheet', icon: LayoutGrid, color: 'purple', cat: 'information', star: true },
   { id: 'news', name: 'News', icon: Newspaper, color: 'cyan', cat: 'information', star: true },

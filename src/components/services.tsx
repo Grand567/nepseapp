@@ -821,6 +821,48 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
   );
 }
 
+function checkIpoStatus(closeDateStr?: string, openDateStr?: string, initialStatus?: string): string {
+  let status = initialStatus || 'Active';
+  const stUpper = String(status).toUpperCase();
+  if (stUpper.includes('CLOSE') || stUpper.includes('EXPIRE') || stUpper.includes('ENDED')) {
+    return 'Closed';
+  }
+  if (!closeDateStr || closeDateStr === '—') return status;
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const match = String(closeDateStr).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+
+      const targetDate = year > 2060 ? new Date(year - 57, month, day) : new Date(year, month, day);
+      if (targetDate < today) {
+        return 'Closed';
+      }
+      const diffMs = targetDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDays <= 2 && diffDays >= 0) {
+        return 'Closing Soon';
+      }
+    }
+
+    if (openDateStr) {
+      const oMatch = String(openDateStr).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+      if (oMatch) {
+        const oYear = parseInt(oMatch[1], 10);
+        const oMonth = parseInt(oMatch[2], 10) - 1;
+        const oDay = parseInt(oMatch[3], 10);
+        const oDate = oYear > 2060 ? new Date(oYear - 57, oMonth, oDay) : new Date(oYear, oMonth, oDay);
+        if (oDate > today) return 'Upcoming';
+      }
+    }
+  } catch (_) {}
+  return status;
+}
+
 // ── IPOs ──
 export function IPOTracker({ type }: { type: 'current' | 'results' }) {
   const [data, setData] = useState<any[]>([]);
@@ -834,18 +876,21 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
       if (type === 'current') {
         const liveRes = await fetchIPOListings();
         if (liveRes && Array.isArray(liveRes) && liveRes.length > 0) {
-          setData(liveRes.map((item: any) => ({
-            ...item,
-            companyName: item.companyName || item.name || item.scrip || '—',
-            shareType: item.shareType || item.type || 'IPO',
-            issuePrice: item.issuePrice || item.price || 100,
-            openDate: item.openDate || '—',
-            closeDate: item.closeDate || '—',
-            status: item.status || 'Active',
-            units: item.units,
-            issueManager: item.issueManager,
-            sector: item.sector,
-          })));
+          setData(liveRes.map((item: any) => {
+            const computedStatus = checkIpoStatus(item.closeDate || item.issueCloseDate, item.openDate || item.issueOpenDate, item.status);
+            return {
+              ...item,
+              companyName: item.companyName || item.name || item.scrip || '—',
+              shareType: item.shareType || item.type || 'IPO',
+              issuePrice: item.issuePrice || item.price || 100,
+              openDate: item.openDate || '—',
+              closeDate: item.closeDate || '—',
+              status: computedStatus,
+              units: item.units,
+              issueManager: item.issueManager,
+              sector: item.sector,
+            };
+          }));
           setLoading(false);
           return;
         }
@@ -1019,6 +1064,13 @@ export function NewsService() {
     if (!targetUrl) return;
 
     let isMounted = true;
+    setArticleDetail({
+      title: selectedArticle.title,
+      date: selectedArticle.date || selectedArticle.pubDate,
+      source: selectedArticle.source,
+      url: targetUrl,
+      paragraphs: selectedArticle.description ? [String(selectedArticle.description).replace(/<[^>]+>/g, '')] : []
+    });
     setArticleLoading(true);
     fetchNewsArticle(targetUrl)
       .then((res: any) => {
@@ -1026,29 +1078,10 @@ export function NewsService() {
         const d = res?.data || res;
         if (d && (d.paragraphs || d.content)) {
           setArticleDetail(d);
-        } else {
-          setArticleDetail({
-            title: selectedArticle.title,
-            date: selectedArticle.date || selectedArticle.pubDate,
-            source: selectedArticle.source,
-            url: targetUrl,
-            paragraphs: [
-              selectedArticle.description || 'Full financial news details are ready on the publisher site.'
-            ]
-          });
         }
       })
-      .catch(() => {
-        if (!isMounted) return;
-        setArticleDetail({
-          title: selectedArticle.title,
-          date: selectedArticle.date || selectedArticle.pubDate,
-          source: selectedArticle.source,
-          url: targetUrl,
-          paragraphs: [
-            selectedArticle.description || 'Full financial news details are ready on the publisher site.'
-          ]
-        });
+      .catch((err) => {
+        console.warn('Full article fetch error:', err);
       })
       .finally(() => {
         if (isMounted) setArticleLoading(false);
@@ -1181,13 +1214,14 @@ export function NewsService() {
       {/* ── In-App News Article Reader Modal (Handles Android Back Gesture) ── */}
       {selectedArticle && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm"
+          className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-sm"
           onClick={() => setSelectedArticle(null)}
-          style={{ animation: 'fadeIn 0.2s ease' }}
+          style={{ zIndex: 99999, animation: 'fadeIn 0.2s ease' }}
         >
           <div
             className="w-full max-w-2xl max-h-[90vh] bg-slate-900 border border-slate-700/80 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 overflow-y-auto flex flex-col gap-4 shadow-2xl"
             onClick={e => e.stopPropagation()}
+            style={{ zIndex: 100000 }}
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 sticky top-0 bg-slate-900/95 z-10">
@@ -1240,7 +1274,7 @@ export function NewsService() {
             )}
 
             {/* Article Body */}
-            {articleLoading ? (
+            {articleLoading && (!articleDetail?.paragraphs || articleDetail.paragraphs.length === 0) ? (
               <div className="space-y-3 py-4">
                 <div className="h-4 bg-slate-800/80 rounded animate-pulse w-3/4" />
                 <div className="h-4 bg-slate-800/60 rounded animate-pulse w-full" />
@@ -1263,6 +1297,12 @@ export function NewsService() {
                       ? String(selectedArticle.description).replace(/<[^>]+>/g, '')
                       : 'Article synopsis loaded. You can read the complete coverage on the publisher portal below.'}
                   </p>
+                )}
+                {articleLoading && (
+                  <div className="flex items-center gap-2 text-xs text-blue-400 pt-2 border-t border-slate-800/60">
+                    <RefreshCw size={12} className="animate-spin" />
+                    <span>Fetching complete coverage from publisher…</span>
+                  </div>
                 )}
               </div>
             )}
@@ -3228,28 +3268,11 @@ export function MarketDepthService() {
     setRefreshing(false);
   };
 
-  // Normalization & fallback synthesizer if bids/asks empty (e.g. offline/market closed)
-  const ltp = depthData?.ltp || 600;
-  let rawBids = Array.isArray(depthData?.bids) ? depthData.bids : [];
-  let rawAsks = Array.isArray(depthData?.asks) ? depthData.asks : [];
-
-  if (rawBids.length === 0 || rawAsks.length === 0) {
-    const tick = ltp > 1000 ? 1 : 0.5;
-    rawBids = [
-      { orderCount: 3, quantity: 450, price: +(ltp - tick).toFixed(1) },
-      { orderCount: 5, quantity: 1200, price: +(ltp - 2 * tick).toFixed(1) },
-      { orderCount: 2, quantity: 800, price: +(ltp - 3 * tick).toFixed(1) },
-      { orderCount: 4, quantity: 1650, price: +(ltp - 4 * tick).toFixed(1) },
-      { orderCount: 7, quantity: 3100, price: +(ltp - 5 * tick).toFixed(1) },
-    ];
-    rawAsks = [
-      { orderCount: 2, quantity: 380, price: +(ltp + tick).toFixed(1) },
-      { orderCount: 4, quantity: 950, price: +(ltp + 2 * tick).toFixed(1) },
-      { orderCount: 3, quantity: 720, price: +(ltp + 3 * tick).toFixed(1) },
-      { orderCount: 6, quantity: 2400, price: +(ltp + 4 * tick).toFixed(1) },
-      { orderCount: 5, quantity: 1850, price: +(ltp + 5 * tick).toFixed(1) },
-    ];
-  }
+  // Normalization
+  const ltp = depthData?.ltp || 0;
+  const rawBids = Array.isArray(depthData?.bids) ? depthData.bids : [];
+  const rawAsks = Array.isArray(depthData?.asks) ? depthData.asks : [];
+  const hasOrders = rawBids.length > 0 || rawAsks.length > 0;
 
   const bids = rawBids.slice(0, 5).map((b: any) => ({
     orders: b.orderCount || b.Orders || b.orders || 1,
@@ -3266,13 +3289,13 @@ export function MarketDepthService() {
   const totalBuyQty = bids.reduce((sum: number, b: any) => sum + b.qty, 0);
   const totalSellQty = asks.reduce((sum: number, a: any) => sum + a.qty, 0);
   const totalOrderQty = totalBuyQty + totalSellQty || 1;
-  const buyPct = Math.round((totalBuyQty / totalOrderQty) * 100);
+  const buyPct = hasOrders ? Math.round((totalBuyQty / totalOrderQty) * 100) : 50;
   const sellPct = 100 - buyPct;
 
   const topBid = bids[0]?.price || ltp;
   const topAsk = asks[0]?.price || ltp;
-  const spread = Math.max(0, +(topAsk - topBid).toFixed(2));
-  const spreadPct = topBid > 0 ? +((spread / topBid) * 100).toFixed(2) : 0;
+  const spread = hasOrders && topAsk > 0 && topBid > 0 ? Math.max(0, +(topAsk - topBid).toFixed(2)) : 0;
+  const spreadPct = topBid > 0 && spread > 0 ? +((spread / topBid) * 100).toFixed(2) : 0;
 
   return (
     <div className="space-y-4">
@@ -3318,6 +3341,10 @@ export function MarketDepthService() {
 
       {loading ? (
         <TableSkeleton rows={5} cols={6} />
+      ) : !hasOrders ? (
+        <InfoBanner type="info">
+          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Sun–Thu 11:00 AM – 3:00 PM NPT).
+        </InfoBanner>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Bid (Buy) Side */}
