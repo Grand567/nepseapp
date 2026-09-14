@@ -270,7 +270,20 @@ export const bulkCheckIPOResult = (companyShareId, profiles) => _proxyFetch('/ap
 export const fetchScanner = (type, mode) => _proxyFetch('/api/scanner/bulk?type=' + type + (mode ? '&mode=' + mode : ''), {}, 60000);
 export const fetchSectorHeatmap = () => _proxyFetch('/api/sector-heatmap', {}, 30000);
 export const fetchSectorAD = () => _proxyFetch('/api/smart-money/sector-ad', {}, 30000);
-export const fetchBrokerHeatmap = (date) => _proxyFetch('/api/smart-money/broker-heatmap' + (date ? '?date=' + date : ''), {}, 120000);
+export const fetchBrokerHeatmap = (arg) => {
+  let q = '';
+  if (typeof arg === 'number') {
+    q = `?days=${arg}`;
+  } else if (arg && typeof arg === 'object') {
+    const p = new URLSearchParams();
+    if (arg.days) p.set('days', String(arg.days));
+    if (arg.date) p.set('date', String(arg.date));
+    q = p.toString() ? `?${p.toString()}` : '';
+  } else if (arg) {
+    q = `?date=${arg}`;
+  }
+  return _proxyFetch('/api/smart-money/broker-heatmap' + q, {}, 120000);
+};
 export const fetchStealthAccumulation = (symbol, days) => _proxyFetch('/api/smart-money/stealth/' + symbol + '?days=' + (days || 15), {}, 300000);
 export const fetchBrokerAnalysis = (symbol, days) => _proxyFetch('/api/broker-analysis/' + symbol + '?days=' + (days || 30), {}, 1800000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);

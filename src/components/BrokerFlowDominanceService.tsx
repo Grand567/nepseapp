@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet } from '../utils/liveData';
-import { fetchBrokerAnalysis } from '../utils/servicesApi';
+import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 
 interface BrokerStat {
@@ -58,6 +58,15 @@ const MAJOR_BROKERS = [
   { id: '6', name: 'Agrawal Securities' },
 ];
 
+const DAYS_MAP: Record<string, number> = {
+  '1D': 1,
+  '1W': 7,
+  '1M': 30,
+  '3M': 90,
+  '6M': 180,
+  '1Y': 365,
+};
+
 export function BrokerFlowDominanceService({
   mode = 'flow',
 }: {
@@ -70,16 +79,28 @@ export function BrokerFlowDominanceService({
   const [search, setSearch] = useState('');
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
+  const [heatmapData, setHeatmapData] = useState<any>(null);
 
   const loadData = async (activeTf = timeframe) => {
     setLoading(true);
     try {
-      const { stocks: liveStocks } = await loadNepseData();
-      setStocks(liveStocks);
-
-      const fsRes = await fetchFloorSheet();
-      const fsData = Array.isArray(fsRes?.content) ? fsRes.content : (Array.isArray(fsRes?.data) ? fsRes.data : []);
-      setFloorsheet(fsData);
+      const days = DAYS_MAP[activeTf] || 1;
+      const [liveDataRes, fsRes, hmRes] = await Promise.allSettled([
+        loadNepseData(),
+        fetchFloorSheet(),
+        fetchBrokerHeatmap({ days })
+      ]);
+      if (liveDataRes.status === 'fulfilled') {
+        setStocks(liveDataRes.value?.stocks || []);
+      }
+      if (fsRes.status === 'fulfilled') {
+        const fs = fsRes.value;
+        const fsData = Array.isArray(fs?.content) ? fs.content : (Array.isArray(fs?.data) ? fs.data : (Array.isArray(fs) ? fs : []));
+        setFloorsheet(fsData);
+      }
+      if (hmRes.status === 'fulfilled' && hmRes.value?.matrix) {
+        setHeatmapData(hmRes.value);
+      }
     } catch (_) {}
     setLoading(false);
   };
@@ -94,10 +115,54 @@ export function BrokerFlowDominanceService({
     setRefreshing(false);
   };
 
-  // 1. Compute Broker Flow from Real Floorsheet Rows
+  // 1. Compute Broker Flow from Real Multi-Day Heatmap or Floorsheet
   const brokerFlowList: BrokerStat[] = useMemo(() => {
-    const tfMult = timeframe === '1W' ? 5 : timeframe === '1M' ? 22 : timeframe === '3M' ? 66 : 1.0;
+    // A. Multi-day horizon: use real aggregated multi-day broker vault matrix
+    if (timeframe !== '1D' && heatmapData?.matrix && heatmapData.matrix.length > 0) {
+      const list: BrokerStat[] = [];
+      heatmapData.matrix.forEach((b: any) => {
+        const bId = String(b.broker || '').trim();
+        const bInfo = MAJOR_BROKERS.find(m => m.id === bId);
+        const name = b.brokerName || (bInfo ? bInfo.name : `Broker #${bId}`);
+        const buyAmount = Math.round(Number(b.totalBuy || 0));
+        const sellAmount = Math.round(Number(b.totalSell || 0));
+        const netFlow = Math.round(Number(b.netFlow != null ? b.netFlow : (buyAmount - sellAmount)));
 
+        let topStock = '—';
+        let maxScripAmt = 0;
+        if (b.scrips && typeof b.scrips === 'object') {
+          Object.entries(b.scrips).forEach(([sSym, sVal]: [string, any]) => {
+            const sAmt = Number(sVal?.buy || 0) + Number(sVal?.sell || 0);
+            if (sAmt > maxScripAmt) {
+              maxScripAmt = sAmt;
+              topStock = sSym;
+            }
+          });
+        }
+
+        let bias: BrokerStat['bias'] = 'Mild Accumulation';
+        if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+        else if (netFlow < -8000000) bias = 'Heavy Selling';
+        else if (netFlow < 0) bias = 'Distribution';
+
+        list.push({
+          brokerId: bId,
+          brokerName: name,
+          buyAmount,
+          sellAmount,
+          netFlow,
+          topStock: topStock || '—',
+          totalTrades: Number(b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
+          bias,
+        });
+      });
+
+      if (list.length > 0) {
+        return list.sort((a, b) => b.netFlow - a.netFlow);
+      }
+    }
+
+    // B. 1D Horizon with active floorsheet
     if (floorsheet && floorsheet.length > 0) {
       const brokerMap = new Map<string, { buy: number; sell: number; trades: number; scrips: Map<string, number> }>();
 
@@ -143,14 +208,14 @@ export function BrokerFlowDominanceService({
           }
         });
 
-        const buyAmount = Math.round(val.buy * tfMult);
-        const sellAmount = Math.round(val.sell * tfMult);
+        const buyAmount = Math.round(val.buy);
+        const sellAmount = Math.round(val.sell);
         const netFlow = buyAmount - sellAmount;
-        const totalTrades = Math.round(val.trades * tfMult);
+        const totalTrades = val.trades;
 
         let bias: BrokerStat['bias'] = 'Mild Accumulation';
-        if (netFlow > 8000000 * (tfMult > 1 ? 2 : 1)) bias = 'Aggressive Accumulation';
-        else if (netFlow < -8000000 * (tfMult > 1 ? 2 : 1)) bias = 'Heavy Selling';
+        if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+        else if (netFlow < -8000000) bias = 'Heavy Selling';
         else if (netFlow < 0) bias = 'Distribution';
 
         list.push({
@@ -159,7 +224,7 @@ export function BrokerFlowDominanceService({
           buyAmount,
           sellAmount,
           netFlow,
-          topStock: topStock || 'NABIL',
+          topStock: topStock || '—',
           totalTrades,
           bias,
         });
@@ -170,29 +235,131 @@ export function BrokerFlowDominanceService({
       }
     }
 
-    // Fallback if floorsheet was not loaded (e.g. market offline)
-    return MAJOR_BROKERS.map((b, idx) => {
-      const baseBuy = Math.round((25000000 + (idx * 3200000)) * tfMult);
-      const baseSell = Math.round((22000000 + ((16 - idx) * 3100000)) * tfMult);
-      const net = baseBuy - baseSell;
-      const topStocks = ['NABIL', 'SHIVM', 'CHCL', 'GBIME', 'HDL', 'CIT', 'NRIC', 'NICA', 'API', 'HRL'];
-      const topStock = topStocks[idx % topStocks.length];
-      return {
-        brokerId: b.id,
-        brokerName: b.name,
-        buyAmount: baseBuy,
-        sellAmount: baseSell,
-        netFlow: net,
-        topStock,
-        totalTrades: Math.round(120 * tfMult + idx * 15),
-        bias: net > 5000000 ? 'Aggressive Accumulation' : net < -5000000 ? 'Heavy Selling' : 'Mild Accumulation',
-      };
-    }).sort((a, b) => b.netFlow - a.netFlow);
-  }, [floorsheet, timeframe]);
+    // C. 1D Fallback to 1D broker vault matrix if floorsheet is offline
+    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
+      return heatmapData.matrix.map((b: any) => {
+        const bId = String(b.broker || '').trim();
+        const bInfo = MAJOR_BROKERS.find(m => m.id === bId);
+        const name = b.brokerName || (bInfo ? bInfo.name : `Broker #${bId}`);
+        const buyAmount = Math.round(Number(b.totalBuy || 0));
+        const sellAmount = Math.round(Number(b.totalSell || 0));
+        const netFlow = Math.round(Number(b.netFlow != null ? b.netFlow : (buyAmount - sellAmount)));
 
-  // 2. Compute Institutional Dominance from Floorsheet & Live Turnover
+        let topStock = '—';
+        let maxScripAmt = 0;
+        if (b.scrips && typeof b.scrips === 'object') {
+          Object.entries(b.scrips).forEach(([sSym, sVal]: [string, any]) => {
+            const sAmt = Number(sVal?.buy || 0) + Number(sVal?.sell || 0);
+            if (sAmt > maxScripAmt) {
+              maxScripAmt = sAmt;
+              topStock = sSym;
+            }
+          });
+        }
+
+        let bias: BrokerStat['bias'] = 'Mild Accumulation';
+        if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+        else if (netFlow < -8000000) bias = 'Heavy Selling';
+        else if (netFlow < 0) bias = 'Distribution';
+
+        return {
+          brokerId: bId,
+          brokerName: name,
+          buyAmount,
+          sellAmount,
+          netFlow,
+          topStock: topStock || '—',
+          totalTrades: Number(b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
+          bias,
+        };
+      }).sort((a: any, b: any) => b.netFlow - a.netFlow);
+    }
+
+    // D. Baseline list (zero fake multi-million generation)
+    return MAJOR_BROKERS.map(b => ({
+      brokerId: b.id,
+      brokerName: b.name,
+      buyAmount: 0,
+      sellAmount: 0,
+      netFlow: 0,
+      topStock: '—',
+      totalTrades: 0,
+      bias: 'Mild Accumulation' as const,
+    }));
+  }, [floorsheet, heatmapData, timeframe]);
+
+  // 2. Compute Institutional Dominance from Real Multi-Day Heatmap or Live Floorsheet
   const dominanceList: DominanceItem[] = useMemo(() => {
-    // If real floorsheet rows exist, compute actual broker share per scrip
+    // A. Multi-day horizon: compute directly from heatmapData scrips breakdown
+    if (timeframe !== '1D' && heatmapData?.matrix && heatmapData.matrix.length > 0) {
+      const stockBrokerMap = new Map<string, { totalBuy: number; brokers: Map<string, number> }>();
+
+      heatmapData.matrix.forEach((bItem: any) => {
+        const bId = String(bItem.broker || '').trim();
+        if (!bId || !bItem.scrips) return;
+        Object.entries(bItem.scrips).forEach(([sym, sVal]: [string, any]) => {
+          const bAmt = Number(sVal?.buy || 0);
+          if (bAmt <= 0) return;
+          if (!stockBrokerMap.has(sym)) {
+            stockBrokerMap.set(sym, { totalBuy: 0, brokers: new Map() });
+          }
+          const entry = stockBrokerMap.get(sym)!;
+          entry.totalBuy += bAmt;
+          entry.brokers.set(bId, (entry.brokers.get(bId) || 0) + bAmt);
+        });
+      });
+
+      const res: DominanceItem[] = [];
+      stockBrokerMap.forEach((val, sym) => {
+        if (val.totalBuy <= 0) return;
+        let topBrokerId = '58';
+        let topBrokerAmt = 0;
+        const sortedBrokers: { id: string; amt: number }[] = [];
+
+        val.brokers.forEach((bAmt, bId) => {
+          sortedBrokers.push({ id: bId, amt: bAmt });
+          if (bAmt > topBrokerAmt) {
+            topBrokerAmt = bAmt;
+            topBrokerId = bId;
+          }
+        });
+
+        sortedBrokers.sort((a, b) => b.amt - a.amt);
+        const topBInfo = MAJOR_BROKERS.find(b => b.id === topBrokerId);
+        const topBName = topBInfo ? topBInfo.name : `Broker #${topBrokerId}`;
+        const dominancePct = +(Math.min(95, Math.max(5, (topBrokerAmt / val.totalBuy) * 100))).toFixed(1);
+        const buyerBrokers = sortedBrokers.slice(0, 3).map(b => `#${b.id}`);
+
+        const matchedStock = stocks.find(s => s.symbol === sym);
+        const ltp = Number(matchedStock?.ltp || matchedStock?.closePrice || 500);
+        const turnover = Number(matchedStock?.turnover || val.totalBuy);
+
+        const status: DominanceItem['status'] =
+          dominancePct >= 40
+            ? 'Highly Cornered'
+            : dominancePct >= 25
+            ? 'Moderate Dominance'
+            : 'Broad Retail';
+
+        res.push({
+          symbol: sym,
+          name: matchedStock?.companyName || matchedStock?.name || sym,
+          ltp,
+          turnover,
+          topBrokerId,
+          topBrokerName: topBName,
+          dominancePct,
+          buyerBrokers,
+          status,
+        });
+      });
+
+      if (res.length > 0) {
+        return res.sort((a, b) => b.dominancePct - a.dominancePct);
+      }
+    }
+
+    // B. 1D: compute from actual floorsheet
     if (floorsheet && floorsheet.length > 0) {
       const stockBrokerMap = new Map<string, { totalBuy: number; brokers: Map<string, number> }>();
 
@@ -228,7 +395,7 @@ export function BrokerFlowDominanceService({
         sortedBrokers.sort((a, b) => b.amt - a.amt);
         const topBInfo = MAJOR_BROKERS.find(b => b.id === topBrokerId);
         const topBName = topBInfo ? topBInfo.name : `Broker #${topBrokerId}`;
-        const dominancePct = +(Math.min(95, Math.max(10, (topBrokerAmt / val.totalBuy) * 100))).toFixed(1);
+        const dominancePct = +(Math.min(95, Math.max(5, (topBrokerAmt / val.totalBuy) * 100))).toFixed(1);
         const buyerBrokers = sortedBrokers.slice(0, 3).map(b => `#${b.id}`);
 
         const matchedStock = stocks.find(s => s.symbol === sym);
@@ -255,53 +422,25 @@ export function BrokerFlowDominanceService({
         });
       });
 
-      if (res.length >= 3) {
+      if (res.length > 0) {
         return res.sort((a, b) => b.dominancePct - a.dominancePct);
       }
     }
 
-    // Secondary fallback using real active stocks
-    const active = stocks.filter(s => Number(s.turnover || 0) > 0).slice(0, 30);
-    const pool = active.length > 5 ? active : [
-      { symbol: 'NABIL', companyName: 'Nabil Bank Ltd.', ltp: 580, turnover: 42000000 },
-      { symbol: 'SHIVM', companyName: 'Shivam Cements', ltp: 490, turnover: 36000000 },
-      { symbol: 'CHCL', companyName: 'Chilime Hydropower', ltp: 420, turnover: 28000000 },
-      { symbol: 'GBIME', companyName: 'Global IME Bank', ltp: 215, turnover: 24000000 },
-      { symbol: 'HDL', companyName: 'Himalayan Distillery', ltp: 1350, turnover: 19000000 },
-      { symbol: 'CIT', companyName: 'Citizen Investment Trust', ltp: 2100, turnover: 18000000 },
-      { symbol: 'NRIC', companyName: 'Nepal Reinsurance', ltp: 720, turnover: 17500000 },
-      { symbol: 'NICA', companyName: 'NIC Asia Bank', ltp: 440, turnover: 16000000 },
-    ];
-
-    return pool.map((s, idx) => {
-      const topBroker = MAJOR_BROKERS[idx % MAJOR_BROKERS.length];
-      const dominancePct = +(22 + ((idx * 7) % 24)).toFixed(1);
-      const buyerBrokers = [
-        `#${topBroker.id}`,
-        `#${MAJOR_BROKERS[(idx + 3) % MAJOR_BROKERS.length].id}`,
-        `#${MAJOR_BROKERS[(idx + 7) % MAJOR_BROKERS.length].id}`,
-      ];
-
-      const status: DominanceItem['status'] =
-        dominancePct >= 38
-          ? 'Highly Cornered'
-          : dominancePct >= 28
-          ? 'Moderate Dominance'
-          : 'Broad Retail';
-
-      return {
-        symbol: s.symbol,
-        name: s.companyName || s.name || s.symbol,
-        ltp: Number(s.ltp || s.closePrice || 500),
-        turnover: Number(s.turnover || 20000000),
-        topBrokerId: topBroker.id,
-        topBrokerName: topBroker.name,
-        dominancePct,
-        buyerBrokers,
-        status,
-      };
-    }).sort((a, b) => b.dominancePct - a.dominancePct);
-  }, [floorsheet, stocks]);
+    // C. Baseline from active stocks with 0 dominance if offline (ZERO synthetic percent formula)
+    const active = stocks.filter(s => Number(s.turnover || 0) > 0).slice(0, 20);
+    return active.map(s => ({
+      symbol: s.symbol,
+      name: s.companyName || s.name || s.symbol,
+      ltp: Number(s.ltp || s.closePrice || 500),
+      turnover: Number(s.turnover || 0),
+      topBrokerId: '—',
+      topBrokerName: 'Floorsheet Offline',
+      dominancePct: 0,
+      buyerBrokers: [],
+      status: 'Broad Retail' as const,
+    }));
+  }, [floorsheet, heatmapData, stocks, timeframe]);
 
   // 3. Compute Bilateral Matching & Block Deals from Authentic Floorsheet
   const matchingDeals: MatchingDeal[] = useMemo(() => {
@@ -354,6 +493,7 @@ export function BrokerFlowDominanceService({
 
   const topAccumulator = brokerFlowList[0];
   const topDistributor = [...brokerFlowList].reverse()[0];
+  const corneredCount = dominanceList.filter(d => d.dominancePct >= 35).length;
 
   if (loading) return <Spinner text="Aggregating Real-Time Institutional Broker Flow…" />;
 
@@ -414,7 +554,7 @@ export function BrokerFlowDominanceService({
         <StatCard label="Top Accumulator" value={topAccumulator ? `Broker #${topAccumulator.brokerId}` : '—'} subtitle={topAccumulator ? `+Rs. ${(topAccumulator.netFlow / 1e7).toFixed(1)} Cr Net (${topAccumulator.topStock})` : undefined} color="#10b981" />
         <StatCard label="Top Distributor" value={topDistributor ? `Broker #${topDistributor.brokerId}` : '—'} subtitle={topDistributor ? `-Rs. ${(Math.abs(topDistributor.netFlow) / 1e7).toFixed(1)} Cr Net` : undefined} color="#f43f5e" />
         <StatCard label="Monitored Brokers" value={`${MAJOR_BROKERS.length} Firms`} subtitle="Live TMS Feed" color="#3b82f6" />
-        <StatCard label="Dominance Alert" value="5 Scrips Cornered" subtitle=">35% Single Broker Volume" color="#f59e0b" />
+        <StatCard label="Dominance Alert" value={`${corneredCount} Scrips Cornered`} subtitle=">35% Single Broker Volume" color="#f59e0b" />
       </div>
 
       {/* MODE 1: BROKER FLOW */}

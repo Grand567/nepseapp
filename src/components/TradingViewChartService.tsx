@@ -59,64 +59,45 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
       };
       setStockInfo(info);
 
-      const daysCount = tf === '1D' ? 1 : tf === '1W' ? 7 : tf === '1M' ? 30 : tf === '3M' ? 90 : tf === '1Y' ? 250 : 500;
+      const daysCount = tf === '1D' ? 5 : tf === '1W' ? 10 : tf === '1M' ? 35 : tf === '3M' ? 95 : tf === '1Y' ? 260 : 500;
       let rawHistory: any[] = [];
       try {
         const histRes = await fetchPriceHistory(sym, daysCount);
-        if (Array.isArray(histRes?.data) && histRes.data.length > 0) {
+        if (Array.isArray(histRes)) {
+          rawHistory = histRes;
+        } else if (Array.isArray(histRes?.data)) {
           rawHistory = histRes.data;
         }
       } catch (_) {}
 
       const ltp = Number(info.ltp || 500);
-      const hi52 = Number(info.high52w || ltp * 1.35);
-      const lo52 = Number(info.low52w || ltp * 0.65);
 
       let generated: Candle[] = [];
-      if (rawHistory.length >= 5) {
-        generated = rawHistory.map((h: any) => ({
-          date: h.businessDate || h.date || '',
-          open: Number(h.openPrice || h.open || h.closePrice || ltp),
-          high: Number(h.highPrice || h.high || ltp),
-          low: Number(h.lowPrice || h.low || ltp),
-          close: Number(h.closePrice || h.close || h.ltp || ltp),
-          volume: Number(h.totalTradedQuantity || h.volume || 10000),
+      if (rawHistory.length > 0) {
+        // Sort ascending by date
+        const sorted = rawHistory.slice().sort((a: any, b: any) => new Date(a.date || a.businessDate).getTime() - new Date(b.date || b.businessDate).getTime());
+        // Filter slice according to selected timeframe
+        const targetBars = tf === '1D' ? 1 : tf === '1W' ? 5 : tf === '1M' ? 22 : tf === '3M' ? 66 : tf === '1Y' ? 250 : sorted.length;
+        const sliced = sorted.slice(Math.max(0, sorted.length - targetBars));
+
+        generated = (sliced.length > 0 ? sliced : sorted).map((h: any) => ({
+          date: String(h.date || h.businessDate || '').slice(0, 10),
+          open: Number(h.open || h.openPrice || h.close || h.closePrice || ltp),
+          high: Number(h.high || h.highPrice || Math.max(Number(h.open || ltp), Number(h.close || ltp))),
+          low: Number(h.low || h.lowPrice || Math.min(Number(h.open || ltp), Number(h.close || ltp))),
+          close: Number(h.close || h.closePrice || h.ltp || ltp),
+          volume: Number(h.volume || h.totalTradedQuantity || 0),
         }));
       } else {
-        // High-fidelity historical candle synthesis anchored to genuine 52W range and LTP
-        const count = Math.min(daysCount, 60);
-        let current = ltp;
-        const now = new Date();
-        const generatedRev: Candle[] = [];
-
-        for (let i = 0; i < count; i++) {
-          const d = new Date(now);
-          d.setDate(d.getDate() - (count - 1 - i));
-          // skip weekends (Friday/Saturday in Nepal)
-          const dayOfWeek = d.getDay();
-          if (dayOfWeek === 5 || dayOfWeek === 6) continue;
-
-          const dateStr = d.toISOString().split('T')[0];
-          const volatility = current * 0.022;
-          const open = current;
-          const delta = (Math.sin(i * 0.45) * 0.8 + (Math.random() - 0.48) * 1.4) * volatility;
-          let close = open + delta;
-          close = Math.max(lo52 * 0.95, Math.min(hi52 * 1.05, close));
-          const high = Math.max(open, close) + Math.random() * volatility * 0.6;
-          const low = Math.min(open, close) - Math.random() * volatility * 0.6;
-          const vol = Math.round(Number(info.volume || 18000) * (0.6 + Math.random() * 0.9));
-
-          generatedRev.push({
-            date: dateStr,
-            open: +open.toFixed(1),
-            high: +high.toFixed(1),
-            low: +low.toFixed(1),
-            close: +close.toFixed(1),
-            volume: vol,
-          });
-          current = close;
-        }
-        generated = generatedRev;
+        // If network completely unavailable, return today's single actual candle
+        generated = [{
+          date: new Date().toISOString().slice(0, 10),
+          open: Number(info.open || ltp),
+          high: Number(info.high || ltp),
+          low: Number(info.low || ltp),
+          close: ltp,
+          volume: Number(info.volume || 0),
+        }];
       }
 
       // Calculate EMAs (EMA 20 & EMA 50)

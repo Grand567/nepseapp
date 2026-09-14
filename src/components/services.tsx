@@ -263,6 +263,20 @@ export function UniversalScreener({
       const { stocks, source: src } = await loadNepseData();
       if (stocks?.length) setRawTotal(stocks.length);
 
+      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is selected
+      if (activeTf !== '1D' && stocks?.length) {
+        const topToWarm = stocks.slice(0, 30);
+        await Promise.allSettled(
+          topToWarm.map(s => {
+            const sym = s.symbol;
+            if (sym && !getCachedRealPriceHistory(sym)) {
+              return fetchPriceHistory(sym, 180);
+            }
+            return Promise.resolve(null);
+          })
+        );
+      }
+
       // Compute multi-timeframe horizon return and metrics for each stock
       const enrichedForTf = stocks.map((stock) => {
         const metricsMap = computeStockTimeframeMetrics(stock);
@@ -774,12 +788,11 @@ export function MarketSummaryService() {
     const dailyChangePct = Number(data.changePercent || 0);
 
     if (timeframe === '1D' || !nepseHistory || nepseHistory.length < 2) {
-      const mult = timeframe === '1W' ? 5 : timeframe === '1M' ? 22 : timeframe === '3M' ? 66 : timeframe === '6M' ? 132 : timeframe === '1Y' ? 250 : 1;
       return {
         changePercent: dailyChangePct,
-        totalTurnover: (data.totalTurnover || 0) * (timeframe === '1D' ? 1 : mult),
-        totalTradedShares: (data.totalTradedShares || 0) * (timeframe === '1D' ? 1 : mult),
-        totalTransactions: (data.totalTransactions || 0) * (timeframe === '1D' ? 1 : mult),
+        totalTurnover: Number(data.totalTurnover || 0),
+        totalTradedShares: Number(data.totalTradedShares || 0),
+        totalTransactions: Number(data.totalTransactions || 0),
       };
     }
 
@@ -2253,8 +2266,6 @@ export function LiveFloorsheetService() {
     setRefreshing(false);
   };
 
-  const tfMultiplier = 1.0;
-
   const filtered = useMemo(() => {
     if (!query.trim()) return data;
     const q = query.toLowerCase();
@@ -2484,10 +2495,13 @@ export function BrokerHeatmapService() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
 
-  const loadData = async () => {
+  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '1Y': 365 };
+
+  const loadData = async (activeTf = timeframe) => {
     setLoading(true);
+    const days = daysMap[activeTf] || 1;
     try {
-      const res = await fetchBrokerHeatmap();
+      const res = await fetchBrokerHeatmap({ days });
       const d = res?.data || res;
       if (d && (d.matrix || d.topBrokers)) {
         setData(d);
@@ -2496,15 +2510,13 @@ export function BrokerHeatmapService() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, [timeframe]);
+  useEffect(() => { loadData(timeframe); }, [timeframe]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(timeframe);
     setRefreshing(false);
   };
-
-  const tfMultiplier = timeframe === '1W' ? 4.8 : timeframe === '1M' ? 21.0 : timeframe === '3M' ? 62.0 : timeframe === '1Y' ? 240.0 : 1.0;
 
   const matrix = useMemo(() => {
     if (!data?.matrix) return [];
@@ -2613,7 +2625,7 @@ export function BrokerHeatmapService() {
           </thead>
           <tbody className="divide-y divide-slate-800/50 font-mono">
             {matrix.map((row: any) => {
-              const netFlow = Number(row.netFlow || 0) * tfMultiplier;
+              const netFlow = Number(row.netFlow || 0);
               const isNetBuy = netFlow >= 0;
               return (
                 <tr key={row.broker} className="hover:bg-slate-900/40 transition-colors">
@@ -2632,13 +2644,13 @@ export function BrokerHeatmapService() {
                   </td>
                   {topScrips.map((sym: string) => {
                     const cell = (row.scrips || []).find((s: any) => s.symbol === sym) || { buy: 0, sell: 0, net: 0 };
-                    const net = Number(cell.net || 0) * tfMultiplier;
+                    const net = Number(cell.net || 0);
                     const hasActivity = cell.buy > 0 || cell.sell > 0;
                     let cellBg = 'bg-slate-900/30 text-slate-600';
                     if (hasActivity) {
-                      if (net > 500000 * tfMultiplier) cellBg = 'bg-emerald-600/60 text-white font-bold border border-emerald-500/40';
+                      if (net > 1000000) cellBg = 'bg-emerald-600/60 text-white font-bold border border-emerald-500/40';
                       else if (net > 0) cellBg = 'bg-emerald-800/40 text-emerald-300 font-semibold';
-                      else if (net < -500000 * tfMultiplier) cellBg = 'bg-rose-600/60 text-white font-bold border border-rose-500/40';
+                      else if (net < -1000000) cellBg = 'bg-rose-600/60 text-white font-bold border border-rose-500/40';
                       else if (net < 0) cellBg = 'bg-rose-800/40 text-rose-300 font-semibold';
                       else cellBg = 'bg-amber-900/30 text-amber-300 font-medium';
                     }
