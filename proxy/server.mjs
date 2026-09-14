@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import Parser from 'rss-parser';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import { initDB, query } from './db.mjs';
@@ -356,6 +357,14 @@ const HEADERS = {
   'Accept-Language': 'en-US,en;q=0.5',
   'Cache-Control': 'no-cache',
 };
+
+const rssParser = new Parser({
+  timeout: 8000,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+  }
+});
 
 // In-memory cache with TTL support (Note: limited persistence on serverless/Vercel)
 const cache = new Map();
@@ -4970,8 +4979,224 @@ app.get('/api/analysis/:symbol/technical', async (req, res) => {
 });
 
 // ============================================================
-// 15: LIVE MULTI-SOURCE NEPSE NEWS (ShareSansar & MeroLagani)
+// 15: LIVE MULTI-SOURCE NEPSE & ECONOMIC NEWS
+// Portals: ShareSansar, MeroLagani, Clickmandu, Karobar Daily, Bizshala, BikashNews, ArthaKendra
 // ============================================================
+async function scrapeShareSansarNews() {
+  try {
+    const res = await axios.get('https://www.sharesansar.com/category/latest', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    const seen = new Set();
+    $('a[href*="/newsdetail/"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text.length > 20 && !seen.has(text)) {
+        seen.add(text);
+        const parent = $(el).closest('.featured-news-list, .news-list, div');
+        const dateText = parent.find('.text-muted, .date, time, span').first().text().trim() || 'Latest';
+        const fullUrl = href.startsWith('http') ? href : `https://www.sharesansar.com${href.startsWith('/') ? '' : '/'}${href}`;
+        items.push({
+          id: `ss-${items.length}`,
+          title: text,
+          link: fullUrl,
+          url: fullUrl,
+          source: 'ShareSansar',
+          pubDate: dateText,
+          date: dateText
+        });
+      }
+    });
+    return items.slice(0, 15);
+  } catch (err) {
+    console.warn('[news/nepse] ShareSansar fetch error:', err.message);
+    return [];
+  }
+}
+
+async function scrapeMeroLaganiNews() {
+  try {
+    const res = await axios.get('https://merolagani.com/NewsList.aspx', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    const seen = new Set();
+    $('a[href*="NewsDetail.aspx"]').each((i, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text.length > 15 && !seen.has(text)) {
+        seen.add(text);
+        const parent = $(el).closest('.media-body, .media, div.panel-body, div');
+        const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
+        const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+        items.push({
+          id: href.match(/newsID=(\d+)/)?.[1] || `ml-${i}`,
+          title: text,
+          link: fullUrl,
+          url: fullUrl,
+          source: 'MeroLagani',
+          pubDate: dateText,
+          date: dateText
+        });
+      }
+    });
+    return items.slice(0, 15);
+  } catch (err) {
+    console.warn('[news/nepse] MeroLagani fetch error:', err.message);
+    return [];
+  }
+}
+
+async function fetchClickmanduNews() {
+  try {
+    const feed = await rssParser.parseURL('https://clickmandu.com/feed');
+    if (!feed?.items?.length) return [];
+    return feed.items.slice(0, 15).map((item, idx) => ({
+      id: `cm-${idx}-${item.guid || item.link}`,
+      title: item.title?.trim() || '',
+      link: item.link || '',
+      url: item.link || '',
+      source: 'Clickmandu',
+      pubDate: item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Latest',
+      date: item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Latest',
+      summary: (item.contentSnippet || item.summary || '').slice(0, 180)
+    }));
+  } catch (err) {
+    console.warn('[news/nepse] Clickmandu fetch error:', err.message);
+    return [];
+  }
+}
+
+async function fetchKarobarNews() {
+  try {
+    const feed = await rssParser.parseURL('https://www.karobardaily.com/feed');
+    if (!feed?.items?.length) return [];
+    return feed.items.slice(0, 15).map((item, idx) => ({
+      id: `kd-${idx}-${item.guid || item.link}`,
+      title: item.title?.trim() || '',
+      link: item.link || '',
+      url: item.link || '',
+      source: 'Karobar Daily',
+      pubDate: item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Latest',
+      date: item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Latest',
+      summary: (item.contentSnippet || item.summary || '').slice(0, 180)
+    }));
+  } catch (err) {
+    console.warn('[news/nepse] Karobar Daily fetch error:', err.message);
+    return [];
+  }
+}
+
+async function scrapeBizshalaNews() {
+  try {
+    const res = await axios.get('https://bizshala.com', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    const seen = new Set();
+    $('a[href*="/article/"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text.length > 20 && !seen.has(text)) {
+        seen.add(text);
+        const fullUrl = href.startsWith('http') ? href : `https://bizshala.com${href.startsWith('/') ? '' : '/'}${href}`;
+        const parent = $(el).closest('article, .post, .card, div');
+        const dateText = parent.find('.date, time, .text-muted').first().text().trim() || 'Latest';
+        items.push({
+          id: `bz-${items.length}`,
+          title: text,
+          link: fullUrl,
+          url: fullUrl,
+          source: 'Bizshala',
+          pubDate: dateText,
+          date: dateText
+        });
+      }
+    });
+    return items.slice(0, 15);
+  } catch (err) {
+    console.warn('[news/nepse] Bizshala fetch error:', err.message);
+    return [];
+  }
+}
+
+async function scrapeBikashNews() {
+  try {
+    const res = await axios.get('https://www.bikashnews.com', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    const seen = new Set();
+    $('a[href*="/story/"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text.length > 20 && !seen.has(text)) {
+        seen.add(text);
+        const fullUrl = href.startsWith('http') ? href : `https://www.bikashnews.com${href.startsWith('/') ? '' : '/'}${href}`;
+        const parent = $(el).closest('article, .post, .news-item, div');
+        const dateText = parent.find('.date, time, .posted-on').first().text().trim() || 'Latest';
+        items.push({
+          id: `bn-${items.length}`,
+          title: text,
+          link: fullUrl,
+          url: fullUrl,
+          source: 'BikashNews',
+          pubDate: dateText,
+          date: dateText
+        });
+      }
+    });
+    return items.slice(0, 15);
+  } catch (err) {
+    console.warn('[news/nepse] BikashNews fetch error:', err.message);
+    return [];
+  }
+}
+
+async function scrapeArthaKendraNews() {
+  try {
+    const res = await axios.get('https://arthakendra.com', {
+      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000
+    });
+    const $ = cheerio.load(res.data);
+    const items = [];
+    const seen = new Set();
+    $('a[href*="/news/"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      if (text.length > 20 && !seen.has(text)) {
+        seen.add(text);
+        const fullUrl = href.startsWith('http') ? href : `https://arthakendra.com${href.startsWith('/') ? '' : '/'}${href}`;
+        const parent = $(el).closest('article, .post, .card, div');
+        const dateText = parent.find('.date, time, span').first().text().trim() || 'Latest';
+        items.push({
+          id: `ak-${items.length}`,
+          title: text,
+          link: fullUrl,
+          url: fullUrl,
+          source: 'ArthaKendra',
+          pubDate: dateText,
+          date: dateText
+        });
+      }
+    });
+    return items.slice(0, 15);
+  } catch (err) {
+    console.warn('[news/nepse] ArthaKendra fetch error:', err.message);
+    return [];
+  }
+}
+
 app.get('/api/news/nepse', async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === 'true';
@@ -4983,89 +5208,56 @@ app.get('/api/news/nepse', async (req, res) => {
         return res.json({
           success: true,
           isMockData: false,
-          source: 'CACHED - ShareSansar & MeroLagani Live Feeds',
+          source: 'CACHED - Unified Economic & Financial News Portals',
           count: cached.length,
           data: cached
         });
       }
     }
 
+    // Parallel multi-portal fetch with Promise.allSettled
+    const results = await Promise.allSettled([
+      scrapeShareSansarNews(),
+      scrapeMeroLaganiNews(),
+      fetchClickmanduNews(),
+      fetchKarobarNews(),
+      scrapeBizshalaNews(),
+      scrapeBikashNews(),
+      scrapeArthaKendraNews()
+    ]);
+
+    const sourcesData = results.map(r => r.status === 'fulfilled' ? r.value : []);
+    const maxLen = Math.max(...sourcesData.map(list => list.length), 0);
     const allNews = [];
     const seenTitles = new Set();
 
-    // 1. Scrape ShareSansar (English & Corporate Announcements)
-    try {
-      const resSS = await axios.get('https://www.sharesansar.com/category/latest', {
-        headers: HEADERS,
-        timeout: 9000
-      });
-      const $ss = cheerio.load(resSS.data);
-      $ss('a[href*="/newsdetail/"]').each((_, el) => {
-        const href = $ss(el).attr('href') || '';
-        const text = $ss(el).text().replace(/\s+/g, ' ').trim();
-        if (text.length > 20 && !seenTitles.has(text)) {
-          seenTitles.add(text);
-          const parent = $ss(el).closest('.featured-news-list, .news-list, div');
-          const dateText = parent.find('.text-muted, .date, time, span').first().text().trim() || 'Latest';
-          allNews.push({
-            title: text,
-            link: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
-            url: href.startsWith('http') ? href : `https://www.sharesansar.com${href}`,
-            source: 'ShareSansar',
-            pubDate: dateText,
-            date: dateText
-          });
+    // Interleave sources so the feed features a rich mix from all publishers
+    for (let i = 0; i < maxLen; i++) {
+      for (const list of sourcesData) {
+        if (list[i]) {
+          const item = list[i];
+          const key = item.title.toLowerCase().replace(/[\s\-_’'"]/g, '').slice(0, 45);
+          if (key && !seenTitles.has(key)) {
+            seenTitles.add(key);
+            allNews.push(item);
+          }
         }
-      });
-    } catch (errSS) {
-      console.warn('[news/nepse] ShareSansar fetch error:', errSS.message);
+      }
     }
 
-    // 2. Scrape MeroLagani (Nepali Market Updates & Financial News)
-    try {
-      const resML = await axios.get('https://merolagani.com/NewsList.aspx', {
-        headers: HEADERS,
-        timeout: 9000
-      });
-      const $ml = cheerio.load(resML.data);
-      $ml('a[href*="NewsDetail.aspx"]').each((i, el) => {
-        const href = $ml(el).attr('href') || '';
-        const text = $ml(el).text().replace(/\s+/g, ' ').trim();
-        if (text.length > 15 && !seenTitles.has(text)) {
-          seenTitles.add(text);
-          const parent = $ml(el).closest('.media-body, .media, div.panel-body, div');
-          const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
-          const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
-          allNews.push({
-            id: href.match(/newsID=(\d+)/)?.[1] || String(i),
-            title: text,
-            link: fullUrl,
-            url: fullUrl,
-            source: 'MeroLagani',
-            pubDate: dateText,
-            date: dateText
-          });
-        }
-      });
-    } catch (errML) {
-      console.warn('[news/nepse] MeroLagani fetch error:', errML.message);
+    if (allNews.length > 0) {
+      setCache('news-nepse', allNews, 10 * 60 * 1000); // 10 minute cache
     }
 
-    const newsSlice = allNews.slice(0, 45);
-    if (newsSlice.length > 0) {
-      setCache('news-nepse', newsSlice, 10 * 60 * 1000); // 10 minute cache
-    }
-
-    const sourceLabel = newsSlice.length > 0
-      ? 'LIVE - ShareSansar & MeroLagani'
-      : 'News feeds temporarily unavailable';
+    const portalNames = ['ShareSansar', 'MeroLagani', 'Clickmandu', 'Karobar Daily', 'Bizshala', 'BikashNews', 'ArthaKendra'];
+    const activePortals = portalNames.filter((_, idx) => sourcesData[idx]?.length > 0);
 
     res.json({
       success: true,
       isMockData: false,
-      source: sourceLabel,
-      count: newsSlice.length,
-      data: newsSlice
+      source: `LIVE - ${activePortals.join(', ') || 'Financial News Portals'}`,
+      count: allNews.length,
+      data: allNews
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false, data: [] });
@@ -5075,6 +5267,7 @@ app.get('/api/news/nepse', async (req, res) => {
 /* ══════════════════════════════════════════════════════════════════════════════
    IN-APP NEWS READER ENDPOINT — Scrape Full Article Body
    GET /api/news/read?url=...
+   Supports: ShareSansar, MeroLagani, Clickmandu, Karobar Daily, Bizshala, BikashNews, ArthaKendra
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
   const url = req.query.url;
@@ -5090,13 +5283,30 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
 
   try {
     const resp = await axios.get(url, {
-      headers: HEADERS,
+      headers: {
+        ...HEADERS,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
       timeout: 10000,
     });
 
     const $ = cheerio.load(resp.data);
     const isMeroLagani = url.includes('merolagani.com');
     const isShareSansar = url.includes('sharesansar.com');
+    const isClickmandu = url.includes('clickmandu.com');
+    const isKarobar = url.includes('karobardaily.com');
+    const isBizshala = url.includes('bizshala.com');
+    const isBikash = url.includes('bikashnews.com');
+    const isArtha = url.includes('arthakendra.com');
+
+    let sourceName = 'Financial News';
+    if (isShareSansar) sourceName = 'ShareSansar';
+    else if (isMeroLagani) sourceName = 'MeroLagani';
+    else if (isClickmandu) sourceName = 'Clickmandu';
+    else if (isKarobar) sourceName = 'Karobar Daily';
+    else if (isBizshala) sourceName = 'Bizshala';
+    else if (isBikash) sourceName = 'BikashNews';
+    else if (isArtha) sourceName = 'ArthaKendra';
 
     let title = '';
     let date = '';
@@ -5117,18 +5327,7 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
           paragraphs.push(text);
         }
       });
-
-      if (paragraphs.length === 0) {
-        const fullContent = $('#ctl00_ContentPlaceHolder1_newsOverview, #ctl00_ContentPlaceHolder1_divContent').text().trim();
-        if (fullContent) {
-          fullContent.split(/\n\s*\n|\r\n\r\n/).forEach(p => {
-            const clean = p.replace(/\s+/g, ' ').trim();
-            if (clean.length > 25 && !paragraphs.includes(clean)) paragraphs.push(clean);
-          });
-        }
-      }
-    } else {
-      // ShareSansar or other sources
+    } else if (isShareSansar) {
       title = $('h1.sub-page-title, .newsdetail h1, h1').first().text().trim();
       date = $('.news-date, .text-muted, time, span.date').first().text().trim();
       image = $('.featured-news-img img, .newsdetail img, .detail img').first().attr('src') || '';
@@ -5142,16 +5341,86 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
           paragraphs.push(text);
         }
       });
+    } else if (isClickmandu) {
+      title = $('h1.entry-title, .single-post-title, h1').first().text().trim();
+      date = $('.posted-on, .entry-date, time, .date').first().text().trim();
+      image = $('meta[property="og:image"]').attr('content') || $('.featured-image img, .entry-content img').first().attr('src') || '';
 
-      if (paragraphs.length === 0) {
-        const fullContent = $('.newsdetail, .detail').text().trim();
-        if (fullContent) {
-          fullContent.split(/\n\s*\n|\r\n\r\n/).forEach(p => {
-            const clean = p.replace(/\s+/g, ' ').trim();
-            if (clean.length > 25 && !paragraphs.includes(clean)) paragraphs.push(clean);
-          });
+      $('.entry-content p, article p, .post-content p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
         }
-      }
+      });
+    } else if (isKarobar) {
+      title = $('h1.post-title, h1.entry-title, h1').first().text().trim() || $('title').text().replace(/\s*-\s*Karobar Daily.*$/i, '').trim();
+      date = $('.post-date, time, .entry-date, .date').first().text().trim();
+      image = $('meta[property="og:image"]').attr('content') || $('.featured-img img, .post-content img').first().attr('src') || '';
+
+      $('.content-area p, .detail-content p, .post-content p, .entry-content p, article p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
+    } else if (isBizshala) {
+      title = $('h1.story-title, h1, .title').first().text().trim() || $('title').text().trim();
+      date = $('.story-date, .date, time').first().text().trim();
+      image = $('meta[property="og:image"]').attr('content') || $('.story-image img, article img').first().attr('src') || '';
+
+      $('.article_detail p, .story-details p, .content p, article p, .detail p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
+    } else if (isBikash) {
+      title = $('h1.story-title, h1.entry-title, h1').first().text().trim() || $('title').text().trim();
+      date = $('.posted-on, .story-date, time, .date').first().text().trim();
+      image = $('meta[property="og:image"]').attr('content') || $('.featured-image img, article img').first().attr('src') || '';
+
+      $('.detail__content-desc p, .detail__content p, .story-details p, article p, .detail-content p, .news-details p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
+    } else if (isArtha) {
+      title = $('h1.entry-title, h1').first().text().trim();
+      date = $('.entry-date, time, .date').first().text().trim();
+      image = $('meta[property="og:image"]').attr('content') || $('.featured-image img, article img').first().attr('src') || '';
+
+      $('.detail-content p, article p, .entry-content p, .news-details p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 20 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
+    }
+
+    // Generic fallback if any field is still missing
+    if (!title) {
+      title = $('meta[property="og:title"]').attr('content') || $('title').text().trim() || 'Market Announcement';
+    }
+    if (!image) {
+      image = $('meta[property="og:image"]').attr('content') || $('article img, .content img').first().attr('src') || '';
+    }
+    if (image && !image.startsWith('http')) {
+      try {
+        const parsedBase = new URL(url).origin;
+        image = `${parsedBase}${image.startsWith('/') ? '' : '/'}${image}`;
+      } catch (_) {}
+    }
+    if (!date) {
+      date = $('meta[property="article:published_time"]').attr('content') || $('.date, time').first().text().trim() || 'Latest';
+    }
+    if (paragraphs.length === 0) {
+      $('article p, main p, .post-content p, .detail p, p').each((_, el) => {
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 30 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
     }
 
     const data = {
@@ -5160,7 +5429,7 @@ app.get(['/api/news/read', '/api/news/article'], async (req, res) => {
       image: image || null,
       paragraphs: paragraphs.length > 0 ? paragraphs : ['Full announcement is available directly on source portal.'],
       content: paragraphs.join('\n\n'),
-      source: isMeroLagani ? 'MeroLagani' : isShareSansar ? 'ShareSansar' : 'NEPSE News',
+      source: sourceName,
       url
     };
 

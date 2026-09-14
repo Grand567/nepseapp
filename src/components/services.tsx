@@ -1021,11 +1021,13 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
 
 // ── News ──
 export function NewsService() {
+  type NewsSourceKey = 'all' | 'sharesansar' | 'merolagani' | 'clickmandu' | 'karobar' | 'bizshala' | 'bikashnews' | 'arthakendra';
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
-  const [selectedSource, setSelectedSource] = useState<'all' | 'sharesansar' | 'merolagani'>('all');
+  const [selectedSource, setSelectedSource] = useState<NewsSourceKey>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleDetail, setArticleDetail] = useState<any | null>(null);
@@ -1064,7 +1066,9 @@ export function NewsService() {
     const targetUrl = selectedArticle.url || selectedArticle.link || '';
     const initialParas = Array.isArray(selectedArticle.paragraphs) && selectedArticle.paragraphs.length > 0
       ? selectedArticle.paragraphs
-      : (selectedArticle.description ? [String(selectedArticle.description).replace(/<[^>]+>/g, '').trim()] : [selectedArticle.title || 'Market story details loaded.']);
+      : (selectedArticle.description || selectedArticle.summary
+          ? [String(selectedArticle.description || selectedArticle.summary).replace(/<[^>]+>/g, '').trim()]
+          : [selectedArticle.title || 'Market story details loaded.']);
 
     setArticleDetail({
       title: selectedArticle.title || selectedArticle.headline || 'Market Announcement',
@@ -1109,30 +1113,83 @@ export function NewsService() {
     setRefreshing(false);
   };
 
-  const filteredData = useMemo(() => {
-    if (selectedSource === 'all') return data;
-    return data.filter(item => {
-      const src = String(item.source || '').toLowerCase();
-      if (selectedSource === 'sharesansar') return src.includes('sharesansar');
-      if (selectedSource === 'merolagani') return src.includes('merolagani');
-      return true;
-    });
-  }, [data, selectedSource]);
+  const SOURCE_CONFIG: Record<string, { label: string; badgeBg: string; badgeColor: string; badgeBorder: string }> = {
+    sharesansar: { label: 'ShareSansar', badgeBg: 'rgba(59, 130, 246, 0.15)', badgeColor: '#60a5fa', badgeBorder: 'rgba(59, 130, 246, 0.35)' },
+    merolagani: { label: 'MeroLagani', badgeBg: 'rgba(16, 185, 129, 0.15)', badgeColor: '#34d399', badgeBorder: 'rgba(16, 185, 129, 0.35)' },
+    clickmandu: { label: 'Clickmandu', badgeBg: 'rgba(99, 102, 241, 0.15)', badgeColor: '#818cf8', badgeBorder: 'rgba(99, 102, 241, 0.35)' },
+    karobar: { label: 'Karobar Daily', badgeBg: 'rgba(245, 158, 11, 0.15)', badgeColor: '#fbbf24', badgeBorder: 'rgba(245, 158, 11, 0.35)' },
+    bizshala: { label: 'Bizshala', badgeBg: 'rgba(20, 184, 166, 0.15)', badgeColor: '#2dd4bf', badgeBorder: 'rgba(20, 184, 166, 0.35)' },
+    bikashnews: { label: 'BikashNews', badgeBg: 'rgba(14, 165, 233, 0.15)', badgeColor: '#38bdf8', badgeBorder: 'rgba(14, 165, 233, 0.35)' },
+    arthakendra: { label: 'ArthaKendra', badgeBg: 'rgba(168, 85, 247, 0.15)', badgeColor: '#c084fc', badgeBorder: 'rgba(168, 85, 247, 0.35)' },
+  };
 
-  if (loading) return <Spinner text="Fetching real-time market news…" />;
+  const getSourceMeta = (srcString: string) => {
+    const s = String(srcString || '').toLowerCase();
+    if (s.includes('sharesansar')) return SOURCE_CONFIG.sharesansar;
+    if (s.includes('merolagani')) return SOURCE_CONFIG.merolagani;
+    if (s.includes('clickmandu')) return SOURCE_CONFIG.clickmandu;
+    if (s.includes('karobar')) return SOURCE_CONFIG.karobar;
+    if (s.includes('bizshala')) return SOURCE_CONFIG.bizshala;
+    if (s.includes('bikash')) return SOURCE_CONFIG.bikashnews;
+    if (s.includes('artha')) return SOURCE_CONFIG.arthakendra;
+    return { label: srcString || 'Financial News', badgeBg: 'rgba(100, 116, 139, 0.15)', badgeColor: '#94a3b8', badgeBorder: 'rgba(100, 116, 139, 0.35)' };
+  };
+
+  const filteredData = useMemo(() => {
+    let list = data;
+    if (selectedSource !== 'all') {
+      list = list.filter(item => {
+        const src = String(item.source || '').toLowerCase();
+        if (selectedSource === 'sharesansar') return src.includes('sharesansar');
+        if (selectedSource === 'merolagani') return src.includes('merolagani');
+        if (selectedSource === 'clickmandu') return src.includes('clickmandu');
+        if (selectedSource === 'karobar') return src.includes('karobar');
+        if (selectedSource === 'bizshala') return src.includes('bizshala');
+        if (selectedSource === 'bikashnews') return src.includes('bikash');
+        if (selectedSource === 'arthakendra') return src.includes('artha');
+        return true;
+      });
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(item => {
+        const title = String(item.title || '').toLowerCase();
+        const summary = String(item.summary || item.description || '').toLowerCase();
+        const src = String(item.source || '').toLowerCase();
+        return title.includes(q) || summary.includes(q) || src.includes(q);
+      });
+    }
+    return list;
+  }, [data, selectedSource, searchQuery]);
+
+  const sourceTabs: { key: NewsSourceKey; label: string; count: number }[] = [
+    { key: 'all', label: 'All Portals', count: data.length },
+    { key: 'sharesansar', label: 'ShareSansar', count: data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length },
+    { key: 'merolagani', label: 'MeroLagani', count: data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length },
+    { key: 'clickmandu', label: 'Clickmandu', count: data.filter(d => String(d.source || '').toLowerCase().includes('clickmandu')).length },
+    { key: 'karobar', label: 'Karobar Daily', count: data.filter(d => String(d.source || '').toLowerCase().includes('karobar')).length },
+    { key: 'bizshala', label: 'Bizshala', count: data.filter(d => String(d.source || '').toLowerCase().includes('bizshala')).length },
+    { key: 'bikashnews', label: 'BikashNews', count: data.filter(d => String(d.source || '').toLowerCase().includes('bikash')).length },
+    { key: 'arthakendra', label: 'ArthaKendra', count: data.filter(d => String(d.source || '').toLowerCase().includes('artha')).length },
+  ];
+
+  if (loading) return <Spinner text="Fetching multi-portal economic & financial news…" />;
   return (
     <div className="space-y-4">
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-base font-bold text-white tracking-wide">NEPSE Market News & Financial Announcements</h3>
+            <h3 className="text-base font-bold text-white tracking-wide">Nepali Economic & Financial News Feed</h3>
             {lastUpdated && (
               <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
                 Live • Updated {lastUpdated}
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">Real-time market headlines from ShareSansar & MeroLagani.</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Aggregated coverage from 7 leading economic portals: ShareSansar, MeroLagani, Clickmandu, Karobar Daily, Bizshala, BikashNews & ArthaKendra.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1146,50 +1203,60 @@ export function NewsService() {
         </div>
       </div>
 
+      {/* Keyword Search Bar */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter headlines by stock symbol or topic (e.g., NABIL, Dividend, NRB, Monetary Policy, IPO, Right Share)..."
+          className="w-full bg-slate-900/80 border border-slate-700/70 rounded-xl pl-9 pr-16 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-medium px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 cursor-pointer"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Source Filter Tabs */}
       {data.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <button
-            onClick={() => setSelectedSource('all')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              selectedSource === 'all'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
-            }`}
-          >
-            All News ({data.length})
-          </button>
-          <button
-            onClick={() => setSelectedSource('sharesansar')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              selectedSource === 'sharesansar'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
-            }`}
-          >
-            ShareSansar ({data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length})
-          </button>
-          <button
-            onClick={() => setSelectedSource('merolagani')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-              selectedSource === 'merolagani'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
-            }`}
-          >
-            MeroLagani ({data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length})
-          </button>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
+          {sourceTabs.map((tab) => {
+            const isSelected = selectedSource === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setSelectedSource(tab.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/40'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/50'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${isSelected ? 'bg-blue-700/80 text-white' : 'bg-slate-700/60 text-slate-300'}`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
       {!filteredData.length ? (
-        <InfoBanner type="warning">News feed unavailable. Try clicking Refresh to reload.</InfoBanner>
+        <InfoBanner type="warning">
+          {searchQuery ? `No articles matching "${searchQuery}". Try a different keyword.` : 'News feed unavailable. Try clicking Refresh to reload.'}
+        </InfoBanner>
       ) : (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filteredData.slice(0, 45).map((n, i) => {
-              const isShareSansar = String(n.source || '').toLowerCase().includes('sharesansar');
-              const sourceName = n.source || (isShareSansar ? 'ShareSansar' : 'MeroLagani');
+            {filteredData.slice(0, 90).map((n, i) => {
+              const meta = getSourceMeta(n.source);
               const dateStr = n.date || n.pubDate || 'Latest';
               const articleUrl = n.url || n.link || '';
               return (
@@ -1240,6 +1307,21 @@ export function NewsService() {
                     </div>
                   </div>
 
+                  {n.summary && (
+                    <div style={{
+                      fontSize: 12,
+                      color: '#94a3b8',
+                      lineHeight: 1.45,
+                      marginTop: -2,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden'
+                    }}>
+                      {n.summary}
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 11, color: '#94a3b8' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
@@ -1247,11 +1329,11 @@ export function NewsService() {
                         padding: '2px 8px',
                         borderRadius: 4,
                         fontSize: 10.5,
-                        backgroundColor: isShareSansar ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                        color: isShareSansar ? '#60a5fa' : '#34d399',
-                        border: isShareSansar ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                        backgroundColor: meta.badgeBg,
+                        color: meta.badgeColor,
+                        border: `1px solid ${meta.badgeBorder}`
                       }}>
-                        {sourceName}
+                        {meta.label}
                       </span>
                       <span>•</span>
                       <span>{dateStr}</span>
@@ -1382,28 +1464,27 @@ export function NewsService() {
             </div>
 
             {/* Source & Date Badge */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{
-                fontSize: 11,
-                fontWeight: 800,
-                padding: '3px 10px',
-                borderRadius: 99,
-                backgroundColor: String(selectedArticle.source || '').toLowerCase().includes('sharesansar')
-                  ? 'rgba(59, 130, 246, 0.2)'
-                  : 'rgba(16, 185, 129, 0.2)',
-                color: String(selectedArticle.source || '').toLowerCase().includes('sharesansar')
-                  ? '#60a5fa'
-                  : '#34d399',
-                border: String(selectedArticle.source || '').toLowerCase().includes('sharesansar')
-                  ? '1px solid rgba(59, 130, 246, 0.4)'
-                  : '1px solid rgba(16, 185, 129, 0.4)'
-              }}>
-                {selectedArticle.source || (String(selectedArticle.link || '').includes('merolagani') ? 'MeroLagani' : 'ShareSansar')}
-              </span>
-              <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                {articleDetail?.date || selectedArticle.date || selectedArticle.pubDate || 'Latest Announcement'}
-              </span>
-            </div>
+            {(() => {
+              const modalMeta = getSourceMeta(articleDetail?.source || selectedArticle.source);
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    padding: '3px 10px',
+                    borderRadius: 99,
+                    backgroundColor: modalMeta.badgeBg,
+                    color: modalMeta.badgeColor,
+                    border: `1px solid ${modalMeta.badgeBorder}`
+                  }}>
+                    {modalMeta.label}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                    {articleDetail?.date || selectedArticle.date || selectedArticle.pubDate || 'Latest Announcement'}
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Article Headline */}
             <h2 style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', lineHeight: 1.35, margin: '2px 0' }}>
@@ -1455,8 +1536,8 @@ export function NewsService() {
                   ))
                 ) : (
                   <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.68, color: '#e2e8f0' }}>
-                    {selectedArticle.description
-                      ? String(selectedArticle.description).replace(/<[^>]+>/g, '').trim()
+                    {selectedArticle.description || selectedArticle.summary
+                      ? String(selectedArticle.description || selectedArticle.summary).replace(/<[^>]+>/g, '').trim()
                       : 'Article synopsis loaded. You can read the complete full coverage directly on the publisher portal below.'}
                   </p>
                 )}
@@ -1494,7 +1575,7 @@ export function NewsService() {
                   boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
                 }}
               >
-                <span>Open on {selectedArticle.source || 'Publisher Portal'}</span>
+                <span>Open on {getSourceMeta(selectedArticle.source).label}</span>
                 <ExternalLink size={15} />
               </a>
               <button
