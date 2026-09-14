@@ -1021,7 +1021,7 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
 
 // ── News ──
 export function NewsService() {
-  type NewsSourceKey = 'all' | 'sharesansar' | 'merolagani' | 'clickmandu' | 'karobar' | 'bizshala' | 'bikashnews' | 'arthakendra';
+  type NewsSourceKey = 'all' | 'sharesansar' | 'merolagani' | 'nepalipaisa' | 'clickmandu' | 'karobar' | 'bizshala' | 'bikashnews' | 'arthakendra' | 'arthasarokar';
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1116,22 +1116,26 @@ export function NewsService() {
   const SOURCE_CONFIG: Record<string, { label: string; badgeBg: string; badgeColor: string; badgeBorder: string }> = {
     sharesansar: { label: 'ShareSansar', badgeBg: 'rgba(59, 130, 246, 0.15)', badgeColor: '#60a5fa', badgeBorder: 'rgba(59, 130, 246, 0.35)' },
     merolagani: { label: 'MeroLagani', badgeBg: 'rgba(16, 185, 129, 0.15)', badgeColor: '#34d399', badgeBorder: 'rgba(16, 185, 129, 0.35)' },
+    nepalipaisa: { label: 'Nepali Paisa', badgeBg: 'rgba(34, 197, 94, 0.15)', badgeColor: '#4ade80', badgeBorder: 'rgba(34, 197, 94, 0.35)' },
     clickmandu: { label: 'Clickmandu', badgeBg: 'rgba(99, 102, 241, 0.15)', badgeColor: '#818cf8', badgeBorder: 'rgba(99, 102, 241, 0.35)' },
     karobar: { label: 'Karobar Daily', badgeBg: 'rgba(245, 158, 11, 0.15)', badgeColor: '#fbbf24', badgeBorder: 'rgba(245, 158, 11, 0.35)' },
     bizshala: { label: 'Bizshala', badgeBg: 'rgba(20, 184, 166, 0.15)', badgeColor: '#2dd4bf', badgeBorder: 'rgba(20, 184, 166, 0.35)' },
     bikashnews: { label: 'BikashNews', badgeBg: 'rgba(14, 165, 233, 0.15)', badgeColor: '#38bdf8', badgeBorder: 'rgba(14, 165, 233, 0.35)' },
-    arthakendra: { label: 'ArthaKendra', badgeBg: 'rgba(168, 85, 247, 0.15)', badgeColor: '#c084fc', badgeBorder: 'rgba(168, 85, 247, 0.35)' },
+    arthakendra: { label: 'Artha Kendra', badgeBg: 'rgba(168, 85, 247, 0.15)', badgeColor: '#c084fc', badgeBorder: 'rgba(168, 85, 247, 0.35)' },
+    arthasarokar: { label: 'Artha Sarokar', badgeBg: 'rgba(244, 63, 94, 0.15)', badgeColor: '#fb7185', badgeBorder: 'rgba(244, 63, 94, 0.35)' },
   };
 
   const getSourceMeta = (srcString: string) => {
     const s = String(srcString || '').toLowerCase();
     if (s.includes('sharesansar')) return SOURCE_CONFIG.sharesansar;
     if (s.includes('merolagani')) return SOURCE_CONFIG.merolagani;
+    if (s.includes('nepali paisa') || s.includes('nepalipaisa')) return SOURCE_CONFIG.nepalipaisa;
     if (s.includes('clickmandu')) return SOURCE_CONFIG.clickmandu;
+    if (s.includes('sarokar') || s.includes('arthasarokar') || s.includes('artha karobar')) return SOURCE_CONFIG.arthasarokar;
+    if (s.includes('kendra') || s.includes('arthakendra')) return SOURCE_CONFIG.arthakendra;
     if (s.includes('karobar')) return SOURCE_CONFIG.karobar;
     if (s.includes('bizshala')) return SOURCE_CONFIG.bizshala;
     if (s.includes('bikash')) return SOURCE_CONFIG.bikashnews;
-    if (s.includes('artha')) return SOURCE_CONFIG.arthakendra;
     return { label: srcString || 'Financial News', badgeBg: 'rgba(100, 116, 139, 0.15)', badgeColor: '#94a3b8', badgeBorder: 'rgba(100, 116, 139, 0.35)' };
   };
 
@@ -1142,11 +1146,13 @@ export function NewsService() {
         const src = String(item.source || '').toLowerCase();
         if (selectedSource === 'sharesansar') return src.includes('sharesansar');
         if (selectedSource === 'merolagani') return src.includes('merolagani');
+        if (selectedSource === 'nepalipaisa') return src.includes('nepali paisa') || src.includes('nepalipaisa');
         if (selectedSource === 'clickmandu') return src.includes('clickmandu');
-        if (selectedSource === 'karobar') return src.includes('karobar');
+        if (selectedSource === 'karobar') return src.includes('karobar') && !src.includes('artha');
         if (selectedSource === 'bizshala') return src.includes('bizshala');
         if (selectedSource === 'bikashnews') return src.includes('bikash');
-        if (selectedSource === 'arthakendra') return src.includes('artha');
+        if (selectedSource === 'arthakendra') return src.includes('kendra');
+        if (selectedSource === 'arthasarokar') return src.includes('sarokar') || src.includes('artha karobar');
         return true;
       });
     }
@@ -1166,11 +1172,13 @@ export function NewsService() {
     { key: 'all', label: 'All Portals', count: data.length },
     { key: 'sharesansar', label: 'ShareSansar', count: data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length },
     { key: 'merolagani', label: 'MeroLagani', count: data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length },
+    { key: 'nepalipaisa', label: 'Nepali Paisa', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('nepali paisa') || s.includes('nepalipaisa'); }).length },
     { key: 'clickmandu', label: 'Clickmandu', count: data.filter(d => String(d.source || '').toLowerCase().includes('clickmandu')).length },
-    { key: 'karobar', label: 'Karobar Daily', count: data.filter(d => String(d.source || '').toLowerCase().includes('karobar')).length },
+    { key: 'karobar', label: 'Karobar Daily', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('karobar') && !s.includes('artha'); }).length },
     { key: 'bizshala', label: 'Bizshala', count: data.filter(d => String(d.source || '').toLowerCase().includes('bizshala')).length },
     { key: 'bikashnews', label: 'BikashNews', count: data.filter(d => String(d.source || '').toLowerCase().includes('bikash')).length },
-    { key: 'arthakendra', label: 'ArthaKendra', count: data.filter(d => String(d.source || '').toLowerCase().includes('artha')).length },
+    { key: 'arthakendra', label: 'Artha Kendra', count: data.filter(d => String(d.source || '').toLowerCase().includes('kendra')).length },
+    { key: 'arthasarokar', label: 'Artha Sarokar', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('sarokar') || s.includes('artha karobar'); }).length },
   ];
 
   if (loading) return <Spinner text="Fetching multi-portal economic & financial news…" />;
@@ -1188,7 +1196,7 @@ export function NewsService() {
             )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Aggregated coverage from 7 leading economic portals: ShareSansar, MeroLagani, Clickmandu, Karobar Daily, Bizshala, BikashNews & ArthaKendra.
+            Aggregated coverage from 9 leading economic portals: ShareSansar, MeroLagani, Nepali Paisa, Clickmandu, Karobar Daily, Bizshala, BikashNews, Artha Kendra & Artha Sarokar.
           </p>
         </div>
         <div className="flex items-center gap-2">
