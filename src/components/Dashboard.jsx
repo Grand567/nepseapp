@@ -1199,9 +1199,14 @@ export default function Dashboard({
               const liveClose = officialVal > 0 ? officialVal : Number(latestPt?.close || 0);
               if (liveClose > 0) {
                 setActiveHeroIndex(prev => {
-                  const basePrice = Number(indices?.nepse?.prevClose || indices?.nepse?.previousClose || prev.val?.prevClose || prev.val?.previousClose || 2542.77);
-                  const chg = indices?.nepse?.change != null ? Number(indices.nepse.change) : +(liveClose - basePrice).toFixed(2);
-                  const pchg = indices?.nepse?.pChange != null ? Number(indices.nepse.pChange) : (basePrice > 0 ? +((chg / basePrice) * 100).toFixed(2) : 0);
+                  const officialChg = indices?.nepse?.change;
+                  const officialPChg = indices?.nepse?.pChange;
+                  let basePrice = Number(indices?.nepse?.prevClose || indices?.nepse?.previousClose || prev.val?.prevClose || prev.val?.previousClose || 0);
+                  if (!basePrice || basePrice <= 0 || (officialChg != null && officialChg !== 0 && Math.abs(liveClose - basePrice) < 0.05)) {
+                    basePrice = (officialChg != null && officialChg !== 0) ? +(liveClose - officialChg).toFixed(2) : 2559.49;
+                  }
+                  const chg = (officialChg != null && !isNaN(officialChg)) ? Number(officialChg) : +(liveClose - basePrice).toFixed(2);
+                  const pchg = (officialPChg != null && !isNaN(officialPChg)) ? Number(officialPChg) : (basePrice > 0 ? +((chg / basePrice) * 100).toFixed(2) : 0);
                   return {
                     ...prev,
                     val: {

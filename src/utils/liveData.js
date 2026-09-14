@@ -994,16 +994,30 @@ export async function fetchMarketIndices() {
 
       const buildIndexObj = (item) => {
         if (!item) return null;
-        const prevClose = Number(item.previousClose || item.close || 0);
         const liveVal = Number(item.currentValue || item.close || 0);
-        const chg = Number(item.change !== undefined ? item.change : (liveVal - prevClose));
-        const pChg = Number(item.perChange !== undefined ? item.perChange : (prevClose > 0 ? (chg / prevClose) * 100 : 0));
+        const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
+        // In NEPSE NOTS API, item.close is frequently yesterday's close (e.g. 2559.49),
+        // while item.previousClose can be the pre-close tick (e.g. 2585.05).
+        // The true previous close is ALWAYS: liveVal - chg! (2585.04 - 25.55 = 2559.49)
+        let truePrevClose = 0;
+        if (chg !== 0 && liveVal > 0) {
+          truePrevClose = +(liveVal - chg).toFixed(2);
+        } else if (item.close && item.currentValue && Number(item.close) !== Number(item.currentValue)) {
+          truePrevClose = Number(item.close);
+        } else {
+          truePrevClose = Number(item.previousClose || item.close || 0);
+        }
+
+        const pChg = Number(item.perChange !== undefined && item.perChange !== null
+          ? item.perChange
+          : (truePrevClose > 0 ? (chg / truePrevClose) * 100 : 0));
+
         return {
           value: liveVal,
           change: chg,
           pChange: pChg,
-          prevClose,
-          open: Number(item.open || prevClose),
+          prevClose: truePrevClose,
+          open: Number(item.open || truePrevClose),
           high: Number(item.high || liveVal),
           low: Number(item.low || liveVal),
           turnover
@@ -1013,9 +1027,9 @@ export async function fetchMarketIndices() {
       if (nepseItem) {
         indicesData = {
           nepse: buildIndexObj(nepseItem),
-          sensitive: buildIndexObj(sensitiveItem) || { value: 452.86, change: 3.36, pChange: 0.74 },
-          float: buildIndexObj(floatItem) || { value: 175.40, change: 1.05, pChange: 0.60 },
-          sensitiveFloat: buildIndexObj(sensFloatItem) || { value: 152.89, change: 1.15, pChange: 0.76 },
+          sensitive: buildIndexObj(sensitiveItem) || { value: 452.86, change: 3.36, pChange: 0.74, prevClose: 449.50 },
+          float: buildIndexObj(floatItem) || { value: 175.40, change: 1.05, pChange: 0.60, prevClose: 174.35 },
+          sensitiveFloat: buildIndexObj(sensFloatItem) || { value: 152.89, change: 1.15, pChange: 0.76, prevClose: 151.74 },
           subIndices
         };
       }
@@ -1035,9 +1049,24 @@ export async function fetchMarketIndices() {
         if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
         if (!indicesData.nepse) indicesData.nepse = {};
 
-        const prevClose = Number(indicesData.nepse.prevClose || indicesData.nepse.previousClose || 2542.77);
-        const change = +(liveClose - prevClose).toFixed(2);
-        const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+        // Preserve official change and true previous close from official NOTS API
+        const officialChange = indicesData.nepse.change;
+        const officialPChange = indicesData.nepse.pChange;
+
+        let prevClose = Number(indicesData.nepse.prevClose || 0);
+        if (!prevClose || prevClose <= 0 || (officialChange != null && officialChange !== 0 && Math.abs(liveClose - prevClose) < 0.05)) {
+          prevClose = (officialChange != null && officialChange !== 0)
+            ? +(liveClose - officialChange).toFixed(2)
+            : 2559.49;
+        }
+
+        const change = (officialChange != null && !isNaN(officialChange) && officialChange !== 0)
+          ? officialChange
+          : +(liveClose - prevClose).toFixed(2);
+
+        const pChange = (officialPChange != null && !isNaN(officialPChange) && officialPChange !== 0)
+          ? officialPChange
+          : (prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0);
 
         indicesData.nepse = {
           ...indicesData.nepse,

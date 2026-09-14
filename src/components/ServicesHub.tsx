@@ -27,7 +27,7 @@ import {
   PortfolioTool, WatchlistTool, TradeNotesTool, AlertsTool,
   ApiStatusService, BrokersDirectoryService, IPOPipelineService, MutualFundsService,
   LiveFloorsheetService, SectorHeatmapService, BrokerAnalysisService,
-  BrokerHeatmapService, BrokerFavouritesService, MarketDepthService,
+  BrokerHeatmapService, BrokerFavouritesService, MarketDepthService, PrimePickService,
 } from './services';
 import IPOList from './IPOList';
 import { useBackHandler } from '../context/NavigationContext';
@@ -125,6 +125,7 @@ const CATEGORIES = [
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
+  { id: 'daily-prime-pick', name: 'Daily Prime Breakout & Buy-Zone Pick', icon: Flame, color: 'emerald', cat: 'flagship', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
   { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
   { id: 'stealth-accumulation-tracker', name: 'Stealth Accumulation', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
@@ -560,6 +561,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'ipo-current': () => <IPOTracker type="current" />,
   'ipo-fpo-alert': () => <IPOTracker type="current" />,
   'ipo-pipeline': IPOPipelineService,
+  'daily-prime-pick': PrimePickService,
+  'prime-breakout-pick': PrimePickService,
   'news': NewsService,
   'nepse-news': NewsService,
   'beginners-guide': GlossaryGuideService,
