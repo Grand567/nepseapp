@@ -86,15 +86,15 @@ export function removeFromWatchlist(symbol, userId = null, userEmail = null) {
  * Toggle watchlist membership for a symbol
  */
 export function toggleWatchlist(symbol, userId = null, userEmail = null) {
-  if (!symbol) return { watched: false, watchlist: getWatchlist() };
+  if (!symbol) return { watched: false, isWatched: false, watchlist: getWatchlist() };
   const sym = String(symbol).trim().toUpperCase();
   const list = getWatchlist();
   const exists = list.includes(sym);
   if (exists) {
     const updated = removeFromWatchlist(sym, userId, userEmail);
-    return { watched: false, watchlist: updated };
+    return { watched: false, isWatched: false, watchlist: updated };
   } else {
     const updated = addToWatchlist(sym, userId, userEmail);
-    return { watched: true, watchlist: updated };
+    return { watched: true, isWatched: true, watchlist: updated };
   }
 }

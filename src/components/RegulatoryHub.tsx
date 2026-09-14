@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   Landmark, Coins, FileText, Gem, ArrowRightLeft,
   ExternalLink, Search, RefreshCw, Shield, AlertCircle,
   TrendingUp, CheckCircle, Scale, Calendar, Award
 } from 'lucide-react';
 import { StatCard, InfoBanner } from './ui';
+import {
+  fetchForexRates, fetchMacroIndicators, fetchBullionRates,
+  fetchNrbCirculars, fetchSebonCirculars,
+} from '../utils/servicesApi';
 
-export function RegulatoryHub() {
-  const [activeSubTab, setActiveSubTab] = useState<'forex' | 'macro' | 'bullion' | 'circulars'>('forex');
+export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' | 'macro' | 'bullion' | 'circulars' } = {}) {
+  const [activeSubTab, setActiveSubTab] = useState<'forex' | 'macro' | 'bullion' | 'circulars'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) setActiveSubTab(initialTab);
+  }, [initialTab]);
   
   // Forex state
   const [forexData, setForexData] = useState<any[]>([]);
@@ -38,10 +45,9 @@ export function RegulatoryHub() {
   const fetchForex = async () => {
     setForexLoading(true);
     try {
-      const res = await axios.get('/api/forex/rates', { timeout: 10000 });
-      if (res.data?.success) {
-        const payload = res.data.data;
-        const rawRates = Array.isArray(payload) ? payload : (payload?.rates || []);
+      const res: any = await fetchForexRates();
+      if (res) {
+        const rawRates = Array.isArray(res) ? res : (res?.rates || res?.data?.rates || res?.data || []);
         const normalized = rawRates.map((item: any) => ({
           iso3: item.iso3 || item.currency?.iso3 || 'N/A',
           name: typeof item.currency === 'string' ? item.currency : (item.currency?.name || item.name || item.iso3 || 'N/A'),
@@ -49,8 +55,10 @@ export function RegulatoryHub() {
           buy: parseFloat(item.buy) || 0,
           sell: parseFloat(item.sell) || 0
         }));
-        setForexData(normalized);
-        setForexDate(payload?.date || res.data.date || new Date().toISOString().split('T')[0]);
+        if (normalized.length > 0) {
+          setForexData(normalized);
+          setForexDate(res?.date || res?.data?.date || new Date().toISOString().split('T')[0]);
+        }
       }
     } catch (e) {
       console.warn('Forex fetch error', e);
@@ -63,9 +71,9 @@ export function RegulatoryHub() {
   const fetchMacro = async () => {
     setMacroLoading(true);
     try {
-      const res = await axios.get('/api/macro/nrb-indicators', { timeout: 8000 });
-      if (res.data?.success && res.data.data) {
-        setMacroData(res.data.data);
+      const res: any = await fetchMacroIndicators();
+      if (res && (res.indicators || res.data || res.inflationRate != null)) {
+        setMacroData(res.data || res);
       }
     } catch (e) {
       console.warn('Macro fetch error', e);
@@ -78,9 +86,9 @@ export function RegulatoryHub() {
   const fetchBullion = async () => {
     setBullionLoading(true);
     try {
-      const res = await axios.get('/api/commodities/bullion', { timeout: 8000 });
-      if (res.data?.success && res.data.data) {
-        setBullionData(res.data.data);
+      const res: any = await fetchBullionRates();
+      if (res && (res.fineGold || res.data || res.silver)) {
+        setBullionData(res.data || res);
       }
     } catch (e) {
       console.warn('Bullion fetch error', e);
@@ -94,14 +102,18 @@ export function RegulatoryHub() {
     setCircularsLoading(true);
     try {
       const [nrbRes, sebonRes] = await Promise.allSettled([
-        axios.get('/api/regulatory/nrb-circulars', { timeout: 10000 }),
-        axios.get('/api/regulatory/sebon-circulars', { timeout: 10000 }),
+        fetchNrbCirculars(),
+        fetchSebonCirculars(),
       ]);
-      if (nrbRes.status === 'fulfilled' && nrbRes.value.data?.success) {
-        setNrbCirculars(nrbRes.value.data.data || []);
+      if (nrbRes.status === 'fulfilled' && nrbRes.value) {
+        const val = nrbRes.value;
+        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : []);
+        if (list.length > 0) setNrbCirculars(list);
       }
-      if (sebonRes.status === 'fulfilled' && sebonRes.value.data?.success) {
-        setSebonCirculars(sebonRes.value.data.data || []);
+      if (sebonRes.status === 'fulfilled' && sebonRes.value) {
+        const val = sebonRes.value;
+        const list = Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : []);
+        if (list.length > 0) setSebonCirculars(list);
       }
     } catch (e) {
       console.warn('Circulars fetch error', e);

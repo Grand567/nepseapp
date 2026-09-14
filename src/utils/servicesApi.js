@@ -316,6 +316,12 @@ export const fetchTodayCalendar = () => _proxyFetch('/api/calendar/today', {}, 6
 export const fetchMeroShareIPOs = (token) => _proxyFetch('/api/meroshare/current-issues?token=' + encodeURIComponent(token), {}, 900000);
 export const fetchApplicationReport = (creds) => _proxyFetch('/api/meroshare/application-report', { body: creds, timeout: 20000 }, 600000);
 
+export const fetchForexRates = () => _proxyFetch('/api/forex/rates', {}, 1800000);
+export const fetchMacroIndicators = () => _proxyFetch('/api/macro/nrb-indicators', {}, 3600000);
+export const fetchBullionRates = () => _proxyFetch('/api/commodities/bullion', {}, 1800000);
+export const fetchNrbCirculars = () => _proxyFetch('/api/regulatory/nrb-circulars', {}, 3600000);
+export const fetchSebonCirculars = () => _proxyFetch('/api/regulatory/sebon-circulars', {}, 3600000);
+
 export const invalidateCache = (path) => { 
   for (const key of _cache.keys()) { 
     if (key.startsWith(path)) {

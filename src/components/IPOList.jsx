@@ -126,8 +126,8 @@ async function fetchIposDirectly(account) {
   }));
 }
 
-export default function IPOList() {
-  const [activeTab, setActiveTab] = useState('apply');
+export default function IPOList({ initialTab = 'apply' }) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [accounts, setAccounts] = useState([]);
   const [ipos, setIpos] = useState([]);
   const [resultCompanies, setResultCompanies] = useState([]);
@@ -141,6 +141,7 @@ export default function IPOList() {
   const [selectedResultCompany, setSelectedResultCompany] = useState('');
   const [appliedKitta, setAppliedKitta] = useState(10);
   const [accountSearch, setAccountSearch] = useState('');
+  const [manualBoid, setManualBoid] = useState('');
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [applyResults, setApplyResults] = useState([]);
@@ -566,6 +567,74 @@ export default function IPOList() {
     }
   };
 
+  const handleCheckSingleBoid = async (targetBoid) => {
+    const boid = String(targetBoid || manualBoid || '').trim();
+    if (!boid || boid.length !== 16) {
+      setError('Please enter a valid 16-digit CDSC BOID.');
+      return;
+    }
+    if (!selectedResultCompany) {
+      setError('Please select an IPO company from the list above.');
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+    setIsProcessing(true);
+    setCheckResults([]);
+
+    try {
+      if (isNative) {
+        const { CapacitorHttp } = await import('@capacitor/core');
+        const res = await CapacitorHttp.request({
+          url: 'https://iporesult.cdsc.com.np/api/ipo-result/public/share-allotment/check',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Origin': 'https://iporesult.cdsc.com.np',
+            'Referer': 'https://iporesult.cdsc.com.np/'
+          },
+          data: { companyShareId: Number(selectedResultCompany), boid },
+        });
+        const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        const msgStr = (data?.message || '').toLowerCase();
+        const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
+        const match = data?.message ? data.message.match(/\d+/) : null;
+        setCheckResults([{
+          id: 'manual',
+          name: `BOID ${boid}`,
+          boid,
+          status: isAllotted ? 'allotted' : (msgStr.includes('sorry') || msgStr.includes('not') ? 'not_allotted' : 'failed'),
+          message: data?.message || (isAllotted ? 'Congratulations! Allotted.' : 'Not allotted.'),
+          units: isAllotted && match ? parseInt(match[0]) : 0,
+        }]);
+        setSuccess('Allotment result checked.');
+      } else {
+        const data = await safeFetch(`${proxyBase}/api/ipo-result/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyShareId: Number(selectedResultCompany), boid }),
+        });
+        const msgStr = (data?.message || data?.error || '').toLowerCase();
+        const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
+        const match = data?.message ? data.message.match(/\d+/) : null;
+        setCheckResults([{
+          id: 'manual',
+          name: `BOID ${boid}`,
+          boid,
+          status: isAllotted ? 'allotted' : (msgStr.includes('sorry') || msgStr.includes('not') ? 'not_allotted' : 'failed'),
+          message: data?.message || (isAllotted ? 'Congratulations! Allotted.' : 'Not allotted.'),
+          units: isAllotted && match ? parseInt(match[0]) : 0,
+        }]);
+        setSuccess('Allotment result checked.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to check IPO allotment result.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const filteredAccounts = accounts.filter(a =>
     (a.name || '').toLowerCase().includes(accountSearch.toLowerCase()) ||
     (a.username || '').toLowerCase().includes(accountSearch.toLowerCase()) ||
@@ -775,6 +844,34 @@ export default function IPOList() {
               <><Play style={{ width: 14, height: 14 }} /> {activeTab === 'apply' ? 'Launch Bulk IPO Apply' : 'Launch Allotment Check'}</>
             )}
           </button>
+        )}
+
+        {activeTab === 'result' && (
+          <div style={{ marginTop: 10, padding: 12, borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)' }}>
+              Check Any CDSC BOID Directly:
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                maxLength={16}
+                placeholder="16-Digit BOID (e.g. 1301...)"
+                value={manualBoid}
+                onChange={e => setManualBoid(e.target.value.replace(/\D/g, ''))}
+                className="input"
+                style={{ flex: 1, padding: '9px 12px', fontSize: 12, letterSpacing: 1 }}
+              />
+              <button
+                type="button"
+                onClick={() => handleCheckSingleBoid(manualBoid)}
+                disabled={isProcessing || manualBoid.length !== 16 || !selectedResultCompany}
+                className="btn-primary"
+                style={{ padding: '9px 16px', fontSize: 12, whiteSpace: 'nowrap', opacity: (isProcessing || manualBoid.length !== 16 || !selectedResultCompany) ? 0.6 : 1 }}
+              >
+                {isProcessing ? 'Checking...' : 'Check Allotment'}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

@@ -2338,7 +2338,12 @@ export default function Dashboard({
           <button
             type="button"
             onClick={() => {
-              setTableFilterMode(prev => prev === 'watchlist' ? 'all' : 'watchlist');
+              setTableFilterMode(prev => {
+                if (prev === 'watchlist') return 'all';
+                setSelectedSector('All');
+                setBreadthFilter('all');
+                return 'watchlist';
+              });
             }}
             style={{
               background: tableFilterMode === 'watchlist' ? 'rgba(251, 191, 36, 0.18)' : 'rgba(255,255,255,0.03)',
@@ -2444,7 +2449,7 @@ export default function Dashboard({
             displayStocks.map(s => {
               const isBull = (s.pChange || 0) >= 0;
               const spark = generateSparkline(s.ltp, s.pChange);
-              const isStarActive = watchlist.includes(s.symbol);
+              const isStarActive = (watchlist || []).some(w => String(w).toUpperCase() === String(s.symbol).toUpperCase());
               return (
                 <div
                   key={s.symbol}

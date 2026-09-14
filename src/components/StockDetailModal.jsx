@@ -706,7 +706,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               const sym = d.symbol;
               if (sym) {
                 const res = toggleWatchlist(sym);
-                setIsFavorite(res.isWatched);
+                setIsFavorite(Boolean(res.watched ?? res.isWatched));
               }
             }}
             title={isFavorite ? 'Remove from Watchlist' : 'Add to Watchlist'}

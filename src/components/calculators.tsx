@@ -22,11 +22,12 @@ export function GrahamValuation() {
   };
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="Benjamin Graham Intrinsic Valuation Model"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">Benjamin Graham Intrinsic Valuation Model</h3>
+          <p className="text-xs text-slate-400">Classical value investing formula to calculate fair intrinsic value.</p>
+        </div>
+      </div>
       <InfoBanner><strong>Formula:</strong> V* = √(22.5 × EPS × BVPS). Margin of safety &gt; 20% = undervalued. Growth factor 7% + defensive P/E 15× = 22.5.</InfoBanner>
       <div className="mb-4 grid gap-3">
         <input type="number" placeholder="EPS — e.g. 65.20" value={form.eps} onChange={(e) => setForm((f) => ({ ...f, eps: e.target.value }))} className={inputCls} />
@@ -86,7 +87,7 @@ export function BrokerageCalculator() {
     const totalCost = buyBrok + sellBrok + sebonBuy + sebonSell + dpFee;
     const grossProfit = sellTotal - buyTotal;
     const taxableProfit = grossProfit - totalCost;
-    const cgtRate = form.holdingType === 'individual_short' || form.holdingType === 'short' ? 0.10 : form.holdingType === 'long' ? 0.075 : 0.10;
+    const cgtRate = form.holdingType === 'individual_short' || form.holdingType === 'short' ? 0.075 : form.holdingType === 'long' ? 0.05 : 0.10;
     const cgt = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
     const netReturn = grossProfit - totalCost - cgt;
     const returnPct = (netReturn / buyTotal) * 100;
@@ -108,21 +109,22 @@ export function BrokerageCalculator() {
 
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="SEBON Official Brokerage & CGT Calculator"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">SEBON Official Brokerage &amp; CGT Calculator</h3>
+          <p className="text-xs text-slate-400">Calculate buy/sell broker commission, SEBON fee, DP fee, CGT and net profit/loss.</p>
+        </div>
+      </div>
       <InfoBanner>
-        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (10% short-term &le;365d, 7.5% long-term &gt;365d, 10% corporate — Final Withholding Tax per Finance Act 2083).
+        <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (7.5% short-term &le;365d, 5.0% long-term &gt;365d, 10% corporate).
       </InfoBanner>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <input type="number" placeholder="Buy Price NPR" value={form.buy} onChange={(e) => setForm((f) => ({ ...f, buy: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Sell Price NPR" value={form.sell} onChange={(e) => setForm((f) => ({ ...f, sell: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Quantity" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} className={inputCls} />
         <select value={form.holdingType} onChange={(e) => setForm((f) => ({ ...f, holdingType: e.target.value }))} className={inputCls}>
-          <option value="short">Individual Short &le;365d — 10% CGT (Final)</option>
-          <option value="long">Individual Long &gt;365d — 7.5% CGT (Final)</option>
+          <option value="short">Individual Short &le;365d — 7.5% CGT</option>
+          <option value="long">Individual Long &gt;365d — 5.0% CGT</option>
           <option value="institutional">Institutional / Corporate — 10% CGT</option>
         </select>
         <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={inputCls}>
@@ -176,11 +178,12 @@ export function DividendCalculator() {
   };
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="NEPSE Dividend & Bonus Share Tax Calculator"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Dividend &amp; Bonus Share Tax Calculator</h3>
+          <p className="text-xs text-slate-400">Calculate gross cash, 5% TDS, net cash in hand, and bonus share credit.</p>
+        </div>
+      </div>
       <InfoBanner>Cash dividend: 5% TDS deducted at source. Bonus shares credited via CDSC directly to Demat.</InfoBanner>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <input type="number" placeholder="Shares Held" value={form.shares} onChange={(e) => setForm((f) => ({ ...f, shares: e.target.value }))} className={inputCls} />
@@ -205,7 +208,6 @@ export function DividendCalculator() {
 export function SIPCalculator() {
   const [form, setForm] = useState({ monthly: '', years: '', rate: '15' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1Y');
 
   const calc = () => {
     const m = parseFloat(form.monthly), y = parseFloat(form.years), annualRate = parseFloat(form.rate);
@@ -216,11 +218,12 @@ export function SIPCalculator() {
   };
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="Stock & Mutual Fund SIP Compounder"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">Stock &amp; Mutual Fund SIP Compounder</h3>
+          <p className="text-xs text-slate-400">Calculate future value of systematic monthly investments with rupee-cost averaging.</p>
+        </div>
+      </div>
       <InfoBanner>NEPSE long-run average: 12–18% CAGR. Monthly SIP smooths volatility through rupee-cost averaging.</InfoBanner>
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         <input type="number" placeholder="Monthly investment Rs." value={form.monthly} onChange={(e) => setForm((f) => ({ ...f, monthly: e.target.value }))} className={inputCls} />
@@ -242,22 +245,22 @@ export function SIPCalculator() {
 export function RiskRewardCalculator() {
   const [form, setForm] = useState({ entry: '', target: '', stop: '' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1D');
 
   const calc = () => {
     const e = parseFloat(form.entry), t = parseFloat(form.target), s = parseFloat(form.stop);
     if (!e || !t || !s || e <= 0) return;
     const reward = Math.abs(t - e), risk = Math.abs(e - s);
     if (risk === 0) return;
-    setResult({ reward, risk, ratio: reward / risk, rewardPct: ((t - e) / e) * 100, riskPct: ((e - s) / e) * 100 });
+    setResult({ reward, risk, ratio: reward / risk, rewardPct: (reward / e) * 100, riskPct: (risk / e) * 100 });
   };
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="Trade Risk-to-Reward & Position Sizer"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">Trade Risk-to-Reward &amp; Position Sizer</h3>
+          <p className="text-xs text-slate-400">Measure risk-reward ratio before entry. Professional swing trades aim for 2:1 or better.</p>
+        </div>
+      </div>
       <InfoBanner>Professional traders only take trades with 2:1 or better risk-reward. Risk max 1–2% of capital per trade.</InfoBanner>
       <div className="mb-4 grid grid-cols-3 gap-3">
         <input type="number" placeholder="Entry" value={form.entry} onChange={(e) => setForm((f) => ({ ...f, entry: e.target.value }))} className={inputCls} />
@@ -278,11 +281,34 @@ export function RiskRewardCalculator() {
   );
 }
 
+// Helper to parse ratios like "1:2", "1/2", "0.5", "50%"
+function parseRatio(str: string): number {
+  if (!str) return 1;
+  const clean = str.trim();
+  if (clean.includes(':')) {
+    const parts = clean.split(':').map((p) => parseFloat(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0) {
+      return parts[0] / parts[1];
+    }
+  }
+  if (clean.includes('/')) {
+    const parts = clean.split('/').map((p) => parseFloat(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[1] !== 0) {
+      return parts[0] / parts[1];
+    }
+  }
+  if (clean.endsWith('%')) {
+    const val = parseFloat(clean.slice(0, -1));
+    return isNaN(val) ? 1 : val / 100;
+  }
+  const val = parseFloat(clean);
+  return isNaN(val) ? 1 : val;
+}
+
 // ── NEPSE Standard Bonus Share Price & WACC Adjustment Calculator ──
 export function BonusAdjustmentCalculator() {
   const [form, setForm] = useState({ closePrice: '', bonusPct: '', shares: '100', wacc: '' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1D');
 
   const calc = () => {
     const pClose = parseFloat(form.closePrice);
@@ -314,11 +340,12 @@ export function BonusAdjustmentCalculator() {
 
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="NEPSE Bonus Share Price & WACC Adjustment Engine"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Bonus Share Price &amp; WACC Adjustment Engine</h3>
+          <p className="text-xs text-slate-400">Calculate post-bonus adjusted book-closure price and weighted average cost.</p>
+        </div>
+      </div>
       <InfoBanner>
         <strong>Official NEPSE Formula:</strong> P_adj = P_close / (1 + Bonus_Ratio). Holdings expand while the stock price is adjusted proportionally by NEPSE on book closure day.
       </InfoBanner>
@@ -374,13 +401,12 @@ export function BonusAdjustmentCalculator() {
 
 // ── NEPSE Standard Right Share Price & WACC Adjustment Calculator ──
 export function RightAdjustmentCalculator() {
-  const [form, setForm] = useState({ closePrice: '', rightRatio: '1', issuePrice: '100', shares: '100', wacc: '' });
+  const [form, setForm] = useState({ closePrice: '', rightRatio: '1:1', issuePrice: '100', shares: '100', wacc: '' });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1D');
 
   const calc = () => {
     const pClose = parseFloat(form.closePrice);
-    const rRatio = parseFloat(form.rightRatio);
+    const rRatio = parseRatio(form.rightRatio);
     const pr = parseFloat(form.issuePrice) || 100;
     const s = parseFloat(form.shares) || 100;
     const w = parseFloat(form.wacc) || pClose;
@@ -407,11 +433,12 @@ export function RightAdjustmentCalculator() {
 
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="NEPSE Right Share Price & WACC Adjustment Engine"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Right Share Price &amp; WACC Adjustment Engine</h3>
+          <p className="text-xs text-slate-400">Calculate post-right adjusted opening price, right call cost, and new WACC.</p>
+        </div>
+      </div>
       <InfoBanner>
         <strong>Official NEPSE Formula:</strong> P_adj = (P_close + Right_Ratio × Issue_Price) / (1 + Right_Ratio). Standard par value for equity right issues in Nepal is Rs. 100.
       </InfoBanner>
@@ -424,9 +451,8 @@ export function RightAdjustmentCalculator() {
           className={inputCls}
         />
         <input
-          type="number"
-          step="0.01"
-          placeholder="Right Ratio (e.g. 1:1 is 1, 1:0.5 is 0.5)"
+          type="text"
+          placeholder="Ratio e.g. 1:1, 1:2 (50%), 0.5"
           value={form.rightRatio}
           onChange={(e) => setForm((f) => ({ ...f, rightRatio: e.target.value }))}
           className={inputCls}
@@ -485,7 +511,6 @@ export function MarginLoanCalculator() {
     borrowerType: 'individual',
   });
   const [result, setResult] = useState<any>(null);
-  const [timeframe, setTimeframe] = useState('1Y');
 
   const calc = () => {
     const qty = parseFloat(form.units);
@@ -545,11 +570,12 @@ export function MarginLoanCalculator() {
 
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="NRB Statutory Margin Lending & Margin Call Engine"
-      />
+      <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
+        <div>
+          <h3 className="text-base font-bold text-white tracking-wide">NRB Statutory Margin Lending &amp; Margin Call Engine</h3>
+          <p className="text-xs text-slate-400">Calculate BFI margin loan eligibility, collateral valuation, and margin call safety buffer.</p>
+        </div>
+      </div>
       <InfoBanner>
         <strong>Nepal Rastra Bank (NRB) Directives:</strong> Max 70% LTV against the lower of current LTP or 180-day VWAP. Single-obligor lending limit is capped at <strong>Rs. 15 Crores (Individual)</strong> and <strong>Rs. 20 Crores (Institutional)</strong> across all BFIs.
       </InfoBanner>

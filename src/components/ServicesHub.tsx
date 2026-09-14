@@ -27,8 +27,9 @@ import {
   StaticInfoService, PortfolioTool, WatchlistTool, TradeNotesTool, AlertsTool,
   ApiStatusService, BrokersDirectoryService, IPOPipelineService, MutualFundsService,
   LiveFloorsheetService, SectorHeatmapService, BrokerAnalysisService,
-  BrokerHeatmapService, BrokerFavouritesService,
+  BrokerHeatmapService, BrokerFavouritesService, MarketDepthService,
 } from './services';
+import IPOList from './IPOList';
 import { useBackHandler } from '../context/NavigationContext';
 import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator } from './calculators';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
@@ -460,11 +461,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'top-turnover': () => <TopPerformersService type="turnover" />,
   'top-transactions': () => <TopPerformersService type="transactions" />,
   'top-traded': () => <TopPerformersService type="transactions" />,
-  'market-depth': () => (
-    <UniversalScreener filterFn={(s) => s.volume > 10000} sortFn={(a, b) => b.turnover - a.turnover}
-      banner={{ type: 'info', text: 'Deep-liquidity board. Wired to /supplydemand.' }}
-      insight="Trade stocks with 10K+ daily volume to avoid slippage." />
-  ),
+  'market-depth': MarketDepthService,
   'volume-spread': () => (
     <UniversalScreener filterFn={(s) => s.high && s.low} sortFn={(a, b) => b.volume * ((b.high - b.low) / b.ltp) - a.volume * ((a.high - a.low) / a.ltp)}
       banner={{ type: 'info', text: 'VSA — Volume Spread Analysis. Wide spread + high volume + close near high = bullish.' }}
@@ -519,10 +516,10 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Regulatory Telemetry Hub & Macro
   'regulatory-hub': RegulatoryHub,
-  'nrb-forex': RegulatoryHub,
-  'bullion-rates': RegulatoryHub,
-  'regulatory-circulars': RegulatoryHub,
-  'nrb-indicators': RegulatoryHub,
+  'nrb-forex': () => <RegulatoryHub initialTab="forex" />,
+  'bullion-rates': () => <RegulatoryHub initialTab="bullion" />,
+  'regulatory-circulars': () => <RegulatoryHub initialTab="circulars" />,
+  'nrb-indicators': () => <RegulatoryHub initialTab="macro" />,
   'compare-stocks': CompareStocks,
   'smart-portfolio': () => (
     <UniversalScreener filterFn={(s) => s.technicalScore > 60 && s.pe > 0 && s.pe < 25} sortFn={(a, b) => b.technicalScore - a.technicalScore}
@@ -565,8 +562,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       tips={['Screenshot every application', 'Reconcile refunds within T+3', 'Save allotment PDFs yearly']} />
   ),
   'brokers': BrokersDirectoryService,
-  'ipo-result': () => <IPOTracker type="results" />,
-  'ipo-results': () => <IPOTracker type="results" />,
+  'ipo-result': () => <IPOList initialTab="result" />,
+  'ipo-results': () => <IPOList initialTab="result" />,
   'ipo-current': () => <IPOTracker type="current" />,
   'ipo-fpo-alert': () => (
     <StaticInfoService title="IPO / FPO Alerts"
