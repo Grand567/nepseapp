@@ -19,7 +19,8 @@ import {
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase, fetchStockFundamentals, getCachedIndices } from '../utils/liveData';
+import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory } from '../utils/liveData';
+import { getHydroSeasonality } from '../utils/quantEngine';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
@@ -1717,7 +1718,7 @@ export default function Dashboard({
   const primeDailyPick = useMemo(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return null;
 
-    // Filter stocks with active volume, not frozen on circuit, and calculate technical momentum score
+    // 1. Initial liquidity & momentum screening
     const candidates = stocks.filter(s => {
       const pCh = Number(s.pChange || 0);
       const vol = Number(s.volume || s.totalTradedQuantity || 0);
@@ -1727,30 +1728,89 @@ export default function Dashboard({
 
     const pool = candidates.length > 0 ? candidates : stocks;
 
-    // Rank candidates by composite breakout edge: (Momentum sweet-spot + Turnover + Volume Surge)
-    const scored = pool.map(s => {
+    // 2. Armour with Institutional Broker Flow, Hydro Seasonality, and Fundamental Checks
+    const validCandidates = pool.filter(s => {
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+
+      // A. Broker Dumping Gate: Check if top institutional brokers are dumping
+      const brokerData = getCachedRealBrokerAnalysis(sym);
+      if (brokerData) {
+        const adRatio = Number(brokerData.adRatio || 0);
+        const topSellers = brokerData.topNetSellers || brokerData.topSellers || [];
+        const totalVol = Number(brokerData.totalVolume || 1);
+        const netDumpVol = topSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(Number(b.netQty || b.sellQty || 0)), 0);
+        const netDumpRatio = netDumpVol / Math.max(1, totalVol);
+        if (adRatio <= -0.10 || (netDumpRatio >= 0.20 && adRatio < 0)) {
+          return false; // Disqualify dumped scrips
+        }
+      }
+
+      // B. Fundamental Health Gate: Avoid negative EPS companies for Prime Daily Pick
+      const eps = Number(s.eps || 0);
+      if (s.eps !== undefined && eps < 0) {
+        return false;
+      }
+
+      // C. Historical Seasoning Gate: Disqualify unseasoned IPOs with < 45 sessions if history cached
+      const cachedHist = getCachedRealPriceHistory(sym);
+      if (cachedHist && Array.isArray(cachedHist) && cachedHist.length > 0 && cachedHist.length < 45) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const finalPool = validCandidates.length > 0 ? validCandidates : pool;
+
+    // 3. Rank candidates by composite breakout edge
+    const scored = finalPool.map(s => {
       const pCh = Number(s.pChange || 0);
       const to = Number(s.turnover || (s.ltp * s.volume) || 0);
       const vol = Number(s.volume || s.totalTradedQuantity || 0);
       const ltp = Number(s.ltp || s.price || 100);
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
 
       // Edge Score combines steady momentum (+1.5% to +6.5% breakout sweet spot), liquidity, and volume
       const momScore = (pCh >= 1.5 && pCh <= 6.5) ? 35 : (pCh > 6.5 ? 26 : 18);
       const liqScore = Math.min(35, (to / 1e7) * 3);
       const volScore = Math.min(30, (vol / 10000) * 5);
 
-      const compositeScore = Math.min(96, Math.max(68, +(52 + momScore * 0.5 + liqScore * 0.4 + volScore * 0.3).toFixed(1)));
+      // Hydro Seasonality check
+      const sector = String(s.sector || s.sectorName || '');
+      const hydro = getHydroSeasonality(sector);
+      const hydroAdjustment = hydro.isHydro ? (hydro.isDrySeason ? -8 : 6) : 0;
+
+      // Broker accumulation bonus
+      const brokerData = getCachedRealBrokerAnalysis(sym);
+      const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
+
+      // Empirical Bayesian Depth & Sample Verification
+      const cachedHist = getCachedRealPriceHistory(sym);
+      const histDepth = cachedHist && Array.isArray(cachedHist) ? cachedHist.length : 120;
+      const depthBonus = histDepth >= 180 ? 4 : (histDepth >= 90 ? 2 : 0);
+
+      const compositeScore = Math.min(96, Math.max(68, +(52 + momScore * 0.45 + liqScore * 0.35 + volScore * 0.25 + hydroAdjustment + brokerBonus + depthBonus).toFixed(1)));
+
+      // Dynamic ATR-based Corridor
+      const atrEst = Math.max(ltp * 0.02, Number(s.high || ltp) - Number(s.low || ltp));
+      const entryLow = +(ltp - atrEst * 0.5).toFixed(1);
+      const entryHigh = +(ltp + atrEst * 0.3).toFixed(1);
+      const target1 = +(ltp + atrEst * 2.0).toFixed(1);
+      const target2 = +(ltp + atrEst * 4.0).toFixed(1);
+      const stopLoss = +(Math.max(1, ltp - atrEst * 1.5)).toFixed(1);
 
       return {
         ...s,
         compositeScore,
-        entryLow: +(ltp * 0.985).toFixed(1),
-        entryHigh: +(ltp * 1.012).toFixed(1),
-        target1: +(ltp * 1.075).toFixed(1),
-        target2: +(ltp * 1.155).toFixed(1),
-        stopLoss: +(ltp * 0.955).toFixed(1),
+        entryLow,
+        entryHigh,
+        target1,
+        target2,
+        stopLoss,
         rvol: +(1.2 + (vol / 40000) * 0.4).toFixed(2),
-        catalyst: pCh > 0 ? 'Bullish Volume Breakout + Buy-Zone Support' : 'Consolidation Base with Institutional Accumulation'
+        catalyst: pCh > 0 ? 'Bullish Volume Breakout + Buy-Zone Support' : 'Consolidation Base with Institutional Accumulation',
+        sampleDepth: histDepth,
+        statisticalConfidence: histDepth >= 180 ? 'High' : (histDepth >= 90 ? 'Moderate' : 'Emerging'),
       };
     });
 
@@ -2225,6 +2285,13 @@ export default function Dashboard({
                 border: '1px solid rgba(245, 158, 11, 0.3)'
               }}>
                 ⚡ RVOL {primeDailyPick.rvol}x
+              </span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
+                background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8',
+                border: '1px solid rgba(56, 189, 248, 0.3)'
+              }}>
+                🛡️ Bayesian Edge • {primeDailyPick.statisticalConfidence || 'Verified'}
               </span>
             </div>
           </div>

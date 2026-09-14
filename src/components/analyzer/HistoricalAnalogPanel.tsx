@@ -21,8 +21,14 @@ interface HistoricalAnalogPanelProps {
     analogs?: AnalogMatch[];
     stats?: {
       sampleSize: number;
+      sampleTier?: string;
+      winsCount?: number;
+      netWinsCount?: number;
       winRate: number;
+      rawWinRate?: number;
       grossWinRate: number;
+      rawGrossWinRate?: number;
+      shrinkageApplied?: boolean;
       avgReturnPct: number;
       avgNetReturnPct: number;
       avgWinPct: number;
@@ -33,8 +39,10 @@ interface HistoricalAnalogPanelProps {
     confidence?: {
       level: string;
       sampleSize: number;
+      sampleTier?: string;
       averageSimilarity: number;
       outcomeConsistency: number;
+      shrinkageApplied?: boolean;
     };
     note?: string;
   };
@@ -72,6 +80,16 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
 
   if (!stats) return null;
 
+  const sampleTier = stats.sampleTier || 'STANDARD';
+  const tierColor =
+    sampleTier === 'ROBUST'
+      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+      : sampleTier === 'MODERATE'
+      ? 'text-sky-400 bg-sky-500/10 border-sky-500/30'
+      : sampleTier === 'SPARSE'
+      ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+      : 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#090d16] p-4 sm:p-5 text-slate-200 shadow-xl space-y-4">
       {/* ── Header ── */}
@@ -90,20 +108,34 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
           </div>
         </div>
 
-        <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full">
-          <Coins size={12} className="text-amber-400" /> Net of SEBON fees & 10% CGT (Final)
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-[10.5px] font-bold px-2.5 py-0.5 rounded-full border ${tierColor}`}>
+            Sample: {sampleTier} (N = {stats.sampleSize})
+          </span>
+          <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full">
+            <Coins size={12} className="text-amber-400" /> Net of SEBON fees & 10% CGT (Final)
+          </span>
+        </div>
       </div>
 
       {/* ── High-Level Analog Summary Metrics ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
         <div className="rounded-xl bg-slate-900/70 border border-slate-800 p-3">
-          <div className="text-[11px] text-slate-400">Net Win Rate</div>
+          <div className="text-[11px] text-slate-400 flex items-center justify-between">
+            <span>Net Win Rate</span>
+            {stats.shrinkageApplied && (
+              <span className="text-[9px] font-bold text-sky-400 bg-sky-500/15 px-1 rounded">Bayesian</span>
+            )}
+          </div>
           <div className="text-xl font-black text-emerald-400 mt-0.5">
             {stats.winRate}%
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            Gross: {stats.grossWinRate ?? stats.winRate ?? 0}%
+            {stats.shrinkageApplied ? (
+              <span>Raw: {stats.rawWinRate}% ({stats.netWinsCount ?? '—'}/{stats.sampleSize} wins)</span>
+            ) : (
+              <span>Gross: {stats.grossWinRate ?? stats.winRate ?? 0}%</span>
+            )}
           </div>
         </div>
 
@@ -143,7 +175,7 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
                 : 'text-rose-400'
             }`}
           >
-            {confidence?.level || 'MEDIUM'} ({stats.sampleSize} matches)
+            {confidence?.level || 'MEDIUM'} ({stats.sampleSize} setups)
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
             Avg Sim: {confidence?.averageSimilarity || 0}%
@@ -164,6 +196,15 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
             </span>
           )}
         </p>
+
+        {stats.shrinkageApplied && (
+          <div className="p-2.5 rounded-lg bg-sky-950/30 border border-sky-800/40 text-[11px] text-sky-200 mt-2 flex items-start gap-2">
+            <span className="text-sky-400 font-bold text-sm leading-none">🛡️</span>
+            <div>
+              <strong>Empirical Bayesian Shrinkage Active:</strong> Because NEPSE scrip history yields {stats.sampleSize} matching setup{stats.sampleSize > 1 ? 's' : ''} (N &lt; 12), the win rate was smoothed toward the 50% benchmark ({stats.winRate}% vs raw {stats.rawWinRate}%) to eliminate small-sample overconfidence.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Collapsible Analog Matches Table ── */}

@@ -57,6 +57,7 @@ import {
   calculateCompositeTechnicalScore,
   calculateCompositeMomentumScore,
   normalizeCorporateActionPrices,
+  getHydroSeasonality,
 } from './quantEngine.js';
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
@@ -443,37 +444,42 @@ export function simulateForwardOutcome(candles, signalIdx, {
     if (unrealizedGain > mfe) mfe = unrealizedGain;
     if (unrealizedLoss < mae) mae = unrealizedLoss;
 
+    // ── NEPSE T+2 Settlement Rule: Shares cannot be sold on Day 0 or Day 1 ──
+    const canExit = daysHeld >= 2;
+
     // ── Same-candle ambiguity check (Stage 3 fix) ────────────────
     const stopHit   = day.low  <= stopPrice;
     const t1Hit     = day.high >= t1Price;
     const t2Hit     = day.high >= t2Price;
 
     if (stopHit && (t1Hit || t2Hit)) {
-      // Both stop and target reached in same candle — unknown order
-      ambiguous   = true;
-      outcomeType = 'ambiguous_intraday';
-      // Conservative: assume stop was hit first
-      outcome     = 'stop_hit';
-      exitPrice   = stopPrice;
-      exitDate    = day.date;
-      break;
+      if (canExit) {
+        // Both stop and target reached in same candle — unknown order
+        ambiguous   = true;
+        outcomeType = 'ambiguous_intraday';
+        // Conservative: assume stop was hit first
+        outcome     = 'stop_hit';
+        exitPrice   = stopPrice;
+        exitDate    = day.date;
+        break;
+      }
     }
 
-    if (t2Hit) {
+    if (t2Hit && canExit) {
       outcome     = 'target2_hit';
       outcomeType = 'target2_hit';
       exitPrice   = t2Price;
       exitDate    = day.date;
       break;
     }
-    if (t1Hit) {
+    if (t1Hit && canExit) {
       outcome     = 'target1_hit';
       outcomeType = 'target1_hit';
       exitPrice   = t1Price;
       exitDate    = day.date;
       break;
     }
-    if (stopHit) {
+    if (stopHit && canExit) {
       outcome     = 'stop_hit';
       outcomeType = 'stop_hit';
       exitPrice   = stopPrice;
@@ -554,24 +560,40 @@ export function runAnalogBacktest(candles, options = {}) {
   const losses        = validOutcomes.filter((o) => !o.win);
   const ambiguousCount = validOutcomes.filter((o) => o.ambiguous).length;
 
-  const grossWinRate   = validOutcomes.length ? (wins.length / validOutcomes.length) * 100 : 0;
-  const netWinRate     = validOutcomes.length ? (netWins.length / validOutcomes.length) * 100 : 0;
-  const avgReturnPct   = validOutcomes.length ? validOutcomes.reduce((s, o) => s + o.returnPct, 0) / validOutcomes.length : 0;
-  const avgNetReturnPct = validOutcomes.length ? validOutcomes.reduce((s, o) => s + (o.netReturnPct ?? o.returnPct), 0) / validOutcomes.length : 0;
+  const N = validOutcomes.length;
+  const rawGrossWinRate = N ? (wins.length / N) * 100 : 0;
+  const rawNetWinRate   = N ? (netWins.length / N) * 100 : 0;
+
+  // ── Bayesian Shrinkage (Empirical Bayes / Laplace prior smoothing) ──
+  // Shrinks empirical win rate toward 50.0% neutral market base rate with pseudo-count N0 = 8.
+  // Prevents distorted 100% win rates on N=2 or false 0% on N=1 due to NEPSE's short historical series.
+  const N0 = 8;
+  const priorWinRate = 0.50;
+  const shrunkNetWinRate = N > 0 ? ((netWins.length + N0 * priorWinRate) / (N + N0)) * 100 : 50;
+  const shrunkGrossWinRate = N > 0 ? ((wins.length + N0 * priorWinRate) / (N + N0)) * 100 : 50;
+
+  // Statistical sample reliability tier
+  let sampleTier = 'INSUFFICIENT';
+  if (N >= 12) sampleTier = 'ROBUST';
+  else if (N >= 6) sampleTier = 'MODERATE';
+  else if (N >= 2) sampleTier = 'SPARSE';
+
+  const avgReturnPct   = N ? validOutcomes.reduce((s, o) => s + o.returnPct, 0) / N : 0;
+  const avgNetReturnPct = N ? validOutcomes.reduce((s, o) => s + (o.netReturnPct ?? o.returnPct), 0) / N : 0;
   const avgWinPct      = wins.length    ? wins.reduce((s, o)   => s + o.returnPct, 0) / wins.length    : 0;
   const avgLossPct     = losses.length  ? losses.reduce((s, o) => s + o.returnPct, 0) / losses.length  : 0;
-  const avgDaysHeld    = validOutcomes.length ? validOutcomes.reduce((s, o) => s + o.daysHeld, 0) / validOutcomes.length : 0;
+  const avgDaysHeld    = N ? validOutcomes.reduce((s, o) => s + o.daysHeld, 0) / N : 0;
   const avgSimilarity  = analogs.reduce((s, a) => s + a.similarity, 0) / analogs.length;
 
   // Outcome consistency: 0=random, 1=all same direction
-  const winFraction        = validOutcomes.length ? wins.length / validOutcomes.length : 0.5;
+  const winFraction        = N ? wins.length / N : 0.5;
   const outcomeConsistency = Math.abs(winFraction - 0.5) * 2; // 0=random, 1=all wins or all losses
 
   // Evidence confidence level
   let confidenceLevel;
-  if (validOutcomes.length >= 6 && outcomeConsistency >= 0.5)      confidenceLevel = 'HIGH';
-  else if (validOutcomes.length >= 3 && outcomeConsistency >= 0.25) confidenceLevel = 'MEDIUM';
-  else                                                               confidenceLevel = 'LOW';
+  if (N >= 8 && outcomeConsistency >= 0.5)      confidenceLevel = 'HIGH';
+  else if (N >= 4 && outcomeConsistency >= 0.25) confidenceLevel = 'MEDIUM';
+  else                                           confidenceLevel = 'LOW';
 
   return {
     supported:       true,
@@ -591,9 +613,15 @@ export function runAnalogBacktest(candles, options = {}) {
       },
     })),
     stats: {
-      sampleSize:       validOutcomes.length,
-      winRate:          +netWinRate.toFixed(1),
-      grossWinRate:     +grossWinRate.toFixed(1),
+      sampleSize:       N,
+      sampleTier,
+      winsCount:        wins.length,
+      netWinsCount:     netWins.length,
+      winRate:          +shrunkNetWinRate.toFixed(1),
+      rawWinRate:       +rawNetWinRate.toFixed(1),
+      grossWinRate:     +shrunkGrossWinRate.toFixed(1),
+      rawGrossWinRate:  +rawGrossWinRate.toFixed(1),
+      shrinkageApplied: N < 12 && N > 0,
       avgReturnPct:     +avgReturnPct.toFixed(2),
       avgNetReturnPct:  +avgNetReturnPct.toFixed(2),
       avgWinPct:        +avgWinPct.toFixed(2),
@@ -605,9 +633,11 @@ export function runAnalogBacktest(candles, options = {}) {
     },
     confidence: {
       level:              confidenceLevel,
-      sampleSize:         validOutcomes.length,
+      sampleSize:         N,
+      sampleTier,
       averageSimilarity:  +avgSimilarity.toFixed(1),
       outcomeConsistency: +outcomeConsistency.toFixed(2),
+      shrinkageApplied:   N < 12 && N > 0,
     },
   };
 }
@@ -703,17 +733,37 @@ const BASE_WEIGHTS = {
 
 /**
  * Redistributes weight from unavailable factors proportionally
- * to available ones, rather than silently filling missing gaps with 50.
+ * to available ones, and dynamically tapers historicalAnalogs weight
+ * when analog sample size (N) is small (< 12).
  */
-function computeEffectiveWeights(availabilityMap) {
+function computeEffectiveWeights(availabilityMap, { analogSampleSize = 15 } = {}) {
   const available   = {};
   const unavailable = [];
   let   totalAvailable = 0;
 
+  // Dynamic tapering factor for historicalAnalogs:
+  // N >= 12: 100% weight (0.150)
+  // 6 <= N < 12: 65% weight (0.098)
+  // 2 <= N < 6: 35% weight (0.053)
+  // N < 2: 0% weight (unweighted, fully reallocated)
+  let analogTaper = 1.0;
+  if (analogSampleSize >= 12) analogTaper = 1.0;
+  else if (analogSampleSize >= 6) analogTaper = 0.65;
+  else if (analogSampleSize >= 2) analogTaper = 0.35;
+  else analogTaper = 0.0;
+
   for (const [factor, isAvailable] of Object.entries(availabilityMap)) {
     if (isAvailable) {
-      available[factor] = BASE_WEIGHTS[factor] || 0;
-      totalAvailable   += BASE_WEIGHTS[factor] || 0;
+      let w = BASE_WEIGHTS[factor] || 0;
+      if (factor === 'historicalAnalogs') {
+        w = +(w * analogTaper).toFixed(4);
+      }
+      if (w > 0) {
+        available[factor] = w;
+        totalAvailable   += w;
+      } else {
+        unavailable.push(factor);
+      }
     } else {
       unavailable.push(factor);
     }
@@ -739,6 +789,12 @@ export function scoreToVerdict(score, riskGate = {}) {
   }
   if (riskGate.isUnfavorableRRR) {
     return 'NO TRADE (UNFAVORABLE RISK/REWARD)';
+  }
+  if (riskGate.isInstitutionalDumping) {
+    return 'REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)';
+  }
+  if (riskGate.isDeepHydroDryBreakout) {
+    return 'REDUCE / AVOID ENTRY (HYDRO DRY SEASON OVERHANG)';
   }
   if (riskGate.isHardCeilingDowntrend) {
     return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
@@ -770,8 +826,13 @@ function buildRationale({ analogResult, strategyTrackRecord, technicalScore, mom
   if (analogResult?.stats) {
     const s = analogResult.stats;
     lines.push(
-      `Found ${s.sampleSize} historically similar setups. ${s.winRate}% were profitable, averaging ${s.avgReturnPct >= 0 ? '+' : ''}${s.avgReturnPct}% return over ~${s.avgDaysHeld} days. (Evidence confidence: ${analogResult.confidence?.level ?? 'UNKNOWN'})`
+      `Found ${s.sampleSize} historically similar setups (${s.sampleTier ?? 'N/A'} sample). ${s.winRate}% were profitable, averaging ${s.avgReturnPct >= 0 ? '+' : ''}${s.avgReturnPct}% return over ~${s.avgDaysHeld} days. (Evidence confidence: ${analogResult.confidence?.level ?? 'UNKNOWN'})`
     );
+    if (s.shrinkageApplied) {
+      lines.push(
+        `ℹ️ Bayesian prior shrinkage applied to analog win rate (${s.winRate}% vs raw ${s.rawWinRate}%, ${s.netWinsCount ?? s.winsCount ?? '—'}/${s.sampleSize} wins) to guard against low sample variance (N=${s.sampleSize}).`
+      );
+    }
     if (s.ambiguousCount > 0) {
       lines.push(`${s.ambiguousCount} analog outcome(s) involved same-candle stop/target ambiguity — resolved conservatively (stop-first).`);
     }
@@ -1070,13 +1131,13 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     supportResistance: Boolean(priceActionReport?.supportResistance),
     breakoutPattern:   Boolean(priceActionReport?.breakout),
     volume:            candles.some((c) => c.volume > 0),
-    historicalAnalogs: analogWinRate !== null,
+    historicalAnalogs: analogWinRate !== null && sampleSize >= 2,
     strategyRecord:    strategyWinRate !== null,
     marketContext:     hasMarketContext,
     sectorContext:     hasSectorContext,
   };
 
-  const { effectiveWeights, unavailableFactors } = computeEffectiveWeights(availabilityMap);
+  const { effectiveWeights, unavailableFactors } = computeEffectiveWeights(availabilityMap, { analogSampleSize: sampleSize });
 
   // Group scores (0-100 each)
   const groupScores = {
@@ -1238,9 +1299,11 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   if (analogResult?.stats?.winRate >= 55) {
-    bullishFactors.push(`Historical analog pattern matches exhibit ${analogResult.stats.winRate}% win rate over ${sampleSize} historical setups`);
+    const shrinkNote = analogResult.stats.shrinkageApplied ? ` (Bayesian shrunk, N=${sampleSize})` : '';
+    bullishFactors.push(`Historical analog pattern matches exhibit ${analogResult.stats.winRate}% win rate over ${sampleSize} historical setups${shrinkNote}`);
   } else if (analogResult?.stats?.winRate && analogResult.stats.winRate < 45) {
-    bearishFactors.push(`Historical analog matches indicate lower forward win rate (${analogResult.stats.winRate}%)`);
+    const shrinkNote = analogResult.stats.shrinkageApplied ? ` (Bayesian shrunk, N=${sampleSize})` : '';
+    bearishFactors.push(`Historical analog matches indicate lower forward win rate (${analogResult.stats.winRate}%${shrinkNote})`);
   }
 
   // Confirmations to watch
@@ -1250,10 +1313,54 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     priceActionReport?.supportResistance?.nearestSupport ? `Preserving structural support at Rs. ${priceActionReport.supportResistance.nearestSupport}` : `Holding above stop-loss price at Rs. ${levels.stopLoss.price}`,
   ];
 
+  // ── Broker Floorsheet & Smart Money Integration ───────────────
+  const brokerAnalysis = options.brokerAnalysis || stock?.brokerAnalysis || null;
+  const brokerAdRatio = brokerAnalysis?.adRatio ?? 0;
+  const brokerAdSignal = brokerAnalysis?.adSignal ?? 'Neutral';
+  const brokerAdStrength = parseFloat(brokerAnalysis?.adStrength) || 0;
+  const isInstitutionalDumping = brokerAdSignal === 'Distribution' && (brokerAdStrength >= 35 || brokerAdRatio <= -0.10);
+
+  if (isInstitutionalDumping) {
+    bearishFactors.push(`Heavy broker distribution: Top institutional brokers are net distributing (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`);
+  } else if (brokerAdSignal === 'Accumulation' && brokerAdRatio >= 0.08) {
+    bullishFactors.push(`Institutional broker accumulation: Top brokers are net buyers (+${(brokerAdRatio * 100).toFixed(1)}% net flow)`);
+  }
+
+  // ── Hydro Seasonality & Fundamental Health Integration ──────────
+  const sector = String(stock?.sector || stock?.sectorName || '');
+  const hydroSeason = getHydroSeasonality(sector);
+  const eps = Number(stock?.eps || 0);
+  const pe = Number(stock?.peRatio || stock?.pe || 0);
+  const isLossMaking = eps < 0;
+  const isExtremePE = pe > 70;
+  const isDeepHydroDry = hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15;
+
+  if (isLossMaking) {
+    bearishFactors.push(`Negative earnings: Company reported negative EPS (Rs. ${eps.toFixed(2)}) — operational loss risk`);
+  } else if (eps > 0 && pe > 0 && pe <= 25) {
+    bullishFactors.push(`Sound valuation fundamentals: Attractive P/E (${pe.toFixed(1)}x) with positive EPS (Rs. ${eps.toFixed(2)})`);
+  }
+
+  if (isExtremePE) {
+    bearishFactors.push(`Elevated valuation: P/E ratio of ${pe.toFixed(1)}x carries multiple contraction risk`);
+  }
+
+  if (hydroSeason.isHydro) {
+    if (hydroSeason.isDrySeason) {
+      bearishFactors.push(`Hydropower seasonality caution: ${hydroSeason.seasonLabel} with reduced RoR water flow`);
+    } else {
+      bullishFactors.push(`Hydropower seasonal tailwind: ${hydroSeason.seasonLabel} with peak generation capacity`);
+    }
+  }
+
   // Warnings
   const warnings = [
     ...(dataSource.real === false ? ['⚠️ Price history is estimated — analysis is based on simulated data'] : []),
     ...(caEvents.length > 0 && unconfirmedCount > 0 ? [`${unconfirmedCount} corporate action adjustment(s) could not be confirmed against dividend records`] : []),
+    ...(isInstitutionalDumping ? [`⚠️ Institutional Distribution: Top brokers are net offloading inventory (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`] : []),
+    ...(isLossMaking ? [`⚠️ Fundamental Caution: Negative EPS (${eps.toFixed(2)}) indicates operating losses`] : []),
+    ...(isExtremePE ? [`⚠️ High Valuation Multiple: P/E of ${pe.toFixed(1)}x exceeds prudent thresholds`] : []),
+    ...(isDeepHydroDry && hydroSeason.warning ? [hydroSeason.warning] : []),
     ...(priceActionReport?.breakout?.bullTrapRisk ? ['⚠️ Potential bull trap: candle formed upper rejection wick > 40% of range'] : []),
     ...(technicalReport?.momentum?.rsi14 > 75 ? [`⚠️ Extreme overbought condition (RSI ${technicalReport.momentum.rsi14.toFixed(1)}) — avoid chasing extended moves`] : []),
     ...(technicalReport?.volume?.rvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${technicalReport.volume.rvol.toFixed(2)}x) — risk of exit slippage`] : []),
@@ -1275,15 +1382,20 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const isBelow50EMA = ema50Val > 0 && ltp < ema50Val;
   const isBearMarket = marketScore !== null && marketScore <= 35;
   const isHardCeilingDowntrend = isBelow50EMA && isBearMarket;
+  const isDeepHydroDryBreakout = isDeepHydroDry && (priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 5.0);
 
   const riskGate = {
     isCircuitTrap,
     isSubFriction,
     isUnfavorableRRR,
+    isInstitutionalDumping,
+    isDeepHydroDryBreakout,
     isHardCeilingDowntrend,
     warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
+           : isInstitutionalDumping ? `Institutional Broker Distribution: Net ${Math.abs(brokerAdRatio * 100).toFixed(1)}% volume dumped by top institutional brokers into retail demand. Avoid fresh entry.`
+           : isDeepHydroDryBreakout ? 'Deep winter hydro dry season: RoR power output severely depressed. Avoid chasing speculative spikes.'
            : isHardCeilingDowntrend ? 'Asset is below 50 EMA during a broader market bear regime.'
            : null
   };

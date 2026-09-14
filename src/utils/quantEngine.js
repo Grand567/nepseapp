@@ -780,7 +780,12 @@ export function classifyActionZone(stock, macroContext = {}) {
     zoneBadge = '🟡 EXIT ZONE (TAKE PROFIT / DISTRIBUTION)';
     zoneIcon = 'TrendingDown';
     const brokerWarn = hasHeavyBrokerDumping ? ` · ⚠️ ${brokerScore.label}: ${brokerScore.detail}` : '';
-    triggerLogic = `Overbought or institutional distribution detected (RSI: ${rsi.toFixed(0)}, I_SmartMoney: ${factors.iSmartMoney})${brokerWarn}.`;
+    const condLabel = hasHeavyBrokerDumping && rsi < 70
+      ? `Institutional distribution detected (I_SmartMoney: ${factors.iSmartMoney})`
+      : rsi >= 75
+      ? `Overbought peak detected (RSI: ${rsi.toFixed(0)})`
+      : `Overbought or institutional distribution detected (RSI: ${rsi.toFixed(0)}, I_SmartMoney: ${factors.iSmartMoney})`;
+    triggerLogic = `${condLabel}${brokerWarn}.`;
     entryTarget = `Avoid Fresh Buys (Pullback Target: Rs. ${(ltp * 0.90).toFixed(1)})`;
     profitTarget1 = `Rs. ${r2.toFixed(1)} (Major Pivot R2)`;
     profitTarget2 = `Rs. ${(high52w).toFixed(1)} (52W High Ceiling)`;

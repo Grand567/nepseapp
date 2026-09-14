@@ -510,6 +510,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   // A/D from real broker analysis
   const ad12M = useMemo(() => {
     if (realBrokerAnalysis) {
+      const topNetB = (realBrokerAnalysis.topNetBuyers || []).reduce((s, b) => s + (b.netAmt || (b.netQty * (d.ltp || 350))), 0);
+      const topNetS = (realBrokerAnalysis.topNetSellers || []).reduce((s, b) => s + Math.abs(b.netAmt || (b.netQty * (d.ltp || 350))), 0);
+      const netCr = (topNetB - topNetS) / 1e7;
+      const inflowStr = netCr >= 0 ? `+Rs. ${netCr.toFixed(2)} Cr` : `-Rs. ${Math.abs(netCr).toFixed(2)} Cr`;
+
       return {
         status: realBrokerAnalysis.adSignal,
         wyckoffPhase: realBrokerAnalysis.adSignal === 'Accumulation'
@@ -517,14 +522,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           : realBrokerAnalysis.adSignal === 'Distribution'
           ? 'Phase D (Distribution / UTAD)'
           : 'Phase B (Institutional Testing)',
+        phaseDescription: realBrokerAnalysis.adSignal === 'Distribution'
+          ? 'Institutional brokers are distributing inventory into retail bids.'
+          : realBrokerAnalysis.adSignal === 'Accumulation'
+          ? 'Smart money absorbing float across structural support levels.'
+          : 'Order flow remains balanced between institutional buyers and sellers.',
         chaikinMoneyFlow: realBrokerAnalysis.adRatio > 0
           ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bullish)`
           : `${(realBrokerAnalysis.adRatio * 100).toFixed(2)} (Bearish)`,
+        twelveMonthNetInflow: inflowStr,
         isReal: true
       };
     }
     return null;
-  }, [realBrokerAnalysis]);
+  }, [realBrokerAnalysis, d?.ltp]);
 
   const broker12M = useMemo(() => realBrokerAnalysis?.dailyFlow || [], [realBrokerAnalysis]);
   const quarterlyReports = useMemo(() => [], []);
@@ -1056,7 +1067,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
                     <div>
                       <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Entry Target</div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{actionZone.entryTarget.split(' ')[1] || 'LTP'}</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
+                        {actionZone.zone === 'Exit Zone' || actionZone.zone === 'Selling Zone' || actionZone.entryTarget.toLowerCase().includes('avoid') || actionZone.entryTarget.toLowerCase().includes('no entry')
+                          ? 'Avoid / Exit'
+                          : (actionZone.entryTarget.match(/Rs\.\s*[\d.]+/)?.[0] || actionZone.entryTarget.split(' ')[1] || 'LTP')}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Target 1 (ATR)</div>

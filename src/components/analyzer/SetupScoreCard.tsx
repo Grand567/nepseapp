@@ -29,12 +29,13 @@ interface SetupScoreCardProps {
 }
 
 function getVerdictColor(score: number, verdict?: string) {
-  if (verdict && verdict.toUpperCase().startsWith('NO TRADE')) {
+  const vUpper = (verdict || '').toUpperCase();
+  if (vUpper.startsWith('NO TRADE') || vUpper.startsWith('REDUCE') || vUpper.startsWith('EXIT') || vUpper.startsWith('AVOID')) {
     return { bg: 'rgba(239, 68, 68, 0.16)', border: 'rgba(239, 68, 68, 0.5)', text: '#f87171', badge: 'bg-rose-500/20 text-rose-300' };
   }
   if (score >= 85) return { bg: 'rgba(16, 185, 129, 0.16)', border: 'rgba(16, 185, 129, 0.5)', text: '#34d399', badge: 'bg-emerald-500/20 text-emerald-300' };
   if (score >= 70) return { bg: 'rgba(59, 130, 246, 0.16)', border: 'rgba(59, 130, 246, 0.5)', text: '#60a5fa', badge: 'bg-blue-500/20 text-blue-300' };
-  if (score >= 58) return { bg: 'rgba(56, 189, 248, 0.16)', border: 'rgba(56, 189, 248, 0.5)', text: '#38bdf8', badge: 'bg-sky-500/20 text-sky-300' };
+  if (score >= 58 || vUpper.includes('BUY') || vUpper.includes('ACCUMULATE')) return { bg: 'rgba(56, 189, 248, 0.16)', border: 'rgba(56, 189, 248, 0.5)', text: '#38bdf8', badge: 'bg-sky-500/20 text-sky-300' };
   if (score >= 45) return { bg: 'rgba(234, 179, 8, 0.16)', border: 'rgba(234, 179, 8, 0.5)', text: '#facc15', badge: 'bg-amber-500/20 text-amber-300' };
   if (score >= 32) return { bg: 'rgba(249, 115, 22, 0.16)', border: 'rgba(249, 115, 22, 0.5)', text: '#fb923c', badge: 'bg-orange-500/20 text-orange-300' };
   return { bg: 'rgba(244, 63, 94, 0.16)', border: 'rgba(244, 63, 94, 0.5)', text: '#fb7185', badge: 'bg-rose-500/20 text-rose-300' };
@@ -70,7 +71,9 @@ export function SetupScoreCard({
             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${theme.badge}`}>
               {verdict?.toUpperCase().startsWith('NO TRADE')
                 ? '🛑 NO TRADE / CAPITAL PRESERVATION'
-                : score >= 70
+                : (verdict?.toUpperCase().startsWith('REDUCE') || verdict?.toUpperCase().startsWith('AVOID') || verdict?.toUpperCase().startsWith('EXIT'))
+                ? '🛑 AVOID / DISTRIBUTION RISK'
+                : (score >= 58 || verdict?.toUpperCase().includes('BUY'))
                 ? '🟢 BULLISH SETUP'
                 : score <= 38
                 ? '🔴 BEARISH SETUP'
@@ -139,18 +142,15 @@ export function SetupScoreCard({
             <CheckCircle2 size={13} /> Why this setup scores well
           </div>
           <ul className="space-y-1 text-slate-300">
-            {confirmations.slice(0, 3).map((c, i) => (
+            {(bullishFactors.length > 0 ? bullishFactors.slice(0, 3) : confirmations.slice(0, 2)).map((item, i) => (
               <li key={i} className="flex items-start gap-1.5">
                 <span className="text-emerald-400 font-bold">✓</span>
-                <span>{c}</span>
+                <span>{item}</span>
               </li>
             ))}
-            {confirmations.length === 0 && bullishFactors.slice(0, 2).map((b, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>{b}</span>
-              </li>
-            ))}
+            {bullishFactors.length === 0 && confirmations.length === 0 && (
+              <li className="text-slate-500 italic">No significant bullish confirmation recorded.</li>
+            )}
           </ul>
         </div>
 

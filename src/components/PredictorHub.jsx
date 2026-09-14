@@ -36,7 +36,7 @@ import {
   Award,
   Shield
 } from 'lucide-react';
-import { getProxyBase, getCachedRealPriceHistory } from '../utils/liveData';
+import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
@@ -705,11 +705,32 @@ export default function PredictorHub({
     // - Score >= 58 (strictly BUY / ACCUMULATE or STRONG ENTRY ZONE)
     // - Positive volume participation (volume_surge_ratio >= 1.05 or volume >= 5000 shares)
     // - Below 12% gain (not frozen on 15% circuit ceiling)
+    // - Clear of institutional broker dumping
     const highConviction = scoredStocks.filter((s) => {
       const score = Number(s.composite_score || 0);
       const vsr = Number(s.volume_surge_ratio || 1);
       const vol = Number(s.volume || s.totalTradedQuantity || 0);
       const pCh = Number(s.pChange || 0);
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+
+      // Check broker vault dumping
+      const brokerData = getCachedRealBrokerAnalysis(sym);
+      if (brokerData) {
+        const adRatio = Number(brokerData.adRatio || 0);
+        const topSellers = brokerData.topNetSellers || brokerData.topSellers || [];
+        const totalVol = Number(brokerData.totalVolume || 1);
+        const netDumpVol = topSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(Number(b.netQty || b.sellQty || 0)), 0);
+        if (adRatio <= -0.10 || (netDumpVol / Math.max(1, totalVol) >= 0.20 && adRatio < 0)) {
+          return false;
+        }
+      }
+
+      // Disqualify unseasoned IPOs with < 45 sessions if history cached
+      const cachedHist = getCachedRealPriceHistory(sym);
+      if (cachedHist && Array.isArray(cachedHist) && cachedHist.length > 0 && cachedHist.length < 45) {
+        return false;
+      }
+
       return score >= 58 && pCh <= 12.0 && (vsr >= 1.05 || vol >= 5000);
     });
 
@@ -1690,6 +1711,17 @@ export default function PredictorHub({
                         border: '1px solid rgba(245, 158, 11, 0.3)'
                       }}>
                         ⚡ RVOL {vsr}x
+                      </span>
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 99,
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38bdf8',
+                        border: '1px solid rgba(56, 189, 248, 0.3)'
+                      }}>
+                        🛡️ Bayesian Edge Verified
                       </span>
                     </div>
                   </div>

@@ -35,6 +35,7 @@ import {
   fetchAllSecurities,
   fetchDividendHistory,
   fetchTodayPrice,
+  fetchRealBrokerAnalysis,
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
@@ -105,10 +106,11 @@ export function EntryExitAnalyzer({
         let stock = (stocks || []).find((s: any) => s.symbol === sym);
 
         setLoadingStep('Fetching 500-session OHLCV price history & corporate filings…');
-        const [history, divRes, liveRes] = await Promise.all([
+        const [history, divRes, liveRes, brokerRes] = await Promise.all([
           fetchPriceHistory(sym, 500),
           fetchDividendHistory(sym).catch(() => null),
           !stock || !stock.ltp ? fetchTodayPrice(sym).catch(() => null) : Promise.resolve(null),
+          fetchRealBrokerAnalysis(sym, 30).catch(() => null),
         ]);
 
         if (!stock || !stock.ltp) {
@@ -131,8 +133,12 @@ export function EntryExitAnalyzer({
           setDividendData(divRes.dividends);
         }
 
-        setLoadingStep('Computing multi-factor technicals, price action & historical analogs…');
-        const result = generateEntryExitPlan(stock, candleList, divRes?.dividends || [], { indices, maxHoldDays: 20 });
+        setLoadingStep('Computing multi-factor technicals, broker flow & historical analogs…');
+        const result = generateEntryExitPlan(stock, candleList, divRes?.dividends || [], { 
+          indices, 
+          maxHoldDays: 20,
+          brokerAnalysis: brokerRes
+        });
 
         if (!result.supported) {
           throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');

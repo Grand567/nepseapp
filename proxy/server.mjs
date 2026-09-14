@@ -16,6 +16,7 @@ import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.m
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
+import { getOrFetchBrokerAnalysis } from './brokerVault.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { 
   adToBs, 
@@ -2487,10 +2488,21 @@ app.get('/api/nepse/company-id/:symbol', async (req, res) => {
    ═══════════════════════════════════════════════════ */
 app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
-  const days = Math.min(parseInt(req.query.days || '30', 10), 90);
+  const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
   const cacheKey = `broker-analysis-${symbol}-${days}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
+
+  // Tier 1: Authentic Dual-Pipeline Broker Vault (ShareSansar + Persistent File Cache)
+  try {
+    const vaultData = await getOrFetchBrokerAnalysis(symbol, days);
+    if (vaultData && (vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0)) {
+      setCache(cacheKey, vaultData, 15 * 60 * 1000);
+      return res.json({ success: true, data: vaultData, source: 'broker_vault_authentic' });
+    }
+  } catch (vaultErr) {
+    console.warn(`[broker-analysis] BrokerVault error for ${symbol}:`, vaultErr.message);
+  }
 
   try {
     const pageSize = Math.min(Math.max(days * 20, 100), 500);
