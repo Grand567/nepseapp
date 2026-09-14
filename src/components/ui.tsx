@@ -363,29 +363,77 @@ export function StockSearchSelect({
     return map;
   }, [stocks]);
 
+  // Merged stock universe combining UNIFIED_UNIVERSE and live traded stocks from props
+  const allAvailableStocks = useMemo(() => {
+    const list = [...UNIFIED_UNIVERSE];
+    const seen = new Set(list.map((c) => c.symbol.toUpperCase()));
+    if (Array.isArray(stocks) && stocks.length > 0) {
+      for (const s of stocks) {
+        if (s && s.symbol) {
+          const sym = String(s.symbol).toUpperCase().trim();
+          if (!seen.has(sym)) {
+            seen.add(sym);
+            list.push({
+              symbol: sym,
+              name: s.companyName || s.name || sym,
+              sector: s.sector || 'Others',
+              basePrice: Number(s.ltp ?? s.price) || 100,
+            });
+          }
+        }
+      }
+    }
+    return list;
+  }, [stocks]);
+
   const selectedCompany = useMemo(() => {
     if (!value) return null;
-    return UNIFIED_UNIVERSE.find((c) => c.symbol.toUpperCase() === value.toUpperCase()) || null;
-  }, [value]);
+    const vUpper = value.toUpperCase();
+    return allAvailableStocks.find((c) => c.symbol.toUpperCase() === vUpper) || null;
+  }, [value, allAvailableStocks]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) {
+      // Default suggestions when search is empty: show active stocks with volume, or top universe names
+      if (Array.isArray(stocks) && stocks.length > 0) {
+        const topByVol = [...stocks]
+          .sort((a, b) => (Number(b.turnover || b.volume) || 0) - (Number(a.turnover || a.volume) || 0))
+          .slice(0, 15)
+          .map((s) => {
+            const sym = s.symbol.toUpperCase();
+            return allAvailableStocks.find((c) => c.symbol.toUpperCase() === sym) || {
+              symbol: sym,
+              name: s.companyName || sym,
+              sector: s.sector || 'Others',
+              basePrice: Number(s.ltp ?? s.price) || 100,
+            };
+          });
+        return topByVol;
+      }
+      return allAvailableStocks.slice(0, 15);
+    }
 
+    const exactSym: UnifiedStockItem[] = [];
     const startsWithSym: UnifiedStockItem[] = [];
     const containsSym: UnifiedStockItem[] = [];
+    const startsWithName: UnifiedStockItem[] = [];
     const containsName: UnifiedStockItem[] = [];
     const containsSector: UnifiedStockItem[] = [];
 
-    for (const c of UNIFIED_UNIVERSE) {
+    for (const c of allAvailableStocks) {
       const sym = c.symbol.toLowerCase();
       const name = c.name.toLowerCase();
       const sector = c.sector.toLowerCase();
 
-      if (sym.startsWith(q)) {
+      if (sym === q) {
+        exactSym.push(c);
+      } else if (sym.startsWith(q)) {
         startsWithSym.push(c);
       } else if (sym.includes(q)) {
         containsSym.push(c);
+      } else if (name.startsWith(q)) {
+        startsWithName.push(c);
       } else if (name.includes(q)) {
         containsName.push(c);
       } else if (sector.includes(q)) {
@@ -393,8 +441,8 @@ export function StockSearchSelect({
       }
     }
 
-    return [...startsWithSym, ...containsSym, ...containsName, ...containsSector].slice(0, 35);
-  }, [search]);
+    return [...exactSym, ...startsWithSym, ...containsSym, ...startsWithName, ...containsName, ...containsSector].slice(0, 35);
+  }, [search, allAvailableStocks, stocks]);
 
   const displayValue = isOpen
     ? search
@@ -427,25 +475,29 @@ export function StockSearchSelect({
           type="text"
           value={displayValue}
           onChange={(e) => {
-            setSearch(e.target.value);
-            if (e.target.value.trim()) {
-              setIsOpen(true);
-            } else {
-              setIsOpen(false);
+            const val = e.target.value;
+            setSearch(val);
+            setIsOpen(true);
+            const q = val.trim().toLowerCase();
+            if (q) {
+              const exact = allAvailableStocks.find(c => c.symbol.toLowerCase() === q);
+              if (exact) {
+                onChange(exact.symbol);
+              }
             }
           }}
           onFocus={(e) => {
-            if (search.trim()) {
-              setIsOpen(true);
-            }
+            setIsOpen(true);
             e.target.select();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setIsOpen(false);
-            } else if (e.key === 'Enter' && filtered.length > 0) {
+            } else if (e.key === 'Enter') {
               e.preventDefault();
-              handleSelect(filtered[0].symbol);
+              if (filtered.length > 0) {
+                handleSelect(filtered[0].symbol);
+              }
             }
           }}
           autoComplete="off"
@@ -513,7 +565,7 @@ export function StockSearchSelect({
         )}
       </div>
 
-      {isOpen && search.trim().length > 0 && (
+      {isOpen && (
         <div
           style={{
             backgroundColor: '#151922',
@@ -533,7 +585,7 @@ export function StockSearchSelect({
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 10px', borderBottom: '1px solid #1e293b', marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Matching Securities ({filtered.length})
+              {search.trim() ? `Matching Securities (${filtered.length})` : `Popular & Active Traded Securities (${filtered.length})`}
             </span>
             <button
               type="button"

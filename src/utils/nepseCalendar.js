@@ -111,7 +111,6 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-08-27': 'Janai Purnima / Raksha Bandhan',
   '2026-08-28': 'Gai Jatra (Public Holiday)',
   '2026-09-04': 'Krishna Janmashtami',
-  '2026-09-14': 'Haritalika Teej',
   '2026-09-19': 'Constitution Day (Sambidhan Diwas)',
   '2026-09-25': 'Indra Jatra',
   '2026-10-10': 'Ghatasthapana',
@@ -171,8 +170,15 @@ export function isNepsePublicHoliday(date = new Date()) {
   const nepaliDate = getNepaliDate(date);
   const iso = getIsoDateInNPT(date);
 
-  // 1. Check Bikram Sambat official holiday database
-  if (nepaliDate.isHoliday) {
+  // 1. Check Bikram Sambat official holiday database (exclude non-closing festivals like Teej / Rishi Panchami)
+  const NON_CLOSING_FESTIVALS = ['तीज', 'teej', 'ऋषि पञ्चमी', 'rishi panchami'];
+  const isExcluded = (name) => {
+    if (!name) return false;
+    const lower = String(name).toLowerCase();
+    return NON_CLOSING_FESTIVALS.some(f => lower.includes(f));
+  };
+
+  if (nepaliDate.isHoliday && !isExcluded(nepaliDate.holidayNameNp) && !isExcluded(nepaliDate.holidayNameEn)) {
     const holidayName = nepaliDate.holidayNameNp || nepaliDate.holidayNameEn;
     return {
       isHoliday: true,
@@ -201,7 +207,7 @@ export function isNepsePublicHoliday(date = new Date()) {
 
 /**
  * Checks if a given date is a weekly closure for NEPSE
- * NEPSE national weekend holidays: Saturday (6) and Sunday (0). Friday is an open trading day.
+ * NEPSE national weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
  */
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
@@ -222,8 +228,8 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // National weekend holidays: Saturday (6) and Sunday (0). Friday is an open trading day
-  const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
+  // National NEPSE weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
+  const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
@@ -233,7 +239,7 @@ export function isNepseWeekend(date = new Date()) {
 
 /**
  * Checks if a given date is an official active NEPSE trading day.
- * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
+ * Returns true for Sunday, Monday, Tuesday, Wednesday, Thursday when NOT a holiday.
  */
 export function isNepseTradingDay(date = new Date()) {
   const weekendCheck = isNepseWeekend(date);

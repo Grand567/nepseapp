@@ -277,7 +277,6 @@ export const BS_PUBLIC_HOLIDAYS = {
   '2083-05-11': { np: 'जनै पूर्णिमा / रक्षाबन्धन', en: 'Janai Purnima / Raksha Bandhan' },
   '2083-05-12': { np: 'गाईजात्रा', en: 'Gai Jatra' },
   '2083-05-19': { np: 'श्रीकृष्ण जन्माष्टमी', en: 'Krishna Janmashtami' },
-  '2083-05-29': { np: 'हरितालिका तीज', en: 'Haritalika Teej' },
   '2083-06-09': { np: 'इन्द्रजात्रा', en: 'Indra Jatra' },
   '2083-06-24': { np: 'घटस्थापना', en: 'Ghatasthapana' },
   '2083-07-01': { np: 'दशैं (फूलपाती)', en: 'Dashain (Phulpati)' },
@@ -465,9 +464,9 @@ export async function fetchLiveCalendarMonth(bsYear, bsMonth) {
     const isHoliday = localHoliday.isHoliday || isRemoteHoliday;
     const holidayName = localHoliday.holidayNameNp || festival || null;
 
-    // National weekend holidays: Saturday (6) and Sunday (0). Friday is open trading.
-    const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
-    const isTradingDay = !isWeekend && !isHoliday; // Monday to Friday
+    // National NEPSE weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
+    const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+    const isTradingDay = !isWeekend && !isHoliday; // Sunday to Thursday
 
     const dayObj = {
       bsYear,

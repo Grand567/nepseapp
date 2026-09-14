@@ -1340,7 +1340,7 @@ function AppInner() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {upcomingHolidaysList.map((h, idx) => {
-                      const isWeekendOff = (h.dayOfWeek === 6 || h.dayOfWeek === 0);
+                      const isWeekendOff = (h.dayOfWeek === 5 || h.dayOfWeek === 6);
                       return (
                         <div
                           key={`${h.bsYear}_${h.bsMonth}_${h.bsDay}_${idx}`}

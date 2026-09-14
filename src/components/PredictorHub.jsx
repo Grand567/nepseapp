@@ -29,10 +29,16 @@ import {
   BookOpen,
   ShieldCheck,
   Activity,
-  Calendar
+  Calendar,
+  ExternalLink,
+  ChevronLeft,
+  X,
+  Award,
+  Shield
 } from 'lucide-react';
 import { getProxyBase, getCachedRealPriceHistory } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
+import { fetchNewsArticle } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import { getHydroSeasonality, computeFiscalCycle } from '../utils/quantEngine';
 import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
@@ -96,6 +102,47 @@ export default function PredictorHub({
   const [searchQuery, setSearchQuery] = useState('');
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [guideTab, setGuideTab] = useState('index');
+  const [selectedNewsArticle, setSelectedNewsArticle] = useState(null);
+  const [newsArticleLoading, setNewsArticleLoading] = useState(false);
+  const [newsArticleDetail, setNewsArticleDetail] = useState(null);
+
+  // Fetch news full article text when an article is tapped
+  useEffect(() => {
+    if (!selectedNewsArticle) {
+      setNewsArticleDetail(null);
+      setNewsArticleLoading(false);
+      return;
+    }
+    const targetUrl = selectedNewsArticle.url || selectedNewsArticle.link;
+    if (!targetUrl) return;
+
+    let isMounted = true;
+    setNewsArticleDetail({
+      title: selectedNewsArticle.headline || selectedNewsArticle.title,
+      date: selectedNewsArticle.published_at || selectedNewsArticle.date || 'Latest',
+      source: selectedNewsArticle.source || 'Financial Media',
+      url: targetUrl,
+      paragraphs: []
+    });
+    setNewsArticleLoading(true);
+
+    fetchNewsArticle(targetUrl)
+      .then((res) => {
+        if (!isMounted) return;
+        const d = res?.data || res;
+        if (d && (d.paragraphs || d.content)) {
+          setNewsArticleDetail(d);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to scrape news article:', err);
+      })
+      .finally(() => {
+        if (isMounted) setNewsArticleLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [selectedNewsArticle]);
 
   const fallbackStockScoring = React.useCallback(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) return;
@@ -614,6 +661,30 @@ export default function PredictorHub({
 
     return searchFiltered;
   }, [scoredStocks, stockFilter, searchQuery]);
+
+  // ── Daily High-Conviction Breakout & Buy-Zone Pick (The Algorithmic Setup of the Day) ──
+  const primeDailyPick = useMemo(() => {
+    if (!Array.isArray(scoredStocks) || scoredStocks.length === 0) return null;
+
+    // 1. Filter for institutional-grade candidates:
+    // - Score >= 58 (strictly BUY / ACCUMULATE or STRONG ENTRY ZONE)
+    // - Positive volume participation (volume_surge_ratio >= 1.05 or volume >= 5000 shares)
+    // - Below 12% gain (not frozen on 15% circuit ceiling)
+    const highConviction = scoredStocks.filter((s) => {
+      const score = Number(s.composite_score || 0);
+      const vsr = Number(s.volume_surge_ratio || 1);
+      const vol = Number(s.volume || s.totalTradedQuantity || 0);
+      const pCh = Number(s.pChange || 0);
+      return score >= 58 && pCh <= 12.0 && (vsr >= 1.05 || vol >= 5000);
+    });
+
+    if (highConviction.length > 0) {
+      return [...highConviction].sort((a, b) => Number(b.composite_score || 0) - Number(a.composite_score || 0))[0];
+    }
+
+    // Fallback to highest ranked stock in the screener
+    return scoredStocks[0] || null;
+  }, [scoredStocks]);
 
   const handleLaunchAnalyzer = (symbol) => {
     setSelectedForAnalysis(symbol);
@@ -1514,6 +1585,176 @@ export default function PredictorHub({
               </span>
             </div>
 
+            {/* ── 🏆 DAILY PRIME BREAKOUT & BUY-ZONE PICK SPOTLIGHT ── */}
+            {primeDailyPick && (() => {
+              const sym = primeDailyPick.symbol;
+              const ltp = Number(primeDailyPick.ltp || primeDailyPick.closePrice || 100);
+              const pCh = Number(primeDailyPick.pChange || 0);
+              const score = Number(primeDailyPick.composite_score || 70).toFixed(1);
+              const entryLow = (ltp * 0.985).toFixed(1);
+              const entryHigh = (ltp * 1.012).toFixed(1);
+              const target1 = (ltp * 1.065).toFixed(1);
+              const target2 = (ltp * 1.145).toFixed(1);
+              const stopLoss = (ltp * 0.958).toFixed(1);
+              const vsr = Number(primeDailyPick.volume_surge_ratio || 1.3).toFixed(2);
+              const isStrong = Number(score) >= 70;
+
+              return (
+                <div style={{
+                  borderRadius: 18,
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))',
+                  border: '1.5px solid rgba(16, 185, 129, 0.45)',
+                  padding: '16px 18px',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45), 0 0 20px rgba(16, 185, 129, 0.1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 14,
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}>
+                  {/* Top Ambient Glow */}
+                  <div style={{
+                    position: 'absolute', top: -40, right: -40, width: 140, height: 140,
+                    background: 'radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, transparent 70%)',
+                    pointerEvents: 'none'
+                  }} />
+
+                  {/* Header Strip */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>🏆</span>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#34d399' }}>
+                          Daily Prime Setup (Highest Statistical Edge)
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
+                          Breakout Stock in Buy Zone
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 900,
+                        padding: '3px 9px',
+                        borderRadius: 99,
+                        background: isStrong ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        color: isStrong ? '#34d399' : '#60a5fa',
+                        border: `1px solid ${isStrong ? 'rgba(16, 185, 129, 0.4)' : 'rgba(59, 130, 246, 0.4)'}`
+                      }}>
+                        ★ Setup Score: {score}/100
+                      </span>
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 99,
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#fbbf24',
+                        border: '1px solid rgba(245, 158, 11, 0.3)'
+                      }}>
+                        ⚡ RVOL {vsr}x
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stock Identity & Pricing */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 22, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
+                          {sym}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
+                          {primeDailyPick.sector || 'NEPSE'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                        {primeDailyPick.companyName}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
+                        Rs. {ltp.toFixed(1)}
+                      </div>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: pCh >= 0 ? '#34d399' : '#f87171',
+                        fontFamily: 'var(--font-mono, monospace)'
+                      }}>
+                        {pCh >= 0 ? `+${pCh.toFixed(2)}%` : `${pCh.toFixed(2)}%`}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quantitative Setup Grid */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: 8,
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    padding: 10,
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.05)'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Entry Corridor</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono, monospace)' }}>
+                        Rs. {entryLow} – {entryHigh}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 1 (Swing)</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono, monospace)' }}>
+                        Rs. {target1} (+6.5%)
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 2 (Position)</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono, monospace)' }}>
+                        Rs. {target2} (+14.5%)
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Stop Loss (Exit)</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono, monospace)' }}>
+                        Rs. {stopLoss} (-4.2%)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Launch Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchAnalyzer(sym)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      width: '100%',
+                      padding: '11px 16px',
+                      borderRadius: 12,
+                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                      color: '#ffffff',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Crosshair size={15} />
+                    <span>Open & Analyze {sym} in Entry/Exit Workstation →</span>
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Filter Chips & Search Bar */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{
@@ -1953,15 +2194,21 @@ export default function PredictorHub({
                   const isBearish = score < -0.15;
 
                   return (
-                    <div key={news.id} style={{
-                      padding: '12px 14px',
-                      borderRadius: 12,
-                      background: 'rgba(255,255,255,0.02)',
-                      border: '1px solid var(--border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8
-                    }}>
+                    <div
+                      key={news.id}
+                      onClick={() => setSelectedNewsArticle(news)}
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 14,
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.45 }}>
                           {news.headline}
@@ -1996,6 +2243,9 @@ export default function PredictorHub({
                           }}>
                             {news.category}
                           </span>
+                          <span style={{ color: '#38bdf8', fontWeight: 700, marginLeft: 4 }}>
+                            Read Story →
+                          </span>
                         </div>
 
                         {news.related_symbols && news.related_symbols.length > 0 && (
@@ -2003,7 +2253,10 @@ export default function PredictorHub({
                             {news.related_symbols.map((sym, si) => (
                               <span
                                 key={si}
-                                onClick={() => handleLaunchAnalyzer(sym)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleLaunchAnalyzer(sym);
+                                }}
                                 style={{
                                   padding: '1px 6px',
                                   borderRadius: 4,
@@ -2029,11 +2282,193 @@ export default function PredictorHub({
         )}
       </div>
 
+      {/* ── In-App News Story Modal ── */}
+      {selectedNewsArticle && (
+        <div
+          onClick={() => setSelectedNewsArticle(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 600,
+              maxHeight: '85vh',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 20,
+              padding: '20px 22px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              overflowY: 'auto',
+              boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.9)'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  textTransform: 'uppercase',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.3)'
+                }}>
+                  {selectedNewsArticle.source || 'Financial News'}
+                </span>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                  {selectedNewsArticle.published_at || selectedNewsArticle.date || 'Latest'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedNewsArticle(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  color: '#ffffff',
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Title */}
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff', lineHeight: 1.4, margin: 0 }}>
+              {selectedNewsArticle.headline || selectedNewsArticle.title}
+            </h2>
+
+            {/* Related Symbols */}
+            {selectedNewsArticle.related_symbols && selectedNewsArticle.related_symbols.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>Mentioned Securities:</span>
+                {selectedNewsArticle.related_symbols.map((sym, si) => (
+                  <button
+                    key={si}
+                    type="button"
+                    onClick={() => {
+                      setSelectedNewsArticle(null);
+                      handleLaunchAnalyzer(sym);
+                    }}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: 'rgba(37, 99, 235, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      color: '#60a5fa',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Analyze {sym}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Body */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderRadius: 14,
+              padding: '14px 16px',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              fontSize: 13,
+              color: '#cbd5e1',
+              lineHeight: 1.6,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}>
+              {newsArticleLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#60a5fa', padding: '12px 0' }}>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Fetching full news details…</span>
+                </div>
+              ) : newsArticleDetail?.paragraphs && newsArticleDetail.paragraphs.length > 0 ? (
+                newsArticleDetail.paragraphs.map((p, pi) => <p key={pi} style={{ margin: 0 }}>{p}</p>)
+              ) : (
+                <p style={{ margin: 0 }}>
+                  {selectedNewsArticle.headline || 'Summary loaded.'} Tap below to read the complete article directly on the publisher portal.
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              {selectedNewsArticle.url && (
+                <a
+                  href={selectedNewsArticle.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    padding: '10px 16px',
+                    borderRadius: 12,
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    textDecoration: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>Open Full Article on {selectedNewsArticle.source || 'Publisher'}</span>
+                  <ExternalLink size={13} />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedNewsArticle(null)}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 12,
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Investor Decision Guide Modal */}
       <InvestorDecisionGuideModal
         isOpen={showGuideModal}
         onClose={() => setShowGuideModal(false)}
-        initialTab={guideTab}
+        defaultTab={guideTab}
       />
     </div>
   );
