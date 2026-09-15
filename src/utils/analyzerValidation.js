@@ -33,7 +33,7 @@
  *
  *   6. CIRCUIT-BREAKER AWARE TARGET CHECK  (auditCircuitBreakers)
  *      Verifies that ATR-based targets don't imply moves impossible
- *      under NEPSE's ±5%/±10% intraday circuit-breaker rules within
+ *      under NEPSE's ±15% intraday circuit-breaker rules within
  *      the stated holding period.
  *
  * HOW TO RUN

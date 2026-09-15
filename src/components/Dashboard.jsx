@@ -592,6 +592,24 @@ function TradingChart({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   NEPSE CIRCUIT DETECTION HELPER (SEBON Fourth Amendment Bylaws 2082: ±15%)
+═══════════════════════════════════════════════════════════════════════════ */
+const isCircuitStock = (s, direction = 'any') => {
+  const chg = Number(s?.pChange) || 0;
+  if (s?.isCircuitHit) {
+    if (direction === 'pos') return chg > 0;
+    if (direction === 'neg') return chg < 0;
+    return true;
+  }
+  // Upper/Lower 15% circuit zone (>= 13.5%) or legacy 10% circuit locks from historical snapshots (>= 9.8%)
+  const isPos = chg >= 13.5 || (chg >= 9.8 && chg <= 10.05);
+  const isNeg = chg <= -13.5 || (chg <= -9.8 && chg >= -10.05);
+  if (direction === 'pos') return isPos;
+  if (direction === 'neg') return isNeg;
+  return isPos || isNeg;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
    CHANGE SUMMARY MODAL
 ═══════════════════════════════════════════════════════════════════════════ */
 function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelectStock }) {
@@ -605,8 +623,8 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
     if (tab === 'advanced') list = stocks.filter(s => (s.pChange || 0) > 0);
     else if (tab === 'declined') list = stocks.filter(s => (s.pChange || 0) < 0);
     else if (tab === 'unchanged') list = stocks.filter(s => (s.pChange || 0) === 0);
-    else if (tab === 'circuit_pos') list = stocks.filter(s => (s.pChange || 0) >= 9.0);
-    else if (tab === 'circuit_neg') list = stocks.filter(s => (s.pChange || 0) <= -9.0);
+    else if (tab === 'circuit_pos') list = stocks.filter(s => isCircuitStock(s, 'pos'));
+    else if (tab === 'circuit_neg') list = stocks.filter(s => isCircuitStock(s, 'neg'));
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -648,8 +666,8 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
             { id: 'advanced', label: 'Advanced', count: stocks.filter(s => (s.pChange || 0) > 0).length, color: 'var(--bull)' },
             { id: 'declined', label: 'Declined', count: stocks.filter(s => (s.pChange || 0) < 0).length, color: '#F43F5E' },
             { id: 'unchanged', label: 'Unchanged', count: stocks.filter(s => (s.pChange || 0) === 0).length, color: 'var(--text-muted)' },
-            { id: 'circuit_pos', label: '+ve Circuit', count: stocks.filter(s => (s.pChange || 0) >= 9.0).length, color: 'var(--bull)' },
-            { id: 'circuit_neg', label: '-ve Circuit', count: stocks.filter(s => (s.pChange || 0) <= -9.0).length, color: '#F43F5E' },
+            { id: 'circuit_pos', label: '+ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'pos')).length, color: 'var(--bull)' },
+            { id: 'circuit_neg', label: '-ve Circuit (15%)', count: stocks.filter(s => isCircuitStock(s, 'neg')).length, color: '#F43F5E' },
           ].map(t => (
             <button
               key={t.id}
@@ -1282,8 +1300,8 @@ export default function Dashboard({
   const advancedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) > 0).length, [stocks]);
   const declinedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) < 0).length, [stocks]);
   const unchangedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) === 0).length, [stocks]);
-  const circuitPosCount = useMemo(() => stocks.filter(s => (s.pChange || 0) >= 9.0).length, [stocks]);
-  const circuitNegCount = useMemo(() => stocks.filter(s => (s.pChange || 0) <= -9.0).length, [stocks]);
+  const circuitPosCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'pos')).length, [stocks]);
+  const circuitNegCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'neg')).length, [stocks]);
 
   // ── NEPSE Market Sentiment & Fear & Greed Index (0 - 100) ──
   const fearGreedData = useMemo(() => {
@@ -1399,9 +1417,9 @@ export default function Dashboard({
   }, [stocks]);
 
   const circuitStocks = useMemo(() => {
-    const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 9.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+    const hits = stocks.filter(s => isCircuitStock(s)).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
     if (hits.length >= 4) return hits.slice(0, 8);
-    const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 4.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+    const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 6.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
     const combined = [...hits, ...nearHits.filter(s => !hits.some(h => h.symbol === s.symbol))];
     if (combined.length > 0) return combined.slice(0, 8);
     return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
@@ -1579,9 +1597,9 @@ export default function Dashboard({
     } else if (breadthFilter === 'unchanged') {
       list = list.filter(s => (s.pChange || 0) === 0);
     } else if (breadthFilter === 'circuit_pos') {
-      list = list.filter(s => (s.pChange || 0) >= 9.0);
+      list = list.filter(s => isCircuitStock(s, 'pos'));
     } else if (breadthFilter === 'circuit_neg') {
-      list = list.filter(s => (s.pChange || 0) <= -9.0);
+      list = list.filter(s => isCircuitStock(s, 'neg'));
     }
 
     if (selectedSector !== 'All') {
@@ -2064,6 +2082,44 @@ export default function Dashboard({
           </div>
         </div>
 
+        {/* SEBON Market-Wide Index Circuit Breaker Telemetry Alert (5% & 8% Thresholds) */}
+        {heroTimeframe === '1D' && Math.abs(heroTfStats.pChange || 0) >= 4.0 && (
+          <div style={{
+            marginBottom: 10,
+            padding: '7px 12px',
+            borderRadius: 8,
+            fontSize: 11.5,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: Math.abs(heroTfStats.pChange) >= 8.0 
+              ? 'rgba(244, 63, 94, 0.2)' 
+              : Math.abs(heroTfStats.pChange) >= 5.0 
+                ? 'rgba(245, 158, 11, 0.2)' 
+                : 'rgba(56, 189, 248, 0.15)',
+            border: Math.abs(heroTfStats.pChange) >= 8.0 
+              ? '1px solid #F43F5E' 
+              : Math.abs(heroTfStats.pChange) >= 5.0 
+                ? '1px solid #F59E0B' 
+                : '1px solid #38BDF8',
+            color: Math.abs(heroTfStats.pChange) >= 8.0 
+              ? '#FCA5A5' 
+              : Math.abs(heroTfStats.pChange) >= 5.0 
+                ? '#FCD34D' 
+                : '#7DD3FC'
+          }}>
+            <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0 }} />
+            <span>
+              {Math.abs(heroTfStats.pChange) >= 8.0
+                ? `🚨 SEBON Level 2 Circuit Breaker: Index moved ${heroTfStats.pChange > 0 ? '+' : ''}${heroTfStats.pChange.toFixed(2)}% (≥8%). Full session halt triggered.`
+                : Math.abs(heroTfStats.pChange) >= 5.0
+                  ? `⚠️ SEBON Level 1 Circuit Breaker: Index moved ${heroTfStats.pChange > 0 ? '+' : ''}${heroTfStats.pChange.toFixed(2)}% (≥5%). 15-minute trading suspension active.`
+                  : `⚡ SEBON Circuit Radar: Index at ${heroTfStats.pChange > 0 ? '+' : ''}${heroTfStats.pChange.toFixed(2)}% is within 1% of the 5% market circuit breaker threshold.`}
+            </span>
+          </div>
+        )}
+
         {/* Dedicated Responsive Timeframe Selector Bar */}
         <div style={{
           display: 'flex',
@@ -2175,8 +2231,8 @@ export default function Dashboard({
                 { id: 'advanced', label: `▲ Advances ${advancedCount}`, sub: `${advPct}%`, col: 'var(--bull)', bg: 'rgba(16,185,129,0.1)' },
                 { id: 'declined', label: `▼ Declines ${declinedCount}`, sub: `${decPct}%`, col: '#F43F5E', bg: 'rgba(244,63,94,0.1)' },
                 { id: 'unchanged', label: `◼ Flat ${unchangedCount}`, sub: `${uncPct}%`, col: 'var(--text-muted)', bg: 'rgba(255,255,255,0.04)' },
-                { id: 'circuit_pos', label: `⚡ +Circuit ${circuitPosCount}`, sub: 'Limit Up', col: '#10B981', bg: 'rgba(16,185,129,0.12)' },
-                { id: 'circuit_neg', label: `⚡ -Circuit ${circuitNegCount}`, sub: 'Limit Down', col: '#F43F5E', bg: 'rgba(244,63,94,0.12)' },
+                { id: 'circuit_pos', label: `⚡ +Circuit ${circuitPosCount}`, sub: '15% Limit Up', col: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+                { id: 'circuit_neg', label: `⚡ -Circuit ${circuitNegCount}`, sub: '15% Limit Down', col: '#F43F5E', bg: 'rgba(244,63,94,0.12)' },
               ].map(chip => {
                 const isSelected = breadthFilter === chip.id;
                 return (

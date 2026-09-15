@@ -237,9 +237,9 @@ function computeStockTimeframeMetrics(stock: any) {
   };
 }
 
-// ── Universal screener: Powers 50+ sub-tabs with interactive TimeframeFilterBar ──
+// ── Universal screener: Powers sub-tabs with interactive TimeframeFilterBar where applicable ──
 export function UniversalScreener({
-  filterFn, sortFn, customCols = [], banner, insight, defaultLimit = null, cols, title,
+  filterFn, sortFn, customCols = [], banner, insight, defaultLimit = null, cols, title, hideTimeframe = false,
 }: {
   filterFn?: (s: EnrichedStock, tf?: string) => any;
   sortFn?: (a: EnrichedStock, b: EnrichedStock, tf?: string) => number;
@@ -249,6 +249,7 @@ export function UniversalScreener({
   defaultLimit?: number | null;
   cols?: ColDef[];
   title?: string;
+  hideTimeframe?: boolean;
 }) {
   const [data, setData] = useState<any[]>([]);
   const [source, setSource] = useState('');
@@ -263,14 +264,14 @@ export function UniversalScreener({
       const { stocks, source: src } = await loadNepseData();
       if (stocks?.length) setRawTotal(stocks.length);
 
-      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is selected
-      if (activeTf !== '1D' && stocks?.length) {
-        const topToWarm = stocks.slice(0, 30);
+      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is active
+      if (!hideTimeframe && activeTf !== '1D' && stocks?.length) {
+        const topToWarm = stocks.slice(0, 60);
         await Promise.allSettled(
           topToWarm.map(s => {
             const sym = s.symbol;
             if (sym && !getCachedRealPriceHistory(sym)) {
-              return fetchPriceHistory(sym, 180);
+              return fetchPriceHistory(sym, 365);
             }
             return Promise.resolve(null);
           })
@@ -307,14 +308,14 @@ export function UniversalScreener({
 
         return {
           ...stock,
-          // CRITICAL: Overwrite active metrics so ANY sub-tab filterFn and sortFn naturally adapt to the selected horizon!
-          pChange: tfMetrics.pChange,
-          percentageChange: tfMetrics.pChange,
-          displayPChange: tfMetrics.pChange,
-          volume: tfMetrics.volume,
-          totalTradedQuantity: tfMetrics.volume,
-          turnover: tfMetrics.turnover,
-          totalTurnover: tfMetrics.turnover,
+          // Overwrite active metrics so sub-tab filterFn and sortFn naturally adapt to the selected horizon
+          pChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
+          percentageChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
+          displayPChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
+          volume: hideTimeframe ? (stock.volume || 0) : tfMetrics.volume,
+          totalTradedQuantity: hideTimeframe ? (stock.volume || 0) : tfMetrics.volume,
+          turnover: hideTimeframe ? (stock.turnover || 0) : tfMetrics.turnover,
+          totalTurnover: hideTimeframe ? (stock.turnover || 0) : tfMetrics.turnover,
           volumeSurgeRatio: tfMetrics.volumeSurgeRatio,
           high: tfMetrics.high,
           low: tfMetrics.low,
@@ -322,7 +323,7 @@ export function UniversalScreener({
           stealthAccumulation: tfMetrics.stealthAccumulation,
           rsi: tfMetrics.rsi,
           technicalScore: tfMetrics.technicalScore,
-          displayHorizon: activeTf,
+          displayHorizon: hideTimeframe ? '1D' : activeTf,
           dailyPChange: stock.pChange,
           dailyVolume: stock.volume,
           dailyTurnover: stock.turnover,
@@ -336,22 +337,21 @@ export function UniversalScreener({
       let processed = [...enrichedForTf];
       let fallbackMsg = '';
       if (filterFn) {
-        const strictlyMatched = processed.filter(s => filterFn(s, activeTf));
+        const strictlyMatched = processed.filter(s => filterFn(s, hideTimeframe ? '1D' : activeTf));
         if (strictlyMatched.length > 0) {
           processed = strictlyMatched;
           fallbackMsg = '';
         } else {
-          // Graceful fallback for non-trading hours, quiet market sessions, or extreme thresholds:
-          // Rank all securities by sortFn if available, otherwise by absolute percentage change or volume
+          // Graceful fallback for non-trading hours or quiet sessions:
           const sortedAll = [...enrichedForTf].sort((a, b) => {
-            if (sortFn) return sortFn(a, b, activeTf);
+            if (sortFn) return sortFn(a, b, hideTimeframe ? '1D' : activeTf);
             return Math.abs(b.displayPChange || 0) - Math.abs(a.displayPChange || 0);
           });
           processed = sortedAll.slice(0, defaultLimit || 20);
-          fallbackMsg = `No scrips triggered this exact extreme filter on the ${activeTf} horizon today. Displaying top ranked relative candidates for current market conditions.`;
+          fallbackMsg = `No scrips triggered this exact filter on the ${hideTimeframe ? '1D' : activeTf} horizon today. Displaying top ranked candidates for current market conditions.`;
         }
       }
-      if (sortFn && !fallbackMsg) processed = processed.sort((a, b) => sortFn(a, b, activeTf));
+      if (sortFn && !fallbackMsg) processed = processed.sort((a, b) => sortFn(a, b, hideTimeframe ? '1D' : activeTf));
       else if (!sortFn && !fallbackMsg) processed = processed.sort((a, b) => (b.displayPChange || 0) - (a.displayPChange || 0));
 
       if (defaultLimit && !fallbackMsg) processed = processed.slice(0, defaultLimit);
@@ -363,12 +363,12 @@ export function UniversalScreener({
   };
 
   useEffect(() => {
-    loadData(timeframe);
-  }, [timeframe]);
+    loadData(hideTimeframe ? '1D' : timeframe);
+  }, [timeframe, hideTimeframe]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData(timeframe);
+    await loadData(hideTimeframe ? '1D' : timeframe);
     setRefreshing(false);
   };
 
@@ -377,19 +377,19 @@ export function UniversalScreener({
       if (c.key === 'pChange') {
         return {
           ...c,
-          label: `${timeframe} % Chg`,
+          label: hideTimeframe || timeframe === '1D' ? '% Chg' : `${timeframe} % Chg`,
           format: (v: any, row: any) => {
-            const val = row?.displayPChange ?? v;
+            const val = hideTimeframe ? (row?.dailyPChange ?? row?.pChange ?? v) : (row?.displayPChange ?? v);
             return val != null ? `${val > 0 ? '+' : ''}${Number(val).toFixed(2)}%` : '—';
           },
-          colorFn: (v: any, row: any) => ((row?.displayPChange ?? v ?? 0) >= 0 ? '#16a34a' : '#dc2626')
+          colorFn: (v: any, row: any) => ((hideTimeframe ? (row?.dailyPChange ?? row?.pChange ?? v ?? 0) : (row?.displayPChange ?? v ?? 0)) >= 0 ? '#16a34a' : '#dc2626')
         };
       }
       if (c.key === 'volume') {
-        return { ...c, label: timeframe === '1D' ? 'Volume' : `${timeframe} Vol` };
+        return { ...c, label: hideTimeframe || timeframe === '1D' ? 'Volume' : `${timeframe} Vol` };
       }
       if (c.key === 'turnover') {
-        return { ...c, label: timeframe === '1D' ? 'Turnover' : `${timeframe} Turnover` };
+        return { ...c, label: hideTimeframe || timeframe === '1D' ? 'Turnover' : `${timeframe} Turnover` };
       }
       return c;
     }),
@@ -399,19 +399,21 @@ export function UniversalScreener({
   if (loading) return <Spinner text="Scanning all 346 NEPSE listed securities…" />;
   return (
     <div className="space-y-3">
-      {/* Interactive Timeframe Filter Bar placed on every sub-tab */}
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title={title}
-        onRefresh={handleRefresh}
-        isRefreshing={refreshing}
-      />
+      {/* Interactive Timeframe Filter Bar placed on sub-tabs that genuinely benefit from multi-horizon analysis */}
+      {!hideTimeframe && (
+        <TimeframeFilterBar
+          timeframe={timeframe}
+          onSelectTimeframe={setTimeframe}
+          title={title}
+          onRefresh={handleRefresh}
+          isRefreshing={refreshing}
+        />
+      )}
 
       {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
-        <InfoBanner type="warning">No stocks match this criteria for timeframe {timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
+        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
       ) : (
         <>
           <SourceBar count={data.length} source={source} totalCount={rawTotal} />
@@ -871,6 +873,18 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
   const loadData = async (activeTf = timeframe) => {
     try {
       const { stocks } = await loadNepseData();
+
+      // Pre-warm authentic price history for top active securities when multi-timeframe horizon is selected
+      if (activeTf !== '1D' && stocks?.length) {
+        const topPool = stocks.slice(0, 60);
+        await Promise.allSettled(
+          topPool.map(s => {
+            const sym = s.symbol;
+            return sym && !getCachedRealPriceHistory(sym) ? fetchPriceHistory(sym, 365) : Promise.resolve(null);
+          })
+        );
+      }
+
       const mapped = stocks.map(s => {
         const metricsMap = computeStockTimeframeMetrics(s);
         const tfMetrics = metricsMap[activeTf as keyof typeof metricsMap] || metricsMap['1D'];
@@ -2079,6 +2093,15 @@ export function SectorHeatmapService() {
     setLoading(true);
     try {
       const { stocks } = await loadNepseData();
+
+      // Pre-warm anchor stocks from each sector to ensure authentic multi-timeframe sector rotation
+      if (activeTf !== '1D' && stocks?.length) {
+        const sectorAnchors = ['NABIL', 'GBIME', 'SHIVM', 'CHCL', 'CIT', 'HDL', 'NRIC', 'NICA', 'UNL', 'STC', 'NTC', 'HATHY', 'SONA'];
+        await Promise.allSettled(
+          sectorAnchors.map(sym => !getCachedRealPriceHistory(sym) ? fetchPriceHistory(sym, 365) : Promise.resolve(null))
+        );
+      }
+
       const map: Record<string, any> = {};
       stocks.forEach((s) => {
         const sec = s.sector || 'Others';
@@ -2468,9 +2491,9 @@ export function LiveFloorsheetService() {
                     <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
                       <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-rose-400">#{s}</span>
                     </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">{Math.round(Number(r.quantity || 0) * tfMultiplier).toLocaleString()}</td>
+                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">{Math.round(Number(r.quantity || 0)).toLocaleString()}</td>
                     <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-slate-200">Rs. {Number(r.rate || 0).toLocaleString()}</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">Rs. {Math.round(Number(r.amount || 0) * tfMultiplier).toLocaleString()}</td>
+                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">Rs. {Math.round(Number(r.amount || 0)).toLocaleString()}</td>
                   </tr>
                 );
               })}
@@ -2687,8 +2710,9 @@ export function BrokerFavouritesService() {
   const loadData = async (tf = timeframe) => {
     setLoading(true);
     try {
-      const { stocks } = await loadNepseData();
-      const heatmapRes = await fetchBrokerHeatmap().catch(() => null);
+      const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+      const tfDays = daysMap[tf] || 1;
+      const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
       const heatmapData = heatmapRes?.data || heatmapRes;
       const matrix = heatmapData?.matrix || [];
 
@@ -2898,7 +2922,7 @@ export function BrokerAnalysisService() {
   const [refreshing, setRefreshing] = useState(false);
   const [brokerData, setBrokerData] = useState<any>(null);
 
-  const daysMap: Record<string, number> = { '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
 
   const loadData = async () => {
     if (!selectedSymbol) {
@@ -3649,11 +3673,12 @@ export function MutualFundsService() {
 // ── Compare stocks ──
 export function CompareStocks() {
   const [symbols, setSymbols] = useState<string[]>([]);
-  const [a, setA] = useState('');
-  const [b, setB] = useState('');
+  const [a, setA] = useState('NABIL');
+  const [b, setB] = useState('GBIME');
   const [stocks, setStocks] = useState<EnrichedStock[]>([]);
   const [timeframe, setTimeframe] = useState('1D');
   const [refreshing, setRefreshing] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   const loadData = async () => {
     try {
@@ -3667,9 +3692,28 @@ export function CompareStocks() {
     loadData();
   }, []);
 
+  // Fetch and cache authentic historical candles for both stocks whenever chosen
+  useEffect(() => {
+    let active = true;
+    const fetchHistories = async () => {
+      const promises = [];
+      if (a && !getCachedRealPriceHistory(a)) promises.push(fetchPriceHistory(a, 365));
+      if (b && !getCachedRealPriceHistory(b)) promises.push(fetchPriceHistory(b, 365));
+      if (promises.length > 0) {
+        await Promise.allSettled(promises);
+        if (active) setHistoryVersion(v => v + 1);
+      }
+    };
+    fetchHistories();
+    return () => { active = false; };
+  }, [a, b]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
+    if (a) await fetchPriceHistory(a, 365);
+    if (b) await fetchPriceHistory(b, 365);
     await loadData();
+    setHistoryVersion(v => v + 1);
     setRefreshing(false);
   };
 

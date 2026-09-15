@@ -424,31 +424,51 @@ function normalizeLiveArray(arr) {
     const companyName = fullIncomingName || prev?.companyName || prev?.name || sym;
     const sector = (r.sector && r.sector !== 'Unknown') ? r.sector : (prev?.sector || 'Others');
 
-    // Indicators
-    const rsi = Number(r.rsi ?? prev?.rsi ?? Math.max(8, Math.min(94, +(50 + pCh * 4.2).toFixed(1))));
-    const macd = (r.macd && typeof r.macd === 'object' && r.macd.histogram !== undefined)
-      ? r.macd
-      : (prev?.macd || { macdLine: +((pCh * 0.35) + 0.5).toFixed(2), signal: 0.5, histogram: +(pCh * 0.35).toFixed(2) });
-
     let realEma50 = r.ema50 ? Number(r.ema50) : (prev?.isRealEma ? prev.ema50 : null);
     let realEma20 = r.ema20 ? Number(r.ema20) : (prev?.isRealEma ? prev.ema20 : null);
+    let realRsi = r.rsi ? Number(r.rsi) : null;
+    let realMacd = (r.macd && typeof r.macd === 'object' && r.macd.histogram !== undefined) ? r.macd : null;
     let isRealEma = Boolean(realEma50);
     const cachedHist = getCachedRealPriceHistory(sym);
-    if (!realEma50 && Array.isArray(cachedHist) && cachedHist.length >= 15) {
+    if (Array.isArray(cachedHist) && cachedHist.length >= 15) {
       const sorted = cachedHist.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
       const cList = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
       if (cList.length >= 15) {
-        const s50 = calculateEMA(cList, Math.min(50, cList.length));
-        if (s50.length > 0) {
-          realEma50 = Number(s50[s50.length - 1].toFixed(1));
-          isRealEma = true;
+        if (!realEma50) {
+          const s50 = calculateEMA(cList, Math.min(50, cList.length));
+          if (s50.length > 0) {
+            realEma50 = Number(s50[s50.length - 1].toFixed(1));
+            isRealEma = true;
+          }
+        }
+        if (!realRsi) {
+          const rVal = calculateRSI(cList, 14);
+          if (rVal != null && !isNaN(rVal)) {
+            realRsi = Number(rVal.toFixed(1));
+          }
+        }
+        if (!realMacd && cList.length >= 26) {
+          const mRes = calculateMACD(cList);
+          if (mRes) {
+            realMacd = {
+              macdLine: Number(mRes.line || 0),
+              signal: Number(mRes.signal || 0),
+              histogram: Number(mRes.histogram || 0)
+            };
+          }
         }
       }
-      if (cList.length >= 10) {
+      if (!realEma20 && cList.length >= 10) {
         const s20 = calculateEMA(cList, Math.min(20, cList.length));
         if (s20.length > 0) realEma20 = Number(s20[s20.length - 1].toFixed(1));
       }
     }
+
+    // Authentic Indicators: calculated from genuine candle series when cached
+    const rsi = Number(realRsi ?? r.rsi ?? prev?.rsi ?? Math.max(8, Math.min(94, +(50 + pCh * 4.2).toFixed(1))));
+    const macd = realMacd || ((r.macd && typeof r.macd === 'object' && r.macd.histogram !== undefined)
+      ? r.macd
+      : (prev?.macd || { macdLine: +((pCh * 0.35) + 0.5).toFixed(2), signal: 0.5, histogram: +(pCh * 0.35).toFixed(2) }));
 
     const ema20 = realEma20 || (prev?.ema20 ? Number(prev.ema20) : +(ltp * 0.98).toFixed(1));
     const ema50 = realEma50 || (prev?.ema50 ? Number(prev.ema50) : null);

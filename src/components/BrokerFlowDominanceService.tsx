@@ -130,15 +130,19 @@ export function BrokerFlowDominanceService({
 
         let topStock = '—';
         let maxScripAmt = 0;
-        if (b.scrips && typeof b.scrips === 'object') {
-          Object.entries(b.scrips).forEach(([sSym, sVal]: [string, any]) => {
-            const sAmt = Number(sVal?.buy || 0) + Number(sVal?.sell || 0);
-            if (sAmt > maxScripAmt) {
-              maxScripAmt = sAmt;
-              topStock = sSym;
-            }
-          });
-        }
+        const scripsList: { symbol: string; buy: number; sell: number }[] = Array.isArray(b.scrips)
+          ? b.scrips.map((s: any) => ({ symbol: String(s?.symbol || ''), buy: Number(s?.buy || 0), sell: Number(s?.sell || 0) }))
+          : (b.scrips && typeof b.scrips === 'object')
+            ? Object.entries(b.scrips).map(([sSym, sVal]: [string, any]) => ({ symbol: sSym, buy: Number(sVal?.buy || 0), sell: Number(sVal?.sell || 0) }))
+            : [];
+
+        scripsList.forEach((s) => {
+          const sAmt = s.buy + s.sell;
+          if (sAmt > maxScripAmt && s.symbol) {
+            maxScripAmt = sAmt;
+            topStock = s.symbol;
+          }
+        });
 
         let bias: BrokerStat['bias'] = 'Mild Accumulation';
         if (netFlow > 8000000) bias = 'Aggressive Accumulation';
@@ -297,9 +301,14 @@ export function BrokerFlowDominanceService({
       heatmapData.matrix.forEach((bItem: any) => {
         const bId = String(bItem.broker || '').trim();
         if (!bId || !bItem.scrips) return;
-        Object.entries(bItem.scrips).forEach(([sym, sVal]: [string, any]) => {
-          const bAmt = Number(sVal?.buy || 0);
-          if (bAmt <= 0) return;
+        const scripsList: { symbol: string; buy: number }[] = Array.isArray(bItem.scrips)
+          ? bItem.scrips.map((s: any) => ({ symbol: String(s?.symbol || ''), buy: Number(s?.buy || 0) }))
+          : (bItem.scrips && typeof bItem.scrips === 'object')
+            ? Object.entries(bItem.scrips).map(([sym, sVal]: [string, any]) => ({ symbol: sym, buy: Number(sVal?.buy || 0) }))
+            : [];
+
+        scripsList.forEach(({ symbol: sym, buy: bAmt }) => {
+          if (!sym || bAmt <= 0) return;
           if (!stockBrokerMap.has(sym)) {
             stockBrokerMap.set(sym, { totalBuy: 0, brokers: new Map() });
           }

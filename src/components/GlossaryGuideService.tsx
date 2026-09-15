@@ -54,9 +54,23 @@ const GLOSSARY_TERMS: TermItem[] = [
   {
     term: 'Circuit Breaker (15% Daily Limit)',
     category: 'Trading & Operations',
-    definition: 'Statutory price fluctuation limit preventing extreme intraday volatility.',
-    nepseContext: 'Effective Baishakh 2083 (April 2026), NEPSE expanded the individual scrip daily circuit band to ±15% from the previous ±10%.',
+    definition: 'Statutory price fluctuation limit preventing extreme intraday volatility on individual scrips.',
+    nepseContext: 'Effective Baishakh 2083 (April 2026) under SEBON Fourth Amendment 2082, NEPSE expanded the individual scrip daily circuit band to ±15% from the previous ±10%.',
     example: 'A stock closing at Rs. 1,000 can trade between Rs. 850 (lower circuit) and Rs. 1,150 (upper circuit).',
+  },
+  {
+    term: 'Market-Wide Circuit Breakers (5% & 8% Index Halts)',
+    category: 'Trading & Operations',
+    definition: 'Exchange-wide trading suspensions triggered when the benchmark NEPSE Index experiences extreme systemic surges or crashes.',
+    nepseContext: 'Under SEBON Fourth Amendment 2082: (1) A 5% index swing within the first 2 hours halts market trading for 15 minutes; (2) An 8% index swing at any time terminates trading for the remainder of the session.',
+    example: 'If the NEPSE Index rises or drops 5% before 1:00 PM, all trading pauses for 15 minutes. At 8% movement, the market immediately closes for the day.',
+  },
+  {
+    term: 'Pre-Open Session Price Limit (±5%)',
+    category: 'Trading & Operations',
+    definition: 'Permitted price variation band for entering opening orders between 10:30 AM and 10:45 AM before normal market open.',
+    nepseContext: 'Expanded from ±2% to ±5% of previous day close to allow more realistic initial price discovery and smoother transition into continuous trading.',
+    example: 'For a stock with Rs. 400 previous close, pre-open orders can range between Rs. 380 and Rs. 420.',
   },
   {
     term: 'T+2 Rolling Settlement',

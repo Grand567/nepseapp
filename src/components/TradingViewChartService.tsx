@@ -59,7 +59,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
       };
       setStockInfo(info);
 
-      const daysCount = tf === '1D' ? 5 : tf === '1W' ? 10 : tf === '1M' ? 35 : tf === '3M' ? 95 : tf === '1Y' ? 260 : 500;
+      const daysCount = tf === '1Y' ? 260 : tf === 'ALL' ? 500 : 120;
       let rawHistory: any[] = [];
       try {
         const histRes = await fetchPriceHistory(sym, daysCount);
@@ -72,15 +72,12 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
 
       const ltp = Number(info.ltp || 500);
 
-      let generated: Candle[] = [];
+      let allCandles: Candle[] = [];
       if (rawHistory.length > 0) {
         // Sort ascending by date
         const sorted = rawHistory.slice().sort((a: any, b: any) => new Date(a.date || a.businessDate).getTime() - new Date(b.date || b.businessDate).getTime());
-        // Filter slice according to selected timeframe
-        const targetBars = tf === '1D' ? 1 : tf === '1W' ? 5 : tf === '1M' ? 22 : tf === '3M' ? 66 : tf === '1Y' ? 250 : sorted.length;
-        const sliced = sorted.slice(Math.max(0, sorted.length - targetBars));
 
-        generated = (sliced.length > 0 ? sliced : sorted).map((h: any) => ({
+        allCandles = sorted.map((h: any) => ({
           date: String(h.date || h.businessDate || '').slice(0, 10),
           open: Number(h.open || h.openPrice || h.close || h.closePrice || ltp),
           high: Number(h.high || h.highPrice || Math.max(Number(h.open || ltp), Number(h.close || ltp))),
@@ -90,7 +87,7 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
         }));
       } else {
         // If network completely unavailable, return today's single actual candle
-        generated = [{
+        allCandles = [{
           date: new Date().toISOString().slice(0, 10),
           open: Number(info.open || ltp),
           high: Number(info.high || ltp),
@@ -100,26 +97,26 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
         }];
       }
 
-      // Calculate EMAs (EMA 20 & EMA 50)
-      let k20 = 2 / (20 + 1);
-      let k50 = 2 / (50 + 1);
-      let ema20 = generated[0]?.close || ltp;
-      let ema50 = generated[0]?.close || ltp;
+      // Calculate EMAs (EMA 20 & EMA 50) across full continuous historical series
+      const k20 = 2 / (20 + 1);
+      const k50 = 2 / (50 + 1);
+      let ema20 = allCandles[0]?.close || ltp;
+      let ema50 = allCandles[0]?.close || ltp;
 
-      const candlesWithTech: Candle[] = generated.map((c, idx) => {
+      const candlesWithTech: Candle[] = allCandles.map((c, idx) => {
         ema20 = +(c.close * k20 + ema20 * (1 - k20)).toFixed(1);
         ema50 = +(c.close * k50 + ema50 * (1 - k50)).toFixed(1);
 
-        // RSI-14 calculation
+        // RSI-14 calculation across continuous series
         let rsiVal = 50;
         if (idx >= 14) {
           let gains = 0, losses = 0;
           for (let j = idx - 13; j <= idx; j++) {
-            const diff = generated[j].close - generated[j - 1].close;
+            const diff = allCandles[j].close - allCandles[j - 1].close;
             if (diff >= 0) gains += diff;
             else losses += Math.abs(diff);
           }
-          const rs = losses === 0 ? 100 : gains / losses;
+          const rs = losses === 0 ? 100 : gains / (losses || 1);
           rsiVal = +(100 - (100 / (1 + rs))).toFixed(1);
         }
 
@@ -131,9 +128,13 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
         };
       });
 
-      setCandles(candlesWithTech);
-      if (candlesWithTech.length > 0) {
-        setHoverCandle(candlesWithTech[candlesWithTech.length - 1]);
+      // Filter slice according to selected timeframe AFTER indicator calculation
+      const targetBars = tf === '1D' ? 1 : tf === '1W' ? 5 : tf === '1M' ? 22 : tf === '3M' ? 66 : tf === '1Y' ? 250 : candlesWithTech.length;
+      const visibleCandles = tf === 'ALL' ? candlesWithTech : candlesWithTech.slice(Math.max(0, candlesWithTech.length - targetBars));
+
+      setCandles(visibleCandles.length > 0 ? visibleCandles : candlesWithTech);
+      if (visibleCandles.length > 0) {
+        setHoverCandle(visibleCandles[visibleCandles.length - 1]);
       }
     } catch (_) {}
     setLoading(false);

@@ -487,6 +487,60 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
               </div>
             </div>
           </div>
+
+          <div className="rounded-2xl border border-cyan-900/40 bg-slate-900/80 p-5">
+            <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-2">
+              <Scale className="h-4 w-4 text-cyan-400" />
+              SEBON Circuit Breakers &amp; Volatility Bands (Fourth Amendment, 2082)
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-sm">Individual Stock Circuit</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-bold border border-cyan-500/20">±15%</span>
+                </div>
+                <div className="text-slate-400">
+                  Daily price fluctuation limit expanded from previous <span className="text-slate-300">±10%</span> to <span className="font-bold text-emerald-400">±15%</span> from previous day's close (LTP).
+                </div>
+                <div className="text-[11px] text-slate-500 pt-1">
+                  Upper circuit: +15% · Lower circuit: -15%. Trading in that security locks once reached.
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-sm">NEPSE Index Breakers</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">2-Tier System</span>
+                </div>
+                <div className="text-slate-400 space-y-1 font-mono text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-300">Level 1 (5% Index):</span>
+                    <span className="text-amber-400 font-bold">15-min halt</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-300">Level 2 (8% Index):</span>
+                    <span className="text-rose-400 font-bold">Closed for day</span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-500 pt-1">
+                  Simplified from previous 4%/5%/6% 3-tier rules to facilitate smoother market cooling.
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-sm">Pre-Open Session Limit</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 font-bold border border-purple-500/20">10:30–10:45 AM</span>
+                </div>
+                <div className="text-slate-400">
+                  Pre-open order matching variation expanded from <span className="text-slate-300">±2%</span> to <span className="font-bold text-purple-300">±5%</span>.
+                </div>
+                <div className="text-[11px] text-slate-500 pt-1">
+                  Enables opening quotes to absorb overnight news and corporate announcements before continuous open.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

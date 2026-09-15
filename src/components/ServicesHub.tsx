@@ -74,7 +74,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
+  if (['daily-prime-pick', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
     return 'flagship';
   }
   if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
@@ -136,7 +136,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'regulatory-hub', name: 'NRB Regulatory Hub', icon: Landmark, color: 'blue', cat: 'regulatory', star: true },
   { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
 
-  { id: 'decision-probability', name: 'Decision Probability', icon: Target, color: 'emerald', cat: 'traders', star: true },
   { id: 'ai-momentum', name: 'AI Momentum', icon: Zap, color: 'emerald', cat: 'traders', star: true },
   { id: 'breakout-stocks', name: 'Breakout Stocks', icon: Flame, color: 'rose', cat: 'traders', star: true },
   { id: 'volume-shockers', name: 'Volume Shockers', icon: Zap, color: 'yellow', cat: 'traders', star: true },
@@ -150,7 +149,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'unusual-trades', name: 'Unusual Trades', icon: ArrowLeftRight, color: 'orange', cat: 'traders', star: true },
   { id: 'relative-strength', name: 'Relative Strength', icon: ArrowUp, color: 'emerald', cat: 'traders', star: true },
 
-  { id: 'graham-intrinsic', name: 'Graham Intrinsic', icon: Award, color: 'blue', cat: 'analytics', star: true },
   { id: 'broker-analysis', name: 'Broker Analysis', icon: Users, color: 'purple', cat: 'analytics' },
   { id: 'stockwise-analysis', name: 'Stockwise Analysis', icon: Activity, color: 'blue', cat: 'analytics' },
   { id: 'stocks-by-market-cap', name: 'Stocks By Market Cap', icon: Building2, color: 'blue', cat: 'analytics' },
@@ -181,7 +179,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: '52w-high', name: '52W High', icon: TrendingUp, color: 'emerald', cat: 'information', star: true },
   { id: '52w-low', name: '52W Low', icon: TrendingDown, color: 'rose', cat: 'information', star: true },
   { id: 'price-history', name: 'Price History', icon: Clock, color: 'cyan', cat: 'information', star: true },
-  { id: 'dividend-history', name: 'Dividend History', icon: TrendingUp, color: 'emerald', cat: 'information', star: true },
   { id: 'mero-share', name: 'Mero Share', icon: BookOpen, color: 'purple', cat: 'information', star: true },
   { id: 'credentials', name: 'Credentials', icon: Lock, color: 'orange', cat: 'information', star: true },
   { id: 'apply-history', name: 'Apply History', icon: RefreshCw, color: 'cyan', cat: 'information', star: true },
@@ -211,7 +208,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'compare-stocks', name: 'Compare Stocks', icon: ArrowLeftRight, color: 'blue', cat: 'trade-tools', star: true },
   { id: 'advanced-chart', name: 'Advanced Chart', icon: Activity, color: 'emerald', cat: 'trade-tools', star: true },
   { id: 'smart-portfolio', name: 'Smart Portfolio', icon: PieChart, color: 'purple', cat: 'trade-tools', star: true },
-  { id: 'seasonality', name: 'Seasonality', icon: Calendar, color: 'cyan', cat: 'trade-tools', star: true },
   { id: 'target-alert', name: 'Target Alert', icon: Bell, color: 'rose', cat: 'trade-tools', star: true },
 
   { id: 'nrb-forex', name: 'NRB Forex Rates', icon: Coins, color: 'emerald', cat: 'regulatory', star: true },
@@ -248,7 +244,6 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'edit', name: 'Preferences', icon: Settings, color: 'yellow', cat: 'desk', star: true },
 
   { id: 'sector-wise-ad', name: 'Sector-Wise A/D', icon: SlidersHorizontal, color: 'cyan', cat: 'smart-money', star: true },
-  { id: 'stealth-accumulation-tracker', name: 'Stealth Accumulation', icon: Crosshair, color: 'emerald', cat: 'smart-money', star: true },
   { id: 'aggressive-accumulators', name: 'Aggressive Accumulators', icon: Zap, color: 'yellow', cat: 'smart-money', star: true },
   { id: 'distribution-leaders', name: 'Distribution Leaders', icon: TrendingDown, color: 'rose', cat: 'smart-money', star: true },
   { id: 'broker-heatmap', name: 'Broker Heatmap', icon: LayoutGrid, color: 'purple', cat: 'smart-money', star: true },
@@ -310,7 +305,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Follow smart-money turnover for consistent outperformance." />
   ),
   'circuit-setup': () => (
-    <UniversalScreener filterFn={(s) => Math.abs(s.pChange) >= 12} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => Math.abs(s.pChange) >= 12} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
       banner={{ type: 'warning', text: 'NEPSE circuit: ±15% daily limit (since April 20, 2026). Wired to /today-price.' }}
       insight="Upper circuit = strong buying pressure. Wait for next-day confirmation — circuits often open gap-up then fade." />
   ),
@@ -362,7 +357,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="52W high/low are the strongest zones — trade rejections, not breaks, without volume." />
   ),
   'unusual-trades': () => (
-    <UniversalScreener filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => b.turnover - a.turnover}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => b.turnover - a.turnover}
       banner={{ type: 'warning', text: 'Block trades above Rs. 1 Crore. Wired to /floorsheet.' }}
       insight="Track the next 3–5 sessions — block flow often leads price." />
   ),
@@ -383,38 +378,38 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Combine technical rank with P/E under 25 for best results." />
   ),
   'stocks-by-market-cap': () => (
-    <UniversalScreener sortFn={(a, b) => b.marketCap - a.marketCap}
+    <UniversalScreener hideTimeframe={true} sortFn={(a, b) => b.marketCap - a.marketCap}
       customCols={[{ key: 'marketCap', label: 'Market Cap', align: 'right', format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') }]}
       banner={{ text: 'All stocks ranked by market capitalization.' }}
       insight="Large caps = lower risk; small caps = higher growth potential." />
   ),
   'stock-capitalization': () => (
-    <UniversalScreener sortFn={(a, b) => b.marketCap - a.marketCap}
+    <UniversalScreener hideTimeframe={true} sortFn={(a, b) => b.marketCap - a.marketCap}
       customCols={[{ key: 'marketCap', label: 'Market Cap', align: 'right', format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') }]}
       banner={{ text: 'Capitalization ladder — from NTC giants to micro-caps.' }}
       insight="Allocate core to large caps, satellite to vetted small caps." />
   ),
   'promoter-shares': PromoterSharesService,
   'dividend-kings': () => (
-    <UniversalScreener filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
       customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'Consistent dividend & earnings capacity names across all sectors.' }}
       insight="Dividend kings compound wealth silently for decades — reinvest payouts." />
   ),
   'dividend-leaders': () => (
-    <UniversalScreener filterFn={(s) => ((s.eps && s.eps >= 12) || (s.dividendYield && s.dividendYield > 0))} sortFn={(a, b) => (b.eps || 0) - (a.eps || 0)}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => ((s.eps && s.eps >= 12) || (s.dividendYield && s.dividendYield > 0))} sortFn={(a, b) => (b.eps || 0) - (a.eps || 0)}
       customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'High EPS = strong dividend capacity. Wired to /CompanyDetails fundamentals.' }}
       insight="High EPS + low P/E = value + income combo." />
   ),
   'fundamentals-pro': () => (
-    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 12 || s.bookValue >= 90)} sortFn={(a, b) => a.pe - b.pe}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 12 || s.bookValue >= 90)} sortFn={(a, b) => a.pe - b.pe}
       customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'Pro-grade fundamental filter for long-term investors.' }}
       insight="Quality + reasonable price beats cheap + weak, every cycle." />
   ),
   'fundamental-scanner': () => (
-    <UniversalScreener filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 10 || s.bookValue >= 80)} sortFn={(a, b) => a.pe - b.pe}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 10 || s.bookValue >= 80)} sortFn={(a, b) => a.pe - b.pe}
       customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
       banner={{ type: 'success', text: 'Fundamentally strong + undervalued. Wired to /fundamental-ratios.' }}
       insight="Low P/E + high EPS = value + growth combo." />
@@ -440,7 +435,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'zero-sum-floorsheet': LiveFloorsheetService,
   'floor-sheet': LiveFloorsheetService,
   'pe-ranking': () => (
-    <UniversalScreener filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
       customCols={[{ key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => v?.toFixed(2), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') }]}
       banner={{ text: 'Every stock ranked by P/E — cheapest earnings first. Wired to /fundamental-ratios.' }}
       insight="Lower P/E = cheaper per rupee of earnings. Always compare within sector." />
@@ -509,12 +504,12 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Breakouts with 1.5× volume mark potential trend change." />
   ),
   'investment-picks': () => (
-    <UniversalScreener filterFn={(s) => s.pe && s.pe < 20 && s.pe > 0} sortFn={(a, b) => a.pe - b.pe}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe && s.pe < 20 && s.pe > 0} sortFn={(a, b) => a.pe - b.pe}
       banner={{ type: 'success', text: 'Low-P/E value picks for long horizons.' }}
       insight="Buy quality at reasonable prices; hold through cycles." />
   ),
   'sip-in-stocks': () => (
-    <UniversalScreener filterFn={(s) => s.eps > 15 && s.pe > 0 && s.pe < 25}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.eps > 15 && s.pe > 0 && s.pe < 25}
       banner={{ type: 'success', text: 'Quality compounders suitable for monthly SIP.' }}
       insight="SIP in fundamentals builds wealth while smoothing volatility." />
   ),
@@ -541,13 +536,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Information
   '52w-high': () => (
-    <UniversalScreener filterFn={(s) => s.high52w && s.ltp && s.ltp / s.high52w > 0.95} sortFn={(a, b) => b.ltp / b.high52w - a.ltp / a.high52w}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.high52w && s.ltp && s.ltp / s.high52w > 0.95} sortFn={(a, b) => b.ltp / b.high52w - a.ltp / a.high52w}
       customCols={[{ key: 'high52w', label: '52W High', align: 'right', format: (v) => `Rs. ${v}` }]}
       banner={{ type: 'success', text: 'Trading within 5% of 52-week highs — leadership board.' }}
       insight="Breaking a 52W high on 2× volume often starts a new leg up." />
   ),
   '52w-low': () => (
-    <UniversalScreener filterFn={(s) => s.low52w && s.ltp && s.ltp / s.low52w < 1.05} sortFn={(a, b) => a.ltp / a.low52w - b.ltp / b.low52w}
+    <UniversalScreener hideTimeframe={true} filterFn={(s) => s.low52w && s.ltp && s.ltp / s.low52w < 1.05} sortFn={(a, b) => a.ltp / a.low52w - b.ltp / b.low52w}
       customCols={[{ key: 'low52w', label: '52W Low', align: 'right', format: (v) => `Rs. ${v}` }]}
       banner={{ type: 'warning', text: 'Within 5% of 52-week lows — value or value-trap?' }}
       insight="Check fundamentals first: falling knife vs coiled value." />
@@ -598,7 +593,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Volume precedes price — new volume leaders deserve a watchlist slot." />
   ),
   'pivot-points': () => (
-    <UniversalScreener filterFn={(s) => s.high && s.low && s.ltp}
+    <UniversalScreener filterFn={(s) => s.high && s.low && s.ltp} hideTimeframe={true}
       customCols={[
         { key: 'high', label: 'High', align: 'right' },
         { key: 'low', label: 'Low', align: 'right' },
@@ -634,7 +629,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Trade with the trend, never against it, on day one." />
   ),
   'comparable-stock': () => (
-    <UniversalScreener sortFn={(a, b) => a.pe - b.pe} defaultLimit={30}
+    <UniversalScreener sortFn={(a, b) => a.pe - b.pe} defaultLimit={30} hideTimeframe={true}
       customCols={[{ key: 'pe', label: 'P/E', align: 'right' }]}
       banner={{ text: 'Peer valuation ladder — cheapest earnings first.' }}
       insight="Compare strictly within sectors for true relative value." />
