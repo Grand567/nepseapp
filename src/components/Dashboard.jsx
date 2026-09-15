@@ -20,7 +20,7 @@ import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
 import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory } from '../utils/liveData';
-import { getHydroSeasonality } from '../utils/quantEngine';
+import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense } from '../utils/quantEngine';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
@@ -1425,11 +1425,36 @@ export default function Dashboard({
     return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
   }, [stocks]);
 
+  // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
+  const masterBreakoutPipeline = useMemo(() => {
+    if (!Array.isArray(stocks) || stocks.length === 0) {
+      return { primeDailyPick: null, activeBreakouts: [], nextBreakouts: [], cashDefenseActive: false, breadthCheck: { breadth50: 50, cashDefenseActive: false } };
+    }
+    const priceHistories = {};
+    const brokerDataMap = {};
+    stocks.forEach(s => {
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+      if (!sym) return;
+      const h = getCachedRealPriceHistory(sym);
+      if (h) priceHistories[sym] = h;
+      const b = getCachedRealBrokerAnalysis(sym);
+      if (b) brokerDataMap[sym] = b;
+    });
+    return runAmalgamatedBreakoutPipeline(stocks, priceHistories, brokerDataMap);
+  }, [stocks]);
+
+  const primeDailyPick = masterBreakoutPipeline.primeDailyPick;
+  const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
+  const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
+
   const breakoutStocks = useMemo(() => {
+    if (masterBreakoutPipeline.activeBreakouts && masterBreakoutPipeline.activeBreakouts.length > 0) {
+      return masterBreakoutPipeline.activeBreakouts.slice(0, 8);
+    }
     const list = runStockScanners(stocks, 'breakout');
     if (list && list.length > 0) return list.slice(0, 8);
     return gainers.slice(0, 8);
-  }, [stocks, gainers]);
+  }, [stocks, gainers, masterBreakoutPipeline.activeBreakouts]);
 
   // Unified 350+ NEPSE universe merged with live traded stock metrics
   const unifiedSearchUniverse = useMemo(() => {
@@ -1732,109 +1757,7 @@ export default function Dashboard({
     };
   }, [heroTimeframe, heroHistory, heroVal, indices]);
 
-  // ── 🏆 DAILY PRIME BREAKOUT & BUY-ZONE PICK ALGORITHM ──
-  const primeDailyPick = useMemo(() => {
-    if (!Array.isArray(stocks) || stocks.length === 0) return null;
 
-    // 1. Initial liquidity & momentum screening
-    const candidates = stocks.filter(s => {
-      const pCh = Number(s.pChange || 0);
-      const vol = Number(s.volume || s.totalTradedQuantity || 0);
-      const ltp = Number(s.ltp || s.price || 0);
-      return ltp > 50 && pCh >= -1.0 && pCh <= 11.0 && (vol > 100 || Number(s.turnover) > 100000);
-    });
-
-    const pool = candidates.length > 0 ? candidates : stocks;
-
-    // 2. Armour with Institutional Broker Flow, Hydro Seasonality, and Fundamental Checks
-    const validCandidates = pool.filter(s => {
-      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
-
-      // A. Broker Dumping Gate: Check if top institutional brokers are dumping
-      const brokerData = getCachedRealBrokerAnalysis(sym);
-      if (brokerData) {
-        const adRatio = Number(brokerData.adRatio || 0);
-        const topSellers = brokerData.topNetSellers || brokerData.topSellers || [];
-        const totalVol = Number(brokerData.totalVolume || 1);
-        const netDumpVol = topSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(Number(b.netQty || b.sellQty || 0)), 0);
-        const netDumpRatio = netDumpVol / Math.max(1, totalVol);
-        if (adRatio <= -0.10 || (netDumpRatio >= 0.20 && adRatio < 0)) {
-          return false; // Disqualify dumped scrips
-        }
-      }
-
-      // B. Fundamental Health Gate: Avoid negative EPS companies for Prime Daily Pick
-      const eps = Number(s.eps || 0);
-      if (s.eps !== undefined && eps < 0) {
-        return false;
-      }
-
-      // C. Historical Seasoning Gate: Disqualify unseasoned IPOs with < 45 sessions if history cached
-      const cachedHist = getCachedRealPriceHistory(sym);
-      if (cachedHist && Array.isArray(cachedHist) && cachedHist.length > 0 && cachedHist.length < 45) {
-        return false;
-      }
-
-      return true;
-    });
-
-    const finalPool = validCandidates.length > 0 ? validCandidates : pool;
-
-    // 3. Rank candidates by composite breakout edge
-    const scored = finalPool.map(s => {
-      const pCh = Number(s.pChange || 0);
-      const to = Number(s.turnover || (s.ltp * s.volume) || 0);
-      const vol = Number(s.volume || s.totalTradedQuantity || 0);
-      const ltp = Number(s.ltp || s.price || 100);
-      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
-
-      // Edge Score combines steady momentum (+1.5% to +6.5% breakout sweet spot), liquidity, and volume
-      const momScore = (pCh >= 1.5 && pCh <= 6.5) ? 35 : (pCh > 6.5 ? 26 : 18);
-      const liqScore = Math.min(35, (to / 1e7) * 3);
-      const volScore = Math.min(30, (vol / 10000) * 5);
-
-      // Hydro Seasonality check
-      const sector = String(s.sector || s.sectorName || '');
-      const hydro = getHydroSeasonality(sector);
-      const hydroAdjustment = hydro.isHydro ? (hydro.isDrySeason ? -8 : 6) : 0;
-
-      // Broker accumulation bonus
-      const brokerData = getCachedRealBrokerAnalysis(sym);
-      const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
-
-      // Empirical Bayesian Depth & Sample Verification
-      const cachedHist = getCachedRealPriceHistory(sym);
-      const histDepth = cachedHist && Array.isArray(cachedHist) ? cachedHist.length : 120;
-      const depthBonus = histDepth >= 180 ? 4 : (histDepth >= 90 ? 2 : 0);
-
-      const compositeScore = Math.min(96, Math.max(68, +(52 + momScore * 0.45 + liqScore * 0.35 + volScore * 0.25 + hydroAdjustment + brokerBonus + depthBonus).toFixed(1)));
-
-      // Dynamic ATR-based Corridor
-      const atrEst = Math.max(ltp * 0.02, Number(s.high || ltp) - Number(s.low || ltp));
-      const entryLow = +(ltp - atrEst * 0.5).toFixed(1);
-      const entryHigh = +(ltp + atrEst * 0.3).toFixed(1);
-      const target1 = +(ltp + atrEst * 2.0).toFixed(1);
-      const target2 = +(ltp + atrEst * 4.0).toFixed(1);
-      const stopLoss = +(Math.max(1, ltp - atrEst * 1.5)).toFixed(1);
-
-      return {
-        ...s,
-        compositeScore,
-        entryLow,
-        entryHigh,
-        target1,
-        target2,
-        stopLoss,
-        rvol: +(1.2 + (vol / 40000) * 0.4).toFixed(2),
-        catalyst: pCh > 0 ? 'Bullish Volume Breakout + Buy-Zone Support' : 'Consolidation Base with Institutional Accumulation',
-        sampleDepth: histDepth,
-        statisticalConfidence: histDepth >= 180 ? 'High' : (histDepth >= 90 ? 'Moderate' : 'Emerging'),
-      };
-    });
-
-    scored.sort((a, b) => b.compositeScore - a.compositeScore);
-    return scored[0] || null;
-  }, [stocks]);
 
   return (
     <div className="dashboard-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '8px 10px 80px' }}>
@@ -2291,8 +2214,51 @@ export default function Dashboard({
         );
       })()}
 
-      {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK SPOTLIGHT CARD ── */}
-      {primeDailyPick && (
+      {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
+      {cashDefenseActive ? (
+        <div style={{
+          borderRadius: 18,
+          background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',
+          border: '1.5px solid rgba(244, 63, 94, 0.45)',
+          padding: '16px 18px',
+          marginBottom: 12,
+          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(244, 63, 94, 0.12)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 38, height: 38, borderRadius: 12,
+                background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Shield style={{ width: 20, height: 20, color: '#f43f5e' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
+                  Systemic Risk Filter • Cash Defense Mode Active
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
+                  Capital Preservation Protocol: No Breakout Buys Issued Today
+                </div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 99,
+              background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)'
+            }}>
+              Market Breadth: {masterBreakoutPipeline?.breadthCheck?.breadth50 ?? '<40'}% (&lt; 40% Threshold)
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+            Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated <strong>Cash Defense Mode</strong> to protect your capital. Avoid new swing entries until breadth recovers above 40%.
+          </div>
+        </div>
+      ) : primeDailyPick ? (
         <div style={{
           borderRadius: 18,
           background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(20, 27, 45, 0.98))',
@@ -2319,10 +2285,10 @@ export default function Dashboard({
               <span style={{ fontSize: 20 }}>🏆</span>
               <div>
                 <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#34d399' }}>
-                  Daily Prime Pick • Verified Buy Zone
+                  Daily Prime Pick • {primeDailyPick.setupClass || 'Flagship Breakout'}
                 </div>
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff' }}>
-                  Today's Prime Breakout & Accumulation Stock
+                  Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)
                 </div>
               </div>
             </div>
@@ -2333,7 +2299,7 @@ export default function Dashboard({
                 background: 'rgba(16, 185, 129, 0.2)', color: '#34d399',
                 border: '1px solid rgba(16, 185, 129, 0.4)'
               }}>
-                ★ Edge Score: {primeDailyPick.compositeScore}/100
+                ★ Edge Score: {primeDailyPick.score || primeDailyPick.compositeScore}/100
               </span>
               <span style={{
                 fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
@@ -2342,12 +2308,21 @@ export default function Dashboard({
               }}>
                 ⚡ RVOL {primeDailyPick.rvol}x
               </span>
+              {primeDailyPick.lbas != null && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
+                  background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc',
+                  border: '1px solid rgba(168, 85, 247, 0.3)'
+                }}>
+                  🏢 LBAS {Math.round((primeDailyPick.lbas || 0) * 100)}% Block
+                </span>
+              )}
               <span style={{
                 fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
                 background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8',
                 border: '1px solid rgba(56, 189, 248, 0.3)'
               }}>
-                🛡️ Bayesian Edge • {primeDailyPick.statisticalConfidence || 'Verified'}
+                🛡️ Base: {primeDailyPick.sampleDepth || 120}D ({primeDailyPick.statisticalConfidence || 'Verified'})
               </span>
             </div>
           </div>
@@ -2370,6 +2345,11 @@ export default function Dashboard({
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
                   {primeDailyPick.sector || 'NEPSE'}
                 </span>
+                {primeDailyPick.vcp?.isVCP && (
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    VCP {primeDailyPick.vcp.finalDepth}%
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>
                 {primeDailyPick.name || primeDailyPick.companyName}
@@ -2408,23 +2388,30 @@ export default function Dashboard({
             </div>
 
             <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (Base)</div>
+              <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase' }}>Chase Cap (+2.5% Max)</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)', marginTop: 2 }} title="Do NOT buy above this price due to T+2 freeze risk">
+                Rs. {primeDailyPick.chaseCap || primeDailyPick.entryHigh} <span style={{ fontSize: 10, color: '#94a3b8' }}>(Max)</span>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (1.5R - 50% Lock)</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.target1} <span style={{ fontSize: 10.5 }}>(+7.5%)</span>
+                Rs. {primeDailyPick.target1}
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (Breakout)</div>
+              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.target2} <span style={{ fontSize: 10.5 }}>(+15.5%)</span>
+                Rs. {primeDailyPick.target2}
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Strict)</div>
+              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.stopLoss} <span style={{ fontSize: 10.5 }}>(-4.5%)</span>
+                Rs. {primeDailyPick.stopLoss}
               </div>
             </div>
           </div>
@@ -2433,7 +2420,7 @@ export default function Dashboard({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ color: '#34d399' }}>●</span>
-              <span>Catalyst: <strong style={{ color: '#e2e8f0' }}>{primeDailyPick.catalyst}</strong> (R:R 1 : 2.6)</span>
+              <span>Catalyst: <strong style={{ color: '#e2e8f0' }}>{primeDailyPick.catalyst}</strong> (Zero-Loss Rule: Sell 50% at Target 1, Move Stop to Entry)</span>
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2486,7 +2473,7 @@ export default function Dashboard({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* ── 4B. QUICK NEWS FEED TICKER ── */}
       <div style={{
@@ -2615,11 +2602,12 @@ export default function Dashboard({
         {/* Movers Navigation Tabs */}
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 10 }}>
           {[
-            { id: 'gainers',   label: 'Top Gainers',      icon: TrendingUp,   color: 'var(--bull)' },
-            { id: 'losers',    label: 'Top Losers',       icon: TrendingDown, color: '#F43F5E' },
-            { id: 'turnover',  label: 'Turnover Leaders', icon: Activity,     color: 'var(--primary-light)' },
-            { id: 'breakouts', label: '🔥 Breakouts',     icon: Flame,        color: '#f59e0b' },
-            { id: 'volume',    label: 'Volume Surge',     icon: BarChart2,    color: '#38bdf8' }
+            { id: 'gainers',        label: 'Top Gainers',      icon: TrendingUp,   color: 'var(--bull)' },
+            { id: 'losers',         label: 'Top Losers',       icon: TrendingDown, color: '#F43F5E' },
+            { id: 'turnover',       label: 'Turnover Leaders', icon: Activity,     color: 'var(--primary-light)' },
+            { id: 'breakouts',      label: '🔥 Breakouts',     icon: Flame,        color: '#f59e0b' },
+            { id: 'next_breakouts', label: '⏱️ Next Breakouts', icon: Zap,          color: '#a855f7' },
+            { id: 'volume',         label: 'Volume Surge',     icon: BarChart2,    color: '#38bdf8' }
           ].map(t => {
             const isActive = moversTab === t.id;
             return (
@@ -2643,11 +2631,17 @@ export default function Dashboard({
         </div>
 
         {/* Active Movers Tab Stock Cards */}
+        {moversTab === 'next_breakouts' && nextBreakoutStocks.length === 0 && (
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+            Scanning 350+ NEPSE scrips: No stocks currently meet the strict pre-breakout contraction criteria (VCP &lt; 7% or BBW compression &lt; 12%).
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 8 }}>
           {(moversTab === 'gainers' ? gainers :
             moversTab === 'losers' ? losers :
             moversTab === 'turnover' ? turnoverLeaders :
             moversTab === 'breakouts' ? breakoutStocks :
+            moversTab === 'next_breakouts' ? nextBreakoutStocks :
             volumeLeaders).map(s => {
             const isBull = (s.pChange || 0) >= 0;
             const spark = generateSparkline(s.ltp, s.pChange);
@@ -2671,7 +2665,8 @@ export default function Dashboard({
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
                     {moversTab === 'turnover' ? `Turnover: ${fmtCr(s.turnover || s.ltp * s.volume)}` :
                      moversTab === 'volume' ? `Vol: ${(s.volume || 0).toLocaleString()} shares` :
-                     moversTab === 'breakouts' ? `Breakout · Vol ${(s.volume || 0).toLocaleString()}` :
+                     moversTab === 'breakouts' ? `Pivot Rs. ${s.pivotLevel || '—'} · RVOL ${s.rvol || 1.2}x` :
+                     moversTab === 'next_breakouts' ? `Coiled ${s.distToPivotPct != null ? s.distToPivotPct + '% to pivot' : 'Base'} · Score ${s.score || s.compositeScore || 80}` :
                      `Vol: ${(s.volume || 0).toLocaleString()} shares`}
                   </div>
                 </div>

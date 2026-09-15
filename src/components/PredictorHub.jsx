@@ -34,7 +34,8 @@ import {
   ChevronLeft,
   X,
   Award,
-  Shield
+  Shield,
+  Compass
 } from 'lucide-react';
 import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
@@ -692,6 +693,22 @@ export default function PredictorHub({
         return scoreB - scoreA;
       });
       return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 45).slice(0, 35);
+    }
+
+    if (stockFilter === 'coiled') {
+      // 5. Pre-Breakout / Coiling Radar: Stocks 0.5% to 5.0% below 20-day high or pivot level
+      const candidates = [...searchFiltered].filter(s => {
+        const dist = s.pivot_distance_pct ?? s.pivotDistancePct;
+        const ltp = Number(s.ltp || s.price || 0);
+        const high20 = Number(s.high20 || s.high52 || ltp);
+        const distPct = dist != null ? Number(dist) : (high20 > 0 ? ((high20 - ltp) / high20) * 100 : 99);
+        return distPct >= 0.2 && distPct <= 5.5;
+      }).sort((a, b) => {
+        const distA = Math.abs(Number(a.pivot_distance_pct ?? a.pivotDistancePct ?? 5));
+        const distB = Math.abs(Number(b.pivot_distance_pct ?? b.pivotDistancePct ?? 5));
+        return distA - distB;
+      });
+      return candidates.length >= 5 ? candidates : [...searchFiltered].filter(s => Number(s.composite_score) >= 50).slice(0, 35);
     }
 
     return searchFiltered;
@@ -1853,6 +1870,7 @@ export default function PredictorHub({
                   { id: 'all', label: 'All Ranked', icon: Sparkles },
                   { id: 'momentum', label: 'High Momentum', icon: Flame },
                   { id: 'volume', label: 'Volume Surge', icon: Zap },
+                  { id: 'coiled', label: '⏱️ Next Breakouts', icon: Compass },
                   { id: 'low_float', label: 'Low Float', icon: Target },
                   { id: 'catalyst', label: 'Corporate Catalysts', icon: Landmark },
                 ].map(f => {
@@ -1901,6 +1919,7 @@ export default function PredictorHub({
                   {stockFilter === 'all' && <><span>📊</span> Ranked by multi-factor quantitative composite score (0–100)</>}
                   {stockFilter === 'momentum' && <><span>🔥</span> Ranked by 5-day directional thrust & velocity (highest momentum first)</>}
                   {stockFilter === 'volume' && <><span>⚡</span> Ranked by institutional volume expansion (highest multiple vs 20-day avg first)</>}
+                  {stockFilter === 'coiled' && <><span>⏱️</span> Ranked by proximity to pivot resistance (tightest consolidation & VCP first)</>}
                   {stockFilter === 'low_float' && <><span>💎</span> Ranked by lowest public float (companies under 50 lakh shares)</>}
                   {stockFilter === 'catalyst' && <><span>📢</span> Ranked by upcoming dividends, bonus shares, rights & AGM disclosures</>}
                 </span>

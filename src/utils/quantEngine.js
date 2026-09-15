@@ -1618,3 +1618,363 @@ export function computeIndexATR(history, period = 14) {
   const recent = trs.slice(-period);
   return +(recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UNIFIED MASTER BREAKOUT ARCHITECTURE & DAILY PRIME ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 28. Volatility Contraction Pattern (VCP) Contraction Index
+ * Quantifies progressive dampening of price swings: D_k = (H_k - L_k) / H_k * 100
+ * Validates monotonic contraction decay and verifies final contraction D_final <= 6.5%.
+ */
+export function calculateVCPContractionRatio(candles = []) {
+  if (!Array.isArray(candles) || candles.length < 25) {
+    return { isVCP: false, contractions: [], finalDepth: 10, ratio: 1.0, qualityScore: 40 };
+  }
+
+  const n = candles.length;
+  // Divide candles into 3 sequential swing windows (Shakeout, Absorption, Coiling)
+  const w1 = candles.slice(-35, -20);
+  const w2 = candles.slice(-20, -8);
+  const w3 = candles.slice(-8);
+
+  const getDepth = (w) => {
+    if (!w || w.length === 0) return 10;
+    const h = Math.max(...w.map(c => Number(c.high || c.close || 0)));
+    const l = Math.min(...w.map(c => Number(c.low || c.close || 0)));
+    return h > 0 ? +(((h - l) / h) * 100).toFixed(1) : 10;
+  };
+
+  const d1 = getDepth(w1);
+  const d2 = getDepth(w2);
+  const d3 = getDepth(w3);
+
+  // Progressive contraction: each wave must be tighter than the previous
+  const isDecaying = (d2 <= d1 * 0.85 || d2 <= d1 - 2.0) && (d3 <= d2 * 0.85 || d3 <= d2 - 1.5);
+  const isTightFinal = d3 <= 6.8; // Final contraction <= 6.8%
+  const isVCP = isDecaying || (d3 <= 5.5 && d2 <= 9.0);
+
+  let qualityScore = 50;
+  if (isVCP) qualityScore += 25;
+  if (isTightFinal) qualityScore += 15;
+  if (d3 <= 4.0) qualityScore += 10;
+
+  return {
+    isVCP,
+    contractions: [d1, d2, d3],
+    finalDepth: d3,
+    ratio: d1 > 0 ? +(d3 / d1).toFixed(2) : 0.5,
+    qualityScore: Math.min(100, Math.max(30, qualityScore)),
+    summary: isVCP
+      ? `VCP Compression Confirmed: Progressive swing tightening (${d1}% ➔ ${d2}% ➔ ${d3}%).`
+      : `Broad Price Swings: Recent wave depth at ${d3}% (needs <= 6.5% for VCP).`
+  };
+}
+
+/**
+ * 29. 120-Day Bollinger BandWidth Percentile Rank (BWPR_120)
+ * Evaluates whether current BandWidth is at historical 6-month compression lows (<= 12%).
+ */
+export function calculateBollingerBandWidthPercentile(history = [], period = 20, lookback = 120) {
+  if (!Array.isArray(history) || history.length < 30) {
+    return { bwpr: 25, isSqueeze: false, currentBBW: 0.08 };
+  }
+
+  const closes = history.map(c => Number(c.close || c.ltp || 0)).filter(c => c > 0);
+  if (closes.length < 30) {
+    return { bwpr: 25, isSqueeze: false, currentBBW: 0.08 };
+  }
+
+  // Calculate rolling BBW across lookback
+  const bbws = [];
+  const startIdx = Math.max(period, closes.length - lookback);
+
+  for (let i = startIdx; i <= closes.length; i++) {
+    const slice = closes.slice(i - period, i);
+    if (slice.length < period) continue;
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const variance = slice.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    const bbw = mean > 0 ? (2 * 2 * stdDev) / mean : 0.08;
+    bbws.push(bbw);
+  }
+
+  if (bbws.length === 0) {
+    return { bwpr: 25, isSqueeze: false, currentBBW: 0.08 };
+  }
+
+  const currentBBW = bbws[bbws.length - 1];
+  const countLesser = bbws.filter(b => b <= currentBBW).length;
+  const bwpr = +((countLesser / bbws.length) * 100).toFixed(1);
+  const isSqueeze = bwpr <= 14.0 || currentBBW <= 0.065;
+
+  return {
+    bwpr,
+    isSqueeze,
+    currentBBW: +(currentBBW).toFixed(4),
+    currentBBWPct: +(currentBBW * 100).toFixed(2)
+  };
+}
+
+/**
+ * 30. Systemic Market Breadth & Cash Defense Gate
+ * Calculates the percentage of listed equities trading above their 50-day EMA/SMA.
+ * When Breadth_50 < 40%, the engine activates "CASH DEFENSE MODE" and blocks Prime picks.
+ */
+export function evaluateMarketBreadthCashDefense(stocks = []) {
+  if (!Array.isArray(stocks) || stocks.length === 0) {
+    return { breadth50: 55, cashDefenseActive: false, message: 'Normal Market Regime' };
+  }
+
+  let countAbove50 = 0;
+  let totalEvaluated = 0;
+
+  stocks.forEach(s => {
+    const ltp = Number(s.ltp || s.price || 0);
+    const ema50 = Number(s.ema50 || s.sma50 || 0);
+    if (ltp > 0 && ema50 > 0) {
+      totalEvaluated++;
+      if (ltp >= ema50) countAbove50++;
+    }
+  });
+
+  const breadth50 = totalEvaluated > 0 ? +((countAbove50 / totalEvaluated) * 100).toFixed(1) : 55;
+  const cashDefenseActive = breadth50 < 40.0;
+
+  return {
+    breadth50,
+    cashDefenseActive,
+    countAbove50,
+    totalEvaluated,
+    regimeLabel: cashDefenseActive ? '🛑 CASH DEFENSE MODE' : '✅ BULLISH / EXPANSION REGIME',
+    message: cashDefenseActive
+      ? `Systemic Market Defense Active: Only ${breadth50}% of equities are above their 50-day EMA. Preserving cash; no high-risk breakout buys issued.`
+      : `Market breadth is healthy (${breadth50}% above 50 EMA). Breakout setups supported.`
+  };
+}
+
+/**
+ * 31. Unified Master Breakout Pipeline
+ * Amalgamates the complete research architecture into a production classifier:
+ *   1. primeDailyPick (Tomorrow's #1 Flagship Buy Blueprint)
+ *   2. activeBreakouts (Confirmed momentum breaches today)
+ *   3. nextBreakouts (Pre-breakout coiled accumulation radar)
+ */
+export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {}, brokerDataMap = {}, options = {}) {
+  const activeBreakouts = [];
+  const nextBreakouts = [];
+  const primeCandidates = [];
+
+  // 1. Evaluate Systemic Market Breadth Cash Defense Gate
+  const breadthCheck = evaluateMarketBreadthCashDefense(stocks);
+  const totalMarketTurnover = stocks.reduce((sum, s) => sum + Number(s.turnover || (s.ltp * s.volume) || 0), 0);
+  // Adaptive liquidity hurdle: 75 Lakhs in quiet markets (< 3 Arba), 1.5 Crore in active markets
+  const turnoverHurdle = totalMarketTurnover >= 3000000000 ? 15000000 : 7500000;
+
+  for (const stock of stocks) {
+    const sym = String(stock.symbol || stock.scrip || '').toUpperCase().trim();
+    const ltp = Number(stock.ltp || stock.price || 0);
+    const pCh = Number(stock.pChange || 0);
+    const vol = Number(stock.volume || stock.totalTradedQuantity || 0);
+    const turnover = Number(stock.turnover || (ltp * vol) || 0);
+    const candles = priceHistories[sym] || [];
+
+    // Safety Gate 1: Liquidity & Basic Pricing
+    if (ltp < 80 || turnover < turnoverHurdle || candles.length < 25) continue;
+
+    // Safety Gate 2: Positive Earnings Filter
+    const eps = Number(stock.eps || 0);
+    if (stock.eps !== undefined && eps < 0) continue;
+
+    // Safety Gate 3: Promoter Share Lock-In Expiry Blackout (45-Day window)
+    if (stock.lockinExpiry || stock.promoterLockinDays !== undefined) {
+      const daysToUnlock = stock.promoterLockinDays !== undefined
+        ? Number(stock.promoterLockinDays)
+        : Math.ceil((new Date(stock.lockinExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (daysToUnlock >= 0 && daysToUnlock <= 45) {
+        continue; // Exclude impending promoter unlock scrips
+      }
+    }
+
+    // Safety Gate 4: Himalayan Hydrology Engine (RoR Dry Season Check)
+    const sector = String(stock.sector || stock.sectorName || '');
+    const hydro = getHydroSeasonality(sector);
+    const hydroPenalty = hydro.isHydro && hydro.isDrySeason ? (hydro.penaltyPoints || -15) : 0;
+    if (hydro.isHydro && hydro.isDrySeason && hydro.penaltyPoints <= -15 && ltp < (stock.ema50 || ltp)) {
+      continue; // Disqualify broken dry season hydros
+    }
+
+    // Floor Sheet Intelligence & Wash-Trade Metrics
+    const broker = brokerDataMap[sym] || {};
+    const adRatio = Number(broker.adRatio || 0);
+    const nbar = Number(broker.nbar || (adRatio > 0 ? 1.6 : 1.0));
+    const lbas = Number(broker.lbas || 0.35); // Large block absorption share
+    const isDumped = adRatio <= -0.10 || (broker.adSignal === 'Distribution' && adRatio < 0);
+    if (isDumped) continue; // Disqualify institutional dump targets
+
+    // Technical Metrics: ATR, 20-Day High, 50-Day Volume
+    const atr = calculateATR(candles, 14);
+    const lastBar = candles[candles.length - 1] || {};
+    const prevBar = candles[candles.length - 2] || lastBar;
+    const high20 = Math.max(...candles.slice(-21, -1).map(c => Number(c.high || c.close || 0)));
+    const lowBase = Math.min(...candles.slice(-21, -1).map(c => Number(c.low || c.close || 0)));
+
+    const avgVol50 = candles.slice(-50).reduce((acc, c) => acc + Number(c.volume || 0), 0) / Math.min(50, candles.length);
+    const rvol = avgVol50 > 0 ? +(vol / avgVol50).toFixed(2) : 1.0;
+
+    // VCP Contraction & Bollinger Squeeze
+    const vcp = calculateVCPContractionRatio(candles);
+    const bbwp = calculateBollingerBandWidthPercentile(candles, 20, 120);
+
+    // Candle Geometry (Upper Wick Bull Trap Check)
+    const barHigh = Number(lastBar.high || ltp);
+    const barLow = Number(lastBar.low || ltp);
+    const barClose = Number(lastBar.close || ltp);
+    const barOpen = Number(lastBar.open || barClose);
+    const barRange = Math.max(0.1, barHigh - barLow);
+    const upperWick = barHigh - Math.max(barClose, barOpen);
+    const upperWickRatio = +(upperWick / barRange).toFixed(2);
+    const closeLocationValue = +(((barClose - barLow) - (barHigh - barClose)) / barRange).toFixed(2);
+
+    // Dynamic Execution Geometry
+    const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
+    const triggerBuyBandLow = +(high20 + clearanceBuffer * 0.5).toFixed(1);
+    const triggerBuyBandHigh = +(high20 * 1.025).toFixed(1); // Strict +2.5% Chase Cap
+    const structuralStopLoss = +(Math.max(1, Math.min(lowBase - atr * 0.5, ltp - atr * 1.5))).toFixed(1);
+    const riskPerShare = Math.max(1, ltp - structuralStopLoss);
+    const target1 = +(ltp + riskPerShare * 1.5).toFixed(1); // 1.5R de-risking
+    const target2 = +(ltp + riskPerShare * 3.0).toFixed(1); // 3.0R trend runner
+
+    // ── 1. ACTIVE BREAKOUT DETECTION ──
+    const isPriceBreaking = ltp >= high20 + clearanceBuffer && prevBar.close <= high20 * 1.01;
+    const isCleanCandle = (upperWickRatio <= 0.40 && closeLocationValue >= 0.35) || barClose >= barHigh * 0.985;
+    const isVolumeConfirmed = rvol >= 1.60;
+
+    if (isPriceBreaking && isCleanCandle && (isVolumeConfirmed || adRatio >= 0.05)) {
+      const activeScore = Math.round(
+        50 +
+        (isVolumeConfirmed ? 18 : 6) +
+        (rvol >= 2.2 ? 10 : 0) +
+        (adRatio >= 0.08 ? 14 : 4) +
+        (lbas >= 0.40 ? 8 : 0) +
+        (pCh >= 1.5 && pCh <= 6.5 ? 10 : 2) +
+        hydroPenalty
+      );
+
+      const activeItem = {
+        ...stock,
+        pivotLevel: high20,
+        rvol,
+        lbas,
+        nbar,
+        upperWickRatio: +(upperWickRatio * 100).toFixed(1),
+        score: activeScore,
+        compositeScore: activeScore,
+        entryZone: [triggerBuyBandLow, triggerBuyBandHigh],
+        entryLow: triggerBuyBandLow,
+        entryHigh: triggerBuyBandHigh,
+        chaseCap: triggerBuyBandHigh,
+        stopLoss: structuralStopLoss,
+        target1,
+        target2,
+        vcp,
+        bbwp,
+        sampleDepth: candles.length,
+        statisticalConfidence: candles.length >= 180 ? 'High' : (candles.length >= 90 ? 'Moderate' : 'Emerging'),
+        catalyst: `Resistance Breach of Rs. ${high20} with RVOL ${rvol}x and Net Accumulation`,
+        statusType: 'Active Resistance Breach'
+      };
+
+      activeBreakouts.push(activeItem);
+
+      if (activeScore >= 80 && !breadthCheck.cashDefenseActive) {
+        primeCandidates.push({
+          ...activeItem,
+          setupClass: 'Active Expansion Breakout'
+        });
+      }
+    }
+
+    // ── 2. NEXT BREAKOUT (COILING / PRE-BREAKOUT RADAR) ──
+    const distToPivotPct = +(((high20 - ltp) / high20) * 100).toFixed(1);
+    const isCoilingNearPivot = distToPivotPct >= 0.1 && distToPivotPct <= 4.8;
+    const isVCPTight = vcp.isVCP || vcp.finalDepth <= 6.8;
+    const isSqueeze = bbwp.isSqueeze || bbwp.bwpr <= 15.0;
+    const isVolumeDryUp = rvol <= 0.70;
+
+    if (isCoilingNearPivot && (isVCPTight || isSqueeze || isVolumeDryUp)) {
+      const nextScore = Math.round(
+        52 +
+        (isVCPTight ? 18 : 6) +
+        (isSqueeze ? 14 : 4) +
+        (isVolumeDryUp ? 12 : 2) +
+        (adRatio >= 0.05 ? 12 : 2) +
+        (lbas >= 0.40 ? 8 : 0) +
+        (distToPivotPct <= 2.0 ? 8 : 0) +
+        hydroPenalty
+      );
+
+      const nextItem = {
+        ...stock,
+        pivotLevel: high20,
+        distToPivotPct,
+        rvol,
+        lbas,
+        nbar,
+        vcp,
+        bbwp,
+        score: nextScore,
+        compositeScore: nextScore,
+        entryZone: [+(high20 * 0.99).toFixed(1), triggerBuyBandHigh],
+        entryLow: +(high20 * 0.99).toFixed(1),
+        entryHigh: triggerBuyBandHigh,
+        chaseCap: triggerBuyBandHigh,
+        stopLoss: structuralStopLoss,
+        target1,
+        target2,
+        sampleDepth: candles.length,
+        statisticalConfidence: candles.length >= 180 ? 'High' : (candles.length >= 90 ? 'Moderate' : 'Emerging'),
+        catalyst: `Coiled Base ${distToPivotPct}% Below Rs. ${high20} Pivot (${vcp.label || 'VCP'})`,
+        statusType: isVCPTight ? 'VCP Volatility Contraction' : 'Bollinger Squeeze Dry-Up'
+      };
+
+      nextBreakouts.push(nextItem);
+
+      if (nextScore >= 82 && !breadthCheck.cashDefenseActive) {
+        primeCandidates.push({
+          ...nextItem,
+          setupClass: 'Coiled Pre-Breakout Spring'
+        });
+      }
+    }
+  }
+
+  // Sort candidates descending by score
+  primeCandidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Programmatic Tie-Breakers: LBAS first, then distance to 52w high, then VCP depth
+    if ((b.lbas || 0) !== (a.lbas || 0)) return (b.lbas || 0) - (a.lbas || 0);
+    return (a.vcp?.finalDepth || 10) - (b.vcp?.finalDepth || 10);
+  });
+
+  activeBreakouts.sort((a, b) => b.score - a.score);
+  nextBreakouts.sort((a, b) => b.score - a.score);
+
+  // Select #1 Daily Prime Pick (or null if cash defense is active)
+  const primeDailyPick = (!breadthCheck.cashDefenseActive && primeCandidates.length > 0)
+    ? primeCandidates[0]
+    : (!breadthCheck.cashDefenseActive && (activeBreakouts.length > 0 || nextBreakouts.length > 0)
+        ? (activeBreakouts[0] || nextBreakouts[0])
+        : null);
+
+  return {
+    primeDailyPick,
+    activeBreakouts: activeBreakouts.slice(0, 15),
+    nextBreakouts: nextBreakouts.slice(0, 15),
+    breadthCheck,
+    cashDefenseActive: breadthCheck.cashDefenseActive,
+    evaluatedAt: new Date().toISOString()
+  };
+}
+

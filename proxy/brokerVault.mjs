@@ -106,17 +106,36 @@ export function aggregateFloorsheetRows(rows, symbol) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
+  // 1. Wash-Trade Decontamination: Purge internal self-matching where buyer === seller
+  let washTradesFiltered = 0;
+  const decontaminatedRows = rows.filter(r => {
+    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
+    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
+    if (b && s && b === s) {
+      washTradesFiltered++;
+      return false; // Skip wash trade
+    }
+    return true;
+  });
+
+  const validRows = decontaminatedRows.length > 0 ? decontaminatedRows : rows;
+
   const brokerMap = {};
   const dateMap = {};
   let totalTradedQty = 0;
   let totalTradedAmt = 0;
+  let largeBlockTradedAmt = 0; // Orders with quantity >= 1000 shares (LBAS)
 
-  rows.forEach(r => {
-    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '');
-    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '');
+  validRows.forEach(r => {
+    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
+    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
     const q = Number(r.qty || r.contractQuantity || r.quantity || 0);
     const amt = Number(r.amount || r.contractAmount || (q * Number(r.rate || 0)) || 0);
-    const d = String(r.businessDate || r.date || r.date_ || '');
+    const d = String(r.businessDate || r.date || r.date_ || '').trim();
+
+    if (q >= 1000) {
+      largeBlockTradedAmt += amt;
+    }
 
     if (b) {
       brokerMap[b] = brokerMap[b] || { brokerId: b, brokerName: getBrokerName(b), buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
@@ -162,6 +181,17 @@ export function aggregateFloorsheetRows(rows, symbol) {
   const adSignal = adRatio >= 0.05 ? 'Accumulation' : adRatio <= -0.05 ? 'Distribution' : 'Neutral';
   const adStrength = `${Math.min(99.9, Math.abs(adRatio * 100)).toFixed(1)}%`;
 
+  // Large-Block Absorption Share (LBAS): share of rupee turnover from lots >= 1000 shares
+  const lbas = totalTradedAmt > 0 ? +(largeBlockTradedAmt / totalTradedAmt).toFixed(3) : 0;
+
+  // Net Broker Accumulation Ratio (NBAR): Top-5 buyers quantity vs Top-5 sellers quantity
+  const top5BuyTotal = topBuyers.reduce((s, b) => s + b.buyQty, 0);
+  const top5SellTotal = topSellers.reduce((s, b) => s + b.sellQty, 0);
+  const nbar = top5SellTotal > 0 ? +(top5BuyTotal / top5SellTotal).toFixed(2) : (top5BuyTotal > 0 ? 3.0 : 1.0);
+
+  // Top-5 Buyer Concentration (CR_B_5)
+  const crb5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(3) : 0;
+
   const top3Volume = brokers.slice(0, 3).reduce((sum, b) => sum + b.totalQty, 0);
   const concentrationPct = totalTradedQty > 0 ? +(Math.min(95, (top3Volume / (totalTradedQty * 2)) * 100)).toFixed(1) : 30;
 
@@ -178,12 +208,16 @@ export function aggregateFloorsheetRows(rows, symbol) {
     topNetSellers,
     brokers,
     dailyFlow,
-    totalTrades: rows.length,
+    totalTrades: validRows.length,
+    washTradesFiltered,
     totalVolume: totalTradedQty,
     totalAmount: totalTradedAmt,
     adSignal,
     adStrength,
     adRatio,
+    lbas,
+    nbar,
+    crb5,
     concentrationPct,
     isReal: true,
     source: 'sharesansar_authentic_floorsheet',
