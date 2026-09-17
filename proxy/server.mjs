@@ -333,7 +333,7 @@ const NEPSE_HOLIDAYS_MAP = {
   '2026-03-19': 'Ghode Jatra', '2026-03-21': 'Eid-ul-Fitr', '2026-04-14': 'Nepali New Year 2083',
   '2026-04-26': 'Ram Navami', '2026-05-01': 'Labour Day / Buddha Jayanti', '2026-05-27': 'Bakra Eid',
   '2026-05-29': 'Republic Day', '2026-08-27': 'Janai Purnima', '2026-08-28': 'Gai Jatra',
-  '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej', '2026-09-19': 'Constitution Day',
+  '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej', '2026-09-17': 'Bishwakarma Puja', '2026-09-19': 'Constitution Day',
   '2026-09-25': 'Indra Jatra', '2026-10-10': 'Ghatasthapana', '2026-10-17': 'Dashain',
   '2026-10-18': 'Dashain', '2026-10-19': 'Dashain', '2026-10-20': 'Dashain', '2026-10-21': 'Dashain',
   '2026-11-08': 'Tihar', '2026-11-09': 'Tihar', '2026-11-10': 'Tihar', '2026-11-15': 'Chhath Parva',
