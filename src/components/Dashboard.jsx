@@ -1080,13 +1080,22 @@ export default function Dashboard({
     };
   }, []);
 
-  // Periodic evaluation of watched stocks against breakout conditions
+  // Combined list of watched symbols and symbols with active alert configurations
+  const watchedOrAlertSymbols = useMemo(() => {
+    const alertSyms = Object.keys(alertConfigs || {}).filter(k => alertConfigs[k]?.alertEnabled !== false);
+    return Array.from(new Set([
+      ...(watchlist || []).map(w => String(w).toUpperCase().trim()),
+      ...alertSyms.map(w => String(w).toUpperCase().trim())
+    ]));
+  }, [watchlist, alertConfigs]);
+
+  // Periodic evaluation of watched & alert stocks against breakout conditions
   useEffect(() => {
-    if (!stocks || stocks.length === 0 || !watchlist || watchlist.length === 0) return;
-    evaluateWatchlistAlerts(stocks, watchlist, (triggeredPayload) => {
+    if (!stocks || stocks.length === 0 || watchedOrAlertSymbols.length === 0) return;
+    evaluateWatchlistAlerts(stocks, watchedOrAlertSymbols, (triggeredPayload) => {
       setActiveBreakoutToast(triggeredPayload);
     });
-  }, [stocks, watchlist]);
+  }, [stocks, watchedOrAlertSymbols]);
 
   // Auto-dismiss toast after 15 seconds
   useEffect(() => {
@@ -1665,7 +1674,11 @@ export default function Dashboard({
     const startsWithName = [];
     const containsName = [];
 
-    unifiedSearchUniverse.forEach(s => {
+    const candidateUniverse = tableFilterMode === 'watchlist'
+      ? unifiedSearchUniverse.filter(s => watchedOrAlertSymbols.includes(String(s.symbol || '').toUpperCase().trim()))
+      : unifiedSearchUniverse;
+
+    candidateUniverse.forEach(s => {
       const sym = String(s.symbol || '').trim().toLowerCase();
       const name = String(s.name || s.companyName || '').toLowerCase();
       if (sym === q) {
@@ -1682,7 +1695,7 @@ export default function Dashboard({
     });
 
     return [...exact, ...startsWithSym, ...containsSym, ...startsWithName, ...containsName].slice(0, 20);
-  }, [unifiedSearchUniverse, topSearch]);
+  }, [unifiedSearchUniverse, topSearch, tableFilterMode, watchedOrAlertSymbols]);
 
   // Sector list with counts
   const sectorList = useMemo(() => {
@@ -1758,9 +1771,10 @@ export default function Dashboard({
   const displayStocks = useMemo(() => {
     let list = [...stocks];
 
+    const watchedOrAlertSet = new Set(watchedOrAlertSymbols);
+
     if (tableFilterMode === 'watchlist') {
-      const wSet = new Set((watchlist || []).map(w => String(w).toUpperCase()));
-      list = list.filter(s => wSet.has(String(s.symbol || '').toUpperCase()));
+      list = list.filter(s => watchedOrAlertSet.has(String(s.symbol || '').toUpperCase().trim()));
     } else if (tableFilterMode === 'gainers') {
       list = list.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
     } else if (tableFilterMode === 'turnover') {
@@ -1799,21 +1813,24 @@ export default function Dashboard({
         return sSec.includes(qSec);
       });
     }
+
     if (topSearch.trim()) {
       const q = topSearch.trim().toLowerCase();
-      // Ensure all securities matching q from unifiedSearchUniverse are in our candidate pool
-      const existingSymbols = new Set(list.map(s => String(s.symbol || '').toUpperCase().trim()));
-      unifiedSearchUniverse.forEach(u => {
-        const uSym = String(u.symbol || '').toUpperCase().trim();
-        if (!existingSymbols.has(uSym)) {
-          const symLower = uSym.toLowerCase();
-          const nameLower = String(u.name || u.companyName || '').toLowerCase();
-          if (symLower.includes(q) || nameLower.includes(q)) {
-            existingSymbols.add(uSym);
-            list.push(u);
+      // Ensure all securities matching q from unifiedSearchUniverse are in our candidate pool ONLY when NOT in watchlist mode!
+      if (tableFilterMode !== 'watchlist') {
+        const existingSymbols = new Set(list.map(s => String(s.symbol || '').toUpperCase().trim()));
+        unifiedSearchUniverse.forEach(u => {
+          const uSym = String(u.symbol || '').toUpperCase().trim();
+          if (!existingSymbols.has(uSym)) {
+            const symLower = uSym.toLowerCase();
+            const nameLower = String(u.name || u.companyName || '').toLowerCase();
+            if (symLower.includes(q) || nameLower.includes(q)) {
+              existingSymbols.add(uSym);
+              list.push(u);
+            }
           }
-        }
-      });
+        });
+      }
 
       list = list.filter(s => {
         const sym = String(s.symbol || '').trim().toLowerCase();
@@ -1869,8 +1886,14 @@ export default function Dashboard({
         return tableSortAsc ? vA - vB : vB - vA;
       });
     }
+
+    // Strict guard: In watchlist mode, NEVER allow any security outside the watched list or alert list
+    if (tableFilterMode === 'watchlist') {
+      list = list.filter(s => watchedOrAlertSet.has(String(s.symbol || '').toUpperCase().trim()));
+    }
+
     return list;
-  }, [stocks, selectedSector, topSearch, breadthFilter, tableSortField, tableSortAsc, tableFilterMode, watchlist, unifiedSearchUniverse]);
+  }, [stocks, selectedSector, topSearch, breadthFilter, tableSortField, tableSortAsc, tableFilterMode, watchlist, alertConfigs, watchedOrAlertSymbols, unifiedSearchUniverse]);
 
   const fallbackHero = getCachedIndices()?.nepse || { value: 2542.77, change: 4.66, pChange: 0.18, turnover: 3465201042.79 };
   const heroVal    = activeHeroIndex.val || indices?.nepse || fallbackHero;
@@ -1933,7 +1956,7 @@ export default function Dashboard({
             autoCapitalize="none"
             spellCheck={false}
             data-form-type="other"
-            placeholder="Search 350+ NEPSE stocks..."
+            placeholder={tableFilterMode === 'watchlist' ? 'Search in Watchlist & Alerts...' : 'Search 350+ NEPSE stocks...'}
             value={topSearch}
             onChange={e => { setTopSearch(e.target.value); setIsSearching(true); }}
             onFocus={() => setIsSearching(true)}
@@ -3193,9 +3216,9 @@ export default function Dashboard({
             }}
           >
             <Star style={{ width: 13, height: 13, fill: tableFilterMode === 'watchlist' ? '#fbbf24' : 'none' }} />
-            <span>{tableFilterMode === 'watchlist' ? 'Showing Watchlist' : 'Filter by Watchlist'}</span>
+            <span>{tableFilterMode === 'watchlist' ? 'Showing Watchlist & Alerts' : 'Watchlist & Alerts'}</span>
             <span style={{ fontSize: 9.5, opacity: 0.9, background: 'rgba(251, 191, 36, 0.2)', padding: '1px 6px', borderRadius: 8 }}>
-              {watchlist.length}
+              {watchedOrAlertSymbols.length}
             </span>
           </button>
 
@@ -3231,7 +3254,7 @@ export default function Dashboard({
       </div>
 
       {/* ── Watchlist Breakout Execution Radar & Live Dual-Gate Checklist ── */}
-      {tableFilterMode === 'watchlist' && watchlist.length > 0 && (
+      {tableFilterMode === 'watchlist' && watchedOrAlertSymbols.length > 0 && (
         <div style={{
           background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(21, 25, 34, 0.95))',
           border: '1px solid rgba(56, 189, 248, 0.25)',
@@ -3383,13 +3406,18 @@ export default function Dashboard({
               {tableFilterMode === 'watchlist' ? (
                 <div>
                   <Star style={{ width: 28, height: 28, color: '#fbbf24', margin: '0 auto 8px', opacity: 0.6 }} />
-                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>Your Watchlist is empty</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, maxWidth: 300, margin: '4px auto 12px' }}>
-                    Tap the ⭐ star icon next to any stock symbol to pin it to your personal watchlist.
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {topSearch.trim() ? `No watched or alert stocks match "${topSearch.trim()}"` : 'Your Watchlist & Alert list is empty'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, maxWidth: 320, margin: '4px auto 12px' }}>
+                    {topSearch.trim() ? 'Try clearing your search query or switch back to all market stocks.' : 'Tap the ⭐ star icon or 🔔 alert icon next to any stock to pin it here.'}
                   </div>
                   <button
                     type="button"
-                    onClick={() => setTableFilterMode('all')}
+                    onClick={() => {
+                      setTableFilterMode('all');
+                      setTopSearch('');
+                    }}
                     style={{
                       background: 'rgba(56, 117, 246, 0.15)',
                       border: '1px solid rgba(56, 117, 246, 0.4)',
@@ -3460,7 +3488,7 @@ export default function Dashboard({
                           color: '#38bdf8',
                           fontWeight: 700
                         }}>
-                          Gate: Rs. {alertConfigs[s.symbol]?.breakoutPrice || (s.ltp * 1.03).toFixed(1)} · RVOL {alertConfigs[s.symbol]?.rvolThreshold || 1.5}x
+                          Gate: Rs. {alertConfigs[s.symbol]?.breakoutPrice || (s.ltp * 1.03).toFixed(1)} · RVOL {(Number(alertConfigs[s.symbol]?.rvolThreshold) || 1.5).toFixed(2)}x
                         </span>
                         <button
                           type="button"

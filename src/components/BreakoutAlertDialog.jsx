@@ -19,6 +19,7 @@ import {
   resetAlertTrigger,
   calculateStockRvol
 } from '../utils/watchlistAlerts';
+import { addToWatchlist } from '../utils/watchlist';
 
 export default function BreakoutAlertDialog({
   isOpen,
@@ -103,6 +104,12 @@ export default function BreakoutAlertDialog({
       pushEnabled,
       autoSyncFromPlan: syncedBadge
     });
+
+    if (alertEnabled) {
+      try {
+        addToWatchlist(sym);
+      } catch (_) {}
+    }
 
     setSaveSuccess(true);
     setTimeout(() => {

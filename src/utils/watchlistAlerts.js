@@ -276,12 +276,21 @@ export function calculateStockRvol(stock, priceHistory = null) {
  * @returns {Array<{ symbol: string, stock: any, config: any, ltp: number, rvol: number, isPriceMet: boolean, isVolumeMet: boolean, isTriggered: boolean }>}
  */
 export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrigger = null) {
-  if (!Array.isArray(stocks) || stocks.length === 0 || !Array.isArray(watchedSymbols) || watchedSymbols.length === 0) {
+  if (!Array.isArray(stocks) || stocks.length === 0) {
     return [];
   }
 
-  const watchedSet = new Set(watchedSymbols.map(s => String(s).trim().toUpperCase()));
   const alertConfigs = getAllWatchlistAlertConfigs();
+  const alertSyms = Object.keys(alertConfigs).filter(k => alertConfigs[k]?.alertEnabled !== false);
+  const watchedSet = new Set([
+    ...(Array.isArray(watchedSymbols) ? watchedSymbols : []).map(s => String(s).trim().toUpperCase()),
+    ...alertSyms.map(s => String(s).trim().toUpperCase())
+  ]);
+
+  if (watchedSet.size === 0) {
+    return [];
+  }
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const results = [];
 
