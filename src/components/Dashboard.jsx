@@ -3313,7 +3313,7 @@ export default function Dashboard({
                     <div style={{ background: 'rgba(255,255,255,0.03)', padding: '4px 6px', borderRadius: 6 }}>
                       <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>2. RVOL HURDLE</div>
                       <div style={{ fontSize: 11, fontWeight: 800, color: isRvolMet ? '#34d399' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>
-                        {isRvolMet ? '✓ ' : ''}{rvol.toFixed(2)}x / {cfg.rvolThreshold}x
+                        {isRvolMet ? '✓ ' : ''}{rvol.toFixed(2)}x / {(Number(cfg.rvolThreshold) || 1.5).toFixed(2)}x
                       </div>
                     </div>
 

@@ -355,8 +355,8 @@ export default function BreakoutAlertDialog({
             {/* Quick Multiplier Chips */}
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               {[
-                { label: '1.25x Normal', val: 1.25 },
-                { label: '1.50x Festive Hurdle', val: 1.50 },
+                { label: '1.50x Festive Hurdle (Standard)', val: 1.50 },
+                { label: '1.75x High Conviction', val: 1.75 },
                 { label: '2.00x Whale Surge', val: 2.00 }
               ].map(chip => (
                 <button

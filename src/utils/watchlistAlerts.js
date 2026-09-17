@@ -6,6 +6,8 @@
  *   2. Volume Condition: RVOL >= RVOL Hurdle Multiplier (e.g. >= 1.50x during Festive Season)
  */
 
+import { getAccurateFestivalSeasonality } from './quantEngine.js';
+
 const ALERTS_STORAGE_KEY = 'nepse_watchlist_alerts_v1';
 const ALERTS_HISTORY_KEY = 'nepse_watchlist_alerts_history_v1';
 
@@ -16,7 +18,22 @@ const ALERTS_HISTORY_KEY = 'nepse_watchlist_alerts_history_v1';
 export function getAllWatchlistAlertConfigs() {
   try {
     const raw = localStorage.getItem(ALERTS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    let migrated = false;
+    for (const k in parsed) {
+      // If previously saved as 1.25, automatically upgrade to institutional 1.50x hurdle
+      if (parsed[k]?.rvolThreshold === 1.25 || parsed[k]?.rvolThreshold == null) {
+        parsed[k].rvolThreshold = 1.5;
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      try {
+        localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(parsed));
+      } catch (_) {}
+    }
+    return parsed;
   } catch (_) {
     return {};
   }
@@ -52,14 +69,18 @@ export function deriveDefaultBreakoutPlan(stock, entryExitPlan = null) {
     breakoutPrice = +(ltp * 1.03).toFixed(1);
   }
 
-  // 2. RVOL Hurdle: Check if Festive Seasonality active (1.5x) or default 1.25x
+  // 2. RVOL Hurdle: Institutional confirmation hurdle is strictly 1.50x (especially during Dashain festive lull)
   let rvolThreshold = 1.5;
   if (entryExitPlan?.festivalSeason?.rvolThreshold) {
     rvolThreshold = Number(entryExitPlan.festivalSeason.rvolThreshold);
-  } else if (entryExitPlan?.festivalSeason?.isFestiveLull) {
-    rvolThreshold = 1.5;
   } else {
-    rvolThreshold = 1.25;
+    const season = getAccurateFestivalSeasonality();
+    rvolThreshold = Number(season?.rvolThreshold || 1.5);
+  }
+
+  // Ensure threshold is never below 1.50x
+  if (rvolThreshold < 1.5) {
+    rvolThreshold = 1.5;
   }
 
   return {
