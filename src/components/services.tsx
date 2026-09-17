@@ -1989,25 +1989,25 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Buy Entry Zone</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {topPick.entryLow} – {topPick.entryHigh}
+                Rs. {typeof topPick.entryLow === 'object' ? (topPick.entryLow?.price ?? topPick.entryLow?.min ?? '—') : (topPick.entryLow || '—')} – {typeof topPick.entryHigh === 'object' ? (topPick.entryHigh?.price ?? topPick.entryHigh?.max ?? '—') : (topPick.entryHigh || '—')}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Target 1 (First Resistance)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {topPick.target1} (+7.5%)
+                Rs. {typeof topPick.target1 === 'object' ? (topPick.target1?.price ?? '—') : (topPick.target1 || '—')} (+7.5%)
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Target 2 (Runner)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#10B981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {topPick.target2} (+15.5%)
+                Rs. {typeof topPick.target2 === 'object' ? (topPick.target2?.price ?? '—') : (topPick.target2 || '—')} (+15.5%)
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Trailing Stop Loss</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {topPick.stopLoss} (-4.5%)
+                Rs. {typeof topPick.stopLoss === 'object' ? (topPick.stopLoss?.price ?? '—') : (topPick.stopLoss || '—')} (-4.5%)
               </div>
             </div>
           </div>
@@ -2120,7 +2120,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
                     </span>
                   </div>
                   <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
-                    Buy Zone: Rs. {cand.entryLow}–{cand.entryHigh} • Target: Rs. {cand.target1} • Stop: Rs. {cand.stopLoss}
+                    Buy Zone: Rs. {typeof cand.entryLow === 'object' ? (cand.entryLow?.price ?? cand.entryLow?.min ?? '—') : (cand.entryLow || '—')}–{typeof cand.entryHigh === 'object' ? (cand.entryHigh?.price ?? cand.entryHigh?.max ?? '—') : (cand.entryHigh || '—')} • Target: Rs. {typeof cand.target1 === 'object' ? (cand.target1?.price ?? '—') : (cand.target1 || '—')} • Stop: Rs. {typeof cand.stopLoss === 'object' ? (cand.stopLoss?.price ?? '—') : (cand.stopLoss || '—')}
                   </div>
                 </div>
 

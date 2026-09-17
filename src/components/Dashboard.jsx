@@ -2577,13 +2577,31 @@ export default function Dashboard({
           {/* Quantitative Execution Grid */}
           {(() => {
             const ltpNum = Number(primeDailyPick.ltp || primeDailyPick.price || 0);
-            const isBreakout = Number(primeDailyPick.entryLow || 0) > ltpNum * 1.005;
-            const t1Num = Number(primeDailyPick.target1 || 0);
-            const t2Num = Number(primeDailyPick.target2 || 0);
-            const slNum = Number(primeDailyPick.stopLoss || 0);
-            const t1Pct = ltpNum > 0 && t1Num > 0 ? (((t1Num - ltpNum) / ltpNum) * 100).toFixed(1) : null;
-            const t2Pct = ltpNum > 0 && t2Num > 0 ? (((t2Num - ltpNum) / ltpNum) * 100).toFixed(1) : null;
-            const slPct = ltpNum > 0 && slNum > 0 ? (((ltpNum - slNum) / ltpNum) * 100).toFixed(1) : null;
+            const eLow = typeof primeDailyPick.entryLow === 'object' ? (primeDailyPick.entryLow?.price ?? primeDailyPick.entryLow?.min ?? 0) : primeDailyPick.entryLow;
+            const eHigh = typeof primeDailyPick.entryHigh === 'object' ? (primeDailyPick.entryHigh?.price ?? primeDailyPick.entryHigh?.max ?? 0) : primeDailyPick.entryHigh;
+            const cCap = typeof primeDailyPick.chaseCap === 'object' ? (primeDailyPick.chaseCap?.price ?? primeDailyPick.chaseCap) : (primeDailyPick.chaseCap || eHigh);
+
+            const isBreakout = Number(eLow || 0) > ltpNum * 1.005;
+
+            const t1Price = typeof primeDailyPick.target1 === 'object'
+              ? (primeDailyPick.target1?.price ?? 0)
+              : Number(primeDailyPick.target1 || 0);
+            const t2Price = typeof primeDailyPick.target2 === 'object'
+              ? (primeDailyPick.target2?.price ?? 0)
+              : Number(primeDailyPick.target2 || 0);
+            const slPrice = typeof primeDailyPick.stopLoss === 'object'
+              ? (primeDailyPick.stopLoss?.price ?? 0)
+              : Number(primeDailyPick.stopLoss || 0);
+
+            const t1Pct = typeof primeDailyPick.target1 === 'object' && primeDailyPick.target1?.pct != null
+              ? primeDailyPick.target1.pct
+              : (ltpNum > 0 && t1Price > 0 ? (((t1Price - ltpNum) / ltpNum) * 100).toFixed(1) : null);
+            const t2Pct = typeof primeDailyPick.target2 === 'object' && primeDailyPick.target2?.pct != null
+              ? primeDailyPick.target2.pct
+              : (ltpNum > 0 && t2Price > 0 ? (((t2Price - ltpNum) / ltpNum) * 100).toFixed(1) : null);
+            const slPct = typeof primeDailyPick.stopLoss === 'object' && primeDailyPick.stopLoss?.pct != null
+              ? primeDailyPick.stopLoss.pct
+              : (ltpNum > 0 && slPrice > 0 ? (((ltpNum - slPrice) / ltpNum) * 100).toFixed(1) : null);
 
             const t1NetPct = primeDailyPick.levels?.target1?.netReturnPct != null
               ? primeDailyPick.levels.target1.netReturnPct
@@ -2607,11 +2625,11 @@ export default function Dashboard({
                     {isBreakout ? '⚡ Breakout Buy Zone (Above Pivot)' : 'Recommended Buy Zone'}
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: isBreakout ? '#fbbf24' : '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {primeDailyPick.entryLow} – {primeDailyPick.entryHigh}
+                    Rs. {eLow} – {eHigh}
                   </div>
                   {isBreakout && (
                     <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2 }}>
-                      LTP Rs. {fmt(ltpNum)} is below zone — trigger above Rs. {primeDailyPick.entryLow}
+                      LTP Rs. {fmt(ltpNum)} is below zone — trigger above Rs. {eLow}
                     </div>
                   )}
                 </div>
@@ -2619,14 +2637,14 @@ export default function Dashboard({
                 <div>
                   <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase' }}>Chase Cap (+2.5% Max)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)', marginTop: 2 }} title="Do NOT buy above this price due to T+2 freeze risk">
-                    Rs. {primeDailyPick.chaseCap || primeDailyPick.entryHigh} <span style={{ fontSize: 10, color: '#94a3b8' }}>(Max)</span>
+                    Rs. {cCap} <span style={{ fontSize: 10, color: '#94a3b8' }}>(Max)</span>
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (1.5R - 50% Lock)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {primeDailyPick.target1} {t1Pct ? `(+${t1Pct}%)` : ''}
+                    Rs. {t1Price || '—'} {t1Pct ? `(+${t1Pct}%)` : ''}
                   </div>
                   {t1NetPct != null && (
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
@@ -2638,7 +2656,7 @@ export default function Dashboard({
                 <div>
                   <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {primeDailyPick.target2} {t2Pct ? `(+${t2Pct}%)` : ''}
+                    Rs. {t2Price || '—'} {t2Pct ? `(+${t2Pct}%)` : ''}
                   </div>
                   {t2NetPct != null && (
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
@@ -2650,7 +2668,7 @@ export default function Dashboard({
                 <div>
                   <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {primeDailyPick.stopLoss} {slPct ? `(-${slPct}%)` : ''}
+                    Rs. {slPrice || '—'} {slPct ? `(-${slPct}%)` : ''}
                   </div>
                 </div>
               </div>

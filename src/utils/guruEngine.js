@@ -321,20 +321,26 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
       max: entryMax,
       label: `Rs. ${entryMin} – ${entryMax}`
     },
-    target1: {
-      price: target1,
-      pct: +(((target1 - ltp) / ltp) * 100).toFixed(1),
-      label: `Rs. ${target1} (+${(((target1 - ltp) / ltp) * 100).toFixed(1)}%)`
-    },
-    target2: {
-      price: target2,
-      pct: +(((target2 - ltp) / ltp) * 100).toFixed(1),
-      label: `Rs. ${target2} (+${(((target2 - ltp) / ltp) * 100).toFixed(1)}%)`
-    },
-    stopLoss: {
-      price: structuralStopLoss,
-      pct: +(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1),
-      label: `Rs. ${structuralStopLoss} (-${(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1)}%)`
+    target1,
+    target2,
+    stopLoss: structuralStopLoss,
+    levels: {
+      entryZone: { min: entryMin, max: entryMax, label: `Rs. ${entryMin} – ${entryMax}` },
+      target1: {
+        price: target1,
+        pct: +(((target1 - ltp) / ltp) * 100).toFixed(1),
+        label: `Rs. ${target1} (+${(((target1 - ltp) / ltp) * 100).toFixed(1)}%)`
+      },
+      target2: {
+        price: target2,
+        pct: +(((target2 - ltp) / ltp) * 100).toFixed(1),
+        label: `Rs. ${target2} (+${(((target2 - ltp) / ltp) * 100).toFixed(1)}%)`
+      },
+      stopLoss: {
+        price: structuralStopLoss,
+        pct: +(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1),
+        label: `Rs. ${structuralStopLoss} (-${(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1)}%)`
+      }
     },
     rrr1,
     rrr2,
