@@ -63,13 +63,14 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   const verdict = entryExitPlan.verdict || 'BUY / ACCUMULATE';
   const isBull = verdict.includes('BUY') || verdict.includes('ACCUMULATE');
   const isAvoid = verdict.includes('AVOID') || verdict.includes('EXIT') || verdict.includes('NO TRADE') || verdict.includes('REDUCE') || setupScore < 45;
+
+  const entryLow = entryExitPlan.levels?.entryZone?.min || entryExitPlan.levels?.entryZone?.low || (ltp * 0.985).toFixed(1);
+  const entryHigh = entryExitPlan.levels?.entryZone?.max || entryExitPlan.levels?.entryZone?.high || (ltp * 1.015).toFixed(1);
   const isBreakoutAboveLtp = Number(entryLow) > ltp * 1.015;
   const verdictColor = isBull ? '#10B981' : isAvoid ? '#F43F5E' : '#F59E0B';
   const verdictBg = isBull ? 'rgba(16, 185, 129, 0.12)' : isAvoid ? 'rgba(244, 63, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)';
   const verdictBorder = isBull ? 'rgba(16, 185, 129, 0.35)' : isAvoid ? 'rgba(244, 63, 94, 0.35)' : 'rgba(245, 158, 11, 0.35)';
 
-  const entryLow = entryExitPlan.levels?.entryZone?.min || entryExitPlan.levels?.entryZone?.low || (ltp * 0.985).toFixed(1);
-  const entryHigh = entryExitPlan.levels?.entryZone?.max || entryExitPlan.levels?.entryZone?.high || (ltp * 1.015).toFixed(1);
   const t1Price = entryExitPlan.levels?.target1?.price || (ltp * 1.10).toFixed(1);
   const t2Price = entryExitPlan.levels?.target2?.price || (ltp * 1.20).toFixed(1);
   const slPrice = entryExitPlan.levels?.stopLoss?.price || (ltp * 0.95).toFixed(1);
