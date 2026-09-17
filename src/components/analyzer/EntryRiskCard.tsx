@@ -5,13 +5,15 @@ interface EntryRiskCardProps {
   levels: {
     entryZone?: { low: number; high: number; label: string };
     stopLoss?: { price: number; pct: number; label: string };
-    target1?: { price: number; pct: number; horizon?: string; label: string };
-    target2?: { price: number; pct: number; horizon?: string; label: string };
+    target1?: { price: number; pct: number; horizon?: string; label: string; netReturnPct?: number; netGainPerShare?: number; grossUpsidePct?: number; capped?: boolean };
+    target2?: { price: number; pct: number; horizon?: string; label: string; netReturnPct?: number; netGainPerShare?: number; grossUpsidePct?: number; capped?: boolean };
     riskPerShare?: number;
     rewardToTarget1?: number;
     rewardToTarget2?: number;
     rrr1?: number;
     rrr2?: number;
+    feeFrictionPct?: number;
+    cgtTaxRatePct?: number;
     isValidTradeSetup?: boolean;
   };
   currentPrice?: number;
@@ -66,40 +68,60 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
         </div>
 
         {/* Target 1 */}
-        <div className="rounded-xl bg-slate-900/80 border border-emerald-900/40 p-3">
-          <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wide">
-            Target 1 (Swing)
+        <div className="rounded-xl bg-slate-900/80 border border-emerald-900/40 p-3 flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wide">
+              Target 1 (Swing)
+            </div>
+            <div className="text-base sm:text-lg font-black text-emerald-400 mt-1">
+              {levels.target1?.label || '—'}
+            </div>
           </div>
-          <div className="text-base sm:text-lg font-black text-emerald-400 mt-1">
-            {levels.target1?.label || '—'}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            {levels.target1?.horizon || '1–2 Weeks Horizon'}
+          <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
+            {levels.target1?.netReturnPct != null ? (
+              <div className="text-[11px] font-bold text-emerald-300">
+                Net: +{levels.target1.netReturnPct}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+              </div>
+            ) : null}
+            <div className="text-[10.5px] text-slate-400">
+              {levels.target1?.horizon || '1–2 Weeks Horizon'}
+            </div>
           </div>
         </div>
 
         {/* Target 2 */}
-        <div className="rounded-xl bg-slate-900/80 border border-teal-900/40 p-3">
-          <div className="text-[11px] text-teal-400 font-semibold uppercase tracking-wide">
-            Target 2 (Position)
+        <div className="rounded-xl bg-slate-900/80 border border-teal-900/40 p-3 flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] text-teal-400 font-semibold uppercase tracking-wide">
+              Target 2 (Position)
+            </div>
+            <div className="text-base sm:text-lg font-black text-teal-300 mt-1">
+              {levels.target2?.label || '—'}
+            </div>
           </div>
-          <div className="text-base sm:text-lg font-black text-teal-300 mt-1">
-            {levels.target2?.label || '—'}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            {levels.target2?.horizon || '3–6 Weeks Horizon'}
+          <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
+            {levels.target2?.netReturnPct != null ? (
+              <div className="text-[11px] font-bold text-teal-300">
+                Net: +{levels.target2.netReturnPct}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+              </div>
+            ) : null}
+            <div className="text-[10.5px] text-slate-400">
+              {levels.target2?.horizon || '3–6 Weeks Horizon'}
+            </div>
           </div>
         </div>
 
         {/* Stop Loss */}
-        <div className="rounded-xl bg-slate-900/80 border border-rose-900/40 p-3">
-          <div className="text-[11px] text-rose-400 font-semibold uppercase tracking-wide">
-            Stop-Loss (Exit Point)
+        <div className="rounded-xl bg-slate-900/80 border border-rose-900/40 p-3 flex flex-col justify-between">
+          <div>
+            <div className="text-[11px] text-rose-400 font-semibold uppercase tracking-wide">
+              Stop-Loss (Exit Point)
+            </div>
+            <div className="text-base sm:text-lg font-black text-rose-400 mt-1">
+              {levels.stopLoss?.label || '—'}
+            </div>
           </div>
-          <div className="text-base sm:text-lg font-black text-rose-400 mt-1">
-            {levels.stopLoss?.label || '—'}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
+          <div className="text-[10.5px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800/80">
             Invalidation threshold
           </div>
         </div>
@@ -140,9 +162,7 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400">
         <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
         <span>
-          <strong>Methodology:</strong> Entry zone is formulated from current price, ATR volatility band,
-          and confirmed support boundaries. Target 1 is aligned just below nearest major overhead resistance to
-          avoid selling congestion.
+          <strong>Real Net Return Accounting:</strong> Net targets incorporate round-trip SEBON regulatory fees (0.015%), broker commission (~0.27%-0.40%), DP fee (Rs. 25), and <strong>10% Final CGT</strong> (Finance Act 2083 for holding &lt; 1 yr). Entry zone is strictly clamped below the +15% NEPSE circuit ceiling.
         </span>
       </div>
     </div>

@@ -40,9 +40,48 @@ export async function aggregateFloorsheetData() {
   }
 }
 
+// Memory cache for verified Post-Market Prime Pick
+let cachedPostMarketPrimePick = null;
+
+export function getVerifiedPostMarketPrimePick() {
+  return cachedPostMarketPrimePick;
+}
+
+export function setVerifiedPostMarketPrimePick(data) {
+  cachedPostMarketPrimePick = data;
+}
+
+// Scheduled post-market close floorsheet reconciliation & prime pick verification worker
+export async function runPostMarketCloseAnalysis() {
+  console.log('[Post-Market Worker] Running post-market floorsheet & prime pick analysis...');
+  try {
+    await aggregateFloorsheetData();
+  } catch (err) {
+    console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
+  }
+}
+
 // Start workers
 export function startWorkers() {
-  // Run aggregation every 1 hour (3600000 ms)
+  // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
-  console.log('Background analytical workers started.');
+
+  // Check every 10 minutes to run post-close reconciliation after 3:15 PM NPT
+  setInterval(() => {
+    try {
+      const now = new Date();
+      // UTC+5:45
+      const nptOffset = 5 * 60 + 45;
+      const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+      const nptMins = (utcMins + nptOffset) % (24 * 60);
+      const isTradingDay = now.getUTCDay() >= 0 && now.getUTCDay() <= 4; // Sun-Thu
+
+      // Between 3:15 PM (15:15 = 915 mins) and 3:45 PM (15:45 = 945 mins)
+      if (isTradingDay && nptMins >= 915 && nptMins <= 945) {
+        runPostMarketCloseAnalysis();
+      }
+    } catch (_) {}
+  }, 10 * 60 * 1000);
+
+  console.log('Background analytical workers started (Floorsheet + Post-Market Close 3:15 PM Reconciler).');
 }

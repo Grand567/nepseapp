@@ -718,7 +718,58 @@ export default function ServicesHub({
 }: ServicesHubProps = {}) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [selectedService, setSelectedService] = useState<ServiceDef | null>(null);
+  const [selectedService, setSelectedService] = useState<ServiceDef | null>(() => {
+    try {
+      const openId = typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null;
+      if (openId) {
+        const found = ALL_SERVICES.find((s) => s.id === openId);
+        if (found) {
+          localStorage.removeItem('open_service_id');
+          return found;
+        }
+      }
+    } catch (_) {}
+    return null;
+  });
+  const [serviceInitialSymbol, setServiceInitialSymbol] = useState<string>(() => {
+    try {
+      return (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '';
+    } catch (_) {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    const handleOpenService = (e: any) => {
+      const sId = e?.detail?.serviceId || (typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null);
+      const sym = e?.detail?.symbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '');
+      if (sId) {
+        const found = ALL_SERVICES.find((s) => s.id === sId);
+        if (found) {
+          setSelectedService(found);
+          if (sym) setServiceInitialSymbol(sym);
+          try {
+            localStorage.removeItem('open_service_id');
+          } catch (_) {}
+          scrollToTop();
+        }
+      }
+    };
+
+    const handleSetSymbol = (e: any) => {
+      const sym = e?.detail?.symbol;
+      if (sym && typeof sym === 'string') {
+        setServiceInitialSymbol(sym.trim().toUpperCase());
+      }
+    };
+
+    window.addEventListener('open_service', handleOpenService);
+    window.addEventListener('set_entry_exit_symbol', handleSetSymbol);
+    return () => {
+      window.removeEventListener('open_service', handleOpenService);
+      window.removeEventListener('set_entry_exit_symbol', handleSetSymbol);
+    };
+  }, []);
 
   useBackHandler(() => {
     if (selectedService) {
@@ -865,6 +916,10 @@ export default function ServicesHub({
                   userId,
                   onNavigateTab,
                   onAskGuruAi,
+                  initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
+                  onSymbolChange: (newSym: string) => {
+                    if (newSym) setServiceInitialSymbol(newSym);
+                  },
                 } as any)}
               />
             ) : (

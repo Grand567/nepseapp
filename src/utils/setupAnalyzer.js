@@ -58,6 +58,7 @@ import {
   calculateCompositeMomentumScore,
   normalizeCorporateActionPrices,
   getHydroSeasonality,
+  getAccurateFestivalSeasonality,
 } from './quantEngine.js';
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
@@ -780,7 +781,7 @@ function computeEffectiveWeights(availabilityMap, { analogSampleSize = 15 } = {}
   return { effectiveWeights, unavailableFactors: unavailable };
 }
 
-export function scoreToVerdict(score, riskGate = {}) {
+export function scoreToVerdict(score, riskGate = {}, setupType = '') {
   if (riskGate.isCircuitTrap) {
     return 'NO TRADE (CIRCUIT CEILING TRAP)';
   }
@@ -789,6 +790,12 @@ export function scoreToVerdict(score, riskGate = {}) {
   }
   if (riskGate.isUnfavorableRRR) {
     return 'NO TRADE (UNFAVORABLE RISK/REWARD)';
+  }
+  if (riskGate.isFestiveLowVolumeTrap) {
+    return 'NO TRADE (FESTIVE CASH DRAIN / LOW RVOL)';
+  }
+  if (riskGate.isLossMaking) {
+    return 'HOLD / AVOID NEW ENTRY (OPERATING LOSS)';
   }
   if (riskGate.isInstitutionalDumping) {
     return 'REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)';
@@ -799,9 +806,15 @@ export function scoreToVerdict(score, riskGate = {}) {
   if (riskGate.isHardCeilingDowntrend) {
     return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
   }
+  if (riskGate.isOverheadResistanceCeiling) {
+    return 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
+  }
+  if (riskGate.isExtremeMultiple && score > 68) {
+    return 'HOLD / AVOID CHASING (EXTREME VALUATION)';
+  }
 
-  if (score >= 85) return 'VERY STRONG SETUP';
-  if (score >= 70) return 'STRONG ENTRY ZONE';
+  if (score >= 82) return setupType === 'coiled_pre_breakout' ? 'HIGH-CONVICTION COIL (AWAITING TRIGGER)' : 'VERY STRONG SETUP';
+  if (score >= 70) return setupType === 'coiled_pre_breakout' ? 'COILED BASE (PRE-BREAKOUT RADAR)' : 'STRONG ENTRY ZONE';
   if (score >= 58) return 'BUY / ACCUMULATE';
   if (score >= 45) return 'HOLD / WAIT FOR CONFIRMATION';
   if (score >= 32) return 'REDUCE / AVOID NEW ENTRY';
@@ -1022,21 +1035,83 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, Number(stock?.pChange) || 0);
   const holdDays  = options.maxHoldDays ?? 20;
 
+  const high20 = closes.length >= 20 ? Math.max(...adjustedCandles.slice(-21, -1).map((c) => Number(c.high || c.close || 0))) : ltp * 1.02;
+  const lowBase = closes.length >= 20 ? Math.min(...adjustedCandles.slice(-21, -1).map((c) => Number(c.low || c.close || 0))) : ltp * 0.94;
+  const distToPivotPct = high20 > 0 ? +(((high20 - ltp) / high20) * 100).toFixed(2) : 99;
+  const isCoilingNearPivot = distToPivotPct >= 0.1 && distToPivotPct <= 4.8;
+
+  // Harmonized dynamic execution geometry
+  const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
+  const structuralStopLoss = +(Math.max(1, Math.min(lowBase - atr * 0.5, ltp - atr * 1.5))).toFixed(1);
+  const riskPerShare = Math.max(1, ltp - structuralStopLoss);
+
   // Apply circuit-breaker cap to T1 and T2
-  const t1Cap = circuitAwareTarget(ltp, rawLevels.target1.price, holdDays);
-  const t2Cap = circuitAwareTarget(ltp, rawLevels.target2.price, holdDays);
+  const target1Candidate = isCoilingNearPivot ? +(ltp + riskPerShare * 1.5).toFixed(1) : rawLevels.target1.price;
+  const target2Candidate = isCoilingNearPivot ? +(ltp + riskPerShare * 3.0).toFixed(1) : rawLevels.target2.price;
+  const t1Cap = circuitAwareTarget(ltp, target1Candidate, holdDays);
+  const t2Cap = circuitAwareTarget(ltp, target2Candidate, holdDays);
+
+  const prevCloseVal = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
+  const maxAllowedEntry = prevCloseVal > 0 ? +(prevCloseVal * 1.125).toFixed(1) : +(ltp * 1.125).toFixed(1); // At least 2.5% below +15% upper circuit
+  const rawEntryZoneMax = isCoilingNearPivot ? +(high20 * 1.025).toFixed(1) : (rawLevels.entryZone?.max ?? rawLevels.entryZone?.high);
+  const entryZoneMin = isCoilingNearPivot ? +(high20 * 0.99).toFixed(1) : (rawLevels.entryZone?.min ?? rawLevels.entryZone?.low);
+  const entryZoneMax = Math.min(rawEntryZoneMax, maxAllowedEntry);
+
+  const stopLossPrice = isCoilingNearPivot ? structuralStopLoss : rawLevels.stopLoss.price;
+  const finalRiskPerShare = Math.max(0.5, ltp - stopLossPrice);
+  const rrr1 = +((t1Cap.price - ltp) / finalRiskPerShare).toFixed(2);
+  const rrr2 = +((t2Cap.price - ltp) / finalRiskPerShare).toFixed(2);
+
+  // Statutory Fee Friction & 10% Final CGT (Finance Act 2083)
+  const roundTripFeePct = 0.73; // 0.70% broker commission + 0.03% SEBON fee
+  const computeNetRealReturn = (targetPrice) => {
+    const grossUpsidePct = ltp > 0 ? ((targetPrice - ltp) / ltp) * 100 : 0;
+    const preTaxNetPct = grossUpsidePct - roundTripFeePct;
+    const netReturnPct = preTaxNetPct > 0 ? +(preTaxNetPct * 0.90).toFixed(2) : +(preTaxNetPct).toFixed(2);
+    const netGainPerShare = +(ltp * (netReturnPct / 100)).toFixed(1);
+    return { grossUpsidePct: +grossUpsidePct.toFixed(2), netReturnPct, netGainPerShare, cgtTaxPct: 10 };
+  };
+  const t1Net = computeNetRealReturn(t1Cap.price);
+  const t2Net = computeNetRealReturn(t2Cap.price);
 
   const levels = {
     ...rawLevels,
+    rrr1,
+    rrr2,
+    feeFrictionPct: roundTripFeePct,
+    cgtTaxRatePct: 10,
     entryZone: {
-      ...rawLevels.entryZone,
-      low: rawLevels.entryZone?.low ?? rawLevels.entryZone?.min,
-      high: rawLevels.entryZone?.high ?? rawLevels.entryZone?.max,
-      min: rawLevels.entryZone?.min ?? rawLevels.entryZone?.low,
-      max: rawLevels.entryZone?.max ?? rawLevels.entryZone?.high,
+      min: entryZoneMin,
+      max: entryZoneMax,
+      low: entryZoneMin,
+      high: entryZoneMax,
+      label: `Rs. ${entryZoneMin} – Rs. ${entryZoneMax}`,
     },
-    target1: { ...rawLevels.target1, price: t1Cap.price, label: `Rs. ${t1Cap.price}${t1Cap.capped ? ' (circuit-capped)' : ''}`, capped: t1Cap.capped },
-    target2: { ...rawLevels.target2, price: t2Cap.price, label: `Rs. ${t2Cap.price}${t2Cap.capped ? ' (circuit-capped)' : ''}`, capped: t2Cap.capped },
+    stopLoss: {
+      price: stopLossPrice,
+      pct: +(((ltp - stopLossPrice) / ltp) * 100).toFixed(1),
+      label: `Rs. ${stopLossPrice} (-${+(((ltp - stopLossPrice) / ltp) * 100).toFixed(1)}%)`
+    },
+    target1: {
+      ...rawLevels.target1,
+      price: t1Cap.price,
+      pct: +(((t1Cap.price - ltp) / ltp) * 100).toFixed(1),
+      netReturnPct: t1Net.netReturnPct,
+      netGainPerShare: t1Net.netGainPerShare,
+      grossUpsidePct: t1Net.grossUpsidePct,
+      label: `Rs. ${t1Cap.price}${t1Cap.capped ? ' (circuit-capped)' : ''}`,
+      capped: t1Cap.capped
+    },
+    target2: {
+      ...rawLevels.target2,
+      price: t2Cap.price,
+      pct: +(((t2Cap.price - ltp) / ltp) * 100).toFixed(1),
+      netReturnPct: t2Net.netReturnPct,
+      netGainPerShare: t2Net.netGainPerShare,
+      grossUpsidePct: t2Net.grossUpsidePct,
+      label: `Rs. ${t2Cap.price}${t2Cap.capped ? ' (circuit-capped)' : ''}`,
+      capped: t2Cap.capped
+    },
   };
 
   // ── Historical analog backtest ────────────────────────────────
@@ -1145,7 +1220,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     momentum:          technicalReport?.momentum?.score ?? (techDataAvailable ? momentumScore100 : null),
     priceAction:       priceActionReport?.score ?? (candles.length >= 100 ? Math.min(100, 50 + (closes[closes.length - 1] > (closes[closes.length - 20] || closes[0]) ? 15 : -10)) : null),
     supportResistance: priceActionReport?.supportResistance ? 60 : (candles.length >= 60 ? 50 : null),
-    breakoutPattern:   priceActionReport?.breakout?.detected ? (priceActionReport.breakout.direction === 'bullish' ? (priceActionReport.breakout.bullTrapRisk ? 45 : 85) : 30) : 50,
+    breakoutPattern:   priceActionReport?.breakout?.detected ? (priceActionReport.breakout.direction === 'bullish' ? (priceActionReport.breakout.bullTrapRisk ? 45 : 85) : 30) : (isCoilingNearPivot || technicalReport?.volatility?.isSqueeze ? 78 : 50),
     volume:            technicalReport?.volume?.score ?? (candles.some((c) => c.volume > 0) ? Math.min(100, 50 + ((stock?.volumeSurgeRatio ?? 1) - 1) * 30) : null),
     historicalAnalogs: analogWinRate !== null ? analogWinRate            : null,
     strategyRecord:    strategyWinRate !== null ? strategyWinRate        : null,
@@ -1162,10 +1237,26 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
   combinedScore = +Math.max(0, Math.min(100, combinedScore)).toFixed(1);
 
+  // Apply fundamental health & valuation adjustments to combinedScore
+  const epsVal = Number(stock?.eps || 0);
+  const peVal = Number(stock?.peRatio || stock?.pe || 0);
+  const pbVal = Number(stock?.pb || stock?.pbv || stock?.priceToBook || 0);
+  const pePbMultiple = epsVal > 0 && peVal > 0 && pbVal > 0 ? peVal * pbVal : 0;
+  const isLossMaking = stock?.eps !== undefined && epsVal < 0;
+  const isExtremeMultiple = pePbMultiple > 50 || peVal > 75;
+
+  if (isLossMaking) {
+    combinedScore = Math.max(10, +(combinedScore - 15).toFixed(1));
+  } else if (isExtremeMultiple) {
+    combinedScore = Math.max(15, +(combinedScore - 8).toFixed(1));
+  }
+
   // Setup classification
   let setupType = 'consolidation';
   if (priceActionReport?.breakout?.detected && priceActionReport.breakout.direction === 'bullish') {
     setupType = 'breakout';
+  } else if (isCoilingNearPivot || technicalReport?.volatility?.isSqueeze) {
+    setupType = 'coiled_pre_breakout';
   } else if (priceActionReport?.candlestick?.direction === 'bullish' && Math.abs((ltp - (priceActionReport.supportResistance?.nearestSupport || ltp)) / ltp) < 0.03) {
     setupType = 'support_bounce';
   } else if (technicalReport?.volatility?.isSqueeze) {
@@ -1329,16 +1420,13 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   // ── Hydro Seasonality & Fundamental Health Integration ──────────
   const sector = String(stock?.sector || stock?.sectorName || '');
   const hydroSeason = getHydroSeasonality(sector);
-  const eps = Number(stock?.eps || 0);
-  const pe = Number(stock?.peRatio || stock?.pe || 0);
-  const isLossMaking = eps < 0;
-  const isExtremePE = pe > 70;
+  const isExtremePE = peVal > 70;
   const isDeepHydroDry = hydroSeason.isHydro && hydroSeason.isDrySeason && hydroSeason.penaltyPoints <= -15;
 
   if (isLossMaking) {
-    bearishFactors.push(`Negative earnings: Company reported negative EPS (Rs. ${eps.toFixed(2)}) — operational loss risk`);
-  } else if (eps > 0 && pe > 0 && pe <= 25) {
-    bullishFactors.push(`Sound valuation fundamentals: Attractive P/E (${pe.toFixed(1)}x) with positive EPS (Rs. ${eps.toFixed(2)})`);
+    bearishFactors.push(`Negative earnings: Company reported negative EPS (Rs. ${epsVal.toFixed(2)}) — operational loss risk`);
+  } else if (epsVal > 0 && peVal > 0 && peVal <= 25) {
+    bullishFactors.push(`Sound valuation fundamentals: Attractive P/E (${peVal.toFixed(1)}x) with positive EPS (Rs. ${epsVal.toFixed(2)})`);
   }
 
   if (isExtremePE) {
@@ -1353,14 +1441,31 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     }
   }
 
+  // ── Accurate Festival & Fiscal Seasonality Integration ───────────
+  const festivalSeason = getAccurateFestivalSeasonality(new Date());
+  const rvol = Number(technicalReport?.volume?.rvol || 1.0);
+  const isBreakoutAttempt = priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 3.0;
+
+  if (festivalSeason.isFestiveLull) {
+    if (isBreakoutAttempt && rvol < festivalSeason.rvolThreshold) {
+      bearishFactors.push(`Festive cash drain volume penalty: ${festivalSeason.festivalName} active. Breakout RVOL (${rvol.toFixed(2)}x) fails festive confirmation hurdle (${festivalSeason.rvolThreshold}x) — elevated risk of low-volume fakeout`);
+    }
+  } else if (festivalSeason.isAgmRally) {
+    bullishFactors.push(`Seasonal dividend tailwind: ${festivalSeason.phase} (${festivalSeason.historicalWinRate} historical win rate, ${festivalSeason.historicalAvgReturn} avg gain) — bonus share declarations support institutional bidding`);
+  } else if (festivalSeason.isTaxDrain) {
+    bearishFactors.push(`Corporate tax remittance: Rs. 40–60 Arba outflow from banking system to IRD tightens margin liquidity`);
+  }
+
   // Warnings
   const warnings = [
     ...(dataSource.real === false ? ['⚠️ Price history is estimated — analysis is based on simulated data'] : []),
     ...(caEvents.length > 0 && unconfirmedCount > 0 ? [`${unconfirmedCount} corporate action adjustment(s) could not be confirmed against dividend records`] : []),
     ...(isInstitutionalDumping ? [`⚠️ Institutional Distribution: Top brokers are net offloading inventory (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`] : []),
-    ...(isLossMaking ? [`⚠️ Fundamental Caution: Negative EPS (${eps.toFixed(2)}) indicates operating losses`] : []),
-    ...(isExtremePE ? [`⚠️ High Valuation Multiple: P/E of ${pe.toFixed(1)}x exceeds prudent thresholds`] : []),
+    ...(isLossMaking ? [`⚠️ Fundamental Caution: Negative EPS (${epsVal.toFixed(2)}) indicates operating losses`] : []),
+    ...(isExtremePE ? [`⚠️ High Valuation Multiple: P/E of ${peVal.toFixed(1)}x exceeds prudent thresholds`] : []),
     ...(isDeepHydroDry && hydroSeason.warning ? [hydroSeason.warning] : []),
+    ...(festivalSeason.isFestiveLull ? [`⚠️ Festive Seasonality Alert: ${festivalSeason.detail} (RVOL hurdle: ${festivalSeason.rvolThreshold}x)`] : []),
+    ...(festivalSeason.isTaxDrain ? [`⚠️ Advance Corporate Tax Outflow: ${festivalSeason.detail}`] : []),
     ...(priceActionReport?.breakout?.bullTrapRisk ? ['⚠️ Potential bull trap: candle formed upper rejection wick > 40% of range'] : []),
     ...(technicalReport?.momentum?.rsi14 > 75 ? [`⚠️ Extreme overbought condition (RSI ${technicalReport.momentum.rsi14.toFixed(1)}) — avoid chasing extended moves`] : []),
     ...(technicalReport?.volume?.rvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${technicalReport.volume.rvol.toFixed(2)}x) — risk of exit slippage`] : []),
@@ -1379,10 +1484,14 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const isUnfavorableRRR = levels.rrr1 > 0 && levels.rrr1 < 1.4;
 
   const ema50Val = technicalReport?.trend?.ema?.ema50 || 0;
+  const ema200Val = technicalReport?.trend?.ema?.ema200 || Number(stock?.ema200 || stock?.sma200 || 0);
   const isBelow50EMA = ema50Val > 0 && ltp < ema50Val;
   const isBearMarket = marketScore !== null && marketScore <= 35;
   const isHardCeilingDowntrend = isBelow50EMA && isBearMarket;
   const isDeepHydroDryBreakout = isDeepHydroDry && (priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 5.0);
+  const isOverheadResistanceCeiling = ema200Val > 0 && Math.abs(ltp - ema200Val) / ema200Val <= 0.015 && (analogWinRate !== null && analogWinRate < 45);
+
+  const isFestiveLowVolumeTrap = Boolean(festivalSeason.isFestiveLull && isBreakoutAttempt && rvol < festivalSeason.rvolThreshold);
 
   const riskGate = {
     isCircuitTrap,
@@ -1391,18 +1500,26 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isInstitutionalDumping,
     isDeepHydroDryBreakout,
     isHardCeilingDowntrend,
+    isOverheadResistanceCeiling,
+    isLossMaking,
+    isExtremeMultiple,
+    isFestiveLowVolumeTrap,
     warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
+           : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${rvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
+           : isLossMaking ? `Fundamental Caution: Negative EPS (Rs. ${epsVal.toFixed(2)}) indicates operational losses.`
+           : isExtremeMultiple ? `Extreme Valuation Multiple: P/E × P/B multiple of ${pePbMultiple.toFixed(1)} carries severe multiple contraction risk.`
            : isInstitutionalDumping ? `Institutional Broker Distribution: Net ${Math.abs(brokerAdRatio * 100).toFixed(1)}% volume dumped by top institutional brokers into retail demand. Avoid fresh entry.`
            : isDeepHydroDryBreakout ? 'Deep winter hydro dry season: RoR power output severely depressed. Avoid chasing speculative spikes.'
            : isHardCeilingDowntrend ? 'Asset is below 50 EMA during a broader market bear regime.'
+           : isOverheadResistanceCeiling ? `Asset is testing 200-day EMA overhead resistance (Rs. ${ema200Val.toFixed(1)}) with lower historical forward win rate (${analogWinRate}%). Overhead supply risk.`
            : null
   };
 
   // Evidence confidence from analog engine
   const evidenceConfidence = analogResult?.confidence?.level ?? 'LOW';
-  const verdict = scoreToVerdict(combinedScore, riskGate)
+  const verdict = scoreToVerdict(combinedScore, riskGate, setupType)
     + (sampleSize < 3 && !riskGate.warning ? ' (Low Evidence Confidence)' : '');
 
   // ── Data quality ─────────────────────────────────────────────
@@ -1484,6 +1601,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     bearishFactors,
     warnings,
     confirmations,
+    festivalSeason,
 
     // ── Backward-compatible aliases ──
     combinedScore,

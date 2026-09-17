@@ -12,7 +12,7 @@
 //   - "What Must Happen Next": Confirmations to watch vs Invalidation triggers
 //   - Data Quality Audit & Corporate Action Normalization
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -36,6 +36,8 @@ import {
   fetchDividendHistory,
   fetchTodayPrice,
   fetchRealBrokerAnalysis,
+  fetchStockFundamentals,
+  getCachedStockFundamentals,
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
@@ -43,6 +45,8 @@ import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
 // Modular Sub-components
 import { StockCandlestickChart } from './charts/StockCandlestickChart';
 import { SetupScoreCard } from './analyzer/SetupScoreCard';
+import { GrahamSafetyCard } from './analyzer/GrahamSafetyCard';
+import { FestivalSeasonalityCard } from './analyzer/FestivalSeasonalityCard';
 import { EntryRiskCard } from './analyzer/EntryRiskCard';
 import { TechnicalDashboard } from './analyzer/TechnicalDashboard';
 import { SupportResistancePanel } from './analyzer/SupportResistancePanel';
@@ -59,6 +63,7 @@ interface EntryExitAnalyzerProps {
   indices?: any;
   onSelectStock?: (s: any) => void;
   initialSymbol?: string;
+  onSymbolChange?: (symbol: string) => void;
 }
 
 export function EntryExitAnalyzer({
@@ -66,8 +71,24 @@ export function EntryExitAnalyzer({
   indices,
   onSelectStock,
   initialSymbol,
+  onSymbolChange,
 }: EntryExitAnalyzerProps) {
-  const [symbol, setSymbol] = useState(initialSymbol || '');
+  const stocksRef = useRef(stocks);
+  stocksRef.current = stocks;
+  const indicesRef = useRef(indices);
+  indicesRef.current = indices;
+
+  const getInitialSym = () => {
+    if (initialSymbol && typeof initialSymbol === 'string') return initialSymbol.trim().toUpperCase();
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('selected_entry_exit_symbol');
+        if (stored && typeof stored === 'string') return stored.trim().toUpperCase();
+      } catch (_) {}
+    }
+    return '';
+  };
+  const [symbol, setSymbol] = useState<string>(getInitialSym);
   const [activeSubTab, setActiveSubTab] = useState<'setup' | 'chart' | 'signals' | 'history' | 'corporate'>('setup');
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -76,8 +97,16 @@ export function EntryExitAnalyzer({
   const [rawCandles, setRawCandles] = useState<any[]>([]);
   const [dividendData, setDividendData] = useState<any[]>([]);
   const [stockInfo, setStockInfo] = useState<any>(null);
+  const [fundamentals, setFundamentals] = useState<any>(null);
   const [analyzedTime, setAnalyzedTime] = useState<string>('');
   const [error, setError] = useState('');
+  const lastAnalyzedSymbolRef = useRef<string>('');
+
+  // Track previous initialSymbol prop to prevent re-triggering unless prop genuinely changed
+  const prevInitialSymbolRef = useRef<string>(
+    initialSymbol && typeof initialSymbol === 'string' ? initialSymbol.trim().toUpperCase() : ''
+  );
+  const initialMountDone = useRef<boolean>(false);
 
   // Prepopulate symbol list for instant autocomplete
   useEffect(() => {
@@ -95,23 +124,60 @@ export function EntryExitAnalyzer({
       if (!targetSymbol) return;
       const sym = targetSymbol.toUpperCase().trim();
       setSymbol(sym);
+      lastAnalyzedSymbolRef.current = sym;
+      try {
+        localStorage.setItem('selected_entry_exit_symbol', sym);
+      } catch (_) {}
       setLoading(true);
       setError('');
       setPlan(null);
       setRawCandles([]);
       setDividendData([]);
+      const cachedFund = getCachedStockFundamentals(sym);
+      if (cachedFund) setFundamentals(cachedFund);
+
+      // Check if Prime Pick already computed this plan within the last 10 minutes
+      try {
+        const cachedRaw = localStorage.getItem('prime_pick_plan_cache');
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          if (cached && cached.symbol === sym && cached.plan && Date.now() - (cached.ts || 0) < 10 * 60 * 1000) {
+            const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
+            setStockInfo(stock);
+            setPlan(cached.plan);
+            setRawCandles(cached.plan.candles || []);
+            setAnalyzedTime(
+              new Date(cached.ts).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true,
+              })
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (_) {}
+
       setLoadingStep('Connecting to NEPSE live exchange feed…');
 
       try {
-        let stock = (stocks || []).find((s: any) => s.symbol === sym);
+        let stock = (stocksRef.current || []).find((s: any) => s.symbol === sym);
 
         setLoadingStep('Fetching 500-session OHLCV price history & corporate filings…');
-        const [history, divRes, liveRes, brokerRes] = await Promise.all([
+        const [history, divRes, liveRes, brokerRes, fundRes] = await Promise.all([
           fetchPriceHistory(sym, 500),
           fetchDividendHistory(sym).catch(() => null),
           !stock || !stock.ltp ? fetchTodayPrice(sym).catch(() => null) : Promise.resolve(null),
           fetchRealBrokerAnalysis(sym, 30).catch(() => null),
+          fetchStockFundamentals(sym).catch(() => null),
         ]);
+
+        if (fundRes) {
+          setFundamentals(fundRes);
+          stock = { ...(stock || {}), ...fundRes };
+        }
 
         if (!stock || !stock.ltp) {
           if (liveRes?.data?.ltp) {
@@ -135,7 +201,7 @@ export function EntryExitAnalyzer({
 
         setLoadingStep('Computing multi-factor technicals, broker flow & historical analogs…');
         const result = generateEntryExitPlan(stock, candleList, divRes?.dividends || [], { 
-          indices, 
+          indices: indicesRef.current, 
           maxHoldDays: 20,
           brokerAnalysis: brokerRes
         });
@@ -160,7 +226,7 @@ export function EntryExitAnalyzer({
         setLoadingStep('');
       }
     },
-    [stocks, indices]
+    []
   );
 
   const handleStockChange = useCallback(
@@ -171,23 +237,100 @@ export function EntryExitAnalyzer({
         setRawCandles([]);
         setDividendData([]);
         setStockInfo(null);
+        setFundamentals(null);
         setError('');
+        lastAnalyzedSymbolRef.current = '';
+        prevInitialSymbolRef.current = '';
+        try {
+          localStorage.removeItem('selected_entry_exit_symbol');
+          window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
+            detail: { symbol: '', source: 'entry_exit_analyzer' }
+          }));
+        } catch (_) {}
+        onSymbolChange?.('');
         return;
       }
-      analyze(newSym);
+      const sym = newSym.trim().toUpperCase();
+      prevInitialSymbolRef.current = sym;
+      try {
+        localStorage.setItem('selected_entry_exit_symbol', sym);
+        window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
+          detail: { symbol: sym, source: 'entry_exit_analyzer' }
+        }));
+      } catch (_) {}
+      onSymbolChange?.(sym);
+      analyze(sym);
     },
-    [analyze]
+    [analyze, onSymbolChange]
   );
 
-  const lastAnalyzedSymbolRef = React.useRef<string>('');
-
+  // 1. Mount effect: Run once on component mount
   useEffect(() => {
-    if (initialSymbol && lastAnalyzedSymbolRef.current !== initialSymbol) {
-      lastAnalyzedSymbolRef.current = initialSymbol;
-      setSymbol(initialSymbol);
-      analyze(initialSymbol);
+    if (initialMountDone.current) return;
+    initialMountDone.current = true;
+
+    let target = (
+      (initialSymbol && typeof initialSymbol === 'string' ? initialSymbol.trim() : '') ||
+      (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') || '' : '')
+    ).toUpperCase().trim();
+
+    if (!target && stocksRef.current && stocksRef.current.length > 0) {
+      target = stocksRef.current[0].symbol;
+    }
+
+    if (target && target !== lastAnalyzedSymbolRef.current) {
+      prevInitialSymbolRef.current = target;
+      analyze(target);
+    }
+  }, [analyze]);
+
+  // 2. Prop change effect: Only triggers if initialSymbol prop genuinely changed from external caller
+  useEffect(() => {
+    if (!initialSymbol || typeof initialSymbol !== 'string') return;
+    const clean = initialSymbol.trim().toUpperCase();
+    if (!clean) return;
+
+    if (clean !== prevInitialSymbolRef.current) {
+      prevInitialSymbolRef.current = clean;
+      if (clean !== lastAnalyzedSymbolRef.current) {
+        analyze(clean);
+      }
     }
   }, [initialSymbol, analyze]);
+
+  // 3. Listen to external window events (e.g. user clicked "Analyze" elsewhere in app)
+  useEffect(() => {
+    const handleSymbolEvent = (e: any) => {
+      if (e?.detail?.source === 'entry_exit_analyzer') return;
+      const sym = e?.detail?.symbol;
+      if (sym && typeof sym === 'string') {
+        const clean = sym.trim().toUpperCase();
+        if (clean && clean !== lastAnalyzedSymbolRef.current) {
+          prevInitialSymbolRef.current = clean;
+          analyze(clean);
+        }
+      }
+    };
+
+    window.addEventListener('open_service', handleSymbolEvent);
+    window.addEventListener('set_entry_exit_symbol', handleSymbolEvent);
+
+    return () => {
+      window.removeEventListener('open_service', handleSymbolEvent);
+      window.removeEventListener('set_entry_exit_symbol', handleSymbolEvent);
+    };
+  }, [analyze]);
+
+  // 4. Live price ticks: update stockInfo quote when stocks change without wiping plan or resetting symbol
+  useEffect(() => {
+    const currentSym = symbol || lastAnalyzedSymbolRef.current;
+    if (currentSym && stocks && stocks.length > 0) {
+      const updated = stocks.find((s: any) => s.symbol === currentSym);
+      if (updated && updated.ltp) {
+        setStockInfo((prev: any) => ({ ...(prev || {}), ...updated }));
+      }
+    }
+  }, [stocks, symbol]);
 
   // Derive active change metrics
   const livePrice = stockInfo?.ltp || stockInfo?.closePrice || plan?.ltp || plan?.levels?.entryZone?.low || 0;
@@ -200,8 +343,8 @@ export function EntryExitAnalyzer({
       {/* ── Top Header Banner ── */}
       <InfoBanner type="info">
         <strong>Entry / Exit Analyzer Workstation:</strong> Quantitative decision engine combining
-        moving-average structures, momentum velocity, volume confirmation, S/R clustering, and
-        historical analog backtesting (net of SEBON brokerage & 10% CGT Final Tax per Finance Act 2083).
+        Benjamin Graham’s Margin of Safety, moving-average structures, momentum velocity, volume confirmation,
+        S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage & 10% CGT Final Tax).
       </InfoBanner>
 
       {/* ── SECTION A: Stock Header & Search Bar ── */}
@@ -409,6 +552,20 @@ export function EntryExitAnalyzer({
                 bearishFactors={plan.bearishFactors}
                 warnings={plan.warnings}
                 confirmations={plan.confirmations}
+              />
+
+              <FestivalSeasonalityCard
+                festivalSeason={plan.festivalSeason}
+                rvol={plan.technical?.volume?.rvol}
+              />
+
+              <GrahamSafetyCard
+                symbol={plan.symbol || symbol}
+                ltp={livePrice}
+                fundamentals={fundamentals || stockInfo}
+                setupScore={plan.setupScore}
+                verdict={plan.verdict}
+                loading={loading}
               />
 
               <EntryRiskCard levels={plan.levels} currentPrice={livePrice} />

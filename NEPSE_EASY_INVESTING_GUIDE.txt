@@ -1,0 +1,221 @@
+================================================================================
+          NEPSE MASTER INVESTING MANUAL & DAILY TRADING CLOCK
+        (Step-by-Step Execution Guide: Entry, Exit, Hold & Timing)
+================================================================================
+
+This comprehensive handbook gives you the exact blueprint to trade for consistent
+profit using the app, protect your capital from devastating losses, and follow
+a strict time-based routine every single trading day (Sunday to Thursday).
+
+================================================================================
+SECTION 1: THE EXACT DAILY TRADING CLOCK (WHAT TO DO & WHEN)
+================================================================================
+
+Trading NEPSE profitably is 80% discipline and timing. Follow this exact daily
+routine to eliminate emotional mistakes:
+
+--------------------------------------------------------------------------------
+TIME 1: 09:30 AM – 10:30 AM (PRE-MARKET PREPARATION)
+--------------------------------------------------------------------------------
+What to do:
+  1. Open the App on your phone or PC.
+  2. Look at the Top Banner on the Dashboard:
+     - IF RED "SYSTEMIC CASH DEFENSE ACTIVE" appears:
+       -> Market breadth is weak (Declines >= 60% or Advances < 35%).
+       -> Strict Rule: NO FRESH BUYING TODAY. Keep 100% cash safe.
+     - IF GREEN / NORMAL:
+       -> Proceed to examine today's opportunities.
+  3. Go to "Daily Prime Pick" (Dashboard / Predictor Hub):
+     - The app scans 350+ NEPSE stocks and displays the single best setup.
+     - Check the 3 Golden Quality Filters:
+       [A] Setup Score >= 58 (e.g., 65.3 or higher).
+       [B] Net Win Rate >= 50% (Bayesian backtested).
+       [C] Evidence Confidence: HIGH or MEDIUM (4+ analogs).
+  4. Tap "Analyze Setup" to open the Entry/Exit Analyzer:
+     - Check the Big Verdict Banner:
+       * "BUY / ACCUMULATE" -> Approved for execution.
+       * "NO TRADE (UNFAVORABLE RISK/REWARD)" -> BLOCKED (like HDHPC). Do NOT buy.
+  5. Write down these 4 key numbers in your notebook/trading journal:
+     - Suggested Entry Zone (e.g., Rs. 261.1 - 270.3)
+     - Target 1 (e.g., Rs. 292.6)
+     - Target 2 (e.g., Rs. 327.3)
+     - Stop Loss (e.g., Rs. 234.9)
+
+--------------------------------------------------------------------------------
+TIME 2: 10:30 AM – 11:00 AM (PRE-OPEN SESSION ON TMS)
+--------------------------------------------------------------------------------
+What to do:
+  1. Log into your NEPSE Broker TMS portal (e.g., Broker 58, Broker 45, etc.).
+  2. DO NOT place aggressive market buy orders in the pre-open session.
+     Pre-open pricing in NEPSE is easily manipulated with low-volume orders.
+  3. Set a Price Alert on your phone/broker for the "Pivot Entry Price"
+     (e.g., Alert at Rs. 261.5 for GBIME).
+
+--------------------------------------------------------------------------------
+TIME 3: 11:00 AM – 11:30 AM (MARKET OPEN & BREAKOUT TRIGGER WINDOW)
+--------------------------------------------------------------------------------
+What to do:
+  1. First 10 Minutes (11:00 - 11:10 AM): SIT ON YOUR HANDS.
+     Let the opening volatility, overnight orders, and wide spreads settle.
+  2. Between 11:15 AM and 11:30 AM: Check the live price and volume:
+     CASE A: BREAKOUT ENTRY (Suggested Entry is above Market Price, e.g. 261.1 - 270.3):
+       - If price crosses above Rs. 261.1 AND trading volume is surging (RVOL > 1.25x):
+         -> Place your BUY LIMIT order between Rs. 261.1 and Rs. 268.0.
+       - If price never crosses Rs. 261.1: DO NOT BUY. Keep your cash in your account.
+       - THE CHASE CAP: If the stock instantly gaps up beyond Rs. 270.3 (+5% or circuit):
+         -> CANCEL AND WALK AWAY. Never chase a stock past its Chase Cap!
+     CASE B: PULLBACK / SUPPORT BUY (Suggested Entry is at or below Market Price):
+       - If price dips into the lower support corridor on low volume:
+         -> Accumulate in 2 tranches (50% now, 50% if it retests support).
+
+--------------------------------------------------------------------------------
+TIME 4: 11:30 AM – 01:30 PM (MID-DAY HOLDING & MONITORING)
+--------------------------------------------------------------------------------
+What to do:
+  1. Do NOT stare at the live ticker every minute. Checking too often creates fear.
+  2. Check once an hour (at 12:30 PM and 1:30 PM):
+     - Is the stock holding above the Stop Loss level?
+     - If yes, do nothing. Let the position work.
+
+--------------------------------------------------------------------------------
+TIME 5: 01:30 PM – 02:45 PM (POWER HOUR & SMART MONEY TRACKING)
+--------------------------------------------------------------------------------
+What to do:
+  1. This is when institutional NEPSE players make their biggest moves.
+  2. Open the app and check the Floorsheet / Broker Activity:
+     - Check LBAS (Large Block Absorption Share): Are blocks >= 45%?
+     - Check Broker AD Ratio: Is it positive (+0.10+)?
+     - If big brokers are accumulating, the breakout is authentic.
+  3. Watch Target 1:
+     - If the stock surges and reaches Target 1 (e.g. Rs. 292.6):
+       -> Prepare to execute Profit Tranche 1.
+
+--------------------------------------------------------------------------------
+TIME 6: 02:45 PM – 03:00 PM (MARKET CLOSE EXECUTION WINDOW)
+--------------------------------------------------------------------------------
+What to do:
+  1. EXIT FOR PROFIT:
+     - If price touched or exceeded Target 1:
+       -> Place a sell limit order for 50% of your shares. Lock in real cash profit.
+       -> Move your Stop Loss on the remaining 50% shares to your original BUY PRICE.
+       -> The trade is now 100% RISK-FREE.
+  2. EXIT FOR LOSS (CAPITAL PRESERVATION):
+     - If the stock broke down and closed below your Stop Loss (e.g. Rs. 234.9):
+       -> SELL 100% IMMEDIATELY before 3:00 PM.
+       -> Never hold overnight hoping for a miracle tomorrow.
+
+--------------------------------------------------------------------------------
+TIME 7: 03:15 PM – 04:00 PM (POST-MARKET REVIEW & JOURNALING)
+--------------------------------------------------------------------------------
+What to do:
+  1. Write your executed trades in your trade journal.
+  2. Record: Buy Price, Sell Price, Target 1 locked profit, remaining shares,
+     and updated Breakeven Stop Loss.
+  3. Clear your mind and relax until tomorrow morning.
+
+
+================================================================================
+SECTION 2: COMPLETE RULES FOR ENTRY, HOLD, AND EXIT
+================================================================================
+
+--------------------------------------------------------------------------------
+RULE A: HOW TO ENTER FOR MAXIMUM PROFIT
+--------------------------------------------------------------------------------
+Never buy blindly. A trade is only valid when ALL 4 conditions match:
+  1. Setup Score >= 58 with Evidence Confidence = HIGH or MEDIUM.
+  2. Setup Verdict says "BUY / ACCUMULATE".
+     (If it says "NO TRADE / CAPITAL PRESERVATION", DO NOT TOUCH IT).
+  3. Risk-to-Reward Ratio (Target 1) is at least 1.5 : 1 (ideally >= 1.75 : 1).
+  4. Entry is strictly executed WITHIN the Suggested Entry Zone, never above Chase Cap.
+
+Position Sizing (The 2% Rule):
+  - Never risk losing more than 2% of your total portfolio on one trade.
+  - Formula:
+      Shares to Buy = (Total Portfolio Value x 0.02) / (Buy Price - Stop Loss Price)
+  - Example:
+      Portfolio = Rs. 5,00,000.
+      2% max risk = Rs. 10,000.
+      Buy Price = Rs. 262.00, Stop Loss = Rs. 235.00 -> Risk per share = Rs. 27.00.
+      Number of shares to buy = 10,000 / 27 = 370 shares.
+      Total cost = 370 x 262 = Rs. 96,940 (~19% of portfolio).
+      If trade fails and hits stop: You only lose Rs. 9,990 (exactly 2%).
+      You still have 98% of your money ready for the next winner!
+
+--------------------------------------------------------------------------------
+RULE B: HOW TO HOLD STOCKS SAFELY (NO PANIC, NO GUESSWORK)
+--------------------------------------------------------------------------------
+  1. Once bought, your shares are locked for T+2 days in NEPSE settlement.
+     Do not panic over minor 1% daily wiggles during T+2.
+  2. While the stock trades between Entry Zone and Target 1:
+     -> HOLD. Do not sell early out of impatience.
+  3. When RSI is between 50 and 65:
+     -> The stock is in healthy upward expansion. Let profits ride.
+  4. If RSI reaches >= 75:
+     -> Overbought exhaustion is near. Prepare to take profits at Target 1.
+
+--------------------------------------------------------------------------------
+RULE C: HOW TO EXIT FOR MAXIMUM PROFIT (THE 2-TRANCHE STRATEGY)
+--------------------------------------------------------------------------------
+Most retail traders turn winning trades into losing trades because they don't
+know when to sell. Follow the 2-Tranche Strategy:
+
+  TRANCHE 1 (At Target 1 - e.g. Rs. 292.6):
+    - Sell exactly 50% of your shares.
+    - Transfer that profit to your bank or cash balance.
+    - IMMEDIATELY RAISE YOUR STOP LOSS to your purchase price (Rs. 261.1).
+    - Even if the market crashes the next day, you exit the rest at breakeven.
+      You cannot lose money on this trade!
+
+  TRANCHE 2 (At Target 2 - e.g. Rs. 327.3):
+    - Let the remaining 50% shares run until they hit Target 2.
+    - Sell the remaining 50% shares at Target 2 for maximum multi-week gains.
+
+--------------------------------------------------------------------------------
+RULE D: HOW TO EXIT FOR LOSS (CUTTING LOSSES LIKE A PRO)
+--------------------------------------------------------------------------------
+  1. The Stop-Loss is non-negotiable. It is your financial seatbelt.
+  2. If a daily candle closes below the Stop-Loss price:
+     -> SELL 100% OF YOUR POSITION. No excuses, no hope, no delays.
+  3. The Math of Why You Must Cut Losses Early:
+     - A -5% loss only needs a +5.3% gain on the next trade to recover.
+     - A -10% loss only needs a +11.1% gain on the next trade to recover.
+     - A -32% loss (like HDHPC at Rs. 335) needs a massive +47% rally to recover!
+     - A -50% loss needs a staggering +100% rally (doubling your money) just to break even!
+  4. Never "average down" on a stock breaking its stop-loss.
+     Averaging down turns a small 5% cut into a 4-year stuck position.
+
+
+================================================================================
+SECTION 3: HOW TO HANDLE EXISTING STUCK STOCKS (E.G. HDHPC AT RS. 335)
+================================================================================
+
+If you already own stocks bought years ago at high prices (e.g. 265 shares of HDHPC):
+
+  1. Do NOT buy more shares today just because the price went up +5%.
+     The app specifically marks it "NO TRADE" because RSI is 70.1 (overbought)
+     and Risk:Reward is an unfavorable 1.18 : 1.
+  2. Use the relief bounce to systematically exit in tranches:
+     - Tranche 1: When price tests Target 1 (Rs. 240 - 242), sell 50% (130 shares).
+       -> Reclaims ~Rs. 31,400 in fresh, liquid cash.
+     - Tranche 2: If momentum carries it to Target 2 (Rs. 255 - 260), sell remaining 135 shares.
+       -> Reclaims ~Rs. 34,800 in cash.
+  3. The "Horse Swap" Principle:
+     - Holding a dead hydropower waiting for +47% gain takes years.
+     - Moving your reclaimed Rs. 66,000 into high-scoring Daily Prime Picks
+       (Score >= 65, RRR >= 2:1, Win Rate >= 65%) will recover your loss in
+       months instead of years.
+
+
+================================================================================
+SECTION 4: QUICK CHEAT-SHEET (PRINT OR SAVE ON PHONE)
+================================================================================
+
+[✓] 09:30 AM: Check Cash Defense Banner (Red = Keep 100% Cash, Green = Proceed).
+[✓] 10:00 AM: Check Daily Prime Pick. Must have Setup Score >= 58, Win Rate >= 50%.
+[✓] 10:15 AM: Verify in Entry/Exit Analyzer. Must say "BUY / ACCUMULATE".
+[✓] 11:15 AM: If Breakout, wait for Pivot crossing with RVOL > 1.25x. Never buy above Chase Cap.
+[✓] During Day: Monitor once an hour. Hold as long as price stays above Stop Loss.
+[✓] At Target 1: Sell 50% of shares -> Move Stop Loss to Buy Price (Risk-Free).
+[✓] At Target 2: Sell remaining 50% of shares.
+[✓] At Stop Loss: Sell 100% immediately. Never average down.
+================================================================================

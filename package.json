@@ -10,8 +10,8 @@
     "preview": "vite preview",
     "whitelabel": "node white-label.mjs",
     "mobile:sync": "npm run build && npx cap sync android",
-    "mobile:build-debug": "npm run mobile:sync && cd android && .\\gradlew.bat assembleDebug && copy /Y .\\app\\build\\outputs\\apk\\debug\\Drabyashree-NEPSE-debug.apk ..\\Drabyashree-NEPSE-debug.apk && copy /Y .\\app\\build\\outputs\\apk\\debug\\Drabyashree-NEPSE-debug.apk ..\\Drabyashree-NEPSE.apk",
-    "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE-release.apk && copy /Y .\\app\\build\\outputs\\apk\\release\\Drabyashree-NEPSE-release.apk ..\\Drabyashree-NEPSE.apk",
+    "mobile:build-debug": "npm run mobile:sync && cd android && .\\gradlew.bat assembleDebug && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE-debug.apk');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE.apk');\"",
+    "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE-release.apk');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE.apk');\"",
     "build:apk": "npm run mobile:build-release"
   },
   "dependencies": {

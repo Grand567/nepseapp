@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { idbGet, idbSet, idbDel } from './indexedDb.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
+import { sortNewsByNepseImpact } from './newsImpactScorer.js';
 
 const getProxy = () => {
   try {
@@ -330,21 +331,50 @@ export const fetchMarketNews = async (forceRefresh = false) => {
   }
   const qs = forceRefresh ? '?refresh=true' : '';
 
-  // 1. Try unified NEPSE news (ShareSansar + MeroLagani) with 8s timeout
-  let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 8000 }, 180000, forceRefresh).catch(() => null);
-  if (Array.isArray(news) && news.length > 0) return news;
+  // 1. Try unified NEPSE news (All 9 Portals: ShareSansar, MeroLagani, Nepali Paisa, Clickmandu, etc.) with 15s timeout
+  let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 15000 }, 180000, forceRefresh).catch(() => null);
+  if (Array.isArray(news) && news.length >= 10) return sortNewsByNepseImpact(news);
 
-  // 2. Fallback to Merolagani endpoint with 8s timeout
-  news = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 8000 }, 180000, forceRefresh).catch(() => null);
-  if (Array.isArray(news) && news.length > 0) return news;
+  // 2. Fallback to Merolagani multi-category proxy endpoint with 12s timeout
+  let meroProxyNews = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 12000 }, 180000, forceRefresh).catch(() => null);
+  if (Array.isArray(meroProxyNews) && meroProxyNews.length > 0) {
+    if (Array.isArray(news) && news.length > 0) {
+      // Merge unique articles from both
+      const seen = new Set(news.map(n => (n.title || '').trim().toLowerCase()));
+      const merged = [...news];
+      for (const m of meroProxyNews) {
+        const key = (m.title || '').trim().toLowerCase();
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          merged.push(m);
+        }
+      }
+      return sortNewsByNepseImpact(merged);
+    }
+    return sortNewsByNepseImpact(meroProxyNews);
+  }
 
-  // 3. Direct client-side web fallback
+  // 3. Direct multi-category client-side web fallback (25+ MeroLagani articles)
   try {
     const directNews = await fetchMerolaganiNews();
-    if (Array.isArray(directNews) && directNews.length > 0) return directNews;
+    if (Array.isArray(directNews) && directNews.length > 0) {
+      if (Array.isArray(news) && news.length > 0) {
+        const seen = new Set(news.map(n => (n.title || '').trim().toLowerCase()));
+        const merged = [...news];
+        for (const m of directNews) {
+          const key = (m.title || '').trim().toLowerCase();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            merged.push(m);
+          }
+        }
+        return sortNewsByNepseImpact(merged);
+      }
+      return sortNewsByNepseImpact(directNews);
+    }
   } catch (_) {}
 
-  return [];
+  return Array.isArray(news) ? sortNewsByNepseImpact(news) : [];
 };
 
 export const fetchNewsArticle = async (articleUrl) => {

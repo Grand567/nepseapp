@@ -19,6 +19,7 @@ import {
 } from '../utils/servicesApi';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
 import { getHydroSeasonality } from '../utils/quantEngine';
+import { sortNewsByNepseImpact } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
 
@@ -1320,7 +1321,7 @@ export function NewsService() {
         return title.includes(q) || summary.includes(q) || src.includes(q);
       });
     }
-    return list;
+    return sortNewsByNepseImpact(list);
   }, [data, selectedSource, searchQuery]);
 
   const sourceTabs: { key: NewsSourceKey; label: string; count: number }[] = [
@@ -1344,8 +1345,11 @@ export function NewsService() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-bold text-white tracking-wide">Nepali Economic & Financial News Feed</h3>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30 font-semibold">
+              ⚡ Prioritized by NEPSE & Stock Impact
+            </span>
             {lastUpdated && (
-              <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
                 Live • Updated {lastUpdated}
               </span>
             )}
@@ -1446,8 +1450,30 @@ export function NewsService() {
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'; }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f8fafc', lineHeight: 1.4, flex: 1 }}>
-                      {n.title}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {n.impactType && (n.impactScore || 0) >= 35 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3.5,
+                            fontSize: 10,
+                            fontWeight: 800,
+                            letterSpacing: '0.02em',
+                            padding: '1.5px 6.5px',
+                            borderRadius: 4,
+                            backgroundColor: (n.impactScore || 0) >= 65 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: (n.impactScore || 0) >= 65 ? '#facc15' : '#34d399',
+                            border: `1px solid ${(n.impactScore || 0) >= 65 ? 'rgba(234, 179, 8, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
+                          }}>
+                            <span>⚡ {n.impactType}</span>
+                            {(n.impactScore || 0) >= 65 && <span style={{ opacity: 0.85, fontSize: 9 }}>• High Impact</span>}
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f8fafc', lineHeight: 1.4 }}>
+                        {n.title}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <span
@@ -1998,25 +2024,58 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
             <div style={{ fontSize: 11, color: '#94a3b8' }}>
               Setup: <strong style={{ color: '#ffffff' }}>{topPick.catalyst}</strong> (Edge Score: {topPick.compositeScore}/100, RVOL: {topPick.rvol}x)
             </div>
-            <button
-              onClick={() => onSelectStock && onSelectStock(topPick)}
-              style={{
-                backgroundColor: '#10B981',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: 12,
-                padding: '8px 14px',
-                borderRadius: 10,
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-            >
-              <span>View Interactive Chart & Fundamentals</span>
-              <ArrowUpRight size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('open_service_id', 'entry-exit-analyzer');
+                    localStorage.setItem('selected_entry_exit_symbol', topPick.symbol);
+                    window.dispatchEvent(new CustomEvent('open_service', {
+                      detail: { serviceId: 'entry-exit-analyzer', symbol: topPick.symbol }
+                    }));
+                    window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
+                      detail: { symbol: topPick.symbol }
+                    }));
+                  } catch (_) {}
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                }}
+              >
+                <span>⚡ Run Entry/Exit Analyzer</span>
+              </button>
+              <button
+                onClick={() => onSelectStock && onSelectStock(topPick)}
+                style={{
+                  backgroundColor: '#10B981',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <span>View Interactive Chart & Fundamentals</span>
+                <ArrowUpRight size={14} />
+              </button>
+            </div>
           </div>
         </div>
       ) : (

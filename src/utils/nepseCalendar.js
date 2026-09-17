@@ -340,15 +340,53 @@ export function getDetailedMarketStatus(now = new Date()) {
 
   const nptTotalMinutes = nptHours * 60 + nptMinutes;
   const isWithinHours = (nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 15 * 60); // 11:00 to 15:00
+  const isTradingDay = !weekend.isWeekend && !holiday.isHoliday;
+
+  // Detailed Session Identification
+  let session = 'POST_MARKET';
+  let sessionLabel = 'Post-Market Closed';
+  let isPreOpen = false;
+  let isClosingSession = false;
+  let isPostCloseReconciling = false;
+
+  if (isTradingDay) {
+    if (nptTotalMinutes >= 10 * 60 + 30 && nptTotalMinutes < 10 * 60 + 45) {
+      session = 'PRE_OPEN';
+      sessionLabel = 'Pre-Open Order Session (±5% limit)';
+      isPreOpen = true;
+    } else if (nptTotalMinutes >= 10 * 60 + 45 && nptTotalMinutes < 11 * 60) {
+      session = 'PRE_OPEN_MATCH';
+      sessionLabel = 'Pre-Open Matching Freeze';
+      isPreOpen = true;
+    } else if (nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 15 * 60) {
+      session = 'CONTINUOUS';
+      sessionLabel = 'Continuous Live Trading';
+    } else if (nptTotalMinutes >= 15 * 60 && nptTotalMinutes < 15 * 60 + 5) {
+      session = 'CLOSING_SESSION';
+      sessionLabel = 'Closing Price Session (3:00 - 3:05 PM)';
+      isClosingSession = true;
+    } else if (nptTotalMinutes >= 15 * 60 + 5 && nptTotalMinutes < 15 * 60 + 30) {
+      session = 'POST_CLOSE_RECONCILING';
+      sessionLabel = 'Floorsheet Finalization (3:05 - 3:30 PM)';
+      isPostCloseReconciling = true;
+    } else {
+      session = 'POST_MARKET';
+      sessionLabel = 'Post-Market Analysis Session';
+    }
+  }
 
   // Common metadata
-  const isTradingDay = !weekend.isWeekend && !holiday.isHoliday;
   const baseData = {
     bsDate: nepaliDate,
     bsFormattedNp: nepaliDate.formattedNp,
     bsFormattedEn: nepaliDate.formattedEn,
     nptTime: nptTimeStr,
     isTradingDay,
+    session,
+    sessionLabel,
+    isPreOpen,
+    isClosingSession,
+    isPostCloseReconciling,
   };
 
   // 1. Check Holiday (Bikram Sambat public holiday)
@@ -381,7 +419,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 3. Regular Trading Day (Monday - Friday)
+  // 3. Regular Trading Day (Sunday - Thursday)
   if (isWithinHours) {
     return {
       ...baseData,
@@ -394,7 +432,7 @@ export function getDetailedMarketStatus(now = new Date()) {
       message: `Market is OPEN (Live Trading) — ${nepaliDate.shortNp}`,
       lastTradingDay: now
     };
-  } else if (nptTotalMinutes < 11 * 60) {
+  } else if (isPreOpen) {
     return {
       ...baseData,
       isOpen: false,
@@ -402,8 +440,46 @@ export function getDetailedMarketStatus(now = new Date()) {
       isWeekend: false,
       isCloseDay: false,
       holidayName: null,
-      statusLabel: 'Pre-Open / Closed',
-      message: `Market Closed — Opens at 11:00 AM NPT (${nepaliDate.shortNp})`,
+      statusLabel: session === 'PRE_OPEN' ? 'Pre-Open Session' : 'Pre-Open Match',
+      message: session === 'PRE_OPEN'
+        ? `Pre-Open Session Active (10:30–10:45 AM) — Continuous opens at 11:00 AM`
+        : `Pre-Open Matching Freeze (10:45–11:00 AM) — Continuous opens at 11:00 AM`,
+      lastTradingDay: now
+    };
+  } else if (isClosingSession) {
+    return {
+      ...baseData,
+      isOpen: false,
+      isHoliday: false,
+      isWeekend: false,
+      isCloseDay: false,
+      holidayName: null,
+      statusLabel: 'Closing Session',
+      message: `Market Closing Session (3:00–3:05 PM) — Determining Final Close`,
+      lastTradingDay: now
+    };
+  } else if (isPostCloseReconciling) {
+    return {
+      ...baseData,
+      isOpen: false,
+      isHoliday: false,
+      isWeekend: false,
+      isCloseDay: false,
+      holidayName: null,
+      statusLabel: 'Floorsheet Finalizing',
+      message: `Reconciling 50+ Broker Floorsheets (3:05–3:30 PM) — Finalizing Day Prime Pick`,
+      lastTradingDay: now
+    };
+  } else if (nptTotalMinutes < 10 * 60 + 30) {
+    return {
+      ...baseData,
+      isOpen: false,
+      isHoliday: false,
+      isWeekend: false,
+      isCloseDay: false,
+      holidayName: null,
+      statusLabel: 'Pre-Market Preparation',
+      message: `Pre-Open opens at 10:30 AM NPT — Continuous trading at 11:00 AM`,
       lastTradingDay: getLastValidTradingDay(new Date(now.getTime() - 86400000))
     };
   } else {
@@ -414,8 +490,8 @@ export function getDetailedMarketStatus(now = new Date()) {
       isWeekend: false,
       isCloseDay: false,
       holidayName: null,
-      statusLabel: 'Market Closed',
-      message: `Market Closed — Closed at 3:00 PM NPT (${nepaliDate.shortNp})`,
+      statusLabel: 'Post-Market Closed',
+      message: `Market Closed at 3:00 PM NPT — Tomorrow's Prime Pick Ready`,
       lastTradingDay: now
     };
   }

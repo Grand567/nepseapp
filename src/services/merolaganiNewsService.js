@@ -32,33 +32,51 @@ export async function fetchMerolaganiNews() {
     }
   } catch (_) {}
 
-  // Attempt 2: Direct request (Capacitor Native or Direct Web)
+  // Attempt 2: Direct multi-category request (Capacitor Native or Direct Web)
   try {
-    let html = '';
-    if (Capacitor.isNativePlatform()) {
-      const nativeRes = await CapacitorHttp.request({
-        url: 'https://merolagani.com/NewsList.aspx',
-        method: 'GET',
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-        connectTimeout: 8000,
-        readTimeout: 10000
-      });
-      html = typeof nativeRes.data === 'string' ? nativeRes.data : '';
-    } else {
-      const webRes = await fetch('https://merolagani.com/NewsList.aspx', {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(7000)
-      });
-      html = await webRes.text();
-    }
+    const urls = [
+      'https://merolagani.com/NewsList.aspx',
+      'https://merolagani.com/NewsList.aspx?id=17&type=latest', // Corporate
+      'https://merolagani.com/NewsList.aspx?id=25&type=latest', // Current Affairs
+      'https://merolagani.com/NewsList.aspx?popular=true'      // Popular News
+    ];
 
-    if (html && html.length > 1000) {
+    const fetchOne = async (targetUrl) => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const nativeRes = await CapacitorHttp.request({
+            url: targetUrl,
+            method: 'GET',
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            connectTimeout: 8000,
+            readTimeout: 10000
+          });
+          return typeof nativeRes.data === 'string' ? nativeRes.data : '';
+        } else {
+          const webRes = await fetch(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(7000)
+          });
+          return await webRes.text();
+        }
+      } catch (_) {
+        return '';
+      }
+    };
+
+    const htmlResults = await Promise.allSettled(urls.map(u => fetchOne(u)));
+    const parsed = [];
+    const seen = new Set();
+
+    for (const res of htmlResults) {
+      if (res.status !== 'fulfilled' || !res.value || res.value.length < 500) continue;
+      const html = res.value;
       const matches = [...html.matchAll(/<a[^>]*href=["']([^"']*NewsDetail\.aspx\?newsID=[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)];
-      const parsed = [];
       for (const m of matches) {
         const href = m[1];
         const title = m[2].replace(/<[^>]+>/g, '').trim().replace(/\s+/g, ' ');
-        if (title.length > 10 && !parsed.some(p => p.title === title)) {
+        if (title.length > 10 && !seen.has(title)) {
+          seen.add(title);
           parsed.push({
             id: href.match(/newsID=(\d+)/)?.[1] || String(parsed.length),
             title,
@@ -73,11 +91,12 @@ export async function fetchMerolaganiNews() {
           });
         }
       }
-      if (parsed.length > 0) {
-        cachedNews = parsed.slice(0, 15);
-        lastFetchTime = now;
-        return cachedNews;
-      }
+    }
+
+    if (parsed.length > 0) {
+      cachedNews = parsed.slice(0, 30);
+      lastFetchTime = now;
+      return cachedNews;
     }
   } catch (err) {
     console.warn('[MerolaganiNews] Scraper fallback failed:', err.message);

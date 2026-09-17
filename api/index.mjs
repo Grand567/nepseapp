@@ -2236,34 +2236,48 @@ app.get('/api/news/merolagani', async (req, res) => {
   }
 
   try {
-    const newsRes = await axios.get('https://merolagani.com/NewsList.aspx', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-      },
-      timeout: 10000
-    });
+    const urls = [
+      'https://merolagani.com/NewsList.aspx',
+      'https://merolagani.com/NewsList.aspx?id=17&type=latest',
+      'https://merolagani.com/NewsList.aspx?id=25&type=latest',
+      'https://merolagani.com/NewsList.aspx?popular=true'
+    ];
 
-    const $ = cheerio.load(newsRes.data);
+    const responses = await Promise.allSettled(
+      urls.map(u => axios.get(u, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+        },
+        timeout: 9000
+      }))
+    );
+
     const articles = [];
+    const seenTitles = new Set();
 
-    $('a[href*="NewsDetail.aspx?newsID="]').each((i, el) => {
-      const href = $(el).attr('href') || '';
-      const title = $(el).text().replace(/\s+/g, ' ').trim();
-      const parent = $(el).closest('.media-news, tr, div, li');
-      const dateText = parent.find('.date, .text-muted, span').text().trim() || '';
+    for (const r of responses) {
+      if (r.status !== 'fulfilled' || !r.value?.data) continue;
+      const $ = cheerio.load(r.value.data);
+      $('a[href*="NewsDetail.aspx?newsID="], a[href*="NewsDetail.aspx"]').each((i, el) => {
+        const href = $(el).attr('href') || '';
+        const title = $(el).text().replace(/\s+/g, ' ').trim();
+        const parent = $(el).closest('.media-news, .media-body, .media, tr, div, li');
+        const dateText = parent.find('.media-label, span[id*="Date"], .date, .time, .text-muted, small, span').first().text().trim() || 'Today';
 
-      if (title && title.length > 8 && !articles.some(a => a.title === title)) {
-        articles.push({
-          id: href.match(/newsID=(\d+)/)?.[1] || String(i),
-          title,
-          source: 'Merolagani',
-          url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
-          date: dateText
-        });
-      }
-    });
+        if (title && title.length > 10 && !seenTitles.has(title)) {
+          seenTitles.add(title);
+          articles.push({
+            id: href.match(/newsID=(\d+)/)?.[1] || `ml-${articles.length}`,
+            title,
+            source: 'Merolagani',
+            url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
+            date: dateText
+          });
+        }
+      });
+    }
 
-    const topArticles = articles.slice(0, 20);
+    const topArticles = articles.slice(0, 30);
     setCache(cacheKey, topArticles, 10 * 60 * 1000); // 10 minutes cache
     return res.json({ success: true, data: topArticles });
   } catch (error) {
@@ -2323,32 +2337,40 @@ app.get('/api/news/nepse', async (req, res) => {
       console.warn('[news/nepse] ShareSansar fetch error:', errSS.message);
     }
 
-    // 2. Scrape MeroLagani
+    // 2. Scrape MeroLagani Multi-Category
     try {
-      const resML = await axios.get('https://merolagani.com/NewsList.aspx', {
-        headers: HEADERS,
-        timeout: 9000
-      });
-      const $ml = cheerio.load(resML.data);
-      $ml('a[href*="NewsDetail.aspx"]').each((i, el) => {
-        const href = $ml(el).attr('href') || '';
-        const text = $ml(el).text().replace(/\s+/g, ' ').trim();
-        if (text.length > 15 && !seenTitles.has(text)) {
-          seenTitles.add(text);
-          const parent = $ml(el).closest('.media-body, .media, div.panel-body, div');
-          const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
-          const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
-          allNews.push({
-            id: href.match(/newsID=(\d+)/)?.[1] || String(i),
-            title: text,
-            link: fullUrl,
-            url: fullUrl,
-            source: 'MeroLagani',
-            pubDate: dateText,
-            date: dateText
-          });
-        }
-      });
+      const mlUrls = [
+        'https://merolagani.com/NewsList.aspx',
+        'https://merolagani.com/NewsList.aspx?id=17&type=latest',
+        'https://merolagani.com/NewsList.aspx?id=25&type=latest',
+        'https://merolagani.com/NewsList.aspx?popular=true'
+      ];
+      const mlResponses = await Promise.allSettled(
+        mlUrls.map(u => axios.get(u, { headers: HEADERS, timeout: 9000 }))
+      );
+      for (const r of mlResponses) {
+        if (r.status !== 'fulfilled' || !r.value?.data) continue;
+        const $ml = cheerio.load(r.value.data);
+        $ml('a[href*="NewsDetail.aspx"]').each((i, el) => {
+          const href = $ml(el).attr('href') || '';
+          const text = $ml(el).text().replace(/\s+/g, ' ').trim();
+          if (text.length > 15 && !seenTitles.has(text)) {
+            seenTitles.add(text);
+            const parent = $ml(el).closest('.media-body, .media, div.panel-body, div');
+            const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
+            const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+            allNews.push({
+              id: href.match(/newsID=(\d+)/)?.[1] || `ml-${allNews.length}`,
+              title: text,
+              link: fullUrl,
+              url: fullUrl,
+              source: 'MeroLagani',
+              pubDate: dateText,
+              date: dateText
+            });
+          }
+        });
+      }
     } catch (errML) {
       console.warn('[news/nepse] MeroLagani fetch error:', errML.message);
     }

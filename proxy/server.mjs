@@ -6,7 +6,7 @@ import Parser from 'rss-parser';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import { initDB, query } from './db.mjs';
-import { startWorkers } from './workers.mjs';
+import { startWorkers, getVerifiedPostMarketPrimePick, setVerifiedPostMarketPrimePick } from './workers.mjs';
 import fs from 'fs';
 import path from 'path';
 import meroshareRouter from './meroshare.js';
@@ -2121,45 +2121,7 @@ app.get('/api/news/merolagani', async (req, res) => {
   }
 
   try {
-    const response = await axios.get('https://merolagani.com/NewsList.aspx', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9,ne;q=0.8'
-      },
-      timeout: 9000
-    });
-
-    const html = response.data;
-    if (!html || html.length < 500) {
-      return res.json({ success: false, data: [] });
-    }
-
-    const $ = cheerio.load(html);
-    const articles = [];
-
-    // Merolagani news listing containers
-    $('a[href*="NewsDetail.aspx"]').each((i, el) => {
-      const href = $(el).attr('href') || '';
-      const rawTitle = $(el).text().replace(/\s+/g, ' ').trim();
-      if (rawTitle.length > 10 && articles.length < 20) {
-        const newsId = href.match(/newsID=(\d+)/)?.[1] || String(i);
-        if (!articles.find(a => a.id === newsId)) {
-          // Try to get the date from a sibling or parent container
-          const parent = $(el).closest('.media, .news-item, .list-item, tr, li, div[class*="news"]');
-          const dateText = parent.find('.date, .time, [class*="date"], [class*="time"], small').first().text().trim() || 'Latest';
-          articles.push({
-            id: newsId,
-            title: rawTitle,
-            source: 'Merolagani',
-            url: `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`,
-            date: dateText,
-            time: dateText
-          });
-        }
-      }
-    });
-
+    const articles = await scrapeMeroLaganiNews();
     if (articles.length > 0) {
       setCache(cacheKey, articles, 6 * 60 * 1000); // Cache 6 minutes
       return res.json({ success: true, data: articles });
@@ -5059,34 +5021,48 @@ async function scrapeShareSansarNews() {
 }
 
 async function scrapeMeroLaganiNews() {
+  const urls = [
+    'https://merolagani.com/NewsList.aspx',
+    'https://merolagani.com/NewsList.aspx?id=17&type=latest',
+    'https://merolagani.com/NewsList.aspx?id=25&type=latest',
+    'https://merolagani.com/NewsList.aspx?popular=true'
+  ];
+
   try {
-    const res = await axios.get('https://merolagani.com/NewsList.aspx', {
-      headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      timeout: 8000
-    });
-    const $ = cheerio.load(res.data);
+    const responses = await Promise.allSettled(
+      urls.map(u => axios.get(u, {
+        headers: { ...HEADERS, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        timeout: 8000
+      }))
+    );
+
     const items = [];
     const seen = new Set();
-    $('a[href*="NewsDetail.aspx"]').each((i, el) => {
-      const href = $(el).attr('href') || '';
-      const text = $(el).text().replace(/\s+/g, ' ').trim();
-      if (text.length > 15 && !seen.has(text)) {
-        seen.add(text);
-        const parent = $(el).closest('.media-body, .media, div.panel-body, div');
-        const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
-        const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
-        items.push({
-          id: href.match(/newsID=(\d+)/)?.[1] || `ml-${i}`,
-          title: text,
-          link: fullUrl,
-          url: fullUrl,
-          source: 'MeroLagani',
-          pubDate: dateText,
-          date: dateText
-        });
-      }
-    });
-    return items.slice(0, 15);
+
+    for (const r of responses) {
+      if (r.status !== 'fulfilled' || !r.value?.data) continue;
+      const $ = cheerio.load(r.value.data);
+      $('a[href*="NewsDetail.aspx"]').each((i, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().replace(/\s+/g, ' ').trim();
+        if (text.length > 15 && !seen.has(text)) {
+          seen.add(text);
+          const parent = $(el).closest('.media-body, .media, div.panel-body, div');
+          const dateText = parent.find('span[id*="Date"], .date, .time, small').first().text().trim() || 'Latest';
+          const fullUrl = `https://merolagani.com/${href.startsWith('/') ? href.slice(1) : href}`;
+          items.push({
+            id: href.match(/newsID=(\d+)/)?.[1] || `ml-${items.length}`,
+            title: text,
+            link: fullUrl,
+            url: fullUrl,
+            source: 'MeroLagani',
+            pubDate: dateText,
+            date: dateText
+          });
+        }
+      });
+    }
+    return items.slice(0, 30);
   } catch (err) {
     console.warn('[news/nepse] MeroLagani fetch error:', err.message);
     return [];
@@ -7513,6 +7489,95 @@ app.get('/api/predict/events', async (req, res) => {
   try {
     const events = await getPoliticalEventFlag();
     res.json({ success: true, data: events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Verified Post-Market / Pre-Open Day Prime Pick
+app.get('/api/prime-pick/daily-verified', async (req, res) => {
+  try {
+    const marketStatus = getDetailedMarketStatus();
+    const cacheKey = 'prime-pick-daily-verified';
+    const cached = getCache(cacheKey) || getVerifiedPostMarketPrimePick();
+
+    if (cached && cached.symbol && (!req.query.force || req.query.force !== 'true')) {
+      return res.json({
+        success: true,
+        data: cached,
+        session: marketStatus.session,
+        isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
+        source: 'cache'
+      });
+    }
+
+    // Identify candidate from latest closing data
+    let stockData = getCache('today-prices') || getCache('market-summary');
+    let stocksList = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+    if (stocksList.length === 0) {
+      stocksList = await fetchTodayPricesInternal().catch(() => []);
+    }
+
+    const priorityCandidates = (Array.isArray(stocksList) ? stocksList : [])
+      .filter(s => {
+        const ltp = Number(s.ltp || s.price || 0);
+        const turnover = Number(s.turnover || s.totalTradedValue || 0);
+        const pCh = Number(s.pChange || s.percentageChange || 0);
+        return ltp >= 80 && turnover >= 3000000 && pCh >= -2.0 && pCh <= 12.0;
+      })
+      .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0))
+      .slice(0, 5);
+
+    let winner = null;
+    for (const cand of priorityCandidates) {
+      const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
+      const history = await getPriceHistoryInternal(sym, 365).catch(() => []);
+      if (history && history.length >= 80) {
+        const broker = await getOrFetchBrokerAnalysis(sym, 30).catch(() => null);
+        winner = {
+          symbol: sym,
+          name: cand.name || cand.companyName || sym,
+          ltp: cand.ltp || cand.price,
+          pChange: cand.pChange || cand.percentageChange,
+          turnover: cand.turnover || cand.totalTradedValue,
+          historyBars: history.length,
+          brokerAnalysis: broker,
+          isPlanVerified: true,
+          postMarketVerifiedAt: new Date().toISOString(),
+          sessionContext: marketStatus.session,
+          postMarketLabel: "Tomorrow's Prime Opportunity (Sealed Post-3:15 Floorsheet + 500-Day Analogs)"
+        };
+        break;
+      }
+    }
+
+    if (!winner && priorityCandidates.length > 0) {
+      const top = priorityCandidates[0];
+      winner = {
+        symbol: String(top.symbol || top.scrip || '').toUpperCase().trim(),
+        name: top.name || top.companyName || top.symbol,
+        ltp: top.ltp || top.price,
+        pChange: top.pChange || top.percentageChange,
+        turnover: top.turnover || top.totalTradedValue,
+        isPlanVerified: false,
+        postMarketVerifiedAt: new Date().toISOString(),
+        sessionContext: marketStatus.session,
+        postMarketLabel: "Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)"
+      };
+    }
+
+    if (winner) {
+      setCache(cacheKey, winner, 60 * 60 * 1000); // 1 hour cache
+      setVerifiedPostMarketPrimePick(winner);
+    }
+
+    res.json({
+      success: true,
+      data: winner,
+      session: marketStatus.session,
+      isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
+      source: 'computed'
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

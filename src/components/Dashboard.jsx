@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronLeft, X, TrendingUp, TrendingDown,
   BarChart2, BookOpen, Activity, Zap, Target, Calculator, BrainCircuit, Sparkles,
@@ -19,8 +19,10 @@ import {
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory } from '../utils/liveData';
-import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense } from '../utils/quantEngine';
+import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
+import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
+import { selectMasterPrimePick } from '../utils/guruEngine';
+import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
@@ -1425,6 +1427,60 @@ export default function Dashboard({
     return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
   }, [stocks]);
 
+  // Cache sync state for background history pre-fetching
+  const [backtestCacheVersion, setBacktestCacheVersion] = useState(0);
+
+  // Pre-fetch historical data and broker analysis for top candidate stocks in the background
+  // to prevent cold-start cache starvation for Day Prime Pick & Breakout verification
+  useEffect(() => {
+    if (!Array.isArray(stocks) || stocks.length === 0) return;
+    let isMounted = true;
+
+    const priorityCandidates = stocks
+      .filter(s => {
+        const ltp = Number(s.ltp || s.price || 0);
+        const turnover = Number(s.turnover || 0);
+        const pCh = Number(s.pChange || 0);
+        const eps = Number(s.eps || 0);
+        return ltp >= 80 && turnover >= 3000000 && pCh >= -2.0 && pCh <= 12.0 && (s.eps === undefined || eps >= 0);
+      })
+      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+      .slice(0, 10);
+
+    const neededFetches = priorityCandidates.filter(s => {
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+      const h = getCachedRealPriceHistory(sym);
+      const b = getCachedRealBrokerAnalysis(sym);
+      return !h || h.length < 60 || !b;
+    });
+
+    if (neededFetches.length === 0) return;
+
+    let didUpdate = false;
+    Promise.allSettled(
+      neededFetches.map(async (s) => {
+        const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+        const promises = [];
+        if (!getCachedRealPriceHistory(sym)) {
+          promises.push(fetchPriceHistory(sym, 500));
+        }
+        if (!getCachedRealBrokerAnalysis(sym)) {
+          promises.push(fetchRealBrokerAnalysis(sym, 30));
+        }
+        await Promise.allSettled(promises);
+        didUpdate = true;
+      })
+    ).then(() => {
+      if (isMounted && didUpdate) {
+        setBacktestCacheVersion(v => v + 1);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [stocks]);
+
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const masterBreakoutPipeline = useMemo(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) {
@@ -1440,12 +1496,87 @@ export default function Dashboard({
       const b = getCachedRealBrokerAnalysis(sym);
       if (b) brokerDataMap[sym] = b;
     });
-    return runAmalgamatedBreakoutPipeline(stocks, priceHistories, brokerDataMap);
-  }, [stocks]);
+    return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
+  }, [stocks, backtestCacheVersion]);
 
   const primeDailyPick = masterBreakoutPipeline.primeDailyPick;
   const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
   const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
+
+  // Pre-Open Order Depth & Gate for Prime Pick
+  const [primeMarketDepth, setPrimeMarketDepth] = useState(null);
+  const [isRefreshingDepth, setIsRefreshingDepth] = useState(false);
+
+  // Cold-start hydration: fetch verified daily prime pick from backend proxy on startup
+  useEffect(() => {
+    let isMounted = true;
+    fetchVerifiedDailyPrimePick().then(res => {
+      if (isMounted && res && res.data && res.data.symbol) {
+        try {
+          const raw = localStorage.getItem('prime_pick_plan_cache');
+          if (!raw) {
+            localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+              symbol: res.data.symbol,
+              plan: res.data,
+              ts: Date.now()
+            }));
+            setBacktestCacheVersion(v => v + 1);
+          }
+        } catch (_) {}
+      }
+    }).catch(() => {});
+
+    return () => { isMounted = false; };
+  }, []);
+
+  // Poll Level-2 pre-open order book during pre-open / post-market sessions for the Prime Pick
+  useEffect(() => {
+    const sym = primeDailyPick?.symbol;
+    if (!sym) return;
+    let isMounted = true;
+
+    const loadDepth = async () => {
+      try {
+        const depth = await fetchMarketDepth(sym);
+        if (isMounted && depth) {
+          setPrimeMarketDepth(depth);
+        }
+      } catch (_) {}
+    };
+
+    loadDepth();
+
+    // If in pre-open session (10:30–11:00 AM), poll every 12 seconds
+    const status = getDetailedMarketStatus();
+    let interval = null;
+    if (status.isPreOpen || status.session === 'PRE_OPEN' || status.session === 'PRE_OPEN_MATCH') {
+      interval = setInterval(loadDepth, 12000);
+    }
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
+  }, [primeDailyPick?.symbol]);
+
+  const handleRefreshDepth = useCallback(async (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const sym = primeDailyPick?.symbol;
+    if (!sym || isRefreshingDepth) return;
+    setIsRefreshingDepth(true);
+    try {
+      const depth = await fetchMarketDepth(sym);
+      if (depth) setPrimeMarketDepth(depth);
+    } catch (_) {}
+    setTimeout(() => setIsRefreshingDepth(false), 500);
+  }, [primeDailyPick?.symbol, isRefreshingDepth]);
+
+  // Compute live Pre-Open Gate analysis
+  const preOpenGate = useMemo(() => {
+    if (!primeDailyPick) return null;
+    const status = getDetailedMarketStatus();
+    return evaluatePreOpenExecutionGate(primeDailyPick, primeMarketDepth, status);
+  }, [primeDailyPick, primeMarketDepth]);
 
   const breakoutStocks = useMemo(() => {
     if (masterBreakoutPipeline.activeBreakouts && masterBreakoutPipeline.activeBreakouts.length > 0) {
@@ -2285,10 +2416,15 @@ export default function Dashboard({
               <span style={{ fontSize: 20 }}>🏆</span>
               <div>
                 <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#34d399' }}>
-                  Daily Prime Pick • {primeDailyPick.setupClass || 'Flagship Breakout'}
+                  Daily Prime Pick • {primeDailyPick.verdict || primeDailyPick.setupClass || 'Flagship Breakout'}
                 </div>
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff' }}>
-                  Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)
+                  {preOpenGate?.session === 'PRE_OPEN' || preOpenGate?.session === 'PRE_OPEN_MATCH'
+                    ? `${primeDailyPick.name || primeDailyPick.symbol} — Pre-Open Order Book Live Matching (10:30–11:00 AM)`
+                    : (primeDailyPick.isPlanVerified
+                        ? `${primeDailyPick.name || primeDailyPick.symbol} (500-Day Backtested Edge)`
+                        : (primeDailyPick.postMarketLabel || "Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)")
+                      )}
                 </div>
               </div>
             </div>
@@ -2299,8 +2435,17 @@ export default function Dashboard({
                 background: 'rgba(16, 185, 129, 0.2)', color: '#34d399',
                 border: '1px solid rgba(16, 185, 129, 0.4)'
               }}>
-                ★ Edge Score: {primeDailyPick.score || primeDailyPick.compositeScore}/100
+                ★ {primeDailyPick.isPlanVerified ? 'Technical Setup Score' : 'Screener Score'}: {Math.min(99, Math.round(primeDailyPick.setupScore || primeDailyPick.score || primeDailyPick.compositeScore || 75))}/100
               </span>
+              {primeDailyPick.winRate != null && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
+                  background: 'rgba(16, 185, 129, 0.15)', color: '#34d399',
+                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                }}>
+                  🎯 {primeDailyPick.winRate}% Win Rate (CGT Net)
+                </span>
+              )}
               <span style={{
                 fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
                 background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24',
@@ -2322,7 +2467,7 @@ export default function Dashboard({
                 background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8',
                 border: '1px solid rgba(56, 189, 248, 0.3)'
               }}>
-                🛡️ Base: {primeDailyPick.sampleDepth || 120}D ({primeDailyPick.statisticalConfidence || 'Verified'})
+                🛡️ {primeDailyPick.confidenceLevel ? `${primeDailyPick.confidenceLevel} (${primeDailyPick.analogCount} Analogs)` : `Base: ${primeDailyPick.sampleDepth || 120}D`}
               </span>
             </div>
           </div>
@@ -2370,51 +2515,147 @@ export default function Dashboard({
             </div>
           </div>
 
+          {/* ── Pre-Open Order Book Execution Gate ── */}
+          {preOpenGate && (
+            <div style={{
+              background: preOpenGate.bg || 'rgba(15, 23, 42, 0.7)',
+              border: `1px solid ${preOpenGate.color}45`,
+              borderRadius: 12,
+              padding: '10px 14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13 }}>{preOpenGate.badge.slice(0, 2)}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: preOpenGate.color, letterSpacing: '0.02em' }}>
+                    {preOpenGate.badge.slice(2)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRefreshDepth}
+                    title="Refresh live order book depth"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      color: '#94a3b8'
+                    }}
+                  >
+                    <RefreshCw size={11} className={isRefreshingDepth ? 'spin' : ''} />
+                  </button>
+                </div>
+                {preOpenGate.hasLiveOrders && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: '#38bdf8' }}>
+                      Bids: {fmt(preOpenGate.totalBidQty)} ({preOpenGate.bidDominancePct}%)
+                    </span>
+                    <span style={{ fontSize: 10, color: '#64748b' }}>vs</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: '#f87171' }}>
+                      Asks: {fmt(preOpenGate.totalAskQty)} ({preOpenGate.askDominancePct}%)
+                    </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 4,
+                      background: preOpenGate.obir >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: preOpenGate.obir >= 0 ? '#34d399' : '#f87171'
+                    }}>
+                      OBIR: {(preOpenGate.obir * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.45 }}>
+                {preOpenGate.recommendation}
+              </div>
+            </div>
+          )}
+
           {/* Quantitative Execution Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-            gap: 8,
-            background: 'rgba(0, 0, 0, 0.35)',
-            padding: 11,
-            borderRadius: 12,
-            border: '1px solid rgba(255, 255, 255, 0.05)'
-          }}>
-            <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Recommended Buy Zone</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.entryLow} – {primeDailyPick.entryHigh}
-              </div>
-            </div>
+          {(() => {
+            const ltpNum = Number(primeDailyPick.ltp || primeDailyPick.price || 0);
+            const isBreakout = Number(primeDailyPick.entryLow || 0) > ltpNum * 1.005;
+            const t1Num = Number(primeDailyPick.target1 || 0);
+            const t2Num = Number(primeDailyPick.target2 || 0);
+            const slNum = Number(primeDailyPick.stopLoss || 0);
+            const t1Pct = ltpNum > 0 && t1Num > 0 ? (((t1Num - ltpNum) / ltpNum) * 100).toFixed(1) : null;
+            const t2Pct = ltpNum > 0 && t2Num > 0 ? (((t2Num - ltpNum) / ltpNum) * 100).toFixed(1) : null;
+            const slPct = ltpNum > 0 && slNum > 0 ? (((ltpNum - slNum) / ltpNum) * 100).toFixed(1) : null;
 
-            <div>
-              <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase' }}>Chase Cap (+2.5% Max)</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)', marginTop: 2 }} title="Do NOT buy above this price due to T+2 freeze risk">
-                Rs. {primeDailyPick.chaseCap || primeDailyPick.entryHigh} <span style={{ fontSize: 10, color: '#94a3b8' }}>(Max)</span>
-              </div>
-            </div>
+            const t1NetPct = primeDailyPick.levels?.target1?.netReturnPct != null
+              ? primeDailyPick.levels.target1.netReturnPct
+              : (t1Pct && Number(t1Pct) > 0.73 ? +((Number(t1Pct) - 0.73) * 0.90).toFixed(1) : t1Pct);
+            const t2NetPct = primeDailyPick.levels?.target2?.netReturnPct != null
+              ? primeDailyPick.levels.target2.netReturnPct
+              : (t2Pct && Number(t2Pct) > 0.73 ? +((Number(t2Pct) - 0.73) * 0.90).toFixed(1) : t2Pct);
 
-            <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (1.5R - 50% Lock)</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.target1}
-              </div>
-            </div>
+            return (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: 8,
+                background: 'rgba(0, 0, 0, 0.35)',
+                padding: 11,
+                borderRadius: 12,
+                border: '1px solid rgba(255, 255, 255, 0.05)'
+              }}>
+                <div>
+                  <div style={{ fontSize: 10, color: isBreakout ? '#f59e0b' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+                    {isBreakout ? '⚡ Breakout Buy Zone (Above Pivot)' : 'Recommended Buy Zone'}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: isBreakout ? '#fbbf24' : '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    Rs. {primeDailyPick.entryLow} – {primeDailyPick.entryHigh}
+                  </div>
+                  {isBreakout && (
+                    <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2 }}>
+                      LTP Rs. {fmt(ltpNum)} is below zone — trigger above Rs. {primeDailyPick.entryLow}
+                    </div>
+                  )}
+                </div>
 
-            <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.target2}
-              </div>
-            </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase' }}>Chase Cap (+2.5% Max)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)', marginTop: 2 }} title="Do NOT buy above this price due to T+2 freeze risk">
+                    Rs. {primeDailyPick.chaseCap || primeDailyPick.entryHigh} <span style={{ fontSize: 10, color: '#94a3b8' }}>(Max)</span>
+                  </div>
+                </div>
 
-            <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                Rs. {primeDailyPick.stopLoss}
+                <div>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (1.5R - 50% Lock)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    Rs. {primeDailyPick.target1} {t1Pct ? `(+${t1Pct}%)` : ''}
+                  </div>
+                  {t1NetPct != null && (
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
+                      Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    Rs. {primeDailyPick.target2} {t2Pct ? `(+${t2Pct}%)` : ''}
+                  </div>
+                  {t2NetPct != null && (
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
+                      Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    Rs. {primeDailyPick.stopLoss} {slPct ? `(-${slPct}%)` : ''}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Rationale & Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -2432,6 +2673,9 @@ export default function Dashboard({
                     localStorage.setItem('selected_entry_exit_symbol', primeDailyPick.symbol);
                     window.dispatchEvent(new CustomEvent('open_service', {
                       detail: { serviceId: 'entry-exit-analyzer', symbol: primeDailyPick.symbol }
+                    }));
+                    window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
+                      detail: { symbol: primeDailyPick.symbol }
                     }));
                   } catch (_) {}
                   setActiveTab('services');

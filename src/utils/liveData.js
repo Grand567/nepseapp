@@ -351,11 +351,9 @@ const NEPSE_BASE = 'https://newweb.nepalstock.com.np/api/nots';
 const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
 
 async function attemptLiveMarket() {
-  const proxyBase = getProxyBase();
-
   // 1. Primary: Real-time Live Intraday trading feed (/api/market-summary)
   try {
-    const j = await tryFetchJSON(`${proxyBase}/api/market-summary`, 10000);
+    const j = await fetchFromBackend('/api/market-summary', 8000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -365,7 +363,7 @@ async function attemptLiveMarket() {
 
   // 2. Secondary: Today's prices / closing prices (/api/today-prices)
   try {
-    const j = await tryFetchJSON(`${proxyBase}/api/today-prices`, 10000);
+    const j = await fetchFromBackend('/api/today-prices', 8000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -549,9 +547,9 @@ export async function fetchMarketSummary() {
   const marketStatus = getDetailedMarketStatus();
   const defaultSource = marketStatus.isOpen ? 'live' : 'closing';
 
-  // 1. Try local proxy /api/market/summary or /api/market-indices
+  // 1. Try backend proxy /api/market/summary or /api/market-indices
   try {
-    const pSum = await tryFetchJSON(`${getProxyBase()}/api/market/summary`, 2500);
+    const pSum = await fetchFromBackend(`/api/market/summary`, 3500);
     const d = pSum?.data;
     if (d && (d.nepseIndex || d.totalTurnover)) {
       return {
@@ -609,7 +607,7 @@ export async function fetchTopVolumeStocks() { return fetchTopVolume(); }
 export async function fetchAllSecurities() {
   ensureSnapshot();
   try {
-    const res = await tryFetchJSON(`${getProxyBase()}/api/today-prices`, 2500);
+    const res = await fetchFromBackend(`/api/today-prices`, 5000);
     const arr = res?.data ?? (Array.isArray(res) ? res : null);
     if (Array.isArray(arr) && arr.length > 50) {
       return {
@@ -979,14 +977,13 @@ export function getCachedIndices() {
 
 export async function fetchMarketIndices() {
   try {
-    const base = getProxyBase();
     // 1. Fetch official real-time NOTS indices, sector subindices, and intraday graph in parallel
     const [indicesRes, sectorRes, intradayRes, summaryRes, legacyRes] = await Promise.all([
-      tryFetchJSON(`${base}/api/indices`, 8000).catch(() => null),
-      tryFetchJSON(`${base}/api/indices/sector`, 8000).catch(() => null),
-      tryFetchJSON(`${base}/api/nepse/intraday-graph`, 8000).catch(() => null),
-      tryFetchJSON(`${base}/api/market/summary`, 8000).catch(() => null),
-      tryFetchJSON(`${base}/api/market-indices`, 8000).catch(() => null)
+      fetchFromBackend(`/api/indices`, 6000).catch(() => null),
+      fetchFromBackend(`/api/indices/sector`, 6000).catch(() => null),
+      fetchFromBackend(`/api/nepse/intraday-graph`, 6000).catch(() => null),
+      fetchFromBackend(`/api/market/summary`, 6000).catch(() => null),
+      fetchFromBackend(`/api/market-indices`, 6000).catch(() => null)
     ]);
 
     let indicesData = null;
@@ -1298,6 +1295,17 @@ export async function fetchMarketDepth(symbol) {
   };
 }
 
+export async function fetchVerifiedDailyPrimePick(forceRefresh = false) {
+  try {
+    const qs = forceRefresh ? '?force=true' : '';
+    const res = await fetchFromBackend(`/api/prime-pick/daily-verified${qs}`, 6000);
+    if (res && res.success && res.data) {
+      return res;
+    }
+  } catch (_) {}
+  return null;
+}
+
 // Warm the cache on import
 if (typeof window !== 'undefined') {
   try { ensureSnapshot(); } catch { /* ignore */ }
@@ -1340,10 +1348,9 @@ export async function fetchDividendHistory(symbol) {
   const verified = VERIFIED_DIVIDEND_DATABASE[sym] || null;
 
   try {
-    const base = getProxyBase();
-    const res = await axios.get(`${base}/api/dividend-history/${encodeURIComponent(sym)}`, { timeout: 8000 });
-    if (res.data && res.data.success && res.data.data) {
-      const payload = res.data.data;
+    const res = await fetchFromBackend(`/api/dividend-history/${encodeURIComponent(sym)}`, 8000);
+    if (res && res.success && res.data) {
+      const payload = res.data;
       const rawDivs = Array.isArray(payload.dividends) ? payload.dividends : (Array.isArray(payload) ? payload : []);
       const validDivs = rawDivs.filter(d => 
         d && (d.cashDividend > 0 || d.bonusShare > 0 || d.rightShare > 0) &&
@@ -1364,7 +1371,7 @@ export async function fetchDividendHistory(symbol) {
           dividends: merged,
           data: merged,
           totalEntries: merged.length,
-          source: res.data.source || 'proxy'
+          source: res.source || res.data?.source || 'proxy'
         };
       }
     }
@@ -1400,8 +1407,8 @@ export async function fetchTodayPrice(symbol) {
   let s = MEM_STOCKS ? MEM_STOCKS.find(x => x.symbol === sym) : null;
   if (!s || !s.ltp) {
     try {
-      const res = await tryFetchJSON(`${getProxyBase()}/api/market-summary`, 2000) 
-               || await tryFetchJSON(`${getProxyBase()}/api/today-prices`, 2000);
+      const res = await fetchFromBackend(`/api/market-summary`, 3000) 
+               || await fetchFromBackend(`/api/today-prices`, 3000);
       const arr = res?.data || res?.stocks || [];
       const found = arr.find(x => String(x.symbol || x.scrip || x.companySymbol).toUpperCase() === sym);
       if (found) {
