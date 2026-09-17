@@ -5,7 +5,7 @@ import {
   Layers, ArrowUpRight, ArrowDownRight, ArrowRight, Eye, Filter, CheckCircle2,
   AlertTriangle, Shield, Flame, Compass, LineChart, PieChart, Users, Clock,
   ExternalLink, ThumbsUp, MessageSquare, Share2, HelpCircle, Check,
-  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar
+  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar, Bell
 } from 'lucide-react';
 import {
   generateSparkline,
@@ -27,9 +27,16 @@ import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiSe
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
 import AdvancedChartModal from './AdvancedChartModal';
+import BreakoutAlertDialog from './BreakoutAlertDialog';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { getWatchlist, toggleWatchlist, isWatched } from '../utils/watchlist';
+import {
+  getAllWatchlistAlertConfigs,
+  deriveDefaultBreakoutPlan,
+  evaluateWatchlistAlerts,
+  calculateStockRvol
+} from '../utils/watchlistAlerts';
 
 /* ─── Formatters & Helpers ─── */
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -1050,6 +1057,43 @@ export default function Dashboard({
     const res = toggleWatchlist(symbol);
     setWatchlist(res.watchlist);
   };
+
+  // ── Breakout Alert State & Live Evaluator ──
+  const [activeBreakoutToast, setActiveBreakoutToast] = useState(null);
+  const [alertModalStock, setAlertModalStock] = useState(null);
+  const [alertConfigs, setAlertConfigs] = useState(() => getAllWatchlistAlertConfigs());
+
+  useEffect(() => {
+    const handleAlertsUpdated = () => {
+      setAlertConfigs(getAllWatchlistAlertConfigs());
+    };
+    const handleAlertTriggered = (e) => {
+      if (e.detail) {
+        setActiveBreakoutToast(e.detail);
+      }
+    };
+    window.addEventListener('nepse_watchlist_alerts_updated', handleAlertsUpdated);
+    window.addEventListener('nepse_breakout_alert_triggered', handleAlertTriggered);
+    return () => {
+      window.removeEventListener('nepse_watchlist_alerts_updated', handleAlertsUpdated);
+      window.removeEventListener('nepse_breakout_alert_triggered', handleAlertTriggered);
+    };
+  }, []);
+
+  // Periodic evaluation of watched stocks against breakout conditions
+  useEffect(() => {
+    if (!stocks || stocks.length === 0 || !watchlist || watchlist.length === 0) return;
+    evaluateWatchlistAlerts(stocks, watchlist, (triggeredPayload) => {
+      setActiveBreakoutToast(triggeredPayload);
+    });
+  }, [stocks, watchlist]);
+
+  // Auto-dismiss toast after 15 seconds
+  useEffect(() => {
+    if (!activeBreakoutToast) return;
+    const timer = setTimeout(() => setActiveBreakoutToast(null), 15000);
+    return () => clearTimeout(timer);
+  }, [activeBreakoutToast]);
 
   const [tableSortField, setTableSortField] = useState(null);
   const [tableSortAsc, setTableSortAsc] = useState(false);
@@ -2322,6 +2366,88 @@ export default function Dashboard({
         );
       })()}
 
+      {/* ── Active Breakout Alert In-App Toast Banner ── */}
+      {activeBreakoutToast && (
+        <div style={{
+          position: 'sticky',
+          top: 10,
+          zIndex: 9999,
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(21, 25, 34, 0.98))',
+          border: '1.5px solid #10B981',
+          borderRadius: 14,
+          padding: '12px 16px',
+          marginBottom: 14,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(16, 185, 129, 0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10,
+              background: 'rgba(16, 185, 129, 0.2)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <Zap size={18} color="#34d399" />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>🚀 BREAKOUT TRIGGERED:</span>
+                <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{activeBreakoutToast.symbol}</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 1 }}>
+                Price crossed <strong style={{ color: '#ffffff' }}>Rs. {activeBreakoutToast.breakoutPrice}</strong> with <strong style={{ color: '#34d399' }}>{Number(activeBreakoutToast.rvol).toFixed(2)}x RVOL</strong> surge! Dual-gate satisfied.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => {
+                const targetStock = stocks.find(s => s.symbol === activeBreakoutToast.symbol) || { symbol: activeBreakoutToast.symbol, ltp: activeBreakoutToast.ltp };
+                handleStockClick(targetStock);
+                setActiveBreakoutToast(null);
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #10B981, #059669)',
+                border: 'none',
+                borderRadius: 8,
+                padding: '6px 14px',
+                fontSize: 11.5,
+                fontWeight: 800,
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
+              }}
+            >
+              <span>View {activeBreakoutToast.symbol} Plan →</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveBreakoutToast(null)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: 'none',
+                borderRadius: 8,
+                padding: '6px 10px',
+                fontSize: 11,
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              Dismiss ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
       {cashDefenseActive ? (
         <div style={{
@@ -3104,6 +3230,126 @@ export default function Dashboard({
         </div>
       </div>
 
+      {/* ── Watchlist Breakout Execution Radar & Live Dual-Gate Checklist ── */}
+      {tableFilterMode === 'watchlist' && watchlist.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(21, 25, 34, 0.95))',
+          border: '1px solid rgba(56, 189, 248, 0.25)',
+          borderRadius: 14,
+          padding: '12px 14px',
+          marginBottom: 12
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Zap size={16} color="#38bdf8" />
+              <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                Execution Checklist Radar (11:00 AM – 3:00 PM)
+              </span>
+              <span style={{ fontSize: 10, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '1px 6px', borderRadius: 6, fontWeight: 700 }}>
+                Dual-Gate
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>
+              Simultaneous Trigger: <strong style={{ color: '#ffffff' }}>Price ≥ Breakout Pivot</strong> + <strong style={{ color: '#34d399' }}>RVOL ≥ Hurdle</strong>
+            </span>
+          </div>
+
+          {/* Scrip Checklist Quick-Status Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 8 }}>
+            {displayStocks.map(s => {
+              const sym = s.symbol;
+              const cfg = alertConfigs[sym] || deriveDefaultBreakoutPlan(s);
+              const ltp = Number(s.ltp || 0);
+              const rvol = calculateStockRvol(s);
+              const isPriceMet = ltp >= Number(cfg.breakoutPrice);
+              const isRvolMet = rvol >= Number(cfg.rvolThreshold);
+              const isTriggered = isPriceMet && isRvolMet;
+              const pctToPivot = ltp > 0 ? (((Number(cfg.breakoutPrice) - ltp) / ltp) * 100).toFixed(1) : 0;
+
+              return (
+                <div
+                  key={sym}
+                  onClick={() => handleStockClick(s)}
+                  style={{
+                    background: isTriggered ? 'rgba(16, 185, 129, 0.12)' : 'rgba(0, 0, 0, 0.3)',
+                    border: isTriggered ? '1.5px solid #10B981' : '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 10,
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{sym}</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Rs. {fmt(ltp)}</span>
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: isTriggered ? '#10B981' : isPriceMet ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                      color: isTriggered ? '#ffffff' : isPriceMet ? '#fbbf24' : '#94a3b8',
+                      border: isTriggered ? 'none' : isPriceMet ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      {isTriggered ? '🔥 BREAKOUT TRIGGERED' : isPriceMet ? '⚠️ VOLUME LACKING' : `⏳ COILING (${pctToPivot}% to pivot)`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, alignItems: 'center' }}>
+                    {/* Price Gate */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '4px 6px', borderRadius: 6 }}>
+                      <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>1. PRICE GATE</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isPriceMet ? '#34d399' : '#ffffff', fontFamily: 'var(--font-mono)' }}>
+                        {isPriceMet ? '✓ ' : ''}Rs. {cfg.breakoutPrice}
+                      </div>
+                    </div>
+
+                    {/* Volume Gate */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '4px 6px', borderRadius: 6 }}>
+                      <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>2. RVOL HURDLE</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: isRvolMet ? '#34d399' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                        {isRvolMet ? '✓ ' : ''}{rvol.toFixed(2)}x / {cfg.rvolThreshold}x
+                      </div>
+                    </div>
+
+                    {/* Edit Alert Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAlertModalStock(s);
+                      }}
+                      title="Configure Breakout Price & Volume Alert"
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        color: '#38bdf8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 10.5,
+                        fontWeight: 700
+                      }}
+                    >
+                      <Bell size={12} />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Main Stock Table */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
         <div className="screener-table-header" style={{
@@ -3203,9 +3449,44 @@ export default function Dashboard({
                         {s.sector || 'Others'}
                       </span>
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 1, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.name || s.companyName}
-                    </div>
+                    {tableFilterMode === 'watchlist' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                        <span style={{
+                          fontSize: 9.5,
+                          fontFamily: 'var(--font-mono)',
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          background: 'rgba(56, 189, 248, 0.12)',
+                          color: '#38bdf8',
+                          fontWeight: 700
+                        }}>
+                          Gate: Rs. {alertConfigs[s.symbol]?.breakoutPrice || (s.ltp * 1.03).toFixed(1)} · RVOL {alertConfigs[s.symbol]?.rvolThreshold || 1.5}x
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAlertModalStock(s);
+                          }}
+                          title="Configure Breakout Alert"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#38bdf8',
+                            cursor: 'pointer',
+                            padding: 0,
+                            display: 'inline-flex',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Bell size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 1, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.name || s.companyName}
+                      </div>
+                    )}
                   </div>
 
                 <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -3563,6 +3844,16 @@ export default function Dashboard({
             <div><span style={{ color: 'var(--text-muted)' }}>Market: </span><strong style={{ color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171' }}>{marketStatus?.isOpen ? 'OPEN' : 'CLOSED'}</strong></div>
           </div>
         </div>
+      )}
+
+      {/* ── Watchlist Breakout Alert Configuration Modal ── */}
+      {alertModalStock && (
+        <BreakoutAlertDialog
+          isOpen={Boolean(alertModalStock)}
+          onClose={() => setAlertModalStock(null)}
+          symbol={alertModalStock?.symbol}
+          stock={alertModalStock}
+        />
       )}
     </div>
   );

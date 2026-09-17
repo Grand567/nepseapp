@@ -61,7 +61,7 @@ export function isWatched(symbol) {
 /**
  * Add a stock symbol to the watchlist
  */
-export function addToWatchlist(symbol, userId = null, userEmail = null) {
+export function addToWatchlist(symbol, userId = null, userEmail = null, stockData = null) {
   if (!symbol) return getWatchlist();
   const sym = String(symbol).trim().toUpperCase();
   const list = getWatchlist();

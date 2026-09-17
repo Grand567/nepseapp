@@ -4,10 +4,12 @@ import {
   Activity, Zap, BookOpen, Users, LineChart, PieChart, BarChart2,
   Shield, Calculator as CalcIcon, BrainCircuit, Star, Download,
   Calendar, Filter, ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, AlertTriangle,
-  Target, Flame, Award, Crosshair, ArrowRight
+  Target, Flame, Award, Crosshair, ArrowRight, Bell
 } from 'lucide-react';
 import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
+import BreakoutAlertDialog from './BreakoutAlertDialog';
+import { getWatchlistAlertConfig } from '../utils/watchlistAlerts';
 import {
   calculatePivotPoints,
   calculateFibonacci,
@@ -55,7 +57,7 @@ const fmtCr = n => {
   return `Rs. ${fmt(n)}`;
 };
 
-function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
+function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onOpenAlert }) {
   if (!entryExitPlan) return null;
 
   const ltp = Number(d?.ltp || entryExitPlan.ltp || 100);
@@ -317,6 +319,63 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         </div>
       )}
 
+      {/* ── Watchlist Breakout Alert Checklist Card ── */}
+      <div style={{
+        background: 'rgba(56, 189, 248, 0.05)',
+        border: '1px solid rgba(56, 189, 248, 0.2)',
+        borderRadius: 10,
+        padding: '8px 12px',
+        marginBottom: 10,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 24, height: 24, borderRadius: 6,
+            background: 'rgba(56, 189, 248, 0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Bell size={13} color="#38bdf8" />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span>Watchlist Breakout Gate:</span>
+              <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>Rs. {entryLow}</span>
+              <span style={{ color: '#64748b' }}>•</span>
+              <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>RVOL ≥ {entryExitPlan?.festivalSeason?.rvolThreshold || 1.5}x</span>
+            </div>
+            <div style={{ fontSize: 9.5, color: '#94a3b8' }}>
+              Dual-Gate Checklist: Alerts only when price clears pivot AND volume confirms.
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenAlert}
+          style={{
+            background: 'rgba(56, 189, 248, 0.15)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: 7,
+            padding: '4px 10px',
+            fontSize: 10.5,
+            fontWeight: 700,
+            color: '#38bdf8',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            transition: 'all 0.15s'
+          }}
+        >
+          <Bell size={11} />
+          <span>Configure Alert</span>
+        </button>
+      </div>
+
       {/* Quantitative Summary Bar */}
       <div style={{
         display: 'flex',
@@ -378,6 +437,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const initialSym = (stock?.symbol || (typeof stock === 'string' ? stock : '')).toUpperCase();
   const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
   const [showAdvancedModal, setShowAdvancedModal] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
   const [historyTimeframe, setHistoryTimeframe] = useState('1Y');
   const scrollRef = useRef(null);
 
@@ -1189,6 +1249,29 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
             <Star style={{ width: 15, height: 15, fill: isFavorite ? '#fbbf24' : 'none' }} />
             <span>{isFavorite ? 'Watched' : 'Watch'}</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAlertModal(true)}
+            title="Configure Breakout Price & RVOL Alert"
+            style={{
+              background: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              borderRadius: 8,
+              color: '#38bdf8',
+              cursor: 'pointer',
+              padding: '5px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 12,
+              fontWeight: 700,
+              transition: 'all 0.15s'
+            }}
+          >
+            <Bell style={{ width: 14, height: 14 }} />
+            <span>Alert</span>
+          </button>
         </div>
       </div>
 
@@ -1396,6 +1479,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               d={d}
               isPrimePick={isPrimePick}
               onOpenAnalyzer={handleOpenInEntryExitAnalyzer}
+              onOpenAlert={() => setShowAlertModal(true)}
             />
 
             {/* ── 2. 4-Card Minimal Metric Grid ── */}
@@ -1805,6 +1889,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               d={d}
               isPrimePick={isPrimePick}
               onOpenAnalyzer={handleOpenInEntryExitAnalyzer}
+              onOpenAlert={() => setShowAlertModal(true)}
             />
 
             {/* 12-Month Accumulation & Distribution / Wyckoff Cycle Card */}
@@ -2906,6 +2991,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           stock={d}
           initialTimeframe={chartTimeframe}
           onClose={() => setShowAdvancedModal(false)}
+        />
+      )}
+
+      {/* ── Watchlist Breakout Alert Configuration Modal ── */}
+      {showAlertModal && (
+        <BreakoutAlertDialog
+          isOpen={showAlertModal}
+          onClose={() => setShowAlertModal(false)}
+          symbol={d.symbol}
+          stock={d}
+          entryExitPlan={entryExitPlan}
         />
       )}
     </div>
