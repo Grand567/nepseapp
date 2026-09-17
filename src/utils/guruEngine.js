@@ -383,6 +383,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
 
   const breadthCheck = evaluateMarketBreadthCashDefense(stocks);
   const candidates = [];
+  const allLiquidCandidates = [];
   const activeBreakouts = [];
   const nextBreakouts = [];
 
@@ -396,7 +397,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const eps = Number(s.eps || 0);
 
     // Fundamental & Liquidity safety hurdles
-    if (ltp < 80 || turnover < 5000000) continue;
+    if (ltp < 80 || turnover < 2500000) continue;
     if (s.eps !== undefined && eps < 0) continue;
 
     // Circuit limit ceiling check (±15% limit)
@@ -424,10 +425,28 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       nextBreakouts.push(evalResult);
     }
 
-    // Candidate for Prime Pick: must pass all safety gates and have score >= 75
-    if (evalResult.isPrimeCandidate && evalResult.guruScore >= 75 && !breadthCheck.cashDefenseActive) {
-      candidates.push(evalResult);
+    // Candidate for Prime Pick: must pass all safety gates
+    if (evalResult.isPrimeCandidate && !breadthCheck.cashDefenseActive) {
+      allLiquidCandidates.push(evalResult);
+      if (evalResult.guruScore >= 75) {
+        candidates.push(evalResult);
+      }
     }
+  }
+
+  // If no candidate scored >= 75 (e.g. cold start with unpopulated price history cache),
+  // promote top liquid momentum leaders as candidates so prime pick is never empty
+  if (candidates.length === 0 && allLiquidCandidates.length > 0 && !breadthCheck.cashDefenseActive) {
+    allLiquidCandidates.sort((a, b) => {
+      const aTurnover = Number(a.turnover || 0);
+      const bTurnover = Number(b.turnover || 0);
+      const aMom = Number(a.pChange || 0);
+      const bMom = Number(b.pChange || 0);
+      const aLbas = Number(a.brokerMetrics?.lbas || 0);
+      const bLbas = Number(b.brokerMetrics?.lbas || 0);
+      return (bTurnover * (bMom > 0 ? 1.5 : 0.8) + bLbas * 50000000) - (aTurnover * (aMom > 0 ? 1.5 : 0.8) + aLbas * 50000000);
+    });
+    candidates.push(...allLiquidCandidates.slice(0, 10));
   }
 
   // Sort descending by Guru Score, then broker LBAS
@@ -573,6 +592,23 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     } catch (_) {}
     if (!verifiedPrimePick) {
       verifiedPrimePick = fallbackCand;
+    }
+  }
+
+  // Tier 2 Fallback: If verified pick was passed via options or stored in prime_pick_plan_cache, use it
+  if (!verifiedPrimePick && !breadthCheck.cashDefenseActive) {
+    if (options?.cachedPrimePick?.symbol) {
+      verifiedPrimePick = options.cachedPrimePick;
+    } else if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem('prime_pick_plan_cache');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.plan?.symbol) {
+            verifiedPrimePick = parsed.plan;
+          }
+        }
+      } catch (_) {}
     }
   }
 

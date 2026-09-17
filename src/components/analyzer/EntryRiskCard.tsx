@@ -57,13 +57,17 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
         {/* Entry Zone */}
         <div className="rounded-xl bg-slate-900/80 border border-blue-900/40 p-3">
           <div className="text-[11px] text-blue-400 font-semibold uppercase tracking-wide">
-            Suggested Entry Zone
+            {levels.entryZone?.low && currentPrice && levels.entryZone.low > currentPrice * 1.015
+              ? 'Breakout Zone (Above Pivot)'
+              : 'Suggested Entry Zone'}
           </div>
           <div className="text-base sm:text-lg font-black text-white mt-1">
             {levels.entryZone?.label || '—'}
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5">
-            Optimal accumulation range
+            {levels.entryZone?.low && currentPrice && levels.entryZone.low > currentPrice * 1.015
+              ? `Requires breakout above Rs. ${levels.entryZone.low}`
+              : 'Optimal accumulation range'}
           </div>
         </div>
 

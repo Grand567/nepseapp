@@ -3,7 +3,7 @@ import {
   ChevronLeft, X, Layers, CheckCircle2, TrendingUp, TrendingDown,
   Activity, Zap, BookOpen, Users, LineChart, PieChart, BarChart2,
   Shield, Calculator as CalcIcon, BrainCircuit, Star, Download,
-  Calendar, Filter, ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle,
+  Calendar, Filter, ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, AlertTriangle,
   Target, Flame, Award, Crosshair, ArrowRight
 } from 'lucide-react';
 import ShareHubChart from './ShareHubChart';
@@ -62,7 +62,8 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   const setupScore = Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70);
   const verdict = entryExitPlan.verdict || 'BUY / ACCUMULATE';
   const isBull = verdict.includes('BUY') || verdict.includes('ACCUMULATE');
-  const isAvoid = verdict.includes('AVOID') || verdict.includes('EXIT') || verdict.includes('NO TRADE');
+  const isAvoid = verdict.includes('AVOID') || verdict.includes('EXIT') || verdict.includes('NO TRADE') || verdict.includes('REDUCE') || setupScore < 45;
+  const isBreakoutAboveLtp = Number(entryLow) > ltp * 1.015;
   const verdictColor = isBull ? '#10B981' : isAvoid ? '#F43F5E' : '#F59E0B';
   const verdictBg = isBull ? 'rgba(16, 185, 129, 0.12)' : isAvoid ? 'rgba(244, 63, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)';
   const verdictBorder = isBull ? 'rgba(16, 185, 129, 0.35)' : isAvoid ? 'rgba(244, 63, 94, 0.35)' : 'rgba(245, 158, 11, 0.35)';
@@ -91,7 +92,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   return (
     <div style={{
       background: 'linear-gradient(135deg, rgba(21, 25, 34, 0.98), rgba(15, 23, 42, 0.98))',
-      border: isPrimePick ? '1.5px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(59, 130, 246, 0.3)',
+      border: isPrimePick ? '1.5px solid rgba(16, 185, 129, 0.45)' : isAvoid ? '1.5px solid rgba(244, 63, 94, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
       borderRadius: 16,
       padding: '16px 18px',
       marginBottom: 14,
@@ -104,10 +105,11 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
             width: 32, height: 32, borderRadius: 10,
-            background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)',
+            background: isAvoid ? 'rgba(244, 63, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(59, 130, 246, 0.3)',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
-            <Target style={{ width: 16, height: 16, color: '#60a5fa' }} />
+            <Target style={{ width: 16, height: 16, color: isAvoid ? '#f43f5e' : '#60a5fa' }} />
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
@@ -148,12 +150,12 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
             {verdict}
           </span>
           <span style={{
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: isAvoid ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.25)' : '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: 20,
             padding: '3px 9px',
             fontSize: 11,
-            color: '#ffffff',
+            color: isAvoid ? '#fca5a5' : '#ffffff',
             fontWeight: 800
           }}>
             Score: {setupScore}/100
@@ -172,42 +174,120 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         border: '1px solid rgba(255, 255, 255, 0.05)',
         marginBottom: 10
       }}>
-        <div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Recommended Buy Zone</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-            Rs. {entryLow} – {entryHigh}
+        {/* Box 1: Stance / Buy Zone */}
+        <div style={{
+          background: isAvoid ? 'rgba(244, 63, 94, 0.06)' : 'transparent',
+          borderRadius: 8,
+          padding: isAvoid ? '4px 6px' : 0
+        }}>
+          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isAvoid ? 'Action / Stance' : (isBreakoutAboveLtp ? 'Breakout Buy Zone (Pivot)' : 'Recommended Buy Zone')}
           </div>
-          <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>Optimal Accumulation</div>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: isAvoid ? '#f43f5e' : '#38bdf8',
+            fontFamily: 'var(--font-mono)',
+            marginTop: 2
+          }}>
+            {isAvoid ? 'NO BUY ZONE' : `Rs. ${entryLow} – ${entryHigh}`}
+          </div>
+          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : '#64748b', marginTop: 1 }}>
+            {isAvoid
+              ? `Avoid Entry • High Downside Risk`
+              : (isBreakoutAboveLtp
+                  ? `Triggers above Rs. ${entryLow} (LTP: Rs. ${fmt(ltp)})`
+                  : 'Optimal Accumulation')}
+          </div>
+          {isAvoid && isBreakoutAboveLtp && (
+            <div style={{ fontSize: 8.5, color: '#94a3b8', marginTop: 2 }}>
+              Overhead Pivot: Rs. {entryLow} – {entryHigh}
+            </div>
+          )}
         </div>
 
+        {/* Box 2: Target 1 / Resistance 1 */}
         <div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 1 (Swing 1.5R)</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isAvoid ? 'Overhead Resistance (T1)' : 'Target 1 (Swing 1.5R)'}
+          </div>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: isAvoid ? '#cbd5e1' : '#34d399',
+            fontFamily: 'var(--font-mono)',
+            marginTop: 2
+          }}>
             Rs. {t1Price} (+{t1GrossPct}%)
           </div>
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
-            Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: isAvoid ? '#94a3b8' : '#34d399', marginTop: 1 }}>
+            {isAvoid ? (
+              <span style={{ color: '#94a3b8', fontSize: 9 }}>Profit-Taking / Trim Resistance</span>
+            ) : (
+              <>Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span></>
+            )}
           </div>
         </div>
 
+        {/* Box 3: Target 2 / Supply Ceiling */}
         <div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Target 2 (Runner 3.0R)</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isAvoid ? 'Supply Ceiling (T2)' : 'Target 2 (Runner 3.0R)'}
+          </div>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: isAvoid ? '#94a3b8' : '#a78bfa',
+            fontFamily: 'var(--font-mono)',
+            marginTop: 2
+          }}>
             Rs. {t2Price} (+{t2GrossPct}%)
           </div>
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
-            Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: isAvoid ? '#64748b' : '#c084fc', marginTop: 1 }}>
+            {isAvoid ? (
+              <span style={{ color: '#64748b', fontSize: 9 }}>Heavy Overhead Supply</span>
+            ) : (
+              <>Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span></>
+            )}
           </div>
         </div>
 
+        {/* Box 4: Structural Invalidation / Stop */}
         <div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
+          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isAvoid ? 'Cut-Loss Floor (Exit)' : 'Stop Loss (Structural)'}
+          </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
             Rs. {slPrice} (-{slPct}%)
           </div>
-          <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>Invalidation Point</div>
+          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : '#64748b', marginTop: 1 }}>
+            {isAvoid ? 'Protect capital if holding' : 'Invalidation Point'}
+          </div>
         </div>
       </div>
+
+      {/* Avoid Warning Alert Box */}
+      {isAvoid && (
+        <div style={{
+          background: 'rgba(244, 63, 94, 0.08)',
+          border: '1px solid rgba(244, 63, 94, 0.25)',
+          borderRadius: 10,
+          padding: '8px 12px',
+          marginBottom: 10,
+          fontSize: 11,
+          color: '#fca5a5',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          lineHeight: 1.45
+        }}>
+          <AlertTriangle style={{ width: 15, height: 15, color: '#f43f5e', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <span style={{ fontWeight: 800, color: '#f43f5e' }}>Capital Protection Alert: </span>
+            This asset exhibits an unfavorable quantitative score ({setupScore}/100) and sub-50% analog win rate ({winRate != null ? `${winRate}%` : 'sub-50%'}). Current market price (Rs. {fmt(ltp)}) trades below overhead resistance. Fresh buy positions should not be initiated.
+          </div>
+        </div>
+      )}
 
       {/* Quantitative Summary Bar */}
       <div style={{

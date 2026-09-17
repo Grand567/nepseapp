@@ -763,7 +763,16 @@ export default function PredictorHub({
     return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
   }, [stocks]);
 
-  const primeDailyPick = masterPipeline.primeDailyPick;
+  const primeDailyPick = masterPipeline.primeDailyPick || (() => {
+    try {
+      const raw = localStorage.getItem('prime_pick_plan_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.plan?.symbol) return parsed.plan;
+      }
+    } catch (_) {}
+    return null;
+  })();
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
 
   // ── AUTO-ANALYSIS: Run full Entry/Exit Analyzer engine on Prime Pick top stock ──

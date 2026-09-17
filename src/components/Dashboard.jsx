@@ -1468,35 +1468,40 @@ export default function Dashboard({
     return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
   }, [stocks, backtestCacheVersion]);
 
-  const primeDailyPick = masterBreakoutPipeline.primeDailyPick;
-  const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
-  const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
-
-  // Pre-Open Order Depth & Gate for Prime Pick
-  const [primeMarketDepth, setPrimeMarketDepth] = useState(null);
-  const [isRefreshingDepth, setIsRefreshingDepth] = useState(false);
+  const [hydratedPrimePick, setHydratedPrimePick] = useState(() => {
+    try {
+      const raw = localStorage.getItem('prime_pick_plan_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.plan?.symbol) return parsed.plan;
+      }
+    } catch (_) {}
+    return null;
+  });
 
   // Cold-start hydration: fetch verified daily prime pick from backend proxy on startup
   useEffect(() => {
     let isMounted = true;
     fetchVerifiedDailyPrimePick().then(res => {
       if (isMounted && res && res.data && res.data.symbol) {
+        setHydratedPrimePick(res.data);
         try {
-          const raw = localStorage.getItem('prime_pick_plan_cache');
-          if (!raw) {
-            localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-              symbol: res.data.symbol,
-              plan: res.data,
-              ts: Date.now()
-            }));
-            setBacktestCacheVersion(v => v + 1);
-          }
+          localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+            symbol: res.data.symbol,
+            plan: res.data,
+            ts: Date.now()
+          }));
+          setBacktestCacheVersion(v => v + 1);
         } catch (_) {}
       }
     }).catch(() => {});
 
     return () => { isMounted = false; };
   }, []);
+
+  const primeDailyPick = masterBreakoutPipeline.primeDailyPick || hydratedPrimePick;
+  const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
+  const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
 
   // Poll Level-2 pre-open order book during pre-open / post-market sessions for the Prime Pick
   useEffect(() => {
