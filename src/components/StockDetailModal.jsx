@@ -63,6 +63,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   const verdict = entryExitPlan.verdict || 'BUY / ACCUMULATE';
   const isBull = verdict.includes('BUY') || verdict.includes('ACCUMULATE');
   const isAvoid = verdict.includes('AVOID') || verdict.includes('EXIT') || verdict.includes('NO TRADE') || verdict.includes('REDUCE') || setupScore < 45;
+  const isHoldWait = !isAvoid && (verdict.includes('HOLD') || verdict.includes('WAIT') || verdict.includes('NEUTRAL') || (setupScore >= 45 && setupScore < 60));
 
   const entryLow = entryExitPlan.levels?.entryZone?.min || entryExitPlan.levels?.entryZone?.low || (ltp * 0.985).toFixed(1);
   const entryHigh = entryExitPlan.levels?.entryZone?.max || entryExitPlan.levels?.entryZone?.high || (ltp * 1.015).toFixed(1);
@@ -93,7 +94,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   return (
     <div style={{
       background: 'linear-gradient(135deg, rgba(21, 25, 34, 0.98), rgba(15, 23, 42, 0.98))',
-      border: isPrimePick ? '1.5px solid rgba(16, 185, 129, 0.45)' : isAvoid ? '1.5px solid rgba(244, 63, 94, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
+      border: isPrimePick ? '1.5px solid rgba(16, 185, 129, 0.45)' : isAvoid ? '1.5px solid rgba(244, 63, 94, 0.35)' : isHoldWait ? '1.5px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)',
       borderRadius: 16,
       padding: '16px 18px',
       marginBottom: 14,
@@ -106,11 +107,11 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
             width: 32, height: 32, borderRadius: 10,
-            background: isAvoid ? 'rgba(244, 63, 94, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(59, 130, 246, 0.3)',
+            background: isAvoid ? 'rgba(244, 63, 94, 0.15)' : isHoldWait ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.3)' : isHoldWait ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(59, 130, 246, 0.3)',
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
-            <Target style={{ width: 16, height: 16, color: isAvoid ? '#f43f5e' : '#60a5fa' }} />
+            <Target style={{ width: 16, height: 16, color: isAvoid ? '#f43f5e' : isHoldWait ? '#fbbf24' : '#60a5fa' }} />
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
@@ -151,12 +152,12 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
             {verdict}
           </span>
           <span style={{
-            background: isAvoid ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.25)' : '1px solid rgba(255, 255, 255, 0.1)',
+            background: isAvoid ? 'rgba(244, 63, 94, 0.12)' : isHoldWait ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+            border: isAvoid ? '1px solid rgba(244, 63, 94, 0.25)' : isHoldWait ? '1px solid rgba(245, 158, 11, 0.25)' : '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: 20,
             padding: '3px 9px',
             fontSize: 11,
-            color: isAvoid ? '#fca5a5' : '#ffffff',
+            color: isAvoid ? '#fca5a5' : isHoldWait ? '#fde68a' : '#ffffff',
             fontWeight: 800
           }}>
             Score: {setupScore}/100
@@ -177,28 +178,30 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
       }}>
         {/* Box 1: Stance / Buy Zone */}
         <div style={{
-          background: isAvoid ? 'rgba(244, 63, 94, 0.06)' : 'transparent',
+          background: isAvoid ? 'rgba(244, 63, 94, 0.06)' : isHoldWait ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
           borderRadius: 8,
-          padding: isAvoid ? '4px 6px' : 0
+          padding: (isAvoid || isHoldWait) ? '4px 6px' : 0
         }}>
-          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Action / Stance' : (isBreakoutAboveLtp ? 'Breakout Buy Zone (Pivot)' : 'Recommended Buy Zone')}
+          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : isHoldWait ? '#fbbf24' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isAvoid ? 'Action / Stance' : isHoldWait ? 'Confirmation Corridor' : (isBreakoutAboveLtp ? 'Breakout Buy Zone (Pivot)' : 'Recommended Buy Zone')}
           </div>
           <div style={{
             fontSize: 13,
             fontWeight: 800,
-            color: isAvoid ? '#f43f5e' : '#38bdf8',
+            color: isAvoid ? '#f43f5e' : isHoldWait ? '#fbbf24' : '#38bdf8',
             fontFamily: 'var(--font-mono)',
             marginTop: 2
           }}>
             {isAvoid ? 'NO BUY ZONE' : `Rs. ${entryLow} – ${entryHigh}`}
           </div>
-          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : '#64748b', marginTop: 1 }}>
+          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : isHoldWait ? '#fde68a' : '#64748b', marginTop: 1 }}>
             {isAvoid
               ? `Avoid Entry • High Downside Risk`
-              : (isBreakoutAboveLtp
-                  ? `Triggers above Rs. ${entryLow} (LTP: Rs. ${fmt(ltp)})`
-                  : 'Optimal Accumulation')}
+              : isHoldWait
+                ? (isBreakoutAboveLtp ? `Requires close above Rs. ${entryLow} on volume` : 'Awaiting Breakout Confirmation • Do Not Front-Run')
+                : (isBreakoutAboveLtp
+                    ? `Triggers above Rs. ${entryLow} (LTP: Rs. ${fmt(ltp)})`
+                    : 'Optimal Accumulation')}
           </div>
           {isAvoid && isBreakoutAboveLtp && (
             <div style={{ fontSize: 8.5, color: '#94a3b8', marginTop: 2 }}>
@@ -210,12 +213,12 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         {/* Box 2: Target 1 / Resistance 1 */}
         <div>
           <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Overhead Resistance (T1)' : 'Target 1 (Swing 1.5R)'}
+            {isAvoid ? 'Overhead Resistance (T1)' : isHoldWait ? 'Target 1 (Post-Trigger 1.5R)' : 'Target 1 (Swing 1.5R)'}
           </div>
           <div style={{
             fontSize: 13,
             fontWeight: 800,
-            color: isAvoid ? '#cbd5e1' : '#34d399',
+            color: isAvoid ? '#cbd5e1' : isHoldWait ? '#a7f3d0' : '#34d399',
             fontFamily: 'var(--font-mono)',
             marginTop: 2
           }}>
@@ -233,7 +236,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         {/* Box 3: Target 2 / Supply Ceiling */}
         <div>
           <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Supply Ceiling (T2)' : 'Target 2 (Runner 3.0R)'}
+            {isAvoid ? 'Supply Ceiling (T2)' : isHoldWait ? 'Target 2 (Post-Trigger 3.0R)' : 'Target 2 (Runner 3.0R)'}
           </div>
           <div style={{
             fontSize: 13,
@@ -290,6 +293,29 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         </div>
       )}
 
+      {/* Hold / Wait Confirmation Alert Box */}
+      {isHoldWait && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: 10,
+          padding: '8px 12px',
+          marginBottom: 10,
+          fontSize: 11,
+          color: '#fde68a',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          lineHeight: 1.45
+        }}>
+          <AlertTriangle style={{ width: 15, height: 15, color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <span style={{ fontWeight: 800, color: '#f59e0b' }}>Confirmation Prerequisite: </span>
+            This asset is in a consolidation phase (Score: {setupScore}/100{winRate != null ? `, Analog Win Rate: ${winRate}%` : ''}). Price must establish a confirmed high-volume close above Rs. {entryHigh} before entering fresh positions.
+          </div>
+        </div>
+      )}
+
       {/* Quantitative Summary Bar */}
       <div style={{
         display: 'flex',
@@ -303,7 +329,11 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
       }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <span>Risk:Reward: <strong style={{ color: '#38bdf8' }}>{rrr1} : 1</strong></span>
-          {winRate != null && <span>Historical Win Rate: <strong style={{ color: '#34d399' }}>{winRate}%</strong> ({sampleSize} Analogs)</span>}
+          {winRate != null && (
+            <span>
+              Historical Win Rate: <strong style={{ color: winRate >= 55 ? '#34d399' : winRate >= 45 ? '#fbbf24' : '#f87171' }}>{winRate}%</strong> ({sampleSize} Analogs)
+            </span>
+          )}
         </div>
 
         <button
@@ -506,6 +536,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       return null;
     }
   }, [d, realPriceHistory, history, realBrokerAnalysis, cachedPrime]);
+
+  const modalSetupScore = entryExitPlan ? Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70) : 50;
+  const modalVerdict = entryExitPlan?.verdict || '';
+  const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalSetupScore < 45;
+  const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL') || (modalSetupScore >= 45 && modalSetupScore < 60));
+  const modalIsBull = !modalIsAvoid && !modalIsHoldWait && (modalVerdict.includes('BUY') || modalVerdict.includes('ACCUMULATE') || modalSetupScore >= 60);
 
   const handleOpenInEntryExitAnalyzer = useCallback(() => {
     if (!d?.symbol) return;
@@ -1440,8 +1476,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 justifyContent: 'space-between'
               }}>
                 <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Quant Signal</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: (realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? '#94a3b8' : (actionZone.zoneColor || '#10B981'), margin: '4px 0' }}>
-                  {(realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? 'Analyzing Structure…' : (actionZone.zone || 'Accumulate')}
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: (realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0))
+                    ? '#94a3b8'
+                    : (modalIsAvoid ? '#f43f5e' : modalIsHoldWait ? '#fbbf24' : '#10B981'),
+                  margin: '4px 0'
+                }}>
+                  {(realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0))
+                    ? 'Analyzing Structure…'
+                    : (modalIsAvoid ? 'Avoid / Reduce' : modalIsHoldWait ? 'Hold / Wait' : (actionZone.zone || 'Accumulate'))}
                 </div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>
                   MS Score: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
@@ -1451,7 +1496,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               </div>
             </div>
 
-            {/* ── 3. Guru AI Action Zone & Quantitative Intelligence Bar ── */}
+            {/* ── 3. Institutional & Smart Money Flow Intelligence Bar ── */}
             <div style={{
               background: '#151922',
               border: '1px solid rgba(255,255,255,0.07)',
@@ -1462,14 +1507,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               {(realHistoryLoading && (!realPriceHistory || realPriceHistory.length === 0)) ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 6px', color: '#94a3b8', fontSize: 12 }}>
                   <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#38bdf8', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                  <span>Calculating authentic 50/200 EMA and structural action zone…</span>
+                  <span>Calculating authentic broker floor sheets and smart money flow…</span>
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: actionZone.zoneColor }}>
-                      <Zap style={{ width: 15, height: 15 }} />
-                      {actionZone.zoneBadge}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 900, color: '#38bdf8' }}>
+                      <Zap style={{ width: 15, height: 15, color: '#38bdf8' }} />
+                      Smart Money & Broker Accumulation
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>
                       Momentum: <span style={{ color: actionZone.momentumScore >= 0 ? '#10B981' : '#F43F5E' }}>{actionZone.momentumScore >= 0 ? '+' : ''}{actionZone.momentumScore}</span>
@@ -1480,22 +1525,34 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>
-                        {actionZone.zone === 'Buying Zone' ? 'Support Entry (ATR)' : 'Entry Target'}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                        {actionZone.zone === 'Exit Zone' || actionZone.zone === 'Selling Zone' || actionZone.entryTarget.toLowerCase().includes('avoid') || actionZone.entryTarget.toLowerCase().includes('no entry')
-                          ? 'Avoid / Exit'
-                          : (actionZone.entryTarget.match(/Rs\.\s*[\d.]+/)?.[0] || actionZone.entryTarget.split(' ')[1] || 'LTP')}
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Broker Flow (LBAS)</div>
+                      <div style={{
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        color: (realBrokerAnalysis?.adRatio ?? 0) >= 0.05 ? '#10B981' : (realBrokerAnalysis?.adRatio ?? 0) <= -0.05 ? '#F43F5E' : '#94a3b8',
+                        fontFamily: 'var(--font-mono)'
+                      }}>
+                        {realBrokerAnalysis?.adRatio != null
+                          ? (realBrokerAnalysis.adRatio >= 0 ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% Flow` : `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% Flow`)
+                          : (actionZone.brokerSignal || 'Neutral')}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Target 1 (1.5×ATR)</div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#10B981', fontFamily: 'var(--font-mono)' }}>{actionZone.profitTarget1.split(' ')[1] || 'Target'}</div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Order Absorption</div>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: actionZone.momentumScore >= 0 ? '#34d399' : '#f87171', fontFamily: 'var(--font-mono)' }}>
+                        {actionZone.momentumScore >= 0.2 ? 'Active Absorption' : actionZone.momentumScore <= -0.2 ? 'Supply Overhang' : 'Consolidation'}
+                      </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Momentum Stop</div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{actionZone.stopLoss.split(' ')[1] || 'Stop'}</div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Execution Stance</div>
+                      <div style={{
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        color: modalIsAvoid ? '#f43f5e' : modalIsHoldWait ? '#fbbf24' : '#10B981',
+                        fontFamily: 'var(--font-mono)'
+                      }}>
+                        {modalIsAvoid ? 'Avoid Entry' : modalIsHoldWait ? 'Wait Confirmation' : 'Accumulate'}
+                      </div>
                     </div>
                   </div>
                 </>
