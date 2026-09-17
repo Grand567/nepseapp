@@ -212,7 +212,6 @@ export const BS_PUBLIC_HOLIDAYS = {
   // Month 2 (Jestha):
   '02-15': { np: 'गणतन्त्र दिवस', en: 'Republic Day (Ganatantra Diwas)' },
   // Month 6 (Ashwin):
-  '06-01': { np: 'विश्वकर्मा पूजा', en: 'Bishwakarma Puja' },
   '06-03': { np: 'राष्ट्रिय संविधान दिवस', en: 'National Constitution Day' },
   // Month 9 (Poush):
   '09-10': { np: 'क्रिसमस डे', en: 'Christmas Day' },
@@ -278,7 +277,6 @@ export const BS_PUBLIC_HOLIDAYS = {
   '2083-05-11': { np: 'जनै पूर्णिमा / रक्षाबन्धन', en: 'Janai Purnima / Raksha Bandhan' },
   '2083-05-12': { np: 'गाईजात्रा', en: 'Gai Jatra' },
   '2083-05-19': { np: 'श्रीकृष्ण जन्माष्टमी', en: 'Krishna Janmashtami' },
-  '2083-06-01': { np: 'विश्वकर्मा पूजा', en: 'Bishwakarma Puja' },
   '2083-06-09': { np: 'इन्द्रजात्रा', en: 'Indra Jatra' },
   '2083-06-24': { np: 'घटस्थापना', en: 'Ghatasthapana' },
   '2083-07-01': { np: 'दशैं (फूलपाती)', en: 'Dashain (Phulpati)' },

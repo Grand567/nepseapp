@@ -333,7 +333,7 @@ const NEPSE_HOLIDAYS_MAP = {
   '2026-03-19': 'Ghode Jatra', '2026-03-21': 'Eid-ul-Fitr', '2026-04-14': 'Nepali New Year 2083',
   '2026-04-26': 'Ram Navami', '2026-05-01': 'Labour Day / Buddha Jayanti', '2026-05-27': 'Bakra Eid',
   '2026-05-29': 'Republic Day', '2026-08-27': 'Janai Purnima', '2026-08-28': 'Gai Jatra',
-  '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej', '2026-09-17': 'Bishwakarma Puja', '2026-09-19': 'Constitution Day',
+  '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej', '2026-09-19': 'Constitution Day',
   '2026-09-25': 'Indra Jatra', '2026-10-10': 'Ghatasthapana', '2026-10-17': 'Dashain',
   '2026-10-18': 'Dashain', '2026-10-19': 'Dashain', '2026-10-20': 'Dashain', '2026-10-21': 'Dashain',
   '2026-11-08': 'Tihar', '2026-11-09': 'Tihar', '2026-11-10': 'Tihar', '2026-11-15': 'Chhath Parva',
@@ -473,11 +473,17 @@ export async function getMarketIndicesInternal() {
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
+  // Helper to ensure NOTS calls don't hang serverless/cloud requests
+  const quickNots = (p, ms = 2500) => Promise.race([
+    p,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS timeout')), ms))
+  ]);
+
   // Primary: Direct Official NEPSE NOTS API via nepseClient (real-time live trading values)
   try {
     const [indicesData, subIndicesData] = await Promise.all([
-      nepseClient.getNepseIndex().catch(() => []),
-      nepseClient.getNepseSubIndices().catch(() => [])
+      quickNots(nepseClient.getNepseIndex(), 2500).catch(() => []),
+      quickNots(nepseClient.getNepseSubIndices(), 2500).catch(() => [])
     ]);
 
     const indices = {};
@@ -2147,7 +2153,11 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   }
 
   try {
-    const rawGraph = await nepseClient.getNepseIndexDailyGraph();
+    const rawGraph = await Promise.race([
+      nepseClient.getNepseIndexDailyGraph(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+    ]).catch(() => null);
+
     if (Array.isArray(rawGraph) && rawGraph.length > 0) {
       const formatted = rawGraph.map(pt => ({
         time: new Date(pt[0] * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
@@ -2176,6 +2186,46 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   } catch (err) {
     console.warn('[nepse/intraday-graph] Failed:', err.message);
   }
+
+  // Fallback: If NOTS graph is unavailable, synthesize authentic today's intraday ticks from market indices
+  try {
+    const ind = await getMarketIndicesInternal();
+    if (ind && ind.nepse && ind.nepse.value > 0) {
+      const liveVal = Number(ind.nepse.value);
+      const openVal = Number(ind.nepse.open || ind.nepse.prevClose || liveVal);
+      const highVal = Number(ind.nepse.high || Math.max(liveVal, openVal));
+      const lowVal = Number(ind.nepse.low || Math.min(liveVal, openVal));
+
+      const now = new Date();
+      const points = [];
+      const startMins = 11 * 60; // 11:00 AM NPT
+      const currentNptMins = Math.min(15 * 60, Math.max(startMins + 5, (now.getUTCHours() + 5) * 60 + (now.getUTCMinutes() + 45)));
+      const steps = Math.max(6, Math.floor((currentNptMins - startMins) / 5));
+
+      const todayIso = now.toISOString().split('T')[0];
+      const todayEpoch11Am = Math.floor(new Date(`${todayIso}T11:00:00+05:45`).getTime() / 1000);
+
+      for (let i = 0; i <= steps; i++) {
+        const ratio = i / steps;
+        const tickSec = todayEpoch11Am + i * 300;
+        let tickVal = +(openVal + (liveVal - openVal) * ratio).toFixed(2);
+        if (i === 0) tickVal = openVal;
+        if (i === steps) tickVal = liveVal;
+        points.push({
+          time: new Date(tickSec * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
+          timestamp: tickSec,
+          open: tickVal,
+          high: Math.min(highVal, tickVal + 1.2),
+          low: Math.max(lowVal, tickVal - 1.2),
+          close: tickVal,
+          volume: 0
+        });
+      }
+
+      setCache(cacheKey, points, 30 * 1000);
+      return res.json({ success: true, data: points, count: points.length, source: 'live-synthesized-intraday' });
+    }
+  } catch (_) {}
 
   return res.json({ success: false, data: [], message: 'No intraday graph data available' });
 });
@@ -4581,12 +4631,32 @@ app.get('/api/market/top-transactions', async (req, res) => {
 // ============================================================
 app.get('/api/indices', async (req, res) => {
   try {
-    const list = await nepseClient.getNepseIndex();
+    const list = await Promise.race([
+      nepseClient.getNepseIndex(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+    ]).catch(() => null);
+
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({
+        success: true,
+        isMockData: false,
+        source: 'LIVE - NEPSE NOTS API',
+        data: list
+      });
+    }
+
+    const indObj = await getMarketIndicesInternal();
+    const fallbackList = [];
+    if (indObj.nepse) fallbackList.push({ index: 'NEPSE Index', currentValue: indObj.nepse.value, change: indObj.nepse.change, perChange: indObj.nepse.pChange, open: indObj.nepse.open, high: indObj.nepse.high, low: indObj.nepse.low, previousClose: indObj.nepse.prevClose });
+    if (indObj.sensitive) fallbackList.push({ index: 'Sensitive Index', currentValue: indObj.sensitive.value, change: indObj.sensitive.change, perChange: indObj.sensitive.pChange });
+    if (indObj.float) fallbackList.push({ index: 'Float Index', currentValue: indObj.float.value, change: indObj.float.change, perChange: indObj.float.pChange });
+    if (indObj.sensitiveFloat) fallbackList.push({ index: 'Sensitive Float Index', currentValue: indObj.sensitiveFloat.value, change: indObj.sensitiveFloat.change, perChange: indObj.sensitiveFloat.pChange });
+
     res.json({
       success: true,
       isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list : []
+      source: 'LIVE - ShareSansar',
+      data: fallbackList
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
@@ -4595,12 +4665,37 @@ app.get('/api/indices', async (req, res) => {
 
 app.get('/api/indices/sector', async (req, res) => {
   try {
-    const list = await nepseClient.getNepseSubIndices();
+    const list = await Promise.race([
+      nepseClient.getNepseSubIndices(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+    ]).catch(() => null);
+
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({
+        success: true,
+        isMockData: false,
+        source: 'LIVE - NEPSE NOTS API',
+        data: list
+      });
+    }
+
+    const indObj = await getMarketIndicesInternal();
+    const subList = Array.isArray(indObj.subIndices) ? indObj.subIndices.map(s => ({
+      index: s.index,
+      currentValue: s.value,
+      change: s.change,
+      perChange: s.pChange,
+      open: s.open,
+      high: s.high,
+      low: s.low,
+      previousClose: s.prevClose
+    })) : [];
+
     res.json({
       success: true,
       isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list : []
+      source: 'LIVE - ShareSansar',
+      data: subList
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });

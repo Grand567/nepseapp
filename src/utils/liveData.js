@@ -137,7 +137,7 @@ function ensureSnapshot() {
 }
 
 // HTTP helper with timeout and native CapacitorHttp support
-async function tryFetchJSON(url, timeoutMs = 4500) {
+async function tryFetchJSON(url, timeoutMs = 12000) {
   try {
     if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
       const res = await CapacitorHttp.request({
@@ -331,7 +331,7 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 
 // Multi-source backend proxy caller that automatically tries configured proxy and falls back to
 // Render production backend (https://nepseapp.onrender.com) so real exchange data is always reached.
-export async function fetchFromBackend(path, timeoutMs = 7000) {
+export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
   try {
     const res = await tryFetchJSON(`${base}${path}`, timeoutMs);
@@ -353,7 +353,7 @@ const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)
 async function attemptLiveMarket() {
   // 1. Primary: Real-time Live Intraday trading feed (/api/market-summary)
   try {
-    const j = await fetchFromBackend('/api/market-summary', 8000);
+    const j = await fetchFromBackend('/api/market-summary', 12000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -363,7 +363,7 @@ async function attemptLiveMarket() {
 
   // 2. Secondary: Today's prices / closing prices (/api/today-prices)
   try {
-    const j = await fetchFromBackend('/api/today-prices', 8000);
+    const j = await fetchFromBackend('/api/today-prices', 12000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -979,11 +979,11 @@ export async function fetchMarketIndices() {
   try {
     // 1. Fetch official real-time NOTS indices, sector subindices, and intraday graph in parallel
     const [indicesRes, sectorRes, intradayRes, summaryRes, legacyRes] = await Promise.all([
-      fetchFromBackend(`/api/indices`, 6000).catch(() => null),
-      fetchFromBackend(`/api/indices/sector`, 6000).catch(() => null),
-      fetchFromBackend(`/api/nepse/intraday-graph`, 6000).catch(() => null),
-      fetchFromBackend(`/api/market/summary`, 6000).catch(() => null),
-      fetchFromBackend(`/api/market-indices`, 6000).catch(() => null)
+      fetchFromBackend(`/api/indices`, 10000).catch(() => null),
+      fetchFromBackend(`/api/indices/sector`, 10000).catch(() => null),
+      fetchFromBackend(`/api/nepse/intraday-graph`, 10000).catch(() => null),
+      fetchFromBackend(`/api/market/summary`, 10000).catch(() => null),
+      fetchFromBackend(`/api/market-indices`, 10000).catch(() => null)
     ]);
 
     let indicesData = null;

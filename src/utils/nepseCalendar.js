@@ -111,7 +111,6 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-08-27': 'Janai Purnima / Raksha Bandhan',
   '2026-08-28': 'Gai Jatra (Public Holiday)',
   '2026-09-04': 'Krishna Janmashtami',
-  '2026-09-17': 'Bishwakarma Puja (Market Holiday)',
   '2026-09-19': 'Constitution Day (Sambidhan Diwas)',
   '2026-09-25': 'Indra Jatra',
   '2026-10-10': 'Ghatasthapana',
