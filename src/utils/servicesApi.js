@@ -144,14 +144,15 @@ export const fetchNepseIntradayGraph = async (symbol) => {
   const path = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
   const res = await _proxyFetch(path, {}, 60000);
   const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
-  if (data && data.length > 0) {
+  const hasTicks = Array.isArray(data) && data.length > 1 && data.some(d => d && (d.timestamp || d.time || Array.isArray(d)));
+  if (hasTicks) {
     return data;
   }
 
   // Tier 2: For individual stocks, fall back to today's floorsheet transaction timeline
   if (sym !== 'NEPSE') {
     try {
-      const fsRes = await fetchFloorsheet(sym, 1, 300);
+      const fsRes = await fetchFloorsheet(sym, 1, 100);
       const rows = Array.isArray(fsRes) ? fsRes : (fsRes?.rows || fsRes?.data?.rows || fsRes?.data || []);
       if (rows && Array.isArray(rows) && rows.length > 0) {
         const trades = rows.map(tr => {

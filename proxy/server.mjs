@@ -6134,15 +6134,96 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
 /* ══════════════════════════════════════════════════════════════════════════════
    ENDPOINT: Intraday Stock Graph
    ══════════════════════════════════════════════════════════════════════════════ */
+const lastKnownStockIntraday = new Map();
+
 app.get('/api/nepse/intraday-graph/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
-  try {
-    const summary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
-    const stock = (summary?.stocks || []).find(s => (s.symbol || '').toUpperCase() === symbol);
-    return res.json({ success: true, data: stock ? [stock] : [] });
-  } catch (e) {
-    return res.json({ success: true, data: [] });
+  const symbol = (req.params.symbol || '').toUpperCase().trim();
+  if (!symbol) return res.json({ success: false, data: [] });
+
+  const cacheKey = `stock-intraday-${symbol}`;
+  const cached = getCache(cacheKey);
+  if (cached && Array.isArray(cached) && cached.length > 0) {
+    return res.json({ success: true, data: cached, cached: true });
   }
+
+  // Tier 1: Authentic NEPSE NOTS Security Daily Graph
+  try {
+    const rawGraph = await Promise.race([
+      nepseClient.getSecurityDailyGraph(symbol),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS timeout')), 4000))
+    ]);
+
+    if (Array.isArray(rawGraph) && rawGraph.length > 0) {
+      const formatted = rawGraph.map(pt => {
+        const sec = Number(pt.time || pt.timestamp || (Array.isArray(pt) ? pt[0] : 0));
+        const rate = Number(pt.contractRate || pt.rate || (Array.isArray(pt) ? pt[1] : 0));
+        const vol = Number(pt.contractQuantity || pt.qty || (Array.isArray(pt) ? pt[2] : 0)) || 0;
+        return {
+          time: new Date(sec * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
+          timestamp: sec,
+          open: rate,
+          high: rate,
+          low: rate,
+          close: rate,
+          volume: vol
+        };
+      }).filter(t => t.timestamp > 0 && t.close > 0).sort((a, b) => a.timestamp - b.timestamp);
+
+      if (formatted.length > 0) {
+        lastKnownStockIntraday.set(symbol, formatted);
+        setCache(cacheKey, formatted, 60 * 1000);
+        return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-security-daily' });
+      }
+    }
+  } catch (err) {
+    console.warn(`[intraday-graph/${symbol}] NOTS daily graph fetch error:`, err.message);
+  }
+
+  // Tier 2: FloorSheet transactions timeline fallback
+  try {
+    const fsResult = await Promise.race([
+      nepseClient.getFloorSheet({ symbol, page: 0, size: 100 }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Floorsheet timeout')), 3500))
+    ]);
+    const rawTrades = fsResult?.floorsheets?.content || fsResult?.content || [];
+    if (Array.isArray(rawTrades) && rawTrades.length > 0) {
+      const formatted = rawTrades.map(tr => {
+        let tStr = tr.tradeTime || tr.businessDate || '';
+        if (tStr && !tStr.includes('+') && !tStr.endsWith('Z')) {
+          tStr += '+05:45';
+        }
+        const d = new Date(tStr);
+        const ts = !isNaN(d.getTime()) ? Math.floor(d.getTime() / 1000) : null;
+        const rate = Number(tr.contractRate || tr.rate || 0);
+        const qty = Number(tr.contractQuantity || tr.qty || 0);
+        return {
+          time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
+          timestamp: ts,
+          open: rate,
+          high: rate,
+          low: rate,
+          close: rate,
+          volume: qty
+        };
+      }).filter(t => t.timestamp && t.close > 0).sort((a, b) => a.timestamp - b.timestamp);
+
+      if (formatted.length > 0) {
+        lastKnownStockIntraday.set(symbol, formatted);
+        setCache(cacheKey, formatted, 60 * 1000);
+        return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-floorsheet-timeline' });
+      }
+    }
+  } catch (fsErr) {
+    console.warn(`[intraday-graph/${symbol}] Floorsheet fallback error:`, fsErr.message);
+  }
+
+  // Tier 3: In-memory cache fallback
+  if (lastKnownStockIntraday.has(symbol)) {
+    const cachedIntraday = lastKnownStockIntraday.get(symbol);
+    return res.json({ success: true, data: cachedIntraday, count: cachedIntraday.length, source: 'cached-stock-intraday' });
+  }
+
+  return res.json({ success: false, data: [], message: `No intraday data available for ${symbol}` });
 });
 
 // ============================================================
