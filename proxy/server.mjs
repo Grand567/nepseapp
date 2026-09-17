@@ -2145,6 +2145,8 @@ app.get('/api/news/merolagani', async (req, res) => {
    Returns real OHLCV history from NEPSE official API
    GET /api/price-history/:symbol?length=365
    ═══════════════════════════════════════════════════ */
+let lastKnownIntradayGraph = [];
+
 app.get('/api/nepse/intraday-graph', async (req, res) => {
   const cacheKey = 'nepse-intraday-graph';
   const cached = getCache(cacheKey);
@@ -2153,11 +2155,7 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
   }
 
   try {
-    const rawGraph = await Promise.race([
-      nepseClient.getNepseIndexDailyGraph(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
-    ]).catch(() => null);
-
+    const rawGraph = await nepseClient.getNepseIndexDailyGraph();
     if (Array.isArray(rawGraph) && rawGraph.length > 0) {
       const formatted = rawGraph.map(pt => ({
         time: new Date(pt[0] * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
@@ -2168,18 +2166,8 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
         close: pt[1],
         volume: 0
       }));
-      // Calibrate last tick to official closing index if available
-      try {
-        const ind = await getMarketIndicesInternal();
-        const liveNepse = ind?.nepse?.value;
-        if (liveNepse && liveNepse > 0 && formatted.length > 0) {
-          const last = formatted[formatted.length - 1];
-          last.close = liveNepse;
-          last.high = Math.max(last.high, liveNepse);
-          last.low = Math.min(last.low, liveNepse);
-        }
-      } catch (_) {}
 
+      lastKnownIntradayGraph = formatted;
       setCache(cacheKey, formatted, 60 * 1000); // 1 min cache
       return res.json({ success: true, data: formatted, count: formatted.length, source: 'nepse-official-intraday' });
     }
@@ -2187,45 +2175,9 @@ app.get('/api/nepse/intraday-graph', async (req, res) => {
     console.warn('[nepse/intraday-graph] Failed:', err.message);
   }
 
-  // Fallback: If NOTS graph is unavailable, synthesize authentic today's intraday ticks from market indices
-  try {
-    const ind = await getMarketIndicesInternal();
-    if (ind && ind.nepse && ind.nepse.value > 0) {
-      const liveVal = Number(ind.nepse.value);
-      const openVal = Number(ind.nepse.open || ind.nepse.prevClose || liveVal);
-      const highVal = Number(ind.nepse.high || Math.max(liveVal, openVal));
-      const lowVal = Number(ind.nepse.low || Math.min(liveVal, openVal));
-
-      const now = new Date();
-      const points = [];
-      const startMins = 11 * 60; // 11:00 AM NPT
-      const currentNptMins = Math.min(15 * 60, Math.max(startMins + 5, (now.getUTCHours() + 5) * 60 + (now.getUTCMinutes() + 45)));
-      const steps = Math.max(6, Math.floor((currentNptMins - startMins) / 5));
-
-      const todayIso = now.toISOString().split('T')[0];
-      const todayEpoch11Am = Math.floor(new Date(`${todayIso}T11:00:00+05:45`).getTime() / 1000);
-
-      for (let i = 0; i <= steps; i++) {
-        const ratio = i / steps;
-        const tickSec = todayEpoch11Am + i * 300;
-        let tickVal = +(openVal + (liveVal - openVal) * ratio).toFixed(2);
-        if (i === 0) tickVal = openVal;
-        if (i === steps) tickVal = liveVal;
-        points.push({
-          time: new Date(tickSec * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' }),
-          timestamp: tickSec,
-          open: tickVal,
-          high: Math.min(highVal, tickVal + 1.2),
-          low: Math.max(lowVal, tickVal - 1.2),
-          close: tickVal,
-          volume: 0
-        });
-      }
-
-      setCache(cacheKey, points, 30 * 1000);
-      return res.json({ success: true, data: points, count: points.length, source: 'live-synthesized-intraday' });
-    }
-  } catch (_) {}
+  if (lastKnownIntradayGraph && lastKnownIntradayGraph.length > 0) {
+    return res.json({ success: true, data: lastKnownIntradayGraph, count: lastKnownIntradayGraph.length, source: 'cached-nots-intraday' });
+  }
 
   return res.json({ success: false, data: [], message: 'No intraday graph data available' });
 });

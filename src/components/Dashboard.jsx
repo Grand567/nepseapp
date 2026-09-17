@@ -1181,41 +1181,12 @@ export default function Dashboard({
         const sym = (activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') ? 'NEPSE' : (activeHeroIndex.key || 'NEPSE');
         if (heroTimeframe === '1D') {
           let intraday = await servicesApi.fetchNepseIntradayGraph(sym);
-          if (!intraday || !Array.isArray(intraday) || intraday.length === 0) {
-            // Synthesize descriptive hourly session curve across NEPSE trading hours (11:00 AM – 3:00 PM)
-            const officialVal = Number(indices?.nepse?.value || currentHeroValue || 2542.77);
-            const basePrice = Number(indices?.nepse?.prevClose || indices?.nepse?.previousClose || activeHeroIndex.val?.prevClose || 2538.11);
-            const delta = officialVal - basePrice;
-            const hVal = Math.max(officialVal, basePrice) + Math.abs(delta) * 0.2;
-            const lVal = Math.min(officialVal, basePrice) - Math.abs(delta) * 0.2;
-            intraday = [
-              { time: '11:00 AM', close: basePrice, open: basePrice, high: basePrice, low: basePrice, value: basePrice },
-              { time: '11:30 AM', close: +(basePrice + delta * 0.25).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.25).toFixed(2) },
-              { time: '12:00 PM', close: +(basePrice + delta * 0.45).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.45).toFixed(2) },
-              { time: '12:30 PM', close: +(basePrice + delta * 0.35).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.35).toFixed(2) },
-              { time: '01:00 PM', close: +(basePrice + delta * 0.60).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.60).toFixed(2) },
-              { time: '01:30 PM', close: +(basePrice + delta * 0.70).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.70).toFixed(2) },
-              { time: '02:00 PM', close: +(basePrice + delta * 0.85).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.85).toFixed(2) },
-              { time: '02:30 PM', close: +(basePrice + delta * 0.90).toFixed(2), open: basePrice, high: hVal, low: lVal, value: +(basePrice + delta * 0.90).toFixed(2) },
-              { time: '03:00 PM', close: officialVal, open: basePrice, high: hVal, low: lVal, value: officialVal }
-            ];
-          }
-
           if (intraday && Array.isArray(intraday) && intraday.length > 0) {
             if (!active) return;
-            // Synchronize hero index with official live exchange closing data
+            setHeroHistory(intraday);
+
             if (sym === 'NEPSE') {
               const officialVal = Number(indices?.nepse?.value || 0);
-              if (officialVal > 0 && intraday.length > 0) {
-                const lastIdx = intraday.length - 1;
-                intraday[lastIdx] = {
-                  ...intraday[lastIdx],
-                  close: officialVal,
-                  value: officialVal
-                };
-              }
-              setHeroHistory(intraday);
-
               const latestPt = intraday[intraday.length - 1];
               const liveClose = officialVal > 0 ? officialVal : Number(latestPt?.close || 0);
               if (liveClose > 0) {
@@ -1241,8 +1212,6 @@ export default function Dashboard({
                   };
                 });
               }
-            } else {
-              setHeroHistory(intraday);
             }
             return;
           }
