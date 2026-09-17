@@ -1499,6 +1499,9 @@ export default function Dashboard({
     return () => { isMounted = false; };
   }, []);
 
+  const [primeMarketDepth, setPrimeMarketDepth] = useState(null);
+  const [isRefreshingDepth, setIsRefreshingDepth] = useState(false);
+
   const primeDailyPick = masterBreakoutPipeline.primeDailyPick || hydratedPrimePick;
   const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
   const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
