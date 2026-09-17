@@ -90,6 +90,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
   const rrr1 = entryExitPlan.levels?.rrr1 != null ? entryExitPlan.levels.rrr1 : +((Number(t1Price) - ltp) / Math.max(0.5, ltp - Number(slPrice))).toFixed(2);
   const winRate = entryExitPlan.analogResult?.stats?.winRate ?? entryExitPlan.winRate;
   const sampleSize = entryExitPlan.analogResult?.stats?.sampleSize ?? entryExitPlan.analogCount ?? 0;
+  const rvol = entryExitPlan.volume?.rvol ?? entryExitPlan.technical?.volume?.rvol ?? (d?.volume && d?.avgVolume20D ? +(d.volume / d.avgVolume20D).toFixed(2) : null);
 
   return (
     <div style={{
@@ -327,11 +328,17 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer }) {
         color: '#94a3b8',
         padding: '6px 2px'
       }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <span>Risk:Reward: <strong style={{ color: '#38bdf8' }}>{rrr1} : 1</strong></span>
           {winRate != null && (
             <span>
-              Historical Win Rate: <strong style={{ color: winRate >= 55 ? '#34d399' : winRate >= 45 ? '#fbbf24' : '#f87171' }}>{winRate}%</strong> ({sampleSize} Analogs)
+              Win Rate: <strong style={{ color: winRate >= 55 ? '#34d399' : winRate >= 45 ? '#fbbf24' : '#f87171' }}>{winRate}%</strong> ({sampleSize} Analogs)
+            </span>
+          )}
+          {rvol != null && (
+            <span>
+              RVOL: <strong style={{ color: rvol >= 1.5 ? '#34d399' : rvol >= 1.0 ? '#38bdf8' : '#f87171' }}>{Number(rvol).toFixed(2)}x</strong>
+              {rvol < 1.5 ? <span style={{ fontSize: 9.5, color: '#f59e0b', marginLeft: 3 }}>(Hurdle ≥1.5x)</span> : <span style={{ fontSize: 9.5, color: '#34d399', marginLeft: 3 }}>(✓ Surge)</span>}
             </span>
           )}
         </div>
@@ -542,6 +549,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalSetupScore < 45;
   const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL') || (modalSetupScore >= 45 && modalSetupScore < 60));
   const modalIsBull = !modalIsAvoid && !modalIsHoldWait && (modalVerdict.includes('BUY') || modalVerdict.includes('ACCUMULATE') || modalSetupScore >= 60);
+  const modalRvol = entryExitPlan?.volume?.rvol ?? entryExitPlan?.technical?.volume?.rvol ?? (d?.volume && d?.avgVolume20D ? +(d.volume / d.avgVolume20D) : null);
 
   const handleOpenInEntryExitAnalyzer = useCallback(() => {
     if (!d?.symbol) return;
@@ -1523,7 +1531,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.4, marginBottom: 8 }}>
                     {actionZone.triggerLogic}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: 6, background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '8px 10px' }}>
                     <div>
                       <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Broker Flow (LBAS)</div>
                       <div style={{
@@ -1535,6 +1543,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                         {realBrokerAnalysis?.adRatio != null
                           ? (realBrokerAnalysis.adRatio >= 0 ? `+${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% Flow` : `${(realBrokerAnalysis.adRatio * 100).toFixed(1)}% Flow`)
                           : (actionZone.brokerSignal || 'Neutral')}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Volume Surge (RVOL)</div>
+                      <div style={{
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        color: (modalRvol != null && modalRvol >= 1.5) ? '#10B981' : (modalRvol != null && modalRvol >= 1.0) ? '#38bdf8' : '#f87171',
+                        fontFamily: 'var(--font-mono)'
+                      }}>
+                        {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '—'}
+                        <span style={{ fontSize: 8.5, fontWeight: 700, marginLeft: 4, color: (modalRvol != null && modalRvol >= 1.5) ? '#10B981' : '#f59e0b' }}>
+                          {(modalRvol != null && modalRvol >= 1.5) ? '✓ Surge' : 'Need ≥1.5x'}
+                        </span>
                       </div>
                     </div>
                     <div>
