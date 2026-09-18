@@ -776,16 +776,18 @@ export default function PredictorHub({
     if (rawPick) {
       const v = String(rawPick.verdict || '').toUpperCase();
       const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
-      if (
-        rawPick.isDefensiveFallback || 
-        (!v.includes('NO TRADE') &&
-        !v.includes('AVOID') &&
-        !v.includes('REDUCE') &&
-        !v.includes('EXIT') &&
-        !rawPick.isLossMaking &&
-        (rawPick.eps === undefined || Number(rawPick.eps) >= 0) &&
-        (score === 0 || score >= 50))
-      ) {
+      const isBad = 
+        v.includes('NO TRADE') ||
+        v.includes('AVOID') ||
+        v.includes('REDUCE') ||
+        v.includes('EXIT') ||
+        v.includes('STAY OUT') ||
+        rawPick.isLossMaking ||
+        Boolean(rawPick.riskGate?.isInstitutionalDumping) ||
+        (rawPick.eps !== undefined && Number(rawPick.eps) < 0) ||
+        (score > 0 && score < 50);
+
+      if (!isBad) {
         return rawPick;
       }
     }
@@ -796,8 +798,19 @@ export default function PredictorHub({
         if (parsed?.plan?.symbol && parsed?.plan?.levels) {
           const v = String(parsed.plan.verdict || '').toUpperCase();
           const score = Number(parsed.plan.setupScore || parsed.plan.guruScore || 0);
-          if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
+          const isBad = 
+            v.includes('NO TRADE') ||
+            v.includes('AVOID') ||
+            v.includes('REDUCE') ||
+            v.includes('EXIT') ||
+            v.includes('STAY OUT') ||
+            Boolean(parsed.plan.riskGate?.isInstitutionalDumping) ||
+            score < 50;
+
+          if (!isBad) {
             return parsed.plan;
+          } else {
+            localStorage.removeItem('prime_pick_plan_cache');
           }
         }
       }

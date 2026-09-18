@@ -12,7 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { calculateGrahamIntrinsicValue } from '../../utils/quantEngine';
+import { calculateGrahamIntrinsicValue, calculateInterestAdjustedGrahamValue, calculateEarningsYieldAndRiskPremium } from '../../utils/quantEngine';
 
 interface GrahamSafetyCardProps {
   symbol: string;
@@ -45,6 +45,8 @@ export function GrahamSafetyCard({
   const currentPrice = Number(ltp || 0);
 
   const graham = calculateGrahamIntrinsicValue(eps, bookValue, currentPrice);
+  const interestAdjusted = calculateInterestAdjustedGrahamValue(eps, 7.0, 7.5, currentPrice);
+  const erpMetrics = calculateEarningsYieldAndRiskPremium(eps, currentPrice, 7.5);
 
   const hasValidFundamentals = eps > 0 && bookValue > 0;
   const isLossMaking = eps <= 0;
@@ -408,6 +410,46 @@ export function GrahamSafetyCard({
           </div>
         </div>
       </div>
+
+      {/* ── Macro Interest-Adjusted strip ── */}
+      {hasValidFundamentals && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.4), rgba(15, 23, 42, 0.6))',
+            borderRadius: 10,
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '8px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 6,
+            fontSize: 11,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#94a3b8' }}>Macro Fair Value (7.5% FD):</span>
+            <span style={{ fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono, monospace)' }}>
+              Rs. {interestAdjusted.intrinsicValue.toFixed(1)}
+            </span>
+            <span style={{ color: '#64748b', fontSize: 10 }}>
+              (Max Buy 20% MOS: Rs. {interestAdjusted.maxBuyPrice20.toFixed(1)})
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#94a3b8' }}>Equity Risk Premium:</span>
+            <span
+              style={{
+                fontWeight: 800,
+                color: erpMetrics.isFavorable ? '#34d399' : '#f87171',
+                fontFamily: 'var(--font-mono, monospace)',
+              }}
+            >
+              {erpMetrics.erp >= 0 ? `+${erpMetrics.erp.toFixed(2)}%` : `${erpMetrics.erp.toFixed(2)}%`}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ── 5-Point Capital Preservation Checklist ── */}
       <div

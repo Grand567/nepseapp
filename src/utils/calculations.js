@@ -48,6 +48,87 @@ export function adjustForRightShare(units, wacc, rightRatio, subscriptionPrice =
 }
 
 /**
+ * Adjusts holdings and price after a simultaneous Bonus and Right Share distribution
+ * Official NEPSE Formula: P_adj = (P_cum + (R * S)) / (1 + B + R)
+ * @param {number} units - Pre-book closure units
+ * @param {number} wacc - Pre-book closure WACC
+ * @param {number} cumPrice - Last traded price before book closure (P_cum)
+ * @param {number} bonusPercent - Bonus % e.g. 10 for 10%
+ * @param {number} rightPercent - Right % e.g. 50 for 50% or 1:0.5
+ * @param {number} subscriptionPrice - Par value, default 100
+ */
+export function adjustSimultaneousBonusAndRight(units, wacc, cumPrice, bonusPercent = 0, rightPercent = 0, subscriptionPrice = 100) {
+  const bRatio = (Number(bonusPercent) || 0) / 100;
+  const rRatio = (Number(rightPercent) || 0) / 100;
+  const sPrice = Number(subscriptionPrice) || 100;
+  const pCum = Number(cumPrice) || 0;
+  const u = Number(units) || 0;
+  const w = Number(wacc) || 0;
+
+  const denominator = 1 + bRatio + rRatio;
+  const adjustedPrice = denominator > 0 ? (pCum + (rRatio * sPrice)) / denominator : pCum;
+
+  const bonusUnits = u * bRatio;
+  const rightUnits = u * rRatio;
+  const totalNewUnits = u + bonusUnits + rightUnits;
+
+  const rightSubscriptionCost = rightUnits * sPrice;
+  const totalCostBasis = (u * w) + rightSubscriptionCost;
+  const newWacc = totalNewUnits > 0 ? totalCostBasis / totalNewUnits : w;
+
+  return {
+    adjustedPrice: Number(adjustedPrice.toFixed(2)),
+    bonusUnits: Number(bonusUnits.toFixed(2)),
+    rightUnits: Number(rightUnits.toFixed(2)),
+    totalNewUnits: Number(totalNewUnits.toFixed(2)),
+    rightSubscriptionCost: Number(rightSubscriptionCost.toFixed(2)),
+    newWacc: Number(newWacc.toFixed(2))
+  };
+}
+
+/**
+ * Philip Fisher Bonus Dilution & Sustainability Auditor
+ * Evaluates whether earnings power can sustain the expanded post-bonus equity base.
+ * @param {number} currentEps - Trailing EPS
+ * @param {number} bonusPercent - Declared bonus %
+ * @param {number} pe - Current P/E ratio
+ */
+export function auditBonusDilution(currentEps, bonusPercent, pe = 0) {
+  const eps = Number(currentEps) || 0;
+  const b = (Number(bonusPercent) || 0) / 100;
+
+  if (eps <= 0 || b <= 0) {
+    return {
+      postBonusEps: eps,
+      dilutionPct: 0,
+      riskLevel: 'Neutral',
+      message: 'Zero or negative EPS / No bonus dividend declared.'
+    };
+  }
+
+  const postBonusEps = Number((eps / (1 + b)).toFixed(2));
+  const dilutionPct = Number(((b / (1 + b)) * 100).toFixed(1));
+
+  let riskLevel = 'Low';
+  let message = 'Earning capacity remains healthy post-distribution.';
+
+  if (postBonusEps < 12 || (pe > 35 && dilutionPct > 20)) {
+    riskLevel = 'High';
+    message = `Severe dilution risk: Post-bonus EPS drops to Rs. ${postBonusEps}. High risk of dividend halving next fiscal year.`;
+  } else if (postBonusEps < 18 || dilutionPct > 15) {
+    riskLevel = 'Moderate';
+    message = `Moderate dilution: Post-bonus EPS contracts by -${dilutionPct}%. Requires sustained net profit growth to maintain dividend yield.`;
+  }
+
+  return {
+    postBonusEps,
+    dilutionPct,
+    riskLevel,
+    message
+  };
+}
+
+/**
  * Calculates Dividend Yield based on Cash Dividend and LTP
  */
 export function calculateDividendYield(cashDivPerShare, ltp) {

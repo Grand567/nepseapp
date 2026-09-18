@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp } from 'lucide-react';
+import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock } from 'lucide-react';
 import { useBackHandler } from '../context/NavigationContext';
 import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
@@ -19,7 +19,7 @@ import {
 } from '../utils/servicesApi';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
 import { getHydroSeasonality } from '../utils/quantEngine';
-import { sortNewsByNepseImpact } from '../utils/newsImpactScorer';
+import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
 
@@ -414,7 +414,7 @@ export function UniversalScreener({
       {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
-        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
+        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Mon–Fri) or check a different filter.</InfoBanner>
       ) : (
         <>
           <SourceBar count={data.length} source={source} totalCount={rawTotal} />
@@ -945,7 +945,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
-      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Sun–Thu 11 AM – 3 PM NPT).</InfoBanner>
+      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Mon–Fri 11 AM – 3 PM NPT).</InfoBanner>
       <DataTable data={data} cols={[
         {
           key: 'symbol',
@@ -1178,11 +1178,14 @@ export function IPOTracker({ type }: { type: 'current' | 'results' }) {
 // ── News ──
 export function NewsService() {
   type NewsSourceKey = 'all' | 'sharesansar' | 'merolagani' | 'nepalipaisa' | 'clickmandu' | 'karobar' | 'bizshala' | 'bikashnews' | 'arthakendra' | 'arthasarokar';
+  type NewsSortMode = 'latest' | 'impact' | 'trending';
+
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [selectedSource, setSelectedSource] = useState<NewsSourceKey>('all');
+  const [sortMode, setSortMode] = useState<NewsSortMode>('latest');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [articleLoading, setArticleLoading] = useState(false);
@@ -1321,21 +1324,29 @@ export function NewsService() {
         return title.includes(q) || summary.includes(q) || src.includes(q);
       });
     }
-    return sortNewsByNepseImpact(list);
-  }, [data, selectedSource, searchQuery]);
 
-  const sourceTabs: { key: NewsSourceKey; label: string; count: number }[] = [
-    { key: 'all', label: 'All Portals', count: data.length },
-    { key: 'sharesansar', label: 'ShareSansar', count: data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length },
-    { key: 'merolagani', label: 'MeroLagani', count: data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length },
-    { key: 'nepalipaisa', label: 'Nepali Paisa', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('nepali paisa') || s.includes('nepalipaisa'); }).length },
-    { key: 'clickmandu', label: 'Clickmandu', count: data.filter(d => String(d.source || '').toLowerCase().includes('clickmandu')).length },
-    { key: 'karobar', label: 'Karobar Daily', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('karobar') && !s.includes('artha'); }).length },
-    { key: 'bizshala', label: 'Bizshala', count: data.filter(d => String(d.source || '').toLowerCase().includes('bizshala')).length },
-    { key: 'bikashnews', label: 'BikashNews', count: data.filter(d => String(d.source || '').toLowerCase().includes('bikash')).length },
-    { key: 'arthakendra', label: 'Artha Kendra', count: data.filter(d => String(d.source || '').toLowerCase().includes('kendra')).length },
-    { key: 'arthasarokar', label: 'Artha Sarokar', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('sarokar') || s.includes('artha karobar'); }).length },
-  ];
+    // Deduplicate cross-portal news so identical stories from different portals are consolidated
+    const deduped = deduplicateNews(list, selectedSource);
+
+    // Sort news according to user's desired sorting order
+    return sortNews(deduped, sortMode);
+  }, [data, selectedSource, searchQuery, sortMode]);
+
+  const sourceTabs: { key: NewsSourceKey; label: string; count: number }[] = useMemo(() => {
+    const allDeduped = deduplicateNews(data, 'all');
+    return [
+      { key: 'all', label: 'All Portals', count: allDeduped.length },
+      { key: 'sharesansar', label: 'ShareSansar', count: data.filter(d => String(d.source || '').toLowerCase().includes('sharesansar')).length },
+      { key: 'merolagani', label: 'MeroLagani', count: data.filter(d => String(d.source || '').toLowerCase().includes('merolagani')).length },
+      { key: 'nepalipaisa', label: 'Nepali Paisa', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('nepali paisa') || s.includes('nepalipaisa'); }).length },
+      { key: 'clickmandu', label: 'Clickmandu', count: data.filter(d => String(d.source || '').toLowerCase().includes('clickmandu')).length },
+      { key: 'karobar', label: 'Karobar Daily', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('karobar') && !s.includes('artha'); }).length },
+      { key: 'bizshala', label: 'Bizshala', count: data.filter(d => String(d.source || '').toLowerCase().includes('bizshala')).length },
+      { key: 'bikashnews', label: 'BikashNews', count: data.filter(d => String(d.source || '').toLowerCase().includes('bikash')).length },
+      { key: 'arthakendra', label: 'Artha Kendra', count: data.filter(d => String(d.source || '').toLowerCase().includes('kendra')).length },
+      { key: 'arthasarokar', label: 'Artha Sarokar', count: data.filter(d => { const s = String(d.source || '').toLowerCase(); return s.includes('sarokar') || s.includes('artha karobar'); }).length },
+    ];
+  }, [data]);
 
   if (loading) return <Spinner text="Fetching multi-portal economic & financial news…" />;
   return (
@@ -1388,6 +1399,56 @@ export function NewsService() {
             Clear
           </button>
         )}
+      </div>
+
+      {/* News Sorting & Deduplication Controls Bar */}
+      <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Sort:</span>
+          <button
+            type="button"
+            onClick={() => setSortMode('latest')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              sortMode === 'latest'
+                ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/40'
+                : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700/50'
+            }`}
+            title="Sort newest published articles first"
+          >
+            <Clock size={12} />
+            <span>Latest (नयाँ)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortMode('impact')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              sortMode === 'impact'
+                ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-400/40'
+                : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700/50'
+            }`}
+            title="Sort by highest NEPSE dividend, policy & stock impact first"
+          >
+            <span>⚡ High Impact (महत्वपूर्ण)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortMode('trending')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              sortMode === 'trending'
+                ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400/40'
+                : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700/50'
+            }`}
+            title="Sort stories covered across multiple news portals first"
+          >
+            <Flame size={12} />
+            <span>Most Covered (धेरै पोर्टल)</span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span>Deduplication: <strong>Active</strong> ({filteredData.length} unique stories)</span>
+        </div>
       </div>
 
       {/* Source Filter Tabs */}
@@ -1545,6 +1606,60 @@ export function NewsService() {
                       </span>
                     )}
                   </div>
+
+                  {n.otherSources && n.otherSources.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        flexWrap: 'wrap',
+                        paddingTop: 6,
+                        marginTop: 2,
+                        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                        fontSize: 10.5
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700 }}>
+                        Also covered by:
+                      </span>
+                      {n.otherSources.map((os: any, oIdx: number) => {
+                        const oMeta = getSourceMeta(os.source);
+                        return (
+                          <span
+                            key={oIdx}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedArticle(os);
+                            }}
+                            title={`Read ${oMeta.label} version: "${os.title}"`}
+                            style={{
+                              padding: '1.5px 6.5px',
+                              borderRadius: 4,
+                              fontSize: 9.5,
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              backgroundColor: oMeta.badgeBg,
+                              color: oMeta.badgeColor,
+                              border: `1px solid ${oMeta.badgeBorder}`,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3.5,
+                              transition: 'opacity 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+                            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                          >
+                            <span>{oMeta.label}</span>
+                            <ExternalLink size={8} />
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -4169,7 +4284,7 @@ export function MarketDepthService() {
         <TableSkeleton rows={5} cols={6} />
       ) : !hasOrders ? (
         <InfoBanner type="info">
-          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Sun–Thu 11:00 AM – 3:00 PM NPT).
+          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Mon–Fri 11:00 AM – 3:00 PM NPT).
         </InfoBanner>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

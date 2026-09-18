@@ -164,7 +164,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
         </div>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          {isPrimePick && (
+          {isPrimePick && !isAvoid && (
             <span style={{
               background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.2))',
               border: '1px solid rgba(16, 185, 129, 0.4)',
@@ -608,31 +608,22 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     return null;
   }, []);
 
-  const isPrimePick = useMemo(() => {
-    if (!d?.symbol) return false;
-    if (cachedPrime && cachedPrime.symbol === d.symbol) {
-      const v = String(cachedPrime.plan?.verdict || '').toUpperCase();
-      const score = Number(cachedPrime.plan?.setupScore || cachedPrime.plan?.guruScore || 0);
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
-        return true;
-      }
-    }
-    if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) {
-      const v = String(resolvedStock?.verdict || '').toUpperCase();
-      const score = Number(resolvedStock?.setupScore || resolvedStock?.guruScore || 0);
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
-        return true;
-      }
-    }
-    return false;
-  }, [d?.symbol, cachedPrime, resolvedStock]);
-
   const entryExitPlan = useMemo(() => {
     if (!d?.symbol) return null;
 
-    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity
+    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity (ONLY IF NOT DISQUALIFIED)
     if (cachedPrime && cachedPrime.symbol === d.symbol && cachedPrime.plan) {
-      return cachedPrime.plan;
+      const v = String(cachedPrime.plan.verdict || '').toUpperCase();
+      const isBad = 
+        v.includes('NO TRADE') ||
+        v.includes('AVOID') ||
+        v.includes('REDUCE') ||
+        v.includes('EXIT') ||
+        v.includes('STAY OUT') ||
+        Boolean(cachedPrime.plan.riskGate?.isInstitutionalDumping);
+      if (!isBad) {
+        return cachedPrime.plan;
+      }
     }
 
     // 2. Otherwise generate authoritative EntryExitPlan using real price history candles & broker metrics
@@ -655,8 +646,31 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const modalSetupScore = entryExitPlan ? Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70) : 50;
   const modalVerdict = entryExitPlan?.verdict || '';
-  const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalSetupScore < 45;
+  const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalVerdict.includes('STAY OUT') || Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping) || modalSetupScore < 45;
   const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL') || (modalSetupScore >= 45 && modalSetupScore < 60));
+
+  const isPrimePick = useMemo(() => {
+    if (!d?.symbol) return false;
+    // A stock evaluated as Avoid, Reduce, or Institutional Dumping can NEVER be a Prime Pick!
+    if (modalIsAvoid) return false;
+
+    if (cachedPrime && cachedPrime.symbol === d.symbol) {
+      const v = String(cachedPrime.plan?.verdict || '').toUpperCase();
+      const score = Number(cachedPrime.plan?.setupScore || cachedPrime.plan?.guruScore || 0);
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !cachedPrime.plan?.riskGate?.isInstitutionalDumping && score >= 50) {
+        return true;
+      }
+    }
+    if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) {
+      const v = String(resolvedStock?.verdict || '').toUpperCase();
+      const score = Number(resolvedStock?.setupScore || resolvedStock?.guruScore || 0);
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !resolvedStock?.riskGate?.isInstitutionalDumping && score >= 50) {
+        return true;
+      }
+    }
+    return false;
+  }, [d?.symbol, cachedPrime, resolvedStock, modalIsAvoid]);
+
   const modalRvol = useMemo(() => {
     if (entryExitPlan?.volume?.rvol) return Number(entryExitPlan.volume.rvol);
     if (entryExitPlan?.technical?.volume?.rvol) return Number(entryExitPlan.technical.volume.rvol);

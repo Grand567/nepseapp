@@ -1535,15 +1535,16 @@ export default function Dashboard({
           const epsVal = Number(parsed.plan.eps ?? 0);
           const isNegativeEps = parsed.plan.eps !== undefined && parsed.plan.eps !== null && epsVal < 0;
           // Reject any failing plan and purge it from cache
-          const isFailing = !parsed.plan.isDefensiveFallback && (
+          const isFailing = 
             vUpper.includes('NO TRADE') ||
             vUpper.includes('AVOID') ||
             vUpper.includes('REDUCE') ||
             vUpper.includes('EXIT') ||
+            vUpper.includes('STAY OUT') ||
+            Boolean(parsed.plan.riskGate?.isInstitutionalDumping) ||
             parsed.plan.isLossMaking ||
             isNegativeEps ||
-            (score > 0 && score < 55)
-          );
+            (score > 0 && score < 50);
           if (!isFailing) {
             return parsed.plan;
           } else {
@@ -1581,16 +1582,18 @@ export default function Dashboard({
         const score = Number(res.data.setupScore || res.data.score || 0);
         const epsVal = Number(res.data.eps ?? 0);
         const isNegativeEps = res.data.eps !== undefined && res.data.eps !== null && epsVal < 0;
-        const isPassing = res.data.isDefensiveFallback || (
-          !vUpper.includes('NO TRADE') &&
-          !vUpper.includes('AVOID') &&
-          !vUpper.includes('REDUCE') &&
-          !vUpper.includes('EXIT') &&
-          !res.data.isLossMaking &&
-          !isNegativeEps &&
-          score >= 55
-        );
-        if (isPassing) {
+        const isFailing = 
+          vUpper.includes('NO TRADE') ||
+          vUpper.includes('AVOID') ||
+          vUpper.includes('REDUCE') ||
+          vUpper.includes('EXIT') ||
+          vUpper.includes('STAY OUT') ||
+          Boolean(res.data.riskGate?.isInstitutionalDumping) ||
+          res.data.isLossMaking ||
+          isNegativeEps ||
+          score < 50;
+
+        if (!isFailing) {
           setHydratedPrimePick(res.data);
           try {
             localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
@@ -1598,6 +1601,10 @@ export default function Dashboard({
               plan: res.data,
               ts: Date.now()
             }));
+          } catch (_) {}
+        } else {
+          try {
+            localStorage.removeItem('prime_pick_plan_cache');
           } catch (_) {}
         }
       }
@@ -1615,7 +1622,16 @@ export default function Dashboard({
     if (hydratedPrimePick && hydratedPrimePick.isPlanVerified) {
       const vUpper = String(hydratedPrimePick.verdict || '').toUpperCase();
       const score = Number(hydratedPrimePick.setupScore || hydratedPrimePick.score || 0);
-      if (hydratedPrimePick.isDefensiveFallback || (!vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && score >= 50)) {
+      const isBad = 
+        vUpper.includes('NO TRADE') ||
+        vUpper.includes('AVOID') ||
+        vUpper.includes('REDUCE') ||
+        vUpper.includes('EXIT') ||
+        vUpper.includes('STAY OUT') ||
+        Boolean(hydratedPrimePick.riskGate?.isInstitutionalDumping) ||
+        (score > 0 && score < 50);
+
+      if (!isBad) {
         candidate = hydratedPrimePick;
       }
     }
@@ -1624,16 +1640,18 @@ export default function Dashboard({
       const rawPick = masterBreakoutPipeline.primeDailyPick;
       const vUpper = String(rawPick.verdict || '').toUpperCase();
       const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
-      if (
-        rawPick.isDefensiveFallback ||
-        (!vUpper.includes('NO TRADE') &&
-        !vUpper.includes('AVOID') &&
-        !vUpper.includes('REDUCE') &&
-        !vUpper.includes('EXIT') &&
-        !rawPick.isLossMaking &&
-        (rawPick.eps === undefined || Number(rawPick.eps) >= 0) &&
-        (score === 0 || score >= 50))
-      ) {
+      const isBad = 
+        vUpper.includes('NO TRADE') ||
+        vUpper.includes('AVOID') ||
+        vUpper.includes('REDUCE') ||
+        vUpper.includes('EXIT') ||
+        vUpper.includes('STAY OUT') ||
+        rawPick.isLossMaking ||
+        Boolean(rawPick.riskGate?.isInstitutionalDumping) ||
+        (rawPick.eps !== undefined && Number(rawPick.eps) < 0) ||
+        (score > 0 && score < 50);
+
+      if (!isBad) {
         candidate = rawPick;
       }
     }
@@ -1646,7 +1664,8 @@ export default function Dashboard({
 
   // ── AUTO-ANALYSIS: Multi-candidate backtest verification against Entry/Exit Analyzer engine ──
   useEffect(() => {
-    if (cashDefenseActive) return;
+    // If Cash Defense is active and we already have a verified defensive fallback with levels and candles, skip scan
+    if (cashDefenseActive && primeDailyPick?.isDefensiveFallback && primeDailyPick?.levels && primeDailyPick?.candles) return;
 
     // Collect top candidates to verify against quantitative setup engine
     const prioritySymbols = [];
@@ -1784,15 +1803,16 @@ export default function Dashboard({
           const v = String(p?.plan?.verdict || '').toUpperCase();
           const score = Number(p?.plan?.setupScore || p?.plan?.guruScore || 0);
           const epsVal = Number(p?.plan?.eps ?? 0);
-          const isFailingPlan = !p?.plan?.isDefensiveFallback && (
+          const isFailingPlan = 
             v.includes('NO TRADE') ||
             v.includes('AVOID') ||
             v.includes('REDUCE') ||
             v.includes('EXIT') ||
+            v.includes('STAY OUT') ||
+            Boolean(p?.plan?.riskGate?.isInstitutionalDumping) ||
             (p?.plan?.isLossMaking) ||
             (p?.plan?.eps !== undefined && p?.plan?.eps !== null && epsVal < 0) ||
-            (score > 0 && score < 50)
-          );
+            (score > 0 && score < 50);
           if (isFailingPlan) {
             localStorage.removeItem('prime_pick_plan_cache');
             setHydratedPrimePick(null);
@@ -2702,7 +2722,7 @@ export default function Dashboard({
       )}
 
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
-      {((cashDefenseActive && !primeDailyPick?.isDefensiveFallback) || !primeDailyPick) ? (
+      {(!primeDailyPick || primeDailyPick.verdict?.includes('AVOID') || primeDailyPick.verdict?.includes('REDUCE') || primeDailyPick.verdict?.includes('NO TRADE') || Boolean(primeDailyPick.riskGate?.isInstitutionalDumping)) ? (
         <div style={{
           borderRadius: 18,
           background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',

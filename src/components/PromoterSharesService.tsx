@@ -15,9 +15,10 @@ interface PromoterStock {
   sharesOutstanding: number;
   promoterShares: number;
   publicShares: number;
-  lockInStatus: 'Locked' | 'Expiring Soon' | 'Unlocked';
+  lockInStatus: 'Locked' | 'Critical Supply Shock' | 'Expiring Soon' | 'Unlocked';
   lockInExpiryDate: string;
   daysRemaining: number;
+  unlockSupplyRatio: number;
   riskLevel: 'Low' | 'Medium' | 'High';
 }
 
@@ -25,7 +26,7 @@ export function PromoterSharesService() {
   const [stocks, setStocks] = useState<PromoterStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'locked' | 'expiring' | 'high_float'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'critical' | 'locked' | 'expiring' | 'high_float'>('all');
 
   useEffect(() => {
     Promise.all([
@@ -93,7 +94,7 @@ export function PromoterSharesService() {
         const publicShares = totalShares - promoterShares;
 
         // Authentic lock-in tracking from verified filings
-        let lockInStatus: 'Locked' | 'Expiring Soon' | 'Unlocked' = 'Unlocked';
+        let lockInStatus: 'Locked' | 'Critical Supply Shock' | 'Expiring Soon' | 'Unlocked' = 'Unlocked';
         let daysRemaining = 0;
         let lockInExpiryDate = 'Unlocked';
 
@@ -104,6 +105,8 @@ export function PromoterSharesService() {
             lockInStatus = 'Unlocked';
             daysRemaining = 0;
             lockInExpiryDate = 'Unlocked';
+          } else if (daysRemaining <= 60 && daysRemaining > 0) {
+            lockInStatus = 'Critical Supply Shock';
           } else if (daysRemaining <= 90 && daysRemaining > 0) {
             lockInStatus = 'Expiring Soon';
           } else if (daysRemaining > 90) {
@@ -119,8 +122,10 @@ export function PromoterSharesService() {
           lockInExpiryDate = 'Unlocked';
         }
 
+        const unlockSupplyRatio = Number((promoterShares / Math.max(1, publicShares)).toFixed(1));
+
         const riskLevel: 'Low' | 'Medium' | 'High' =
-          lockInStatus === 'Expiring Soon'
+          lockInStatus === 'Critical Supply Shock' || lockInStatus === 'Expiring Soon'
             ? 'High'
             : publicPct > 45
             ? 'Medium'
@@ -139,12 +144,15 @@ export function PromoterSharesService() {
           lockInStatus,
           lockInExpiryDate,
           daysRemaining,
+          unlockSupplyRatio,
           riskLevel,
         };
       });
 
       // Sort with upcoming expiring and active locks first, followed by high float
       processed.sort((a, b) => {
+        if (a.lockInStatus === 'Critical Supply Shock' && b.lockInStatus !== 'Critical Supply Shock') return -1;
+        if (b.lockInStatus === 'Critical Supply Shock' && a.lockInStatus !== 'Critical Supply Shock') return 1;
         if (a.lockInStatus === 'Expiring Soon' && b.lockInStatus !== 'Expiring Soon') return -1;
         if (b.lockInStatus === 'Expiring Soon' && a.lockInStatus !== 'Expiring Soon') return 1;
         if (a.lockInStatus === 'Locked' && b.lockInStatus === 'Unlocked') return -1;
@@ -162,14 +170,16 @@ export function PromoterSharesService() {
     return stocks.filter((s) => {
       const matchSearch = !search || s.symbol.toLowerCase().includes(search.toLowerCase()) || s.name.toLowerCase().includes(search.toLowerCase());
       if (!matchSearch) return false;
+      if (selectedFilter === 'critical') return s.lockInStatus === 'Critical Supply Shock';
       if (selectedFilter === 'locked') return s.lockInStatus === 'Locked';
-      if (selectedFilter === 'expiring') return s.lockInStatus === 'Expiring Soon';
+      if (selectedFilter === 'expiring') return s.lockInStatus === 'Expiring Soon' || s.lockInStatus === 'Critical Supply Shock';
       if (selectedFilter === 'high_float') return s.publicPct >= 40;
       return true;
     });
   }, [stocks, search, selectedFilter]);
 
-  const expiringCount = useMemo(() => stocks.filter(s => s.lockInStatus === 'Expiring Soon').length, [stocks]);
+  const criticalCount = useMemo(() => stocks.filter(s => s.lockInStatus === 'Critical Supply Shock').length, [stocks]);
+  const expiringCount = useMemo(() => stocks.filter(s => s.lockInStatus === 'Expiring Soon' || s.lockInStatus === 'Critical Supply Shock').length, [stocks]);
   const avgPromoterHolding = useMemo(() => {
     if (!stocks.length) return '0';
     return (stocks.reduce((acc, s) => acc + s.promoterPct, 0) / stocks.length).toFixed(1);
@@ -200,16 +210,17 @@ export function PromoterSharesService() {
       {/* Metric Cards */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard label="Avg Promoter Holding" value={`${avgPromoterHolding}%`} big color="#3b82f6" />
-        <StatCard label="Lock-in Expiring (<90D)" value={expiringCount} subtitle="High Supply Overhang" color="#f43f5e" />
-        <StatCard label="Average Public Float" value={`${(100 - Number(avgPromoterHolding)).toFixed(1)}%`} color="#10b981" />
-        <StatCard label="Mandatory Hydro Lock-in" value="3 Years" subtitle="SEBON Clause 38" />
+        <StatCard label="Critical Shock (≤60D)" value={criticalCount} subtitle="Severe Supply Flood" color="#ef4444" big />
+        <StatCard label="Lock-in Expiring (≤90D)" value={expiringCount} subtitle="Supply Overhang" color="#f59e0b" />
+        <StatCard label="Mandatory Hydro Lock-in" value="3 Years" subtitle="SEBON Statutory Rule" />
       </div>
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         {[
           { id: 'all', label: `All Scrips (${stocks.length})` },
-          { id: 'expiring', label: `⚠️ Lock-in Expiring Soon (${expiringCount})` },
+          { id: 'critical', label: `🚨 Critical Shock ≤60D (${criticalCount})` },
+          { id: 'expiring', label: `⚠️ Expiring ≤90D (${expiringCount})` },
           { id: 'locked', label: '🔒 Fully Locked Promoters' },
           { id: 'high_float', label: '📊 High Public Float (>40%)' },
         ].map((tab) => (
@@ -283,7 +294,11 @@ export function PromoterSharesService() {
                     {s.publicPct}%
                   </td>
                   <td className="p-3 text-center font-sans">
-                    {s.lockInStatus === 'Expiring Soon' ? (
+                    {s.lockInStatus === 'Critical Supply Shock' ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-600/30 border border-rose-500/60 px-2 py-0.5 text-[10px] font-black text-rose-300 animate-pulse">
+                        <AlertTriangle size={10} /> {s.daysRemaining}d CRITICAL
+                      </span>
+                    ) : s.lockInStatus === 'Expiring Soon' ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
                         <AlertTriangle size={10} /> {s.daysRemaining} days left
                       </span>
@@ -298,9 +313,16 @@ export function PromoterSharesService() {
                     )}
                   </td>
                   <td className="p-3 text-right">
-                    <span className={`text-[11px] font-bold ${s.riskLevel === 'High' ? 'text-rose-400' : s.riskLevel === 'Medium' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                      {s.riskLevel} Risk
-                    </span>
+                    <div>
+                      <span className={`text-[11px] font-bold ${s.riskLevel === 'High' ? 'text-rose-400' : s.riskLevel === 'Medium' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {s.riskLevel} Risk
+                      </span>
+                      {s.unlockSupplyRatio > 0 && s.daysRemaining > 0 && (
+                        <div className="text-[9px] text-slate-500 font-sans mt-0.5">
+                          {s.unlockSupplyRatio}x Float Flood
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

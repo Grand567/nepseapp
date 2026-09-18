@@ -7,9 +7,76 @@
  */
 
 import { getAccurateFestivalSeasonality } from './quantEngine.js';
+import { getCachedRealPriceHistory } from './liveData.js';
 
 const ALERTS_STORAGE_KEY = 'nepse_watchlist_alerts_v1';
 const ALERTS_HISTORY_KEY = 'nepse_watchlist_alerts_history_v1';
+
+let _audioCtx = null;
+function getAudioContext() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!_audioCtx || _audioCtx.state === 'closed') {
+      _audioCtx = new AudioContextClass();
+    }
+    if (_audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
+    return _audioCtx;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Trigger physical haptic vibration on mobile devices (Android / Capacitor)
+ */
+export function triggerBreakoutVibration(pattern = [250, 100, 250, 100, 400]) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(pattern);
+    }
+  } catch (_) {}
+}
+
+/**
+ * Play an ascending 3-tone synthesizer breakout chime using Web Audio API
+ */
+export function playBreakoutChime() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    // Triangle waveform produces a crisp, audible tone on both phone speakers and desktop
+    osc.type = 'triangle';
+    // Ascending melodic progression: 880Hz (A5) -> 1320Hz (E6) -> 1760Hz (A6)
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.setValueAtTime(1320, now + 0.12);
+    osc.frequency.setValueAtTime(1760, now + 0.24);
+
+    // Gain envelope: fast attack, distinct sustain, smooth fadeout
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.45, now + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.8);
+  } catch (err) {
+    console.debug('[AudioChime] AudioContext blocked or unsupported:', err);
+  }
+}
 
 /**
  * Get all saved watchlist alert configs
@@ -136,39 +203,6 @@ export function deleteWatchlistAlertConfig(symbol) {
 }
 
 /**
- * Play a pleasant two-tone synthesizer chime using Web Audio API
- */
-export function playBreakoutChime() {
-  try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    // Frequency sequence: 880Hz (A5) for 120ms, then jumps to 1320Hz (E6) for high conviction chime
-    osc.frequency.setValueAtTime(880, now);
-    osc.frequency.setValueAtTime(1320, now + 0.12);
-
-    // Gain envelope: gentle attack, sustain, smooth exponential decay
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.28, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.6);
-  } catch (err) {
-    console.debug('[AudioChime] AudioContext blocked or unsupported:', err);
-  }
-}
-
-/**
  * Request notification permission if not yet granted
  */
 export async function requestNotificationPermission() {
@@ -240,30 +274,41 @@ export function resetAlertTrigger(symbol) {
 }
 
 /**
- * Calculate live RVOL for a stock
+ * Calculate live RVOL (Relative Volume vs 20-Day Baseline) for a stock
  */
 export function calculateStockRvol(stock, priceHistory = null) {
   if (!stock) return 1.0;
 
-  // 1. If stock already has volume surge ratio calculated
-  if (stock.volumeSurgeRatio != null && Number(stock.volumeSurgeRatio) > 0) {
-    return +Number(stock.volumeSurgeRatio).toFixed(2);
-  }
+  const sym = String(stock.symbol || stock.scrip || '').toUpperCase().trim();
+  const vol = Number(stock.volume || stock.totalTradedQuantity || 0);
 
-  const vol = Number(stock.volume || 0);
-
-  // 2. If avgVolume20D is present
+  // 1. Direct explicit avgVolume20D on stock if present and valid
   if (stock.avgVolume20D != null && Number(stock.avgVolume20D) > 0) {
     return +(vol / Number(stock.avgVolume20D)).toFixed(2);
   }
 
-  // 3. If priceHistory is provided
-  if (Array.isArray(priceHistory) && priceHistory.length >= 5) {
-    const recent = priceHistory.slice(-20);
+  // 2. Direct RVOL if already attached by setupAnalyzer or backend pipeline
+  if (stock.rvol != null && Number(stock.rvol) > 0 && stock.rvol !== 1.0) {
+    return +Number(stock.rvol).toFixed(2);
+  }
+
+  // 3. If stock already has volume surge ratio calculated
+  if (stock.volumeSurgeRatio != null && Number(stock.volumeSurgeRatio) > 0 && stock.volumeSurgeRatio !== 1.0) {
+    return +Number(stock.volumeSurgeRatio).toFixed(2);
+  }
+
+  // 4. Calculate from priceHistory (passed directly or resolved from local persistent cache)
+  const hist = priceHistory || (sym && typeof window !== 'undefined' ? getCachedRealPriceHistory(sym) : null);
+  if (Array.isArray(hist) && hist.length >= 5) {
+    const recent = hist.slice(-20);
     const sum = recent.reduce((acc, c) => acc + (Number(c.volume) || 0), 0);
     const avg = sum / recent.length;
     if (avg > 0) return +(vol / avg).toFixed(2);
   }
+
+  // 5. If volume is meaningful (> 50k shares in NEPSE) but no historical baseline yet, estimate standard participation
+  if (vol > 100000) return 1.55;
+  if (vol > 50000) return 1.25;
 
   return 1.0;
 }
@@ -359,6 +404,9 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
       if (config.soundEnabled !== false) {
         playBreakoutChime();
       }
+
+      // Trigger phone vibration (Android / Mobile)
+      triggerBreakoutVibration([300, 150, 300, 150, 450]);
 
       // Dispatch system notification if enabled
       if (config.pushEnabled !== false) {

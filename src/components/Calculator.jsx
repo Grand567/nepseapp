@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { calculateBuyDetails, calculateSellDetails, adjustForBonusShare, adjustForRightShare } from '../utils/calculations';
-import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw } from 'lucide-react';
+import { calculateBuyDetails, calculateSellDetails, adjustForBonusShare, adjustForRightShare, adjustSimultaneousBonusAndRight, auditBonusDilution } from '../utils/calculations';
+import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 export default function Calculator() {
   const [activeTab, setActiveTab] = useState('buy');
@@ -102,41 +102,35 @@ export default function Calculator() {
   // ── Bonus & Right Price Adjustment Calculation ──
   const adjustmentResult = useMemo(() => {
     const p0 = parseFloat(adjLtp) || 0;
-    const bRatio = (parseFloat(bonusPct) || 0) / 100;
-    const rRatio = (parseFloat(rightPct) || 0) / 100;
+    const bonusPctNum = parseFloat(bonusPct) || 0;
+    const rightPctNum = parseFloat(rightPct) || 0;
     const pr = parseFloat(rightIssuePrice) || 100;
     const qty = parseInt(userShares) || 0;
+    const currentWacc = parseFloat(buyWacc) || p0;
 
     if (p0 <= 0) return null;
 
-    const denominator = 1 + bRatio + rRatio;
-    
-    const bonusPctNum = parseFloat(bonusPct) || 0;
-    const rightRatioNum = (parseFloat(rightPct) || 0) / 100;
-    
-    // Wire to utils/calculations.js adjustForBonusShare and adjustForRightShare (which handles WACC)
-    // For raw price adjustment (P_close):
-    let adjustedPrice = p0;
-    if (bonusPctNum > 0) adjustedPrice = adjustedPrice / (1 + (bonusPctNum/100));
-    if (rightRatioNum > 0) adjustedPrice = (adjustedPrice + (rightRatioNum * pr)) / (1 + rightRatioNum);
+    // Use the official NEPSE simultaneous adjustment formula
+    const sim = adjustSimultaneousBonusAndRight(qty, currentWacc, p0, bonusPctNum, rightPctNum, pr);
+    const bonusTax = Math.floor(sim.bonusUnits) * 100 * 0.05;
 
-    const bonusUnits = Math.floor(qty * (bonusPctNum/100));
-    const rightUnits = Math.floor(qty * rightRatioNum);
-    const totalNewUnits = qty + bonusUnits + rightUnits;
-    const rightCost = rightUnits * pr;
-    const bonusTax = bonusUnits * 100 * 0.05;
+    // Estimate baseline EPS from LTP (assuming standard P/E 20) or audit post-bonus dilution
+    const estimatedEps = p0 > 0 ? Number((p0 / 22).toFixed(2)) : 20;
+    const dilutionAudit = auditBonusDilution(estimatedEps, bonusPctNum);
 
     return {
-      adjustedPrice: Number(adjustedPrice.toFixed(2)),
-      bonusUnits,
-      rightUnits,
-      totalNewUnits,
-      rightCost,
+      adjustedPrice: sim.adjustedPrice,
+      bonusUnits: Math.floor(sim.bonusUnits),
+      rightUnits: Math.floor(sim.rightUnits),
+      totalNewUnits: Math.floor(sim.totalNewUnits),
+      rightCost: sim.rightSubscriptionCost,
+      newWacc: sim.newWacc,
       bonusTax,
       preValue: qty * p0,
-      postValue: totalNewUnits * adjustedPrice
+      postValue: Math.floor(sim.totalNewUnits) * sim.adjustedPrice,
+      dilutionAudit
     };
-  }, [adjLtp, bonusPct, rightPct, rightIssuePrice, userShares]);
+  }, [adjLtp, bonusPct, rightPct, rightIssuePrice, userShares, buyWacc]);
 
   // ── SIP Calculation ──
   const sipResult = useMemo(() => {
@@ -624,6 +618,10 @@ export default function Calculator() {
                   <span style={{ color: 'var(--text-muted)' }}>Total New Share Count:</span>
                   <span style={{ fontWeight: 900, color: '#ffffff' }}>{adjustmentResult.totalNewUnits} Units</span>
                 </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Adjusted WACC / Share:</span>
+                  <span style={{ fontWeight: 800, color: '#facc15', fontFamily: 'var(--font-mono)' }}>{formatRs(adjustmentResult.newWacc)}</span>
+                </div>
                 {adjustmentResult.bonusTax > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Bonus Share Tax (5% on par):</span>
@@ -635,6 +633,47 @@ export default function Calculator() {
                   <span style={{ fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{formatRs(adjustmentResult.postValue)}</span>
                 </div>
               </div>
+
+              {/* Philip Fisher Bonus Dilution & Sustainability Auditor */}
+              {bonusPct > 0 && adjustmentResult.dilutionAudit && (
+                <div style={{
+                  marginTop: 14,
+                  padding: 12,
+                  borderRadius: 10,
+                  background: adjustmentResult.dilutionAudit.riskLevel === 'High' ? 'rgba(239, 68, 68, 0.1)' : adjustmentResult.dilutionAudit.riskLevel === 'Moderate' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  border: `1px solid ${adjustmentResult.dilutionAudit.riskLevel === 'High' ? 'rgba(239, 68, 68, 0.3)' : adjustmentResult.dilutionAudit.riskLevel === 'Moderate' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {adjustmentResult.dilutionAudit.riskLevel === 'High' ? <AlertTriangle size={14} color="#f87171" /> : <ShieldCheck size={14} color="#34d399" />}
+                      Fisher Bonus Dilution Auditor
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: adjustmentResult.dilutionAudit.riskLevel === 'High' ? 'rgba(239, 68, 68, 0.2)' : adjustmentResult.dilutionAudit.riskLevel === 'Moderate' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                      color: adjustmentResult.dilutionAudit.riskLevel === 'High' ? '#f87171' : adjustmentResult.dilutionAudit.riskLevel === 'Moderate' ? '#fbbf24' : '#34d399'
+                    }}>
+                      {adjustmentResult.dilutionAudit.riskLevel} Dilution Risk
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginBottom: 6 }}>
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 6 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>Post-Bonus EPS (Est.): </span>
+                      <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs. {adjustmentResult.dilutionAudit.postBonusEps}</span>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 6 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>Equity Base Expansion: </span>
+                      <span style={{ fontWeight: 800, color: '#f87171' }}>+{bonusPct}%</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    {adjustmentResult.dilutionAudit.message}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

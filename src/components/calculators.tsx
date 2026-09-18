@@ -5,43 +5,127 @@ const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
 
 export function GrahamValuation() {
-  const [form, setForm] = useState({ eps: '', bvps: '', price: '' });
+  const [modelType, setModelType] = useState<'classical' | 'interest_adjusted'>('classical');
+  const [form, setForm] = useState({ eps: '', bvps: '', price: '', growthRate: '7.0', fdRate: '7.5' });
   const [result, setResult] = useState<any>(null);
 
   const calc = () => {
-    if (!form.eps || !form.bvps) return;
-    const eps = parseFloat(form.eps), bvps = parseFloat(form.bvps), price = parseFloat(form.price) || 0;
-    if (eps <= 0 || bvps <= 0) return;
-    const intrinsic = Math.sqrt(22.5 * eps * bvps);
-    const mos = price > 0 ? ((intrinsic - price) / price) * 100 : 0;
-    const verdict = mos > 20 ? { text: 'UNDERVALUED — Strong Buy', color: '#10b981' }
-      : mos < -20 ? { text: 'OVERVALUED — Avoid', color: '#F43F5E' }
-      : { text: 'FAIRLY VALUED — Hold', color: '#f59e0b' };
-    setResult({ intrinsic, price, mos, verdict });
+    const eps = parseFloat(form.eps);
+    const price = parseFloat(form.price) || 0;
+    if (!eps || eps <= 0) return;
+
+    if (modelType === 'classical') {
+      const bvps = parseFloat(form.bvps);
+      if (!bvps || bvps <= 0) return;
+      const intrinsic = Math.sqrt(22.5 * eps * bvps);
+      const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
+      const verdict = mos > 20 ? { text: 'UNDERVALUED — Strong Margin of Safety', color: '#10b981' }
+        : mos < -20 ? { text: 'OVERVALUED — Premium Multiple', color: '#F43F5E' }
+        : { text: 'FAIRLY VALUED — Hold', color: '#f59e0b' };
+      setResult({ model: 'classical', intrinsic, price, mos, verdict, maxBuy20: intrinsic * 0.80, maxBuy30: intrinsic * 0.70 });
+    } else {
+      const g = Math.max(0, Math.min(25, parseFloat(form.growthRate) || 7.0));
+      const y = Math.max(2.0, parseFloat(form.fdRate) || 7.5);
+      // V = (EPS * (8.5 + 2g) * 4.4) / Y
+      const growthFactor = 8.5 + (2 * g);
+      const intrinsic = (eps * growthFactor * 4.4) / y;
+      const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
+      const equityYield = price > 0 ? (eps / price) * 100 : 0;
+      const erp = equityYield - y;
+      const verdict = mos >= 20 ? { text: 'UNDERVALUED — Favorable Risk-Adjusted Entry', color: '#10b981' }
+        : mos < -20 ? { text: 'OVERVALUED — Insufficient Yield vs FD', color: '#F43F5E' }
+        : { text: 'FAIRLY VALUED', color: '#f59e0b' };
+      setResult({
+        model: 'interest_adjusted',
+        intrinsic,
+        price,
+        mos,
+        verdict,
+        maxBuy20: intrinsic * 0.80,
+        maxBuy30: intrinsic * 0.70,
+        equityYield,
+        erp,
+        y,
+        g
+      });
+    }
   };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
-          <h3 className="text-base font-bold text-white tracking-wide">Benjamin Graham Intrinsic Valuation Model</h3>
-          <p className="text-xs text-slate-400">Classical value investing formula to calculate fair intrinsic value.</p>
+          <h3 className="text-base font-bold text-white tracking-wide">Benjamin Graham Valuation Engine</h3>
+          <p className="text-xs text-slate-400">Classical intrinsic value &amp; macro interest-adjusted models.</p>
         </div>
       </div>
-      <InfoBanner><strong>Formula:</strong> V* = √(22.5 × EPS × BVPS). Margin of safety &gt; 20% = undervalued. Growth factor 7% + defensive P/E 15× = 22.5.</InfoBanner>
+
+      {/* Model Selection Tabs */}
+      <div className="grid grid-cols-2 gap-2 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+        <button
+          type="button"
+          onClick={() => { setModelType('classical'); setResult(null); }}
+          className={`py-2 text-xs font-bold rounded-lg transition-all ${modelType === 'classical' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+        >
+          Classical Graham Number (V*)
+        </button>
+        <button
+          type="button"
+          onClick={() => { setModelType('interest_adjusted'); setResult(null); }}
+          className={`py-2 text-xs font-bold rounded-lg transition-all ${modelType === 'interest_adjusted' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+        >
+          Interest-Adjusted (Nepal FD Y)
+        </button>
+      </div>
+
+      {modelType === 'classical' ? (
+        <InfoBanner><strong>Classical Formula:</strong> V* = √(22.5 × EPS × BVPS). Assumes balanced P/E 15× and P/B 1.5×.</InfoBanner>
+      ) : (
+        <InfoBanner><strong>Macro Formula:</strong> V = [EPS × (8.5 + 2g) × 4.4] / Y. Dynamically adjusts fair value to Nepal commercial bank Fixed Deposit rate (Y).</InfoBanner>
+      )}
+
       <div className="mb-4 grid gap-3">
-        <input type="number" placeholder="EPS — e.g. 65.20" value={form.eps} onChange={(e) => setForm((f) => ({ ...f, eps: e.target.value }))} className={inputCls} />
-        <input type="number" placeholder="BVPS — e.g. 182.50" value={form.bvps} onChange={(e) => setForm((f) => ({ ...f, bvps: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="EPS — e.g. 35.50" value={form.eps} onChange={(e) => setForm((f) => ({ ...f, eps: e.target.value }))} className={inputCls} />
+        {modelType === 'classical' ? (
+          <input type="number" placeholder="BVPS — e.g. 182.50" value={form.bvps} onChange={(e) => setForm((f) => ({ ...f, bvps: e.target.value }))} className={inputCls} />
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" placeholder="5Y Exp. Growth g % (e.g. 7.0)" value={form.growthRate} onChange={(e) => setForm((f) => ({ ...f, growthRate: e.target.value }))} className={inputCls} />
+            <input type="number" placeholder="Nepal Bank FD Rate Y % (e.g. 7.5)" value={form.fdRate} onChange={(e) => setForm((f) => ({ ...f, fdRate: e.target.value }))} className={inputCls} />
+          </div>
+        )}
         <input type="number" placeholder="Current market price (optional)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className={inputCls} />
       </div>
+
       <button onClick={calc} className={btnCls}>Calculate Intrinsic Value</button>
+
       {result && (
         <div className="mt-5 rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-5 text-center">
-          <div className="text-[13px] text-slate-400">Benjamin Graham Intrinsic Value</div>
-          <div className="text-4xl font-black text-emerald-400">NPR {result.intrinsic.toFixed(2)}</div>
+          <div className="text-[13px] text-slate-400">
+            {result.model === 'classical' ? 'Benjamin Graham Intrinsic Value (V*)' : `Macro-Adjusted Fair Value (${result.y}% FD Rate)`}
+          </div>
+          <div className="text-4xl font-black text-emerald-400">Rs. {result.intrinsic.toFixed(2)}</div>
+          
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+              <span className="text-slate-400 block text-[11px]">Max Buy (20% MOS):</span>
+              <span className="font-bold text-emerald-400 text-sm">Rs. {result.maxBuy20.toFixed(2)}</span>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+              <span className="text-slate-400 block text-[11px]">Deep Value (30% MOS):</span>
+              <span className="font-bold text-blue-400 text-sm">Rs. {result.maxBuy30.toFixed(2)}</span>
+            </div>
+          </div>
+
           {result.price > 0 && (
             <>
-              <div className="mt-2 text-lg font-bold" style={{ color: result.verdict.color }}>{result.verdict.text}</div>
+              <div className="mt-3 text-base font-bold" style={{ color: result.verdict.color }}>{result.verdict.text}</div>
               <div className="mt-1 text-sm text-slate-400">Margin of Safety: {result.mos > 0 ? '+' : ''}{result.mos.toFixed(1)}%</div>
+              {result.model === 'interest_adjusted' && (
+                <div className="mt-2 text-xs text-slate-400 pt-2 border-t border-slate-800">
+                  Earnings Yield: <span className="font-bold text-white">{result.equityYield.toFixed(2)}%</span> vs Bank FD: <span className="font-bold text-white">{result.y}%</span> (Equity Risk Premium: <span className={result.erp >= 0 ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{result.erp >= 0 ? `+${result.erp.toFixed(2)}%` : `${result.erp.toFixed(2)}%`}</span>)
+                </div>
+              )}
             </>
           )}
         </div>

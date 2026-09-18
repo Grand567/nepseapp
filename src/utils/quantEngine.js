@@ -71,6 +71,223 @@ export function calculateGrahamIntrinsicValue(eps, bookValue, ltp) {
 }
 
 /**
+ * 1B. Benjamin Graham Interest-Adjusted Intrinsic Valuation Model (1974 Revision)
+ * Formula: V = (EPS * (8.5 + 2g) * 4.4) / Y
+ * Adapted for Nepal's monetary policy and commercial bank 1-year Fixed Deposit rate Y.
+ * @param {number} eps - Trailing 12-month Earnings Per Share in NPR
+ * @param {number} expectedGrowthRate - 5-year expected earnings growth rate (%) e.g. 7.0
+ * @param {number} prevailingFdRate - Commercial bank 1-year FD rate in Nepal (%) e.g. 7.5
+ * @param {number} ltp - Current Last Traded Price
+ */
+export function calculateInterestAdjustedGrahamValue(eps, expectedGrowthRate = 7.0, prevailingFdRate = 7.5, ltp = 0) {
+  const e = Number(eps) || 0;
+  const g = Math.max(0, Math.min(25, Number(expectedGrowthRate) || 7.0));
+  const y = Math.max(2.0, Number(prevailingFdRate) || 7.5);
+  const price = Number(ltp) || 0;
+
+  if (e <= 0) {
+    return {
+      intrinsicValue: 0,
+      marginOfSafetyPct: 0,
+      maxBuyPrice20: 0,
+      maxBuyPrice30: 0,
+      isUndervalued: false,
+      valuationStatus: 'Loss-Making / Negative EPS',
+      growthFactor: Number((8.5 + 2 * g).toFixed(2)),
+      fdRate: y,
+      equityYield: 0,
+      erp: 0
+    };
+  }
+
+  // V = (EPS * (8.5 + 2g) * 4.4) / Y
+  const growthMultiplier = 8.5 + (2 * g);
+  const numerator = e * growthMultiplier * 4.4;
+  const intrinsicValue = Number((numerator / y).toFixed(2));
+
+  const maxBuyPrice20 = Number((intrinsicValue * 0.80).toFixed(2));
+  const maxBuyPrice30 = Number((intrinsicValue * 0.70).toFixed(2));
+
+  const marginOfSafetyPct = intrinsicValue > 0 && price > 0
+    ? Number((((intrinsicValue - price) / intrinsicValue) * 100).toFixed(1))
+    : 0;
+
+  const equityYield = price > 0 ? Number(((e / price) * 100).toFixed(2)) : 0;
+  const erp = Number((equityYield - y).toFixed(2));
+
+  let valuationStatus = 'Fairly Valued';
+  if (marginOfSafetyPct >= 30) valuationStatus = 'Deep Value (≥30% Margin of Safety)';
+  else if (marginOfSafetyPct >= 20) valuationStatus = 'Undervalued (Favorable 20% MOS Entry)';
+  else if (marginOfSafetyPct >= 0) valuationStatus = 'Fairly Valued (Within Intrinsic Value)';
+  else if (marginOfSafetyPct >= -25) valuationStatus = 'Modestly Overvalued';
+  else valuationStatus = 'Speculative / Premium Valuation';
+
+  return {
+    intrinsicValue,
+    marginOfSafetyPct,
+    maxBuyPrice20,
+    maxBuyPrice30,
+    isUndervalued: price > 0 && price <= maxBuyPrice20,
+    valuationStatus,
+    growthFactor: Number(growthMultiplier.toFixed(2)),
+    fdRate: y,
+    equityYield,
+    erp
+  };
+}
+
+/**
+ * 1C. Earnings Yield & Equity Risk Premium (ERP)
+ * Evaluates whether stock equity yield provides adequate compensation over risk-free bank FD rate.
+ */
+export function calculateEarningsYieldAndRiskPremium(eps, ltp, prevailingFdRate = 7.5) {
+  const e = Number(eps) || 0;
+  const price = Number(ltp) || 0;
+  const y = Number(prevailingFdRate) || 7.5;
+
+  if (e <= 0 || price <= 0) {
+    return {
+      earningsYield: 0,
+      erp: Number((-y).toFixed(2)),
+      isFavorable: false,
+      status: 'Negative Earning Power / No Risk Premium'
+    };
+  }
+
+  const earningsYield = Number(((e / price) * 100).toFixed(2));
+  const erp = Number((earningsYield - y).toFixed(2));
+  const isFavorable = erp > 0;
+
+  let status = 'Inadequate Equity Risk Premium (FD Yield Superior)';
+  if (erp >= 3.0) status = 'Exceptional Risk Premium (High Equity Compensation)';
+  else if (erp > 0) status = 'Positive Equity Risk Premium (Attractive vs FD)';
+  else if (erp >= -1.5) status = 'Neutral Risk Premium (Comparable to Fixed Deposit)';
+
+  return {
+    earningsYield,
+    erp,
+    isFavorable,
+    status
+  };
+}
+
+/**
+ * 1D. Peter Lynch Metrics & 6-Archetype Classifier
+ * Classifies NEPSE stocks into Lynch categories and computes PEG ratio.
+ */
+export function calculatePeterLynchMetrics(stock = {}, ltp = 0, epsGrowthRate = 0) {
+  const eps = Number(stock?.eps) || 0;
+  const price = Number(ltp || stock?.ltp || stock?.closePrice || 0);
+  const pe = price > 0 && eps > 0 ? price / eps : Number(stock?.pe) || 0;
+  const g = Number(epsGrowthRate || stock?.epsGrowth || stock?.growth || (eps > 20 ? 12 : eps > 10 ? 8 : 5));
+  const sector = String(stock?.sector || '').toLowerCase();
+  const roe = Number(stock?.roe || 0);
+  const pb = Number(stock?.pb || stock?.pbv || (stock?.bookValue && price > 0 ? price / stock.bookValue : 1.5));
+
+  // PEG = PE / g
+  const peg = pe > 0 && g > 0 ? Number((pe / g).toFixed(2)) : 0;
+
+  // Peter Lynch 6-Archetype Categorization
+  let archetype = 'Stalwarts';
+  let rationale = '';
+
+  if (sector.includes('mutual') || (pb > 0 && pb < 0.85)) {
+    archetype = 'Asset Plays';
+    rationale = 'Trading at a substantial discount to Net Asset Value or carrying high underlying assets.';
+  } else if (sector.includes('hydro') || sector.includes('cement') || sector.includes('manufactur')) {
+    archetype = 'Cyclicals';
+    rationale = 'Revenue tied to seasonal hydrology/monsoon water levels or industrial capital expenditure cycles.';
+  } else if (g >= 20 || (eps > 25 && roe >= 18)) {
+    archetype = 'Fast Growers';
+    rationale = 'Aggressive double-digit earnings growth compounder with strong capital reinvestment.';
+  } else if (stock?.npl && Number(stock.npl) > 4.5) {
+    archetype = 'Turnarounds';
+    rationale = 'Distressed asset or bank restructuring bad loans to restore regular dividend distribution.';
+  } else if (g < 6 && (stock?.dividendYield >= 5 || stock?.divYield >= 5)) {
+    archetype = 'Slow Growers';
+    rationale = 'Mature utility or cash-cow with generous dividend payouts but modest capital expansion.';
+  } else {
+    archetype = 'Stalwarts';
+    rationale = 'Large-cap institutional anchor with dependable 10–15% ROE and consistent regulatory standing.';
+  }
+
+  const isGarp = peg > 0 && peg <= 1.2 && pe <= 30;
+
+  return {
+    peg,
+    archetype,
+    rationale,
+    isGarp,
+    pegStatus: peg <= 0 ? 'N/A (Loss-Making or Zero Growth)' : peg <= 0.8 ? 'Deep Bargain GARP (PEG ≤ 0.8)' : peg <= 1.2 ? 'Fair Growth Valuation (PEG ≤ 1.2)' : peg <= 2.0 ? 'Premium Growth' : 'Overextended / Bubble Multiples (PEG > 2.0)'
+  };
+}
+
+/**
+ * 1E. Nepal Rastra Bank (NRB) Mandatory Solvency & Safety Gate
+ * Enforces quantitative regulatory filters for Commercial Banks, Dev Banks, and Finance.
+ */
+export function evaluateNrbRegulatorySafety(stock = {}) {
+  const sector = String(stock?.sector || '').toLowerCase();
+  const isBfi = sector.includes('bank') || sector.includes('finance') || sector.includes('micro');
+
+  if (!isBfi) {
+    return {
+      isBfi: false,
+      passSafetyGate: true,
+      dividendRisk: 'Not Applicable (Non-BFI)',
+      car: null,
+      npl: null,
+      cdRatio: null,
+      issues: []
+    };
+  }
+
+  const npl = Number(stock?.npl != null ? stock.npl : 2.5);
+  const car = Number(stock?.car != null ? stock.car : 12.0);
+  const cdRatio = Number(stock?.cdRatio != null ? stock.cdRatio : 82.5);
+  const roe = Number(stock?.roe != null ? stock.roe : 12.0);
+
+  const issues = [];
+  let passSafetyGate = true;
+
+  if (npl > 5.0) {
+    passSafetyGate = false;
+    issues.push(`Critical NPL (${npl}% > 5.0%): Exceeds NRB regulatory dividend threshold. Dividends will be frozen.`);
+  } else if (npl > 3.0) {
+    issues.push(`Elevated NPL (${npl}%): Higher loan loss provisioning required; profit contraction risk.`);
+  }
+
+  if (car < 11.0) {
+    passSafetyGate = false;
+    issues.push(`Capital Adequacy Breach (${car}% < 11.0% NRB minimum): Tier-1 capital impaired; dividend halt mandatory.`);
+  } else if (car < 11.5) {
+    issues.push(`Tight Capital Buffer (${car}%): Very close to the 11.0% mandatory minimum.`);
+  }
+
+  if (cdRatio > 90.0) {
+    passSafetyGate = false;
+    issues.push(`Credit-to-Deposit Ceiling Breach (${cdRatio}% > 90.0%): Statutory lending freeze active.`);
+  } else if (cdRatio > 88.0) {
+    issues.push(`Tight Liquidity (${cdRatio}%): Close to 90% regulatory cap; credit growth restricted.`);
+  }
+
+  let dividendRisk = 'Safe / Eligible';
+  if (!passSafetyGate) dividendRisk = 'High Risk / Frozen';
+  else if (issues.length > 0) dividendRisk = 'Caution / Monitor';
+
+  return {
+    isBfi: true,
+    passSafetyGate,
+    dividendRisk,
+    npl,
+    car,
+    cdRatio,
+    roe,
+    issues
+  };
+}
+
+/**
  * 2. Volume Z-Score Engine
  * Formula: Z_vol = (V_t - mu_vol) / sigma_vol
  * Flags institutional volume anomalies (Z_vol >= 2.0 is a Volume Shocker)

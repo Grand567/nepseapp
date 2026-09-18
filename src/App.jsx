@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
   LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
   BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw,
-  Calendar, X, Info
+  Calendar, X, Info, Crown, Zap, Smartphone, Copy
 } from 'lucide-react';
 import Dashboard      from './components/Dashboard';
 import Portfolio      from './components/Portfolio';
@@ -19,8 +19,10 @@ import LoginScreen    from './components/LoginScreen';
 import TestSuite      from './components/TestSuite';
 import StockDetailModal from './components/StockDetailModal';
 import PullToRefresh from './components/PullToRefresh';
+import SubscriptionModal from './components/SubscriptionModal';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
-import { fetchHolidays } from './utils/servicesApi.js';
+import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
+import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays } from './utils/bikramSambat.js';
 
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices } from './utils/liveData';
@@ -35,14 +37,17 @@ const defaultIndices = getCachedIndices() || calculateIndices(initialStocks);
 
 export default function App() {
   return (
-    <NavigationProvider>
-      <AppInner />
-    </NavigationProvider>
+    <SubscriptionProvider>
+      <NavigationProvider>
+        <AppInner />
+      </NavigationProvider>
+    </SubscriptionProvider>
   );
 }
 
 function AppInner() {
   const { activeTab, setActiveTab, selectedStock, closeStockDetail, openStockDetail, exitToast } = useNavigation();
+  const { isPro, daysRemaining, planDuration, deviceId, openSubscriptionModal, syncFromCloud } = useSubscription();
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,6 +56,29 @@ function AppInner() {
   // ── Auth state ──
   const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
+  const avatarBtnRef = useRef(null);
+
+  // Close account menu on any click or touch outside
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const handleOutsideInteraction = (e) => {
+      if (
+        userMenuRef.current && 
+        !userMenuRef.current.contains(e.target) &&
+        avatarBtnRef.current && 
+        !avatarBtnRef.current.contains(e.target)
+      ) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideInteraction);
+    document.addEventListener('touchstart', handleOutsideInteraction, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideInteraction);
+      document.removeEventListener('touchstart', handleOutsideInteraction);
+    };
+  }, [showUserMenu]);
 
   // ── Accessibility & Font Scale State for Weak Eyesight ──
   const [fontScale, setFontScale] = useState(() => localStorage.getItem('nepse_font_scale') || 'normal');
@@ -169,6 +197,7 @@ function AppInner() {
             if (Array.isArray(cloudData.tradeJournal)) cloudTradeJournal = cloudData.tradeJournal;
             if (cloudData.paperTrading) cloudPaperTrading = cloudData.paperTrading;
             if (Array.isArray(cloudData.credentials)) cloudCredentials = cloudData.credentials;
+            if (cloudData.subscription) syncFromCloud(cloudData.subscription);
 
             console.log(`[Firebase Sync] Cloud data fetched for ${email || uid}.`);
           }
@@ -467,7 +496,8 @@ function AppInner() {
       const [rawStatus, response, liveIndices] = await Promise.all([
         fetchMarketStatus(),
         fetchLiveMarketData(),
-        fetchMarketIndices()
+        fetchMarketIndices(),
+        fetchNepseIntradayGraph('NEPSE', true).catch(() => null)
       ]);
       const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
       if (status) setMarketStatus(status);
@@ -600,172 +630,136 @@ function AppInner() {
               title="Click to view NEPSE Calendar & Holidays"
             >
               <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                {indices?.nepse?.value ?? 2542.77}&nbsp;
-                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 4.66).toFixed(2)} pts ({Math.abs(indices?.nepse?.pChange ?? 0.18)}%)
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>·</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 10.5, fontFamily: 'var(--font-mono)' }} title={marketStatus.bsFormattedEn || ''}>
-                {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
+                {Number(indices?.nepse?.value ?? 2624.36).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
+                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 11.93).toFixed(2)} pts ({nepseChange >= 0 ? '+' : '-'}{Math.abs(indices?.nepse?.pChange ?? 0.45).toFixed(2)}%)
               </span>
             </div>
           </div>
         </div>
 
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          {/* Compact Market Status Indicator Button */}
-          {(() => {
-            const isLive = Boolean(marketStatus?.isOpen);
-            const badgeColor = isLive 
-              ? 'var(--bull)' 
-              : marketStatus?.isHoliday 
-              ? '#c084fc' 
-              : marketStatus?.isWeekend 
-              ? '#fbbf24' 
-              : '#94a3b8';
-            const badgeBg = isLive 
-              ? 'rgba(16,185,129,0.1)' 
-              : marketStatus?.isHoliday 
-              ? 'rgba(192,132,252,0.12)' 
-              : marketStatus?.isWeekend 
-              ? 'rgba(251,191,36,0.12)' 
-              : 'rgba(255,255,255,0.03)';
-            const badgeBorder = isLive 
-              ? 'rgba(16,185,129,0.35)' 
-              : marketStatus?.isHoliday 
-              ? 'rgba(192,132,252,0.35)' 
-              : marketStatus?.isWeekend 
-              ? 'rgba(251,191,36,0.35)' 
-              : 'var(--border)';
-            const label = isLive 
-              ? 'LIVE' 
-              : marketStatus?.isHoliday 
-              ? 'HOLIDAY' 
-              : marketStatus?.isWeekend 
-              ? 'WEEKEND' 
-              : 'CLOSED';
-
-            return (
-              <button 
-                type="button"
-                onClick={() => setShowCalendarModal(true)}
-                title={`${marketStatus?.message || label}${marketStatus?.holidayName ? ` (${marketStatus.holidayName})` : ''} — Tap to view NEPSE Calendar & Holidays`}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '3px 7px',
-                  borderRadius: 20,
-                  border: `1px solid ${badgeBorder}`,
-                  background: badgeBg,
-                  cursor: 'pointer',
-                  outline: 'none',
-                  flexShrink: 0,
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <span style={{
-                  display: 'inline-block',
-                  width: 5.5,
-                  height: 5.5,
-                  borderRadius: '50%',
-                  background: badgeColor
-                }} />
-                <span style={{
-                  fontSize: 10, fontWeight: 800,
-                  color: badgeColor,
-                  letterSpacing: '0.02em'
-                }}>
-                  {label}
-                </span>
-              </button>
-            );
-          })()}
-
-          {/* Refresh Live Data Button */}
-          <button
-            id="btn-refresh-market"
-            className="icon-btn"
-            onClick={triggerTick}
-            disabled={isRefreshing}
-            title="Refresh Live Market Data"
-            style={{
-              padding: '0 8px',
-              height: 32,
-              background: isRefreshing ? 'rgba(91,94,244,0.2)' : 'rgba(255,255,255,0.04)',
-              borderColor: isRefreshing ? 'var(--primary-light)' : 'var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              cursor: isRefreshing ? 'wait' : 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <RefreshCw style={{ width: 14, height: 14, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-            <span className="header-refresh-label" style={{ fontSize: 11, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
-              {isRefreshing ? '…' : 'Refresh'}
-            </span>
-          </button>
-
-          {/* Text Size / Accessibility Font Enlarger for Weak Eyesight */}
-          <button
-            id="btn-font-size"
-            className={`icon-btn ${showFontModal ? 'active' : ''}`}
-            onClick={() => setShowFontModal(v => !v)}
-            title="Enlarge Font for Weak Eyesight"
-            style={{ 
-              fontWeight: 900, 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 3, 
-              padding: '0 8px', 
-              width: 'auto',
-              background: fontScale !== 'normal' ? 'rgba(79,70,229,0.18)' : 'rgba(255,255,255,0.04)',
-              borderColor: fontScale !== 'normal' ? 'var(--primary-light)' : 'var(--border)'
-            }}
-          >
-            <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>A</span>
-            <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary-light)' }}>
-              {fontScale === 'huge' ? '+++' : fontScale === 'xlarge' ? '++' : fontScale === 'large' ? '+' : ''}
-            </span>
-          </button>
-
-          {/* Resources button */}
-          <button
-            className={`icon-btn ${activeTab === 'resources' ? 'active' : ''}`}
-            onClick={() => setActiveTab('resources')}
-            title="Resources & Guides"
-          >
-            <BookOpen style={{ width: 15, height: 15 }} />
-          </button>
-
-          {/* User avatar + menu */}
-          <div style={{ position: 'relative' }}>
+        <div className="header-actions" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          {/* Top Row: Refresh, Font Size, Resources, User Avatar/Account */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Refresh Live Data Button */}
             <button
-              id="btn-user-avatar"
-              onClick={() => setShowUserMenu(v => !v)}
+              id="btn-refresh-market"
+              className="icon-btn"
+              onClick={triggerTick}
+              disabled={isRefreshing}
+              title="Refresh Live Market Data"
               style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: 0, display: 'flex', alignItems: 'center',
+                padding: '0 8px',
+                height: 30,
+                background: isRefreshing ? 'rgba(91,94,244,0.2)' : 'rgba(255,255,255,0.04)',
+                borderColor: isRefreshing ? 'var(--primary-light)' : 'var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: isRefreshing ? 'wait' : 'pointer',
+                transition: 'all 0.2s ease'
               }}
-              title={user.displayName || user.email || 'Guest'}
             >
-              {renderAvatar(28)}
+              <RefreshCw style={{ width: 13, height: 13, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+              <span className="header-refresh-label" style={{ fontSize: 11, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
+                {isRefreshing ? '…' : 'Refresh'}
+              </span>
             </button>
 
-            {/* Dropdown menu */}
-            {showUserMenu && (
-              <>
-                {/* backdrop */}
-                <div
-                  style={{ position: 'fixed', inset: 0, zIndex: 199 }}
-                  onClick={() => setShowUserMenu(false)}
-                />
-                <div style={{
-                  position: 'absolute', top: 36, right: 0, zIndex: 200,
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
-                  minWidth: 220, padding: '8px 0',
-                }}>
+            {/* Text Size / Accessibility Font Enlarger for Weak Eyesight */}
+            <button
+              id="btn-font-size"
+              className={`icon-btn ${showFontModal ? 'active' : ''}`}
+              onClick={() => setShowFontModal(v => !v)}
+              title="Enlarge Font for Weak Eyesight"
+              style={{ 
+                fontWeight: 900, 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 3, 
+                padding: '0 8px', 
+                height: 30,
+                width: 'auto',
+                background: fontScale !== 'normal' ? 'rgba(79,70,229,0.18)' : 'rgba(255,255,255,0.04)',
+                borderColor: fontScale !== 'normal' ? 'var(--primary-light)' : 'var(--border)'
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>A</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--primary-light)' }}>
+                {fontScale === 'huge' ? '+++' : fontScale === 'xlarge' ? '++' : fontScale === 'large' ? '+' : ''}
+              </span>
+            </button>
+
+            {/* Pro Subscription Badge / Upgrade Button */}
+            <button
+              id="btn-pro-subscription"
+              className="icon-btn"
+              onClick={() => openSubscriptionModal()}
+              title={isPro ? `⭐ Pro Active (${daysRemaining}d remaining)` : '⚡ Upgrade to Pro (1m, 2m...)'}
+              style={{
+                height: 30,
+                padding: '0 8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                background: isPro
+                  ? 'rgba(245, 158, 11, 0.15)'
+                  : 'linear-gradient(90deg, rgba(245, 158, 11, 0.22), rgba(217, 119, 6, 0.22))',
+                borderColor: isPro ? 'rgba(245, 158, 11, 0.45)' : 'rgba(245, 158, 11, 0.55)',
+                color: isPro ? '#f59e0b' : '#fbbf24',
+                cursor: 'pointer',
+                fontWeight: 900,
+                fontSize: 10.5
+              }}
+            >
+              <Crown style={{ width: 13, height: 13, color: isPro ? '#f59e0b' : '#fbbf24' }} />
+              <span>{isPro ? `PRO (${daysRemaining}d)` : 'PRO'}</span>
+            </button>
+
+            {/* Resources button */}
+            <button
+              className={`icon-btn ${activeTab === 'resources' ? 'active' : ''}`}
+              onClick={() => setActiveTab('resources')}
+              title="Resources & Guides"
+              style={{ height: 30, width: 30 }}
+            >
+              <BookOpen style={{ width: 14, height: 14 }} />
+            </button>
+
+            {/* User avatar + menu */}
+            <div style={{ position: 'relative' }}>
+              <button
+                id="btn-user-avatar"
+                ref={avatarBtnRef}
+                onClick={() => setShowUserMenu(v => !v)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: 0, display: 'flex', alignItems: 'center',
+                }}
+                title={user.displayName || user.email || 'Guest'}
+              >
+                {renderAvatar(28)}
+              </button>
+
+              {/* Dropdown menu */}
+              {showUserMenu && (
+                <>
+                  {/* backdrop */}
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+                    onClick={() => setShowUserMenu(false)}
+                    onTouchStart={() => setShowUserMenu(false)}
+                  />
+                  <div 
+                    ref={userMenuRef}
+                    style={{
+                      position: 'absolute', top: 36, right: 0, zIndex: 200,
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+                      minWidth: 220, padding: '8px 0',
+                    }}
+                  >
                   {/* User info */}
                   <div style={{ padding: '10px 16px 12px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -784,6 +778,99 @@ function AppInner() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Pro Subscription Status Card */}
+                  <div style={{
+                    padding: '8px 14px',
+                    borderBottom: '1px solid var(--border)',
+                    background: isPro ? 'rgba(245, 158, 11, 0.07)' : 'rgba(255, 255, 255, 0.02)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Crown style={{ width: 12, height: 12, color: '#f59e0b' }} />
+                        <span style={{ fontSize: 11, fontWeight: 800, color: isPro ? '#f59e0b' : 'var(--text-secondary)' }}>
+                          {isPro ? `PRO (${planDuration || 'Active'})` : 'FREE PLAN'}
+                        </span>
+                      </div>
+                      {isPro && (
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '1px 5px', borderRadius: 4 }}>
+                          {daysRemaining}d left
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setShowUserMenu(false); openSubscriptionModal(); }}
+                      style={{
+                        width: '100%',
+                        background: 'linear-gradient(90deg, #d97706, #f59e0b)',
+                        color: '#000',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '5px 8px',
+                        fontSize: 10.5,
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        marginTop: 3,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4
+                      }}
+                    >
+                      <Zap style={{ width: 11, height: 11 }} />
+                      <span>{isPro ? 'Manage / Extend Plan' : '⚡ Upgrade to Pro'}</span>
+                    </button>
+                  </div>
+
+                  {/* Device License ID Row */}
+                  <div style={{
+                    padding: '8px 14px',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 6
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <Smartphone style={{ width: 12, height: 12, color: '#f59e0b', flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 9.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Device License ID
+                        </div>
+                        <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
+                          {deviceId || 'DS-SYNCING'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (deviceId && navigator?.clipboard?.writeText) {
+                          navigator.clipboard.writeText(deviceId);
+                        }
+                        alert(`Copied Device ID: ${deviceId}`);
+                      }}
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        color: '#fbbf24',
+                        borderRadius: 5,
+                        padding: '3px 8px',
+                        fontSize: 10,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        flexShrink: 0
+                      }}
+                    >
+                      <Copy style={{ width: 10, height: 10 }} />
+                      Copy
+                    </button>
                   </div>
 
                   {/* Cloud Sync Manual Trigger */}
@@ -944,7 +1031,85 @@ function AppInner() {
             )}
           </div>
         </div>
-      </header>
+
+        {/* Sub-row: Weekend / Market Status & Date written directly below Refresh, Font Size, Account */}
+        <div 
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 5, 
+            cursor: 'pointer',
+            userSelect: 'none',
+            marginTop: 1
+          }}
+          onClick={() => setShowCalendarModal(true)}
+          title={`${marketStatus?.message || ''} — Tap to view NEPSE Calendar & Holidays`}
+        >
+          {/* Status indicator: WEEKEND / LIVE / CLOSED / HOLIDAY */}
+          {(() => {
+            const isLive = Boolean(marketStatus?.isOpen);
+            const badgeColor = isLive 
+              ? 'var(--bull)' 
+              : marketStatus?.isHoliday 
+              ? '#c084fc' 
+              : marketStatus?.isWeekend 
+              ? '#fbbf24' 
+              : '#94a3b8';
+            const badgeBg = isLive 
+              ? 'rgba(16,185,129,0.12)' 
+              : marketStatus?.isHoliday 
+              ? 'rgba(192,132,252,0.14)' 
+              : marketStatus?.isWeekend 
+              ? 'rgba(251,191,36,0.14)' 
+              : 'rgba(255,255,255,0.04)';
+            const badgeBorder = isLive 
+              ? 'rgba(16,185,129,0.35)' 
+              : marketStatus?.isHoliday 
+              ? 'rgba(192,132,252,0.35)' 
+              : marketStatus?.isWeekend 
+              ? 'rgba(251,191,36,0.35)' 
+              : 'var(--border)';
+            const label = isLive 
+              ? 'LIVE' 
+              : marketStatus?.isHoliday 
+              ? 'HOLIDAY' 
+              : marketStatus?.isWeekend 
+              ? 'WEEKEND' 
+              : 'CLOSED';
+
+            return (
+              <span 
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '1.5px 6px',
+                  borderRadius: 10,
+                  border: `1px solid ${badgeBorder}`,
+                  background: badgeBg,
+                  fontSize: 9.5, fontWeight: 800,
+                  color: badgeColor,
+                  letterSpacing: '0.02em',
+                  lineHeight: 1
+                }}
+              >
+                <span style={{
+                  display: 'inline-block',
+                  width: 5,
+                  height: 5,
+                  borderRadius: '50%',
+                  background: badgeColor
+                }} />
+                {label}
+              </span>
+            );
+          })()}
+
+          {/* Date */}
+          <span style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600 }} title={marketStatus.bsFormattedEn || ''}>
+            {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
+          </span>
+        </div>
+      </div>
+    </header>
 
       {/* ── Font Size / Readability Accessibility Modal ── */}
       {showFontModal && (
@@ -1340,7 +1505,7 @@ function AppInner() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {upcomingHolidaysList.map((h, idx) => {
-                      const isWeekendOff = (h.dayOfWeek === 5 || h.dayOfWeek === 6);
+                      const isWeekendOff = Boolean(h.isWeekend ?? (h.dayOfWeek === 0 || h.dayOfWeek === 6));
                       return (
                         <div
                           key={`${h.bsYear}_${h.bsMonth}_${h.bsDay}_${idx}`}
@@ -1468,6 +1633,9 @@ function AppInner() {
           </div>
         </div>
       )}
+
+      {/* ── Global Subscription & Pro Pass Modal ── */}
+      <SubscriptionModal />
     </div>
   );
 }

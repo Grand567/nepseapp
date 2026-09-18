@@ -44,9 +44,10 @@ import {
   Bot, Send, Sparkles, TrendingUp, TrendingDown, ShieldAlert, Target,
   BarChart2, Briefcase, Globe, CheckCircle2, AlertTriangle, Layers,
   Award, Activity, DollarSign, Clock, ShieldCheck, Wallet, RefreshCw, X, Check, ArrowUpRight, Key, Trash2,
-  BookOpen
+  BookOpen, Crown, Lock
 } from 'lucide-react';
 import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
+import ProGate from './ProGate';
 
 const PROXY = getProxyBase();
 
@@ -1918,10 +1919,10 @@ Format as plain text (not JSON) for this conversational response.`;
         {/* Tab Navigation */}
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingTop: 10, paddingBottom: 2, scrollbarWidth: 'none' }}>
           {[
-            { id: 'stock', label: 'Stock Analysis', icon: BarChart2 },
+            { id: 'stock', label: 'Stock Analysis', icon: BarChart2, isPro: true },
             { id: 'sandbox', label: 'Virtual Sandbox', icon: Wallet },
-            { id: 'market', label: 'Market Outlook', icon: Globe },
-            { id: 'chat', label: 'AI Dialogue', icon: Bot },
+            { id: 'market', label: 'Market Outlook', icon: Globe, isPro: true },
+            { id: 'chat', label: 'AI Dialogue', icon: Bot, isPro: true },
           ].map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -1947,6 +1948,23 @@ Format as plain text (not JSON) for this conversational response.`;
               >
                 <Icon size={13} style={{ color: active ? '#ffffff' : 'var(--text-muted)' }} />
                 <span>{tab.label}</span>
+                {tab.isPro && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    fontSize: 9,
+                    fontWeight: 900,
+                    padding: '1px 5px',
+                    borderRadius: 6,
+                    background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.25))',
+                    color: '#f59e0b',
+                    border: '1px solid rgba(245, 158, 11, 0.4)'
+                  }}>
+                    <Crown size={10} />
+                    PRO
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2237,8 +2255,12 @@ Format as plain text (not JSON) for this conversational response.`;
 
       {/* Chat / Stock Messages Stream (when not on sandbox tab) */}
       {activeTab !== 'sandbox' && (
-        <>
-          {/* Chat Control Toolbar (Clear / Single Q&A Mode) */}
+        <ProGate
+          featureName="GURU AI Quantitative Workstation"
+          description="Unlock institutional Wyckoff accumulation tracking, Benjamin Graham intrinsic valuation, multi-horizon price targets, and intelligent NEPSE AI dialogues with a Pro monthly pass."
+        >
+          <>
+            {/* Chat Control Toolbar (Clear / Single Q&A Mode) */}
           <div style={{
             maxWidth: 896,
             margin: '0 auto',
@@ -2419,6 +2441,7 @@ Format as plain text (not JSON) for this conversational response.`;
             </div>
           </div>
         </>
+        </ProGate>
       )}
 
       {/* Quick Paper Buy Modal */}

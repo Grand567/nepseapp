@@ -1,6 +1,10 @@
 {
   "appName": "Drabyashree NEPSE",
   "appId": "com.smartwealth.nepse",
+  "developer": {
+    "name": "Rexsh K Suwal",
+    "phone": "+977 9841576936"
+  },
   "theme": {
     "primary": "#3b82f6",
     "primaryLight": "#60a5fa",

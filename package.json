@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "version": "1.0.0",
+  "author": "Rexsh K Suwal (+977 9841576936)",
   "scripts": {
     "start": "node proxy/server.mjs",
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",

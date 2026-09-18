@@ -136,26 +136,50 @@ export function EntryExitAnalyzer({
       const cachedFund = getCachedStockFundamentals(sym);
       if (cachedFund) setFundamentals(cachedFund);
 
-      // Check if Prime Pick already computed this plan within the last 10 minutes
+      // Check if Prime Pick already computed this plan within the last 5 minutes
+      // Only accept if cached plan is a genuine full setup plan (with levels, technical & candles)
       try {
         const cachedRaw = localStorage.getItem('prime_pick_plan_cache');
         if (cachedRaw) {
           const cached = JSON.parse(cachedRaw);
-          if (cached && cached.symbol === sym && cached.plan && Date.now() - (cached.ts || 0) < 10 * 60 * 1000) {
-            const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
-            setStockInfo(stock);
-            setPlan(cached.plan);
-            setRawCandles(cached.plan.candles || []);
-            setAnalyzedTime(
-              new Date(cached.ts).toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true,
-              })
-            );
-            setLoading(false);
-            return;
+          const CACHE_TTL_MS = 5 * 60 * 1000;
+          const isFullSetupPlan = Boolean(
+            cached &&
+            cached.symbol === sym &&
+            cached.plan &&
+            cached.plan.levels &&
+            (cached.plan.setupScore != null || cached.plan.score != null || cached.plan.guruScore != null) &&
+            Array.isArray(cached.plan.candles) &&
+            cached.plan.candles.length >= 20 &&
+            (Date.now() - (cached.ts || 0)) < CACHE_TTL_MS
+          );
+
+          if (isFullSetupPlan) {
+            const cachedVerdict = (cached.plan.verdict || '').toUpperCase();
+            const isUnsafeVerdict = cachedVerdict.includes('NO TRADE') ||
+                                    cachedVerdict.includes('AVOID') ||
+                                    cachedVerdict.includes('REDUCE') ||
+                                    cachedVerdict.includes('EXIT');
+            if (!isUnsafeVerdict) {
+              const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
+              setStockInfo(stock);
+              const normalizedPlan = {
+                ...cached.plan,
+                setupScore: cached.plan.setupScore ?? cached.plan.score ?? cached.plan.guruScore ?? 65
+              };
+              setPlan(normalizedPlan);
+              setRawCandles(cached.plan.candles || []);
+              setAnalyzedTime(
+                new Date(cached.ts).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: true,
+                })
+              );
+              setLoading(false);
+              return;
+            }
           }
         }
       } catch (_) {}
@@ -167,7 +191,7 @@ export function EntryExitAnalyzer({
 
         setLoadingStep('Fetching 500-session OHLCV price history & corporate filings…');
         const [history, divRes, liveRes, brokerRes, fundRes] = await Promise.all([
-          fetchPriceHistory(sym, 500),
+          fetchPriceHistory(sym, 500).catch(() => null),
           fetchDividendHistory(sym).catch(() => null),
           !stock || !stock.ltp ? fetchTodayPrice(sym).catch(() => null) : Promise.resolve(null),
           fetchRealBrokerAnalysis(sym, 30).catch(() => null),
@@ -188,11 +212,17 @@ export function EntryExitAnalyzer({
         }
         setStockInfo(stock);
 
-        if (!history || history.length === 0) {
-          throw new Error(`No historical price data found for ${sym}.`);
+        let candleList = Array.isArray(history) ? history : (history?.data || []);
+        if (candleList.length === 0) {
+          const cachedCandles = getCachedRealPriceHistory(sym);
+          if (cachedCandles && cachedCandles.length > 0) {
+            candleList = cachedCandles;
+          }
         }
 
-        const candleList = Array.isArray(history) ? history : history.data || [];
+        if (!candleList || candleList.length === 0) {
+          throw new Error(`No historical price data found for ${sym}. Please check network or try again.`);
+        }
         setRawCandles(candleList);
 
         if (divRes?.dividends && Array.isArray(divRes.dividends)) {
@@ -542,7 +572,7 @@ export function EntryExitAnalyzer({
           {activeSubTab === 'setup' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <SetupScoreCard
-                score={plan.setupScore}
+                score={plan.setupScore ?? plan.score ?? plan.guruScore ?? 50}
                 verdict={plan.verdict}
                 confidence={plan.confidence}
                 setupType={plan.setupType}
@@ -563,7 +593,7 @@ export function EntryExitAnalyzer({
                 symbol={plan.symbol || symbol}
                 ltp={livePrice}
                 fundamentals={fundamentals || stockInfo}
-                setupScore={plan.setupScore}
+                setupScore={plan.setupScore ?? plan.score ?? plan.guruScore ?? 50}
                 verdict={plan.verdict}
                 loading={loading}
               />

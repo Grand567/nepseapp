@@ -206,8 +206,9 @@ export function isNepsePublicHoliday(date = new Date()) {
 }
 
 /**
- * Checks if a given date is a weekly closure for NEPSE
- * NEPSE national weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
+ * Checks if a given date is a weekly closure for NEPSE.
+ * Under current NEPSE rules: Saturday (6) and Sunday (0) are weekend market closures.
+ * Monday (1) through Friday (5) are active trading days (11:00 AM – 3:00 PM NPT).
  */
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
@@ -228,8 +229,9 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // National NEPSE weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
-  const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+  // National NEPSE weekend holidays: Saturday (6) and Sunday (0).
+  // Monday (1) to Friday (5) are active trading days!
+  const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
@@ -239,7 +241,7 @@ export function isNepseWeekend(date = new Date()) {
 
 /**
  * Checks if a given date is an official active NEPSE trading day.
- * Returns true for Sunday, Monday, Tuesday, Wednesday, Thursday when NOT a holiday.
+ * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
 export function isNepseTradingDay(date = new Date()) {
   const weekendCheck = isNepseWeekend(date);
@@ -253,7 +255,7 @@ export function isNepseTradingDay(date = new Date()) {
 
 /**
  * Finds the most recent past valid NEPSE Trading Day.
- * If today is Friday, Saturday, or a Holiday (or trading hasn't started yet),
+ * If today is Saturday, Sunday, or a Holiday (or trading hasn't started yet),
  * it scans backwards until finding the last active trading session date.
  */
 export function getLastValidTradingDay(fromDate = new Date(), requireCompleted = false) {
@@ -275,7 +277,7 @@ export function getLastValidTradingDay(fromDate = new Date(), requireCompleted =
 
 /**
  * Generates an array of EXACT past valid NEPSE trading dates.
- * Strictly skips Fridays, Saturdays, and all Nepal Public Holidays.
+ * Strictly skips Saturdays, Sundays, and all Nepal Public Holidays.
  */
 export function generateTradingDaysSequence(count = 365, referenceDate = new Date()) {
   const tradingDays = [];
@@ -404,7 +406,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 2. Check Weekly Close (Saturday, Sunday, Friday)
+  // 2. Check Weekly Close (Saturday, Sunday)
   if (weekend.isWeekend) {
     return {
       ...baseData,
@@ -419,7 +421,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 3. Regular Trading Day (Sunday - Thursday)
+  // 3. Regular Trading Day (Monday - Friday)
   if (isWithinHours) {
     return {
       ...baseData,

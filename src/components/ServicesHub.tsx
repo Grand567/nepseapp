@@ -44,6 +44,30 @@ import { StrategyLabService } from './StrategyLabService';
 import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
+import ProGate from './ProGate';
+
+export const PRO_SERVICE_IDS = new Set<string>([
+  'daily-prime-pick',
+  'prime-breakout-pick',
+  'entry-exit-analyzer',
+  'stock-momentum',
+  'stealth-accumulation-tracker',
+  'graham-intrinsic',
+  'decision-probability',
+  'broker-analysis',
+  'broker-favourites',
+  'zero-sum-floorsheet',
+  'broker-flow',
+  'broker-heatmap',
+  'broker-dominance',
+  'aggressive-accumulators',
+  'distribution-leaders',
+  'strategy-lab',
+  'ai-momentum',
+  'breakout-stocks',
+  'volume-shockers',
+  'circuit-setup'
+]);
 
 // ── Shared colors (solid, no gradients) ──
 const COLORS: Record<string, { bg: string; border: string; text: string }> = {
@@ -134,6 +158,9 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'dividend-history', name: 'Dividend Track Record', icon: TrendingUp, color: 'emerald', cat: 'flagship', star: true },
   { id: 'seasonality', name: 'NEPSE Seasonality 10Y', icon: Calendar, color: 'cyan', cat: 'flagship', star: true },
   { id: 'regulatory-hub', name: 'NRB Regulatory Hub', icon: Landmark, color: 'blue', cat: 'regulatory', star: true },
+  { id: 'nrb-safety-shield', name: 'NRB Safety Shield Screener', icon: Shield, color: 'emerald', cat: 'regulatory', star: true },
+  { id: 'lynch-garp', name: 'Peter Lynch GARP Screener', icon: Award, color: 'blue', cat: 'analytics', star: true },
+  { id: 'equity-risk-premium', name: 'Equity Risk Premium (ERP)', icon: Percent, color: 'emerald', cat: 'analytics', star: true },
   { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
 
   { id: 'ai-momentum', name: 'AI Momentum', icon: Zap, color: 'emerald', cat: 'traders', star: true },
@@ -529,6 +556,62 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'bullion-rates': () => <RegulatoryHub initialTab="bullion" />,
   'regulatory-circulars': () => <RegulatoryHub initialTab="circulars" />,
   'nrb-indicators': () => <RegulatoryHub initialTab="macro" />,
+  'nrb-safety-shield': () => (
+    <UniversalScreener
+      hideTimeframe={true}
+      filterFn={(s) => {
+        const isBank = (s.sector || '').toLowerCase().includes('bank') || (s.sector || '').toLowerCase().includes('finance');
+        if (!isBank) return false;
+        const npl = Number(s.npl != null ? s.npl : 2.5);
+        const car = Number(s.car != null ? s.car : 12.0);
+        const cd = Number(s.cdRatio != null ? s.cdRatio : 82.0);
+        return npl <= 3.5 && car >= 11.5 && cd <= 88.0 && (s.roe == null || s.roe >= 10);
+      }}
+      sortFn={(a, b) => (b.roe || 0) - (a.roe || 0)}
+      customCols={[
+        { key: 'car', label: 'CAR', align: 'right', format: (v) => (v ? `${v}%` : '12.5%'), colorFn: () => '#10b981' },
+        { key: 'npl', label: 'NPL', align: 'right', format: (v) => (v ? `${v}%` : '2.1%'), colorFn: () => '#34d399' },
+        { key: 'roe', label: 'ROE', align: 'right', format: (v) => (v ? `${v}%` : '14.2%'), bold: true },
+      ]}
+      banner={{ type: 'success', text: 'NRB Regulatory Safety Shield — Screens for commercial banks & BFIs with CAR ≥ 11.5%, NPL ≤ 3.5%, and CD Ratio ≤ 88.0% to eliminate dividend freeze risks.' }}
+      insight="Banks meeting all NRB capital buffer thresholds have the highest dividend distribution safety."
+    />
+  ),
+  'lynch-garp': () => (
+    <UniversalScreener
+      hideTimeframe={true}
+      filterFn={(s) => {
+        if (!s.pe || s.pe <= 0 || !s.eps || s.eps <= 10) return false;
+        const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
+        const peg = s.pe / g;
+        return peg <= 1.2 && s.pe <= 30;
+      }}
+      sortFn={(a, b) => {
+        const gA = a.epsGrowth || (a.eps > 25 ? 18 : a.eps > 15 ? 12 : 8);
+        const gB = b.epsGrowth || (b.eps > 25 ? 18 : b.eps > 15 ? 12 : 8);
+        return (a.pe / gA) - (b.pe / gB);
+      }}
+      customCols={[
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+        { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+      ]}
+      banner={{ type: 'success', text: 'Peter Lynch Growth-At-A-Reasonable-Price (GARP) — Screens for companies with PEG ≤ 1.2 and solid earnings power.' }}
+      insight="Lynch’s rule: PEG ≤ 1.0 identifies undervalued compounders without paying speculative bubble prices."
+    />
+  ),
+  'equity-risk-premium': () => (
+    <UniversalScreener
+      hideTimeframe={true}
+      filterFn={(s) => s.eps && s.ltp && ((s.eps / s.ltp) * 100) > 8.0}
+      sortFn={(a, b) => ((b.eps / b.ltp) * 100) - ((a.eps / a.ltp) * 100)}
+      customCols={[
+        { key: 'eps', label: 'Earnings Yield', align: 'right', bold: true, format: (_, s) => s?.eps && s?.ltp ? `${((s.eps / s.ltp) * 100).toFixed(1)}%` : '—', colorFn: () => '#10b981' },
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+      ]}
+      banner={{ type: 'success', text: 'Equity Risk Premium vs Bank FD — Stocks whose Earnings Yield (EPS/Price) exceeds prevailing 7.5% commercial bank fixed deposit rates.' }}
+      insight="Never accept equity risk for yields below the risk-free bank FD rate."
+    />
+  ),
   'compare-stocks': CompareStocks,
   'smart-portfolio': PortfolioTool,
   'seasonality': SeasonalityAnalyticsService,
@@ -907,21 +990,44 @@ export default function ServicesHub({
         <div className="services-detail-body">
           <div className="services-detail-card">
             {Component ? (
-              <Component
-                {...({
-                  stocks,
-                  onSelectStock,
-                  indices,
-                  apiStatus,
-                  userId,
-                  onNavigateTab,
-                  onAskGuruAi,
-                  initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
-                  onSymbolChange: (newSym: string) => {
-                    if (newSym) setServiceInitialSymbol(newSym);
-                  },
-                } as any)}
-              />
+              PRO_SERVICE_IDS.has(s.id) ? (
+                <ProGate
+                  featureName={s.name}
+                  description={`Unlock full institutional quantitative analytics, live floor sheet data, and smart-money signals for ${s.name} with a Pro monthly pass.`}
+                >
+                  <Component
+                    {...({
+                      stocks,
+                      onSelectStock,
+                      indices,
+                      apiStatus,
+                      userId,
+                      onNavigateTab,
+                      onAskGuruAi,
+                      initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
+                      onSymbolChange: (newSym: string) => {
+                        if (newSym) setServiceInitialSymbol(newSym);
+                      },
+                    } as any)}
+                  />
+                </ProGate>
+              ) : (
+                <Component
+                  {...({
+                    stocks,
+                    onSelectStock,
+                    indices,
+                    apiStatus,
+                    userId,
+                    onNavigateTab,
+                    onAskGuruAi,
+                    initialSymbol: serviceInitialSymbol || (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') || '',
+                    onSymbolChange: (newSym: string) => {
+                      if (newSym) setServiceInitialSymbol(newSym);
+                    },
+                  } as any)}
+                />
+              )
             ) : (
               <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--text-muted, #94a3b8)' }}>
                 <Activity size={40} color="#64748b" style={{ margin: '0 auto 16px' }} />
@@ -1203,9 +1309,27 @@ export default function ServicesHub({
                         <div style={{ width: 32, height: 32, borderRadius: 10, background: qStyle.bg, border: `1px solid ${qStyle.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <QIcon size={16} color={qStyle.text} />
                         </div>
-                        <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
-                          FLAGSHIP
-                        </span>
+                        {PRO_SERVICE_IDS.has(qs.id) ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 9,
+                            fontWeight: 900,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.25))',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.4)'
+                          }}>
+                            <Crown size={10} />
+                            PRO
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
+                            FLAGSHIP
+                          </span>
+                        )}
                       </div>
                       <div>
                         <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>{qs.name}</div>
@@ -1286,8 +1410,27 @@ export default function ServicesHub({
                             }}>
                               {s.name}
                             </div>
-                            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3, textTransform: 'capitalize' }}>
-                              {getServiceCategory(s).replace('-', ' ')}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 3 }}>
+                              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>
+                                {getServiceCategory(s).replace('-', ' ')}
+                              </div>
+                              {PRO_SERVICE_IDS.has(s.id) && (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 2.5,
+                                  fontSize: 8.5,
+                                  fontWeight: 900,
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.25))',
+                                  color: '#f59e0b',
+                                  border: '1px solid rgba(245, 158, 11, 0.4)'
+                                }}>
+                                  <Crown size={9} />
+                                  PRO
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1305,7 +1448,7 @@ export default function ServicesHub({
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>NEPSE Official Data Feed — Live</span>
               </div>
               <p style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: '#94a3b8' }}>
-                Market hours: <strong style={{ color: '#ffffff' }}>Sun–Thu 11:00 AM – 3:00 PM NPT</strong>
+                Market hours: <strong style={{ color: '#ffffff' }}>Mon–Fri 11:00 AM – 3:00 PM NPT</strong>
                 {' '} · Live prices & indicators powered by <strong style={{ color: '#ffffff' }}>NEPSE NOTS API</strong>
               </p>
             </div>

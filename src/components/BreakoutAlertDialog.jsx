@@ -15,6 +15,7 @@ import {
   saveWatchlistAlertConfig,
   deriveDefaultBreakoutPlan,
   playBreakoutChime,
+  triggerBreakoutVibration,
   requestNotificationPermission,
   resetAlertTrigger,
   calculateStockRvol
@@ -88,6 +89,7 @@ export default function BreakoutAlertDialog({
 
   const handleTestChime = () => {
     playBreakoutChime();
+    triggerBreakoutVibration([250, 100, 250, 100, 350]);
   };
 
   const handleRequestPush = async () => {

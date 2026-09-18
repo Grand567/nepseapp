@@ -723,6 +723,14 @@ export default function ShareHubChart({
   // Compute authentic session change and percentage for the HUD
   const hudMetrics = useMemo(() => {
     if (!activeHud) return { change: 0, pChange: 0, isBull: true };
+
+    // When not actively hovering over historical candles, strictly match authoritative parent telemetry
+    if (!hoverData && stock && stock.change != null && stock.pChange != null && !isNaN(Number(stock.change))) {
+      const c = Number(stock.change);
+      const pc = Number(stock.pChange);
+      return { change: c, pChange: pc, isBull: c >= 0 };
+    }
+
     const currentVal = Number(activeHud.close ?? activeHud.value ?? authoritativeLtp ?? 0);
     const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
     const firstPointVal = Number(processedChartData[0]?.close ?? processedChartData[0]?.value ?? 0);
@@ -740,13 +748,14 @@ export default function ShareHubChart({
     const fallbackChange = Number(stock?.change ?? 0);
     const fallbackPct = Number(stock?.pChange ?? 0);
     return { change: fallbackChange, pChange: fallbackPct, isBull: fallbackChange >= 0 };
-  }, [activeHud, authoritativeLtp, stock, processedChartData, isTrulyIntraday]);
+  }, [activeHud, hoverData, authoritativeLtp, stock, processedChartData, isTrulyIntraday]);
 
   const isUp = hudMetrics.isBull;
 
   // Format time/date label for the HUD bar
   const hudTimeLabel = useMemo(() => {
     if (!activeHud || !activeHud.time) return '';
+    if (typeof activeHud.time === 'string') return activeHud.time;
     if (isTrulyIntraday && typeof activeHud.time === 'number') {
       return formatNptTime(activeHud.time);
     }

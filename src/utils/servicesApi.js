@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { idbGet, idbSet, idbDel } from './indexedDb.js';
 import { fetchMerolaganiNews } from '../services/merolaganiNewsService.js';
-import { sortNewsByNepseImpact } from './newsImpactScorer.js';
+import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactScorer.js';
 
 const getProxy = () => {
   try {
@@ -30,6 +30,7 @@ const _setCache = (key, data, ttlMs = 60000) => { _cache.set(key, { data, expire
 
 const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = false) => {
   const cacheKey = path + (options.body ? JSON.stringify(options.body) : '');
+  const isIntradayOrLive = path.includes('intraday-graph') || path.includes('market-indices') || path.includes('/indices');
   
   if (forceRefresh) {
     _cache.delete(cacheKey);
@@ -39,18 +40,22 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
     const cached = _getCache(cacheKey);
     if (cached !== null) return cached;
 
-    // 2. Fast IndexedDB persistent cache check
-    try {
-      const idbCached = await idbGet(cacheKey, false);
-      if (idbCached !== null) {
-        _setCache(cacheKey, idbCached, ttlMs);
-        return idbCached;
-      }
-    } catch (_) {}
+    // 2. Fast IndexedDB persistent cache check (only for non-intraday or when explicitly enabled)
+    if (!isIntradayOrLive) {
+      try {
+        const idbCached = await idbGet(cacheKey, false);
+        if (idbCached !== null) {
+          _setCache(cacheKey, idbCached, ttlMs);
+          return idbCached;
+        }
+      } catch (_) {}
+    }
   }
 
-  // Dynamic persistent TTL: fast-updating data (news, live prices) expires in 10-15 mins max, not 24 hours
-  const idbTtl = ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000);
+  // Dynamic persistent TTL: intraday/live data expires in 30s max; news/reports up to 10-15 mins
+  const idbTtl = isIntradayOrLive
+    ? Math.min(ttlMs, 30 * 1000)
+    : (ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000));
 
   try {
     const url = PROXY + path;
@@ -135,14 +140,14 @@ export const fetchFloorsheet = (symbol, page, size, date) => {
 
 export const fetchPriceHistory = (symbol, length) => _proxyFetch('/api/price-history/' + symbol + '?length=' + (length || 365), {}, 7200000);
 
-export const fetchNepseIntradayGraph = async (symbol) => {
+export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
   const sym = (!symbol || symbol === 'NEPSE Index' || symbol === 'nepse' || symbol === 'NEPSE')
     ? 'NEPSE'
     : String(symbol).toUpperCase().trim();
 
   // Tier 1: Query proxy intraday route (supports NEPSE, sub-indices, and equities)
   const path = sym === 'NEPSE' ? '/api/nepse/intraday-graph' : `/api/nepse/intraday-graph/${encodeURIComponent(sym)}`;
-  const res = await _proxyFetch(path, {}, 60000);
+  const res = await _proxyFetch(path, {}, 15000, forceRefresh);
   const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
   const hasTicks = Array.isArray(data) && data.length > 1 && data.some(d => d && (d.timestamp || d.time || Array.isArray(d)));
   if (hasTicks) {
@@ -334,25 +339,20 @@ export const fetchMarketNews = async (forceRefresh = false) => {
 
   // 1. Try unified NEPSE news (All 9 Portals: ShareSansar, MeroLagani, Nepali Paisa, Clickmandu, etc.) with 15s timeout
   let news = await _proxyFetch('/api/news/nepse' + qs, { timeout: 15000 }, 180000, forceRefresh).catch(() => null);
-  if (Array.isArray(news) && news.length >= 10) return sortNewsByNepseImpact(news);
+  if (Array.isArray(news) && news.length >= 10) {
+    const deduped = deduplicateNews(news);
+    return sortNews(deduped, 'latest');
+  }
 
   // 2. Fallback to Merolagani multi-category proxy endpoint with 12s timeout
   let meroProxyNews = await _proxyFetch('/api/news/merolagani' + qs, { timeout: 12000 }, 180000, forceRefresh).catch(() => null);
   if (Array.isArray(meroProxyNews) && meroProxyNews.length > 0) {
     if (Array.isArray(news) && news.length > 0) {
-      // Merge unique articles from both
-      const seen = new Set(news.map(n => (n.title || '').trim().toLowerCase()));
-      const merged = [...news];
-      for (const m of meroProxyNews) {
-        const key = (m.title || '').trim().toLowerCase();
-        if (key && !seen.has(key)) {
-          seen.add(key);
-          merged.push(m);
-        }
-      }
-      return sortNewsByNepseImpact(merged);
+      const merged = deduplicateNews([...news, ...meroProxyNews]);
+      return sortNews(merged, 'latest');
     }
-    return sortNewsByNepseImpact(meroProxyNews);
+    const deduped = deduplicateNews(meroProxyNews);
+    return sortNews(deduped, 'latest');
   }
 
   // 3. Direct multi-category client-side web fallback (25+ MeroLagani articles)
@@ -360,22 +360,15 @@ export const fetchMarketNews = async (forceRefresh = false) => {
     const directNews = await fetchMerolaganiNews();
     if (Array.isArray(directNews) && directNews.length > 0) {
       if (Array.isArray(news) && news.length > 0) {
-        const seen = new Set(news.map(n => (n.title || '').trim().toLowerCase()));
-        const merged = [...news];
-        for (const m of directNews) {
-          const key = (m.title || '').trim().toLowerCase();
-          if (key && !seen.has(key)) {
-            seen.add(key);
-            merged.push(m);
-          }
-        }
-        return sortNewsByNepseImpact(merged);
+        const merged = deduplicateNews([...news, ...directNews]);
+        return sortNews(merged, 'latest');
       }
-      return sortNewsByNepseImpact(directNews);
+      const deduped = deduplicateNews(directNews);
+      return sortNews(deduped, 'latest');
     }
   } catch (_) {}
 
-  return Array.isArray(news) ? sortNewsByNepseImpact(news) : [];
+  return Array.isArray(news) ? sortNews(deduplicateNews(news), 'latest') : [];
 };
 
 export const fetchNewsArticle = async (articleUrl) => {

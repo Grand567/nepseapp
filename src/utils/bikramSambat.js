@@ -464,9 +464,9 @@ export async function fetchLiveCalendarMonth(bsYear, bsMonth) {
     const isHoliday = localHoliday.isHoliday || isRemoteHoliday;
     const holidayName = localHoliday.holidayNameNp || festival || null;
 
-    // National NEPSE weekend holidays: Friday (5) and Saturday (6). Sunday (0) to Thursday (4) are open trading days!
-    const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
-    const isTradingDay = !isWeekend && !isHoliday; // Sunday to Thursday
+    // National NEPSE weekend holidays: Saturday (6) and Sunday (0). Monday (1) to Friday (5) are open trading days!
+    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+    const isTradingDay = !isWeekend && !isHoliday; // Monday to Friday
 
     const dayObj = {
       bsYear,
