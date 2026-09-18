@@ -1535,7 +1535,7 @@ export default function Dashboard({
           const epsVal = Number(parsed.plan.eps ?? 0);
           const isNegativeEps = parsed.plan.eps !== undefined && parsed.plan.eps !== null && epsVal < 0;
           // Reject any failing plan and purge it from cache
-          const isFailing = (
+          const isFailing = !parsed.plan.isDefensiveFallback && (
             vUpper.includes('NO TRADE') ||
             vUpper.includes('AVOID') ||
             vUpper.includes('REDUCE') ||
@@ -1581,7 +1581,7 @@ export default function Dashboard({
         const score = Number(res.data.setupScore || res.data.score || 0);
         const epsVal = Number(res.data.eps ?? 0);
         const isNegativeEps = res.data.eps !== undefined && res.data.eps !== null && epsVal < 0;
-        const isPassing = (
+        const isPassing = res.data.isDefensiveFallback || (
           !vUpper.includes('NO TRADE') &&
           !vUpper.includes('AVOID') &&
           !vUpper.includes('REDUCE') &&
@@ -1615,7 +1615,7 @@ export default function Dashboard({
     if (hydratedPrimePick && hydratedPrimePick.isPlanVerified) {
       const vUpper = String(hydratedPrimePick.verdict || '').toUpperCase();
       const score = Number(hydratedPrimePick.setupScore || hydratedPrimePick.score || 0);
-      if (!vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && score >= 50) {
+      if (hydratedPrimePick.isDefensiveFallback || (!vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && score >= 50)) {
         candidate = hydratedPrimePick;
       }
     }
@@ -1625,13 +1625,14 @@ export default function Dashboard({
       const vUpper = String(rawPick.verdict || '').toUpperCase();
       const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
       if (
-        !vUpper.includes('NO TRADE') &&
+        rawPick.isDefensiveFallback ||
+        (!vUpper.includes('NO TRADE') &&
         !vUpper.includes('AVOID') &&
         !vUpper.includes('REDUCE') &&
         !vUpper.includes('EXIT') &&
         !rawPick.isLossMaking &&
         (rawPick.eps === undefined || Number(rawPick.eps) >= 0) &&
-        (score === 0 || score >= 50)
+        (score === 0 || score >= 50))
       ) {
         candidate = rawPick;
       }
@@ -1783,7 +1784,7 @@ export default function Dashboard({
           const v = String(p?.plan?.verdict || '').toUpperCase();
           const score = Number(p?.plan?.setupScore || p?.plan?.guruScore || 0);
           const epsVal = Number(p?.plan?.eps ?? 0);
-          const isFailingPlan = (
+          const isFailingPlan = !p?.plan?.isDefensiveFallback && (
             v.includes('NO TRADE') ||
             v.includes('AVOID') ||
             v.includes('REDUCE') ||
