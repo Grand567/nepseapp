@@ -104,13 +104,13 @@ function buildEnrichedSnapshot() {
   const totalVol = stocks.reduce((a, s) => a + s.volume, 0);
   const totalTx = stocks.reduce((a, s) => a + s.transactions, 0);
   const avgChg = stocks.reduce((a, s) => a + s.pChange, 0) / stocks.length;
-  const nepseIndex = 2542.77;
+  const nepseIndex = 2624.36;
 
   const marketStatusObj = getDetailedMarketStatus();
   const isOpen = marketStatusObj.isOpen;
 
   const summary = {
-    nepseIndex, change: 4.66, changePercent: 0.18,
+    nepseIndex, change: 11.93, changePercent: 0.45,
     totalTurnover, totalTradedShares: totalVol, totalTransactions: totalTx,
     advances, declines, unchanged,
     marketStatus: isOpen ? 'OPEN' : 'CLOSED',
@@ -229,7 +229,7 @@ export function getCachedStockFundamentals(sym) {
     const raw = localStorage.getItem(`nepse_fundamentals_${sym.toUpperCase()}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && (parsed.bookValue > 0 || parsed.eps > 0 || parsed.pe > 0 || parsed.pbv > 0)) {
+      if (parsed && (parsed.bookValue !== undefined || parsed.eps !== undefined || parsed.pe !== undefined || parsed.pbv !== undefined)) {
         return parsed;
       }
     }
@@ -249,8 +249,9 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   if (!sym) return null;
 
   const cached = getCachedStockFundamentals(sym);
-  // Only use cache if not forcing refresh and cache actually contains positive fundamental ratios
-  if (!forceRefresh && cached && (cached.bookValue > 0 || cached.eps > 0 || cached.pe > 0)) {
+  // Accept cache if it has any fundamental data — including negative EPS companies
+  // Do NOT filter out negative EPS here; that is the screener's job
+  if (!forceRefresh && cached && (cached.bookValue !== undefined || cached.eps !== undefined || cached.pe !== undefined)) {
     cached.data = cached;
     return cached;
   }
@@ -268,7 +269,9 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   } catch (_) {}
 
   // 2. If Book Value, PE, or EPS is missing or 0, always enrich from /api/mero/stock-details
-  if (!detail || !detail.bookValue || detail.bookValue <= 0 || !detail.pe || detail.pe <= 0 || !detail.eps || detail.eps <= 0) {
+  // NOTE: We do NOT replace valid negative EPS with 0. eps=null/undefined means missing, eps<0 means loss-making.
+  const epsIsMissing = (d) => d?.eps === undefined || d?.eps === null;
+  if (!detail || !detail.bookValue || detail.bookValue <= 0 || !detail.pe || detail.pe <= 0 || epsIsMissing(detail)) {
     try {
       const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 7000);
       if (res2 && res2.success && res2.data) {
@@ -277,7 +280,8 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
           ...(detail || {}),
           symbol: sym,
           ...m,
-          eps: m.eps > 0 ? m.eps : (detail?.eps || 0),
+          // Preserve the real EPS including negative values — only replace if truly missing
+          eps: (!epsIsMissing(m)) ? m.eps : (epsIsMissing(detail) ? undefined : detail?.eps),
           bookValue: m.bookValue > 0 ? m.bookValue : (detail?.bookValue || 0),
           pe: m.pe > 0 ? m.pe : (detail?.pe || 0),
           pbv: m.pbv > 0 ? m.pbv : (detail?.pbv || 0),
@@ -299,7 +303,8 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
           ...(detail || {}),
           ...c,
           bookValue: c.bookValue > 0 ? c.bookValue : (detail?.bookValue || 0),
-          eps: c.eps > 0 ? c.eps : (detail?.eps || 0),
+          // Preserve the real EPS; do NOT replace with 0 if source reports negative
+          eps: (!epsIsMissing(c)) ? c.eps : (epsIsMissing(detail) ? undefined : detail?.eps),
           pe: c.pe > 0 ? c.pe : (detail?.pe || 0),
           pbv: c.pbv > 0 ? c.pbv : (detail?.pbv || 0)
         };
@@ -316,7 +321,8 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
       detail.pbv = +(ltp / detail.bookValue).toFixed(2);
     }
     detail.data = detail;
-    if (detail.bookValue > 0 || detail.pe > 0 || detail.eps > 0) {
+    // Cache any result that has meaningful data — including negative EPS companies
+    if (detail.bookValue > 0 || detail.pe > 0 || detail.eps !== undefined) {
       setCachedStockFundamentals(sym, detail);
     }
     return detail;
@@ -489,10 +495,10 @@ function normalizeLiveArray(arr) {
     const sharesM = prev?.sharesOut || 10;
     const marketCap = prev?.marketCap || Math.floor(ltp * sharesM * 1e6);
     const cachedFund = getCachedStockFundamentals(sym);
-    const eps = Number(cachedFund?.eps > 0 ? cachedFund.eps : (prev?.eps ?? 15));
-    const bvps = Number(cachedFund?.bookValue > 0 ? cachedFund.bookValue : (prev?.bvps ?? prev?.bookValue ?? 140));
-    const pe = Number(cachedFund?.pe > 0 ? cachedFund.pe : (eps > 0 ? +(ltp / eps).toFixed(2) : 0));
-    const pb = Number(cachedFund?.pbv > 0 ? cachedFund.pbv : (bvps > 0 ? +(ltp / bvps).toFixed(2) : 0));
+    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (prev?.eps ?? 0));
+    const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (prev?.bvps ?? prev?.bookValue ?? 140));
+    const pe = Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (eps > 0 ? +(ltp / eps).toFixed(2) : 0));
+    const pb = Number(cachedFund?.pbv !== undefined && cachedFund?.pbv !== null ? cachedFund.pbv : (bvps > 0 ? +(ltp / bvps).toFixed(2) : 0));
 
     out.push({
       ...(prev || {}),
@@ -674,10 +680,10 @@ export function getLatestTradingDateStr() {
   // Nepal is UTC+5:45
   const nep = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
   const day = nep.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
-  if (day === 5) {
-    nep.setUTCDate(nep.getUTCDate() - 1); // Fri -> Thu
+  if (day === 0) {
+    nep.setUTCDate(nep.getUTCDate() - 2); // Sun -> Fri
   } else if (day === 6) {
-    nep.setUTCDate(nep.getUTCDate() - 2); // Sat -> Thu
+    nep.setUTCDate(nep.getUTCDate() - 1); // Sat -> Fri
   }
   const y = nep.getUTCFullYear();
   const m = String(nep.getUTCMonth() + 1).padStart(2, '0');
@@ -690,13 +696,13 @@ export async function fetchPriceHistory(symbol, days = 365) {
   const rawSym = String(symbol || '').trim();
   const isNepseOrIndex = /nepse|index|float|sensitive/i.test(rawSym);
 
-  let px = 2542.77;
+  let px = 2624.36;
   let baseVol = 18000000;
   let symKey = rawSym.toUpperCase();
 
   if (isNepseOrIndex) {
     symKey = 'NEPSE';
-    px = Number(MEM_SUMMARY?.nepseIndex || 2542.77);
+    px = Number(MEM_SUMMARY?.nepseIndex || 2624.36);
     baseVol = Number(MEM_SUMMARY?.totalTradedShares || 18000000);
   } else {
     const stock = (MEM_STOCKS || []).find(s => s.symbol === symKey);
@@ -891,10 +897,17 @@ export function calculateIndices(stocks) {
   const adv = list.filter(s => (s.pChange || 0) > 0).length;
   const dec = list.filter(s => (s.pChange || 0) < 0).length;
   const avg = list.length ? list.reduce((a, s) => a + (s.pChange || 0), 0) / list.length : 0;
-  const turnover = list.reduce((a, s) => a + (s.turnover || 0), 0) || 3465201042.79;
-  const nepseVal = Number(MEM_SUMMARY?.nepseIndex || 2542.77);
-  const nepseChg = Number(MEM_SUMMARY?.change || 4.66);
-  const nepsePChg = Number(MEM_SUMMARY?.changePercent || 0.18);
+
+  // Prioritize cached authentic NEPSE index and exchange turnover
+  const cached = getCachedIndices();
+  const cachedTurnover = Number(cached?.nepse?.turnover || MEM_SUMMARY?.totalTurnover || 0);
+  const sumTurnover = list.reduce((a, s) => a + (s.turnover || 0), 0);
+  const turnover = cachedTurnover > 0 ? cachedTurnover : (sumTurnover > 0 ? sumTurnover : 5499316643.52);
+
+  const nepseVal = Number(cached?.nepse?.value || MEM_SUMMARY?.nepseIndex || 2624.36);
+  const nepseChg = Number(cached?.nepse?.change ?? MEM_SUMMARY?.change ?? 11.93);
+  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : 2624.36;
+  const nepsePChg = Number(cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0.45));
 
   const bySector = {};
   list.forEach(s => {
@@ -920,27 +933,27 @@ export function calculateIndices(stocks) {
       change: nepseChg,
       pChange: nepsePChg,
       turnover,
-      prevClose: +(nepseVal - nepseChg).toFixed(2)
+      prevClose: truePrevClose
     },
-    float: {
-      value: 174.35,
-      change: 0.15,
-      pChange: 0.08,
-      turnover: 3395416485.5
+    float: cached?.float || {
+      value: 180.58,
+      change: 1.05,
+      pChange: 0.58,
+      turnover: 4395416485.5
     },
-    sensitive: {
-      value: 449.50,
-      change: 0.31,
-      pChange: 0.06,
-      turnover: 1056123696.6
+    sensitive: cached?.sensitive || {
+      value: 465.75,
+      change: 2.07,
+      pChange: 0.44,
+      turnover: 2148463089.2
     },
-    sensitiveFloat: {
-      value: 151.73,
-      change: 0.12,
-      pChange: 0.08,
-      turnover: 1056123696.6
+    sensitiveFloat: cached?.sensitiveFloat || {
+      value: 157.12,
+      change: 0.88,
+      pChange: 0.56,
+      turnover: 1856123696.6
     },
-    subIndices,
+    subIndices: (cached?.subIndices?.length > 0) ? cached.subIndices : subIndices,
     advances: adv,
     declines: dec,
     unchanged: list.length - adv - dec
@@ -956,9 +969,9 @@ export function getCachedIndices() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.nepse && parsed.nepse.value > 0) {
-        // Discard any stale synthetic 2680... cache
-        if (parsed.nepse.value >= 2670 && parsed.nepse.value <= 2695 && Math.abs(parsed.nepse.value - 2680) < 15) {
-          // Stale mock calculation; discard
+        // Discard legacy stale mock values (2542.77)
+        if (Math.abs(parsed.nepse.value - 2542.77) < 0.5) {
+          // Stale legacy fallback; discard
         } else {
           parsed.data = parsed;
           return parsed;
@@ -967,10 +980,10 @@ export function getCachedIndices() {
     }
   } catch (_) {}
   return {
-    nepse: { value: 2542.77, change: 4.66, pChange: 0.18, open: 2537.25, high: 2545.04, low: 2533.28, turnover: 3465201042.79 },
-    sensitive: { value: 449.50, change: 0.31, pChange: 0.06, open: 449.48, high: 450.31, low: 448.03, turnover: 1056123696.6 },
-    float: { value: 174.35, change: 0.15, pChange: 0.08, open: 174.15, high: 174.60, low: 173.69, turnover: 3395416485.5 },
-    sensitiveFloat: { value: 151.73, change: 0.12, pChange: 0.08, open: 151.74, high: 151.99, low: 151.16, turnover: 1056123696.6 },
+    nepse: { value: 2624.36, change: 11.93, pChange: 0.45, open: 2616.40, high: 2637.58, low: 2615.69, prevClose: 2612.43, turnover: 5499316643.52 },
+    sensitive: { value: 465.75, change: 2.07, pChange: 0.44, open: 464.20, high: 467.58, low: 464.12, turnover: 2148463089.2 },
+    float: { value: 180.58, change: 1.05, pChange: 0.58, open: 179.80, high: 181.20, low: 179.50, turnover: 4395416485.5 },
+    sensitiveFloat: { value: 157.12, change: 0.88, pChange: 0.56, open: 156.50, high: 157.60, low: 156.20, turnover: 1856123696.6 },
     subIndices: []
   };
 }
@@ -1007,7 +1020,7 @@ export async function fetchMarketIndices() {
         prevClose: Number(s.previousClose || s.close || 0)
       })) : [];
 
-      const turnover = Number(summaryRes?.data?.totalTurnover || 0);
+      const turnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
 
       const buildIndexObj = (item) => {
         if (!item) return null;
@@ -1032,12 +1045,12 @@ export async function fetchMarketIndices() {
         return {
           value: liveVal,
           change: chg,
-          pChange: pChg,
+          pChange: +(pChg).toFixed(2),
           prevClose: truePrevClose,
           open: Number(item.open || truePrevClose),
           high: Number(item.high || liveVal),
           low: Number(item.low || liveVal),
-          turnover
+          turnover: turnover > 0 ? turnover : Number(item.turnover || 0)
         };
       };
 
@@ -1057,44 +1070,35 @@ export async function fetchMarketIndices() {
       indicesData = { ...legacyRes.data };
     }
 
-    // Synchronize latest live NEPSE index value from official real-time exchange stream
-    const intradayPts = intradayRes?.data ?? (Array.isArray(intradayRes) ? intradayRes : null);
-    if (Array.isArray(intradayPts) && intradayPts.length > 0) {
-      const latest = intradayPts[intradayPts.length - 1];
-      const liveClose = Number(latest?.close || latest?.value || 0);
-      if (liveClose > 0) {
-        if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
-        if (!indicesData.nepse) indicesData.nepse = {};
+    // Only fallback to intraday graph point if live index was not available from /api/indices or /api/market-indices
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      const intradayPts = intradayRes?.data ?? (Array.isArray(intradayRes) ? intradayRes : null);
+      if (Array.isArray(intradayPts) && intradayPts.length > 0) {
+        const latest = intradayPts[intradayPts.length - 1];
+        const liveClose = Number(latest?.close || latest?.value || 0);
+        if (liveClose > 0) {
+          if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
+          if (!indicesData.nepse) indicesData.nepse = {};
 
-        // Preserve official change and true previous close from official NOTS API
-        const officialChange = indicesData.nepse.change;
-        const officialPChange = indicesData.nepse.pChange;
-
-        let prevClose = Number(indicesData.nepse.prevClose || 0);
-        if (!prevClose || prevClose <= 0 || (officialChange != null && officialChange !== 0 && Math.abs(liveClose - prevClose) < 0.05)) {
-          prevClose = (officialChange != null && officialChange !== 0)
-            ? +(liveClose - officialChange).toFixed(2)
-            : 2559.49;
+          const officialChange = Number(summaryRes?.data?.change || 0);
+          const truePrevClose = (officialChange !== 0) ? +(liveClose - officialChange).toFixed(2) : +(liveClose - 11.93).toFixed(2);
+          indicesData.nepse = {
+            value: liveClose,
+            change: officialChange || 11.93,
+            pChange: truePrevClose > 0 ? +((officialChange / truePrevClose) * 100).toFixed(2) : 0.45,
+            prevClose: truePrevClose,
+            open: Number(intradayPts[0]?.open || liveClose),
+            high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveClose))),
+            low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveClose))),
+            turnover: Number(summaryRes?.data?.totalTurnover || 5499316643.52)
+          };
         }
-
-        const change = (officialChange != null && !isNaN(officialChange) && officialChange !== 0)
-          ? officialChange
-          : +(liveClose - prevClose).toFixed(2);
-
-        const pChange = (officialPChange != null && !isNaN(officialPChange) && officialPChange !== 0)
-          ? officialPChange
-          : (prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0);
-
-        indicesData.nepse = {
-          ...indicesData.nepse,
-          value: liveClose,
-          change,
-          pChange,
-          prevClose,
-          open: Number(indicesData.nepse.open || intradayPts[0]?.open || prevClose),
-          high: Math.max(Number(indicesData.nepse.high || liveClose), liveClose),
-          low: Math.min(Number(indicesData.nepse.low || liveClose), liveClose)
-        };
+      }
+    } else {
+      // Enrich turnover from summary if missing or newer
+      const authoritativeTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
+      if (authoritativeTurnover > 0 && indicesData?.nepse) {
+        indicesData.nepse.turnover = authoritativeTurnover;
       }
     }
 

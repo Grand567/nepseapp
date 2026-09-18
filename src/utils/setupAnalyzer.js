@@ -68,7 +68,7 @@ import { analyzePriceAction } from './priceActionEngine.js';
 // ══════════════════════════════════════════════════════════════════
 
 const NEPSE_DAILY_CIRCUIT_PCT = 15;  // ±15% max intraday move (since April 20, 2026; previously ±10%)
-const MIN_HISTORY_DAYS        = 80;  // minimum candles for analysis
+const MIN_HISTORY_DAYS        = 20;  // minimum candles for analysis (14-day RSI + 20-day EMA)
 
 // ══════════════════════════════════════════════════════════════════
 // 1.  DATA NORMALISATION
@@ -1251,6 +1251,36 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     combinedScore = Math.max(15, +(combinedScore - 8).toFixed(1));
   }
 
+  // ── FUNDAMENTAL CATALYST MODULE (News, Dividends, Earnings) ──
+  let catalystBonus = 0;
+  const catalysts = options.catalysts || stock?.catalysts || {};
+  const catalystFactors = [];
+  
+  if (catalysts.highDividend) {
+    catalystBonus += 10;
+    catalystFactors.push('🚀 High Dividend Declared (Book Closure Pending)');
+  } else if (catalysts.dividendPending) {
+    catalystBonus += 5;
+    catalystFactors.push('📈 Dividend Declared (Book Closure Pending)');
+  }
+  if (catalysts.rightShare) {
+    catalystBonus += 8;
+    catalystFactors.push('⚖️ Right Share / Bonus Share Pending');
+  }
+  if (catalysts.strongProfitGrowth) {
+    catalystBonus += 7;
+    catalystFactors.push('📊 Strong YoY Profit Growth Reported');
+  }
+  if (catalysts.sectorTailwind) {
+    catalystBonus += 5;
+    catalystFactors.push('🌐 Positive Macro / Sector Tailwind');
+  }
+  
+  if (catalystBonus > 0) {
+    catalystBonus = Math.min(15, catalystBonus); // Cap fundamental boost at 15 points
+    combinedScore = +Math.max(0, Math.min(100, combinedScore + catalystBonus)).toFixed(1);
+  }
+
   // Setup classification
   let setupType = 'consolidation';
   if (priceActionReport?.breakout?.detected && priceActionReport.breakout.direction === 'bullish') {
@@ -1315,7 +1345,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   };
 
   // Factored Catalysts and Risks
-  const bullishFactors = [];
+  const bullishFactors = [...catalystFactors];
   const bearishFactors = [];
 
   if (technicalReport?.trend) {

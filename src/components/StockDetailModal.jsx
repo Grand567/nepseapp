@@ -9,7 +9,7 @@ import {
 import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
-import { getWatchlistAlertConfig } from '../utils/watchlistAlerts';
+import { getWatchlistAlertConfig, calculateStockRvol } from '../utils/watchlistAlerts';
 import {
   calculatePivotPoints,
   calculateFibonacci,
@@ -18,6 +18,9 @@ import {
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import {
   calculateGrahamIntrinsicValue,
+  calculateInterestAdjustedGrahamValue,
+  calculatePeterLynchMetrics,
+  evaluateNrbRegulatorySafety,
   classifyActionZone,
   calculateVolumeZScore,
   calculateCompositeTechnicalScore,
@@ -58,7 +61,41 @@ const fmtCr = n => {
 };
 
 function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onOpenAlert }) {
-  if (!entryExitPlan) return null;
+  if (!entryExitPlan || entryExitPlan.supported === false) {
+    return (
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(21, 25, 34, 0.98), rgba(15, 23, 42, 0.98))',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: 16,
+        padding: '16px 18px',
+        marginBottom: 14,
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Target style={{ width: 16, height: 16, color: '#94a3b8' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
+              Entry & Risk Management Plan
+            </div>
+            <div style={{ fontSize: 10.5, color: '#94a3b8' }}>
+              Synchronized with Entry/Exit Analyzer Engine
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: '#64748b', lineHeight: 1.5, padding: '10px 0' }}>
+          Insufficient trading history (requires minimum 20 sessions) to generate quantitative risk models, targets, and analog backtests for this asset.
+        </div>
+      </div>
+    );
+  }
 
   const ltp = Number(d?.ltp || entryExitPlan.ltp || 100);
   const setupScore = Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70);
@@ -573,8 +610,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const isPrimePick = useMemo(() => {
     if (!d?.symbol) return false;
-    if (cachedPrime && cachedPrime.symbol === d.symbol) return true;
-    if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) return true;
+    if (cachedPrime && cachedPrime.symbol === d.symbol) {
+      const v = String(cachedPrime.plan?.verdict || '').toUpperCase();
+      const score = Number(cachedPrime.plan?.setupScore || cachedPrime.plan?.guruScore || 0);
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
+        return true;
+      }
+    }
+    if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) {
+      const v = String(resolvedStock?.verdict || '').toUpperCase();
+      const score = Number(resolvedStock?.setupScore || resolvedStock?.guruScore || 0);
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
+        return true;
+      }
+    }
     return false;
   }, [d?.symbol, cachedPrime, resolvedStock]);
 
@@ -608,8 +657,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const modalVerdict = entryExitPlan?.verdict || '';
   const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalSetupScore < 45;
   const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL') || (modalSetupScore >= 45 && modalSetupScore < 60));
-  const modalIsBull = !modalIsAvoid && !modalIsHoldWait && (modalVerdict.includes('BUY') || modalVerdict.includes('ACCUMULATE') || modalSetupScore >= 60);
-  const modalRvol = entryExitPlan?.volume?.rvol ?? entryExitPlan?.technical?.volume?.rvol ?? (d?.volume && d?.avgVolume20D ? +(d.volume / d.avgVolume20D) : null);
+  const modalRvol = useMemo(() => {
+    if (entryExitPlan?.volume?.rvol) return Number(entryExitPlan.volume.rvol);
+    if (entryExitPlan?.technical?.volume?.rvol) return Number(entryExitPlan.technical.volume.rvol);
+    const hist = (realPriceHistory && realPriceHistory.length > 0) ? realPriceHistory : (history || null);
+    return calculateStockRvol(d, hist);
+  }, [entryExitPlan, d, realPriceHistory, history]);
 
   const handleOpenInEntryExitAnalyzer = useCallback(() => {
     if (!d?.symbol) return;
@@ -1085,14 +1138,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     const hasPb = pb !== 0;
     const hasDividend = bonusPayout > 0 || (d.bonusShare !== undefined || d.cashDiv !== undefined);
 
+    const bvpsVal = Number(d.bookValue || (pb > 0 && ltp > 0 ? ltp / pb : 100));
+    const graham = calculateGrahamIntrinsicValue(eps, bvpsVal, ltp);
+    const lynch = calculatePeterLynchMetrics(d, ltp);
+    const nrb = evaluateNrbRegulatorySafety(d);
+
     const criteria = [
       { label: 'Positive Net Profit / Earnings (EPS > 0)', pass: hasEps && eps > 0, val: hasEps ? `Rs. ${eps}` : 'No data', hasData: hasEps },
       { label: 'Positive Return on Equity (ROE > 0%)', pass: hasRoe && roe > 0, val: hasRoe ? `${roe}%` : 'No data', hasData: hasRoe },
       { label: 'Healthy Price-to-Book Ratio (PBV < 3.0x)', pass: hasPb && pb > 0 && pb < 3.0, val: hasPb ? `${pb}x` : 'No data', hasData: hasPb },
       { label: 'Reasonable Valuation Multiple (P/E < 30x)', pass: hasPe && pe > 0 && pe < 30, val: hasPe ? `${pe}x` : 'No data', hasData: hasPe },
+      { label: `Peter Lynch Archetype (${lynch.archetype})`, pass: lynch.isGarp || lynch.archetype === 'Stalwarts', val: lynch.peg > 0 ? `PEG ${lynch.peg}x` : lynch.archetype, hasData: true },
+      { label: 'Graham Margin of Safety (LTP ≤ V*)', pass: graham.isUndervalued, val: graham.intrinsicValue > 0 ? `Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct > 0 ? '+' : ''}${graham.marginOfSafetyPct}%)` : 'Data pending', hasData: graham.intrinsicValue > 0 },
+      ...(nrb.isBfi ? [{ label: 'NRB Regulatory Dividend Safety', pass: nrb.passSafetyGate, val: nrb.dividendRisk, hasData: true }] : []),
       { label: 'Adequate Liquidity & Free Float', pass: true, val: '35% Public', hasData: true },
-      { label: 'Operating Cash Flow Quality', pass: true, val: 'Positive', hasData: false }, // not available from NEPSE API
-      { label: 'No Share Capital Dilution YoY', pass: true, val: 'Stable', hasData: false },  // not available
       { label: 'Dividend & Bonus Payout History', pass: hasDividend && bonusPayout > 0, val: bonusPayout > 0 ? `${bonusPayout}%` : (hasDividend ? 'No payout' : 'No data'), hasData: hasDividend },
       { label: 'Trend Above 200-Day SMA Support', pass: ltp > 0 && ltp >= sma200Ref, val: ltp > 0 ? 'Bullish' : 'No data', hasData: history12M.length >= 200 }
     ];
@@ -1387,6 +1446,32 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       🏛️ Undervalued ({graham.marginOfSafetyPct}%)
                     </span>
                   )}
+                  <span style={{
+                    background: (modalRvol != null && modalRvol >= 1.5)
+                      ? 'rgba(16, 185, 129, 0.18)'
+                      : (modalRvol != null && modalRvol >= 1.0)
+                        ? 'rgba(56, 189, 248, 0.15)'
+                        : 'rgba(245, 158, 11, 0.15)',
+                    border: (modalRvol != null && modalRvol >= 1.5)
+                      ? '1px solid rgba(16, 185, 129, 0.45)'
+                      : (modalRvol != null && modalRvol >= 1.0)
+                        ? '1px solid rgba(56, 189, 248, 0.35)'
+                        : '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: 20,
+                    padding: '2px 9px',
+                    fontSize: 10.5,
+                    color: (modalRvol != null && modalRvol >= 1.5) ? '#34d399' : (modalRvol != null && modalRvol >= 1.0) ? '#38bdf8' : '#fbbf24',
+                    fontWeight: 800,
+                    fontFamily: 'var(--font-mono)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3.5
+                  }}>
+                    ⚡ RVOL: {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '1.00x'}
+                    <span style={{ fontSize: 9, fontWeight: 700, opacity: 0.85 }}>
+                      {(modalRvol != null && modalRvol >= 1.5) ? '(Surge)' : (modalRvol != null && modalRvol >= 1.0) ? '(Normal)' : '(Light)'}
+                    </span>
+                  </span>
                 </div>
               </div>
 
@@ -1436,13 +1521,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
               </div>
 
-              {/* Fundamental Valuation Snapshot (P/E, Book Value, PBV, EPS) */}
+              {/* Fundamental Valuation Snapshot (P/E, Book Value, PBV, EPS, RVOL) */}
               <div style={{
                 marginTop: 14,
                 paddingTop: 12,
                 borderTop: '1px solid rgba(255, 255, 255, 0.07)',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
+                gridTemplateColumns: 'repeat(5, 1fr)',
                 gap: 8,
                 textAlign: 'center'
               }}>
@@ -1459,7 +1544,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   </div>
                 </div>
                 <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '6px 4px', borderRadius: 8, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>PBV (PEV)</div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>PBV</div>
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: d.pb > 0 ? '#a855f7' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                     {d.pb > 0 ? `${fmt(d.pb)}x` : '—'}
                   </div>
@@ -1468,6 +1553,23 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 600 }}>EPS</div>
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: d.eps > 0 ? '#ffffff' : '#64748b', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                     {d.eps > 0 ? `Rs. ${fmt(d.eps)}` : '—'}
+                  </div>
+                </div>
+                <div style={{
+                  background: (modalRvol != null && modalRvol >= 1.5) ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.025)',
+                  padding: '6px 4px',
+                  borderRadius: 8,
+                  border: (modalRvol != null && modalRvol >= 1.5) ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(255, 255, 255, 0.05)'
+                }}>
+                  <div style={{ fontSize: 9.5, color: (modalRvol != null && modalRvol >= 1.5) ? '#34d399' : '#94a3b8', fontWeight: 700 }}>RVOL (20D)</div>
+                  <div style={{
+                    fontSize: 12.5,
+                    fontWeight: 900,
+                    color: (modalRvol != null && modalRvol >= 1.5) ? '#10B981' : (modalRvol != null && modalRvol >= 1.0) ? '#38bdf8' : '#fbbf24',
+                    fontFamily: 'var(--font-mono)',
+                    marginTop: 2
+                  }}>
+                    {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x` : '1.00x'}
                   </div>
                 </div>
               </div>
@@ -1523,21 +1625,36 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 </div>
               </div>
 
-              {/* Card 2: Volume */}
+              {/* Card 2: Volume & RVOL */}
               <div style={{
                 background: '#151922',
-                border: '1px solid rgba(255,255,255,0.07)',
+                border: (modalRvol != null && modalRvol >= 1.5) ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 12,
                 padding: '11px 13px',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between'
               }}>
-                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Volume</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>Volume & RVOL</div>
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 800,
+                    padding: '1px 5px',
+                    borderRadius: 4,
+                    background: (modalRvol != null && modalRvol >= 1.5) ? 'rgba(16, 185, 129, 0.2)' : (modalRvol != null && modalRvol >= 1.0) ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                    color: (modalRvol != null && modalRvol >= 1.5) ? '#34d399' : (modalRvol != null && modalRvol >= 1.0) ? '#38bdf8' : '#fbbf24',
+                    fontFamily: 'var(--font-mono)'
+                  }}>
+                    {modalRvol != null ? `${Number(modalRvol).toFixed(2)}x RVOL` : '1.00x RVOL'}
+                  </span>
+                </div>
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
                   {(Number(d.volume || (realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory[realPriceHistory.length - 1].volume : 0)) || 0).toLocaleString()}
                 </div>
-                <div style={{ fontSize: 10, color: '#64748b' }}>Shares Traded</div>
+                <div style={{ fontSize: 10, color: (modalRvol != null && modalRvol >= 1.5) ? '#10B981' : '#64748b', fontWeight: (modalRvol != null && modalRvol >= 1.5) ? 700 : 400 }}>
+                  {(modalRvol != null && modalRvol >= 1.5) ? '🔥 Institutional Volume Surge' : (modalRvol != null && modalRvol >= 1.0) ? 'Normal Participation' : 'Light / Below 20D Avg'}
+                </div>
               </div>
 
               {/* Card 3: Turnover */}
@@ -1883,15 +2000,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {/* ════ TAB 2: TECHNICAL EDGE ⭐ ════ */}
         {activeTab === 'technicals' && (
           <div>
-            {/* ── Actionable Entry & Risk Management Plan (Parity with Day Prime Pick & Entry/Exit Analyzer) ── */}
-            <StockEntryExitCard
-              entryExitPlan={entryExitPlan}
-              d={d}
-              isPrimePick={isPrimePick}
-              onOpenAnalyzer={handleOpenInEntryExitAnalyzer}
-              onOpenAlert={() => setShowAlertModal(true)}
-            />
-
             {/* 12-Month Accumulation & Distribution / Wyckoff Cycle Card */}
             <div style={{ background: '#151922', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -2119,7 +2227,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {(brokerAnalysis?.topBuyers && brokerAnalysis.topBuyers.length > 0) ? (
                     brokerAnalysis.topBuyers.map((b, idx) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
+                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo || b.buyerMemberId || b.buyerBroker || b.memberId || b.id || 'N/A'}</span>
                         <span style={{ color: 'var(--bull)', fontWeight: 700 }}>+{(b.buyQty || b.shares || b.qty || 0).toLocaleString()}</span>
                       </div>
                     ))
@@ -2140,7 +2248,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {(brokerAnalysis?.topSellers && brokerAnalysis.topSellers.length > 0) ? (
                     brokerAnalysis.topSellers.map((b, idx) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo}</span>
+                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo || b.sellerMemberId || b.sellerBroker || b.memberId || b.id || 'N/A'}</span>
                         <span style={{ color: '#F43F5E', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
                       </div>
                     ))
@@ -2177,7 +2285,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--bull)', marginBottom: 4 }}>Net Buyers (30D)</div>
                     {(realBrokerAnalysis.topNetBuyers || []).slice(0, 3).map((b, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <span style={{ color: 'rgba(255,255,255,0.8)' }}>#{b.broker}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.8)' }}>#{b.broker || b.brokerNo || b.memberId || b.id || 'N/A'}</span>
                         <span style={{ color: 'var(--bull)', fontWeight: 700 }}>+{b.netQty?.toLocaleString()}</span>
                       </div>
                     ))}
@@ -2186,7 +2294,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#F43F5E', marginBottom: 4 }}>Net Sellers (30D)</div>
                     {(realBrokerAnalysis.topNetSellers || []).slice(0, 3).map((b, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <span style={{ color: 'rgba(255,255,255,0.8)' }}>#{b.broker}</span>
+                        <span style={{ color: 'rgba(255,255,255,0.8)' }}>#{b.broker || b.brokerNo || b.memberId || b.id || 'N/A'}</span>
                         <span style={{ color: '#F43F5E', fontWeight: 700 }}>{b.netQty?.toLocaleString()}</span>
                       </div>
                     ))}

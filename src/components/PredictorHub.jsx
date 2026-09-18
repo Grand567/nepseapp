@@ -35,12 +35,15 @@ import {
   X,
   Award,
   Shield,
-  Compass
+  Compass,
+  Crown,
+  Lock
 } from 'lucide-react';
 import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
+import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate } from '../utils/quantEngine';
 import { selectMasterPrimePick, evaluateGuruMasterSetup } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -202,9 +205,11 @@ export default function PredictorHub({
       const vsr = Number(s.volumeSurgeRatio || (vol > 15000 ? 1.55 : 0.95));
 
       // ── REAL RSI only — never estimate from pChange ──────────────────────
-      // If real RSI is absent (no historical data yet), treat as neutral (50).
+      // If real RSI is absent (no historical data yet), apply a conservative -5 penalty
+      // to guard against overbought stocks that appear neutral due to missing data (GAP-7).
       const rsi = Number(s.rsi) > 0 ? Number(s.rsi) : 50;
       const rsiIsReal = Number(s.rsi) > 0;
+      const rsiDataMissing = !rsiIsReal; // GAP-7: track missing RSI for UI badge
 
       // ── EMA Structural Position ───────────────────────────────────────────
       let ema50 = Number(s.ema50 || s.sma50 || 0);
@@ -247,9 +252,11 @@ export default function PredictorHub({
       // Volume surge: can add max 10 pts
       score += vsr >= 1.8 ? 10 : vsr >= 1.3 ? 6 : vsr < 0.7 ? -8 : 0;
 
-      // RSI: only add score if RSI comes from real data
+      // RSI: only add score if RSI comes from real data; penalize -5 if RSI is unavailable (GAP-7)
       if (rsiIsReal) {
         score += rsi >= 52 && rsi <= 68 ? 10 : rsi > 78 ? -10 : rsi < 35 ? 8 : 0;
+      } else {
+        score -= 5; // GAP-7: conservative penalty for missing RSI — prevents overbought stocks from scoring high
       }
 
       score += macdSignal === 'bullish' ? 8 : macdSignal === 'bearish' ? -8 : 0;
@@ -358,6 +365,7 @@ export default function PredictorHub({
         volume_surge_ratio: vsr,
         momentum_5d: momentum5d,
         rsi_14: rsiIsReal ? Math.round(rsi) : null,
+        rsiDataMissing,          // GAP-7: flag for screener ⚠️ RSI Unverified badge
         macd_signal: macdSignal,
         obv_trend: obvTrend,
         isAbove50EMA,
@@ -483,7 +491,7 @@ export default function PredictorHub({
             : `NEPSE (Rs. ${nepseIdx.toFixed(1)}) indicates consolidation near benchmark levels. [${fiscal.phase}]: ${fiscal.detail} Support floor: Rs. ${stopFloor}, Resistance ceiling: Rs. ${target1}.`
         });
 
-        // Dynamic recent trading day generator (Sun-Thu, excluding Fri/Sat)
+        // Dynamic recent trading day generator (Mon-Fri, excluding Sat/Sun)
         const hist = [];
         const today = new Date();
         let daysAgo = 1;
@@ -491,7 +499,7 @@ export default function PredictorHub({
           const d = new Date(today);
           d.setDate(today.getDate() - daysAgo);
           const dayOfWeek = d.getDay();
-          if (dayOfWeek >= 0 && dayOfWeek <= 4) {
+          if (dayOfWeek >= 1 && dayOfWeek <= 5) {
             hist.push({
               prediction_date: d.toISOString().slice(0, 10),
               direction: (daysAgo % 3 === 0) ? 'consolidate' : (daysAgo % 2 === 0) ? 'up' : 'down',
@@ -763,16 +771,39 @@ export default function PredictorHub({
     return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
   }, [stocks]);
 
-  const primeDailyPick = masterPipeline.primeDailyPick || (() => {
+  const primeDailyPick = useMemo(() => {
+    const rawPick = masterPipeline.primeDailyPick;
+    if (rawPick) {
+      const v = String(rawPick.verdict || '').toUpperCase();
+      const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
+      if (
+        rawPick.isDefensiveFallback || 
+        (!v.includes('NO TRADE') &&
+        !v.includes('AVOID') &&
+        !v.includes('REDUCE') &&
+        !v.includes('EXIT') &&
+        !rawPick.isLossMaking &&
+        (rawPick.eps === undefined || Number(rawPick.eps) >= 0) &&
+        (score === 0 || score >= 50))
+      ) {
+        return rawPick;
+      }
+    }
     try {
       const raw = localStorage.getItem('prime_pick_plan_cache');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.plan?.symbol) return parsed.plan;
+        if (parsed?.plan?.symbol && parsed?.plan?.levels) {
+          const v = String(parsed.plan.verdict || '').toUpperCase();
+          const score = Number(parsed.plan.setupScore || parsed.plan.guruScore || 0);
+          if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && score >= 50) {
+            return parsed.plan;
+          }
+        }
       }
     } catch (_) {}
     return null;
-  })();
+  }, [masterPipeline.primeDailyPick]);
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
 
   // ── AUTO-ANALYSIS: Run full Entry/Exit Analyzer engine on Prime Pick top stock ──
@@ -823,16 +854,28 @@ export default function PredictorHub({
         if (cancelled) return;
 
         if (result.supported) {
+          const vUpper = String(result.verdict || '').toUpperCase();
+          const isPassing = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && Number(result.setupScore || 0) >= 50;
           const planWithSymbol = { ...result, symbol: sym };
           setPrimePlan(planWithSymbol);
-          // Cache plan result so Entry/Exit Analyzer can load it instantly (10-min TTL)
-          try {
-            localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-              symbol: sym,
-              plan: planWithSymbol,
-              ts: Date.now()
-            }));
-          } catch (_) {}
+          if (isPassing) {
+            // Cache passing plan so Entry/Exit Analyzer can load it instantly
+            try {
+              localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+                symbol: sym,
+                plan: planWithSymbol,
+                ts: Date.now()
+              }));
+            } catch (_) {}
+          } else {
+            // Plan failed verification - remove from prime pick cache
+            try {
+              const raw = localStorage.getItem('prime_pick_plan_cache');
+              if (raw && JSON.parse(raw)?.symbol === sym) {
+                localStorage.removeItem('prime_pick_plan_cache');
+              }
+            } catch (_) {}
+          }
         } else {
           setPrimePlanError(result.reason || 'Insufficient historical data for backtested analysis.');
         }
@@ -987,9 +1030,9 @@ export default function PredictorHub({
         }}>
           {[
             { id: 'nepse', label: 'Index Predictor', icon: Target },
-            { id: 'stocks', label: 'Stock Screener', icon: Flame, badge: scoredStocks.length },
-            { id: 'entry_exit', label: 'Entry/Exit Analyzer', icon: Crosshair },
-            { id: 'macro_sentiment', label: 'Macro & Sentiment', icon: Globe },
+            { id: 'stocks', label: 'Stock Screener', icon: Flame, badge: scoredStocks.length, isPro: true },
+            { id: 'entry_exit', label: 'Entry/Exit Analyzer', icon: Crosshair, isPro: true },
+            { id: 'macro_sentiment', label: 'Macro & Sentiment', icon: Globe, isPro: true },
           ].map(tab => {
             const isActive = activeTab === tab.id;
             const Icon = tab.icon;
@@ -1026,6 +1069,23 @@ export default function PredictorHub({
               >
                 <Icon style={{ width: 14, height: 14 }} />
                 <span>{tab.label}</span>
+                {tab.isPro && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    fontSize: 9,
+                    fontWeight: 900,
+                    padding: '1px 5px',
+                    borderRadius: 6,
+                    background: 'linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(217, 119, 6, 0.25))',
+                    color: '#f59e0b',
+                    border: '1px solid rgba(245, 158, 11, 0.4)'
+                  }}>
+                    <Crown size={10} />
+                    PRO
+                  </span>
+                )}
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span style={{
                     fontSize: 9.5,
@@ -1751,7 +1811,11 @@ export default function PredictorHub({
             VIEW 2: STOCK COMPOSITE SCORES & SCREENER
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'stocks' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <ProGate
+            featureName="Master Prime Screener & Quant Setups"
+            description="Unlock algorithmic multi-factor ranking, Wyckoff accumulation filters, Master Prime Setups, and real-time catalyst screening with a Pro monthly pass."
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {/* Quick Decision Banner */}
             <div
               onClick={() => setShowGuideModal(true)}
@@ -1792,7 +1856,7 @@ export default function PredictorHub({
             </div>
 
             {/* ── 🏆 DAILY PRIME BREAKOUT & BUY-ZONE PICK SPOTLIGHT / CASH DEFENSE BANNER ── */}
-            {cashDefenseActive ? (
+            {(cashDefenseActive || !primeDailyPick) ? (
               <div style={{
                 borderRadius: 18,
                 background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',
@@ -1816,7 +1880,7 @@ export default function PredictorHub({
                     </div>
                     <div>
                       <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
-                        Systemic Risk Filter • Cash Defense Mode Active
+                        {cashDefenseActive ? 'Systemic Risk Filter • Cash Defense Mode Active' : 'Quantitative Risk Filter • Capital Defense Active'}
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
                         Capital Preservation Protocol: No Breakout Buys Issued Today
@@ -1827,11 +1891,15 @@ export default function PredictorHub({
                     fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 99,
                     background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)'
                   }}>
-                    Market Breadth: {masterPipeline?.breadthCheck?.breadth50 ?? '<40'}% (&lt; 40% Threshold)
+                    {cashDefenseActive
+                      ? `Market Breadth: ${masterPipeline?.breadthCheck?.breadth50 ?? '<40'}% (< 40% Threshold)`
+                      : '100% Capital Defense Filter'}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
-                  Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated <strong>Cash Defense Mode</strong> to protect your capital. Avoid new swing entries until breadth recovers above 40%.
+                  {cashDefenseActive
+                    ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers above 40%.'
+                    : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (due to negative EPS, unfavorable risk/reward ratios, or historical win rates below threshold). The quantitative engine enforces 100% capital preservation rather than issuing low-conviction picks.'}
                 </div>
               </div>
             ) : primeDailyPick ? (() => {
@@ -2405,7 +2473,40 @@ export default function PredictorHub({
               </div>
             </div>
 
+            {/* GAP-8: Cash Defense Mode Warning Banner — shown when breadth < 40% */}
+            {cashDefenseActive && (
+              <div style={{
+                borderRadius: 14,
+                border: '1.5px solid rgba(244, 63, 94, 0.5)',
+                background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.12), rgba(20, 15, 25, 0.95))',
+                padding: '14px 16px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+                boxShadow: '0 4px 20px rgba(244, 63, 94, 0.15)',
+                marginBottom: 4
+              }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                  background: 'rgba(244, 63, 94, 0.18)', border: '1px solid rgba(244, 63, 94, 0.4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18
+                }}>⛔</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', marginBottom: 4 }}>
+                    CASH DEFENSE MODE ACTIVE — DO NOT ENTER NEW POSITIONS
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.55 }}>
+                    Market breadth has collapsed below 40% (fewer than 40% of NEPSE stocks are above their 50-day EMA).
+                    Entering new positions in a weak-breadth environment dramatically increases loss probability.
+                    <strong style={{ color: '#fbbf24' }}> The screener below is for research only.</strong>{' '}
+                    Wait for breadth to recover above 50% before committing capital.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Stocks List */}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {filteredStocks.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -2651,37 +2752,47 @@ export default function PredictorHub({
               )}
             </div>
           </div>
+        </ProGate>
         )}
 
         {/* ══════════════════════════════════════════════════════════
             VIEW 3: ENTRY / EXIT ANALYZER WORKSTATION
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'entry_exit' && (
-          <div>
-            <EntryExitAnalyzer
-              stocks={stocks}
-              indices={indices}
-              onSelectStock={onSelectStock}
-              initialSymbol={
-                selectedForAnalysis ||
-                (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') ||
-                primeDailyPick?.symbol ||
-                scoredStocks[0]?.symbol ||
-                stocks[0]?.symbol ||
-                'NABIL'
-              }
-              onSymbolChange={(newSym) => {
-                if (newSym) setSelectedForAnalysis(newSym);
-              }}
-            />
-          </div>
+          <ProGate
+            featureName="Algorithmic Entry/Exit Analyzer"
+            description="Calculate institutional risk/reward ratios, multi-tier profit targets, dynamic trailing stop-loss, and trade win rates with a Pro monthly pass."
+          >
+            <div>
+              <EntryExitAnalyzer
+                stocks={stocks}
+                indices={indices}
+                onSelectStock={onSelectStock}
+                initialSymbol={
+                  selectedForAnalysis ||
+                  (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') ||
+                  primeDailyPick?.symbol ||
+                  scoredStocks[0]?.symbol ||
+                  stocks[0]?.symbol ||
+                  'NABIL'
+                }
+                onSymbolChange={(newSym) => {
+                  if (newSym) setSelectedForAnalysis(newSym);
+                }}
+              />
+            </div>
+          </ProGate>
         )}
 
         {/* ══════════════════════════════════════════════════════════
             VIEW 4: MACRO & NEWS SENTIMENT INTELLIGENCE
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'macro_sentiment' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ProGate
+            featureName="Macro & Smart Money Sentiment"
+            description="Monitor liquidity cycles, NRB monetary catalysts, and smart-money news sentiment with a Pro monthly pass."
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* NRB Macro Indicators Dashboard */}
             {macroData && (
               <div style={{
@@ -2843,6 +2954,7 @@ export default function PredictorHub({
               </div>
             </div>
           </div>
+        </ProGate>
         )}
       </div>
 

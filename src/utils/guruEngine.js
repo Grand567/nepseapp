@@ -17,7 +17,8 @@ import {
   evaluateMarketBreadthCashDefense,
   getHydroSeasonality,
   calculateMultiHorizonTargets,
-  evaluatePreOpenExecutionGate
+  evaluatePreOpenExecutionGate,
+  evaluateNrbRegulatorySafety
 } from './quantEngine.js';
 
 import { getDetailedMarketStatus } from './nepseCalendar.js';
@@ -30,6 +31,7 @@ import {
 } from './setupAnalyzer.js';
 
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
+import { getCachedStockFundamentals } from './liveData.js';
 
 /**
  * Evaluates a single stock setup with unified quantitative & statistical gates.
@@ -105,7 +107,7 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     try {
       const analogResult = runAnalogBacktest(adjustedCandles, {
         maxMatches: 8,
-        minSimilarity: 55,
+        minSimilarity: 62,        // Raised from 55 — only statistically meaningful matches (GAP-11)
         forwardWindow: 20,
         maxHoldDays: 20
       });
@@ -139,35 +141,58 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
   const upperCeiling = +(prevClose * 1.15).toFixed(1);
   const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-  const isCircuitCeilingTrap = distToCeilingPct <= 2.0; // Within 2% of +15% ceiling
+  const isCircuitCeilingTrap = distToCeilingPct <= 3.5; // Within 3.5% of +15% ceiling (raised from 2.0)
 
-  // Promoter Lock-In Expiry Blackout (45-Day window)
+  // Promoter Lock-In Expiry Blackout (60-Day window — synced with PromoterSharesService Critical Shock tier)
   let isPromoterUnlockRisk = false;
   let promoterUnlockDays = null;
   if (stock?.lockinExpiry || stock?.promoterLockinDays !== undefined) {
     const daysToUnlock = stock.promoterLockinDays !== undefined
       ? Number(stock.promoterLockinDays)
       : Math.ceil((new Date(stock.lockinExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (daysToUnlock >= 0 && daysToUnlock <= 45) {
+    if (daysToUnlock >= 0 && daysToUnlock <= 60) {
       isPromoterUnlockRisk = true;
       promoterUnlockDays = daysToUnlock;
     }
   }
 
-  // Fundamental EPS check
-  const eps = Number(stock?.eps || 0);
-  const isLossMaking = stock?.eps !== undefined && eps < 0;
+  // Fundamental EPS check (cross-reference cached fundamentals to detect operational losses)
+  const cachedFund = getCachedStockFundamentals(sym);
+  const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (stock?.eps || 0));
+  const isLossMaking = (cachedFund?.eps !== undefined && Number(cachedFund.eps) < 0) || (stock?.eps !== undefined && Number(stock.eps) < 0);
 
   // Hydrology Check
   const sector = String(stock?.sector || stock?.sectorName || '');
   const hydro = getHydroSeasonality(sector);
   const isDeepHydroDry = hydro.isHydro && hydro.isDrySeason && hydro.penaltyPoints <= -15;
 
+  // GAP-1: NRB Regulatory Safety Gate for BFI sector stocks
+  let isNrbRegulatoryFail = false;
+  let nrbFailReason = null;
+  const sectorLower = sector.toLowerCase();
+  const isBfiSector = sectorLower.includes('bank') || sectorLower.includes('finance') ||
+                      sectorLower.includes('bfi') || sectorLower.includes('microfinance') ||
+                      sectorLower.includes('development bank');
+  if (isBfiSector) {
+    try {
+      const nrbResult = evaluateNrbRegulatorySafety(stock);
+      if (nrbResult && nrbResult.overallStatus === 'REGULATORY_FAIL') {
+        isNrbRegulatoryFail = true;
+        nrbFailReason = nrbResult.failReasons?.join('; ') || 'NRB mandatory metrics not met';
+      }
+    } catch (_) {}
+  }
+
   if (isCircuitCeilingTrap) {
     actionState = 'CIRCUIT_CEILING_TRAP';
     setupClass = 'Circuit Ceiling Overhang (Upside Exhausted)';
     isPrimeCandidate = false;
     disqualificationReason = `Within ${distToCeilingPct}% of +15% daily circuit ceiling — upside capped against severe gap-down risk`;
+  } else if (isNrbRegulatoryFail) {
+    actionState = 'NRB_REGULATORY_FAIL';
+    setupClass = 'NRB Regulatory Threshold Breach';
+    isPrimeCandidate = false;
+    disqualificationReason = `BFI regulatory failure: ${nrbFailReason}`;
   } else if (isPromoterUnlockRisk) {
     actionState = 'PROMOTER_LOCKIN_BLACKOUT';
     setupClass = 'Promoter Share Lock-in Expiry (Supply Flood)';
@@ -193,17 +218,25 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     setupClass = 'Overbought Peak (Take Profit / Exit)';
     isPrimeCandidate = false;
     disqualificationReason = `RSI extended at ${Number(stock?.rsi || stock?.rsi14 || 50).toFixed(1)} (>= 70) — overbought exhaustion / distribution risk`;
-  } else if (analogWinRate !== null && analogWinRate < 50) {
-    actionState = 'LOW_WIN_RATE_AVOID';
-    setupClass = 'Low Historical Win Rate (<50%)';
+  } else if (pCh >= 8.0) {
+    // GAP-4: Anti-FOMO gate — stock already up 8%+ on the day is an extended breakout
+    // Entry at this level means buying into a parabolic move with T+2 freeze risk
+    actionState = 'EXTENDED_BREAKOUT_AVOID';
+    setupClass = 'Extended Intraday Surge — Anti-FOMO Gate';
     isPrimeCandidate = false;
-    disqualificationReason = `Historical analog backtest indicates lower forward win rate (${analogWinRate}% < 50%) — statistical edge absent`;
+    disqualificationReason = `Stock already up ${pCh.toFixed(1)}% today (>= 8.0%) — parabolic extension with severe T+2 freeze and gap-down risk`;
+  } else if (analogWinRate !== null && analogWinRate < 55) {
+    // GAP-6: Raised from 50% to 55% — statistical edge requires meaningful forward win rate
+    actionState = 'LOW_WIN_RATE_AVOID';
+    setupClass = 'Low Historical Win Rate (<55%)';
+    isPrimeCandidate = false;
+    disqualificationReason = `Historical analog backtest indicates insufficient forward win rate (${analogWinRate}% < 55%) — statistical edge absent`;
   } else if (ltp > 0 && (ltp - structuralStopLoss) / ltp > 0.10) {
     actionState = 'EXCESSIVE_DOWNSIDE_RISK';
     setupClass = 'Unfavorable Risk/Reward (Stop > 10%)';
     isPrimeCandidate = false;
     disqualificationReason = `Downside risk to structural stop is ${(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1)}% (fails max 10% risk threshold)`;
-  } else if (isTesting200EMA && (analogWinRate === null || analogWinRate < 50)) {
+  } else if (isTesting200EMA && (analogWinRate === null || analogWinRate < 55)) {
     actionState = 'RESISTANCE_TRAP';
     setupClass = '200-Day EMA Resistance Ceiling';
     isPrimeCandidate = false;
@@ -394,24 +427,25 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const ltp = Number(s.ltp || s.price || 0);
     const vol = Number(s.volume || s.totalTradedQuantity || 0);
     const turnover = Number(s.turnover || (ltp * vol) || 0);
-    const eps = Number(s.eps || 0);
+    const cachedFund = getCachedStockFundamentals(sym);
+    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (s.eps || 0));
 
     // Fundamental & Liquidity safety hurdles
     if (ltp < 80 || turnover < 2500000) continue;
-    if (s.eps !== undefined && eps < 0) continue;
+    if (eps < 0 || (cachedFund?.eps !== undefined && Number(cachedFund.eps) < 0)) continue; // Disqualify loss-making entities
 
     // Circuit limit ceiling check (±15% limit)
     const prevClose = Number(s.previousClose || s.prevClose || ltp);
     const upperCeiling = +(prevClose * 1.15).toFixed(1);
     const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-    if (distToCeilingPct <= 2.0) continue; // Upside exhausted / circuit trap
+    if (distToCeilingPct <= 3.5) continue; // Upside exhausted / circuit trap (raised from 2.0 — GAP-4b)
 
-    // Promoter lock-in expiry blackout (45 days)
+    // Promoter lock-in expiry blackout (60 days — synced with PromoterSharesService Critical Shock tier — GAP-5b)
     if (s.lockinExpiry || s.promoterLockinDays !== undefined) {
       const daysToUnlock = s.promoterLockinDays !== undefined
         ? Number(s.promoterLockinDays)
         : Math.ceil((new Date(s.lockinExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      if (daysToUnlock >= 0 && daysToUnlock <= 45) continue;
+      if (daysToUnlock >= 0 && daysToUnlock <= 60) continue;
     }
 
     const history = priceHistories[sym] || [];
@@ -435,7 +469,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   }
 
   // If no candidate scored >= 75 (e.g. cold start with unpopulated price history cache),
-  // promote top liquid momentum leaders as candidates so prime pick is never empty
+  // promote top liquid momentum leaders as candidates ONLY if they pass basic safety
   if (candidates.length === 0 && allLiquidCandidates.length > 0 && !breadthCheck.cashDefenseActive) {
     allLiquidCandidates.sort((a, b) => {
       const aTurnover = Number(a.turnover || 0);
@@ -446,7 +480,15 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const bLbas = Number(b.brokerMetrics?.lbas || 0);
       return (bTurnover * (bMom > 0 ? 1.5 : 0.8) + bLbas * 50000000) - (aTurnover * (aMom > 0 ? 1.5 : 0.8) + aLbas * 50000000);
     });
-    candidates.push(...allLiquidCandidates.slice(0, 10));
+    const safeCandidates = allLiquidCandidates.filter(c =>
+      c.isPrimeCandidate &&
+      c.actionState !== 'NEGATIVE_EARNINGS_AVOID' &&
+      c.actionState !== 'DISTRIBUTION_AVOID' &&
+      c.actionState !== 'RESISTANCE_TRAP' &&
+      c.actionState !== 'EXCESSIVE_DOWNSIDE_RISK' &&
+      c.actionState !== 'LOW_WIN_RATE_AVOID'
+    );
+    candidates.push(...safeCandidates.slice(0, 10));
   }
 
   // Sort descending by Guru Score, then broker LBAS
@@ -469,12 +511,19 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const broker = brokerDataMap[sym] || null;
       const stockObj = stocks.find(s => s.symbol === sym) || cand;
 
-      if (history.length >= 30) {
+      if (history.length >= 20) {  // Lowered to 20 bars to match setupAnalyzer minimum requirement
         try {
-          const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker });
+          const cachedFundForCatalyst = getCachedStockFundamentals(sym) || {};
+          const catalysts = {
+            highDividend: cachedFundForCatalyst.dividendYield > 5 || cachedFundForCatalyst.proposedDividend > 10,
+            strongProfitGrowth: cachedFundForCatalyst.epsGrowth > 20 || (cachedFundForCatalyst.eps > 25 && cachedFundForCatalyst.pe < 15),
+            rightShare: cachedFundForCatalyst.hasRightShare || false
+          };
+          const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker, catalysts });
           if (plan && plan.supported) {
             const vUpper = (plan.verdict || '').toUpperCase();
             const winRate = Number(plan.analogResult?.stats?.winRate ?? 50);
+            const analogSampleSize = Number(plan.analogResult?.stats?.sampleSize ?? 0);
             const slPrice = Number(plan.levels?.stopLoss?.price || 0);
             const ltpNum = Number(plan.ltp || cand.ltp || 0);
             const riskPct = ltpNum > 0 && slPrice > 0 ? (ltpNum - slPrice) / ltpNum : 0;
@@ -485,12 +534,12 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
 
             // Strict disqualifications:
             // 1. Verdict cannot be NO TRADE, AVOID, REDUCE, or EXIT
-            // 2. Win rate must be >= 50%
+            // 2. Win rate must be >= 55% with at least 4 analog samples (GAP-6 + GAP-6b)
             // 3. Downside risk to stop cannot exceed 10%
             if (vUpper.includes('NO TRADE') || vUpper.includes('AVOID') || vUpper.includes('REDUCE') || vUpper.includes('EXIT')) {
               continue;
             }
-            if (winRate < 50) {
+            if (winRate < 55 || (analogSampleSize > 0 && analogSampleSize < 4)) {
               continue;
             }
             if (riskPct > 0.10) {
@@ -555,7 +604,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     }
   }
 
-  // Fallback if no candidate had >= 30 bars in cache: build plan for top candidate
+  // GAP-3: Fallback — same strict disqualification filters as the main verified loop
   if (!verifiedPrimePick && candidates.length > 0 && !breadthCheck.cashDefenseActive) {
     const fallbackCand = candidates[0];
     const sym = fallbackCand.symbol;
@@ -563,54 +612,211 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const broker = brokerDataMap[sym] || null;
     const stockObj = stocks.find(s => s.symbol === sym) || fallbackCand;
     try {
-      const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker });
-      if (plan && plan.supported) {
-        verifiedPrimePick = {
-          ...fallbackCand,
-          ...plan,
-          symbol: sym,
-          setupScore: plan.setupScore,
-          score: plan.setupScore,
-          compositeScore: plan.setupScore,
-          guruScore: plan.setupScore,
-          winRate: plan.analogResult?.stats?.winRate,
-          analogCount: plan.analogResult?.stats?.sampleSize,
-          confidenceLevel: plan.confidence?.level,
-          signalAgreement: plan.signalAgreement,
-          bullishFactors: plan.bullishFactors,
-          warnings: plan.warnings,
-          verdict: plan.verdict,
-          levels: plan.levels,
-          entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
-          entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
-          target1: plan.levels?.target1?.price,
-          target2: plan.levels?.target2?.price,
-          stopLoss: plan.levels?.stopLoss?.price,
-          isPlanVerified: true
-        };
+      if (history.length >= 20) {
+        const cachedFundForCatalyst = getCachedStockFundamentals(sym) || {};
+          const catalysts = {
+            highDividend: cachedFundForCatalyst.dividendYield > 5 || cachedFundForCatalyst.proposedDividend > 10,
+            strongProfitGrowth: cachedFundForCatalyst.epsGrowth > 20 || (cachedFundForCatalyst.eps > 25 && cachedFundForCatalyst.pe < 15),
+            rightShare: cachedFundForCatalyst.hasRightShare || false
+          };
+          const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker, catalysts });
+        if (plan && plan.supported) {
+          const vUpper = (plan.verdict || '').toUpperCase();
+          const winRate = Number(plan.analogResult?.stats?.winRate ?? 50);
+          const analogSampleSize = Number(plan.analogResult?.stats?.sampleSize ?? 0);
+          const slPrice = Number(plan.levels?.stopLoss?.price || 0);
+          const ltpNum = Number(plan.ltp || fallbackCand.ltp || 0);
+          const riskPct = ltpNum > 0 && slPrice > 0 ? (ltpNum - slPrice) / ltpNum : 0;
+
+          // Apply same safety gates as the main loop (GAP-3)
+          const isSafe = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') &&
+                         !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') &&
+                         winRate >= 55 && !(analogSampleSize > 0 && analogSampleSize < 4) &&
+                         riskPct <= 0.10;
+
+          if (isSafe) {
+            verifiedPrimePick = {
+              ...fallbackCand,
+              ...plan,
+              symbol: sym,
+              setupScore: plan.setupScore,
+              score: plan.setupScore,
+              compositeScore: plan.setupScore,
+              guruScore: plan.setupScore,
+              winRate: plan.analogResult?.stats?.winRate,
+              analogCount: plan.analogResult?.stats?.sampleSize,
+              confidenceLevel: plan.confidence?.level,
+              signalAgreement: plan.signalAgreement,
+              bullishFactors: plan.bullishFactors,
+              warnings: plan.warnings,
+              verdict: plan.verdict,
+              levels: plan.levels,
+              entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
+              entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
+              target1: plan.levels?.target1?.price,
+              target2: plan.levels?.target2?.price,
+              stopLoss: plan.levels?.stopLoss?.price,
+              isPlanVerified: true
+            };
+          }
+        }
       }
     } catch (_) {}
-    if (!verifiedPrimePick) {
-      verifiedPrimePick = fallbackCand;
-    }
   }
 
-  // Tier 2 Fallback: If verified pick was passed via options or stored in prime_pick_plan_cache, use it
+  // GAP-3b: Tier 2 Fallback — 30-minute TTL enforced (only if cached plan has full levels, setup score, AND passing verdict)
   if (!verifiedPrimePick && !breadthCheck.cashDefenseActive) {
-    if (options?.cachedPrimePick?.symbol) {
+    const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    const isPassingPlan = (plan) => {
+      if (!plan || !plan.symbol || !plan.levels) return false;
+      const v = String(plan.verdict || '').toUpperCase();
+      const score = Number(plan.setupScore || plan.guruScore || plan.score || 0);
+      return (
+        !v.includes('NO TRADE') &&
+        !v.includes('AVOID') &&
+        !v.includes('REDUCE') &&
+        !v.includes('EXIT') &&
+        !plan.isLossMaking &&
+        (plan.eps === undefined || plan.eps === null || Number(plan.eps) >= 0) &&
+        (score === 0 || score >= 55)
+      );
+    };
+    if (options?.cachedPrimePick?.symbol && options?.cachedPrimePick?.levels && isPassingPlan(options.cachedPrimePick)) {
       verifiedPrimePick = options.cachedPrimePick;
     } else if (typeof window !== 'undefined' && window.localStorage) {
       try {
         const raw = localStorage.getItem('prime_pick_plan_cache');
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (parsed?.plan?.symbol) {
+          if (parsed?.plan && (Date.now() - (parsed.ts || 0)) < CACHE_TTL_MS && isPassingPlan(parsed.plan)) {
             verifiedPrimePick = parsed.plan;
+          } else if (parsed) {
+            // Stale or failing plan — purge it so it never surfaces
+            localStorage.removeItem('prime_pick_plan_cache');
           }
         }
       } catch (_) {}
     }
   }
+
+
+  // If still no verified pick after Tier 1 (top 15) + Tier 2 (cache): expand search to all remaining candidates
+  // Run generateEntryExitPlan on each remaining candidate beyond the initial 15 until one passes
+  if (!verifiedPrimePick && !breadthCheck.cashDefenseActive && candidates.length > 15) {
+    for (const cand of candidates.slice(15)) {
+      const sym = cand.symbol;
+      const history = priceHistories[sym] || [];
+      const broker = brokerDataMap[sym] || null;
+      const stockObj = stocks.find(s => s.symbol === sym) || cand;
+      if (history.length < 20) continue;
+      try {
+        const cachedFundForCatalyst = getCachedStockFundamentals(sym) || {};
+          const catalysts = {
+            highDividend: cachedFundForCatalyst.dividendYield > 5 || cachedFundForCatalyst.proposedDividend > 10,
+            strongProfitGrowth: cachedFundForCatalyst.epsGrowth > 20 || (cachedFundForCatalyst.eps > 25 && cachedFundForCatalyst.pe < 15),
+            rightShare: cachedFundForCatalyst.hasRightShare || false
+          };
+          const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker, catalysts });
+        if (plan && plan.supported) {
+          const vUpper = (plan.verdict || '').toUpperCase();
+          const winRate = Number(plan.analogResult?.stats?.winRate ?? 50);
+          const analogSampleSize = Number(plan.analogResult?.stats?.sampleSize ?? 0);
+          const slPrice = Number(plan.levels?.stopLoss?.price || 0);
+          const ltpNum = Number(plan.ltp || cand.ltp || 0);
+          const riskPct = ltpNum > 0 && slPrice > 0 ? (ltpNum - slPrice) / ltpNum : 0;
+
+          const isSafe = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') &&
+                         !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') &&
+                         winRate >= 55 && !(analogSampleSize > 0 && analogSampleSize < 4) &&
+                         riskPct <= 0.10;
+
+          if (isSafe) {
+            verifiedPrimePick = {
+              ...cand,
+              ...plan,
+              symbol: sym,
+              setupScore: plan.setupScore,
+              score: plan.setupScore,
+              compositeScore: plan.setupScore,
+              guruScore: plan.setupScore,
+              winRate: plan.analogResult?.stats?.winRate,
+              analogCount: plan.analogResult?.stats?.sampleSize,
+              confidenceLevel: plan.confidence?.level,
+              signalAgreement: plan.signalAgreement,
+              bullishFactors: plan.bullishFactors,
+              warnings: plan.warnings,
+              verdict: plan.verdict,
+              levels: plan.levels,
+              entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
+              entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
+              target1: plan.levels?.target1?.price,
+              target2: plan.levels?.target2?.price,
+              stopLoss: plan.levels?.stopLoss?.price,
+              isPlanVerified: true
+            };
+            break; // Found a verified winner — stop scanning
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // FINAL SAFETY & RADAR FALLBACK: If no stock passed the strict generateEntryExitPlan test.
+  // We activate Cash Defense Mode, but we grab the highest scoring candidate as a "Radar / Watchlist" pick.
+  if (!verifiedPrimePick) {
+    if (!breadthCheck.cashDefenseActive) {
+      breadthCheck.cashDefenseActive = true;
+    }
+    
+    // Provide a "Best of the Worst" relative strength leader for the UI to display as a Watchlist item
+    if (candidates.length > 0) {
+      const radarCand = candidates[0];
+      const sym = radarCand.symbol;
+      const history = priceHistories[sym] || [];
+      const broker = brokerDataMap[sym] || null;
+      const stockObj = stocks.find(s => s.symbol === sym) || radarCand;
+      
+      try {
+        if (history.length >= 20) {
+          const cachedFundForCatalyst = getCachedStockFundamentals(sym) || {};
+          const catalysts = {
+            highDividend: cachedFundForCatalyst.dividendYield > 5 || cachedFundForCatalyst.proposedDividend > 10,
+            strongProfitGrowth: cachedFundForCatalyst.epsGrowth > 20 || (cachedFundForCatalyst.eps > 25 && cachedFundForCatalyst.pe < 15),
+            rightShare: cachedFundForCatalyst.hasRightShare || false
+          };
+          const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker, catalysts });
+          if (plan && plan.supported) {
+            verifiedPrimePick = {
+              ...radarCand,
+              ...plan,
+              symbol: sym,
+              setupScore: plan.setupScore,
+              score: plan.setupScore,
+              compositeScore: plan.setupScore,
+              guruScore: plan.setupScore,
+              winRate: plan.analogResult?.stats?.winRate,
+              analogCount: plan.analogResult?.stats?.sampleSize,
+              confidenceLevel: plan.confidence?.level,
+              signalAgreement: plan.signalAgreement,
+              bullishFactors: plan.bullishFactors,
+              warnings: plan.warnings,
+              verdict: plan.verdict,
+              levels: plan.levels,
+              entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
+              entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
+              target1: plan.levels?.target1?.price,
+              target2: plan.levels?.target2?.price,
+              stopLoss: plan.levels?.stopLoss?.price,
+              isPlanVerified: true,
+              isDefensiveFallback: true // Identifies this as a high-risk watchlist fallback
+            };
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+
 
   const marketStatus = getDetailedMarketStatus();
   const isPostMarket = marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen;
