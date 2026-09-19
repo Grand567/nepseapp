@@ -1219,11 +1219,12 @@ function AppInner() {
                 onSelectStock={openStockDetail}
               />
             )}
-            {activeTab === 'predictor'  && (
+            {(activeTab === 'predictor' || activeTab === 'entry_exit') && (
               <PredictorHub
                 stocks={stocks}
                 indices={indices}
                 onSelectStock={openStockDetail}
+                initialSubTab={activeTab === 'entry_exit' ? 'entry_exit' : undefined}
               />
             )}
 
@@ -1276,7 +1277,7 @@ function AppInner() {
           { id: 'services',   icon: LayoutGrid,      label: 'Services' },
           { id: 'ai',         icon: BrainCircuit,    label: 'Guru AI' },
         ].map(({ id, icon: Icon, label }) => {
-          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo');
+          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && activeTab === 'entry_exit');
           return (
             <button
               key={id}

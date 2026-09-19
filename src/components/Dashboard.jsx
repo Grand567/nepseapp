@@ -3396,17 +3396,25 @@ export default function Dashboard({
               <button
                 type="button"
                 onClick={() => {
+                  const sym = String(primeDailyPick?.symbol || '').toUpperCase().trim();
                   try {
                     localStorage.setItem('open_service_id', 'entry-exit-analyzer');
-                    localStorage.setItem('selected_entry_exit_symbol', primeDailyPick.symbol);
+                    if (sym) {
+                      localStorage.setItem('selected_entry_exit_symbol', sym);
+                    }
                     window.dispatchEvent(new CustomEvent('open_service', {
-                      detail: { serviceId: 'entry-exit-analyzer', symbol: primeDailyPick.symbol }
+                      detail: { serviceId: 'entry-exit-analyzer', symbol: sym }
                     }));
-                    window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
-                      detail: { symbol: primeDailyPick.symbol }
-                    }));
+                    if (sym) {
+                      window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
+                        detail: { symbol: sym }
+                      }));
+                      window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                        detail: { tab: 'entry_exit', symbol: sym }
+                      }));
+                    }
                   } catch (_) {}
-                  setActiveTab('services');
+                  setActiveTab('entry_exit');
                 }}
                 style={{
                   background: 'linear-gradient(135deg, #059669, #10b981)',

@@ -1081,6 +1081,10 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     rrr2,
     feeFrictionPct: roundTripFeePct,
     cgtTaxRatePct: 10,
+    breakoutPivot: +high20.toFixed(1),
+    breakoutPrice: +(high20 + clearanceBuffer).toFixed(1),
+    clearanceBuffer: +clearanceBuffer.toFixed(1),
+    chaseCap: +entryZoneMax.toFixed(1),
     entryZone: {
       min: entryZoneMin,
       max: entryZoneMax,
@@ -1609,6 +1613,9 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
     // ── Levels (circuit-aware) ──
     levels,
+    breakoutPivot: levels.breakoutPivot,
+    breakoutPrice: levels.breakoutPrice,
+    chaseCap: levels.chaseCap,
 
     // ── Analog results ──
     analogResult,

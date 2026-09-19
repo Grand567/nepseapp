@@ -224,6 +224,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'breakout-tradable', name: 'Breakout Tradable', icon: Zap, color: 'emerald', cat: 'trade-lab', star: true },
   { id: 'investment-picks', name: 'Investment Picks', icon: Building2, color: 'purple', cat: 'trade-lab', star: true },
   { id: 'sip-in-stocks', name: 'SIP In Stocks', icon: PieChart, color: 'cyan', cat: 'trade-lab', star: true },
+  { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'trade-lab', star: true },
 
   { id: 'calculator', name: 'Brokerage Calc', icon: Calculator, color: 'orange', cat: 'trade-tools', star: true },
   { id: 'margin-loan', name: 'Margin Loan (NRB)', icon: Scale, color: 'rose', cat: 'trade-tools', star: true },

@@ -689,18 +689,22 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const handleOpenInEntryExitAnalyzer = useCallback(() => {
     if (!d?.symbol) return;
+    const sym = String(d.symbol).toUpperCase().trim();
     try {
       localStorage.setItem('open_service_id', 'entry-exit-analyzer');
-      localStorage.setItem('selected_entry_exit_symbol', d.symbol);
+      localStorage.setItem('selected_entry_exit_symbol', sym);
       window.dispatchEvent(new CustomEvent('open_service', {
-        detail: { serviceId: 'entry-exit-analyzer', symbol: d.symbol }
+        detail: { serviceId: 'entry-exit-analyzer', symbol: sym }
       }));
       window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
-        detail: { symbol: d.symbol }
+        detail: { symbol: sym }
+      }));
+      window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+        detail: { tab: 'entry_exit', symbol: sym }
       }));
     } catch (_) {}
     if (typeof onClose === 'function') onClose();
-    if (typeof setGlobalActiveTab === 'function') setGlobalActiveTab('services');
+    if (typeof setGlobalActiveTab === 'function') setGlobalActiveTab('entry_exit');
   }, [d?.symbol, onClose, setGlobalActiveTab]);
 
   // Helper: compute performance return for N days using real price history

@@ -93,9 +93,10 @@ export default function PredictorHub({
   stocks = [],
   indices = {},
   onSelectStock,
-  initialSymbol
+  initialSymbol,
+  initialSubTab
 }) {
-  const [activeTab, setActiveTab] = useState('nepse'); // 'nepse', 'stocks', 'entry_exit', 'macro_sentiment'
+  const [activeTab, setActiveTab] = useState(() => initialSubTab || 'nepse'); // 'nepse', 'stocks', 'entry_exit', 'macro_sentiment'
   const [selectedForAnalysis, setSelectedForAnalysis] = useState(() => {
     if (initialSymbol && typeof initialSymbol === 'string') return initialSymbol.trim().toUpperCase();
     try {
@@ -105,7 +106,13 @@ export default function PredictorHub({
     return '';
   });
 
-  // Keep selectedForAnalysis in sync when symbol changes across app components
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  // Keep selectedForAnalysis & activeTab in sync when triggered across app components
   useEffect(() => {
     const handleSymbolSync = (e) => {
       const s = e?.detail?.symbol;
@@ -113,8 +120,22 @@ export default function PredictorHub({
         setSelectedForAnalysis(s.trim().toUpperCase());
       }
     };
+
+    const handleTabSwitch = (e) => {
+      if (e?.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+      if (e?.detail?.symbol) {
+        setSelectedForAnalysis(String(e.detail.symbol).trim().toUpperCase());
+      }
+    };
+
     window.addEventListener('set_entry_exit_symbol', handleSymbolSync);
-    return () => window.removeEventListener('set_entry_exit_symbol', handleSymbolSync);
+    window.addEventListener('switch_predictor_tab', handleTabSwitch);
+    return () => {
+      window.removeEventListener('set_entry_exit_symbol', handleSymbolSync);
+      window.removeEventListener('switch_predictor_tab', handleTabSwitch);
+    };
   }, []);
 
   // Prediction state
