@@ -1302,7 +1302,7 @@ export async function fetchMarketDepth(symbol) {
 export async function fetchVerifiedDailyPrimePick(forceRefresh = false) {
   try {
     const qs = forceRefresh ? '?force=true' : '';
-    const res = await fetchFromBackend(`/api/prime-pick/daily-verified${qs}`, 6000);
+    const res = await fetchFromBackend(`/api/prime-pick/daily-verified${qs}`, 18000);
     if (res && res.success && res.data) {
       return res;
     }

@@ -775,17 +775,16 @@ export default function PredictorHub({
     const rawPick = masterPipeline.primeDailyPick;
     if (rawPick) {
       const v = String(rawPick.verdict || '').toUpperCase();
-      const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
+      // STRICT 2 RULES ONLY:
+      // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
+      // 2. isInstitutionalDumping is false
       const isBad = 
         v.includes('NO TRADE') ||
         v.includes('AVOID') ||
         v.includes('REDUCE') ||
         v.includes('EXIT') ||
         v.includes('STAY OUT') ||
-        rawPick.isLossMaking ||
-        Boolean(rawPick.riskGate?.isInstitutionalDumping) ||
-        (rawPick.eps !== undefined && Number(rawPick.eps) < 0) ||
-        (score > 0 && score < 50);
+        Boolean(rawPick.riskGate?.isInstitutionalDumping);
 
       if (!isBad) {
         return rawPick;
@@ -797,20 +796,16 @@ export default function PredictorHub({
         const parsed = JSON.parse(raw);
         if (parsed?.plan?.symbol && parsed?.plan?.levels) {
           const v = String(parsed.plan.verdict || '').toUpperCase();
-          const score = Number(parsed.plan.setupScore || parsed.plan.guruScore || 0);
           const isBad = 
             v.includes('NO TRADE') ||
             v.includes('AVOID') ||
             v.includes('REDUCE') ||
             v.includes('EXIT') ||
             v.includes('STAY OUT') ||
-            Boolean(parsed.plan.riskGate?.isInstitutionalDumping) ||
-            score < 50;
+            Boolean(parsed.plan.riskGate?.isInstitutionalDumping);
 
           if (!isBad) {
             return parsed.plan;
-          } else {
-            localStorage.removeItem('prime_pick_plan_cache');
           }
         }
       }
@@ -868,7 +863,8 @@ export default function PredictorHub({
 
         if (result.supported) {
           const vUpper = String(result.verdict || '').toUpperCase();
-          const isPassing = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && Number(result.setupScore || 0) >= 50;
+          // STRICT 2 RULES ONLY
+          const isPassing = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && !vUpper.includes('STAY OUT') && !Boolean(result.riskGate?.isInstitutionalDumping);
           const planWithSymbol = { ...result, symbol: sym };
           setPrimePlan(planWithSymbol);
           if (isPassing) {

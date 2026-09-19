@@ -1525,11 +1525,30 @@ export default function Dashboard({
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const verifiedSymbolsRef = useRef(new Set());
 
-  // CRITICAL FIX: hydratedPrimePick MUST NOT be initialized from localStorage.
-  // A stale localStorage plan (computed with synthetic/old history) is what caused HIMSTAR (score 29)
-  // to appear as the Day Prime Pick. Only the backend /api/prime-pick/daily-verified endpoint
-  // (which runs generateEntryExitPlan with real 500-day server history) is authoritative.
-  const [hydratedPrimePick, setHydratedPrimePick] = useState(null);
+  // Initialize hydratedPrimePick from localStorage if a clean plan exists
+  const [hydratedPrimePick, setHydratedPrimePick] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem('prime_pick_plan_cache');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const p = parsed.plan || parsed;
+          const v = String(p.verdict || '').toUpperCase();
+          const isBad = 
+            v.includes('NO TRADE') ||
+            v.includes('AVOID') ||
+            v.includes('REDUCE') ||
+            v.includes('EXIT') ||
+            v.includes('STAY OUT') ||
+            Boolean(p.riskGate?.isInstitutionalDumping);
+          if (p.symbol && !isBad) {
+            return p;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  });
 
 
   const masterBreakoutPipeline = useMemo(() => {
@@ -1664,6 +1683,8 @@ export default function Dashboard({
 
     let isMounted = true;
     (async () => {
+      const evaluatedList = [];
+
       for (const sym of prioritySymbols) {
         if (!isMounted) break;
         verifiedSymbolsRef.current.add(sym);
@@ -1677,12 +1698,6 @@ export default function Dashboard({
           ]);
 
           if (!isMounted) break;
-
-          // Disqualify any loss-making entity (negative EPS like GCIL -6.13)
-          if (fundRes && fundRes.eps !== undefined && Number(fundRes.eps) < 0) {
-            console.info(`[Dashboard] Disqualifying ${sym} due to negative EPS (${fundRes.eps})`);
-            continue;
-          }
 
           let candleList = Array.isArray(history) ? history : (history?.data || []);
           if (candleList.length === 0) {
@@ -1700,32 +1715,31 @@ export default function Dashboard({
 
             if (plan && plan.supported && isMounted) {
               const vUpper = String(plan.verdict || '').toUpperCase();
-              const winRate = Number(plan.analogResult?.stats?.winRate ?? 50);
-              const setupScore = Number(plan.setupScore || 0);
+              const scoreVal = Number(plan.setupScore || 0);
 
-              // STRICT ENTRY/EXIT ANALYZER PASS CRITERIA:
-              // 1. Verdict CANNOT be NO TRADE, AVOID, REDUCE, or EXIT
-              // 2. Setup score must be >= 55
-              // 3. Forward analog win rate must be >= 48%
-              const isPassing = !vUpper.includes('NO TRADE') &&
-                                !vUpper.includes('AVOID') &&
-                                !vUpper.includes('REDUCE') &&
-                                !vUpper.includes('EXIT') &&
-                                setupScore >= 55 &&
-                                winRate >= 48;
+              // STRICT 2 RULES ONLY:
+              // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
+              // 2. isInstitutionalDumping is false
+              const isDisqualified = 
+                vUpper.includes('NO TRADE') ||
+                vUpper.includes('AVOID') ||
+                vUpper.includes('REDUCE') ||
+                vUpper.includes('EXIT') ||
+                vUpper.includes('STAY OUT') ||
+                Boolean(plan.riskGate?.isInstitutionalDumping);
 
-              if (isPassing) {
+              if (!isDisqualified) {
                 const entryHighNum = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || plan.ltp || stockObj.ltp || 100);
                 const verifiedPick = {
                   ...stockObj,
                   ...plan,
                   symbol: sym,
-                  setupScore: plan.setupScore,
-                  score: plan.setupScore,
-                  compositeScore: plan.setupScore,
-                  guruScore: plan.setupScore,
+                  setupScore: scoreVal,
+                  score: scoreVal,
+                  compositeScore: scoreVal,
+                  guruScore: scoreVal,
                   rvol: plan.technical?.volume?.rvol || 1.25,
-                  winRate: plan.analogResult?.stats?.winRate ?? 65,
+                  winRate: plan.analogResult?.stats?.winRate ?? 50,
                   analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
                   confidenceLevel: plan.confidence?.level || 'MEDIUM',
                   levels: plan.levels,
@@ -1738,22 +1752,7 @@ export default function Dashboard({
                   isPlanVerified: true,
                   candles: candleList
                 };
-
-                setHydratedPrimePick(verifiedPick);
-                try {
-                  localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-                    symbol: sym,
-                    plan: {
-                      ...verifiedPick,
-                      candles: candleList.slice(-100) // preserve up to 100 candles for instant cache loading
-                    },
-                    ts: Date.now()
-                  }));
-                } catch (_) {}
-                // Winning verified setup found! Stop search.
-                return;
-              } else {
-                console.info(`[Dashboard] ${sym} failed Entry/Exit Analyzer test (verdict: ${plan.verdict}, score: ${plan.setupScore}, winRate: ${winRate}%). Testing next candidate...`);
+                evaluatedList.push(verifiedPick);
               }
             }
           }
@@ -1762,28 +1761,22 @@ export default function Dashboard({
         }
       }
 
-      // If all scanned candidates failed the Entry/Exit Analyzer test:
-      // Wipe any cached plan that fails the same gates primeDailyPick uses, so nothing slips through
-      try {
-        const raw = localStorage.getItem('prime_pick_plan_cache');
-        if (raw) {
-          const p = JSON.parse(raw);
-          const v = String(p?.plan?.verdict || '').toUpperCase();
-          const score = Number(p?.plan?.setupScore || p?.plan?.guruScore || 0);
-          const epsVal = Number(p?.plan?.eps ?? 0);
-          const isFailingPlan = 
-            v.includes('NO TRADE') ||
-            v.includes('AVOID') ||
-            v.includes('REDUCE') ||
-            v.includes('EXIT') ||
-            v.includes('STAY OUT') ||
-            Boolean(p?.plan?.riskGate?.isInstitutionalDumping);
-          if (isFailingPlan) {
-            localStorage.removeItem('prime_pick_plan_cache');
-            setHydratedPrimePick(null);
-          }
-        }
-      } catch (_) {}
+      // Select highest scoring setup from Entry/Exit Analyzer evaluation
+      if (isMounted && evaluatedList.length > 0) {
+        evaluatedList.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+        const bestPick = evaluatedList[0];
+        setHydratedPrimePick(bestPick);
+        try {
+          localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+            symbol: bestPick.symbol,
+            plan: {
+              ...bestPick,
+              candles: (bestPick.candles || []).slice(-100)
+            },
+            ts: Date.now()
+          }));
+        } catch (_) {}
+      }
     })();
 
     return () => { isMounted = false; };
@@ -2831,7 +2824,22 @@ export default function Dashboard({
       )}
 
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
-      {(!primeDailyPick || primeDailyPick.verdict?.includes('AVOID') || primeDailyPick.verdict?.includes('REDUCE') || primeDailyPick.verdict?.includes('NO TRADE') || Boolean(primeDailyPick.riskGate?.isInstitutionalDumping)) ? (
+      {(!stocks || stocks.length === 0) ? (
+        <div style={{
+          borderRadius: 18,
+          background: 'rgba(15, 23, 42, 0.7)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '20px',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12
+        }}>
+          <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #3b82f6', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+          <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>Analyzing 350+ NEPSE stocks via Entry/Exit Analyzer...</span>
+        </div>
+      ) : (!primeDailyPick || primeDailyPick.verdict?.includes('AVOID') || primeDailyPick.verdict?.includes('REDUCE') || primeDailyPick.verdict?.includes('NO TRADE') || Boolean(primeDailyPick.riskGate?.isInstitutionalDumping)) ? (
         <div style={{
           borderRadius: 18,
           background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',

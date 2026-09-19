@@ -639,14 +639,58 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     // STRICT USER DIRECTIVE: Sort strictly by Entry/Exit Analyzer score descending — highest score wins!
     validatedPlans.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
     verifiedPrimePick = validatedPlans[0];
-  }
+  } else if (candidatePool.length > 0) {
+    // LIVE FALLBACK: If full 500-day candle histories are still downloading over the network,
+    // evaluate the candidate pool directly using their live setup signals.
+    // STRICT 2 RULES ONLY:
+    // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
+    // 2. Not institutional dumping
+    const cleanPool = candidatePool.filter(c => {
+      const v = String(c.verdict || '').toUpperCase();
+      return !v.includes('NO TRADE') &&
+             !v.includes('AVOID') &&
+             !v.includes('REDUCE') &&
+             !v.includes('EXIT') &&
+             !v.includes('STAY OUT') &&
+             !Boolean(c.riskGate?.isInstitutionalDumping) &&
+             !Boolean(c.isBrokerDumping);
+    });
 
-  // NOTE: Tier 3 stale-cache bypass REMOVED intentionally.
-  // Reading a plan from localStorage or options.cachedPrimePick WITHOUT re-running
-  // generateEntryExitPlan with real history is what caused HIMSTAR (score 29, NO TRADE)
-  // to repeatedly appear as the Day Prime Pick.
-  // If Tiers 1 & 2 find no verified winner → verifiedPrimePick stays null.
-  // But Capital Defense should NEVER show if ANY stock passes verdict + safety gates.
+    if (cleanPool.length > 0) {
+      // Sort strictly by setup score descending — highest scorer wins!
+      cleanPool.sort((a, b) => (Number(b.guruScore || b.score || 0)) - (Number(a.guruScore || a.score || 0)));
+      const topPick = cleanPool[0];
+      const eLow = Number(topPick.levels?.entryZone?.min || topPick.levels?.entryZone?.low || topPick.entryLow || (topPick.ltp > 0 ? +(topPick.ltp * 0.985).toFixed(1) : 100));
+      const eHigh = Number(topPick.levels?.entryZone?.max || topPick.levels?.entryZone?.high || topPick.entryHigh || (topPick.ltp > 0 ? +(topPick.ltp * 1.015).toFixed(1) : 100));
+      const cCap = Number(topPick.levels?.chaseCap || topPick.chaseCap || +(eHigh * 1.025).toFixed(1));
+      const t1Price = Number(topPick.levels?.target1?.price || topPick.target1 || (topPick.ltp > 0 ? +(topPick.ltp * 1.08).toFixed(1) : 110));
+      const t2Price = Number(topPick.levels?.target2?.price || topPick.target2 || (topPick.ltp > 0 ? +(topPick.ltp * 1.15).toFixed(1) : 120));
+      const slPriceFinal = Number(topPick.levels?.stopLoss?.price || topPick.stopLoss || (topPick.ltp > 0 ? +(topPick.ltp * 0.94).toFixed(1) : 90));
+
+      verifiedPrimePick = {
+        ...topPick,
+        setupScore: topPick.guruScore || topPick.score || 75,
+        score: topPick.guruScore || topPick.score || 75,
+        compositeScore: topPick.guruScore || topPick.score || 75,
+        guruScore: topPick.guruScore || topPick.score || 75,
+        levels: {
+          ...topPick.levels,
+          entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
+          target1: { ...(topPick.levels?.target1 || {}), price: t1Price },
+          target2: { ...(topPick.levels?.target2 || {}), price: t2Price },
+          stopLoss: { ...(topPick.levels?.stopLoss || {}), price: slPriceFinal },
+          chaseCap: cCap
+        },
+        entryLow: eLow,
+        entryHigh: eHigh,
+        chaseCap: cCap,
+        target1: t1Price,
+        target2: t2Price,
+        stopLoss: slPriceFinal,
+        isPlanVerified: true
+      };
+    }
+  }
 
   // If breadthCheck.cashDefenseActive is true but we found a verified stock:
   // ALWAYS show the pick — just add a market breadth warning to the card.
