@@ -564,6 +564,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     const promoterPercentage = Number(liveDetail?.promoterPercentage || s.promoterPercentage || 0);
     const publicPercentage = Number(liveDetail?.publicPercentage || s.publicPercentage || (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0));
 
+    const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
+    const stockVol = Number(s.volume || s.totalTradedQuantity || 0);
+    const volume = liveVol > 0 ? liveVol : stockVol;
+
+    const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
+    const stockTurnover = Number(s.turnover || s.totalTradedValue || 0);
+    const turnover = liveTurnover > 0 ? liveTurnover : stockTurnover;
+
+    const rvol = Number(liveDetail?.rvol || s.rvol || s.volumeSurgeRatio || 0) || undefined;
+    const avgVolume20D = Number(liveDetail?.avgVolume20D || s.avgVolume20D || 0) || undefined;
+
     return {
       ...s,
       ltp: ltp > 0 ? ltp : Number(s.ltp || 0),
@@ -573,6 +584,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       high: Number(liveDetail?.highPrice || s.high || ltp),
       low: Number(liveDetail?.lowPrice || s.low || ltp),
       prevClose: Number(liveDetail?.prevClose || s.prevClose || (ltp - (s.change || 0))),
+      volume,
+      turnover,
+      rvol,
+      avgVolume20D,
       eps,
       pe,
       pb,
@@ -600,8 +615,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         const item = localStorage.getItem('prime_pick_plan_cache');
         if (item) {
           const parsed = JSON.parse(item);
-          if (parsed && parsed.symbol && parsed.plan) {
-            return parsed;
+          const plan = parsed?.plan || parsed;
+          const symbol = parsed?.symbol || plan?.symbol;
+          if (symbol && plan) {
+            return { symbol, plan };
           }
         }
       }
@@ -615,6 +632,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity (ONLY IF AUTHENTIC BUY/ACCUMULATE)
     if (cachedPrime && cachedPrime.symbol === d.symbol && cachedPrime.plan && isActionableBuySignal(cachedPrime.plan)) {
       return cachedPrime.plan;
+    }
+
+    // 1b. If resolvedStock already passed with verified actionable plan, reuse it directly to maintain absolute stability across async renders!
+    if (resolvedStock && resolvedStock.isPlanVerified && resolvedStock.levels && isActionableBuySignal(resolvedStock)) {
+      return resolvedStock;
     }
 
     // 2. Otherwise generate authoritative EntryExitPlan using real price history candles & broker metrics
@@ -633,7 +655,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       console.warn('[StockDetailModal] generateEntryExitPlan error:', err);
       return null;
     }
-  }, [d, realPriceHistory, history, realBrokerAnalysis, cachedPrime]);
+  }, [d, realPriceHistory, history, realBrokerAnalysis, cachedPrime, resolvedStock]);
 
   const modalSetupScore = entryExitPlan ? Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70) : 50;
   const modalVerdict = entryExitPlan?.verdict || '';
@@ -750,30 +772,45 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
       const todayLtp = Number(d.ltp || d.closePrice || 0);
       const todayDate = d.businessDate || d.date || getLatestTradingDateStr();
+      const liveVol = Number(d.volume || d.totalTradedQuantity || 0);
+      const liveTurnover = Number(d.turnover || d.totalTradedValue || 0);
+      const liveTrades = Number(d.transactions || d.totalTrades || 0);
 
       if (todayLtp > 0 && fullHistory.length > 0) {
         const last = fullHistory[fullHistory.length - 1];
         const isLastToday = last && (last.date === todayDate || String(last.date).slice(0, 10) === todayDate);
 
-        const todayRecord = {
-          date: todayDate,
-          open: Number(d.open) || todayLtp,
-          high: Math.max(Number(d.high) || todayLtp, todayLtp),
-          low: Math.min(Number(d.low) || todayLtp, todayLtp),
-          close: todayLtp,
-          volume: Number(d.volume || d.totalTradedQuantity || 0),
-          turnover: Number(d.turnover || d.totalTradedValue || 0),
-          trades: Number(d.transactions || d.totalTrades || 0),
-          change: Number(d.change || 0),
-          pChange: Number(d.pChange || 0),
-          isToday: true,
-          isReal: true
-        };
-
         if (isLastToday) {
-          fullHistory[fullHistory.length - 1] = { ...last, ...todayRecord };
-        } else {
-          fullHistory.push(todayRecord);
+          fullHistory[fullHistory.length - 1] = {
+            ...last,
+            open: Number(d.open) || Number(last.open) || todayLtp,
+            high: Math.max(Number(d.high) || todayLtp, Number(last.high) || todayLtp, todayLtp),
+            low: Math.min(Number(d.low) || todayLtp, Number(last.low) || todayLtp, todayLtp),
+            close: todayLtp,
+            volume: liveVol > 0 ? liveVol : (Number(last.volume) || 0),
+            turnover: liveTurnover > 0 ? liveTurnover : (Number(last.turnover) || 0),
+            trades: liveTrades > 0 ? liveTrades : (Number(last.trades) || 0),
+            change: Number(d.change !== undefined ? d.change : (last.change || 0)),
+            pChange: Number(d.pChange !== undefined ? d.pChange : (last.pChange || 0)),
+            isToday: true,
+            isReal: true
+          };
+        } else if (liveVol > 0) {
+          // ONLY push a new candle if there is genuine active volume (prevents weekend/holiday 0-volume corruption)
+          fullHistory.push({
+            date: todayDate,
+            open: Number(d.open) || todayLtp,
+            high: Math.max(Number(d.high) || todayLtp, todayLtp),
+            low: Math.min(Number(d.low) || todayLtp, todayLtp),
+            close: todayLtp,
+            volume: liveVol,
+            turnover: liveTurnover,
+            trades: liveTrades,
+            change: Number(d.change || 0),
+            pChange: Number(d.pChange || 0),
+            isToday: true,
+            isReal: true
+          });
         }
       }
 

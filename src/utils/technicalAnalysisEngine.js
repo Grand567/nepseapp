@@ -399,16 +399,27 @@ export function analyzeVolume(candles) {
   }
 
   const n = candles.length;
-  const currentBar = candles[n - 1];
-  const prevBar = candles[n - 2];
+  // If the last candle has 0 volume (e.g. weekend/holiday stub), find the latest candle with volume > 0
+  let currentBar = candles[n - 1];
+  let currentVolume = Number(currentBar.volume) || 0;
+  if (currentVolume <= 0 && n > 1) {
+    for (let i = n - 1; i >= 0; i--) {
+      if (Number(candles[i].volume) > 0) {
+        currentBar = candles[i];
+        currentVolume = Number(currentBar.volume);
+        break;
+      }
+    }
+  }
 
-  const currentVolume = Number(currentBar.volume) || 0;
-  const currentClose = Number(currentBar.close) || 0;
+  const currentClose = Number(candles[n - 1].close) || 0;
+  const prevBar = candles[n - 2];
   const prevClose = Number(prevBar?.close) || currentClose;
   const pChange = prevClose > 0 ? ((currentClose - prevClose) / prevClose) * 100 : 0;
 
-  // 20-day average volume
-  const volWindow = candles.slice(Math.max(0, n - 20)).map((c) => Number(c.volume) || 0);
+  // 20-day average volume (filter candles with volume > 0 to prevent holiday/weekend dilution)
+  const activeBars = candles.filter((c) => Number(c.volume) > 0);
+  const volWindow = (activeBars.length >= 5 ? activeBars : candles).slice(-20).map((c) => Number(c.volume) || 0);
   const avgVolume20 = Math.round(volWindow.reduce((a, b) => a + b, 0) / Math.max(1, volWindow.length));
 
   // Standard deviation of volume
@@ -420,7 +431,7 @@ export function analyzeVolume(candles) {
   const zScoreObj = calculateVolumeZScore(currentVolume, avgVolume20, stdDevVol);
 
   // 5-day volume trend vs 20-day
-  const vol5 = candles.slice(Math.max(0, n - 5)).map((c) => Number(c.volume) || 0);
+  const vol5 = (activeBars.length >= 5 ? activeBars : candles).slice(-5).map((c) => Number(c.volume) || 0);
   const avgVol5 = vol5.reduce((a, b) => a + b, 0) / Math.max(1, vol5.length);
   const volumeTrend = avgVol5 > avgVolume20 * 1.1 ? 'rising' : avgVol5 < avgVolume20 * 0.9 ? 'falling' : 'flat';
 

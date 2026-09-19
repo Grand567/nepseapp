@@ -62,6 +62,7 @@ import {
 } from './quantEngine.js';
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
+import { calculateStockRvol } from './watchlistAlerts.js';
 
 // ══════════════════════════════════════════════════════════════════
 // 0.  CONSTANTS
@@ -791,7 +792,7 @@ export function scoreToVerdict(score, riskGate = {}, setupType = '') {
   if (riskGate.isUnfavorableRRR) {
     return 'NO TRADE (UNFAVORABLE RISK/REWARD)';
   }
-  if (riskGate.isFestiveLowVolumeTrap) {
+  if (riskGate.isFestiveLowVolumeTrap && score < 68) {
     return 'NO TRADE (FESTIVE CASH DRAIN / LOW RVOL)';
   }
   if (riskGate.isLossMaking) {
@@ -1142,8 +1143,10 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   try {
-    const rvol = technicalReport?.volume?.rvol ?? 1.0;
-    priceActionReport = analyzePriceAction(adjustedCandles, rvol, atr);
+    const stockRvol = Number(stock?.rvol || stock?.volumeSurgeRatio || 0);
+    const techRvol = Number(technicalReport?.volume?.rvol || 0);
+    const effRvol = stockRvol > 0 ? stockRvol : (techRvol > 0 ? techRvol : 1.0);
+    priceActionReport = analyzePriceAction(adjustedCandles, effRvol, atr);
   } catch (e) {
     console.warn('[setupAnalyzer] Price action analysis error:', e.message);
   }
@@ -1473,12 +1476,15 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // ── Accurate Festival & Fiscal Seasonality Integration ───────────
   const festivalSeason = getAccurateFestivalSeasonality(new Date());
-  const rvol = Number(technicalReport?.volume?.rvol || 1.0);
+  const stockRvol = Number(stock?.rvol || stock?.volumeSurgeRatio || 0);
+  const techRvol = Number(technicalReport?.volume?.rvol || 0);
+  const calcRvol = typeof calculateStockRvol === 'function' ? calculateStockRvol(stock, adjustedCandles) : 1.0;
+  const resolvedRvol = stockRvol > 0 ? stockRvol : (techRvol > 0 ? techRvol : (calcRvol > 0 ? calcRvol : 1.0));
   const isBreakoutAttempt = priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 3.0;
 
   if (festivalSeason.isFestiveLull) {
-    if (isBreakoutAttempt && rvol < festivalSeason.rvolThreshold) {
-      bearishFactors.push(`Festive cash drain volume penalty: ${festivalSeason.festivalName} active. Breakout RVOL (${rvol.toFixed(2)}x) fails festive confirmation hurdle (${festivalSeason.rvolThreshold}x) — elevated risk of low-volume fakeout`);
+    if (isBreakoutAttempt && resolvedRvol < festivalSeason.rvolThreshold && resolvedRvol < 1.4 && combinedScore < 68) {
+      bearishFactors.push(`Festive cash drain volume penalty: ${festivalSeason.festivalName} active. Breakout RVOL (${resolvedRvol.toFixed(2)}x) fails festive confirmation hurdle (${festivalSeason.rvolThreshold}x) — elevated risk of low-volume fakeout`);
     }
   } else if (festivalSeason.isAgmRally) {
     bullishFactors.push(`Seasonal dividend tailwind: ${festivalSeason.phase} (${festivalSeason.historicalWinRate} historical win rate, ${festivalSeason.historicalAvgReturn} avg gain) — bonus share declarations support institutional bidding`);
@@ -1498,7 +1504,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     ...(festivalSeason.isTaxDrain ? [`⚠️ Advance Corporate Tax Outflow: ${festivalSeason.detail}`] : []),
     ...(priceActionReport?.breakout?.bullTrapRisk ? ['⚠️ Potential bull trap: candle formed upper rejection wick > 40% of range'] : []),
     ...(technicalReport?.momentum?.rsi14 > 75 ? [`⚠️ Extreme overbought condition (RSI ${technicalReport.momentum.rsi14.toFixed(1)}) — avoid chasing extended moves`] : []),
-    ...(technicalReport?.volume?.rvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${technicalReport.volume.rvol.toFixed(2)}x) — risk of exit slippage`] : []),
+    ...(resolvedRvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${resolvedRvol.toFixed(2)}x) — risk of exit slippage`] : []),
   ];
 
   // ── Risk & Execution Gate (Section 1, 6.2, 6.3) ───────────────
@@ -1521,7 +1527,13 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const isDeepHydroDryBreakout = isDeepHydroDry && (priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 5.0);
   const isOverheadResistanceCeiling = ema200Val > 0 && Math.abs(ltp - ema200Val) / ema200Val <= 0.015 && (analogWinRate !== null && analogWinRate < 45);
 
-  const isFestiveLowVolumeTrap = Boolean(festivalSeason.isFestiveLull && isBreakoutAttempt && rvol < festivalSeason.rvolThreshold);
+  const isFestiveLowVolumeTrap = Boolean(
+    festivalSeason.isFestiveLull &&
+    isBreakoutAttempt &&
+    resolvedRvol < festivalSeason.rvolThreshold &&
+    resolvedRvol < 1.4 &&
+    combinedScore < 68
+  );
 
   const riskGate = {
     isCircuitTrap,
@@ -1537,7 +1549,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
-           : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${rvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
+           : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${resolvedRvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
            : isLossMaking ? `Fundamental Caution: Negative EPS (Rs. ${epsVal.toFixed(2)}) indicates operational losses.`
            : isExtremeMultiple ? `Extreme Valuation Multiple: P/E × P/B multiple of ${pePbMultiple.toFixed(1)} carries severe multiple contraction risk.`
            : isInstitutionalDumping ? `Institutional Broker Distribution: Net ${Math.abs(brokerAdRatio * 100).toFixed(1)}% volume dumped by top institutional brokers into retail demand. Avoid fresh entry.`
@@ -1617,7 +1629,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     technical:        technicalReport,
     trend:            technicalReport?.trend,
     momentum:         technicalReport?.momentum,
-    volume:           technicalReport?.volume,
+    volume:           { ...(technicalReport?.volume || {}), rvol: resolvedRvol },
     volatility:       technicalReport?.volatility,
     priceAction:      priceActionReport,
     supportResistance: priceActionReport?.supportResistance,
