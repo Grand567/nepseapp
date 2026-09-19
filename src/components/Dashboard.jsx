@@ -3294,7 +3294,222 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* ── 4B. QUICK NEWS FEED TICKER ── */}
+      {/* ── 4B. UNIFIED WATCHLIST & BREAKOUT ALERTS CARD (Single Card - Directly Below Day Prime Pick) ── */}
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 16,
+        padding: '14px',
+        marginBottom: 12
+      }}>
+        {/* Card Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 10,
+              background: 'rgba(251, 191, 36, 0.15)',
+              border: '1px solid rgba(251, 191, 36, 0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fbbf24'
+            }}>
+              <Star size={16} fill="#fbbf24" />
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                Watchlist & Breakout Alerts
+                <span style={{
+                  fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99,
+                  background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24',
+                  border: '1px solid rgba(251, 191, 36, 0.4)'
+                }}>
+                  {watchedOrAlertSymbols.length}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                Live price tracking, Dual-Gate breakout telemetry & custom alerts
+              </div>
+            </div>
+          </div>
+
+          <span style={{ fontSize: 10.5, color: '#94a3b8', background: 'rgba(255,255,255,0.04)', padding: '4px 8px', borderRadius: 6 }}>
+            Dual-Gate: Price ≥ Pivot & RVOL ≥ Hurdle
+          </span>
+        </div>
+
+        {/* Watchlist Stock Rows */}
+        {watchedStocks.length === 0 ? (
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <Star style={{ width: 32, height: 32, color: '#fbbf24', margin: '0 auto 8px', opacity: 0.5 }} />
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)' }}>
+              {topSearch.trim() ? `No watched stocks match "${topSearch.trim()}"` : 'Your Watchlist & Alerts list is empty'}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, maxWidth: 360, margin: '4px auto 10px', lineHeight: 1.5 }}>
+              {topSearch.trim()
+                ? 'Try clearing your search query above.'
+                : 'Search any stock above or tap the ⭐ star icon or 🔔 alert icon next to any stock to track it here with live price updates and breakout signals.'}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {watchedStocks.map(s => {
+              const sym = s.symbol;
+              const cfg = alertConfigs[sym] || deriveDefaultBreakoutPlan(s);
+              const ltp = Number(s.ltp || 0);
+              const pCh = Number(s.pChange || 0);
+              const isBull = pCh >= 0;
+              const rvol = calculateStockRvol(s);
+              const isPriceMet = ltp >= Number(cfg.breakoutPrice);
+              const isRvolMet = rvol >= Number(cfg.rvolThreshold);
+              const isTriggered = isPriceMet && isRvolMet;
+              const pctToPivot = ltp > 0 ? (((Number(cfg.breakoutPrice) - ltp) / ltp) * 100).toFixed(1) : 0;
+              const spark = generateSparkline(ltp, pCh);
+
+              return (
+                <div
+                  key={sym}
+                  onClick={() => handleStockClick(s)}
+                  style={{
+                    background: isTriggered ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)',
+                    border: isTriggered ? '1.5px solid rgba(16, 185, 129, 0.5)' : '1px solid var(--border)',
+                    borderRadius: 12,
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isTriggered ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)'}
+                  onMouseLeave={e => e.currentTarget.style.background = isTriggered ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)'}
+                >
+                  {/* Line 1: Symbol, Star, Sector, Sparkline, LTP Price, and Change Percentage */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleWatchlist(sym);
+                        }}
+                        title="Remove from Watchlist"
+                        style={{
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#fbbf24'
+                        }}
+                      >
+                        <Star size={16} fill="#fbbf24" />
+                      </button>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
+                        {sym}
+                      </span>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
+                        {s.sector || 'Others'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 44 }} className="screener-col-desktop">
+                        <Sparkline points={spark} bull={isBull} />
+                      </div>
+
+                      <div style={{ fontSize: 13.5, fontWeight: 900, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                        Rs. {fmt(ltp)}
+                      </div>
+
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '2px 7px',
+                        borderRadius: 5,
+                        background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                        color: isBull ? 'var(--bull)' : '#F43F5E',
+                        border: `1px solid ${isBull ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                        minWidth: 58,
+                        textAlign: 'center'
+                      }}>
+                        {isBull ? '+' : ''}{pCh.toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Line 2: Trigger Status Badge & Price Gate */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingTop: 6,
+                    borderTop: '1px solid rgba(255,255,255,0.04)',
+                    fontSize: 11,
+                    color: '#94a3b8',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{
+                      fontSize: 9.5,
+                      fontWeight: 800,
+                      padding: '2px 6px',
+                      borderRadius: 5,
+                      background: isTriggered ? 'rgba(16, 185, 129, 0.2)' : isPriceMet ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      color: isTriggered ? '#10B981' : isPriceMet ? '#fbbf24' : '#94a3b8',
+                      border: isTriggered ? '1px solid rgba(16, 185, 129, 0.4)' : isPriceMet ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)'
+                    }}>
+                      {isTriggered ? '🔥 BREAKOUT' : isPriceMet ? '⚠️ VOLUME LACKING' : `⏳ COILING (${pctToPivot}% to pivot)`}
+                    </span>
+                    <span>
+                      Price Gate: <strong style={{ color: isPriceMet ? '#34d399' : '#ffffff', fontFamily: 'var(--font-mono)' }}>Rs. {cfg.breakoutPrice}</strong> {isPriceMet && '✓'}
+                    </span>
+                  </div>
+
+                  {/* Line 3: RVOL Hurdle and Configure Alert Button (on the exact same line) */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    fontSize: 11,
+                    color: '#94a3b8'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>
+                        RVOL: <strong style={{ color: isRvolMet ? '#34d399' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>{Number(rvol || 1).toFixed(2)}x</strong> / {(Number(cfg.rvolThreshold) || 1.5).toFixed(2)}x {isRvolMet && '✓'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAlertModalStock(s);
+                      }}
+                      title="Configure Breakout Alert"
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        borderRadius: 6,
+                        padding: '3px 8px',
+                        color: '#38bdf8',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        flexShrink: 0
+                      }}
+                    >
+                      <Bell size={11} />
+                      <span>Configure Alert</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4C. QUICK NEWS FEED TICKER ── */}
       <div style={{
         background: 'rgba(15, 23, 42, 0.65)',
         border: '1px solid var(--border)',
@@ -3522,221 +3737,6 @@ export default function Dashboard({
               })}
             </div>
           </>
-        )}
-      </div>
-
-      {/* ── 6. UNIFIED WATCHLIST & BREAKOUT ALERTS CARD (Single Card) ── */}
-      <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 16,
-        padding: '14px',
-        marginBottom: 12
-      }}>
-        {/* Card Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 10,
-              background: 'rgba(251, 191, 36, 0.15)',
-              border: '1px solid rgba(251, 191, 36, 0.35)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fbbf24'
-            }}>
-              <Star size={16} fill="#fbbf24" />
-            </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Watchlist & Breakout Alerts
-                <span style={{
-                  fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99,
-                  background: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24',
-                  border: '1px solid rgba(251, 191, 36, 0.4)'
-                }}>
-                  {watchedOrAlertSymbols.length}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                Live price tracking, Dual-Gate breakout telemetry & custom alerts
-              </div>
-            </div>
-          </div>
-
-          <span style={{ fontSize: 10.5, color: '#94a3b8', background: 'rgba(255,255,255,0.04)', padding: '4px 8px', borderRadius: 6 }}>
-            Dual-Gate: Price ≥ Pivot & RVOL ≥ Hurdle
-          </span>
-        </div>
-
-        {/* Watchlist Stock Rows */}
-        {watchedStocks.length === 0 ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            <Star style={{ width: 32, height: 32, color: '#fbbf24', margin: '0 auto 8px', opacity: 0.5 }} />
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)' }}>
-              {topSearch.trim() ? `No watched stocks match "${topSearch.trim()}"` : 'Your Watchlist & Alerts list is empty'}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, maxWidth: 360, margin: '4px auto 10px', lineHeight: 1.5 }}>
-              {topSearch.trim()
-                ? 'Try clearing your search query above.'
-                : 'Search any stock above or tap the ⭐ star icon or 🔔 alert icon next to any stock to track it here with live price updates and breakout signals.'}
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {watchedStocks.map(s => {
-              const sym = s.symbol;
-              const cfg = alertConfigs[sym] || deriveDefaultBreakoutPlan(s);
-              const ltp = Number(s.ltp || 0);
-              const pCh = Number(s.pChange || 0);
-              const isBull = pCh >= 0;
-              const rvol = calculateStockRvol(s);
-              const isPriceMet = ltp >= Number(cfg.breakoutPrice);
-              const isRvolMet = rvol >= Number(cfg.rvolThreshold);
-              const isTriggered = isPriceMet && isRvolMet;
-              const pctToPivot = ltp > 0 ? (((Number(cfg.breakoutPrice) - ltp) / ltp) * 100).toFixed(1) : 0;
-              const spark = generateSparkline(ltp, pCh);
-
-              return (
-                <div
-                  key={sym}
-                  onClick={() => handleStockClick(s)}
-                  style={{
-                    background: isTriggered ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)',
-                    border: isTriggered ? '1.5px solid rgba(16, 185, 129, 0.5)' : '1px solid var(--border)',
-                    borderRadius: 12,
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = isTriggered ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)'}
-                  onMouseLeave={e => e.currentTarget.style.background = isTriggered ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)'}
-                >
-                  {/* Line 1: Symbol, Star, Sector, Sparkline, LTP Price, and Change Percentage */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleWatchlist(sym);
-                        }}
-                        title="Remove from Watchlist"
-                        style={{
-                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          color: '#fbbf24'
-                        }}
-                      >
-                        <Star size={16} fill="#fbbf24" />
-                      </button>
-                      <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                        {sym}
-                      </span>
-                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
-                        {s.sector || 'Others'}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 44 }} className="screener-col-desktop">
-                        <Sparkline points={spark} bull={isBull} />
-                      </div>
-
-                      <div style={{ fontSize: 13.5, fontWeight: 900, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
-                        Rs. {fmt(ltp)}
-                      </div>
-
-                      <span style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 7px',
-                        borderRadius: 5,
-                        background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                        color: isBull ? 'var(--bull)' : '#F43F5E',
-                        border: `1px solid ${isBull ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
-                        minWidth: 58,
-                        textAlign: 'center'
-                      }}>
-                        {isBull ? '+' : ''}{pCh.toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Line 2: Trigger Status Badge & Price Gate */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    paddingTop: 6,
-                    borderTop: '1px solid rgba(255,255,255,0.04)',
-                    fontSize: 11,
-                    color: '#94a3b8',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span style={{
-                      fontSize: 9.5,
-                      fontWeight: 800,
-                      padding: '2px 6px',
-                      borderRadius: 5,
-                      background: isTriggered ? 'rgba(16, 185, 129, 0.2)' : isPriceMet ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      color: isTriggered ? '#10B981' : isPriceMet ? '#fbbf24' : '#94a3b8',
-                      border: isTriggered ? '1px solid rgba(16, 185, 129, 0.4)' : isPriceMet ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)'
-                    }}>
-                      {isTriggered ? '🔥 BREAKOUT' : isPriceMet ? '⚠️ VOLUME LACKING' : `⏳ COILING (${pctToPivot}% to pivot)`}
-                    </span>
-                    <span>
-                      Price Gate: <strong style={{ color: isPriceMet ? '#34d399' : '#ffffff', fontFamily: 'var(--font-mono)' }}>Rs. {cfg.breakoutPrice}</strong> {isPriceMet && '✓'}
-                    </span>
-                  </div>
-
-                  {/* Line 3: RVOL Hurdle and Configure Alert Button (on the exact same line) */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    fontSize: 11,
-                    color: '#94a3b8'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>
-                        RVOL: <strong style={{ color: isRvolMet ? '#34d399' : '#f59e0b', fontFamily: 'var(--font-mono)' }}>{Number(rvol || 1).toFixed(2)}x</strong> / {(Number(cfg.rvolThreshold) || 1.5).toFixed(2)}x {isRvolMet && '✓'}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAlertModalStock(s);
-                      }}
-                      title="Configure Breakout Alert"
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.12)',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                        borderRadius: 6,
-                        padding: '3px 8px',
-                        color: '#38bdf8',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        flexShrink: 0
-                      }}
-                    >
-                      <Bell size={11} />
-                      <span>Configure Alert</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 
