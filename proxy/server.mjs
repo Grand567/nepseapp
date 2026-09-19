@@ -7706,16 +7706,24 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
 
     if (cached && cached.symbol && (!req.query.force || req.query.force !== 'true')) {
       const vUpper = String(cached.verdict || '').toUpperCase();
-      // Only reject cached pick on bad verdicts or dumping — NO score threshold
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(cached.riskGate?.isInstitutionalDumping);
+        vUpper.includes('HOLD') ||
+        vUpper.includes('WAIT') ||
+        Boolean(cached.riskGate?.isInstitutionalDumping) ||
+        Boolean(cached.riskGate?.isCircuitTrap);
 
-      if (!isBad) {
+      const hasBuyKeyword =
+        vUpper.includes('BUY') ||
+        vUpper.includes('ACCUMULATE') ||
+        vUpper.includes('STRONG') ||
+        vUpper.includes('COIL');
+
+      if (!isBad && hasBuyKeyword && Number(cached.setupScore || cached.score || 0) >= 55) {
         return res.json({
           success: true,
           data: cached,
@@ -7724,7 +7732,7 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
           source: 'cache'
         });
       } else {
-        // Stale or disqualified plan in cache — purge it
+        // Stale or non-buy plan in cache — purge it
         cache.delete(cacheKey);
         setVerifiedPostMarketPrimePick(null);
       }
@@ -7817,21 +7825,26 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       const scoreVal = Number(plan.setupScore || 0);
       const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
 
-      // MANDATORY DISQUALIFICATIONS — STRICTLY 2 RULES (USER DIRECTIVE):
-      // 1. Verdict: NO TRADE / AVOID / REDUCE / EXIT / STAY OUT (Analyzer explicitly says don't trade)
-      // 2. isInstitutionalDumping = true (Smart money is selling into retail)
-      // Capital Defense only shows if EVERY stock fails these 2 rules.
-      // Otherwise, highest scorer wins!
+      // STRICT USER DIRECTIVE: Day Prime Pick MUST be a genuine BUY or ACCUMULATE signal!
       const isDisqualified =
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(plan.riskGate?.isInstitutionalDumping);
+        vUpper.includes('HOLD') ||
+        vUpper.includes('WAIT') ||
+        Boolean(plan.riskGate?.isInstitutionalDumping) ||
+        Boolean(plan.riskGate?.isCircuitTrap);
 
-      if (isDisqualified) {
-        continue; // Disqualified by Entry/Exit Analyzer — check next candidate
+      const hasBuyKeyword =
+        vUpper.includes('BUY') ||
+        vUpper.includes('ACCUMULATE') ||
+        vUpper.includes('STRONG') ||
+        vUpper.includes('COIL');
+
+      if (isDisqualified || !hasBuyKeyword || scoreVal < 55) {
+        continue; // Disqualified by Entry/Exit Analyzer — must be actionable BUY/ACCUMULATE
       }
 
       const epsVal = Number(cand.eps || 0);

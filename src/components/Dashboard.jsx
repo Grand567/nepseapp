@@ -23,7 +23,7 @@ import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
 import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
-import { selectMasterPrimePick } from '../utils/guruEngine';
+import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
@@ -1525,7 +1525,7 @@ export default function Dashboard({
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const verifiedSymbolsRef = useRef(new Set());
 
-  // Initialize hydratedPrimePick from localStorage if a clean plan exists
+  // Initialize hydratedPrimePick from localStorage if a clean BUY/ACCUMULATE plan exists
   const [hydratedPrimePick, setHydratedPrimePick] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -1533,16 +1533,10 @@ export default function Dashboard({
         if (raw) {
           const parsed = JSON.parse(raw);
           const p = parsed.plan || parsed;
-          const v = String(p.verdict || '').toUpperCase();
-          const isBad = 
-            v.includes('NO TRADE') ||
-            v.includes('AVOID') ||
-            v.includes('REDUCE') ||
-            v.includes('EXIT') ||
-            v.includes('STAY OUT') ||
-            Boolean(p.riskGate?.isInstitutionalDumping);
-          if (p.symbol && !isBad) {
+          if (p && p.symbol && isActionableBuySignal(p)) {
             return p;
+          } else {
+            localStorage.removeItem('prime_pick_plan_cache');
           }
         }
       }
@@ -1573,18 +1567,7 @@ export default function Dashboard({
     let isMounted = true;
     fetchVerifiedDailyPrimePick().then(res => {
       if (isMounted && res && res.data && res.data.symbol && res.data.levels) {
-        const vUpper = String(res.data.verdict || '').toUpperCase();
-        const score = Number(res.data.setupScore || res.data.score || 0);
-        const epsVal = Number(res.data.eps ?? 0);
-        const isFailing = 
-          vUpper.includes('NO TRADE') ||
-          vUpper.includes('AVOID') ||
-          vUpper.includes('REDUCE') ||
-          vUpper.includes('EXIT') ||
-          vUpper.includes('STAY OUT') ||
-          Boolean(res.data.riskGate?.isInstitutionalDumping);
-
-        if (!isFailing) {
+        if (isActionableBuySignal(res.data)) {
           setHydratedPrimePick(res.data);
           try {
             localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
@@ -1610,37 +1593,12 @@ export default function Dashboard({
   // Prioritize verified passing hydrated plan if available for the candidate symbol
   const primeDailyPick = useMemo(() => {
     let candidate = null;
-    if (hydratedPrimePick && hydratedPrimePick.isPlanVerified) {
-      const vUpper = String(hydratedPrimePick.verdict || '').toUpperCase();
-      // STRICT 2 RULES: Only reject on explicit bad verdicts or institutional dumping
-      const isBad = 
-        vUpper.includes('NO TRADE') ||
-        vUpper.includes('AVOID') ||
-        vUpper.includes('REDUCE') ||
-        vUpper.includes('EXIT') ||
-        vUpper.includes('STAY OUT') ||
-        Boolean(hydratedPrimePick.riskGate?.isInstitutionalDumping);
-
-      if (!isBad) {
-        candidate = hydratedPrimePick;
-      }
+    if (hydratedPrimePick && hydratedPrimePick.isPlanVerified && isActionableBuySignal(hydratedPrimePick)) {
+      candidate = hydratedPrimePick;
     }
 
-    if (!candidate && masterBreakoutPipeline.primeDailyPick) {
-      const rawPick = masterBreakoutPipeline.primeDailyPick;
-      const vUpper = String(rawPick.verdict || '').toUpperCase();
-      // STRICT 2 RULES: Only reject on explicit bad verdicts or institutional dumping
-      const isBad = 
-        vUpper.includes('NO TRADE') ||
-        vUpper.includes('AVOID') ||
-        vUpper.includes('REDUCE') ||
-        vUpper.includes('EXIT') ||
-        vUpper.includes('STAY OUT') ||
-        Boolean(rawPick.riskGate?.isInstitutionalDumping);
-
-      if (!isBad) {
-        candidate = rawPick;
-      }
+    if (!candidate && masterBreakoutPipeline.primeDailyPick && isActionableBuySignal(masterBreakoutPipeline.primeDailyPick)) {
+      candidate = masterBreakoutPipeline.primeDailyPick;
     }
 
     return candidate;
@@ -1676,21 +1634,8 @@ export default function Dashboard({
 
     if (prioritySymbols.length === 0) return;
 
-    // If primeDailyPick is already fully verified and PASSING, no need to re-scan
-    const isPickDisqualified = (p) => {
-      if (!p) return true;
-      const v = String(p.verdict || '').toUpperCase();
-      return (
-        v.includes('NO TRADE') ||
-        v.includes('AVOID') ||
-        v.includes('REDUCE') ||
-        v.includes('EXIT') ||
-        v.includes('STAY OUT') ||
-        Boolean(p.riskGate?.isInstitutionalDumping)
-      );
-    };
-
-    if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && !isPickDisqualified(primeDailyPick)) {
+    // If primeDailyPick is already fully verified and PASSING an actionable Buy/Accumulate signal, no need to re-scan
+    if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && isActionableBuySignal(primeDailyPick)) {
       return;
     }
 
@@ -1727,21 +1672,10 @@ export default function Dashboard({
             );
 
             if (plan && plan.supported && isMounted) {
-              const vUpper = String(plan.verdict || '').toUpperCase();
               const scoreVal = Number(plan.setupScore || 0);
 
-              // STRICT 2 RULES ONLY:
-              // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
-              // 2. isInstitutionalDumping is false
-              const isDisqualified = 
-                vUpper.includes('NO TRADE') ||
-                vUpper.includes('AVOID') ||
-                vUpper.includes('REDUCE') ||
-                vUpper.includes('EXIT') ||
-                vUpper.includes('STAY OUT') ||
-                Boolean(plan.riskGate?.isInstitutionalDumping);
-
-              if (!isDisqualified) {
+              // STRICT DIRECTIVE: Only genuine BUY or ACCUMULATE signals from Entry/Exit Analyzer!
+              if (isActionableBuySignal(plan)) {
                 const epsVal = Number(fundRes?.eps ?? stockObj.eps ?? 0);
                 const passesAll5 = 
                   !Boolean(plan.riskGate?.isCircuitTrap) &&
@@ -1784,8 +1718,8 @@ export default function Dashboard({
       }
 
       // Select highest scoring setup from Entry/Exit Analyzer evaluation:
-      // Tier 1: stocks that pass all 5 criteria
-      // Tier 2: if no stock passes all 5 criteria, fallback to stocks that pass the 2 strict non-negotiables
+      // Tier 1: stocks that pass all 5 criteria with actionable Buy/Accumulate signal
+      // Tier 2: if no stock passes all 5 criteria, fallback to stocks that have an actionable Buy/Accumulate signal
       if (isMounted && evaluatedList.length > 0) {
         const tier1 = evaluatedList.filter(e => e.passesAll5);
         const listToRank = tier1.length > 0 ? tier1 : evaluatedList;
@@ -2865,7 +2799,7 @@ export default function Dashboard({
           <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #3b82f6', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
           <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>Analyzing 350+ NEPSE stocks via Entry/Exit Analyzer...</span>
         </div>
-      ) : (!primeDailyPick || primeDailyPick.verdict?.includes('AVOID') || primeDailyPick.verdict?.includes('REDUCE') || primeDailyPick.verdict?.includes('NO TRADE') || Boolean(primeDailyPick.riskGate?.isInstitutionalDumping)) ? (
+      ) : (!primeDailyPick || !isActionableBuySignal(primeDailyPick)) ? (
         <div style={{
           borderRadius: 18,
           background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',

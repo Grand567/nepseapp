@@ -48,6 +48,7 @@ import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { toggleWatchlist, isWatched } from '../utils/watchlist';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
+import { isActionableBuySignal } from '../utils/guruEngine';
 
 
 
@@ -611,19 +612,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const entryExitPlan = useMemo(() => {
     if (!d?.symbol) return null;
 
-    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity (ONLY IF NOT DISQUALIFIED)
-    if (cachedPrime && cachedPrime.symbol === d.symbol && cachedPrime.plan) {
-      const v = String(cachedPrime.plan.verdict || '').toUpperCase();
-      const isBad = 
-        v.includes('NO TRADE') ||
-        v.includes('AVOID') ||
-        v.includes('REDUCE') ||
-        v.includes('EXIT') ||
-        v.includes('STAY OUT') ||
-        Boolean(cachedPrime.plan.riskGate?.isInstitutionalDumping);
-      if (!isBad) {
-        return cachedPrime.plan;
-      }
+    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity (ONLY IF AUTHENTIC BUY/ACCUMULATE)
+    if (cachedPrime && cachedPrime.symbol === d.symbol && cachedPrime.plan && isActionableBuySignal(cachedPrime.plan)) {
+      return cachedPrime.plan;
     }
 
     // 2. Otherwise generate authoritative EntryExitPlan using real price history candles & broker metrics
@@ -651,23 +642,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const isPrimePick = useMemo(() => {
     if (!d?.symbol) return false;
-    // A stock evaluated as Avoid, Reduce, or Institutional Dumping can NEVER be a Prime Pick!
-    if (modalIsAvoid) return false;
+    // A stock evaluated as Avoid, Reduce, Hold, or Institutional Dumping can NEVER be a Prime Pick!
+    if (modalIsAvoid || modalIsHoldWait || !isActionableBuySignal(entryExitPlan)) return false;
 
     if (cachedPrime && cachedPrime.symbol === d.symbol) {
-      const v = String(cachedPrime.plan?.verdict || '').toUpperCase();
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !cachedPrime.plan?.riskGate?.isInstitutionalDumping) {
+      if (isActionableBuySignal(cachedPrime.plan)) {
         return true;
       }
     }
     if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) {
-      const v = String(resolvedStock?.verdict || '').toUpperCase();
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !resolvedStock?.riskGate?.isInstitutionalDumping) {
+      if (isActionableBuySignal(resolvedStock)) {
         return true;
       }
     }
     return false;
-  }, [d?.symbol, cachedPrime, resolvedStock, modalIsAvoid]);
+  }, [d?.symbol, cachedPrime, resolvedStock, modalIsAvoid, modalIsHoldWait, entryExitPlan]);
 
   const modalRvol = useMemo(() => {
     if (entryExitPlan?.volume?.rvol) return Number(entryExitPlan.volume.rvol);

@@ -40,6 +40,7 @@ import {
   getCachedStockFundamentals,
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
+import { isActionableBuySignal } from '../utils/guruEngine';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
 
 // Modular Sub-components
@@ -154,16 +155,8 @@ export function EntryExitAnalyzer({
             (Date.now() - (cached.ts || 0)) < CACHE_TTL_MS
           );
 
-          if (isFullSetupPlan) {
-            const cachedVerdict = (cached.plan.verdict || '').toUpperCase();
-            const isUnsafeVerdict = cachedVerdict.includes('NO TRADE') ||
-                                    cachedVerdict.includes('AVOID') ||
-                                    cachedVerdict.includes('REDUCE') ||
-                                    cachedVerdict.includes('EXIT') ||
-                                    cachedVerdict.includes('STAY OUT') ||
-                                    Boolean(cached.plan?.riskGate?.isInstitutionalDumping);
-            if (!isUnsafeVerdict) {
-              const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
+          if (isFullSetupPlan && isActionableBuySignal(cached.plan)) {
+            const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
               setStockInfo(stock);
               const normalizedPlan = {
                 ...cached.plan,
@@ -183,8 +176,7 @@ export function EntryExitAnalyzer({
               return;
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
 
       setLoadingStep('Connecting to NEPSE live exchange feed…');
 

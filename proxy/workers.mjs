@@ -122,16 +122,27 @@ export async function runFullUniversePrimePick() {
         const vUpper = String(plan.verdict || '').toUpperCase();
         const scoreVal = Number(plan.setupScore || 0);
 
-        // MANDATORY DISQUALIFICATIONS — STRICTLY 2 RULES (USER DIRECTIVE):
-        // 1. Verdict: NO TRADE / AVOID / REDUCE / EXIT / STAY OUT (Analyzer explicitly says don't trade)
-        // 2. isInstitutionalDumping = true (Smart money is selling into retail)
+        // STRICT USER DIRECTIVE: Day Prime Pick MUST be a genuine BUY or ACCUMULATE signal!
         const isDisqualified =
           vUpper.includes('NO TRADE') ||
           vUpper.includes('AVOID') ||
           vUpper.includes('REDUCE') ||
           vUpper.includes('EXIT') ||
           vUpper.includes('STAY OUT') ||
-          Boolean(plan.riskGate?.isInstitutionalDumping);
+          vUpper.includes('HOLD') ||
+          vUpper.includes('WAIT') ||
+          Boolean(plan.riskGate?.isInstitutionalDumping) ||
+          Boolean(plan.riskGate?.isCircuitTrap);
+
+        const hasBuyKeyword =
+          vUpper.includes('BUY') ||
+          vUpper.includes('ACCUMULATE') ||
+          vUpper.includes('STRONG') ||
+          vUpper.includes('COIL');
+
+        if (isDisqualified || !hasBuyKeyword || scoreVal < 55) {
+          continue; // Disqualified — must be actionable BUY/ACCUMULATE
+        }
 
         const passesAll5 =
           !Boolean(plan.riskGate?.isCircuitTrap) &&
@@ -140,9 +151,7 @@ export async function runFullUniversePrimePick() {
           Boolean(plan.levels?.entryZone?.min) &&
           Number(plan.levels?.entryZone?.min) > 0;
 
-        if (!isDisqualified) {
-          qualifiedCandidates.push({ cand, plan, sym, scoreVal, winRateVal: Number(plan.analogResult?.stats?.winRate ?? 50), passesAll5 });
-        }
+        qualifiedCandidates.push({ cand, plan, sym, scoreVal, winRateVal: Number(plan.analogResult?.stats?.winRate ?? 50), passesAll5 });
       } catch (_) {
         // Individual stock failure — continue to next
       }

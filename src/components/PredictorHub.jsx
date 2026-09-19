@@ -45,7 +45,7 @@ import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate } from '../utils/quantEngine';
-import { selectMasterPrimePick, evaluateGuruMasterSetup } from '../utils/guruEngine';
+import { selectMasterPrimePick, evaluateGuruMasterSetup, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import InvestorDecisionGuideModal from './InvestorDecisionGuideModal';
@@ -773,40 +773,15 @@ export default function PredictorHub({
 
   const primeDailyPick = useMemo(() => {
     const rawPick = masterPipeline.primeDailyPick;
-    if (rawPick) {
-      const v = String(rawPick.verdict || '').toUpperCase();
-      // STRICT 2 RULES ONLY:
-      // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
-      // 2. isInstitutionalDumping is false
-      const isBad = 
-        v.includes('NO TRADE') ||
-        v.includes('AVOID') ||
-        v.includes('REDUCE') ||
-        v.includes('EXIT') ||
-        v.includes('STAY OUT') ||
-        Boolean(rawPick.riskGate?.isInstitutionalDumping);
-
-      if (!isBad) {
-        return rawPick;
-      }
+    if (rawPick && isActionableBuySignal(rawPick)) {
+      return rawPick;
     }
     try {
       const raw = localStorage.getItem('prime_pick_plan_cache');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.plan?.symbol && parsed?.plan?.levels) {
-          const v = String(parsed.plan.verdict || '').toUpperCase();
-          const isBad = 
-            v.includes('NO TRADE') ||
-            v.includes('AVOID') ||
-            v.includes('REDUCE') ||
-            v.includes('EXIT') ||
-            v.includes('STAY OUT') ||
-            Boolean(parsed.plan.riskGate?.isInstitutionalDumping);
-
-          if (!isBad) {
-            return parsed.plan;
-          }
+        if (parsed?.plan?.symbol && parsed?.plan?.levels && isActionableBuySignal(parsed.plan)) {
+          return parsed.plan;
         }
       }
     } catch (_) {}
@@ -862,9 +837,7 @@ export default function PredictorHub({
         if (cancelled) return;
 
         if (result.supported) {
-          const vUpper = String(result.verdict || '').toUpperCase();
-          // STRICT 2 RULES ONLY
-          const isPassing = !vUpper.includes('NO TRADE') && !vUpper.includes('AVOID') && !vUpper.includes('REDUCE') && !vUpper.includes('EXIT') && !vUpper.includes('STAY OUT') && !Boolean(result.riskGate?.isInstitutionalDumping);
+          const isPassing = isActionableBuySignal(result);
           const planWithSymbol = { ...result, symbol: sym };
           setPrimePlan(planWithSymbol);
           if (isPassing) {
