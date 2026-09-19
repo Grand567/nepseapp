@@ -7,7 +7,6 @@
  */
 
 import { getAccurateFestivalSeasonality } from './quantEngine.js';
-import { getCachedRealPriceHistory } from './liveData.js';
 
 const ALERTS_STORAGE_KEY = 'nepse_watchlist_alerts_v1';
 const ALERTS_HISTORY_KEY = 'nepse_watchlist_alerts_history_v1';
@@ -298,7 +297,16 @@ export function calculateStockRvol(stock, priceHistory = null) {
   }
 
   // 4. Calculate from priceHistory (passed directly or resolved from local persistent cache)
-  const hist = priceHistory || (sym && typeof window !== 'undefined' ? getCachedRealPriceHistory(sym) : null);
+  let hist = priceHistory;
+  if (!hist && sym && typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage?.getItem(`nepse_hist_prices_${sym}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) hist = parsed;
+      }
+    } catch (_) {}
+  }
   if (Array.isArray(hist) && hist.length >= 5) {
     const recent = hist.slice(-20);
     const sum = recent.reduce((acc, c) => acc + (Number(c.volume) || 0), 0);
