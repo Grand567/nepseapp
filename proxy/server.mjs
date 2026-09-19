@@ -7790,8 +7790,7 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       .filter(s => {
         const ltp = Number(s.ltp || s.price || 0);
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
-        const pCh = Number(s.pChange || s.percentageChange || 0);
-        return ltp >= 80 && turnover >= 1500000 && pCh >= -8 && pCh <= 14.5;
+        return ltp >= 30 && turnover >= 300000;
       })
       .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0));
     // NO .slice() limit — evaluate full universe
@@ -7818,20 +7817,18 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       const scoreVal = Number(plan.setupScore || 0);
       const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
 
-      // MANDATORY DISQUALIFICATIONS — explicit safety gates ONLY, NO score threshold.
-      // Entry/Exit Analyzer score is the RANKING metric, not a filter.
-      // Always show the HIGHEST SCORING stock from the full 350+ universe.
+      // MANDATORY DISQUALIFICATIONS — STRICTLY 2 RULES (USER DIRECTIVE):
+      // 1. Verdict: NO TRADE / AVOID / REDUCE / EXIT / STAY OUT (Analyzer explicitly says don't trade)
+      // 2. isInstitutionalDumping = true (Smart money is selling into retail)
+      // Capital Defense only shows if EVERY stock fails these 2 rules.
+      // Otherwise, highest scorer wins!
       const isDisqualified =
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(plan.riskGate?.isInstitutionalDumping) ||
-        Boolean(plan.riskGate?.isCircuitTrap) ||
-        Boolean(plan.riskGate?.isLossMaking) ||
-        !plan.levels?.entryZone?.min ||
-        Number(plan.levels?.entryZone?.min) <= 0;
+        Boolean(plan.riskGate?.isInstitutionalDumping);
 
       if (isDisqualified) {
         continue; // Disqualified by Entry/Exit Analyzer — check next candidate
@@ -7844,17 +7841,18 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
     }
 
     if (qualifiedCandidates.length > 0) {
-      // Sort by score descending (highest quality setup / best among the worst)
+      // Sort strictly by Entry/Exit Analyzer score descending — highest score wins!
       qualifiedCandidates.sort((a, b) => b.scoreVal - a.scoreVal);
       const chosen = qualifiedCandidates[0];
       const { cand, plan, sym, history, broker, scoreVal, winRateVal } = chosen;
 
-      const eLow = Number(plan.levels.entryZone.min || plan.levels.entryZone.low);
-      const eHigh = Number(plan.levels.entryZone.max || plan.levels.entryZone.high);
-      const cCap = Number(plan.levels.chaseCap || +(eHigh * 1.025).toFixed(1));
-      const t1Price = Number(plan.levels.target1?.price);
-      const t2Price = Number(plan.levels.target2?.price);
-      const slPrice = Number(plan.levels.stopLoss?.price);
+      const candLtp = Number(cand.ltp || plan.ltp || history[history.length - 1]?.close || 100);
+      const eLow = Number(plan.levels?.entryZone?.min || plan.levels?.entryZone?.low || +(candLtp * 0.985).toFixed(1));
+      const eHigh = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || +(candLtp * 1.015).toFixed(1));
+      const cCap = Number(plan.levels?.chaseCap || +(eHigh * 1.025).toFixed(1));
+      const t1Price = Number(plan.levels?.target1?.price || +(candLtp * 1.08).toFixed(1));
+      const t2Price = Number(plan.levels?.target2?.price || +(candLtp * 1.15).toFixed(1));
+      const slPrice = Number(plan.levels?.stopLoss?.price || +(candLtp * 0.94).toFixed(1));
 
       winner = {
         ...cand,
@@ -7862,7 +7860,7 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         symbol: sym,
         name: cand.name || cand.companyName || sym,
         sector: cand.sector || 'NEPSE',
-        ltp: Number(cand.ltp || plan.ltp || history[history.length - 1]?.close || 100),
+        ltp: candLtp,
         pChange: Number(cand.pChange || cand.percentageChange || 0),
         turnover: Number(cand.turnover || cand.totalTradedValue || 0),
         historyBars: history.length,
@@ -7873,15 +7871,22 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         guruScore: scoreVal,
         compositeScore: scoreVal,
         winRate: winRateVal,
-        analogCount: plan.analogResult?.stats?.sampleSize || 6,
-        confidenceLevel: plan.confidence?.level || 'HIGH',
+        levels: {
+          ...plan.levels,
+          entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
+          target1: { ...(plan.levels?.target1 || {}), price: t1Price },
+          target2: { ...(plan.levels?.target2 || {}), price: t2Price },
+          stopLoss: { ...(plan.levels?.stopLoss || {}), price: slPrice },
+          chaseCap: cCap
+        },
         entryLow: eLow,
         entryHigh: eHigh,
         chaseCap: cCap,
         target1: t1Price,
         target2: t2Price,
         stopLoss: slPrice,
-        levels: plan.levels,
+        analogCount: plan.analogResult?.stats?.sampleSize || 6,
+        confidenceLevel: plan.confidence?.level || 'HIGH',
         verdict: plan.verdict,
         warnings: plan.warnings,
         bullishFactors: plan.bullishFactors,

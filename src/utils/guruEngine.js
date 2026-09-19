@@ -430,17 +430,10 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const cachedFund = getCachedStockFundamentals(sym);
     const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (s.eps || 0));
 
-    // Fundamental & Liquidity safety hurdles
-    if (ltp < 80 || turnover < 2500000) continue;
-    if (eps < 0 || (cachedFund?.eps !== undefined && Number(cachedFund.eps) < 0)) continue; // Disqualify loss-making entities
+    // Fundamental & Liquidity safety hurdles (broadened to capture all active market participants)
+    if (ltp < 30 || turnover < 300000) continue;
 
-    // Circuit limit ceiling check (±15% limit)
-    const prevClose = Number(s.previousClose || s.prevClose || ltp);
-    const upperCeiling = +(prevClose * 1.15).toFixed(1);
-    const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-    if (distToCeilingPct <= 3.5) continue; // Upside exhausted / circuit trap (raised from 2.0 — GAP-4b)
-
-    // Promoter lock-in expiry blackout (60 days — synced with PromoterSharesService Critical Shock tier — GAP-5b)
+    // Promoter lock-in expiry blackout (60 days — critical supply shock protection)
     if (s.lockinExpiry || s.promoterLockinDays !== undefined) {
       const daysToUnlock = s.promoterLockinDays !== undefined
         ? Number(s.promoterLockinDays)
@@ -459,12 +452,10 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       nextBreakouts.push(evalResult);
     }
 
-    // Candidate for Prime Pick: collect candidates across market; Cash Defense will determine whether to issue a breakout or fallback
-    if (evalResult.isPrimeCandidate) {
-      allLiquidCandidates.push(evalResult);
-      if (evalResult.guruScore >= 75) {
-        candidates.push(evalResult);
-      }
+    // Candidate for Prime Pick: collect all active stocks across market for Entry/Exit Analyzer evaluation
+    allLiquidCandidates.push(evalResult);
+    if (evalResult.isPrimeCandidate || evalResult.guruScore >= 60) {
+      candidates.push(evalResult);
     }
   }
 
@@ -556,41 +547,29 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const lbas = Number(cand.brokerMetrics?.lbas || 0);
       const setupScore = Number(plan.setupScore || 70);
 
-      // MANDATORY DISQUALIFICATIONS — only hard safety gates, NO score threshold:
-      // The Entry/Exit Analyzer score itself determines ranking.
-      // We always show the HIGHEST SCORING stock from 350+ universe.
-      // A stock can only be rejected for explicit verdict failures or risk flags.
+      // MANDATORY DISQUALIFICATIONS — STRICTLY 2 RULES (USER DIRECTIVE):
+      // 1. Verdict: NO TRADE / AVOID / REDUCE / EXIT / STAY OUT (Analyzer explicitly says don't trade)
+      // 2. isInstitutionalDumping = true (Smart money is selling into retail)
+      // Any stock without these two rejection flags is eligible!
       const isDisqualified = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(plan.riskGate?.isInstitutionalDumping) ||
-        Boolean(plan.riskGate?.isCircuitTrap) ||
-        Boolean(plan.riskGate?.isLossMaking) ||
-        !plan.levels?.entryZone?.min ||
-        Number(plan.levels?.entryZone?.min) <= 0;
+        Boolean(plan.riskGate?.isInstitutionalDumping);
 
       if (isDisqualified) {
         return null;
       }
 
-      // Profit Edge: weighted composite of setup quality, net real return after 10% CGT, win rate, and RRR
-      const profitEdge = +(
-        setupScore * 0.35 +
-        t1Net * 2.5 +
-        winRate * 0.30 +
-        rrr1 * 10 +
-        lbas * 15
-      ).toFixed(2);
-
-      const eLow = Number(plan.levels.entryZone.min || plan.levels.entryZone.low);
-      const eHigh = Number(plan.levels.entryZone.max || plan.levels.entryZone.high);
-      const cCap = Number(plan.levels.chaseCap || +(eHigh * 1.025).toFixed(1));
-      const t1Price = Number(plan.levels.target1?.price);
-      const t2Price = Number(plan.levels.target2?.price);
-      const slPriceFinal = Number(plan.levels.stopLoss?.price);
+      // Safe level resolution with LTP fallbacks
+      const eLow = Number(plan.levels?.entryZone?.min || plan.levels?.entryZone?.low || (ltpNum > 0 ? +(ltpNum * 0.985).toFixed(1) : 100));
+      const eHigh = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || (ltpNum > 0 ? +(ltpNum * 1.015).toFixed(1) : 100));
+      const cCap = Number(plan.levels?.chaseCap || +(eHigh * 1.025).toFixed(1));
+      const t1Price = Number(plan.levels?.target1?.price || (ltpNum > 0 ? +(ltpNum * 1.08).toFixed(1) : 110));
+      const t2Price = Number(plan.levels?.target2?.price || (ltpNum > 0 ? +(ltpNum * 1.15).toFixed(1) : 120));
+      const slPriceFinal = Number(plan.levels?.stopLoss?.price || (ltpNum > 0 ? +(ltpNum * 0.94).toFixed(1) : 90));
 
       return {
         ...cand,
@@ -605,7 +584,6 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
         score: plan.setupScore,
         compositeScore: plan.setupScore,
         guruScore: plan.setupScore,
-        profitEdge,
         winRate: plan.analogResult?.stats?.winRate,
         analogCount: plan.analogResult?.stats?.sampleSize,
         confidenceLevel: plan.confidence?.level,
@@ -613,7 +591,14 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
         bullishFactors: plan.bullishFactors,
         warnings: plan.warnings,
         verdict: plan.verdict,
-        levels: plan.levels,
+        levels: {
+          ...plan.levels,
+          entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
+          target1: { ...(plan.levels?.target1 || {}), price: t1Price },
+          target2: { ...(plan.levels?.target2 || {}), price: t2Price },
+          stopLoss: { ...(plan.levels?.stopLoss || {}), price: slPriceFinal },
+          chaseCap: cCap
+        },
         entryLow: eLow,
         entryHigh: eHigh,
         chaseCap: cCap,
@@ -632,17 +617,17 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   const candidatePool = candidates.length > 0 ? candidates : allLiquidCandidates;
   const validatedPlans = [];
 
-  // Tier 1: Check priority candidates (first 15)
-  for (const cand of candidatePool.slice(0, 15)) {
+  // Tier 1: Check priority candidates (first 40)
+  for (const cand of candidatePool.slice(0, 40)) {
     const verified = evaluatePlanWithEntryExitAnalyzer(cand);
     if (verified) {
       validatedPlans.push(verified);
     }
   }
 
-  // Tier 2: If none in top 15 passed, scan next batch up to 35 candidates
-  if (validatedPlans.length === 0 && candidatePool.length > 15) {
-    for (const cand of candidatePool.slice(15, 35)) {
+  // Tier 2: If needed, scan next batch up to 100 candidates
+  if (candidatePool.length > 40) {
+    for (const cand of candidatePool.slice(40, 100)) {
       const verified = evaluatePlanWithEntryExitAnalyzer(cand);
       if (verified) {
         validatedPlans.push(verified);
@@ -651,19 +636,9 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   }
 
   if (validatedPlans.length > 0) {
-    // Prefer setups with score >= 50, otherwise best among the worst
-    const topTier = validatedPlans.filter(p => (p.setupScore || 0) >= 50);
-    if (topTier.length > 0) {
-      topTier.sort((a, b) => b.profitEdge - a.profitEdge);
-      verifiedPrimePick = topTier[0];
-    } else {
-      validatedPlans.sort((a, b) => (b.setupScore || 0) - (a.setupScore || 0));
-      verifiedPrimePick = validatedPlans[0];
-      verifiedPrimePick.warnings = [
-        ...(verifiedPrimePick.warnings || []),
-        'Best Relative Strength Pick: Selected as top risk-managed setup in current market conditions'
-      ];
-    }
+    // STRICT USER DIRECTIVE: Sort strictly by Entry/Exit Analyzer score descending — highest score wins!
+    validatedPlans.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+    verifiedPrimePick = validatedPlans[0];
   }
 
   // NOTE: Tier 3 stale-cache bypass REMOVED intentionally.

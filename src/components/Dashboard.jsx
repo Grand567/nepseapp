@@ -1557,17 +1557,13 @@ export default function Dashboard({
         const vUpper = String(res.data.verdict || '').toUpperCase();
         const score = Number(res.data.setupScore || res.data.score || 0);
         const epsVal = Number(res.data.eps ?? 0);
-        const isNegativeEps = res.data.eps !== undefined && res.data.eps !== null && epsVal < 0;
         const isFailing = 
           vUpper.includes('NO TRADE') ||
           vUpper.includes('AVOID') ||
           vUpper.includes('REDUCE') ||
           vUpper.includes('EXIT') ||
           vUpper.includes('STAY OUT') ||
-          Boolean(res.data.riskGate?.isInstitutionalDumping) ||
-          res.data.isLossMaking ||
-          isNegativeEps ||
-          score < 50;
+          Boolean(res.data.riskGate?.isInstitutionalDumping);
 
         if (!isFailing) {
           setHydratedPrimePick(res.data);
@@ -1597,7 +1593,7 @@ export default function Dashboard({
     let candidate = null;
     if (hydratedPrimePick && hydratedPrimePick.isPlanVerified) {
       const vUpper = String(hydratedPrimePick.verdict || '').toUpperCase();
-      // Only reject on explicit bad verdicts or institutional dumping — NO score threshold
+      // STRICT 2 RULES: Only reject on explicit bad verdicts or institutional dumping
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
@@ -1614,16 +1610,14 @@ export default function Dashboard({
     if (!candidate && masterBreakoutPipeline.primeDailyPick) {
       const rawPick = masterBreakoutPipeline.primeDailyPick;
       const vUpper = String(rawPick.verdict || '').toUpperCase();
-      // Only reject on explicit bad verdicts, dumping or loss-making — NO score threshold
+      // STRICT 2 RULES: Only reject on explicit bad verdicts or institutional dumping
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        rawPick.isLossMaking ||
-        Boolean(rawPick.riskGate?.isInstitutionalDumping) ||
-        (rawPick.eps !== undefined && Number(rawPick.eps) < 0);
+        Boolean(rawPick.riskGate?.isInstitutionalDumping);
 
       if (!isBad) {
         candidate = rawPick;
@@ -1783,10 +1777,7 @@ export default function Dashboard({
             v.includes('REDUCE') ||
             v.includes('EXIT') ||
             v.includes('STAY OUT') ||
-            Boolean(p?.plan?.riskGate?.isInstitutionalDumping) ||
-            (p?.plan?.isLossMaking) ||
-            (p?.plan?.eps !== undefined && p?.plan?.eps !== null && epsVal < 0) ||
-            (score > 0 && score < 50);
+            Boolean(p?.plan?.riskGate?.isInstitutionalDumping);
           if (isFailingPlan) {
             localStorage.removeItem('prime_pick_plan_cache');
             setHydratedPrimePick(null);

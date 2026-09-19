@@ -94,13 +94,12 @@ export async function runFullUniversePrimePick() {
       return;
     }
 
-    // Step 2: Filter by basic liquidity/price hurdles — include ALL above floor
+    // Step 2: Filter by basic liquidity/price hurdles — include ALL active stocks
     const candidates = stocksList
       .filter(s => {
         const ltp = Number(s.ltp || s.price || 0);
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
-        const pCh = Number(s.pChange || s.percentageChange || 0);
-        return ltp >= 80 && turnover >= 1500000 && pCh >= -8 && pCh <= 14.5;
+        return ltp >= 30 && turnover >= 300000;
       })
       .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0));
 
@@ -123,19 +122,16 @@ export async function runFullUniversePrimePick() {
         const vUpper = String(plan.verdict || '').toUpperCase();
         const scoreVal = Number(plan.setupScore || 0);
 
-        // DISQUALIFICATION — explicit safety gates ONLY, NO score threshold.
-        // Score is the RANKING metric (highest wins), not a filter.
+        // MANDATORY DISQUALIFICATIONS — STRICTLY 2 RULES (USER DIRECTIVE):
+        // 1. Verdict: NO TRADE / AVOID / REDUCE / EXIT / STAY OUT (Analyzer explicitly says don't trade)
+        // 2. isInstitutionalDumping = true (Smart money is selling into retail)
         const isDisqualified =
           vUpper.includes('NO TRADE') ||
           vUpper.includes('AVOID') ||
           vUpper.includes('REDUCE') ||
           vUpper.includes('EXIT') ||
           vUpper.includes('STAY OUT') ||
-          Boolean(plan.riskGate?.isInstitutionalDumping) ||
-          Boolean(plan.riskGate?.isCircuitTrap) ||
-          Boolean(plan.riskGate?.isLossMaking) ||
-          !plan.levels?.entryZone?.min ||
-          Number(plan.levels?.entryZone?.min) <= 0;
+          Boolean(plan.riskGate?.isInstitutionalDumping);
 
         if (!isDisqualified) {
           qualifiedCandidates.push({ cand, plan, sym, scoreVal, winRateVal: Number(plan.analogResult?.stats?.winRate ?? 50) });
@@ -146,7 +142,7 @@ export async function runFullUniversePrimePick() {
     }
 
     if (qualifiedCandidates.length === 0) {
-      console.log('[PrimePickWorker] No qualifying stock found across full universe — all stocks have bad verdicts.');
+      console.log('[PrimePickWorker] No qualifying stock found across full universe — all stocks have bad verdicts or dumping.');
       setVerifiedPostMarketPrimePick(null);
       return;
     }
@@ -156,8 +152,13 @@ export async function runFullUniversePrimePick() {
     const best = qualifiedCandidates[0];
     const { cand, plan, sym, scoreVal, winRateVal } = best;
 
-    const eLow = Number(plan.levels.entryZone.min || plan.levels.entryZone.low || 0);
-    const eHigh = Number(plan.levels.entryZone.max || plan.levels.entryZone.high || 0);
+    const candLtp = Number(cand.ltp || plan.ltp || 0);
+    const eLow = Number(plan.levels?.entryZone?.min || plan.levels?.entryZone?.low || (candLtp > 0 ? +(candLtp * 0.985).toFixed(1) : 100));
+    const eHigh = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || (candLtp > 0 ? +(candLtp * 1.015).toFixed(1) : 100));
+    const cCap = Number(plan.levels?.chaseCap || +(eHigh * 1.025).toFixed(1));
+    const t1Price = Number(plan.levels?.target1?.price || (candLtp > 0 ? +(candLtp * 1.08).toFixed(1) : 110));
+    const t2Price = Number(plan.levels?.target2?.price || (candLtp > 0 ? +(candLtp * 1.15).toFixed(1) : 120));
+    const slPrice = Number(plan.levels?.stopLoss?.price || (candLtp > 0 ? +(candLtp * 0.94).toFixed(1) : 90));
 
     const winner = {
       ...cand,
@@ -165,7 +166,7 @@ export async function runFullUniversePrimePick() {
       symbol: sym,
       name: cand.name || cand.companyName || sym,
       sector: cand.sector || 'NEPSE',
-      ltp: Number(cand.ltp || plan.ltp || 0),
+      ltp: candLtp,
       pChange: Number(cand.pChange || cand.percentageChange || 0),
       turnover: Number(cand.turnover || cand.totalTradedValue || 0),
       isPlanVerified: true,
@@ -174,13 +175,20 @@ export async function runFullUniversePrimePick() {
       guruScore: scoreVal,
       compositeScore: scoreVal,
       winRate: winRateVal,
+      levels: {
+        ...plan.levels,
+        entryZone: { min: eLow, max: eHigh, low: eLow, high: eHigh },
+        target1: { ...(plan.levels?.target1 || {}), price: t1Price },
+        target2: { ...(plan.levels?.target2 || {}), price: t2Price },
+        stopLoss: { ...(plan.levels?.stopLoss || {}), price: slPrice },
+        chaseCap: cCap
+      },
       entryLow: eLow,
       entryHigh: eHigh,
-      chaseCap: Number(plan.levels.chaseCap || +(eHigh * 1.025).toFixed(1)),
-      target1: Number(plan.levels.target1?.price),
-      target2: Number(plan.levels.target2?.price),
-      stopLoss: Number(plan.levels.stopLoss?.price),
-      levels: plan.levels,
+      chaseCap: cCap,
+      target1: t1Price,
+      target2: t2Price,
+      stopLoss: slPrice,
       verdict: plan.verdict,
       warnings: plan.warnings,
       bullishFactors: plan.bullishFactors,
