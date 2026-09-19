@@ -1597,15 +1597,14 @@ export default function Dashboard({
     let candidate = null;
     if (hydratedPrimePick && hydratedPrimePick.isPlanVerified) {
       const vUpper = String(hydratedPrimePick.verdict || '').toUpperCase();
-      const score = Number(hydratedPrimePick.setupScore || hydratedPrimePick.score || 0);
+      // Only reject on explicit bad verdicts or institutional dumping — NO score threshold
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(hydratedPrimePick.riskGate?.isInstitutionalDumping) ||
-        (score > 0 && score < 50);
+        Boolean(hydratedPrimePick.riskGate?.isInstitutionalDumping);
 
       if (!isBad) {
         candidate = hydratedPrimePick;
@@ -1615,7 +1614,7 @@ export default function Dashboard({
     if (!candidate && masterBreakoutPipeline.primeDailyPick) {
       const rawPick = masterBreakoutPipeline.primeDailyPick;
       const vUpper = String(rawPick.verdict || '').toUpperCase();
-      const score = Number(rawPick.setupScore || rawPick.guruScore || rawPick.score || 0);
+      // Only reject on explicit bad verdicts, dumping or loss-making — NO score threshold
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
@@ -1624,8 +1623,7 @@ export default function Dashboard({
         vUpper.includes('STAY OUT') ||
         rawPick.isLossMaking ||
         Boolean(rawPick.riskGate?.isInstitutionalDumping) ||
-        (rawPick.eps !== undefined && Number(rawPick.eps) < 0) ||
-        (score > 0 && score < 50);
+        (rawPick.eps !== undefined && Number(rawPick.eps) < 0);
 
       if (!isBad) {
         candidate = rawPick;

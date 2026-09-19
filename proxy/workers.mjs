@@ -123,7 +123,8 @@ export async function runFullUniversePrimePick() {
         const vUpper = String(plan.verdict || '').toUpperCase();
         const scoreVal = Number(plan.setupScore || 0);
 
-        // ZERO-TOLERANCE DISQUALIFICATION — same gates as the API endpoint
+        // DISQUALIFICATION — explicit safety gates ONLY, NO score threshold.
+        // Score is the RANKING metric (highest wins), not a filter.
         const isDisqualified =
           vUpper.includes('NO TRADE') ||
           vUpper.includes('AVOID') ||
@@ -133,7 +134,6 @@ export async function runFullUniversePrimePick() {
           Boolean(plan.riskGate?.isInstitutionalDumping) ||
           Boolean(plan.riskGate?.isCircuitTrap) ||
           Boolean(plan.riskGate?.isLossMaking) ||
-          scoreVal < 45 ||
           !plan.levels?.entryZone?.min ||
           Number(plan.levels?.entryZone?.min) <= 0;
 
@@ -146,7 +146,7 @@ export async function runFullUniversePrimePick() {
     }
 
     if (qualifiedCandidates.length === 0) {
-      console.log('[PrimePickWorker] No qualifying stock found — Capital Defense remains active.');
+      console.log('[PrimePickWorker] No qualifying stock found across full universe — all stocks have bad verdicts.');
       setVerifiedPostMarketPrimePick(null);
       return;
     }

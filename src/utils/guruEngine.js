@@ -556,13 +556,10 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const lbas = Number(cand.brokerMetrics?.lbas || 0);
       const setupScore = Number(plan.setupScore || 70);
 
-      // MANDATORY DISQUALIFICATIONS:
-      // A stock CANNOT be chosen as Day Prime Pick under ANY circumstances if:
-      // 1. Verdict is NO TRADE, AVOID, REDUCE, EXIT, or STAY OUT
-      // 2. Institutional brokers are dumping inventory (smart money selling into retail)
-      // 3. Risk gate triggered circuit trap or operating loss
-      // 4. Entry zone is invalid (eLow <= 0 or eHigh <= 0)
-      // 5. Setup score < 45 (allow best among the worst if score >= 45)
+      // MANDATORY DISQUALIFICATIONS — only hard safety gates, NO score threshold:
+      // The Entry/Exit Analyzer score itself determines ranking.
+      // We always show the HIGHEST SCORING stock from 350+ universe.
+      // A stock can only be rejected for explicit verdict failures or risk flags.
       const isDisqualified = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
@@ -572,7 +569,6 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
         Boolean(plan.riskGate?.isInstitutionalDumping) ||
         Boolean(plan.riskGate?.isCircuitTrap) ||
         Boolean(plan.riskGate?.isLossMaking) ||
-        setupScore < 45 ||
         !plan.levels?.entryZone?.min ||
         Number(plan.levels?.entryZone?.min) <= 0;
 
@@ -674,17 +670,19 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   // Reading a plan from localStorage or options.cachedPrimePick WITHOUT re-running
   // generateEntryExitPlan with real history is what caused HIMSTAR (score 29, NO TRADE)
   // to repeatedly appear as the Day Prime Pick.
-  // If Tiers 1 & 2 find no verified winner → verifiedPrimePick stays null → Capital Defense shown.
+  // If Tiers 1 & 2 find no verified winner → verifiedPrimePick stays null.
+  // But Capital Defense should NEVER show if ANY stock passes verdict + safety gates.
 
-
-  // If breadthCheck.cashDefenseActive is true and we found a verified stock:
+  // If breadthCheck.cashDefenseActive is true but we found a verified stock:
+  // ALWAYS show the pick — just add a market breadth warning to the card.
+  // Capital Defense is only shown when NO stock passes the safety gates at all.
   if (verifiedPrimePick && breadthCheck.cashDefenseActive) {
-    verifiedPrimePick.isDefensiveFallback = true;
     verifiedPrimePick.warnings = [
       ...(verifiedPrimePick.warnings || []),
-      'Cash Defense Active: Market breadth is below safe threshold',
-      'Strict capital preservation: Consider conservative sizing (0.5x)'
+      '⚠️ Broad Market Breadth Weak — Position size conservatively (0.5–0.75x normal)',
+      'Best available setup selected from full 350+ stock universe'
     ];
+    // Do NOT set isDefensiveFallback — show it as a normal Prime Pick with the warning label
   }
 
   // Cache verified winner in localStorage so Entry/Exit & Stock Details load instantly
@@ -720,7 +718,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     activeBreakouts: activeBreakouts.slice(0, 12),
     nextBreakouts: nextBreakouts.slice(0, 12),
     breadthCheck,
-    cashDefenseActive: breadthCheck.cashDefenseActive,
+    cashDefenseActive: !primeDailyPick && breadthCheck.cashDefenseActive, // Only true when NO pick exists
     marketStatus
   };
 }

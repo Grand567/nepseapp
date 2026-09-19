@@ -7706,14 +7706,14 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
 
     if (cached && cached.symbol && (!req.query.force || req.query.force !== 'true')) {
       const vUpper = String(cached.verdict || '').toUpperCase();
+      // Only reject cached pick on bad verdicts or dumping — NO score threshold
       const isBad = 
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
         vUpper.includes('EXIT') ||
         vUpper.includes('STAY OUT') ||
-        Boolean(cached.riskGate?.isInstitutionalDumping) ||
-        (cached.setupScore && cached.setupScore < 50);
+        Boolean(cached.riskGate?.isInstitutionalDumping);
 
       if (!isBad) {
         return res.json({
@@ -7818,7 +7818,9 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       const scoreVal = Number(plan.setupScore || 0);
       const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
 
-      // MANDATORY DISQUALIFICATIONS — any of these → skip
+      // MANDATORY DISQUALIFICATIONS — explicit safety gates ONLY, NO score threshold.
+      // Entry/Exit Analyzer score is the RANKING metric, not a filter.
+      // Always show the HIGHEST SCORING stock from the full 350+ universe.
       const isDisqualified =
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
@@ -7828,7 +7830,6 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         Boolean(plan.riskGate?.isInstitutionalDumping) ||
         Boolean(plan.riskGate?.isCircuitTrap) ||
         Boolean(plan.riskGate?.isLossMaking) ||
-        scoreVal < 45 ||
         !plan.levels?.entryZone?.min ||
         Number(plan.levels?.entryZone?.min) <= 0;
 
