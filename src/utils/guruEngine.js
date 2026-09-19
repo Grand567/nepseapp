@@ -650,69 +650,95 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     }
   };
 
-  let verifiedPrimePick = null;
-  // Assemble candidatePool with active breakouts strictly at the head, followed by high-score candidates
-  const seenCandidateSyms = new Set();
-  const candidatePool = [];
-  [...activeBreakouts, ...candidates, ...allLiquidCandidates].forEach(cand => {
-    const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
-    if (sym && !seenCandidateSyms.has(sym)) {
-      seenCandidateSyms.add(sym);
-      candidatePool.push(cand);
-    }
-  });
-  const validatedPlans = [];
+  const marketStatus = getDetailedMarketStatus();
+  const targetSessionDate = marketStatus?.targetSessionDate || new Date().toISOString().slice(0, 10);
+  const isPostMarket = marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen;
 
-  // Tier 1: Check priority candidates (first 40)
-  for (const cand of candidatePool.slice(0, 40)) {
-    const verified = evaluatePlanWithEntryExitAnalyzer(cand);
-    if (verified) {
-      validatedPlans.push(verified);
+  let verifiedPrimePick = null;
+
+  // 1. Session-Lock Check: If we already have a locked verified BUY/ACCUMULATE pick for this session date, preserve it!
+  if (!options.forceRecalculate) {
+    if (options.cachedPrimePick && isActionableBuySignal(options.cachedPrimePick)) {
+      if (!options.cachedPrimePick.sessionDate || options.cachedPrimePick.sessionDate === targetSessionDate) {
+        verifiedPrimePick = {
+          ...options.cachedPrimePick,
+          sessionDate: options.cachedPrimePick.sessionDate || targetSessionDate,
+          isLockedForSession: true
+        };
+      }
+    }
+
+    if (!verifiedPrimePick) {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const raw = localStorage.getItem('prime_pick_plan_cache');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const p = parsed?.plan || parsed;
+            if (p && p.symbol && isActionableBuySignal(p)) {
+              if (!parsed.sessionDate || parsed.sessionDate === targetSessionDate) {
+                verifiedPrimePick = {
+                  ...p,
+                  sessionDate: parsed.sessionDate || targetSessionDate,
+                  isLockedForSession: true
+                };
+              }
+            }
+          }
+        }
+      } catch (_) {}
     }
   }
 
-  // Tier 2: If needed, scan next batch up to 100 candidates
-  if (candidatePool.length > 40) {
-    for (const cand of candidatePool.slice(40, 100)) {
+  // 2. If no locked pick for targetSessionDate, evaluate candidates through Entry/Exit Analyzer
+  if (!verifiedPrimePick) {
+    // Assemble candidatePool with active breakouts strictly at the head, followed by high-score candidates
+    const seenCandidateSyms = new Set();
+    const candidatePool = [];
+    [...activeBreakouts, ...candidates, ...allLiquidCandidates].forEach(cand => {
+      const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
+      if (sym && !seenCandidateSyms.has(sym)) {
+        seenCandidateSyms.add(sym);
+        candidatePool.push(cand);
+      }
+    });
+    const validatedPlans = [];
+
+    // Tier 1: Check priority candidates (first 40)
+    for (const cand of candidatePool.slice(0, 40)) {
       const verified = evaluatePlanWithEntryExitAnalyzer(cand);
       if (verified) {
         validatedPlans.push(verified);
       }
     }
-  }
 
-  if (validatedPlans.length > 0) {
-    // TIER 1: Check if any candidate passes ALL 5 criteria with actionable BUY/ACCUMULATE signal:
-    const tier1 = validatedPlans.filter(p => p.passesAll5 && isActionableBuySignal(p));
-    const buyPlans = validatedPlans.filter(p => isActionableBuySignal(p));
-    const poolToRank = tier1.length > 0 ? tier1 : buyPlans;
-
-    if (poolToRank.length > 0) {
-      poolToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
-      verifiedPrimePick = {
-        ...poolToRank[0],
-        qualityTier: tier1.length > 0 ? 'PRIME_5_STAR' : 'BUY_ACCUMULATE_LEADER'
-      };
-    }
-  } else if (options.cachedPrimePick && isActionableBuySignal(options.cachedPrimePick)) {
-    // Re-use verified plan from cold-start hydration if it is an authentic BUY/ACCUMULATE setup
-    verifiedPrimePick = options.cachedPrimePick;
-  }
-
-  // Fallback: If still no pick, check localStorage persistent cache for an authentic BUY/ACCUMULATE plan
-  if (!verifiedPrimePick) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const raw = localStorage.getItem('prime_pick_plan_cache');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const p = parsed?.plan || parsed;
-          if (p && p.symbol && isActionableBuySignal(p)) {
-            verifiedPrimePick = p;
-          }
+    // Tier 2: If needed, scan next batch up to 100 candidates
+    if (candidatePool.length > 40) {
+      for (const cand of candidatePool.slice(40, 100)) {
+        const verified = evaluatePlanWithEntryExitAnalyzer(cand);
+        if (verified) {
+          validatedPlans.push(verified);
         }
       }
-    } catch (_) {}
+    }
+
+    if (validatedPlans.length > 0) {
+      // TIER 1: Check if any candidate passes ALL 5 criteria with actionable BUY/ACCUMULATE signal:
+      const tier1 = validatedPlans.filter(p => p.passesAll5 && isActionableBuySignal(p));
+      const buyPlans = validatedPlans.filter(p => isActionableBuySignal(p));
+      const poolToRank = tier1.length > 0 ? tier1 : buyPlans;
+
+      if (poolToRank.length > 0) {
+        poolToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+        verifiedPrimePick = {
+          ...poolToRank[0],
+          qualityTier: tier1.length > 0 ? 'PRIME_5_STAR' : 'BUY_ACCUMULATE_LEADER',
+          sessionDate: targetSessionDate,
+          isLockedForSession: true,
+          lockedAt: new Date().toISOString()
+        };
+      }
+    }
   }
 
   // If breadthCheck.cashDefenseActive is true but we found a verified stock:
@@ -732,6 +758,7 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       if (typeof window !== 'undefined' && window.localStorage) {
         localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
           symbol: verifiedPrimePick.symbol,
+          sessionDate: verifiedPrimePick.sessionDate || targetSessionDate,
           plan: verifiedPrimePick,
           ts: Date.now()
         }));
@@ -739,13 +766,10 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     } catch (_) {}
   }
 
-
-
-  const marketStatus = getDetailedMarketStatus();
-  const isPostMarket = marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen;
-  
   let primeDailyPick = verifiedPrimePick ? { ...verifiedPrimePick } : null;
   if (primeDailyPick) {
+    primeDailyPick.sessionDate = primeDailyPick.sessionDate || targetSessionDate;
+    primeDailyPick.isLockedForSession = true;
     primeDailyPick.sessionContext = marketStatus.session;
     primeDailyPick.isPostMarketVerified = isPostMarket;
     primeDailyPick.marketStatusLabel = marketStatus.statusLabel;

@@ -276,6 +276,76 @@ export function getLastValidTradingDay(fromDate = new Date(), requireCompleted =
 }
 
 /**
+ * Formats a Date object into YYYY-MM-DD in Asia/Kathmandu time zone.
+ */
+export function formatNptDateIso(date = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kathmandu',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(new Date(date));
+  } catch (_) {
+    return new Date(date).toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Finds the NEXT active NEPSE trading day strictly skipping weekends and holidays.
+ */
+export function getNextValidTradingDay(fromDate = new Date()) {
+  const cursor = new Date(fromDate);
+  cursor.setDate(cursor.getDate() + 1);
+  let iterations = 0;
+  while (iterations < 30) {
+    if (isNepseTradingDay(cursor)) {
+      return new Date(cursor);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    iterations++;
+  }
+  return new Date(fromDate);
+}
+
+/**
+ * Returns the exact target NEPSE trading session date (YYYY-MM-DD) that a Prime Pick setup applies to.
+ * - During active trading hours (before 15:00 NPT on a trading day): applies to TODAY.
+ * - After market close (>= 15:00 NPT), or on weekends/holidays: applies to NEXT trading day.
+ */
+export function getTargetTradingSessionDate(now = new Date()) {
+  const d = new Date(now);
+  let nptHours = 0;
+  let nptMinutes = 0;
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kathmandu',
+      hour12: false,
+      hour: 'numeric',
+      minute: 'numeric'
+    });
+    const parts = formatter.formatToParts(d);
+    nptHours = parseInt(parts.find(p => p.type === 'hour').value, 10) % 24;
+    nptMinutes = parseInt(parts.find(p => p.type === 'minute').value, 10);
+  } catch (_) {
+    const nptOffset = 5 * 60 + 45;
+    const utcMins = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const totalMins = (utcMins + nptOffset) % (24 * 60);
+    nptHours = Math.floor(totalMins / 60);
+    nptMinutes = totalMins % 60;
+  }
+  const nptTotalMinutes = nptHours * 60 + nptMinutes;
+  const isTrading = isNepseTradingDay(d);
+
+  if (isTrading && nptTotalMinutes < 15 * 60) {
+    return formatNptDateIso(d);
+  }
+  const nextDay = getNextValidTradingDay(d);
+  return formatNptDateIso(nextDay);
+}
+
+/**
  * Generates an array of EXACT past valid NEPSE trading dates.
  * Strictly skips Saturdays, Sundays, and all Nepal Public Holidays.
  */
@@ -343,6 +413,9 @@ export function getDetailedMarketStatus(now = new Date()) {
   const nptTotalMinutes = nptHours * 60 + nptMinutes;
   const isWithinHours = (nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 15 * 60); // 11:00 to 15:00
   const isTradingDay = !weekend.isWeekend && !holiday.isHoliday;
+  const isAmoWindow = (nptTotalMinutes >= 17 * 60 || nptTotalMinutes < 10 * 60 + 30) || weekend.isWeekend || holiday.isHoliday;
+  const isFirst15Min = isTradingDay && (nptTotalMinutes >= 11 * 60 && nptTotalMinutes < 11 * 60 + 15);
+  const targetSessionDate = getTargetTradingSessionDate(now);
 
   // Detailed Session Identification
   let session = 'POST_MARKET';
@@ -383,12 +456,16 @@ export function getDetailedMarketStatus(now = new Date()) {
     bsFormattedNp: nepaliDate.formattedNp,
     bsFormattedEn: nepaliDate.formattedEn,
     nptTime: nptTimeStr,
+    nptTotalMinutes,
     isTradingDay,
     session,
     sessionLabel,
     isPreOpen,
     isClosingSession,
     isPostCloseReconciling,
+    isAmoWindow,
+    isFirst15Min,
+    targetSessionDate,
   };
 
   // 1. Check Holiday (Bikram Sambat public holiday)

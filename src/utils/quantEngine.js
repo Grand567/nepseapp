@@ -1278,10 +1278,10 @@ export function evaluatePreOpenExecutionGate(primePick = {}, marketDepth = null,
   const indicativeGapPct = prevClose > 0 ? +(((indicativePrice - prevClose) / prevClose) * 100).toFixed(2) : 0;
 
   // Key execution levels
-  const entryLow = Number(primePick.entryLow || primePick.levels?.entryZone?.low || prevClose * 0.99);
-  const entryHigh = Number(primePick.entryHigh || primePick.levels?.entryZone?.high || prevClose * 1.02);
+  const entryLow = Number(primePick.entryLow || primePick.levels?.entryZone?.low || primePick.levels?.entryZone?.min || prevClose * 0.99);
+  const entryHigh = Number(primePick.entryHigh || primePick.levels?.entryZone?.high || primePick.levels?.entryZone?.max || prevClose * 1.02);
   const stopLoss = Number(primePick.stopLoss || primePick.levels?.stopLoss?.price || prevClose * 0.93);
-  const chaseCap = Number(primePick.chaseCap || (entryHigh > 0 ? +(entryHigh * 1.015).toFixed(1) : +(prevClose * 1.025).toFixed(1)));
+  const chaseCap = Number(primePick.chaseCap || primePick.levels?.chaseCap || (entryHigh > 0 ? +(entryHigh * 1.015).toFixed(1) : +(prevClose * 1.025).toFixed(1)));
   const preOpenCeiling = +(prevClose * 1.05).toFixed(1); // ±5% NEPSE pre-open limit
 
   // Order concentration & anti-spoofing
@@ -1292,78 +1292,164 @@ export function evaluatePreOpenExecutionGate(primePick = {}, marketDepth = null,
 
   const session = marketStatus?.session || 'POST_MARKET';
   const hasLiveOrders = (totalBidQty > 0 || totalAskQty > 0);
+  const isTradingDay = marketStatus?.isTradingDay ?? true;
+  const isAmoWindow = Boolean(marketStatus?.isAmoWindow);
+  const isFirst15Min = Boolean(marketStatus?.isFirst15Min);
+  const isPreOpenSession = session === 'PRE_OPEN' || session === 'PRE_OPEN_MATCH' || Boolean(marketStatus?.isPreOpen);
+  const isContinuous = session === 'CONTINUOUS';
 
+  let phase = 'POST_MARKET';
   let state = 'MONITORING_PRE_OPEN';
   let badge = '⚪ Pre-Open Liquidity Gathering';
   let color = '#94a3b8';
   let bg = 'rgba(148, 163, 184, 0.15)';
   let recommendation = 'Monitoring pre-open order book queue. Liquidity forming.';
+  let verdict = 'MONITOR';
 
-  const isContinuous = session === 'CONTINUOUS';
-  const isPreOpenSession = session === 'PRE_OPEN' || session === 'PRE_OPEN_MATCH';
-
-  if (hasLiveOrders || isPreOpenSession || isContinuous) {
-    if (indicativePrice > 0 && stopLoss > 0 && indicativePrice < stopLoss) {
-      state = 'GAP_DOWN_INVALIDATED';
-      badge = isContinuous
-        ? '🔴 Aborted: Traded Below Structural Stop'
-        : '🔴 Aborted: Gapping Down Below Structural Stop';
-      color = '#ef4444';
-      bg = 'rgba(239, 68, 68, 0.15)';
-      recommendation = isContinuous
-        ? `Live price (Rs. ${indicativePrice}) breached stop loss (Rs. ${stopLoss}). Trade setup invalidated. Stand down.`
-        : `Indicative open (Rs. ${indicativePrice}) breached stop loss (Rs. ${stopLoss}). Trade setup invalidated. Stand down.`;
-    } else if (indicativePrice > chaseCap || indicativeGapPct >= 3.8) {
-      state = 'CHASE_CAUTION';
-      badge = isContinuous
-        ? '🟡 Chase Warning: Price Extended Above Entry Zone'
-        : '🟡 Chase Warning: Extended Pre-Open Gap-Up';
+  // ── PHASE 1: AFTER-MARKET ORDER (AMO) / PRE-ORDER WINDOW (5:00 PM – 10:30 AM) ──
+  if (isAmoWindow && !isPreOpenSession && !isContinuous) {
+    phase = 'AMO_PRE_ORDER';
+    state = 'AMO_PRE_ORDER_WINDOW';
+    badge = '🌙 Pre-Order / AMO Window Open (5:00 PM – 10:30 AM)';
+    color = '#a855f7';
+    bg = 'rgba(168, 85, 247, 0.15)';
+    recommendation = `NEPSE Broker TMS (NOTS) accepts After-Market Orders (AMO) from 5:00 PM to 10:30 AM. Queue a LIMIT buy order inside Recommended Buy Zone (Rs. ${entryLow} – Rs. ${entryHigh}). DO NOT place market orders or bid above Chase Cap (Rs. ${chaseCap}). Order will queue for pre-open matching.`;
+    verdict = 'QUEUE_AMO_LIMIT';
+  }
+  // ── PHASE 2: PRE-OPEN ORDER SESSION & MATCHING (10:30 AM – 11:00 AM) ──
+  else if (isPreOpenSession) {
+    phase = 'PRE_OPEN';
+    if (indicativePrice > chaseCap || indicativeGapPct >= 3.8) {
+      state = 'PRE_OPEN_CHASE_WARNING';
+      badge = '🟡 Pre-Open Warning: Indicative Open Above Chase Cap';
       color = '#f59e0b';
       bg = 'rgba(245, 158, 11, 0.15)';
-      recommendation = isContinuous
-        ? `Current price (+${indicativeGapPct}%) is extended above entry cap (Rs. ${chaseCap}). Wait for a pullback before entering.`
-        : `Indicative open (+${indicativeGapPct}%) exceeds chase cap (Rs. ${chaseCap}). Risk/Reward poor. Do NOT chase market order at 11:00 AM open.`;
+      recommendation = `Indicative open (+${indicativeGapPct}%) exceeds Chase Cap (Rs. ${chaseCap}). Risk/Reward poor. Do NOT chase market order at 11:00 AM open. Cancel or adjust pre-order.`;
+      verdict = 'CHASE_WARNING';
+    } else if (obirMetrics.obir <= -0.25) {
+      state = 'PRE_OPEN_SUPPLY_OVERHANG';
+      badge = '🔴 Pre-Open Alert: Heavy Supply Blocks in Book';
+      color = '#ef4444';
+      bg = 'rgba(239, 68, 68, 0.15)';
+      recommendation = `Institutional sell orders dominate pre-open book (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Stand down and wait for 11:15 AM opening absorption.`;
+      verdict = 'AVOID';
+    } else if (obirMetrics.obir >= 0.15 && indicativePrice >= entryLow * 0.985 && indicativePrice <= chaseCap) {
+      state = 'PRE_OPEN_CONFIRMED';
+      badge = '🟢 Pre-Open Confirmed: Strong Bid Absorption';
+      color = '#10b981';
+      bg = 'rgba(16, 185, 129, 0.15)';
+      recommendation = `High-conviction green light. Bids dominate by ${obirMetrics.bidDominancePct}% inside Entry Corridor (Rs. ${entryLow}–${entryHigh}). Safe to queue limit buy.`;
+      verdict = 'BUY_CONFIRMED';
+    } else {
+      state = 'PRE_OPEN_BALANCED';
+      badge = '🔵 Pre-Open Order Book Balanced';
+      color = '#38bdf8';
+      bg = 'rgba(56, 189, 248, 0.15)';
+      recommendation = `Pre-open order queue forming smoothly (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Indicative price Rs. ${indicativePrice}. Flow is neutral.`;
+      verdict = 'MONITOR';
+    }
+  }
+  // ── PHASE 3: FIRST 15-MINUTE FINAL GO / NO-GO DECISION ENGINE (11:00 AM – 11:15 AM) ──
+  else if (isFirst15Min) {
+    phase = 'FIRST_15M_DECISION';
+    const livePrice = indicativePrice;
+
+    if (livePrice > 0 && stopLoss > 0 && livePrice < stopLoss) {
+      state = 'FINAL_VERDICT_NO_GO_STOP_BREACH';
+      badge = '🔴 Final 15-Min Decision: NO-GO (Stop Loss Breached)';
+      color = '#ef4444';
+      bg = 'rgba(239, 68, 68, 0.15)';
+      recommendation = `Stock opened at Rs. ${livePrice}, breaching the structural stop loss (Rs. ${stopLoss}). Trade setup invalidated. DO NOT ENTER.`;
+      verdict = 'NO-GO';
+    } else if (livePrice > chaseCap || indicativeGapPct >= 2.5) {
+      state = 'FINAL_VERDICT_NO_GO_CHASE_TRAP';
+      badge = '🔴 Final 15-Min Decision: NO-GO (Chase Trap Detected)';
+      color = '#ef4444';
+      bg = 'rgba(239, 68, 68, 0.15)';
+      recommendation = `Stock opened extended at Rs. ${livePrice} (+${indicativeGapPct}%), exceeding the maximum Chase Cap of Rs. ${chaseCap}. High risk of retail trap. STAND DOWN and do not chase market orders.`;
+      verdict = 'NO-GO';
+    } else if (obirMetrics.obir <= -0.25 || Boolean(primePick.riskGate?.isInstitutionalDumping)) {
+      state = 'FINAL_VERDICT_NO_GO_DUMPING';
+      badge = '🔴 Final 15-Min Decision: NO-GO (Supply Dump In Progress)';
+      color = '#ef4444';
+      bg = 'rgba(239, 68, 68, 0.15)';
+      recommendation = `Heavy institutional sell blocks detected in opening 15-minute order book (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Smart money selling into retail. STAND DOWN.`;
+      verdict = 'NO-GO';
+    } else if (livePrice <= chaseCap && livePrice >= entryLow * 0.985 && obirMetrics.obir > -0.20) {
+      state = 'FINAL_VERDICT_GO';
+      badge = '🟢 Final 15-Min Decision: GO (Confirmed Execution)';
+      color = '#10b981';
+      bg = 'rgba(16, 185, 129, 0.15)';
+      recommendation = `Opening 15-minute price action confirmed inside Entry Zone (Rs. ${entryLow}–${entryHigh}) at Rs. ${livePrice}. Buying demand healthy (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Execution confirmed.`;
+      verdict = 'GO';
+    } else {
+      state = 'FIRST_15M_CONFIRMING';
+      badge = '🟡 15-Min Verification In Progress (11:00 – 11:15 AM)';
+      color = '#f59e0b';
+      bg = 'rgba(245, 158, 11, 0.15)';
+      recommendation = `Assessing initial 15-minute price action, opening auction price, and institutional flow against Chase Cap (Rs. ${chaseCap}). Final verdict locked at 11:15 AM.`;
+      verdict = 'PENDING';
+    }
+  }
+  // ── PHASE 4: CONTINUOUS LIVE TRADING EXECUTION (11:15 AM – 3:00 PM) ──
+  else if (isContinuous) {
+    phase = 'CONTINUOUS_LIVE';
+    if (indicativePrice > 0 && stopLoss > 0 && indicativePrice < stopLoss) {
+      state = 'GAP_DOWN_INVALIDATED';
+      badge = '🔴 Aborted: Traded Below Structural Stop';
+      color = '#ef4444';
+      bg = 'rgba(239, 68, 68, 0.15)';
+      recommendation = `Live price (Rs. ${indicativePrice}) breached stop loss (Rs. ${stopLoss}). Trade setup invalidated. Stand down.`;
+      verdict = 'STOPPED_OUT';
+    } else if (indicativePrice > chaseCap || indicativeGapPct >= 3.8) {
+      state = 'CHASE_CAUTION';
+      badge = '🟡 Chase Warning: Price Extended Above Entry Zone';
+      color = '#f59e0b';
+      bg = 'rgba(245, 158, 11, 0.15)';
+      recommendation = `Current price (+${indicativeGapPct}%) is extended above entry cap (Rs. ${chaseCap}). Wait for a pullback before entering.`;
+      verdict = 'CHASE_WARNING';
     } else if (obirMetrics.obir <= -0.30) {
       state = 'SUPPLY_OVERHANG_ABORT';
-      badge = isContinuous
-        ? '🔴 Heavy Supply Resistance in Order Book'
-        : '🔴 Heavy Supply Resistance in Pre-Open Queue';
+      badge = '🔴 Heavy Supply Resistance in Order Book';
       color = '#ef4444';
       bg = 'rgba(239, 68, 68, 0.15)';
       recommendation = `Sellers heavily dominate the book (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Institutional selling block detected. Avoid entry.`;
+      verdict = 'AVOID';
     } else if (obirMetrics.obir >= 0.20 && indicativePrice >= entryLow * 0.99 && indicativePrice <= chaseCap) {
       state = 'CONFIRMED_EXECUTION';
-      badge = isContinuous
-        ? '🟢 Live Order Book: Strong Buying Demand Dominance'
-        : '🟢 Pre-Open Confirmed: Strong Bid Absorption';
+      badge = '🟢 Live Order Book: Strong Buying Demand Dominance';
       color = '#10b981';
       bg = 'rgba(16, 185, 129, 0.15)';
-      recommendation = isContinuous
-        ? `High-conviction green light. Bids dominate by ${obirMetrics.bidDominancePct}% inside Entry Zone (Rs. ${entryLow}–${entryHigh}). Momentum supported by live book.`
-        : `High-conviction green light. Bids dominate by ${obirMetrics.bidDominancePct}% inside Entry Corridor (Rs. ${entryLow}–${entryHigh}). Safe to queue limit buy.`;
+      recommendation = `High-conviction green light. Bids dominate by ${obirMetrics.bidDominancePct}% inside Entry Zone (Rs. ${entryLow}–${entryHigh}). Momentum supported by live book.`;
+      verdict = 'BUY_CONFIRMED';
     } else {
       state = 'BALANCED_ORDER_BOOK';
-      badge = isContinuous
-        ? '🔵 Balanced Live Order Flow'
-        : '🔵 Balanced Pre-Open Order Flow';
+      badge = '🔵 Balanced Live Order Flow';
       color = '#38bdf8';
       bg = 'rgba(56, 189, 248, 0.15)';
       recommendation = `Order book balanced (OBIR: ${(obirMetrics.obir * 100).toFixed(0)}%). Indicative price Rs. ${indicativePrice}. Flow is neutral.`;
+      verdict = 'MONITOR';
     }
-  } else if (session === 'POST_MARKET' || session === 'POST_CLOSE_RECONCILING') {
+  }
+  // ── PHASE 5: POST-MARKET / RECONCILING (3:00 PM – 5:00 PM) ──
+  else {
+    phase = 'POST_MARKET';
     state = 'POST_MARKET_READY';
     badge = '🌙 Post-Market Verified: Tomorrow Prime Setup';
     color = '#c084fc';
     bg = 'rgba(192, 132, 252, 0.15)';
-    recommendation = `Sealed with full-day floorsheet + 500-day analogs. Pre-open order book opens at 10:30 AM tomorrow for final Go/No-Go check.`;
+    recommendation = `Sealed with full-day floorsheet + 500-day analogs. Pre-Order / AMO window opens at 5:00 PM for queuing limit orders in Broker TMS.`;
+    verdict = 'POST_MARKET_SEALED';
   }
 
   return {
     state,
+    phase,
     badge,
     color,
     bg,
     recommendation,
+    verdict,
     indicativePrice,
     indicativeGapPct,
     bestBid,
@@ -1384,6 +1470,9 @@ export function evaluatePreOpenExecutionGate(primePick = {}, marketDepth = null,
     preOpenCeiling,
     session,
     hasLiveOrders,
+    targetSessionDate: marketStatus?.targetSessionDate || '',
+    isAmoWindow,
+    isFirst15Min,
     evaluatedAt: new Date().toISOString()
   };
 }

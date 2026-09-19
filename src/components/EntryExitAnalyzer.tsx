@@ -281,30 +281,28 @@ export function EntryExitAnalyzer({
               candles: candleList
             };
 
+            // CRITICAL FIX: Do NOT overwrite the global Day Prime Pick with arbitrary user-searched stocks!
+            // Only update the prime pick cache if the analyzed stock is ALREADY the sealed Day Prime Pick.
             const rawCached = localStorage.getItem('prime_pick_plan_cache');
-            let shouldUpdate = true;
             if (rawCached) {
-              const existing = JSON.parse(rawCached);
-              const existingScore = Number(existing?.plan?.setupScore || existing?.plan?.score || 0);
-              if (existing?.plan && existing.plan.passesAll5 && !passesAll5) {
-                shouldUpdate = false;
-              } else if (existingScore > scoreVal && existing?.plan && isActionableBuySignal(existing.plan)) {
-                shouldUpdate = false;
-              }
-            }
-
-            if (shouldUpdate) {
-              localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-                symbol: sym,
-                plan: {
-                  ...fullPrimePlan,
-                  candles: (candleList || []).slice(-100)
-                },
-                ts: Date.now()
-              }));
-              window.dispatchEvent(new CustomEvent('prime_pick_plan_updated', {
-                detail: { symbol: sym, plan: fullPrimePlan }
-              }));
+              try {
+                const existing = JSON.parse(rawCached);
+                const existingSym = String(existing?.symbol || existing?.plan?.symbol || '').toUpperCase().trim();
+                if (existingSym === sym && isActionableBuySignal(fullPrimePlan)) {
+                  localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+                    ...existing,
+                    symbol: sym,
+                    plan: {
+                      ...fullPrimePlan,
+                      candles: (candleList || []).slice(-100)
+                    },
+                    ts: Date.now()
+                  }));
+                  window.dispatchEvent(new CustomEvent('prime_pick_plan_updated', {
+                    detail: { symbol: sym, plan: fullPrimePlan }
+                  }));
+                }
+              } catch (_) {}
             }
           } catch (_) {}
         }

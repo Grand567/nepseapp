@@ -7726,8 +7726,13 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       if (!isBad && hasBuyKeyword && Number(cached.setupScore || cached.score || 0) >= 55) {
         return res.json({
           success: true,
-          data: cached,
+          data: {
+            ...cached,
+            sessionDate: cached.sessionDate || marketStatus.targetSessionDate,
+            isLockedForSession: true
+          },
           session: marketStatus.session,
+          sessionDate: marketStatus.targetSessionDate,
           isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
           source: 'cache'
         });
@@ -7927,6 +7932,8 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         bullishFactors: plan.bullishFactors,
         catalyst: "Post-3:15 institutional floorsheet accumulation & historical analog edge",
         postMarketVerifiedAt: new Date().toISOString(),
+        sessionDate: marketStatus.targetSessionDate,
+        isLockedForSession: true,
         sessionContext: marketStatus.session,
         postMarketLabel: "Tomorrow's Prime Opportunity (Sealed Post-3:15 Floorsheet + 500-Day Analogs)",
         riskGate: plan.riskGate

@@ -1555,8 +1555,15 @@ export default function Dashboard({
         if (raw) {
           const parsed = JSON.parse(raw);
           const p = parsed.plan || parsed;
+          const status = getDetailedMarketStatus();
           if (p && p.symbol && isActionableBuySignal(p)) {
-            return p;
+            if (!parsed.sessionDate || parsed.sessionDate === status.targetSessionDate) {
+              return {
+                ...p,
+                sessionDate: parsed.sessionDate || status.targetSessionDate,
+                isLockedForSession: true
+              };
+            }
           } else {
             localStorage.removeItem('prime_pick_plan_cache');
           }
@@ -1571,8 +1578,14 @@ export default function Dashboard({
     const handlePlanUpdated = (e) => {
       if (e?.detail?.plan && isActionableBuySignal(e.detail.plan)) {
         const newPlan = e.detail.plan;
+        const status = getDetailedMarketStatus();
         setHydratedPrimePick(prev => {
           if (!prev || !isActionableBuySignal(prev)) return newPlan;
+          // IMMUTABILITY: If a verified pick is already locked for the current session date,
+          // do NOT let manual searches or third-party stocks overwrite it!
+          if (prev.isLockedForSession && prev.sessionDate === status.targetSessionDate && prev.symbol !== newPlan.symbol) {
+            return prev;
+          }
           const prevScore = Number(prev.setupScore || prev.score || 0);
           const newScore = Number(newPlan.setupScore || newPlan.score || 0);
           if (newPlan.passesAll5 && !prev.passesAll5) return newPlan;
@@ -1606,14 +1619,21 @@ export default function Dashboard({
   // Cold-start hydration: fetch verified daily prime pick from backend proxy on startup
   useEffect(() => {
     let isMounted = true;
+    const status = getDetailedMarketStatus();
     fetchVerifiedDailyPrimePick().then(res => {
       if (isMounted && res && res.data && res.data.symbol && res.data.levels) {
         if (isActionableBuySignal(res.data)) {
-          setHydratedPrimePick(res.data);
+          const lockedPick = {
+            ...res.data,
+            sessionDate: res.data.sessionDate || status.targetSessionDate,
+            isLockedForSession: true
+          };
+          setHydratedPrimePick(lockedPick);
           try {
             localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-              symbol: res.data.symbol,
-              plan: res.data,
+              symbol: lockedPick.symbol,
+              sessionDate: lockedPick.sessionDate,
+              plan: lockedPick,
               ts: Date.now()
             }));
           } catch (_) {}
@@ -1652,6 +1672,13 @@ export default function Dashboard({
   useEffect(() => {
     // If Cash Defense is active and we already have a verified defensive fallback with levels and candles, skip scan
     if (cashDefenseActive && primeDailyPick?.isDefensiveFallback && primeDailyPick?.levels && primeDailyPick?.candles) return;
+
+    const status = getDetailedMarketStatus();
+    // IMMUTABILITY: If primeDailyPick is ALREADY locked for targetSessionDate and passes actionable BUY/ACCUMULATE:
+    // DO NOT run candidate evaluation loop! Prevents intermediate flashing and multi-stock flipping!
+    if (primeDailyPick?.isPlanVerified && primeDailyPick?.isLockedForSession && primeDailyPick?.sessionDate === status.targetSessionDate && isActionableBuySignal(primeDailyPick)) {
+      return;
+    }
 
     // Collect top candidates in strict priority order to verify against quantitative setup engine
     const prioritySymbols = [];
@@ -1710,16 +1737,6 @@ export default function Dashboard({
       });
 
     if (prioritySymbols.length === 0) return;
-
-    // If primeDailyPick is already fully verified and PASSING an actionable Buy/Accumulate signal,
-    // only scan if there are pending live breakouts or watched scrips not yet analyzed
-    if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && isActionableBuySignal(primeDailyPick)) {
-      const pendingBreakouts = prioritySymbols.filter(sym => {
-        const s = stocks.find(st => st.symbol === sym);
-        return s?.isBreakout || (s && calculateStockRvol(s) >= 1.5 && Number(s.pChange || 0) > 0);
-      });
-      if (pendingBreakouts.length === 0) return;
-    }
 
     let isMounted = true;
     setIsEvaluatingCandidates(true);
@@ -1793,27 +1810,7 @@ export default function Dashboard({
                   candles: candleList
                 };
                 evaluatedList.push(verifiedPick);
-
-                // PROGRESSIVE IMMEDIATE PROMOTION:
-                // Immediately update Day Prime Pick so user sees verified setup without waiting for loop to finish
-                setHydratedPrimePick(prev => {
-                  if (!prev || !isActionableBuySignal(prev)) return verifiedPick;
-                  const prevScore = Number(prev.setupScore || prev.score || 0);
-                  if (verifiedPick.passesAll5 && !prev.passesAll5) return verifiedPick;
-                  if (scoreVal > prevScore) return verifiedPick;
-                  return prev;
-                });
-
-                try {
-                  localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-                    symbol: verifiedPick.symbol,
-                    plan: {
-                      ...verifiedPick,
-                      candles: (verifiedPick.candles || []).slice(-100)
-                    },
-                    ts: Date.now()
-                  }));
-                } catch (_) {}
+                // Note: intermediate candidate promotion removed to eliminate card flashing!
               }
             }
           }
@@ -1829,11 +1826,18 @@ export default function Dashboard({
         const tier1 = evaluatedList.filter(e => e.passesAll5);
         const listToRank = tier1.length > 0 ? tier1 : evaluatedList;
         listToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
-        const bestPick = listToRank[0];
+        const winner = listToRank[0];
+        const bestPick = {
+          ...winner,
+          sessionDate: status.targetSessionDate,
+          isLockedForSession: true,
+          lockedAt: new Date().toISOString()
+        };
         setHydratedPrimePick(bestPick);
         try {
           localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
             symbol: bestPick.symbol,
+            sessionDate: bestPick.sessionDate,
             plan: {
               ...bestPick,
               candles: (bestPick.candles || []).slice(-100)
@@ -3006,12 +3010,16 @@ export default function Dashboard({
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff' }}>
                   {primeDailyPick.isDefensiveFallback
                     ? `${primeDailyPick.name || primeDailyPick.symbol} (Watchlist & Awaiting Confirmation)`
-                    : (preOpenGate?.session === 'PRE_OPEN' || preOpenGate?.session === 'PRE_OPEN_MATCH'
-                      ? `${primeDailyPick.name || primeDailyPick.symbol} — Pre-Open Order Book Live Matching (10:30–11:00 AM)`
-                      : (primeDailyPick.isPlanVerified
-                          ? `${primeDailyPick.name || primeDailyPick.symbol} (500-Day Backtested Edge)`
-                          : (primeDailyPick.postMarketLabel || "Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)")
-                        ))}
+                    : (preOpenGate?.phase === 'AMO_PRE_ORDER'
+                      ? `${primeDailyPick.name || primeDailyPick.symbol} — Pre-Order / AMO Window Open (5:00 PM – 10:30 AM)`
+                      : (preOpenGate?.phase === 'PRE_OPEN'
+                        ? `${primeDailyPick.name || primeDailyPick.symbol} — Pre-Open Order Book Live Matching (10:30–11:00 AM)`
+                        : (preOpenGate?.phase === 'FIRST_15M_DECISION'
+                          ? `${primeDailyPick.name || primeDailyPick.symbol} — First 15-Minute Final Go/No-Go Decision (11:00–11:15 AM)`
+                          : (primeDailyPick.isPlanVerified
+                              ? `${primeDailyPick.name || primeDailyPick.symbol} (500-Day Backtested Edge)`
+                              : (primeDailyPick.postMarketLabel || "Tomorrow's High-Conviction Opportunity (Post-3:15 Floorsheet + Historical Base)")
+                            ))))}
                 </div>
               </div>
             </div>
@@ -3033,6 +3041,15 @@ export default function Dashboard({
               }}>
                 ★ {primeDailyPick.isPlanVerified ? 'Technical Setup Score' : 'Screener Score'}: {Math.min(99, Math.round(primeDailyPick.setupScore || primeDailyPick.score || primeDailyPick.compositeScore || 75))}/100
               </span>
+              {preOpenGate?.targetSessionDate && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,
+                  background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc',
+                  border: '1px solid rgba(168, 85, 247, 0.3)'
+                }}>
+                  🔒 Session: {preOpenGate.targetSessionDate}
+                </span>
+              )}
               {(primeDailyPick.passesAll5 || primeDailyPick.qualityTier === 'PRIME_5_STAR') ? (
                 <span style={{
                   fontSize: 10.5, fontWeight: 900, padding: '3px 8px', borderRadius: 99,
@@ -3160,10 +3177,10 @@ export default function Dashboard({
               background: preOpenGate.bg || 'rgba(15, 23, 42, 0.7)',
               border: `1px solid ${preOpenGate.color}45`,
               borderRadius: 12,
-              padding: '10px 14px',
+              padding: '12px 14px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 6
+              gap: 8
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -3214,6 +3231,42 @@ export default function Dashboard({
                   </div>
                 )}
               </div>
+
+              {/* Specialized Phase Callout */}
+              {preOpenGate.phase === 'FIRST_15M_DECISION' && (
+                <div style={{
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  background: preOpenGate.verdict === 'GO' ? 'rgba(16, 185, 129, 0.2)' : (preOpenGate.verdict === 'NO-GO' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'),
+                  border: `1px solid ${preOpenGate.verdict === 'GO' ? '#10b981' : (preOpenGate.verdict === 'NO-GO' ? '#ef4444' : '#f59e0b')}`,
+                  color: preOpenGate.verdict === 'GO' ? '#34d399' : (preOpenGate.verdict === 'NO-GO' ? '#f87171' : '#fbbf24')
+                }}>
+                  {preOpenGate.verdict === 'GO' && '🟢 15-MIN VERDICT: GO (Execution Confirmed — Price within Buy Zone)'}
+                  {preOpenGate.verdict === 'NO-GO' && '🔴 15-MIN VERDICT: NO-GO (Stand Down — Chase Trap or Supply Dump Detected)'}
+                  {preOpenGate.verdict === 'PENDING' && '🟡 15-MIN VERDICT: EVALUATING (Checking Opening Price vs Chase Cap until 11:15 AM)'}
+                </div>
+              )}
+
+              {preOpenGate.phase === 'AMO_PRE_ORDER' && (
+                <div style={{
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: 'rgba(168, 85, 247, 0.12)',
+                  border: '1px solid rgba(168, 85, 247, 0.3)',
+                  color: '#d8b4fe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}>
+                  <span>🌙</span>
+                  <span><strong>AMO Guideline:</strong> Broker TMS accepts limit orders until 10:30 AM. Place limit buy order strictly within Buy Zone below Chase Cap.</span>
+                </div>
+              )}
+
               <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.45 }}>
                 {preOpenGate.recommendation}
               </div>

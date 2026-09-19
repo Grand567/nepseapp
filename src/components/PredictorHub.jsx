@@ -781,19 +781,27 @@ export default function PredictorHub({
   }, []);
 
   const primeDailyPick = useMemo(() => {
-    const rawPick = masterPipeline.primeDailyPick;
-    if (rawPick && isActionableBuySignal(rawPick)) {
-      return rawPick;
-    }
+    const status = getDetailedMarketStatus();
     try {
       const raw = localStorage.getItem('prime_pick_plan_cache');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed?.plan?.symbol && parsed?.plan?.levels && isActionableBuySignal(parsed.plan)) {
-          return parsed.plan;
+          if (!parsed.sessionDate || parsed.sessionDate === status.targetSessionDate) {
+            return {
+              ...parsed.plan,
+              sessionDate: parsed.sessionDate || status.targetSessionDate,
+              isLockedForSession: true
+            };
+          }
         }
       }
     } catch (_) {}
+
+    const rawPick = masterPipeline.primeDailyPick;
+    if (rawPick && isActionableBuySignal(rawPick)) {
+      return rawPick;
+    }
     return null;
   }, [masterPipeline.primeDailyPick, externalPlanVersion]);
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
@@ -847,13 +855,20 @@ export default function PredictorHub({
 
         if (result.supported) {
           const isPassing = isActionableBuySignal(result);
-          const planWithSymbol = { ...result, symbol: sym };
+          const status = getDetailedMarketStatus();
+          const planWithSymbol = {
+            ...result,
+            symbol: sym,
+            sessionDate: primeDailyPick?.sessionDate || status.targetSessionDate,
+            isLockedForSession: true
+          };
           setPrimePlan(planWithSymbol);
           if (isPassing) {
             // Cache passing plan so Entry/Exit Analyzer can load it instantly
             try {
               localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
                 symbol: sym,
+                sessionDate: planWithSymbol.sessionDate,
                 plan: planWithSymbol,
                 ts: Date.now()
               }));
@@ -911,10 +926,13 @@ export default function PredictorHub({
     try {
       localStorage.setItem('selected_entry_exit_symbol', cleanSym);
       window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', { detail: { symbol: cleanSym } }));
-      // If we have a pre-computed plan, cache it so Entry/Exit shows instantly
-      if (primePlan && primePlan.symbol === cleanSym) {
+      if (primePlan && primePlan.symbol === cleanSym && isActionableBuySignal(primePlan)) {
+        const status = getDetailedMarketStatus();
         localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
-          symbol: cleanSym, plan: primePlan, ts: Date.now()
+          symbol: cleanSym,
+          sessionDate: primePlan.sessionDate || status.targetSessionDate,
+          plan: primePlan,
+          ts: Date.now()
         }));
       }
     } catch (_) {}

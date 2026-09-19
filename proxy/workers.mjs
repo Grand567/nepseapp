@@ -1,4 +1,5 @@
 import { query } from './db.mjs';
+import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 
 // Worker to aggregate daily floorsheet into broker accumulation table
 export async function aggregateFloorsheetData() {
@@ -219,6 +220,8 @@ export async function runFullUniversePrimePick() {
       riskGate: plan.riskGate,
       catalyst: 'Post-3:15 full-universe Entry/Exit Analyzer scan — best among 350+ stocks',
       postMarketVerifiedAt: new Date().toISOString(),
+      sessionDate: getDetailedMarketStatus().targetSessionDate,
+      isLockedForSession: true,
       postMarketLabel: "Tomorrow's Prime Opportunity (Full 350+ Universe Scan + Entry/Exit Analyzer)",
     };
 
