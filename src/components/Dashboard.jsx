@@ -1525,37 +1525,12 @@ export default function Dashboard({
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const verifiedSymbolsRef = useRef(new Set());
 
-  const [hydratedPrimePick, setHydratedPrimePick] = useState(() => {
-    try {
-      const raw = localStorage.getItem('prime_pick_plan_cache');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.plan?.symbol && parsed?.plan?.levels) {
-          const vUpper = String(parsed.plan.verdict || '').toUpperCase();
-          const score = Number(parsed.plan.setupScore || parsed.plan.guruScore || parsed.plan.score || 0);
-          const epsVal = Number(parsed.plan.eps ?? 0);
-          const isNegativeEps = parsed.plan.eps !== undefined && parsed.plan.eps !== null && epsVal < 0;
-          // Reject any failing plan and purge it from cache
-          const isFailing = 
-            vUpper.includes('NO TRADE') ||
-            vUpper.includes('AVOID') ||
-            vUpper.includes('REDUCE') ||
-            vUpper.includes('EXIT') ||
-            vUpper.includes('STAY OUT') ||
-            Boolean(parsed.plan.riskGate?.isInstitutionalDumping) ||
-            parsed.plan.isLossMaking ||
-            isNegativeEps ||
-            (score > 0 && score < 50);
-          if (!isFailing) {
-            return parsed.plan;
-          } else {
-            localStorage.removeItem('prime_pick_plan_cache');
-          }
-        }
-      }
-    } catch (_) {}
-    return null;
-  });
+  // CRITICAL FIX: hydratedPrimePick MUST NOT be initialized from localStorage.
+  // A stale localStorage plan (computed with synthetic/old history) is what caused HIMSTAR (score 29)
+  // to appear as the Day Prime Pick. Only the backend /api/prime-pick/daily-verified endpoint
+  // (which runs generateEntryExitPlan with real 500-day server history) is authoritative.
+  const [hydratedPrimePick, setHydratedPrimePick] = useState(null);
+
 
   const masterBreakoutPipeline = useMemo(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) {

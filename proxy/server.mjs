@@ -6,7 +6,7 @@ import Parser from 'rss-parser';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import { initDB, query } from './db.mjs';
-import { startWorkers, getVerifiedPostMarketPrimePick, setVerifiedPostMarketPrimePick } from './workers.mjs';
+import { startWorkers, getVerifiedPostMarketPrimePick, setVerifiedPostMarketPrimePick, initWorkerDependencies } from './workers.mjs';
 import fs from 'fs';
 import path from 'path';
 import meroshareRouter from './meroshare.js';
@@ -7734,27 +7734,72 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
     let stockData = getCache('today-prices') || getCache('market-summary');
     let stocksList = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
     if (!stocksList || stocksList.length === 0) {
-      stocksList = await fetchTodayPricesInternal().catch(() => []);
+      // Inline fetch from today-prices source (ShareSansar)
+      try {
+        const todayResp = await axios.get('https://www.sharesansar.com/today-share-price', { headers: HEADERS, timeout: 12000 });
+        const $td = cheerio.load(todayResp.data);
+        const fetched = [];
+        $td('table tbody tr').each((i, row) => {
+          const tds = $td(row).find('td');
+          if (tds.length >= 10) {
+            const sym = $td(tds[1]).text().trim();
+            if (sym) fetched.push({
+              symbol: sym,
+              ltp: parseMoney($td(tds[2]).text()),
+              pChange: parseMoney($td(tds[5]).text()),
+              turnover: parseMoney($td(tds[10]).text()) || parseMoney($td(tds[9]).text()),
+              volume: parseMoney($td(tds[7]).text()),
+              source: 'sharesansar'
+            });
+          }
+        });
+        if (fetched.length > 0) {
+          stocksList = fetched;
+          setCache('today-prices', fetched, 30000);
+        }
+      } catch (_fetchErr) {}
     }
     if (!stocksList || stocksList.length === 0) {
-      const lm = await fetchLiveMarketInternal().catch(() => []);
-      stocksList = Array.isArray(lm) ? lm : (lm?.data || []);
+      // Last resort: live-trading page
+      try {
+        const lmResp = await axios.get('https://www.sharesansar.com/live-trading', { headers: HEADERS, timeout: 10000 });
+        const $lm = cheerio.load(lmResp.data);
+        const lmStocks = [];
+        $lm('table tbody tr').each((i, row) => {
+          const tds = $lm(row).find('td');
+          if (tds.length >= 10) {
+            const sym = $lm(tds[1]).text().trim();
+            if (sym) lmStocks.push({
+              symbol: sym,
+              ltp: parseMoney($lm(tds[2]).text()),
+              pChange: parseMoney($lm(tds[4]).text()),
+              turnover: parseMoney($lm(tds[9]).text()),
+              volume: parseMoney($lm(tds[6]).text()),
+              source: 'live-trading'
+            });
+          }
+        });
+        stocksList = lmStocks;
+      } catch (_lmErr) {}
     }
 
-    const priorityCandidates = (Array.isArray(stocksList) ? stocksList : [])
+    // CRITICAL FIX: Scan ALL available stocks — not just top 45 by turnover.
+    // The best stock by Entry/Exit Analyzer score may not be in the top-45 by turnover.
+    // No early-break: every candidate runs through generateEntryExitPlan before picking the winner.
+    const allCandidates = (Array.isArray(stocksList) ? stocksList : [])
       .filter(s => {
         const ltp = Number(s.ltp || s.price || 0);
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
         const pCh = Number(s.pChange || s.percentageChange || 0);
-        return ltp >= 80 && turnover >= 1500000 && pCh >= -4.5 && pCh <= 14.5;
+        return ltp >= 80 && turnover >= 1500000 && pCh >= -8 && pCh <= 14.5;
       })
-      .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0))
-      .slice(0, 45);
+      .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0));
+    // NO .slice() limit — evaluate full universe
 
     let winner = null;
     const qualifiedCandidates = [];
 
-    for (const cand of priorityCandidates) {
+    for (const cand of allCandidates) {
       const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
       if (!sym) continue;
       const history = await getPriceHistoryInternal(sym, 365).catch(() => []);
@@ -7773,9 +7818,8 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       const scoreVal = Number(plan.setupScore || 0);
       const winRateVal = Number(plan.analogResult?.stats?.winRate ?? 50);
 
-      // MANDATORY DISQUALIFICATIONS:
-      // Absolutely reject any stock with AVOID, REDUCE, EXIT, NO TRADE, or Institutional Dumping!
-      const isDisqualified = 
+      // MANDATORY DISQUALIFICATIONS — any of these → skip
+      const isDisqualified =
         vUpper.includes('NO TRADE') ||
         vUpper.includes('AVOID') ||
         vUpper.includes('REDUCE') ||
@@ -7789,23 +7833,13 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         Number(plan.levels?.entryZone?.min) <= 0;
 
       if (isDisqualified) {
-        continue; // Disqualified by Entry/Exit Analyzer! Check next candidate.
+        continue; // Disqualified by Entry/Exit Analyzer — check next candidate
       }
 
       qualifiedCandidates.push({
-        cand,
-        plan,
-        sym,
-        history,
-        broker,
-        scoreVal,
-        winRateVal
+        cand, plan, sym, history, broker, scoreVal, winRateVal
       });
-
-      // If we already found a high-conviction candidate with score >= 55, we have a clear winner
-      if (scoreVal >= 55) {
-        break;
-      }
+      // NO early-break at score >= 55 — evaluate all candidates to find the TRUE best
     }
 
     if (qualifiedCandidates.length > 0) {
@@ -8173,6 +8207,32 @@ app.get('/api/market/promoter-shares', (req, res) => {
 app.listen(PORT, async () => {
     try {
         await initDB();
+        // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan
+        initWorkerDependencies({
+          getPriceHistoryInternal,
+          getOrFetchBrokerAnalysis,
+          generateEntryExitPlan,
+          getCache,
+          fetchTodayPricesInternal: async () => {
+            const stockData = getCache('today-prices') || getCache('market-summary');
+            let list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+            if (list.length === 0) {
+              try {
+                const resp = await axios.get('https://www.sharesansar.com/today-share-price', { headers: HEADERS, timeout: 12000 });
+                const $t = cheerio.load(resp.data);
+                $t('table tbody tr').each((i, row) => {
+                  const tds = $t(row).find('td');
+                  if (tds.length >= 10) {
+                    const sym = $t(tds[1]).text().trim();
+                    if (sym) list.push({ symbol: sym, ltp: parseMoney($t(tds[2]).text()), pChange: parseMoney($t(tds[5]).text()), turnover: parseMoney($t(tds[10]).text()) || parseMoney($t(tds[9]).text()), volume: parseMoney($t(tds[7]).text()), source: 'sharesansar' });
+                  }
+                });
+                if (list.length > 0) setCache('today-prices', list, 30000);
+              } catch (_) {}
+            }
+            return list;
+          }
+        });
         startWorkers();
     } catch (e) {
         console.error("Failed to start DB/Workers", e.message);

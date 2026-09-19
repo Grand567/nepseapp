@@ -528,41 +528,11 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const broker = brokerDataMap[sym] || null;
     const stockObj = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === sym) || cand;
 
+    // CRITICAL: Never evaluate a candidate without real price history.
+    // Synthetic/fake candles produce wrong scores that diverge from StockDetailModal's real-data result.
+    // If real history < 20 bars, skip this candidate entirely.
     if (!history || history.length < 20) {
-      // Build realistic 25-bar baseline anchored to real stock pricing so Entry/Exit Analyzer can run without cold-start failure
-      const ltp = Number(stockObj.ltp || stockObj.price || cand.ltp || 100);
-      const prevClose = Number(stockObj.previousClose || stockObj.prevClose || ltp);
-      const high = Number(stockObj.high || Math.max(ltp, prevClose));
-      const low = Number(stockObj.low || Math.min(ltp, prevClose));
-      const open = Number(stockObj.open || prevClose);
-      const vol = Number(stockObj.volume || 50000);
-      
-      const synthetic = [];
-      const now = Date.now();
-      for (let i = 25; i >= 1; i--) {
-        const d = new Date(now - i * 86400000).toISOString().slice(0, 10);
-        const drift = 1 + (Math.sin(i * 0.4) * 0.015);
-        const barClose = +(prevClose * drift).toFixed(1);
-        synthetic.push({
-          date: d,
-          open: +(barClose * 0.995).toFixed(1),
-          high: +(barClose * 1.01).toFixed(1),
-          low: +(barClose * 0.99).toFixed(1),
-          close: barClose,
-          volume: Math.round(vol * (0.8 + (i % 5) * 0.1)),
-          isReal: false
-        });
-      }
-      synthetic.push({
-        date: new Date().toISOString().slice(0, 10),
-        open,
-        high,
-        low,
-        close: ltp,
-        volume: vol,
-        isReal: true
-      });
-      history = synthetic;
+      return null;
     }
 
     try {
@@ -700,43 +670,12 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     }
   }
 
-  // Tier 3: Cached plan fallback — ONLY if cached plan strictly passes with non-avoid verdict
-  if (!verifiedPrimePick) {
-    const isPassingPlan = (plan) => {
-      if (!plan || !plan.symbol || !plan.levels) return false;
-      const v = String(plan.verdict || '').toUpperCase();
-      const score = Number(plan.setupScore || plan.guruScore || plan.score || 0);
-      return (
-        !v.includes('NO TRADE') &&
-        !v.includes('AVOID') &&
-        !v.includes('REDUCE') &&
-        !v.includes('EXIT') &&
-        !v.includes('STAY OUT') &&
-        !plan.isLossMaking &&
-        !plan.riskGate?.isInstitutionalDumping &&
-        (plan.eps === undefined || plan.eps === null || Number(plan.eps) >= 0) &&
-        score >= 48 &&
-        Number(plan.levels?.entryZone?.min || 0) > 0
-      );
-    };
+  // NOTE: Tier 3 stale-cache bypass REMOVED intentionally.
+  // Reading a plan from localStorage or options.cachedPrimePick WITHOUT re-running
+  // generateEntryExitPlan with real history is what caused HIMSTAR (score 29, NO TRADE)
+  // to repeatedly appear as the Day Prime Pick.
+  // If Tiers 1 & 2 find no verified winner → verifiedPrimePick stays null → Capital Defense shown.
 
-    if (options?.cachedPrimePick?.symbol && isPassingPlan(options.cachedPrimePick)) {
-      verifiedPrimePick = options.cachedPrimePick;
-    } else if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        const raw = localStorage.getItem('prime_pick_plan_cache');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.plan && isPassingPlan(parsed.plan)) {
-            verifiedPrimePick = parsed.plan;
-          } else if (parsed) {
-            // Stale or failing plan — purge it so it never surfaces
-            localStorage.removeItem('prime_pick_plan_cache');
-          }
-        }
-      } catch (_) {}
-    }
-  }
 
   // If breadthCheck.cashDefenseActive is true and we found a verified stock:
   if (verifiedPrimePick && breadthCheck.cashDefenseActive) {
