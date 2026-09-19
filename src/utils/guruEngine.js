@@ -31,7 +31,8 @@ import {
 } from './setupAnalyzer.js';
 
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
-import { getCachedStockFundamentals } from './liveData.js';
+import { getCachedStockFundamentals, getCachedRealPriceHistory } from './liveData.js';
+import { calculateStockRvol } from './watchlistAlerts.js';
 
 /**
  * Evaluates a single stock setup with unified quantitative & statistical gates.
@@ -84,19 +85,21 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   // High 20 Pivot & Distance
   const high20 = closes.length >= 20
     ? Math.max(...adjustedCandles.slice(-21, -1).map(c => Number(c.high || c.close || 0)))
-    : ltp * 1.02;
+    : Number(stock?.high20 || stock?.breakoutPrice || (ltp * 1.02));
   const lowBase = closes.length >= 20
     ? Math.min(...adjustedCandles.slice(-21, -1).map(c => Number(c.low || c.close || 0)))
-    : ltp * 0.94;
+    : Number(stock?.low20 || (ltp * 0.94));
 
   const distToPivotPct = high20 > 0 ? +(((high20 - ltp) / high20) * 100).toFixed(1) : 0;
   const isCoilingNearPivot = distToPivotPct >= 0.1 && distToPivotPct <= 4.8;
   const isVCPTight = vcp.isVCP || vcp.finalDepth <= 6.8;
   const isSqueeze = bbwp.isSqueeze || bbwp.bwpr <= 18.0;
 
-  // Relative volume
+  // Relative volume (use stock.rvol or calculateStockRvol if historical candles are insufficient)
   const avgVol50 = adjustedCandles.slice(-50).reduce((s, c) => s + Number(c.volume || 0), 0) / Math.min(50, Math.max(1, adjustedCandles.length));
-  const rvol = avgVol50 > 0 ? +(vol / avgVol50).toFixed(2) : 1.0;
+  const rvol = (stock?.rvol != null && !isNaN(Number(stock.rvol)) && Number(stock.rvol) > 0)
+    ? Number(stock.rvol)
+    : (avgVol50 > 0 ? +(vol / avgVol50).toFixed(2) : calculateStockRvol(stock, rawCandles));
 
   // 2. Bayesian Historical Analogs (Zero-Lookahead Backtest)
   let analogWinRate = null;
@@ -241,7 +244,11 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     setupClass = '200-Day EMA Resistance Ceiling';
     isPrimeCandidate = false;
     disqualificationReason = `Testing 200 EMA overhead resistance (Rs. ${ema200.toFixed(1)}) with unconfirmed or low analog win rate (${analogWinRate ?? 'unverified'}%)`;
-  } else if (ltp >= high20 + clearanceBuffer && rvol >= 1.40) {
+  } else if (
+    (high20 > 0 && ltp >= high20 + clearanceBuffer && rvol >= 1.40) ||
+    (Boolean(stock?.isBreakout) && rvol >= 1.40) ||
+    (stock?.breakoutPrice && ltp >= Number(stock.breakoutPrice) && rvol >= 1.40)
+  ) {
     actionState = 'ACTIVE_BREAKOUT';
     setupClass = 'Active Momentum Breakout';
   } else if (isCoilingNearPivot && (isVCPTight || isSqueeze)) {
@@ -535,8 +542,11 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     }
   }
 
-  // Sort descending by Guru Score, then broker LBAS
+  // Sort descending: Active breakouts first, then Guru Score, then broker LBAS
   candidates.sort((a, b) => {
+    const aBreakout = a.actionState === 'ACTIVE_BREAKOUT' ? 1 : 0;
+    const bBreakout = b.actionState === 'ACTIVE_BREAKOUT' ? 1 : 0;
+    if (bBreakout !== aBreakout) return bBreakout - aBreakout;
     if (b.guruScore !== a.guruScore) return b.guruScore - a.guruScore;
     return (b.brokerMetrics?.lbas || 0) - (a.brokerMetrics?.lbas || 0);
   });
@@ -550,6 +560,12 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
     if (!sym) return null;
     let history = priceHistories[sym] || [];
+    if (!history || history.length < 20) {
+      const cached = getCachedRealPriceHistory(sym);
+      if (cached && cached.length >= 20) {
+        history = cached;
+      }
+    }
     const broker = brokerDataMap[sym] || null;
     const stockObj = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === sym) || cand;
 
@@ -635,7 +651,16 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   };
 
   let verifiedPrimePick = null;
-  const candidatePool = candidates.length > 0 ? candidates : allLiquidCandidates;
+  // Assemble candidatePool with active breakouts strictly at the head, followed by high-score candidates
+  const seenCandidateSyms = new Set();
+  const candidatePool = [];
+  [...activeBreakouts, ...candidates, ...allLiquidCandidates].forEach(cand => {
+    const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
+    if (sym && !seenCandidateSyms.has(sym)) {
+      seenCandidateSyms.add(sym);
+      candidatePool.push(cand);
+    }
+  });
   const validatedPlans = [];
 
   // Tier 1: Check priority candidates (first 40)
@@ -672,6 +697,22 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   } else if (options.cachedPrimePick && isActionableBuySignal(options.cachedPrimePick)) {
     // Re-use verified plan from cold-start hydration if it is an authentic BUY/ACCUMULATE setup
     verifiedPrimePick = options.cachedPrimePick;
+  }
+
+  // Fallback: If still no pick, check localStorage persistent cache for an authentic BUY/ACCUMULATE plan
+  if (!verifiedPrimePick) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem('prime_pick_plan_cache');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const p = parsed?.plan || parsed;
+          if (p && p.symbol && isActionableBuySignal(p)) {
+            verifiedPrimePick = p;
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   // If breadthCheck.cashDefenseActive is true but we found a verified stock:

@@ -101,7 +101,12 @@ export async function runFullUniversePrimePick() {
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
         return ltp >= 30 && turnover >= 300000;
       })
-      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0));
+      .sort((a, b) => {
+        const aBreakout = (a.isBreakout || (Number(a.rvol || 0) >= 1.4 && Number(a.pChange || 0) >= 0)) ? 1 : 0;
+        const bBreakout = (b.isBreakout || (Number(b.rvol || 0) >= 1.4 && Number(b.pChange || 0) >= 0)) ? 1 : 0;
+        if (bBreakout !== aBreakout) return bBreakout - aBreakout;
+        return Number(b.turnover || 0) - Number(a.turnover || 0);
+      });
 
     console.log(`[PrimePickWorker] Scanning ${candidates.length} stocks through Entry/Exit Analyzer...`);
 

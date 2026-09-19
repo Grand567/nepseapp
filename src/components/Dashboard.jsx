@@ -1477,16 +1477,37 @@ export default function Dashboard({
     if (!Array.isArray(stocks) || stocks.length === 0) return;
     let isMounted = true;
 
-    const priorityCandidates = stocks
+    // 1. Watched & alert stocks (like KBL)
+    const watchedCandidates = (watchedOrAlertSymbols || [])
+      .map(sym => stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === sym))
+      .filter(Boolean);
+
+    // 2. Active breakouts and high RVOL momentum scrips
+    const breakoutCandidates = stocks.filter(s => {
+      const ltp = Number(s.ltp || s.price || 0);
+      const pCh = Number(s.pChange || 0);
+      const rvol = calculateStockRvol(s);
+      return ltp >= 30 && (s.isBreakout || (rvol >= 1.4 && pCh >= 0));
+    });
+
+    // 3. Top turnover liquid stocks
+    const turnoverCandidates = stocks
       .filter(s => {
         const ltp = Number(s.ltp || s.price || 0);
         const turnover = Number(s.turnover || 0);
         const pCh = Number(s.pChange || 0);
         const eps = Number(s.eps || 0);
-        return ltp >= 80 && turnover >= 3000000 && pCh >= -2.0 && pCh <= 12.0 && (s.eps === undefined || eps >= 0);
+        return ltp >= 80 && turnover >= 2500000 && pCh >= -2.0 && pCh <= 12.0 && (s.eps === undefined || eps >= 0);
       })
       .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
-      .slice(0, 10);
+      .slice(0, 15);
+
+    const candidateMap = new Map();
+    [...breakoutCandidates, ...watchedCandidates, ...turnoverCandidates].forEach(s => {
+      const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+      if (sym && !candidateMap.has(sym)) candidateMap.set(sym, s);
+    });
+    const priorityCandidates = Array.from(candidateMap.values()).slice(0, 25);
 
     const neededFetches = priorityCandidates.filter(s => {
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
@@ -1520,10 +1541,11 @@ export default function Dashboard({
     return () => {
       isMounted = false;
     };
-  }, [stocks]);
+  }, [stocks, watchedOrAlertSymbols]);
 
   // ── 🏆 MASTER AMALGAMATED BREAKOUT & PRIME PICK PIPELINE ──
   const verifiedSymbolsRef = useRef(new Set());
+  const [isEvaluatingCandidates, setIsEvaluatingCandidates] = useState(false);
 
   // Initialize hydratedPrimePick from localStorage if a clean BUY/ACCUMULATE plan exists
   const [hydratedPrimePick, setHydratedPrimePick] = useState(() => {
@@ -1543,6 +1565,25 @@ export default function Dashboard({
     } catch (_) {}
     return null;
   });
+
+  // Cross-component sync: update hydratedPrimePick whenever Entry/Exit Analyzer evaluates a BUY/ACCUMULATE setup
+  useEffect(() => {
+    const handlePlanUpdated = (e) => {
+      if (e?.detail?.plan && isActionableBuySignal(e.detail.plan)) {
+        const newPlan = e.detail.plan;
+        setHydratedPrimePick(prev => {
+          if (!prev || !isActionableBuySignal(prev)) return newPlan;
+          const prevScore = Number(prev.setupScore || prev.score || 0);
+          const newScore = Number(newPlan.setupScore || newPlan.score || 0);
+          if (newPlan.passesAll5 && !prev.passesAll5) return newPlan;
+          if (newScore >= prevScore) return newPlan;
+          return prev;
+        });
+      }
+    };
+    window.addEventListener('prime_pick_plan_updated', handlePlanUpdated);
+    return () => window.removeEventListener('prime_pick_plan_updated', handlePlanUpdated);
+  }, []);
 
 
   const masterBreakoutPipeline = useMemo(() => {
@@ -1612,40 +1653,82 @@ export default function Dashboard({
     // If Cash Defense is active and we already have a verified defensive fallback with levels and candles, skip scan
     if (cashDefenseActive && primeDailyPick?.isDefensiveFallback && primeDailyPick?.levels && primeDailyPick?.candles) return;
 
-    // Collect top candidates to verify against quantitative setup engine
+    // Collect top candidates in strict priority order to verify against quantitative setup engine
     const prioritySymbols = [];
-    if (primeDailyPick?.symbol && !verifiedSymbolsRef.current.has(primeDailyPick.symbol)) {
-      prioritySymbols.push(primeDailyPick.symbol);
+
+    // 1. Any live triggered breakout toast or explicit breakout flag
+    if (activeBreakoutToast?.symbol && !verifiedSymbolsRef.current.has(activeBreakoutToast.symbol)) {
+      prioritySymbols.push(activeBreakoutToast.symbol);
     }
-    (masterBreakoutPipeline.nextBreakouts || []).forEach(s => {
-      if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) prioritySymbols.push(s.symbol);
+    (stocks || []).forEach(s => {
+      if (s?.isBreakout && s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) {
+        prioritySymbols.push(s.symbol);
+      }
     });
+
+    // 2. Watched & alert symbols with non-negative momentum (like KBL)
+    (watchedOrAlertSymbols || []).forEach(sym => {
+      if (sym && !prioritySymbols.includes(sym) && !verifiedSymbolsRef.current.has(sym)) {
+        prioritySymbols.push(sym);
+      }
+    });
+
+    // 3. Active breakouts from master pipeline
     (masterBreakoutPipeline.activeBreakouts || []).forEach(s => {
-      if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) prioritySymbols.push(s.symbol);
+      if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) {
+        prioritySymbols.push(s.symbol);
+      }
     });
-    // Add top turnover liquid stocks
-    stocks
-      .filter(s => Number(s.turnover || 0) >= 2500000 && Number(s.ltp || 0) >= 80)
-      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+
+    // 4. Next coiled breakouts from master pipeline
+    (masterBreakoutPipeline.nextBreakouts || []).forEach(s => {
+      if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) {
+        prioritySymbols.push(s.symbol);
+      }
+    });
+
+    // 5. Volume surge scrips (RVOL >= 1.4 & pChange >= 0)
+    (stocks || [])
+      .filter(s => Number(s.ltp || 0) >= 30 && Number(s.pChange || 0) >= 0 && (calculateStockRvol(s) >= 1.4 || Number(s.rvol || 0) >= 1.4))
+      .sort((a, b) => (calculateStockRvol(b) || 0) - (calculateStockRvol(a) || 0))
       .slice(0, 10)
       .forEach(s => {
-        if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) prioritySymbols.push(s.symbol);
+        if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) {
+          prioritySymbols.push(s.symbol);
+        }
+      });
+
+    // 6. Top turnover liquid stocks
+    (stocks || [])
+      .filter(s => Number(s.turnover || 0) >= 2000000 && Number(s.ltp || 0) >= 60)
+      .sort((a, b) => Number(b.turnover || 0) - Number(a.turnover || 0))
+      .slice(0, 15)
+      .forEach(s => {
+        if (s?.symbol && !prioritySymbols.includes(s.symbol) && !verifiedSymbolsRef.current.has(s.symbol)) {
+          prioritySymbols.push(s.symbol);
+        }
       });
 
     if (prioritySymbols.length === 0) return;
 
-    // If primeDailyPick is already fully verified and PASSING an actionable Buy/Accumulate signal, no need to re-scan
+    // If primeDailyPick is already fully verified and PASSING an actionable Buy/Accumulate signal,
+    // only scan if there are pending live breakouts or watched scrips not yet analyzed
     if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && isActionableBuySignal(primeDailyPick)) {
-      return;
+      const pendingBreakouts = prioritySymbols.filter(sym => {
+        const s = stocks.find(st => st.symbol === sym);
+        return s?.isBreakout || (s && calculateStockRvol(s) >= 1.5 && Number(s.pChange || 0) > 0);
+      });
+      if (pendingBreakouts.length === 0) return;
     }
 
     let isMounted = true;
+    setIsEvaluatingCandidates(true);
+
     (async () => {
       const evaluatedList = [];
 
       for (const sym of prioritySymbols) {
         if (!isMounted) break;
-        verifiedSymbolsRef.current.add(sym);
 
         try {
           const [history, divRes, brokerRes, fundRes] = await Promise.all([
@@ -1663,7 +1746,8 @@ export default function Dashboard({
           }
 
           if (candleList.length >= 20) {
-            const stockObj = stocks.find(s => s.symbol === sym) || { symbol: sym };
+            verifiedSymbolsRef.current.add(sym);
+            const stockObj = (stocks || []).find(s => s.symbol === sym) || { symbol: sym };
             const plan = generateEntryExitPlan(
               { ...(stockObj || {}), ...(fundRes || {}) },
               candleList,
@@ -1694,7 +1778,7 @@ export default function Dashboard({
                   compositeScore: scoreVal,
                   guruScore: scoreVal,
                   passesAll5,
-                  rvol: plan.technical?.volume?.rvol || 1.25,
+                  rvol: plan.technical?.volume?.rvol || stockObj.rvol || 1.25,
                   winRate: plan.analogResult?.stats?.winRate ?? 50,
                   analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
                   confidenceLevel: plan.confidence?.level || 'MEDIUM',
@@ -1709,6 +1793,27 @@ export default function Dashboard({
                   candles: candleList
                 };
                 evaluatedList.push(verifiedPick);
+
+                // PROGRESSIVE IMMEDIATE PROMOTION:
+                // Immediately update Day Prime Pick so user sees verified setup without waiting for loop to finish
+                setHydratedPrimePick(prev => {
+                  if (!prev || !isActionableBuySignal(prev)) return verifiedPick;
+                  const prevScore = Number(prev.setupScore || prev.score || 0);
+                  if (verifiedPick.passesAll5 && !prev.passesAll5) return verifiedPick;
+                  if (scoreVal > prevScore) return verifiedPick;
+                  return prev;
+                });
+
+                try {
+                  localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+                    symbol: verifiedPick.symbol,
+                    plan: {
+                      ...verifiedPick,
+                      candles: (verifiedPick.candles || []).slice(-100)
+                    },
+                    ts: Date.now()
+                  }));
+                } catch (_) {}
               }
             }
           }
@@ -1717,7 +1822,7 @@ export default function Dashboard({
         }
       }
 
-      // Select highest scoring setup from Entry/Exit Analyzer evaluation:
+      // Final rank of all evaluated candidates across this pass:
       // Tier 1: stocks that pass all 5 criteria with actionable Buy/Accumulate signal
       // Tier 2: if no stock passes all 5 criteria, fallback to stocks that have an actionable Buy/Accumulate signal
       if (isMounted && evaluatedList.length > 0) {
@@ -1737,10 +1842,17 @@ export default function Dashboard({
           }));
         } catch (_) {}
       }
+
+      if (isMounted) {
+        setIsEvaluatingCandidates(false);
+      }
     })();
 
-    return () => { isMounted = false; };
-  }, [primeDailyPick?.symbol, cashDefenseActive]);
+    return () => {
+      isMounted = false;
+      setIsEvaluatingCandidates(false);
+    };
+  }, [stocks, watchedOrAlertSymbols, activeBreakoutToast?.symbol, cashDefenseActive, backtestCacheVersion]);
 
   // Poll Level-2 pre-open order book during pre-open / post-market sessions for the Prime Pick
   useEffect(() => {
@@ -2800,19 +2912,35 @@ export default function Dashboard({
           <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>Analyzing 350+ NEPSE stocks via Entry/Exit Analyzer...</span>
         </div>
       ) : (!primeDailyPick || !isActionableBuySignal(primeDailyPick)) ? (
-        <div style={{
-          borderRadius: 18,
-          background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',
-          border: '1.5px solid rgba(244, 63, 94, 0.45)',
-          padding: '16px 18px',
-          marginBottom: 12,
-          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(244, 63, 94, 0.12)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
+        isEvaluatingCandidates ? (
+          <div style={{
+            borderRadius: 18,
+            background: 'rgba(15, 23, 42, 0.7)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '20px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12
+          }}>
+            <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #10b981', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>Evaluating NEPSE breakout setups via Entry/Exit Analyzer...</span>
+          </div>
+        ) : (
+          <div style={{
+            borderRadius: 18,
+            background: 'linear-gradient(135deg, rgba(30, 18, 22, 0.98), rgba(20, 15, 25, 0.98))',
+            border: '1.5px solid rgba(244, 63, 94, 0.45)',
+            padding: '16px 18px',
+            marginBottom: 12,
+            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(244, 63, 94, 0.12)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{
@@ -2846,7 +2974,7 @@ export default function Dashboard({
               : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.'}
           </div>
         </div>
-      ) : (
+      )) : (
         <div style={{
           borderRadius: 18,
           background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(20, 27, 45, 0.98))',

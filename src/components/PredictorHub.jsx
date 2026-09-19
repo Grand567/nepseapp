@@ -771,6 +771,15 @@ export default function PredictorHub({
     return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
   }, [stocks]);
 
+  const [externalPlanVersion, setExternalPlanVersion] = useState(0);
+  useEffect(() => {
+    const handlePlanUpdated = () => {
+      setExternalPlanVersion(v => v + 1);
+    };
+    window.addEventListener('prime_pick_plan_updated', handlePlanUpdated);
+    return () => window.removeEventListener('prime_pick_plan_updated', handlePlanUpdated);
+  }, []);
+
   const primeDailyPick = useMemo(() => {
     const rawPick = masterPipeline.primeDailyPick;
     if (rawPick && isActionableBuySignal(rawPick)) {
@@ -786,7 +795,7 @@ export default function PredictorHub({
       }
     } catch (_) {}
     return null;
-  }, [masterPipeline.primeDailyPick]);
+  }, [masterPipeline.primeDailyPick, externalPlanVersion]);
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
 
   // ── AUTO-ANALYSIS: Run full Entry/Exit Analyzer engine on Prime Pick top stock ──

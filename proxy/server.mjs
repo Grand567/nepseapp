@@ -7800,8 +7800,12 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
         return ltp >= 30 && turnover >= 300000;
       })
-      .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0));
-    // NO .slice() limit — evaluate full universe
+      .sort((a, b) => {
+        const aBreakout = (a.isBreakout || (Number(a.rvol || 0) >= 1.4 && Number(a.pChange || 0) >= 0)) ? 1 : 0;
+        const bBreakout = (b.isBreakout || (Number(b.rvol || 0) >= 1.4 && Number(b.pChange || 0) >= 0)) ? 1 : 0;
+        if (bBreakout !== aBreakout) return bBreakout - aBreakout;
+        return Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0);
+      });
 
     let winner = null;
     const qualifiedCandidates = [];

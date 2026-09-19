@@ -243,6 +243,71 @@ export function EntryExitAnalyzer({
             hour12: true,
           })
         );
+
+        // If this plan is an authentic BUY / ACCUMULATE setup, sync with prime pick cache & broadcast
+        if (isActionableBuySignal(result)) {
+          try {
+            const scoreVal = Number(result.setupScore ?? result.score ?? 0);
+            const epsVal = Number(result.fundamental?.eps ?? stock?.eps ?? 0);
+            const passesAll5 = 
+              !Boolean(result.riskGate?.isCircuitTrap) &&
+              !Boolean(result.riskGate?.isLossMaking) &&
+              epsVal >= 0 &&
+              Boolean(result.levels?.entryZone?.min) &&
+              Number(result.levels?.entryZone?.min) > 0;
+
+            const entryHighNum = Number(result.levels?.entryZone?.max || result.levels?.entryZone?.high || result.ltp || stock?.ltp || 100);
+            const fullPrimePlan = {
+              ...stock,
+              ...result,
+              symbol: sym,
+              setupScore: scoreVal,
+              score: scoreVal,
+              compositeScore: scoreVal,
+              guruScore: scoreVal,
+              passesAll5,
+              rvol: result.technical?.volume?.rvol || stock?.rvol || 1.25,
+              winRate: result.analogResult?.stats?.winRate ?? 50,
+              analogCount: result.analogResult?.stats?.sampleSize ?? 6,
+              confidenceLevel: result.confidence?.level || 'MEDIUM',
+              levels: result.levels,
+              entryLow: result.levels?.entryZone?.min || result.levels?.entryZone?.low,
+              entryHigh: result.levels?.entryZone?.max || result.levels?.entryZone?.high,
+              chaseCap: result.levels?.chaseCap || +(entryHighNum * 1.025).toFixed(1),
+              target1: result.levels?.target1?.price,
+              target2: result.levels?.target2?.price,
+              stopLoss: result.levels?.stopLoss?.price,
+              isPlanVerified: true,
+              candles: candleList
+            };
+
+            const rawCached = localStorage.getItem('prime_pick_plan_cache');
+            let shouldUpdate = true;
+            if (rawCached) {
+              const existing = JSON.parse(rawCached);
+              const existingScore = Number(existing?.plan?.setupScore || existing?.plan?.score || 0);
+              if (existing?.plan && existing.plan.passesAll5 && !passesAll5) {
+                shouldUpdate = false;
+              } else if (existingScore > scoreVal && existing?.plan && isActionableBuySignal(existing.plan)) {
+                shouldUpdate = false;
+              }
+            }
+
+            if (shouldUpdate) {
+              localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+                symbol: sym,
+                plan: {
+                  ...fullPrimePlan,
+                  candles: (candleList || []).slice(-100)
+                },
+                ts: Date.now()
+              }));
+              window.dispatchEvent(new CustomEvent('prime_pick_plan_updated', {
+                detail: { symbol: sym, plan: fullPrimePlan }
+              }));
+            }
+          } catch (_) {}
+        }
       } catch (e: any) {
         setError(e.message || 'Failed to analyze this stock.');
       } finally {
