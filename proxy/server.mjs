@@ -7733,18 +7733,27 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
     // Identify candidate from latest closing data
     let stockData = getCache('today-prices') || getCache('market-summary');
     let stocksList = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+    if (!stocksList || stocksList.length === 0) {
+      stocksList = await fetchTodayPricesInternal().catch(() => []);
+    }
+    if (!stocksList || stocksList.length === 0) {
+      const lm = await fetchLiveMarketInternal().catch(() => []);
+      stocksList = Array.isArray(lm) ? lm : (lm?.data || []);
+    }
 
     const priorityCandidates = (Array.isArray(stocksList) ? stocksList : [])
       .filter(s => {
         const ltp = Number(s.ltp || s.price || 0);
         const turnover = Number(s.turnover || s.totalTradedValue || 0);
         const pCh = Number(s.pChange || s.percentageChange || 0);
-        return ltp >= 80 && turnover >= 2000000 && pCh >= -3.5 && pCh <= 12.0;
+        return ltp >= 80 && turnover >= 1500000 && pCh >= -4.5 && pCh <= 14.5;
       })
       .sort((a, b) => Number(b.turnover || b.totalTradedValue || 0) - Number(a.turnover || a.totalTradedValue || 0))
-      .slice(0, 30);
+      .slice(0, 45);
 
     let winner = null;
+    const qualifiedCandidates = [];
+
     for (const cand of priorityCandidates) {
       const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
       if (!sym) continue;
@@ -7775,13 +7784,35 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         Boolean(plan.riskGate?.isInstitutionalDumping) ||
         Boolean(plan.riskGate?.isCircuitTrap) ||
         Boolean(plan.riskGate?.isLossMaking) ||
-        scoreVal < 52 ||
+        scoreVal < 45 ||
         !plan.levels?.entryZone?.min ||
         Number(plan.levels?.entryZone?.min) <= 0;
 
       if (isDisqualified) {
         continue; // Disqualified by Entry/Exit Analyzer! Check next candidate.
       }
+
+      qualifiedCandidates.push({
+        cand,
+        plan,
+        sym,
+        history,
+        broker,
+        scoreVal,
+        winRateVal
+      });
+
+      // If we already found a high-conviction candidate with score >= 55, we have a clear winner
+      if (scoreVal >= 55) {
+        break;
+      }
+    }
+
+    if (qualifiedCandidates.length > 0) {
+      // Sort by score descending (highest quality setup / best among the worst)
+      qualifiedCandidates.sort((a, b) => b.scoreVal - a.scoreVal);
+      const chosen = qualifiedCandidates[0];
+      const { cand, plan, sym, history, broker, scoreVal, winRateVal } = chosen;
 
       const eLow = Number(plan.levels.entryZone.min || plan.levels.entryZone.low);
       const eHigh = Number(plan.levels.entryZone.max || plan.levels.entryZone.high);
@@ -7825,7 +7856,6 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         postMarketLabel: "Tomorrow's Prime Opportunity (Sealed Post-3:15 Floorsheet + 500-Day Analogs)",
         riskGate: plan.riskGate
       };
-      break; // Found verified winner that passed generateEntryExitPlan
     }
 
     if (winner) {

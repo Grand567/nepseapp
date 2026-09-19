@@ -613,9 +613,10 @@ const isCircuitStock = (s, direction = 'any') => {
     if (direction === 'neg') return chg < 0;
     return true;
   }
-  // Upper/Lower 15% circuit zone (>= 13.5%) or legacy 10% circuit locks from historical snapshots (>= 9.8%)
-  const isPos = chg >= 13.5 || (chg >= 9.8 && chg <= 10.05);
-  const isNeg = chg <= -13.5 || (chg <= -9.8 && chg >= -10.05);
+  // Upper circuit in NEPSE triggers from +9.5% up to +15%
+  const isPos = chg >= 9.5;
+  // Lower circuit in NEPSE triggers from -9.5% down to -15%
+  const isNeg = chg <= -9.5;
   if (direction === 'pos') return isPos;
   if (direction === 'neg') return isNeg;
   return isPos || isNeg;
@@ -2535,6 +2536,15 @@ export default function Dashboard({
         const decPct = Math.round((declinedCount / totalBreadth) * 100);
         const uncPct = Math.max(0, 100 - advPct - decPct);
 
+        let filteredBreadthStocks = [];
+        if (breadthFilter && Array.isArray(stocks)) {
+          if (breadthFilter === 'advanced') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) > 0).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
+          else if (breadthFilter === 'declined') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) < 0).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
+          else if (breadthFilter === 'unchanged') filteredBreadthStocks = stocks.filter(s => (Number(s.pChange) || 0) === 0);
+          else if (breadthFilter === 'circuit_pos') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'pos')).sort((a, b) => (Number(b.pChange) || 0) - (Number(a.pChange) || 0));
+          else if (breadthFilter === 'circuit_neg') filteredBreadthStocks = stocks.filter(s => isCircuitStock(s, 'neg')).sort((a, b) => (Number(a.pChange) || 0) - (Number(b.pChange) || 0));
+        }
+
         return (
           <div style={{
             background: 'var(--bg-card)',
@@ -2579,8 +2589,8 @@ export default function Dashboard({
                 { id: 'advanced', label: `▲ Advances ${advancedCount}`, sub: `${advPct}%`, col: 'var(--bull)', bg: 'rgba(16,185,129,0.1)' },
                 { id: 'declined', label: `▼ Declines ${declinedCount}`, sub: `${decPct}%`, col: '#F43F5E', bg: 'rgba(244,63,94,0.1)' },
                 { id: 'unchanged', label: `◼ Flat ${unchangedCount}`, sub: `${uncPct}%`, col: 'var(--text-muted)', bg: 'rgba(255,255,255,0.04)' },
-                { id: 'circuit_pos', label: `⚡ +Circuit ${circuitPosCount}`, sub: '15% Limit Up', col: '#10B981', bg: 'rgba(16,185,129,0.12)' },
-                { id: 'circuit_neg', label: `⚡ -Circuit ${circuitNegCount}`, sub: '15% Limit Down', col: '#F43F5E', bg: 'rgba(244,63,94,0.12)' },
+                { id: 'circuit_pos', label: `⚡ +Circuit ${circuitPosCount}`, sub: '10%-15% Up', col: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+                { id: 'circuit_neg', label: `⚡ -Circuit ${circuitNegCount}`, sub: '10%-15% Down', col: '#F43F5E', bg: 'rgba(244,63,94,0.12)' },
               ].map(chip => {
                 const isSelected = breadthFilter === chip.id;
                 return (
@@ -2611,28 +2621,163 @@ export default function Dashboard({
               })}
             </div>
 
-            {/* Active filter notification with reset */}
+            {/* Active filter notification with interactive stock drawer */}
             {breadthFilter && (
-              <div style={{
-                marginTop: 8,
-                padding: '4px 10px',
-                borderRadius: 6,
-                background: 'rgba(56, 117, 246, 0.12)',
-                border: '1px solid rgba(56, 117, 246, 0.3)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                fontSize: 11
-              }}>
-                <span style={{ color: '#93c5fd' }}>
-                  Filtering by: <strong style={{ color: '#fff', textTransform: 'capitalize' }}>{breadthFilter.replace('_', ' ')}</strong>
-                </span>
-                <button
-                  onClick={() => setBreadthFilter(null)}
-                  style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
-                >
-                  Clear Filter ✕
-                </button>
+              <div style={{ marginTop: 10 }}>
+                <div style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(56, 117, 246, 0.12)',
+                  border: '1px solid rgba(56, 117, 246, 0.3)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 11,
+                  marginBottom: 8
+                }}>
+                  <span style={{ color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>Showing:</span>
+                    <strong style={{ color: '#fff', textTransform: 'capitalize' }}>
+                      {breadthFilter.replace('_', ' ')}
+                    </strong>
+                    <span style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      padding: '1px 7px',
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: '#ffffff'
+                    }}>
+                      {filteredBreadthStocks.length} Scrips
+                    </span>
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button
+                      onClick={() => setBreadthModalTab(breadthFilter)}
+                      style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
+                    >
+                      Full Table ↗
+                    </button>
+                    <button
+                      onClick={() => setBreadthFilter(null)}
+                      style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
+                    >
+                      Clear ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Interactive list of matching stocks */}
+                {filteredBreadthStocks.length === 0 ? (
+                  <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11.5 }}>
+                    No scrips currently matching {breadthFilter.replace('_', ' ')} in this session.
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                    paddingRight: 2,
+                    scrollbarWidth: 'thin'
+                  }}>
+                    {filteredBreadthStocks.slice(0, 20).map(stock => {
+                      const pCh = Number(stock.pChange || 0);
+                      const isUp = pCh > 0;
+                      const isDown = pCh < 0;
+                      const isCircuit = isCircuitStock(stock);
+                      return (
+                        <div
+                          key={stock.symbol}
+                          onClick={() => handleStockClick(stock)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            border: isCircuit
+                              ? (isUp ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(244, 63, 94, 0.45)')
+                              : '1px solid rgba(255, 255, 255, 0.06)',
+                            borderRadius: 10,
+                            padding: '8px 12px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 900, fontSize: 13, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
+                                {stock.symbol}
+                              </span>
+                              {isCircuit && (
+                                <span style={{
+                                  fontSize: 9,
+                                  fontWeight: 900,
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  background: isUp ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                                  color: isUp ? '#34d399' : '#f87171',
+                                  border: isUp ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)'
+                                }}>
+                                  ⚡ CIRCUIT
+                                </span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {stock.name || stock.companyName || stock.symbol}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
+                                Rs. {Number(stock.ltp || stock.price || 0).toLocaleString('en-IN')}
+                              </div>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                {stock.turnover ? `Rs. ${(Number(stock.turnover) / 10000000).toFixed(2)}Cr` : (stock.volume ? `${Number(stock.volume).toLocaleString('en-IN')} qty` : '')}
+                              </div>
+                            </div>
+
+                            <div style={{
+                              minWidth: 64,
+                              textAlign: 'center',
+                              padding: '4px 7px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 900,
+                              fontFamily: 'var(--font-mono)',
+                              background: isUp ? 'rgba(16, 185, 129, 0.15)' : isDown ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                              color: isUp ? '#34d399' : isDown ? '#f87171' : 'var(--text-muted)',
+                              border: isUp ? '1px solid rgba(16, 185, 129, 0.3)' : isDown ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)'
+                            }}>
+                              {pCh > 0 ? `+${pCh.toFixed(2)}%` : `${pCh.toFixed(2)}%`}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {filteredBreadthStocks.length > 20 && (
+                      <button
+                        onClick={() => setBreadthModalTab(breadthFilter)}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: 8,
+                          padding: '7px 12px',
+                          fontSize: 11.5,
+                          fontWeight: 800,
+                          color: '#38bdf8',
+                          cursor: 'pointer',
+                          marginTop: 4
+                        }}
+                      >
+                        View All {filteredBreadthStocks.length} Scrips in Full Table ↗
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
