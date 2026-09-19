@@ -133,8 +133,15 @@ export async function runFullUniversePrimePick() {
           vUpper.includes('STAY OUT') ||
           Boolean(plan.riskGate?.isInstitutionalDumping);
 
+        const passesAll5 =
+          !Boolean(plan.riskGate?.isCircuitTrap) &&
+          !Boolean(plan.riskGate?.isLossMaking) &&
+          Number(cand.eps || 0) >= 0 &&
+          Boolean(plan.levels?.entryZone?.min) &&
+          Number(plan.levels?.entryZone?.min) > 0;
+
         if (!isDisqualified) {
-          qualifiedCandidates.push({ cand, plan, sym, scoreVal, winRateVal: Number(plan.analogResult?.stats?.winRate ?? 50) });
+          qualifiedCandidates.push({ cand, plan, sym, scoreVal, winRateVal: Number(plan.analogResult?.stats?.winRate ?? 50), passesAll5 });
         }
       } catch (_) {
         // Individual stock failure — continue to next
@@ -147,9 +154,12 @@ export async function runFullUniversePrimePick() {
       return;
     }
 
-    // Step 4: Sort by setupScore descending — true best of all 350+ stocks
-    qualifiedCandidates.sort((a, b) => b.scoreVal - a.scoreVal);
-    const best = qualifiedCandidates[0];
+    // Step 4: Two-Tier Selection — Tier 1: passes all 5 criteria; Tier 2: fallback to 2 rules
+    const tier1 = qualifiedCandidates.filter(c => c.passesAll5);
+    const candidatesToRank = tier1.length > 0 ? tier1 : qualifiedCandidates;
+    candidatesToRank.sort((a, b) => b.scoreVal - a.scoreVal);
+    const best = candidatesToRank[0];
+    const isTier1 = tier1.length > 0;
     const { cand, plan, sym, scoreVal, winRateVal } = best;
 
     const candLtp = Number(cand.ltp || plan.ltp || 0);

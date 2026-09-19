@@ -571,10 +571,19 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const t2Price = Number(plan.levels?.target2?.price || (ltpNum > 0 ? +(ltpNum * 1.15).toFixed(1) : 120));
       const slPriceFinal = Number(plan.levels?.stopLoss?.price || (ltpNum > 0 ? +(ltpNum * 0.94).toFixed(1) : 90));
 
+      const epsVal = Number(cand.eps ?? stockObj.eps ?? 0);
+      const passesAll5 = 
+        !Boolean(plan.riskGate?.isCircuitTrap) &&
+        !Boolean(plan.riskGate?.isLossMaking) &&
+        epsVal >= 0 &&
+        Boolean(plan.levels?.entryZone?.min) &&
+        Number(plan.levels?.entryZone?.min) > 0;
+
       return {
         ...cand,
         ...plan,
         symbol: sym,
+        passesAll5,
         name: cand.name || stockObj.name || sym,
         sector: cand.sector || stockObj.sector || 'NEPSE',
         ltp: ltpNum,
@@ -636,15 +645,28 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
   }
 
   if (validatedPlans.length > 0) {
-    // STRICT USER DIRECTIVE: Sort strictly by Entry/Exit Analyzer score descending — highest score wins!
-    validatedPlans.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
-    verifiedPrimePick = validatedPlans[0];
+    // TIER 1: Check if any candidate passes ALL 5 criteria:
+    // 1. Verdict is CLEAN (not NO TRADE, AVOID, REDUCE, EXIT, STAY OUT)
+    // 2. Not institutional dumping (!isInstitutionalDumping)
+    // 3. Not circuit trap (!isCircuitTrap)
+    // 4. Not loss-making (!isLossMaking & eps >= 0)
+    // 5. Valid entry levels (levels.entryZone.min > 0)
+    const tier1 = validatedPlans.filter(p => p.passesAll5);
+    const poolToRank = tier1.length > 0 ? tier1 : validatedPlans; // TIER 2 fallback to strictly 2 rules!
+    poolToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+    verifiedPrimePick = {
+      ...poolToRank[0],
+      qualityTier: tier1.length > 0 ? 'PRIME_5_STAR' : 'BEST_AVAILABLE_SETUP'
+    };
+    if (tier1.length === 0) {
+      verifiedPrimePick.warnings = [
+        ...(verifiedPrimePick.warnings || []),
+        'Best Available Setup: No stock passed all 5 criteria — selected top scorer passing clean verdict & institutional accumulation filters'
+      ];
+    }
   } else if (candidatePool.length > 0) {
     // LIVE FALLBACK: If full 500-day candle histories are still downloading over the network,
     // evaluate the candidate pool directly using their live setup signals.
-    // STRICT 2 RULES ONLY:
-    // 1. Verdict is NOT NO TRADE, AVOID, REDUCE, EXIT, STAY OUT
-    // 2. Not institutional dumping
     const cleanPool = candidatePool.filter(c => {
       const v = String(c.verdict || '').toUpperCase();
       return !v.includes('NO TRADE') &&
@@ -657,9 +679,11 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     });
 
     if (cleanPool.length > 0) {
-      // Sort strictly by setup score descending — highest scorer wins!
-      cleanPool.sort((a, b) => (Number(b.guruScore || b.score || 0)) - (Number(a.guruScore || a.score || 0)));
-      const topPick = cleanPool[0];
+      // Prioritize candidates passing all 5 criteria in live pool
+      const tier1Live = cleanPool.filter(c => !Boolean(c.riskGate?.isCircuitTrap) && !Boolean(c.riskGate?.isLossMaking) && Number(c.eps || 0) >= 0);
+      const livePoolToRank = tier1Live.length > 0 ? tier1Live : cleanPool;
+      livePoolToRank.sort((a, b) => (Number(b.guruScore || b.score || 0)) - (Number(a.guruScore || a.score || 0)));
+      const topPick = livePoolToRank[0];
       const eLow = Number(topPick.levels?.entryZone?.min || topPick.levels?.entryZone?.low || topPick.entryLow || (topPick.ltp > 0 ? +(topPick.ltp * 0.985).toFixed(1) : 100));
       const eHigh = Number(topPick.levels?.entryZone?.max || topPick.levels?.entryZone?.high || topPick.entryHigh || (topPick.ltp > 0 ? +(topPick.ltp * 1.015).toFixed(1) : 100));
       const cCap = Number(topPick.levels?.chaseCap || topPick.chaseCap || +(eHigh * 1.025).toFixed(1));

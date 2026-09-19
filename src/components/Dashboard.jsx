@@ -1677,7 +1677,20 @@ export default function Dashboard({
     if (prioritySymbols.length === 0) return;
 
     // If primeDailyPick is already fully verified and PASSING, no need to re-scan
-    if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && Number(primeDailyPick?.setupScore || 0) >= 55 && !String(primeDailyPick?.verdict || '').toUpperCase().includes('NO TRADE')) {
+    const isPickDisqualified = (p) => {
+      if (!p) return true;
+      const v = String(p.verdict || '').toUpperCase();
+      return (
+        v.includes('NO TRADE') ||
+        v.includes('AVOID') ||
+        v.includes('REDUCE') ||
+        v.includes('EXIT') ||
+        v.includes('STAY OUT') ||
+        Boolean(p.riskGate?.isInstitutionalDumping)
+      );
+    };
+
+    if (primeDailyPick?.isPlanVerified && primeDailyPick?.levels && !isPickDisqualified(primeDailyPick)) {
       return;
     }
 
@@ -1729,6 +1742,14 @@ export default function Dashboard({
                 Boolean(plan.riskGate?.isInstitutionalDumping);
 
               if (!isDisqualified) {
+                const epsVal = Number(fundRes?.eps ?? stockObj.eps ?? 0);
+                const passesAll5 = 
+                  !Boolean(plan.riskGate?.isCircuitTrap) &&
+                  !Boolean(plan.riskGate?.isLossMaking) &&
+                  epsVal >= 0 &&
+                  Boolean(plan.levels?.entryZone?.min) &&
+                  Number(plan.levels?.entryZone?.min) > 0;
+
                 const entryHighNum = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || plan.ltp || stockObj.ltp || 100);
                 const verifiedPick = {
                   ...stockObj,
@@ -1738,6 +1759,7 @@ export default function Dashboard({
                   score: scoreVal,
                   compositeScore: scoreVal,
                   guruScore: scoreVal,
+                  passesAll5,
                   rvol: plan.technical?.volume?.rvol || 1.25,
                   winRate: plan.analogResult?.stats?.winRate ?? 50,
                   analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
@@ -1761,10 +1783,14 @@ export default function Dashboard({
         }
       }
 
-      // Select highest scoring setup from Entry/Exit Analyzer evaluation
+      // Select highest scoring setup from Entry/Exit Analyzer evaluation:
+      // Tier 1: stocks that pass all 5 criteria
+      // Tier 2: if no stock passes all 5 criteria, fallback to stocks that pass the 2 strict non-negotiables
       if (isMounted && evaluatedList.length > 0) {
-        evaluatedList.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
-        const bestPick = evaluatedList[0];
+        const tier1 = evaluatedList.filter(e => e.passesAll5);
+        const listToRank = tier1.length > 0 ? tier1 : evaluatedList;
+        listToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+        const bestPick = listToRank[0];
         setHydratedPrimePick(bestPick);
         try {
           localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
@@ -2945,6 +2971,23 @@ export default function Dashboard({
               }}>
                 ★ {primeDailyPick.isPlanVerified ? 'Technical Setup Score' : 'Screener Score'}: {Math.min(99, Math.round(primeDailyPick.setupScore || primeDailyPick.score || primeDailyPick.compositeScore || 75))}/100
               </span>
+              {(primeDailyPick.passesAll5 || primeDailyPick.qualityTier === 'PRIME_5_STAR') ? (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 900, padding: '3px 8px', borderRadius: 99,
+                  background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.4)'
+                }}>
+                  🛡️ 5-Star Setup (All 5 Passed)
+                </span>
+              ) : (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 900, padding: '3px 8px', borderRadius: 99,
+                  background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24',
+                  border: '1px solid rgba(245, 158, 11, 0.4)'
+                }}>
+                  ⚡ Top Scorer (2-Rule Fallback)
+                </span>
+              )}
               {primeDailyPick.winRate != null && (
                 <span style={{
                   fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99,

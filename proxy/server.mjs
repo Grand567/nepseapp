@@ -7834,16 +7834,33 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         continue; // Disqualified by Entry/Exit Analyzer — check next candidate
       }
 
+      const epsVal = Number(cand.eps || 0);
+      const passesAll5 =
+        !Boolean(plan.riskGate?.isCircuitTrap) &&
+        !Boolean(plan.riskGate?.isLossMaking) &&
+        epsVal >= 0 &&
+        Boolean(plan.levels?.entryZone?.min) &&
+        Number(plan.levels?.entryZone?.min) > 0;
+
       qualifiedCandidates.push({
-        cand, plan, sym, history, broker, scoreVal, winRateVal
+        cand, plan, sym, history, broker, scoreVal, winRateVal, passesAll5
       });
       // NO early-break at score >= 55 — evaluate all candidates to find the TRUE best
     }
 
     if (qualifiedCandidates.length > 0) {
-      // Sort strictly by Entry/Exit Analyzer score descending — highest score wins!
-      qualifiedCandidates.sort((a, b) => b.scoreVal - a.scoreVal);
-      const chosen = qualifiedCandidates[0];
+      // TIER 1: Check if any candidate passes ALL 5 criteria:
+      // 1. Clean verdict
+      // 2. No institutional dumping
+      // 3. No circuit trap
+      // 4. Not loss-making (positive EPS)
+      // 5. Valid entry levels
+      const tier1 = qualifiedCandidates.filter(c => c.passesAll5);
+      // TIER 2: If NO stock passes all 5 criteria, fallback to candidates passing the 2 strict rules!
+      const candidatesToRank = tier1.length > 0 ? tier1 : qualifiedCandidates;
+      candidatesToRank.sort((a, b) => b.scoreVal - a.scoreVal);
+      const chosen = candidatesToRank[0];
+      const isTier1 = tier1.length > 0;
       const { cand, plan, sym, history, broker, scoreVal, winRateVal } = chosen;
 
       const candLtp = Number(cand.ltp || plan.ltp || history[history.length - 1]?.close || 100);
@@ -7866,6 +7883,7 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         historyBars: history.length,
         brokerAnalysis: broker,
         isPlanVerified: true,
+        qualityTier: isTier1 ? 'PRIME_5_STAR' : 'BEST_AVAILABLE_SETUP',
         setupScore: scoreVal,
         score: scoreVal,
         guruScore: scoreVal,

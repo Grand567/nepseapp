@@ -159,7 +159,9 @@ export function EntryExitAnalyzer({
             const isUnsafeVerdict = cachedVerdict.includes('NO TRADE') ||
                                     cachedVerdict.includes('AVOID') ||
                                     cachedVerdict.includes('REDUCE') ||
-                                    cachedVerdict.includes('EXIT');
+                                    cachedVerdict.includes('EXIT') ||
+                                    cachedVerdict.includes('STAY OUT') ||
+                                    Boolean(cached.plan?.riskGate?.isInstitutionalDumping);
             if (!isUnsafeVerdict) {
               const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
               setStockInfo(stock);

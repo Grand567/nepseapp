@@ -646,8 +646,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const modalSetupScore = entryExitPlan ? Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70) : 50;
   const modalVerdict = entryExitPlan?.verdict || '';
-  const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalVerdict.includes('STAY OUT') || Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping) || modalSetupScore < 45;
-  const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL') || (modalSetupScore >= 45 && modalSetupScore < 60));
+  const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalVerdict.includes('STAY OUT') || Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping);
+  const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL'));
 
   const isPrimePick = useMemo(() => {
     if (!d?.symbol) return false;
@@ -656,15 +656,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
     if (cachedPrime && cachedPrime.symbol === d.symbol) {
       const v = String(cachedPrime.plan?.verdict || '').toUpperCase();
-      const score = Number(cachedPrime.plan?.setupScore || cachedPrime.plan?.guruScore || 0);
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !cachedPrime.plan?.riskGate?.isInstitutionalDumping && score >= 50) {
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !cachedPrime.plan?.riskGate?.isInstitutionalDumping) {
         return true;
       }
     }
     if (resolvedStock?.isPrimeCandidate && resolvedStock?.isPlanVerified) {
       const v = String(resolvedStock?.verdict || '').toUpperCase();
-      const score = Number(resolvedStock?.setupScore || resolvedStock?.guruScore || 0);
-      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !resolvedStock?.riskGate?.isInstitutionalDumping && score >= 50) {
+      if (!v.includes('NO TRADE') && !v.includes('AVOID') && !v.includes('REDUCE') && !v.includes('EXIT') && !v.includes('STAY OUT') && !resolvedStock?.riskGate?.isInstitutionalDumping) {
         return true;
       }
     }
