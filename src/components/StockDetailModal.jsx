@@ -329,7 +329,15 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
           <AlertTriangle style={{ width: 15, height: 15, color: '#f43f5e', flexShrink: 0, marginTop: 1 }} />
           <div>
             <span style={{ fontWeight: 800, color: '#f43f5e' }}>Capital Protection Alert: </span>
-            This asset exhibits an unfavorable quantitative score ({setupScore}/100) and sub-50% analog win rate ({winRate != null ? `${winRate}%` : 'sub-50%'}). Current market price (Rs. {fmt(ltp)}) trades below overhead resistance. Fresh buy positions should not be initiated.
+            {entryExitPlan?.riskGate?.isInstitutionalDumping ? (
+              <>Institutional Distribution Warning: Top brokers are net distributing inventory ({entryExitPlan?.riskGate?.warning || 'Heavy broker offloading detected'}). Despite a technical setup score of {setupScore}/100, fresh buy positions should be avoided to prevent getting trapped in institutional supply.</>
+            ) : entryExitPlan?.riskGate?.isCircuitTrap ? (
+              <>Circuit Ceiling Trap: Asset is within proximity of the daily circuit ceiling. Upside is mechanically capped against sudden gap-down risk.</>
+            ) : entryExitPlan?.riskGate?.isLossMaking ? (
+              <>Operating Loss Caution: Company reported negative operational earnings (EPS: Rs. {entryExitPlan?.fundamental?.eps ?? '—'}).</>
+            ) : (
+              <>This asset exhibits an unfavorable quantitative score ({setupScore}/100){winRate != null ? ` and sub-50% analog win rate (${winRate}%)` : ''}. Current market price (Rs. {fmt(ltp)}) trades below overhead resistance. Fresh buy positions should not be initiated.</>
+            )}
           </div>
         </div>
       )}
@@ -513,7 +521,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     if (typeof stock === 'object') {
       if (!stock.symbol) return { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
       const found = allStocks.find(s => s && s.symbol === stock.symbol);
-      return found ? { ...found, ...stock } : stock;
+      if (!found) return stock;
+      return {
+        ...found,
+        ...stock,
+        name: (stock.name && stock.name !== stock.symbol && stock.name !== 'Unknown') ? stock.name : (found.companyName || found.name || stock.symbol),
+        companyName: (stock.companyName && stock.companyName !== stock.symbol && stock.companyName !== 'Unknown') ? stock.companyName : (found.companyName || found.name || stock.symbol),
+        sector: (stock.sector && stock.sector !== 'Unknown' && stock.sector !== 'NEPSE') ? stock.sector : (found.sector || 'Others')
+      };
     }
     return null;
   }, [stock, allStocks]);
@@ -618,24 +633,25 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           const plan = parsed?.plan || parsed;
           const symbol = parsed?.symbol || plan?.symbol;
           if (symbol && plan) {
-            return { symbol, plan };
+            return { symbol: String(symbol).toUpperCase().trim(), plan };
           }
         }
       }
     } catch (_) {}
     return null;
-  }, []);
+  }, [d?.symbol]);
 
   const entryExitPlan = useMemo(() => {
     if (!d?.symbol) return null;
+    const cleanSym = String(d.symbol).toUpperCase().trim();
 
-    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity (ONLY IF AUTHENTIC BUY/ACCUMULATE)
-    if (cachedPrime && cachedPrime.symbol === d.symbol && cachedPrime.plan && isActionableBuySignal(cachedPrime.plan)) {
+    // 1. If this stock is the verified Day Prime Pick, use the cached verified plan for 100% exact parity
+    if (cachedPrime && cachedPrime.symbol === cleanSym && cachedPrime.plan) {
       return cachedPrime.plan;
     }
 
     // 1b. If resolvedStock already passed with verified actionable plan, reuse it directly to maintain absolute stability across async renders!
-    if (resolvedStock && resolvedStock.isPlanVerified && resolvedStock.levels && isActionableBuySignal(resolvedStock)) {
+    if (resolvedStock && resolvedStock.isPlanVerified && resolvedStock.levels) {
       return resolvedStock;
     }
 
@@ -664,10 +680,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
   const isPrimePick = useMemo(() => {
     if (!d?.symbol) return false;
+    const cleanSym = String(d.symbol).toUpperCase().trim();
     // A stock evaluated as Avoid, Reduce, Hold, or Institutional Dumping can NEVER be a Prime Pick!
     if (modalIsAvoid || modalIsHoldWait || !isActionableBuySignal(entryExitPlan)) return false;
 
-    if (cachedPrime && cachedPrime.symbol === d.symbol) {
+    if (cachedPrime && cachedPrime.symbol === cleanSym) {
       if (isActionableBuySignal(cachedPrime.plan)) {
         return true;
       }
@@ -681,11 +698,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   }, [d?.symbol, cachedPrime, resolvedStock, modalIsAvoid, modalIsHoldWait, entryExitPlan]);
 
   const modalRvol = useMemo(() => {
-    if (entryExitPlan?.volume?.rvol) return Number(entryExitPlan.volume.rvol);
-    if (entryExitPlan?.technical?.volume?.rvol) return Number(entryExitPlan.technical.volume.rvol);
+    if (entryExitPlan?.volume?.rvol != null && Number(entryExitPlan.volume.rvol) > 0) return Number(entryExitPlan.volume.rvol);
+    if (entryExitPlan?.technical?.volume?.rvol != null && Number(entryExitPlan.technical.volume.rvol) > 0) return Number(entryExitPlan.technical.volume.rvol);
+    if (resolvedStock?.rvol != null && Number(resolvedStock.rvol) > 0) return Number(resolvedStock.rvol);
+    if (resolvedStock?.volumeSurgeRatio != null && Number(resolvedStock.volumeSurgeRatio) > 0) return Number(resolvedStock.volumeSurgeRatio);
     const hist = (realPriceHistory && realPriceHistory.length > 0) ? realPriceHistory : (history || null);
     return calculateStockRvol(d, hist);
-  }, [entryExitPlan, d, realPriceHistory, history]);
+  }, [entryExitPlan, resolvedStock, d, realPriceHistory, history]);
 
   const handleOpenInEntryExitAnalyzer = useCallback(() => {
     if (!d?.symbol) return;

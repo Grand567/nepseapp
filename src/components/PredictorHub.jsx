@@ -1028,6 +1028,32 @@ export default function PredictorHub({
             </button>
 
             <button
+              onClick={() => {
+                try {
+                  localStorage.setItem('open_service_id', 'alpha-playbook');
+                  window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'alpha-playbook' } }));
+                } catch (_) {}
+              }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 10,
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+                color: '#a5b4fc',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              title="NEPSE Alpha Playbook: 3-Tier Edge & Execution Guide"
+            >
+              <ShieldCheck style={{ width: 13, height: 13 }} />
+              <span>Alpha Playbook</span>
+            </button>
+
+            <button
               onClick={fetchPredictionData}
               disabled={loading}
               style={{
@@ -2148,7 +2174,12 @@ export default function PredictorHub({
                           {sym}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
-                          {primeDailyPick.sector || 'NEPSE'}
+                          {(() => {
+                            const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === sym) : null;
+                            return (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' && primeDailyPick.sector !== 'NEPSE')
+                              ? primeDailyPick.sector
+                              : (masterStock?.sector || 'Commercial Banks');
+                          })()}
                         </span>
                         {hasPlan && (
                           <span style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
@@ -2157,7 +2188,14 @@ export default function PredictorHub({
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                        {primeDailyPick.companyName}
+                        {(() => {
+                          const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === sym) : null;
+                          return (primeDailyPick.companyName && primeDailyPick.companyName !== sym && primeDailyPick.companyName !== 'Unknown')
+                            ? primeDailyPick.companyName
+                            : (primeDailyPick.name && primeDailyPick.name !== sym && primeDailyPick.name !== 'Unknown')
+                              ? primeDailyPick.name
+                              : (masterStock?.companyName || masterStock?.name || sym);
+                        })()}
                       </div>
                     </div>
 

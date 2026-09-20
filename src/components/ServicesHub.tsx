@@ -44,6 +44,7 @@ import { StrategyLabService } from './StrategyLabService';
 import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
+import { AlphaPlaybookService } from './AlphaPlaybookService';
 import ProGate from './ProGate';
 
 export const PRO_SERVICE_IDS = new Set<string>([
@@ -150,6 +151,7 @@ interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string
 
 const ALL_SERVICES: ServiceDef[] = [
   { id: 'daily-prime-pick', name: 'Daily Prime Breakout & Buy-Zone Pick', icon: Flame, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'alpha-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'flagship', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
   { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
   { id: 'stealth-accumulation-tracker', name: 'Stealth Accumulation', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
@@ -215,6 +217,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'ipo-pipeline', name: 'IPO Pipeline', icon: Layers, color: 'pink', cat: 'information', star: true },
   { id: 'floor-sheet', name: 'Floor Sheet', icon: LayoutGrid, color: 'purple', cat: 'information', star: true },
   { id: 'news', name: 'News', icon: Newspaper, color: 'cyan', cat: 'information', star: true },
+  { id: 'nepse-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'information', star: true },
   { id: 'beginners-guide', name: "Beginner's Guide", icon: BookOpen, color: 'emerald', cat: 'information', star: true },
   { id: 'top-traded', name: 'Top Traded', icon: Activity, color: 'yellow', cat: 'information', star: true },
 
@@ -642,6 +645,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'ipo-pipeline': IPOPipelineService,
   'daily-prime-pick': PrimePickService,
   'prime-breakout-pick': PrimePickService,
+  'alpha-playbook': AlphaPlaybookService,
+  'nepse-playbook': AlphaPlaybookService,
   'news': NewsService,
   'nepse-news': NewsService,
   'beginners-guide': GlossaryGuideService,

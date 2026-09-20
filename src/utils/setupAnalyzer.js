@@ -963,6 +963,153 @@ function buildDataQuality({ historyDays, technicalDataAvailable, analogSampleSiz
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 11B. T+2 / T+3 SETTLEMENT LOCKUP RISK & DILUTION CALCULATORS
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Evaluates downside lockup risk during Nepal's mandatory 2-day settlement cycle.
+ * In NEPSE, shares purchased on Day T settle on T+2 and can only be sold on T+3.
+ *
+ * @param {object[]} candles - Ascending OHLCV daily candle array
+ * @param {number}   ltp     - Current last traded price
+ * @param {number}   atr     - 14-day Average True Range
+ * @param {object}   stock   - Live stock metadata (volume, turnover, sharesOut)
+ * @returns {object} T+2 settlement risk metrics and position sizing multiplier
+ */
+export function calculateT2LockupRisk(candles, ltp, atr, stock = {}) {
+  if (!Array.isArray(candles) || candles.length < 10) {
+    return {
+      score: 50,
+      tier: 'MODERATE',
+      worst2DayDropPct: 8.5,
+      t2DrawdownBufferPct: 7.0,
+      circuitDropsCount: 0,
+      isIlliquid: false,
+      isMicroFloat: false,
+      holdingSessions: 3,
+      recommendedPositionMultiplier: 1.0,
+      warning: null,
+      detail: 'Standard T+2 settlement risk under moderate history.'
+    };
+  }
+
+  const closes = candles.map((c) => Number(c.close || 0)).filter((p) => p > 0);
+  const curLtp = Number(ltp || closes[closes.length - 1] || 100);
+  const curAtr = Number(atr || (curLtp * 0.025));
+
+  // 1. Worst 2-day consecutive percentage drop in last 60 candles
+  const windowLen = Math.min(60, closes.length);
+  const subCloses = closes.slice(-windowLen);
+  let worst2DayDropPct = 0;
+  for (let i = 0; i < subCloses.length - 2; i++) {
+    const p1 = subCloses[i];
+    const p3 = Math.min(subCloses[i + 1], subCloses[i + 2]);
+    if (p1 > 0) {
+      const drop = ((p1 - p3) / p1) * 100;
+      if (drop > worst2DayDropPct) worst2DayDropPct = drop;
+    }
+  }
+
+  // 2. Frequency of severe single-day drops (>= 7.5% drop indicating circuit / near-circuit plunge)
+  let circuitDropsCount = 0;
+  for (let i = 1; i < subCloses.length; i++) {
+    const prevC = subCloses[i - 1];
+    const currC = subCloses[i];
+    if (prevC > 0 && ((prevC - currC) / prevC) * 100 >= 7.5) {
+      circuitDropsCount++;
+    }
+  }
+
+  // 3. Liquidity Depth (Average 20-day Volume & Turnover)
+  const volLookback = Math.min(20, candles.length);
+  const recentCandles = candles.slice(-volLookback);
+  const avgVol20 = recentCandles.reduce((s, c) => s + Number(c.volume || 0), 0) / volLookback;
+  const avgTurnover20 = recentCandles.reduce((s, c) => s + Number(c.turnover || (Number(c.close || 0) * Number(c.volume || 0)) || 0), 0) / volLookback;
+
+  const sharesOut = Number(stock?.sharesOut || stock?.shares || 0);
+  const isMicroFloat = sharesOut > 0 && sharesOut <= 5; // <= 5M shares
+  const isIlliquid = avgVol20 > 0 && (avgVol20 < 3000 || avgTurnover20 < 1000000);
+
+  // 4. Expected 2-day Lockup Drawdown Range (2.2 * ATR / LTP)
+  const atrDrawdownPct = curLtp > 0 ? +((curAtr * 2.2 / curLtp) * 100).toFixed(1) : 6.0;
+  const t2DrawdownBufferPct = +Math.max(atrDrawdownPct, Math.min(30.0, worst2DayDropPct)).toFixed(1);
+
+  // 5. Composite T+2 Lockup Risk Score (0-100)
+  let riskScore = 25; // baseline low-moderate
+  if (t2DrawdownBufferPct > 18.0) riskScore += 30;
+  else if (t2DrawdownBufferPct > 12.0) riskScore += 20;
+  else if (t2DrawdownBufferPct > 8.0) riskScore += 10;
+
+  if (circuitDropsCount >= 3) riskScore += 25;
+  else if (circuitDropsCount >= 1) riskScore += 15;
+
+  if (isIlliquid) riskScore += 25;
+  if (isMicroFloat) riskScore += 10;
+
+  const score = Math.min(100, Math.max(10, riskScore));
+
+  let tier = 'LOW';
+  let recommendedPositionMultiplier = 1.0;
+  let warning = null;
+
+  if (score >= 75) {
+    tier = 'CRITICAL';
+    recommendedPositionMultiplier = 0.35;
+    warning = `Critical T+2 Lockup Trap: High-risk volatility with ${circuitDropsCount > 0 ? `${circuitDropsCount} severe drop(s)` : 'illiquid order book'}. During Nepal's 2-day settlement lockup, stop-losses cannot be executed if lower circuits occur.`;
+  } else if (score >= 52) {
+    tier = 'HIGH';
+    recommendedPositionMultiplier = 0.50;
+    warning = `Elevated T+2 Lockup Risk: Potential 2-session drawdown up to -${t2DrawdownBufferPct}%. Size position at 0.50x normal to prevent unmanageable lockup losses.`;
+  } else if (score >= 35) {
+    tier = 'MODERATE';
+    recommendedPositionMultiplier = 0.80;
+  } else {
+    tier = 'LOW';
+    recommendedPositionMultiplier = 1.0;
+  }
+
+  return {
+    score,
+    tier,
+    worst2DayDropPct: +worst2DayDropPct.toFixed(1),
+    t2DrawdownBufferPct,
+    circuitDropsCount,
+    isIlliquid,
+    isMicroFloat,
+    holdingSessions: 3,
+    recommendedPositionMultiplier,
+    warning,
+    detail: tier === 'LOW'
+      ? `Orderly price action with sufficient liquidity. Expected 2-session settlement volatility is ±${t2DrawdownBufferPct}%.`
+      : tier === 'MODERATE'
+      ? `Manageable 2-session lockup volatility (±${t2DrawdownBufferPct}%). Standard position sizing applies.`
+      : `High 2-session drawdown risk (-${t2DrawdownBufferPct}%). Capital exposure must be scaled down.`
+  };
+}
+
+/**
+ * Calculates theoretical ex-rights price and expected dilution gap.
+ * Formula: P_ex = (P_cum + (R * PaidUp)) / (1 + R)
+ */
+export function calculateTheoreticalExRightsPrice(ltp, rightRatio = 1.0, paidUp = 100) {
+  const price = Number(ltp) || 0;
+  const r = Number(rightRatio) || 0;
+  const p = Number(paidUp) || 100;
+  if (price <= 0 || r <= 0) return null;
+
+  const exPrice = +((price + (r * p)) / (1 + r)).toFixed(1);
+  const dilutionDiscountPct = +(((price - exPrice) / price) * 100).toFixed(1);
+
+  return {
+    exPrice,
+    dilutionDiscountPct,
+    rightRatio: r,
+    paidUp: p,
+    label: `Ex-Right Est: Rs. ${exPrice} (-${dilutionDiscountPct}% dilution drop from Rs. ${price})`
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 12. MAIN ENTRY POINT
 // ══════════════════════════════════════════════════════════════════
 
@@ -1031,6 +1178,9 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const high52w = Math.max(...closes.slice(-252));
   const low52w  = Math.min(...closes.slice(-252));
   const atr     = calculateATR(adjustedCandles.slice(-60), 14);
+
+  // ── T+2 / T+3 Settlement Lockup Risk Assessment ───────────────
+  const t2Risk = calculateT2LockupRisk(adjustedCandles, ltp, atr, stock);
 
   // ── Risk levels (circuit-capped) ─────────────────────────────
   const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, Number(stock?.pChange) || 0);
@@ -1117,6 +1267,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
       label: `Rs. ${t2Cap.price}${t2Cap.capped ? ' (circuit-capped)' : ''}`,
       capped: t2Cap.capped
     },
+    t2Risk,
+    recommendedPositionMultiplier: t2Risk.recommendedPositionMultiplier,
   };
 
   // ── Historical analog backtest ────────────────────────────────
@@ -1270,9 +1422,15 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     catalystBonus += 5;
     catalystFactors.push('📈 Dividend Declared (Book Closure Pending)');
   }
-  if (catalysts.rightShare) {
+  if (catalysts.rightShare || stock?.rightShare) {
     catalystBonus += 8;
-    catalystFactors.push('⚖️ Right Share / Bonus Share Pending');
+    const rRatio = Number(catalysts.rightRatio || stock?.rightRatio || 1.0);
+    const exRes = calculateTheoreticalExRightsPrice(ltp, rRatio, 100);
+    if (exRes) {
+      catalystFactors.push(`⚖️ Right Share (${(rRatio * 100).toFixed(0)}%) in pipeline — ${exRes.label}`);
+    } else {
+      catalystFactors.push('⚖️ Right Share / Bonus Share Pending');
+    }
   }
   if (catalysts.strongProfitGrowth) {
     catalystBonus += 7;
@@ -1286,6 +1444,13 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   if (catalystBonus > 0) {
     catalystBonus = Math.min(15, catalystBonus); // Cap fundamental boost at 15 points
     combinedScore = +Math.max(0, Math.min(100, combinedScore + catalystBonus)).toFixed(1);
+  }
+
+  // ── Apply T+2 Settlement Lockup Risk Penalty ──
+  if (t2Risk.tier === 'CRITICAL') {
+    combinedScore = Math.max(10, +(combinedScore - 12).toFixed(1));
+  } else if (t2Risk.tier === 'HIGH') {
+    combinedScore = Math.max(15, +(combinedScore - 6).toFixed(1));
   }
 
   // Setup classification
@@ -1498,6 +1663,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // Warnings
   const warnings = [
+    ...(t2Risk.warning ? [t2Risk.warning] : []),
     ...(dataSource.real === false ? ['⚠️ Price history is estimated — analysis is based on simulated data'] : []),
     ...(caEvents.length > 0 && unconfirmedCount > 0 ? [`${unconfirmedCount} corporate action adjustment(s) could not be confirmed against dividend records`] : []),
     ...(isInstitutionalDumping ? [`⚠️ Institutional Distribution: Top brokers are net offloading inventory (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`] : []),
@@ -1550,7 +1716,10 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isLossMaking,
     isExtremeMultiple,
     isFestiveLowVolumeTrap,
+    isCriticalT2Lockup: t2Risk.tier === 'CRITICAL',
+    t2Risk,
     warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
+           : t2Risk.tier === 'CRITICAL' ? t2Risk.warning
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
            : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${resolvedRvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
@@ -1610,6 +1779,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     dataSource,
     dataQuality,
     riskGate,
+    t2Risk,
 
     // ── Levels (circuit-aware) ──
     levels,

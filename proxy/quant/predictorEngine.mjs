@@ -100,9 +100,22 @@ export async function predictIndexDirection(options = {}) {
 
   macroScore = Math.max(-1, Math.min(1, macroScore));
 
-  // Weighted raw score
-  // Weights: Technical (0.35), Breadth (0.25), Macro/Fiscal (0.25), Sentiment (0.15)
-  const weights = { technical: 0.35, breadth: 0.25, macro: 0.25, sentiment: 0.15 };
+  // ── Dynamic Regime-Adaptive Weighting ────────────────────────────────
+  // In Bull Expansions, momentum and breadth confirmation lead returns.
+  // In Bear Corrections / below 50 EMA, macro liquidity and capital defense dominate.
+  let weights;
+  let detectedRegime;
+  if (features.is_above_50_ema === true && (features.is_above_200_ema === true || features.golden_cross === true)) {
+    weights = { technical: 0.40, breadth: 0.30, macro: 0.20, sentiment: 0.10 };
+    detectedRegime = 'BULL_EXPANSION';
+  } else if (features.is_above_50_ema === false) {
+    weights = { technical: 0.25, breadth: 0.30, macro: 0.35, sentiment: 0.10 };
+    detectedRegime = 'BEAR_CORRECTION';
+  } else {
+    weights = { technical: 0.35, breadth: 0.25, macro: 0.25, sentiment: 0.15 };
+    detectedRegime = 'CONSOLIDATION';
+  }
+
   let rawScore = +(
     techScore * weights.technical +
     breadthScore * weights.breadth +

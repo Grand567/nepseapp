@@ -1235,10 +1235,16 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30) {
       const topNetBuyers = [...brokers].filter(x => x.netQty > 0).sort((a, b) => b.netQty - a.netQty).slice(0, 3);
       const topNetSellers = [...brokers].filter(x => x.netQty < 0).sort((a, b) => a.netQty - b.netQty).slice(0, 3);
 
-      const isAccumulation = topNetBuyers.reduce((s, b) => s + b.netQty, 0) >= Math.abs(topNetSellers.reduce((s, b) => s + b.netQty, 0));
+      const netBuyerQty = topNetBuyers.reduce((s, b) => s + b.netQty, 0);
+      const netSellerQty = Math.abs(topNetSellers.reduce((s, b) => s + b.netQty, 0));
+      const adRatio = totalTradedQty > 0 ? +((netBuyerQty - netSellerQty) / totalTradedQty).toFixed(4) : 0;
+      const isAccumulation = adRatio >= 0.05;
+      const isDistribution = adRatio <= -0.05;
+      const adSignal = isAccumulation ? 'Accumulation' : isDistribution ? 'Distribution' : 'Neutral';
+      const adStrength = `${Math.min(99.9, Math.abs(adRatio * 100)).toFixed(1)}%`;
       const dailyFlow = Object.values(dateMap).map(df => ({
         ...df,
-        netFlow: Math.round(df.buyVol * 0.1)
+        netFlow: Math.round(df.buyVol * adRatio)
       }));
 
       const computedFromRealFloorsheet = {
@@ -1249,8 +1255,9 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30) {
         topNetSellers,
         dailyFlow,
         totalTrades: fs.rows.length,
-        adSignal: isAccumulation ? 'Accumulation' : 'Distribution',
-        adStrength: '54.0%',
+        adSignal,
+        adStrength,
+        adRatio,
         isReal: true,
         source: 'nepse_real_floorsheet_aggregation'
       };

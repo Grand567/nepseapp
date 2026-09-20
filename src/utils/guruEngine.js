@@ -27,7 +27,8 @@ import {
   runAnalogBacktest,
   toAscendingCandles,
   adjustForCorporateActionsWithConfirmation,
-  generateEntryExitPlan
+  generateEntryExitPlan,
+  calculateT2LockupRisk
 } from './setupAnalyzer.js';
 
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
@@ -60,6 +61,7 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
 
   const closes = adjustedCandles.map(c => Number(c.close || 0)).filter(p => p > 0);
   const atr = calculateATR(adjustedCandles.slice(-60), 14);
+  const t2Risk = calculateT2LockupRisk(adjustedCandles, ltp, atr, stock);
 
   // Structural moving averages
   let technicalReport = null;
@@ -239,6 +241,11 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     setupClass = 'Unfavorable Risk/Reward (Stop > 10%)';
     isPrimeCandidate = false;
     disqualificationReason = `Downside risk to structural stop is ${(((ltp - structuralStopLoss) / ltp) * 100).toFixed(1)}% (fails max 10% risk threshold)`;
+  } else if (t2Risk.tier === 'CRITICAL') {
+    actionState = 'CRITICAL_T2_LOCKUP_RISK';
+    setupClass = 'Critical T+2 Settlement Lockup Risk';
+    isPrimeCandidate = false;
+    disqualificationReason = t2Risk.warning || `Critical T+2 lockup risk (±${t2Risk.t2DrawdownBufferPct}% 2-day drawdown volatility)`;
   } else if (isTesting200EMA && (analogWinRate === null || analogWinRate < 55)) {
     actionState = 'RESISTANCE_TRAP';
     setupClass = '200-Day EMA Resistance Ceiling';
@@ -344,6 +351,7 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     verdict,
     isPrimeCandidate,
     disqualificationReason,
+    t2Risk,
     isAbove50,
     isAbove200,
     isTesting200EMA,
@@ -600,9 +608,11 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
       const slPriceFinal = Number(plan.levels?.stopLoss?.price || (ltpNum > 0 ? +(ltpNum * 0.94).toFixed(1) : 90));
 
       const epsVal = Number(cand.eps ?? stockObj.eps ?? 0);
+      const isCriticalT2 = Boolean(plan.riskGate?.isCriticalT2Lockup || plan.t2Risk?.tier === 'CRITICAL');
       const passesAll5 = 
         !Boolean(plan.riskGate?.isCircuitTrap) &&
         !Boolean(plan.riskGate?.isLossMaking) &&
+        !isCriticalT2 &&
         epsVal >= 0 &&
         Boolean(plan.levels?.entryZone?.min) &&
         Number(plan.levels?.entryZone?.min) > 0;

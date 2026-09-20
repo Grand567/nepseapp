@@ -639,6 +639,7 @@ export function EntryExitAnalyzer({
                 bearishFactors={plan.bearishFactors}
                 warnings={plan.warnings}
                 confirmations={plan.confirmations}
+                t2Risk={plan.t2Risk}
               />
 
               <FestivalSeasonalityCard

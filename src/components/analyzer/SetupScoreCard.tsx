@@ -22,6 +22,14 @@ interface SetupScoreCardProps {
     overall: string;
     historyDays: number;
   };
+  t2Risk?: {
+    score: number;
+    tier: string;
+    worst2DayDropPct: number;
+    t2DrawdownBufferPct: number;
+    warning?: string | null;
+    detail?: string;
+  };
   bullishFactors?: string[];
   bearishFactors?: string[];
   warnings?: string[];
@@ -48,6 +56,7 @@ export function SetupScoreCard({
   setupType = 'neutral_setup',
   signalAgreement,
   dataQuality,
+  t2Risk,
   bullishFactors = [],
   bearishFactors = [],
   warnings = [],
@@ -64,7 +73,7 @@ export function SetupScoreCard({
       {/* ── Top Header Row ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-black uppercase tracking-wider text-slate-400">
               Technical Setup Score
             </span>
@@ -79,6 +88,19 @@ export function SetupScoreCard({
                 ? '🔴 BEARISH SETUP'
                 : '🟡 NEUTRAL / WAIT'}
             </span>
+            {t2Risk && (
+              <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${
+                t2Risk.tier === 'LOW'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : t2Risk.tier === 'MODERATE'
+                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-300'
+                  : t2Risk.tier === 'HIGH'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}>
+                T+2 Lockup: {t2Risk.tier} (±{t2Risk.t2DrawdownBufferPct}%)
+              </span>
+            )}
           </div>
           <div className="text-2xl sm:text-3xl font-black mt-1" style={{ color: theme.text }}>
             {verdict}

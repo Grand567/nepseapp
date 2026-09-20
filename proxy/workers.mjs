@@ -1,5 +1,18 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+let stockMap = {};
+try {
+  const mapPath = path.join(__dirname, 'stockmap.json');
+  if (fs.existsSync(mapPath)) {
+    stockMap = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+  }
+} catch (_) {}
 
 // Worker to aggregate daily floorsheet into broker accumulation table
 export async function aggregateFloorsheetData() {
@@ -185,13 +198,18 @@ export async function runFullUniversePrimePick() {
     const t2Price = Number(plan.levels?.target2?.price || (candLtp > 0 ? +(candLtp * 1.15).toFixed(1) : 120));
     const slPrice = Number(plan.levels?.stopLoss?.price || (candLtp > 0 ? +(candLtp * 0.94).toFixed(1) : 90));
 
+    const meta = stockMap[sym] || {};
+    const chosenRvol = Number(plan.volume?.rvol || plan.technical?.volume?.rvol || cand.rvol || cand.volumeSurgeRatio || 1.25);
     const winner = {
       ...cand,
       ...plan,
       symbol: sym,
-      name: cand.name || cand.companyName || sym,
-      sector: cand.sector || 'NEPSE',
+      name: cand.name || cand.companyName || meta.name || sym,
+      companyName: cand.companyName || cand.name || meta.name || sym,
+      sector: (cand.sector && cand.sector !== 'Unknown' && cand.sector !== 'NEPSE') ? cand.sector : (meta.sector || 'Others'),
       ltp: candLtp,
+      rvol: chosenRvol,
+      volumeSurgeRatio: chosenRvol,
       pChange: Number(cand.pChange || cand.percentageChange || 0),
       turnover: Number(cand.turnover || cand.totalTradedValue || 0),
       isPlanVerified: true,

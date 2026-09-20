@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NEPSE Alpha Playbook: Investor & Trader Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 14mm 16mm 14mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    line-height: 1.5;
+    font-size: 13px;
+    margin: 0;
+    padding: 0;
+  }
+  .header {
+    border-bottom: 2px solid #0284c7;
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+  }
+  .header-badge {
+    display: inline-block;
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 4px 0 6px 0;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    font-size: 13px;
+    color: #475569;
+    margin: 0;
+  }
+  .axiom-box {
+    background: #f8fafc;
+    border-left: 4px solid #0284c7;
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    margin: 14px 0 20px 0;
+    font-size: 12.5px;
+    color: #334155;
+  }
+  .axiom-box strong {
+    color: #0f172a;
+  }
+  h2 {
+    font-size: 15px;
+    color: #0f172a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 5px;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 13.5px;
+    color: #1e293b;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+  .tier-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #ffffff;
+    page-break-inside: avoid;
+  }
+  .tier-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .tier-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .badge-tier1 { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+  .badge-tier2 { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+  .badge-tier3 { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+
+  .rule-box {
+    background: #f1f5f9;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-top: 6px;
+  }
+  .rule-box.danger {
+    background: #fef2f2;
+    color: #991b1b;
+    border-left: 3px solid #dc2626;
+  }
+  .rule-box.success {
+    background: #f0fdf4;
+    color: #166534;
+    border-left: 3px solid #16a34a;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px 0;
+    font-size: 12px;
+    page-break-inside: avoid;
+  }
+  th, td {
+    padding: 7px 10px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+  }
+  th {
+    background: #f8fafc;
+    font-weight: 700;
+    color: #334155;
+  }
+  tr:nth-child(even) td {
+    background: #fafafa;
+  }
+
+  .step-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+    page-break-inside: avoid;
+  }
+  .step-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px;
+    background: #ffffff;
+    page-break-inside: avoid;
+  }
+  .step-box .time {
+    font-size: 11px;
+    font-weight: 700;
+    color: #0284c7;
+    text-transform: uppercase;
+  }
+  .step-box .title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 2px 0 6px 0;
+  }
+  .step-box ul {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 11.5px;
+    color: #334155;
+  }
+  .step-box li {
+    margin-bottom: 4px;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  .footer {
+    margin-top: 24px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 10px;
+    font-size: 10.5px;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-badge">NEPSE App Quantitative Strategy</div>
+  <h1>NEPSE Alpha Playbook: Investor & Trader Guide</h1>
+  <div class="subtitle">Actionable Framework for Profitable Execution & Systematic Capital Preservation</div>
+</div>
+
+<div class="axiom-box">
+  <strong>Core Market Reality of NEPSE:</strong> In the Nepal Stock Exchange, <strong>capital defense accounts for 80% of net profitability</strong>. Because NEPSE enforces a <strong>T+2 settlement freeze</strong> (stocks bought today cannot be sold for 2 business days), has <strong>no shorting mechanism</strong>, and caps price moves with <strong>&plusmn;10% circuit limits</strong>, wrong entries cannot be cut intraday. To extract consistent profits among the app's 110+ features, follow the hierarchy: <em>Defend Capital First &rarr; Follow Institutional Footprints &rarr; Execute Asymmetrically</em>.
+</div>
+
+<h2>1. Feature Reliability Classification (The 3 Tiers)</h2>
+
+<div class="tier-card">
+  <div class="tier-header">
+    <div class="tier-title">Tier 1: Non-Negotiable Capital Protectors</div>
+    <span class="badge badge-tier1">Weight: 90%+ Reliability</span>
+  </div>
+  <p style="margin: 0 0 6px 0; color: #475569;">These features protect your portfolio from catastrophic drawdowns and traps.</p>
+  
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div>
+      <strong>1. Cash Defense Mode (Market Breadth Gate)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Evaluates real-time Advance/Decline ratio and New Highs vs Lows. During bear regimes (breadth &lt; 40%), over 75% of chart breakouts fail immediately.
+      </div>
+      <div class="rule-box danger">
+        RULE: In Cash Defense, DO NOT BUY ANY BREAKOUT. Maintain 70-80% cash.
+      </div>
+    </div>
+    <div>
+      <strong>2. Chase Cap Guard (+2.5% Maximum Limit)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Guards against NEPSE's T+2 trap. Buying a stock already up +4% to +8% on Day 1 makes you easy exit liquidity for swing traders.
+      </div>
+      <div class="rule-box danger">
+        RULE: If Current Price &gt; Entry Pivot + 2.5%, CANCEL TRADE. Never chase.
+      </div>
+    </div>
+    <div>
+      <strong>3. Promoter Lock-in Expiry Radar (60-Day Blackout)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Hydropower and Microfinance promoter shares unlock 3 years post-IPO, dumping massive supply and triggering multi-month 20-40% drawdowns.
+      </div>
+      <div class="rule-box danger">
+        RULE: Automatic blacklist. Never swing trade within 60 days of lock-in expiry.
+      </div>
+    </div>
+    <div>
+      <strong>4. Broker Floorsheet LBAS (Large-Block Absorption)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Tracks institutional broker accumulation (e.g. Brokers 58, 45, 34, 17). Confirms if smart money is accumulating or retail is FOMOing into distribution.
+      </div>
+      <div class="rule-box success">
+        RULE: Only swing trade when Top 3 buyer brokers absorb &ge; 35% of total volume.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tier-card" style="margin-top: 12px;">
+  <div class="tier-header">
+    <div class="tier-title">Tier 2: High-Edge Opportunity Engines</div>
+    <span class="badge badge-tier2">Statistical Edge: 80%+</span>
+  </div>
+  <p style="margin: 0 0 6px 0; color: #475569;">The primary alpha-generating tools during neutral and bullish market conditions.</p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div>
+      <strong>1. Day Prime Pick + Zero-Loss Protocol</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Screens the market using 500-session analog pattern vectors, filtering for liquidity, fundamental health, and institutional accumulation.
+      </div>
+      <div class="rule-box success">
+        ZERO-LOSS RULE: Sell 50% at Target 1 (+4% to +6%). Immediately move Stop Loss on remaining 50% to Entry Price. Trade is now immune to loss.
+      </div>
+    </div>
+    <div>
+      <strong>2. Sector Rotation Matrix & Heatmap</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        NEPSE capital flows in waves across sub-indices (Hydro &rarr; Finance &rarr; Commercial Banks).
+      </div>
+      <div class="rule-box success">
+        RULE: Never buy a stock in a "Lagging" sector. Only enter stocks positioned in "Leading" or "Improving" quadrants.
+      </div>
+    </div>
+    <div>
+      <strong>3. Pre-Open Order Book Imbalance (OBIR)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Measures real matching bid/ask depth between 10:30 AM & 11:00 AM before the opening bell.
+      </div>
+      <div class="rule-box success">
+        RULE: OBIR &gt; 1.8 with positive depth confirms strong institutional morning demand.
+      </div>
+    </div>
+    <div>
+      <strong>4. Dual-Gate Alerts (RVOL &ge; 1.4x + VCP)</strong>
+      <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+        Detects volatility compression breakouts validated against a 20-day baseline relative volume.
+      </div>
+      <div class="rule-box success">
+        RULE: Volume precedes price in NEPSE. Never buy a chart breakout if RVOL &lt; 1.0x.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tier-card" style="margin-top: 12px;">
+  <div class="tier-header">
+    <div class="tier-title">Tier 3: Informational Traps to Avoid in Isolation</div>
+    <span class="badge badge-tier3">Danger: High Failure Rate</span>
+  </div>
+  <div style="font-size: 11.5px; color: #475569; line-height: 1.6;">
+    &bull; <strong>Standalone Oscillators (RSI / MACD / Stochastics):</strong> In speculative NEPSE runs, RSI &gt; 70 can stay overbought for 3 weeks while the stock doubles; RSI &lt; 30 in a downtrend can keep falling another 30%. Never trade indicators without volume and floorsheet confirmation.<br>
+    &bull; <strong>Theoretical Monte Carlo Price Projections:</strong> Statistical models cannot predict sudden Nepal Rastra Bank directives, margin loan ceiling adjustments, or interest rate policy shifts.<br>
+    &bull; <strong>Unadjusted Historical Charts:</strong> Always ensure technical levels are adjusted for bonus and right share splits.
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<h2>2. The 4-Step Daily Execution Routine</h2>
+<div class="step-grid">
+  <div class="step-box">
+    <div class="time">10:00 AM &ndash; 10:30 AM</div>
+    <div class="title">Step 1: Pre-Market Breadth & Blacklist</div>
+    <ul>
+      <li>Check <strong>Cash Defense Mode</strong> on top banner. If ACTIVE, close TMS buy tab; hold 70-80% cash.</li>
+      <li>Review <strong>Day Prime Pick</strong> card: record Entry Zone, Chase Cap, Stop Loss, and Target 1.</li>
+      <li>Run <strong>Safety Audit</strong>: verify candidate stock has NO promoter lock-in expiry in next 60 days.</li>
+    </ul>
+  </div>
+
+  <div class="step-box">
+    <div class="time">10:30 AM &ndash; 11:00 AM</div>
+    <div class="title">Step 2: Pre-Open Order Book Validation</div>
+    <ul>
+      <li>Observe <strong>Pre-Open OBIR</strong> (Order Book Imbalance Ratio) for morning buyer pressure.</li>
+      <li>Check matching pre-open price:
+        <br>&bull; Gapping up &gt; 2.5% above Entry Pivot? <strong>Abort buy</strong> (violates Chase Cap).
+        <br>&bull; Opening inside Entry Zone with OBIR &gt; 1.5? <strong>Confirmed</strong>.
+      </li>
+    </ul>
+  </div>
+
+  <div class="step-box">
+    <div class="time">11:15 AM &ndash; 01:30 PM</div>
+    <div class="title">Step 3: Live Execution & Sizing</div>
+    <ul>
+      <li>Wait out the 11:00&ndash;11:15 AM opening shakeout to avoid emotional retail whipsaws.</li>
+      <li>Verify live volume pacing: <strong>RVOL must be &ge; 1.2x &ndash; 1.5x</strong> of 20-day average.</li>
+      <li>Apply <strong>1.5% Risk Rule</strong>:
+        <br><code>Max Shares = (Portfolio &times; 0.015) / (Entry - StopLoss)</code>
+      </li>
+      <li>Place Limit Orders strictly inside the Entry Zone on TMS.</li>
+    </ul>
+  </div>
+
+  <div class="step-box">
+    <div class="time">03:15 PM &ndash; 04:00 PM</div>
+    <div class="title">Step 4: Post-Market Floorsheet Audit</div>
+    <ul>
+      <li>Open <strong>Floorsheet Analytics</strong> for the stock.</li>
+      <li>Identify Top 5 buyer and seller broker IDs: did Broker 58, 45, 34, 17 net accumulate?</li>
+      <li>Did Top 3 buyer brokers control &ge; 35% of total volume?</li>
+      <li>Calibrate trailing stop loss and lock in T+2 execution plan.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>3. Seasonal Liquidity & Calendar Cycles in Nepal</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 22%;">Period</th>
+      <th style="width: 28%;">Market Behavior</th>
+      <th>Strategic Edge & Trader Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Bhadra &ndash; Ashwin</strong><br><span style="font-size: 11px; color:#64748b;">(Sept &ndash; Oct)</span></td>
+      <td><strong>Pre-Dashain Liquidity Squeeze:</strong> Retail liquidates shares for festival travel and business expenses. Margin lending tightens.</td>
+      <td>Volume drops sharply. Historically the best accumulation window for smart money to purchase quality dividend-paying stocks at heavy discounts.</td>
+    </tr>
+    <tr>
+      <td><strong>Mangsir &ndash; Magh</strong><br><span style="font-size: 11px; color:#64748b;">(Dec &ndash; Feb)</span></td>
+      <td><strong>Dividend Season Rally:</strong> Commercial banks, insurance, and hydro companies announce AGMs and dividend declarations.</td>
+      <td>Strongest multi-week seasonal rally. Sell into strength before the book closure date rather than holding through the dividend adjustment.</td>
+    </tr>
+    <tr>
+      <td><strong>Chaitra &ndash; Baisakh</strong><br><span style="font-size: 11px; color:#64748b;">(Mar &ndash; May)</span></td>
+      <td><strong>Q3 Corporate Earnings:</strong> Market tests banking system liquidity ahead of the national annual budget announcement.</td>
+      <td>Focus on high cash-flow producers and sector rotations driven by quarterly EPS surprises.</td>
+    </tr>
+    <tr>
+      <td><strong>Ashad</strong><br><span style="font-size: 11px; color:#64748b;">(June &ndash; July)</span></td>
+      <td><strong>Fiscal Year-End Squeeze:</strong> Commercial banks aggressively recall loans; investors sell to settle quarterly tax and interest obligations.</td>
+      <td>High volatility and sharp pullbacks. Avoid aggressive new swing buys during the final 2 weeks of Ashad. Accumulate cash for Shrawan.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>4. Quick-Reference Decision Matrix</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 32%;">Live Market Condition</th>
+      <th style="width: 28%;">Primary Feature to Check</th>
+      <th>Required Trader Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>NEPSE Index dropping, Breadth &lt; 40%</td>
+      <td><strong>Cash Defense Mode</strong></td>
+      <td><span style="color: #b91c1c; font-weight: 700;">Hold 70-80% Cash.</span> Abort all chart breakouts.</td>
+    </tr>
+    <tr>
+      <td>Stock is up +5% at 11:05 AM</td>
+      <td><strong>Chase Cap Indicator</strong></td>
+      <td><span style="color: #b91c1c; font-weight: 700;">Do not buy.</span> Never chase past +2.5% of pivot.</td>
+    </tr>
+    <tr>
+      <td>Candidate has promoter lock-in in 30 days</td>
+      <td><strong>Promoter Lock-in Radar</strong></td>
+      <td><span style="color: #b91c1c; font-weight: 700;">Blacklist stock.</span> Severe supply shock ahead.</td>
+    </tr>
+    <tr>
+      <td>Stock reaches Target 1 (+5%) on T+2</td>
+      <td><strong>Entry/Exit Analyzer Levels</strong></td>
+      <td><span style="color: #15803d; font-weight: 700;">Sell 50% position.</span> Move Stop Loss to Entry price.</td>
+    </tr>
+    <tr>
+      <td>Price breaks out on low volume (RVOL &lt; 1.0x)</td>
+      <td><strong>Relative Volume (RVOL)</strong></td>
+      <td><span style="color: #b91c1c; font-weight: 700;">Fake breakout trap.</span> Do not enter.</td>
+    </tr>
+    <tr>
+      <td>Top 3 brokers accumulate &ge; 35% of volume</td>
+      <td><strong>Floorsheet LBAS</strong></td>
+      <td><span style="color: #15803d; font-weight: 700;">High-conviction setup.</span> Institutional backing active.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footer">
+  <span>NEPSE Quantitative Intelligence Platform &bull; Alpha Playbook</span>
+  <span>Strict Mathematical Discipline &bull; Capital Preservation First</span>
+</div>
+
+</body>
+</html>

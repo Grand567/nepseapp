@@ -1146,10 +1146,31 @@ export default function Dashboard({
   }, Boolean(activeScanner || breadthModalTab || showSubIndicesModal || showTVModal), 30);
 
   const handleStockClick = (stock) => {
+    if (!stock) return;
+    const sym = String(typeof stock === 'string' ? stock : (stock.symbol || stock.scrip || '')).toUpperCase().trim();
+    let targetStock = typeof stock === 'string' ? { symbol: sym } : { ...stock };
+    
+    const foundMaster = Array.isArray(stocks) ? stocks.find(s => String(s?.symbol || '').toUpperCase().trim() === sym) : null;
+    if (foundMaster) {
+      targetStock = { ...foundMaster, ...targetStock };
+    }
+
+    if (primeDailyPick && String(primeDailyPick.symbol || '').toUpperCase().trim() === sym) {
+      targetStock = {
+        ...targetStock,
+        ...primeDailyPick,
+        isPlanVerified: true,
+        companyName: targetStock.companyName || targetStock.name || primeDailyPick.companyName || sym,
+        sector: (targetStock.sector && targetStock.sector !== 'Unknown' && targetStock.sector !== 'NEPSE') 
+          ? targetStock.sector 
+          : (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' ? primeDailyPick.sector : 'Commercial Banks')
+      };
+    }
+
     if (onSelectStock) {
-      onSelectStock(stock);
+      onSelectStock(targetStock);
     } else {
-      setSelectedStock(stock);
+      setSelectedStock(targetStock);
     }
   };
 
@@ -2977,6 +2998,33 @@ export default function Dashboard({
               ? 'Fewer than 40% of NEPSE equities are trading above their 50-day moving average. In this market regime, breakout failure rates exceed 75% due to lack of broad institutional participation. The quantitative engine has activated Cash Defense Mode to protect your capital. Avoid new swing entries until breadth recovers.'
               : 'All evaluated screener candidates failed the 500-session Entry/Exit Analyzer risk/reward verification (must have ≥55% historical analog win-rate, ≤10% downside risk, and a positive momentum setup). The quantitative engine enforced 100% capital preservation rather than issuing high-risk, low-conviction picks.'}
           </div>
+          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem('open_service_id', 'alpha-playbook');
+                  window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'alpha-playbook' } }));
+                } catch (_) {}
+                setActiveTab('services');
+              }}
+              style={{
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.35)',
+                color: '#fca5a5',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 11.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <span>📖 Read Cash Defense Rules in Alpha Playbook →</span>
+            </button>
+          </div>
         </div>
       )) : (
         <div style={{
@@ -3081,7 +3129,7 @@ export default function Dashboard({
                 background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24',
                 border: '1px solid rgba(245, 158, 11, 0.3)'
               }}>
-                ⚡ RVOL {primeDailyPick.rvol || '1.25'}x
+                ⚡ RVOL {primeDailyPick.rvol != null ? Number(primeDailyPick.rvol).toFixed(2) : (primeDailyPick.volume?.rvol != null ? Number(primeDailyPick.volume.rvol).toFixed(2) : '1.25')}x
               </span>
               {primeDailyPick.lbas != null && (
                 <span style={{
@@ -3139,7 +3187,12 @@ export default function Dashboard({
                   {primeDailyPick.symbol}
                 </span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
-                  {primeDailyPick.sector || 'NEPSE'}
+                  {(() => {
+                    const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === primeDailyPick?.symbol) : null;
+                    return (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' && primeDailyPick.sector !== 'NEPSE')
+                      ? primeDailyPick.sector
+                      : (masterStock?.sector || 'Commercial Banks');
+                  })()}
                 </span>
                 {primeDailyPick.vcp?.isVCP && (
                   <span style={{ fontSize: 10, fontWeight: 800, color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
@@ -3148,7 +3201,14 @@ export default function Dashboard({
                 )}
               </div>
               <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>
-                {primeDailyPick.name || primeDailyPick.companyName}
+                {(() => {
+                  const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === primeDailyPick?.symbol) : null;
+                  return (primeDailyPick.companyName && primeDailyPick.companyName !== primeDailyPick.symbol && primeDailyPick.companyName !== 'Unknown')
+                    ? primeDailyPick.companyName
+                    : (primeDailyPick.name && primeDailyPick.name !== primeDailyPick.symbol && primeDailyPick.name !== 'Unknown')
+                      ? primeDailyPick.name
+                      : (masterStock?.companyName || masterStock?.name || primeDailyPick.symbol);
+                })()}
               </div>
             </div>
 
@@ -3387,9 +3447,31 @@ export default function Dashboard({
 
           {/* Rationale & Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <span style={{ color: '#34d399' }}>●</span>
-              <span>Catalyst: <strong style={{ color: '#e2e8f0' }}>{primeDailyPick.catalyst || 'High institutional volume & price momentum consolidation'}</strong> (Zero-Loss Rule: Sell 50% at Target 1, Move Stop to Entry)</span>
+              <span>Catalyst: <strong style={{ color: '#e2e8f0' }}>{primeDailyPick.catalyst || 'High institutional volume & price momentum consolidation'}</strong></span>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('open_service_id', 'alpha-playbook');
+                    window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'alpha-playbook' } }));
+                  } catch (_) {}
+                  setActiveTab('services');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: '#fbbf24',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textDecoration: 'underline'
+                }}
+              >
+                (Zero-Loss Rule: Sell 50% at Target 1, Move Stop to Entry ➔ Playbook)
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3449,6 +3531,33 @@ export default function Dashboard({
                 }}
               >
                 <span>📊 View Stock Details</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('open_service_id', 'alpha-playbook');
+                    window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'alpha-playbook' } }));
+                  } catch (_) {}
+                  setActiveTab('services');
+                }}
+                style={{
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: '#a5b4fc',
+                  border: '1px solid rgba(99, 102, 241, 0.35)',
+                  borderRadius: 10,
+                  padding: '7px 12px',
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+                title="Read the NEPSE Alpha Playbook: 3-Tier Edge & Zero-Loss Protocol"
+              >
+                <span>📖 Alpha Playbook</span>
               </button>
             </div>
           </div>

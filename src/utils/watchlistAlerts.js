@@ -279,10 +279,27 @@ export function calculateStockRvol(stock, priceHistory = null) {
   if (!stock) return 1.0;
 
   const sym = String(stock.symbol || stock.scrip || '').toUpperCase().trim();
-  const vol = Number(stock.volume || stock.totalTradedQuantity || 0);
+  let vol = Number(stock.volume || stock.totalTradedQuantity || 0);
+
+  // Resolve price history from cache if not passed directly
+  let hist = priceHistory;
+  if (!hist && sym && typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage?.getItem(`nepse_hist_prices_${sym}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) hist = parsed;
+      }
+    } catch (_) {}
+  }
+
+  // If vol is 0 (e.g. weekend, holiday, closed market), fallback to the latest traded session candle volume
+  if (vol === 0 && Array.isArray(hist) && hist.length > 0) {
+    vol = Number(hist[hist.length - 1]?.volume || 0);
+  }
 
   // 1. Direct explicit avgVolume20D on stock if present and valid
-  if (stock.avgVolume20D != null && Number(stock.avgVolume20D) > 0) {
+  if (stock.avgVolume20D != null && Number(stock.avgVolume20D) > 0 && vol > 0) {
     return +(vol / Number(stock.avgVolume20D)).toFixed(2);
   }
 
@@ -296,22 +313,12 @@ export function calculateStockRvol(stock, priceHistory = null) {
     return +Number(stock.volumeSurgeRatio).toFixed(2);
   }
 
-  // 4. Calculate from priceHistory (passed directly or resolved from local persistent cache)
-  let hist = priceHistory;
-  if (!hist && sym && typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage?.getItem(`nepse_hist_prices_${sym}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) hist = parsed;
-      }
-    } catch (_) {}
-  }
+  // 4. Calculate from priceHistory (excluding latest candle when comparing against baseline)
   if (Array.isArray(hist) && hist.length >= 5) {
-    const recent = hist.slice(-20);
-    const sum = recent.reduce((acc, c) => acc + (Number(c.volume) || 0), 0);
-    const avg = sum / recent.length;
-    if (avg > 0) return +(vol / avg).toFixed(2);
+    const baselineCandles = hist.slice(-21, -1).length >= 5 ? hist.slice(-21, -1) : hist.slice(-20);
+    const sum = baselineCandles.reduce((acc, c) => acc + (Number(c.volume) || 0), 0);
+    const avg = sum / baselineCandles.length;
+    if (avg > 0 && vol > 0) return +(vol / avg).toFixed(2);
   }
 
   // 5. If volume is meaningful (> 50k shares in NEPSE) but no historical baseline yet, estimate standard participation

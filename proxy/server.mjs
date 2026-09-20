@@ -7697,6 +7697,18 @@ app.get('/api/predict/events', async (req, res) => {
   }
 });
 
+// 5b. NEPSE Alpha Playbook Publication PDF
+app.get('/api/playbook/pdf', (req, res) => {
+  const pdfPath = path.join(__dirname, '../public/NEPSE_Alpha_Playbook.pdf');
+  if (fs.existsSync(pdfPath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="NEPSE_Alpha_Playbook.pdf"');
+    fs.createReadStream(pdfPath).pipe(res);
+  } else {
+    res.status(404).json({ success: false, error: 'Playbook PDF not found' });
+  }
+});
+
 // 6. Verified Post-Market / Pre-Open Day Prime Pick
 app.get('/api/prime-pick/daily-verified', async (req, res) => {
   try {
@@ -7756,8 +7768,12 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
           const tds = $td(row).find('td');
           if (tds.length >= 10) {
             const sym = $td(tds[1]).text().trim();
+            const meta = stockMap[sym] || {};
             if (sym) fetched.push({
               symbol: sym,
+              name: meta.name || sym,
+              companyName: meta.name || sym,
+              sector: meta.sector || 'Others',
               ltp: parseMoney($td(tds[2]).text()),
               pChange: parseMoney($td(tds[5]).text()),
               turnover: parseMoney($td(tds[10]).text()) || parseMoney($td(tds[9]).text()),
@@ -7782,8 +7798,12 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
           const tds = $lm(row).find('td');
           if (tds.length >= 10) {
             const sym = $lm(tds[1]).text().trim();
+            const meta = stockMap[sym] || {};
             if (sym) lmStocks.push({
               symbol: sym,
+              name: meta.name || sym,
+              companyName: meta.name || sym,
+              sector: meta.sector || 'Others',
               ltp: parseMoney($lm(tds[2]).text()),
               pChange: parseMoney($lm(tds[4]).text()),
               turnover: parseMoney($lm(tds[9]).text()),
@@ -7893,13 +7913,18 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
       const t2Price = Number(plan.levels?.target2?.price || +(candLtp * 1.15).toFixed(1));
       const slPrice = Number(plan.levels?.stopLoss?.price || +(candLtp * 0.94).toFixed(1));
 
+      const meta = stockMap[sym] || {};
+      const chosenRvol = Number(plan.volume?.rvol || plan.technical?.volume?.rvol || cand.rvol || cand.volumeSurgeRatio || 1.25);
       winner = {
         ...cand,
         ...plan,
         symbol: sym,
-        name: cand.name || cand.companyName || sym,
-        sector: cand.sector || 'NEPSE',
+        name: cand.name || cand.companyName || meta.name || sym,
+        companyName: cand.companyName || cand.name || meta.name || sym,
+        sector: (cand.sector && cand.sector !== 'Unknown' && cand.sector !== 'NEPSE') ? cand.sector : (meta.sector || 'Others'),
         ltp: candLtp,
+        rvol: chosenRvol,
+        volumeSurgeRatio: chosenRvol,
         pChange: Number(cand.pChange || cand.percentageChange || 0),
         turnover: Number(cand.turnover || cand.totalTradedValue || 0),
         historyBars: history.length,
