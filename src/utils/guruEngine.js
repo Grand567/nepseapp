@@ -440,7 +440,14 @@ export function isActionableBuySignal(plan) {
     vUpper.includes('HOLD') ||
     vUpper.includes('WAIT') ||
     Boolean(plan.riskGate?.isInstitutionalDumping) ||
-    Boolean(plan.riskGate?.isCircuitTrap)
+    Boolean(plan.riskGate?.isCircuitTrap) ||
+    Boolean(plan.riskGate?.isT2CircuitExhaustion) ||
+    Boolean(plan.riskGate?.isCriticalT2Lockup) ||
+    Boolean(plan.riskGate?.isLossMaking) ||
+    Boolean(plan.riskGate?.isSubFriction) ||
+    Boolean(plan.riskGate?.isUnfavorableRRR) ||
+    Number(plan.fundamental?.eps ?? plan.eps ?? 0) < 0 ||
+    (plan.levels?.rrr1 !== undefined && Number(plan.levels?.rrr1) < 1.35)
   ) {
     return false;
   }
@@ -538,10 +545,34 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     candidates.push(...safeCandidates.slice(0, 10));
   }
 
+function isDisqualifiedNonEquityOrLossMaking(s) {
+  const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
+  const sec = String(s.sector || s.sectorName || '').toLowerCase();
+  const n = String(s.name || '').toLowerCase();
+  const ltp = Number(s.ltp || s.price || 0);
+
+  // Exclude mutual funds, debentures, bonds, promoter shares
+  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
+  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
+  if (sym.endsWith('PO') || sym.endsWith('P') || sym.includes('DEB') || sym.startsWith('NMB50') || sym.startsWith('ADBLD')) return true;
+  if (/\d+$/.test(sym) && (sym.includes('D') || sym.includes('B') || sym.includes('F'))) return true;
+  if (ltp > 0 && ltp < 50) return true;
+  if (sym.endsWith('F') && sym.length >= 4 && !['SANIMA', 'SHIVM'].includes(sym)) {
+    if (!sec.includes('microfinance') && !n.includes('microfinance') && !n.includes('laghubitta')) return true;
+  }
+
+  // Exclude loss-making companies
+  const cachedFund = getCachedStockFundamentals(sym);
+  const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (s.eps ?? 0));
+  if (eps < 0) return true;
+
+  return false;
+}
+
   // Guarantee: if candidates is still empty, promote top liquid relative strength stock from universe
   if (candidates.length === 0 && Array.isArray(stocks) && stocks.length > 0) {
     const sortedUniverse = [...stocks]
-      .filter(s => Number(s.ltp || s.price || 0) >= 60)
+      .filter(s => Number(s.ltp || s.price || 0) >= 60 && !isDisqualifiedNonEquityOrLossMaking(s))
       .sort((a, b) => {
         const aT = Number(a.turnover || (Number(a.ltp || 0) * Number(a.volume || 0)) || 0);
         const bT = Number(b.turnover || (Number(b.ltp || 0) * Number(b.volume || 0)) || 0);

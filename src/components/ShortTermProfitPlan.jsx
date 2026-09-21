@@ -51,6 +51,7 @@ import {
   simulateCompoundExpectancy
 } from '../utils/quantEngine';
 import { getCachedRealPriceHistory, fetchPriceHistory, getCachedStockFundamentals } from '../utils/liveData';
+import { calculateEMA } from '../utils/indicators';
 import { toAscendingCandles } from '../utils/setupAnalyzer';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 
@@ -140,9 +141,11 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const stopLoss = Number(levels.stopLoss?.price || (ltp - Math.min(ltp * 0.065, Math.max(ltp * 0.035, dynamicAtr * 1.25))).toFixed(1));
   const stopLossPct = Number(levels.stopLoss?.pct || (((ltp - stopLoss) / ltp) * 100).toFixed(2));
 
-  const riskPerShare = Math.max(0.5, ltp - stopLoss);
-  const rewardPerShare = Math.max(0.5, target1 - ltp);
-  const netRRR = Number((rewardPerShare / riskPerShare).toFixed(2));
+  // Geometric sanity guard: Target must be above entry and stop loss must be below entry
+  const isGeometricallySound = stopLoss < ltp * 0.99 && target1 > ltp * 1.025;
+  const riskPerShare = isGeometricallySound ? (ltp - stopLoss) : Math.max(0.5, ltp - stopLoss);
+  const rewardPerShare = isGeometricallySound ? (target1 - ltp) : 0;
+  const netRRR = isGeometricallySound && riskPerShare > 0 ? Number((rewardPerShare / riskPerShare).toFixed(2)) : 0;
 
   // Broker accumulation
   const broker = stock.brokerAnalysis || {};
@@ -183,20 +186,40 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const totalAskQty = Number(stock.totalSellQty || stock.totalAskQty || 0);
   const obirMetrics = (totalBidQty > 0 || totalAskQty > 0) ? calculateOrderBookImbalanceRatio(totalBidQty, totalAskQty) : null;
 
+  // Dynamic fallback for missing EMA20 / EMA50 using cached price history
+  let effEma20 = ema20;
+  let effEma50 = ema50;
+  if ((!effEma20 || !effEma50) && Array.isArray(cachedHistory) && cachedHistory.length >= 10) {
+    const closes = cachedHistory.map(h => Number(h.close || h.price || h.ltp)).filter(v => !isNaN(v) && v > 0);
+    if (closes.length >= 10) {
+      if (!effEma20) {
+        const emaArr = calculateEMA(closes, 20);
+        if (emaArr.length > 0) effEma20 = Number(emaArr[emaArr.length - 1].toFixed(2));
+      }
+      if (!effEma50) {
+        const emaArr = calculateEMA(closes, 50);
+        if (emaArr.length > 0) effEma50 = Number(emaArr[emaArr.length - 1].toFixed(2));
+      }
+    }
+  }
+
   // ── EVALUATE 8 CRITERIA ──
   // 1. Tradable Liquidity Floor (Excludes penny units, mutual funds, debentures)
   const passLiquidity = !isExcluded && ltp >= 60 && (vol >= 800 || turnover >= 200000 || (stock.marketCap && stock.marketCap > 100000000) || ltp >= 150);
 
-  // 2. Trend & Moving Average Structure
-  const isAboveMovingAvg = (ema20 > 0 && ltp >= ema20 * 0.97) || (ema50 > 0 && ltp >= ema50 * 0.97) || (ema20 === 0 && ema50 === 0 && ltp >= 75);
+  // 2. Trend & Moving Average Structure (Zero tolerance: no blind pass if EMAs are uncomputed)
+  const hasEma = (effEma20 > 0 || effEma50 > 0);
+  const isAboveMovingAvg = hasEma
+    ? ((effEma20 > 0 && ltp >= effEma20 * 0.97) || (effEma50 > 0 && ltp >= effEma50 * 0.97))
+    : (stock.high52 && stock.low52 && ltp >= (Number(stock.low52) + Number(stock.high52)) * 0.52 && pChg >= 0);
   const isHealthyRsi = rsi >= 38 && rsi <= 74;
   const passTrend = isAboveMovingAvg && isHealthyRsi;
 
   // 3. Volume Surge / Smart Money Footprint
   const passVolume = vsr >= 1.05 || isBrokerAccum || (vol >= 5000 && pChg >= 0) || (pChg >= 1.5 && vol >= 2000);
 
-  // 4. Dynamic ATR-Calibrated RRR (Target 1 >= 4.5%, Stop <= 7.0%, Net RRR >= 1.45)
-  const passRRR = target1Pct >= 4.5 && stopLossPct <= 7.0 && netRRR >= 1.45;
+  // 4. Dynamic ATR-Calibrated RRR (Target 1 >= 4.5%, Stop <= 7.0%, Net RRR >= 1.45, Geometrically Sound)
+  const passRRR = isGeometricallySound && target1Pct >= 4.5 && stopLossPct <= 7.0 && stopLossPct >= 1.0 && netRRR >= 1.45;
 
   // 5. Sector Relative Strength (RS) Alignment (no sector drag)
   const passSector = isSectorTailwind;
@@ -207,8 +230,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   // 7. T+2 Settlement & 3-Year Lockup Guard
   const passT2Guard = t2Guard.isSafeToEnter && t2Guard.status !== 'HIGH_T2_CIRCUIT_TRAP' && !hasLockupCliff;
 
-  // 8. Solvency & Conviction Score
-  const passFundamentals = (eps >= 0 || bookValue >= 90);
+  // 8. Solvency & Conviction Score (Strictly require non-negative EPS and Book Value >= 75)
+  const passFundamentals = (eps >= 0 && bookValue >= 75);
 
   // Calculate composite conviction score (0-100)
   let baseScore = 48;
@@ -244,8 +267,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       name: '2. Trend & Moving Average Structure',
       passed: passTrend,
       detail: passTrend 
-        ? `Holding 20/50 EMA · RSI ${rsi.toFixed(1)} (Healthy 38–74 range)`
-        : `Fails trend structure (Below EMA or RSI out of range: ${rsi.toFixed(1)})`
+        ? `Holding ${effEma20 > 0 ? 'EMA 20 (Rs. ' + effEma20 + ')' : effEma50 > 0 ? 'EMA 50 (Rs. ' + effEma50 + ')' : '52W Mid-band'} · RSI ${rsi.toFixed(1)} (Healthy 38–74 range)`
+        : `Fails trend structure (${!isAboveMovingAvg ? 'Below EMA/Trend structure' : `RSI ${rsi.toFixed(1)} out of 38-74 bounds`})`
     },
     {
       id: 'volume',
@@ -261,6 +284,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       passed: passRRR,
       detail: passRRR 
         ? `RRR ${netRRR} : 1 · ATR Rs. ${dynamicAtr.toFixed(1)} (${volTier}) · Target 1 +${target1Pct}% · Stop -${stopLossPct}%`
+        : !isGeometricallySound
+        ? `Invalid trade geometry (Stop Loss Rs. ${stopLoss} >= Entry or Target Rs. ${target1} <= Entry)`
         : `Fails ATR RRR hurdle (RRR ${netRRR}:1 < 1.45:1 or Target < 4.5%)`
     },
     {
@@ -292,8 +317,12 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       name: '8. Solvency & Conviction Score',
       passed: passFundamentals && passConviction,
       detail: (passFundamentals && passConviction)
-        ? `EPS Rs. ${eps >= 0 ? eps.toFixed(1) : '—'} · Conviction Score: ${score}/100 (BUY / ACCUMULATE)`
-        : `Fails solvency or conviction (${score}/100 < 55 threshold or negative asset base)`
+        ? `EPS Rs. ${eps >= 0 ? eps.toFixed(1) : '—'} (Solvent) · Conviction Score: ${score}/100 (BUY / ACCUMULATE)`
+        : eps < 0
+        ? `Fails solvency (Negative EPS: Rs. ${eps.toFixed(1)} indicates operating losses)`
+        : bookValue < 75
+        ? `Fails capital solvency (Book Value Rs. ${bookValue.toFixed(1)} < Rs. 75 capital preservation floor)`
+        : `Fails conviction threshold (${score}/100 < 55 minimum hurdle)`
     }
   ];
 

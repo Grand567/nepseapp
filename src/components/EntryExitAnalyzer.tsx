@@ -374,7 +374,7 @@ export function EntryExitAnalyzer({
     const list = stocks && stocks.length > 0 ? stocks : (NEPSE_UNIVERSE || []);
     const evaluated = list.slice(0, 150).map((s: any) => evaluateShortTermCriteria(s));
     const passed = evaluated.filter((c: any) => c.passesAll);
-    const pool = passed.length > 0 ? passed : evaluated.filter((c: any) => c.passedCount >= 5);
+    const pool = passed.length > 0 ? passed : evaluated.filter((c: any) => c.isTradableEquity && !c.isExcluded && Number(c.eps ?? 0) >= 0 && c.passedCount >= 5);
     pool.sort((a: any, b: any) => b.compositeRankScore - a.compositeRankScore);
     return pool.slice(0, 4);
   }, [stocks]);
