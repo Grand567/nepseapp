@@ -1129,20 +1129,35 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
       const reports = await fetchUserApplicationReports(account);
       if (Array.isArray(reports) && reports.length > 0) {
         const targetCleanId = Number(String(companyShareId).replace(/\D+/g, ''));
-        const targetName = (companyObj?.name || '').toLowerCase();
-        const targetScrip = (companyObj?.scrip || '').toUpperCase();
+        const targetName = companyObj?.name || '';
+        const targetScrip = companyObj?.scrip || '';
+
+        const cleanTokenStr = (s) => String(s || '')
+          .toLowerCase()
+          .replace(/\b(limited|ltd|project|company|prabhakar|general|public|ordinary|shares|ipo|result|published)\b/gi, '')
+          .replace(/[^a-z0-9]/g, ' ')
+          .trim();
+
+        const cleanTarget = cleanTokenStr(targetName);
+        const targetWords = cleanTarget.split(/\s+/).filter(w => w.length >= 3);
 
         const match = reports.find(r => {
           const cs = r.companyShare || {};
           const rId = Number(cs.id || r.companyShareId);
-          const rScrip = (cs.scrip || '').toUpperCase();
-          const rName = (cs.name || cs.companyName || r.companyName || '').toLowerCase();
+          const rScrip = String(cs.scrip || '').trim().toUpperCase();
+          const rName = String(cs.name || cs.companyName || r.companyName || '').trim();
+          const cleanReportName = cleanTokenStr(rName);
 
           if (targetCleanId && rId === targetCleanId) return true;
-          if (targetScrip && rScrip && targetScrip === rScrip) return true;
-          if (targetName && rName) {
-            const shortTarget = targetName.slice(0, 8);
-            if (rName.includes(shortTarget) || targetName.includes(rName.slice(0, 8))) return true;
+          if (targetScrip && rScrip && targetScrip.toUpperCase() === rScrip) return true;
+
+          if (cleanTarget && cleanReportName) {
+            if (cleanTarget.includes(cleanReportName) || cleanReportName.includes(cleanTarget)) return true;
+            const rWords = cleanReportName.split(/\s+/).filter(w => w.length >= 3);
+            if (targetWords.length > 0 && rWords.length > 0) {
+              const common = targetWords.filter(tw => rWords.some(rw => rw.includes(tw) || tw.includes(rw)));
+              if (common.length >= 1) return true;
+            }
           }
           return false;
         });
@@ -1168,15 +1183,10 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
             message,
             source: 'meroshare-asba'
           };
-        } else {
-          return {
-            success: true,
-            allotted: false,
-            units: 0,
-            message: 'यो शेयरमा आवेदन दिइएको छैन (Not applied for this issue)',
-            source: 'meroshare-asba'
-          };
         }
+        // If not matched in user's online MeroShare reports (e.g. physical application, or different naming),
+        // do not abort! Fall through to Strategy 2 (Issue Manager API) and Strategy 3 to verify against official registry.
+        console.log('[checkSingleBoidAllotment] Not found in MeroShare ASBA reports, falling through to Issue Manager API...');
       }
     } catch (asbaErr) {
       console.warn('[checkSingleBoidAllotment] MeroShare ASBA report check failed, falling back:', asbaErr.message);
@@ -1624,12 +1634,14 @@ export async function checkBulkIpoResults(
   accounts
 ) {
   let targetCompanyId = companyNameOrId;
+  let targetCompany = null;
 
-  // If passed a company name instead of ID, resolve it from CDSC list
+  const list = await fetchIpoCompanyList();
   if (isNaN(Number(companyNameOrId))) {
-    const list = await fetchIpoCompanyList();
-    const found = list.find(c => c.name.toLowerCase().includes(String(companyNameOrId).toLowerCase()));
-    if (found) targetCompanyId = found.id;
+    targetCompany = list.find(c => c.name.toLowerCase().includes(String(companyNameOrId).toLowerCase())) || null;
+    if (targetCompany) targetCompanyId = targetCompany.id;
+  } else {
+    targetCompany = list.find(c => String(c.id) === String(companyNameOrId)) || null;
   }
 
   const records = [];
@@ -1647,7 +1659,7 @@ export async function checkBulkIpoResults(
       continue;
     }
 
-    const check = await checkSingleBoidAllotment(targetCompanyId, cleanBoid);
+    const check = await checkSingleBoidAllotment(targetCompanyId, cleanBoid, acc, targetCompany);
     records.push({
       boid: acc.boid,
       name: acc.name || acc.accountName,
