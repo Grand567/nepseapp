@@ -6,6 +6,7 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getProxyBase } from '../utils/liveData.js';
+import { setDynamicMarketHalt, getDynamicMarketHalt, getIsoDateInNPT } from '../utils/nepseCalendar.js';
 
 let cachedNews = null;
 let lastFetchTime = 0;
@@ -198,4 +199,62 @@ export function analyzePoliticalAndMarketPulse(newsArticles = []) {
     keyHighlights: highlights.slice(0, 4),
     summary: `Merolagani News Pulse indicates ${sentiment} (Macro Score: ${score}/100). Institutional players are pricing in monetary liquidity alongside political headlines.`
   };
+}
+
+/**
+ * Detects whether an unscheduled emergency market halt has occurred by analyzing
+ * breaking news headlines from financial portals (MeroLagani, NepaliPaisa, etc.).
+ * If a halt headline is found, automatically updates the dynamic market halt registry.
+ */
+export async function detectMarketHaltFromNews(articles = null) {
+  let newsList = articles;
+  if (!Array.isArray(newsList) || newsList.length === 0) {
+    try {
+      newsList = await fetchMerolaganiNews();
+    } catch (_) {
+      newsList = [];
+    }
+  }
+
+  if (!Array.isArray(newsList) || newsList.length === 0) {
+    const existingHalt = getDynamicMarketHalt();
+    return existingHalt || { isHalted: false, isEmergencyHalt: false, reason: null };
+  }
+
+  const haltTerms = [
+    'आज शेयर बजार नखुल्ने',
+    'शेयर बजार नखुल्ने',
+    'बजार नखुल्ने',
+    'कारोबार स्थगित',
+    'कारोबार नहुने',
+    'आकस्मिक बजार बन्द',
+    'trading halted',
+    'market halt',
+    'डाटा सेन्टरमा र्‍यानसमवेयर',
+    'र्यान्समवेयर आक्रमण'
+  ];
+
+  for (const article of newsList) {
+    const title = (article.title || article.headline || '').trim();
+    if (!title) continue;
+
+    const matched = haltTerms.some(term => title.includes(term));
+    if (matched) {
+      const haltInfo = {
+        isHalted: true,
+        isEmergencyHalt: true,
+        reason: title,
+        headline: title,
+        url: article.url || 'https://merolagani.com',
+        source: article.source || 'MeroLagani',
+        date: getIsoDateInNPT(),
+        detectedAt: Date.now()
+      };
+      setDynamicMarketHalt(haltInfo);
+      return haltInfo;
+    }
+  }
+
+  const existingHalt = getDynamicMarketHalt();
+  return existingHalt || { isHalted: false, isEmergencyHalt: false, reason: null };
 }

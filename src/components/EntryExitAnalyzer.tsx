@@ -44,6 +44,7 @@ import { isActionableBuySignal } from '../utils/guruEngine';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
 import { evaluateShortTermCriteria } from './ShortTermProfitPlan';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
+import { getDetailedMarketStatus, getIsoDateInNPT } from '../utils/nepseCalendar';
 
 // Modular Sub-components
 import { StockCandlestickChart } from './charts/StockCandlestickChart';
@@ -217,6 +218,18 @@ export function EntryExitAnalyzer({
         }
         if (candleList.length === 0 && stock?.candles && Array.isArray(stock.candles) && stock.candles.length > 0) {
           candleList = stock.candles;
+        }
+
+        // Lock to last confirmed completed trading session when market is halted or today had 0 trades
+        const curMkt = getDetailedMarketStatus();
+        const todayIso = getIsoDateInNPT();
+        if (candleList.length > 1) {
+          const lastBar = candleList[candleList.length - 1];
+          const isTodayBar = lastBar && (lastBar.date === todayIso || String(lastBar.date).slice(0, 10) === todayIso);
+          const isZeroVol = Number(lastBar?.volume || 0) === 0;
+          if (isTodayBar && (curMkt.isEmergencyHalt || !curMkt.isOpen || isZeroVol)) {
+            candleList = candleList.slice(0, -1);
+          }
         }
 
         if (!candleList || candleList.length === 0) {
@@ -444,6 +457,8 @@ export function EntryExitAnalyzer({
   const changeVal = Number(stockInfo?.change || 0);
   const companyName = stockInfo?.name || stockInfo?.companyName || symbol;
 
+  const mktStatus = useMemo(() => getDetailedMarketStatus(), []);
+
   return (
     <div className="space-y-5 font-sans text-slate-100">
       {/* ── Top Header Banner ── */}
@@ -452,6 +467,38 @@ export function EntryExitAnalyzer({
         Benjamin Graham’s Margin of Safety, moving-average structures, momentum velocity, volume confirmation,
         S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage & 10% CGT Final Tax).
       </InfoBanner>
+
+      {/* ── Market Halt / Session Locking Notice ── */}
+      {(mktStatus.isEmergencyHalt || !mktStatus.isOpen) && (
+        <div style={{
+          borderRadius: 14,
+          background: mktStatus.isEmergencyHalt ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+          border: mktStatus.isEmergencyHalt ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(245, 158, 11, 0.35)',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          color: mktStatus.isEmergencyHalt ? '#fca5a5' : '#fcd34d',
+          fontSize: 12.5,
+          fontWeight: 600,
+          lineHeight: 1.5,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+        }}>
+          <AlertTriangle size={18} className="shrink-0" style={{ color: mktStatus.isEmergencyHalt ? '#ef4444' : '#f59e0b' }} />
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 2 }}>
+              {mktStatus.isEmergencyHalt
+                ? '⏸️ NEPSE Emergency Market Halt (आकस्मिक बजार बन्द) Active'
+                : `🔴 NEPSE Market Closed (${mktStatus.statusLabel})`}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>
+              {mktStatus.isEmergencyHalt
+                ? `Trading is officially suspended today (${mktStatus.holidayName || 'Data Center Incident'}). Technical setups, volume verification, and entry/exit targets are locked to the last completed trading session to prevent false 0-volume distortion.`
+                : 'Market is currently closed. Analysis and price actions are evaluated on the last completed trading session.'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── SECTION A: Stock Header & Search Bar ── */}
       <div style={{

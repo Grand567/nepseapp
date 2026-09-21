@@ -14,8 +14,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators';
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { getDetailedMarketStatus } from './nepseCalendar';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso } from './nepseCalendar';
 import { idbGet, idbSet } from './indexedDb.js';
 
 
@@ -541,23 +540,35 @@ export async function fetchLiveMarket() {
   const live = await attemptLiveMarket();
   if (live && live.length) {
     persistStocks(live);
-    LAST_SOURCE = marketStatus.isOpen ? 'live' : 'closing';
+    LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
     return { data: live, source: LAST_SOURCE, marketStatus };
   }
-  LAST_SOURCE = marketStatus.isOpen ? 'simulated-live' : 'yesterday';
+  LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'simulated-live' : 'yesterday');
   return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus };
 }
 
 export async function fetchMarketSummary() {
   ensureSnapshot();
-  const marketStatus = getDetailedMarketStatus();
-  const defaultSource = marketStatus.isOpen ? 'live' : 'closing';
+  let marketStatus = getDetailedMarketStatus();
+  const defaultSource = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
+
+  // Trigger background news cross-verification if market is seemingly open but stagnant turnover
+  if (marketStatus.isOpen && !marketStatus.isEmergencyHalt) {
+    const memTurnover = Number(MEM_SUMMARY?.totalTurnover || 0);
+    if (memTurnover === 0) {
+      import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
+    }
+  }
 
   // 1. Try backend proxy /api/market/summary or /api/market-indices
   try {
     const pSum = await fetchFromBackend(`/api/market/summary`, 3500);
     const d = pSum?.data;
-    if (d && (d.nepseIndex || d.totalTurnover)) {
+    if (d && (d.nepseIndex || d.totalTurnover !== undefined)) {
+      const isZeroTurnover = Number(d.totalTurnover || 0) === 0;
+      if (isZeroTurnover && marketStatus.isOpen) {
+        import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
+      }
       return {
         data: {
           nepseIndex: Number(d.nepseIndex || MEM_SUMMARY.nepseIndex),
@@ -566,7 +577,7 @@ export async function fetchMarketSummary() {
           totalTurnover: Number(d.totalTurnover || MEM_SUMMARY.totalTurnover),
           totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY.totalTradedShares),
           totalTransactions: Number(d.totalTransactions || MEM_SUMMARY.totalTransactions),
-          marketStatus: marketStatus.isOpen ? 'OPEN' : 'CLOSED',
+          marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen && !isZeroTurnover ? 'OPEN' : 'CLOSED'),
           advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
         },
         source: defaultSource,
@@ -576,7 +587,11 @@ export async function fetchMarketSummary() {
 
   const live = await tryFetchJSON(PROXY(`${NEPSE_BASE}/market-summary/`), 3500);
   const d = live?.[0] ?? live?.data ?? live;
-  if (d && (d.nepseIndex || d.indexValue || d.totalTurnover)) {
+  if (d && (d.nepseIndex || d.indexValue || d.totalTurnover !== undefined)) {
+    const isZeroTurnover = Number(d.totalTurnover ?? d.turnover ?? 0) === 0;
+    if (isZeroTurnover && marketStatus.isOpen) {
+      import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
+    }
     return {
       data: {
         nepseIndex: Number(d.nepseIndex ?? d.indexValue ?? MEM_SUMMARY.nepseIndex),
@@ -584,7 +599,7 @@ export async function fetchMarketSummary() {
         totalTurnover: Number(d.totalTurnover ?? d.turnover ?? MEM_SUMMARY.totalTurnover),
         totalTradedShares: Number(d.totalTradedShares ?? d.volume ?? MEM_SUMMARY.totalTradedShares),
         totalTransactions: Number(d.totalTransactions ?? MEM_SUMMARY.totalTransactions),
-        marketStatus: marketStatus.isOpen ? 'OPEN' : 'CLOSED',
+        marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen && !isZeroTurnover ? 'OPEN' : 'CLOSED'),
         advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
       }, source: defaultSource,
     };
@@ -676,19 +691,12 @@ export async function fetchSupplyDemand() {
 }
 
 export function getLatestTradingDateStr() {
-  const now = new Date();
-  // Nepal is UTC+5:45
-  const nep = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
-  const day = nep.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
-  if (day === 0) {
-    nep.setUTCDate(nep.getUTCDate() - 2); // Sun -> Fri
-  } else if (day === 6) {
-    nep.setUTCDate(nep.getUTCDate() - 1); // Sat -> Fri
+  const mkt = getDetailedMarketStatus();
+  if (mkt.isOpen && !mkt.isEmergencyHalt && !mkt.isHoliday && !mkt.isWeekend) {
+    return formatNptDateIso(new Date());
   }
-  const y = nep.getUTCFullYear();
-  const m = String(nep.getUTCMonth() + 1).padStart(2, '0');
-  const dt = String(nep.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${dt}`;
+  const lastTrading = getLastValidTradingDay(new Date());
+  return formatNptDateIso(lastTrading);
 }
 
 export async function fetchPriceHistory(symbol, days = 365) {
@@ -725,24 +733,44 @@ export async function fetchPriceHistory(symbol, days = 365) {
     if (!Array.isArray(list) || list.length === 0 || !(px > 0)) return list;
     const out = [...list];
     const last = out[out.length - 1];
+
+    const mktStatus = getDetailedMarketStatus();
+    const isMarketActive = mktStatus.isOpen && !mktStatus.isEmergencyHalt && !mktStatus.isHoliday && !mktStatus.isWeekend;
+    const volNum = Number(stockObj.volume || 0);
+    const turnoverNum = Number(stockObj.turnover || 0);
+    const tradesNum = Number(stockObj.transactions || 0);
+    const hasTodayTrades = (volNum > 0 || turnoverNum > 0 || tradesNum > 0);
+
+    // If market is not currently open/active and no trades took place,
+    // NEVER append a zero-volume fake bar that breaks analyzers and signals!
+    if (!isMarketActive && !hasTodayTrades) {
+      return out;
+    }
+
     const isLastToday = last && (last.date === latestTradingDate || String(last.date).slice(0, 10) === latestTradingDate);
+    if (!hasTodayTrades && !isLastToday) {
+      return out;
+    }
+
     const todayCandle = {
       date: latestTradingDate,
       open: Number(stockObj.open || px),
       high: Number(stockObj.high || Math.max(px, Number(stockObj.open || px))),
       low: Number(stockObj.low || Math.min(px, Number(stockObj.open || px))),
       close: px,
-      volume: Number(stockObj.volume || 0),
-      turnover: Number(stockObj.turnover || Math.round((stockObj.volume || 0) * px)),
-      trades: Number(stockObj.transactions || 0),
+      volume: volNum,
+      turnover: turnoverNum || Math.round(volNum * px),
+      trades: tradesNum,
       change: Number(stockObj.change || 0),
       pChange: Number(stockObj.pChange || 0),
       isReal: true,
       isToday: true
     };
     if (isLastToday) {
-      out[out.length - 1] = { ...last, ...todayCandle };
-    } else {
+      if (hasTodayTrades) {
+        out[out.length - 1] = { ...last, ...todayCandle };
+      }
+    } else if (hasTodayTrades) {
       out.push(todayCandle);
     }
     return out;

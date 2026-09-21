@@ -112,6 +112,7 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-08-28': 'Gai Jatra (Public Holiday)',
   '2026-09-04': 'Krishna Janmashtami',
   '2026-09-19': 'Constitution Day (Sambidhan Diwas)',
+  '2026-09-21': 'Emergency Market Halt (आकस्मिक बजार बन्द — NEPSE Data Center Breach)',
   '2026-09-25': 'Indra Jatra',
   '2026-10-10': 'Ghatasthapana',
   '2026-10-17': 'Dashain (Phulpati)',
@@ -163,12 +164,66 @@ export function getIsoDateInNPT(date = new Date()) {
   }
 }
 
+let dynamicHaltMemory = null;
+
+/**
+ * Sets or clears a dynamic market halt (e.g., detected by news scraper or server breach).
+ * Persists to localStorage for resilience across page reloads.
+ */
+export function setDynamicMarketHalt(haltInfo) {
+  dynamicHaltMemory = haltInfo;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      if (haltInfo) {
+        localStorage.setItem('nepse_dynamic_emergency_halt', JSON.stringify(haltInfo));
+      } else {
+        localStorage.removeItem('nepse_dynamic_emergency_halt');
+      }
+    } catch (_) {}
+  }
+}
+
+/**
+ * Retrieves currently active dynamic market halt, if any.
+ */
+export function getDynamicMarketHalt() {
+  if (dynamicHaltMemory) return dynamicHaltMemory;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const item = localStorage.getItem('nepse_dynamic_emergency_halt');
+      if (item) {
+        const parsed = JSON.parse(item);
+        const todayIso = getIsoDateInNPT();
+        if (!parsed.date || parsed.date === todayIso) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 /**
  * Checks if a given date is a Public Holiday in Nepal (Bikram Sambat & Official NEPSE)
+ * or an Emergency Market Halt (e.g. ransomware breach / regulatory suspension).
  */
 export function isNepsePublicHoliday(date = new Date()) {
   const nepaliDate = getNepaliDate(date);
   const iso = getIsoDateInNPT(date);
+
+  // 0. Check dynamic emergency halt reported at runtime (news headline / server error detector)
+  const dynamicHalt = getDynamicMarketHalt();
+  if (dynamicHalt && (dynamicHalt.isHalted || dynamicHalt.isEmergencyHalt) && (!dynamicHalt.date || dynamicHalt.date === iso)) {
+    return {
+      isHoliday: true,
+      isEmergencyHalt: true,
+      holidayName: dynamicHalt.reason || 'Emergency Market Halt (आकस्मिक बजार बन्द — NEPSE Incident)',
+      holidayNameNp: 'आकस्मिक बजार बन्द (NEPSE Server Incident)',
+      holidayNameEn: 'Emergency Market Halt',
+      nepaliDate,
+      dateStr: iso
+    };
+  }
 
   // 1. Check Bikram Sambat official holiday database (exclude non-closing festivals like Teej / Rishi Panchami)
   const NON_CLOSING_FESTIVALS = ['तीज', 'teej', 'ऋषि पञ्चमी', 'rishi panchami'];
@@ -182,6 +237,7 @@ export function isNepsePublicHoliday(date = new Date()) {
     const holidayName = nepaliDate.holidayNameNp || nepaliDate.holidayNameEn;
     return {
       isHoliday: true,
+      isEmergencyHalt: false,
       holidayName,
       holidayNameNp: nepaliDate.holidayNameNp,
       holidayNameEn: nepaliDate.holidayNameEn,
@@ -192,8 +248,10 @@ export function isNepsePublicHoliday(date = new Date()) {
 
   // 2. Check Gregorian ISO mapping fallback
   if (NEPSE_PUBLIC_HOLIDAYS[iso]) {
+    const isEmergency = /emergency|आकस्मिक|halt/i.test(NEPSE_PUBLIC_HOLIDAYS[iso]);
     return {
       isHoliday: true,
+      isEmergencyHalt: isEmergency,
       holidayName: NEPSE_PUBLIC_HOLIDAYS[iso],
       holidayNameNp: NEPSE_PUBLIC_HOLIDAYS[iso],
       holidayNameEn: NEPSE_PUBLIC_HOLIDAYS[iso],
@@ -202,7 +260,7 @@ export function isNepsePublicHoliday(date = new Date()) {
     };
   }
 
-  return { isHoliday: false, holidayName: null, nepaliDate, dateStr: iso };
+  return { isHoliday: false, isEmergencyHalt: false, holidayName: null, nepaliDate, dateStr: iso };
 }
 
 /**
@@ -468,17 +526,23 @@ export function getDetailedMarketStatus(now = new Date()) {
     targetSessionDate,
   };
 
-  // 1. Check Holiday (Bikram Sambat public holiday)
+  // 1. Check Holiday (Bikram Sambat public holiday or Emergency Market Halt)
   if (holiday.isHoliday) {
+    const isHalt = Boolean(holiday.isEmergencyHalt);
     return {
       ...baseData,
       isOpen: false,
       isHoliday: true,
+      isEmergencyHalt: isHalt,
+      session: isHalt ? 'EMERGENCY_HALT' : baseData.session,
+      sessionLabel: isHalt ? 'Trading Suspended (Emergency Market Halt)' : baseData.sessionLabel,
       isWeekend: false,
       isCloseDay: true,
       holidayName: holiday.holidayName,
-      statusLabel: 'Holiday Closed',
-      message: `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp})`,
+      statusLabel: isHalt ? 'Emergency Market Halt (आकस्मिक बजार बन्द)' : 'Holiday Closed',
+      message: isHalt
+        ? `Market Closed — ${holiday.holidayName}`
+        : `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp})`,
       lastTradingDay: getLastValidTradingDay(now)
     };
   }

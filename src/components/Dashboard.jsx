@@ -4366,7 +4366,9 @@ export default function Dashboard({
             width: 34,
             height: 34,
             borderRadius: 9,
-            background: marketStatus?.isOpen
+            background: marketStatus?.isEmergencyHalt
+              ? 'rgba(239, 68, 68, 0.15)'
+              : marketStatus?.isOpen
               ? 'rgba(16, 185, 129, 0.12)'
               : marketStatus?.isHoliday
               ? 'rgba(192, 132, 252, 0.15)'
@@ -4374,7 +4376,9 @@ export default function Dashboard({
               ? 'rgba(251, 191, 36, 0.15)'
               : 'rgba(255, 255, 255, 0.05)',
             border: `1px solid ${
-              marketStatus?.isOpen
+              marketStatus?.isEmergencyHalt
+                ? 'rgba(239, 68, 68, 0.35)'
+                : marketStatus?.isOpen
                 ? 'rgba(16, 185, 129, 0.3)'
                 : marketStatus?.isHoliday
                 ? 'rgba(192, 132, 252, 0.3)'
@@ -4390,7 +4394,9 @@ export default function Dashboard({
             <Calendar style={{
               width: 17,
               height: 17,
-              color: marketStatus?.isOpen
+              color: marketStatus?.isEmergencyHalt
+                ? '#ef4444'
+                : marketStatus?.isOpen
                 ? 'var(--bull)'
                 : marketStatus?.isHoliday
                 ? '#c084fc'
@@ -4409,14 +4415,18 @@ export default function Dashboard({
                 fontWeight: 800,
                 padding: '1px 7px',
                 borderRadius: 4,
-                background: marketStatus?.isOpen
+                background: marketStatus?.isEmergencyHalt
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : marketStatus?.isOpen
                   ? 'rgba(16, 185, 129, 0.15)'
                   : marketStatus?.isHoliday
                   ? 'rgba(192, 132, 252, 0.18)'
                   : marketStatus?.isWeekend
                   ? 'rgba(251, 191, 36, 0.18)'
                   : 'rgba(255, 255, 255, 0.08)',
-                color: marketStatus?.isOpen
+                color: marketStatus?.isEmergencyHalt
+                  ? '#f87171'
+                  : marketStatus?.isOpen
                   ? 'var(--bull)'
                   : marketStatus?.isHoliday
                   ? '#c084fc'
@@ -4424,7 +4434,7 @@ export default function Dashboard({
                   ? '#fbbf24'
                   : 'var(--text-muted)'
               }}>
-                {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Market Closed')}
+                {marketStatus?.statusLabel || (marketStatus?.isEmergencyHalt ? 'Emergency Halt' : marketStatus?.isOpen ? 'Market Open' : 'Market Closed')}
               </span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -4539,14 +4549,18 @@ export default function Dashboard({
                   border: 'none',
                   cursor: onOpenCalendar ? 'pointer' : 'default',
                   outline: 'none',
-                  background: marketStatus?.isOpen
+                  background: marketStatus?.isEmergencyHalt
+                    ? 'rgba(239,68,68,0.18)'
+                    : marketStatus?.isOpen
                     ? 'rgba(16,185,129,0.15)'
                     : marketStatus?.isHoliday
                     ? 'rgba(192,132,252,0.15)'
                     : marketStatus?.isWeekend
                     ? 'rgba(251,191,36,0.15)'
                     : 'rgba(244,63,94,0.15)',
-                  color: marketStatus?.isOpen
+                  color: marketStatus?.isEmergencyHalt
+                    ? '#f87171'
+                    : marketStatus?.isOpen
                     ? 'var(--bull)'
                     : marketStatus?.isHoliday
                     ? '#c084fc'
@@ -4555,7 +4569,9 @@ export default function Dashboard({
                     : '#f87171'
                 }}
               >
-                {marketStatus?.isOpen
+                {marketStatus?.isEmergencyHalt
+                  ? 'Emergency Halt'
+                  : marketStatus?.isOpen
                   ? 'Market Open'
                   : marketStatus?.isHoliday
                   ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`

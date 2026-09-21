@@ -1047,29 +1047,38 @@ function AppInner() {
         >
           {/* Status indicator: WEEKEND / LIVE / CLOSED / HOLIDAY */}
           {(() => {
+            const isHalt = Boolean(marketStatus?.isEmergencyHalt);
             const isLive = Boolean(marketStatus?.isOpen);
-            const badgeColor = isLive 
+            const badgeColor = isHalt
+              ? '#ef4444'
+              : isLive 
               ? 'var(--bull)' 
               : marketStatus?.isHoliday 
               ? '#c084fc' 
               : marketStatus?.isWeekend 
               ? '#fbbf24' 
               : '#94a3b8';
-            const badgeBg = isLive 
+            const badgeBg = isHalt
+              ? 'rgba(239, 68, 68, 0.16)'
+              : isLive 
               ? 'rgba(16,185,129,0.12)' 
               : marketStatus?.isHoliday 
               ? 'rgba(192,132,252,0.14)' 
               : marketStatus?.isWeekend 
               ? 'rgba(251,191,36,0.14)' 
               : 'rgba(255,255,255,0.04)';
-            const badgeBorder = isLive 
+            const badgeBorder = isHalt
+              ? 'rgba(239, 68, 68, 0.45)'
+              : isLive 
               ? 'rgba(16,185,129,0.35)' 
               : marketStatus?.isHoliday 
               ? 'rgba(192,132,252,0.35)' 
               : marketStatus?.isWeekend 
               ? 'rgba(251,191,36,0.35)' 
               : 'var(--border)';
-            const label = isLive 
+            const label = isHalt
+              ? 'HALTED'
+              : isLive 
               ? 'LIVE' 
               : marketStatus?.isHoliday 
               ? 'HOLIDAY' 
@@ -1437,16 +1446,18 @@ function AppInner() {
 
                   <div style={{
                     padding: '6px 12px', borderRadius: 20,
-                    background: marketStatus?.isOpen ? 'rgba(16,185,129,0.15)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.15)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.15)' : 'rgba(244,63,94,0.15)',
-                    border: `1px solid ${marketStatus?.isOpen ? 'rgba(16,185,129,0.4)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.4)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.4)' : 'rgba(244,63,94,0.4)'}`,
-                    color: marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171',
+                    background: marketStatus?.isEmergencyHalt ? 'rgba(239, 68, 68, 0.15)' : marketStatus?.isOpen ? 'rgba(16,185,129,0.15)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.15)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.15)' : 'rgba(244,63,94,0.15)',
+                    border: `1px solid ${marketStatus?.isEmergencyHalt ? 'rgba(239, 68, 68, 0.4)' : marketStatus?.isOpen ? 'rgba(16,185,129,0.4)' : marketStatus?.isHoliday ? 'rgba(192,132,252,0.4)' : marketStatus?.isWeekend ? 'rgba(251,191,36,0.4)' : 'rgba(244,63,94,0.4)'}`,
+                    color: marketStatus?.isEmergencyHalt ? '#f87171' : marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171',
                     fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6
                   }}>
                     <span style={{
                       width: 7, height: 7, borderRadius: '50%',
-                      background: marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171'
+                      background: marketStatus?.isEmergencyHalt ? '#ef4444' : marketStatus?.isOpen ? 'var(--bull)' : marketStatus?.isHoliday ? '#c084fc' : marketStatus?.isWeekend ? '#fbbf24' : '#f87171'
                     }} />
-                    {marketStatus?.isOpen
+                    {marketStatus?.isEmergencyHalt
+                      ? `Emergency Halt: ${marketStatus.holidayName || 'आकस्मिक बजार बन्द'}`
+                      : marketStatus?.isOpen
                       ? 'Market Open (खुल्ला)'
                       : marketStatus?.isHoliday
                       ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
