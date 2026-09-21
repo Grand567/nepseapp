@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, CheckCircle2, AlertTriangle, Info, Zap, Flame } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, AlertTriangle, Info, Zap, Flame, Award, TrendingUp, BarChart2 } from 'lucide-react';
 
 interface SetupScoreCardProps {
   score: number;
@@ -30,6 +30,55 @@ interface SetupScoreCardProps {
     warning?: string | null;
     detail?: string;
   };
+  quantMetrics?: {
+    minerviniTemplate?: {
+      passedCount: number;
+      totalCount: number;
+      isStage2Uptrend: boolean;
+      stageLabel: string;
+      distFrom52wLowPct?: number;
+      distFrom52wHighPct?: number;
+    };
+    mansfieldRS?: {
+      mrs: number;
+      isOutperforming: boolean;
+      isRising: boolean;
+      status: string;
+      label: string;
+    };
+    volumeDryUp?: {
+      vduRatio: number;
+      isDryUp: boolean;
+      isPocketPivot: boolean;
+      status: string;
+      label: string;
+    };
+    brokerCornering?: {
+      cr5BuyPct: number;
+      isCornered: boolean;
+      isInstitutionalDumping: boolean;
+      tier: string;
+      label: string;
+    };
+    expectancy?: {
+      ev: number;
+      profitFactor: number;
+      breakEvenWinRate: number;
+      hasPositiveEdge: boolean;
+      edgeRating: string;
+    };
+    kelly?: {
+      halfKellyPct: number;
+      recommendationPct: number;
+      isViable: boolean;
+    };
+    t2CircuitGuard?: {
+      trapDangerScore: number;
+      status: string;
+      twoDayGain: number;
+      isSafeToEnter: boolean;
+    };
+  };
   bullishFactors?: string[];
   bearishFactors?: string[];
   warnings?: string[];
@@ -38,11 +87,14 @@ interface SetupScoreCardProps {
 
 function getVerdictColor(score: number, verdict?: string) {
   const vUpper = (verdict || '').toUpperCase();
-  if (vUpper.startsWith('NO TRADE') || vUpper.startsWith('REDUCE') || vUpper.startsWith('EXIT') || vUpper.startsWith('AVOID')) {
+  if (vUpper.startsWith('NO TRADE') || vUpper.startsWith('REDUCE') || vUpper.startsWith('EXIT') || (vUpper.startsWith('AVOID') && !vUpper.startsWith('HOLD'))) {
     return { bg: 'rgba(239, 68, 68, 0.16)', border: 'rgba(239, 68, 68, 0.5)', text: '#f87171', badge: 'bg-rose-500/20 text-rose-300' };
   }
-  if (score >= 85) return { bg: 'rgba(16, 185, 129, 0.16)', border: 'rgba(16, 185, 129, 0.5)', text: '#34d399', badge: 'bg-emerald-500/20 text-emerald-300' };
-  if (score >= 70) return { bg: 'rgba(59, 130, 246, 0.16)', border: 'rgba(59, 130, 246, 0.5)', text: '#60a5fa', badge: 'bg-blue-500/20 text-blue-300' };
+  if (vUpper.includes('EXTREME VALUATION') || vUpper.includes('AVOID CHASING') || vUpper.startsWith('HOLD')) {
+    return { bg: 'rgba(234, 179, 8, 0.16)', border: 'rgba(234, 179, 8, 0.5)', text: '#facc15', badge: 'bg-amber-500/20 text-amber-300' };
+  }
+  if (score >= 82 || vUpper.includes('VERY STRONG') || vUpper.includes('HIGH-CONVICTION')) return { bg: 'rgba(16, 185, 129, 0.16)', border: 'rgba(16, 185, 129, 0.5)', text: '#34d399', badge: 'bg-emerald-500/20 text-emerald-300' };
+  if (score >= 70 || vUpper.includes('STRONG ENTRY') || vUpper.includes('COILED BASE')) return { bg: 'rgba(59, 130, 246, 0.16)', border: 'rgba(59, 130, 246, 0.5)', text: '#60a5fa', badge: 'bg-blue-500/20 text-blue-300' };
   if (score >= 58 || vUpper.includes('BUY') || vUpper.includes('ACCUMULATE')) return { bg: 'rgba(56, 189, 248, 0.16)', border: 'rgba(56, 189, 248, 0.5)', text: '#38bdf8', badge: 'bg-sky-500/20 text-sky-300' };
   if (score >= 45) return { bg: 'rgba(234, 179, 8, 0.16)', border: 'rgba(234, 179, 8, 0.5)', text: '#facc15', badge: 'bg-amber-500/20 text-amber-300' };
   if (score >= 32) return { bg: 'rgba(249, 115, 22, 0.16)', border: 'rgba(249, 115, 22, 0.5)', text: '#fb923c', badge: 'bg-orange-500/20 text-orange-300' };
@@ -61,6 +113,7 @@ export function SetupScoreCard({
   bearishFactors = [],
   warnings = [],
   confirmations = [],
+  quantMetrics,
 }: SetupScoreCardProps) {
   const theme = getVerdictColor(score, verdict);
   const confidenceLevel = confidence?.level || 'LOW';
@@ -80,9 +133,13 @@ export function SetupScoreCard({
             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${theme.badge}`}>
               {verdict?.toUpperCase().startsWith('NO TRADE')
                 ? '🛑 NO TRADE / CAPITAL PRESERVATION'
-                : (verdict?.toUpperCase().startsWith('REDUCE') || verdict?.toUpperCase().startsWith('AVOID') || verdict?.toUpperCase().startsWith('EXIT'))
+                : (verdict?.toUpperCase().startsWith('REDUCE') || verdict?.toUpperCase().startsWith('EXIT') || (verdict?.toUpperCase().startsWith('AVOID') && !verdict?.toUpperCase().startsWith('HOLD')))
                 ? '🛑 AVOID / DISTRIBUTION RISK'
-                : (score >= 58 || verdict?.toUpperCase().includes('BUY'))
+                : (verdict?.toUpperCase().includes('EXTREME VALUATION') || verdict?.toUpperCase().includes('AVOID CHASING'))
+                ? '🟡 VALUATION CAUTION (HOLD / DO NOT CHASE)'
+                : verdict?.toUpperCase().startsWith('HOLD')
+                ? '🟡 HOLD / WAIT FOR CONFIRMATION'
+                : (score >= 58 || verdict?.toUpperCase().includes('BUY') || verdict?.toUpperCase().includes('ACCUMULATE'))
                 ? '🟢 BULLISH SETUP'
                 : score <= 38
                 ? '🔴 BEARISH SETUP'
@@ -155,6 +212,93 @@ export function SetupScoreCard({
           </div>
         </div>
       </div>
+
+      {/* ── Institutional Quant & Edge Matrix ── */}
+      {quantMetrics && (
+        <div className="rounded-xl p-3 bg-slate-950/80 border border-blue-900/40 space-y-2.5 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className="flex items-center gap-1.5 text-blue-400">
+              <Award size={13} /> Institutional Quant & Market Theory Edge
+            </span>
+            {quantMetrics.minerviniTemplate && (
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                quantMetrics.minerviniTemplate.isStage2Uptrend
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-slate-800 text-slate-400'
+              }`}>
+                Minervini SEPA: {quantMetrics.minerviniTemplate.passedCount}/8 ({quantMetrics.minerviniTemplate.stageLabel})
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* Mathematical Expectancy (EV) */}
+            <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
+              <div className="text-[10.5px] text-slate-400">Math Expectancy (EV)</div>
+              <div className={`font-bold mt-0.5 ${
+                (quantMetrics.expectancy?.ev ?? 0) > 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}>
+                {(quantMetrics.expectancy?.ev ?? 0) > 0 ? '+' : ''}Rs. {quantMetrics.expectancy?.ev?.toLocaleString() ?? '—'}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5">
+                Profit Factor: {quantMetrics.expectancy?.profitFactor ?? '—'}x
+              </div>
+            </div>
+
+            {/* Break-Even Win Rate vs Analog Edge */}
+            <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
+              <div className="text-[10.5px] text-slate-400">Statistical Edge (Δ)</div>
+              {(() => {
+                const empiricalWin = quantMetrics.expectancy?.pWin ?? (score >= 55 ? 55 : 40);
+                const beWin = quantMetrics.expectancy?.breakEvenWinRate ?? 33;
+                const delta = +(empiricalWin - beWin).toFixed(1);
+                const hasPositiveEv = (quantMetrics.expectancy?.ev ?? 0) > 0;
+                const isPositive = delta > 0 && hasPositiveEv;
+
+                return (
+                  <>
+                    <div className={`font-bold mt-0.5 ${isPositive ? 'text-sky-400' : 'text-rose-400'}`}>
+                      {delta > 0 ? `+${delta}%` : `${delta}%`}
+                      {!isPositive && <span className="text-[9px] font-normal text-rose-400/80 ml-1">(No Edge)</span>}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      B/E: {beWin}% • Win: {empiricalWin}%
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Volume Dry-Up (VDU) / Pocket Pivot */}
+            <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
+              <div className="text-[10.5px] text-slate-400">Volume & Supply Flow</div>
+              <div className="font-bold text-amber-300 mt-0.5 truncate">
+                {quantMetrics.volumeDryUp?.isPocketPivot
+                  ? '🚀 Pocket Pivot'
+                  : (quantMetrics.volumeDryUp?.isDryUp ? `💎 VDU ${quantMetrics.volumeDryUp.vduRatio}x` : 'Orderly Volume')}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                {quantMetrics.volumeDryUp?.isDryUp ? 'Supply Exhausted' : 'Normal Participation'}
+              </div>
+            </div>
+
+            {/* Mansfield Relative Strength vs NEPSE */}
+            <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
+              <div className="text-[10.5px] text-slate-400">Mansfield RS vs NEPSE</div>
+              <div className={`font-bold mt-0.5 truncate ${
+                quantMetrics.mansfieldRS?.isOutperforming ? 'text-purple-300' : 'text-slate-400'
+              }`}>
+                {quantMetrics.mansfieldRS?.mrs != null
+                  ? `${quantMetrics.mansfieldRS.mrs > 0 ? '+' : ''}${quantMetrics.mansfieldRS.mrs}% MRS`
+                  : 'In-Line'}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                {quantMetrics.mansfieldRS?.isOutperforming ? 'Outperforming NEPSE' : 'Consolidating'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Compact Explanation & Warnings ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80 text-xs">

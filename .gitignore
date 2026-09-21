@@ -26,3 +26,4 @@ android/
 launch-claude-code.*
 proxy/data/sync_vaults/
 proxy/data/broker_vault/
+scratch/

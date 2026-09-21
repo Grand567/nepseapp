@@ -42,6 +42,8 @@ import {
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
+import { evaluateShortTermCriteria } from './ShortTermProfitPlan';
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 
 // Modular Sub-components
 import { StockCandlestickChart } from './charts/StockCandlestickChart';
@@ -213,6 +215,9 @@ export function EntryExitAnalyzer({
             candleList = cachedCandles;
           }
         }
+        if (candleList.length === 0 && stock?.candles && Array.isArray(stock.candles) && stock.candles.length > 0) {
+          candleList = stock.candles;
+        }
 
         if (!candleList || candleList.length === 0) {
           throw new Error(`No historical price data found for ${sym}. Please check network or try again.`);
@@ -351,6 +356,16 @@ export function EntryExitAnalyzer({
     [analyze, onSymbolChange]
   );
 
+  // Pre-screen top qualified candidates from the 350+ NEPSE universe for instant switching
+  const topQualifiedPicks = useMemo(() => {
+    const list = stocks && stocks.length > 0 ? stocks : (NEPSE_UNIVERSE || []);
+    const evaluated = list.slice(0, 150).map((s: any) => evaluateShortTermCriteria(s));
+    const passed = evaluated.filter((c: any) => c.passesAll);
+    const pool = passed.length > 0 ? passed : evaluated.filter((c: any) => c.passedCount >= 5);
+    pool.sort((a: any, b: any) => b.compositeRankScore - a.compositeRankScore);
+    return pool.slice(0, 4);
+  }, [stocks]);
+
   // 1. Mount effect: Run once on component mount
   useEffect(() => {
     if (initialMountDone.current) return;
@@ -361,15 +376,19 @@ export function EntryExitAnalyzer({
       (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') || '' : '')
     ).toUpperCase().trim();
 
-    if (!target && stocksRef.current && stocksRef.current.length > 0) {
-      target = stocksRef.current[0].symbol;
+    if (!target) {
+      if (topQualifiedPicks.length > 0) {
+        target = topQualifiedPicks[0].symbol;
+      } else if (stocksRef.current && stocksRef.current.length > 0) {
+        target = stocksRef.current[0].symbol;
+      }
     }
 
     if (target && target !== lastAnalyzedSymbolRef.current) {
       prevInitialSymbolRef.current = target;
       analyze(target);
     }
-  }, [analyze]);
+  }, [analyze, topQualifiedPicks]);
 
   // 2. Prop change effect: Only triggers if initialSymbol prop genuinely changed from external caller
   useEffect(() => {
@@ -490,6 +509,40 @@ export function EntryExitAnalyzer({
             {loading ? 'Analyzing…' : 'Analyze Setup'}
           </button>
         </div>
+
+        {/* Quick Selector: Top Verified Short-Term Setups */}
+        {topQualifiedPicks && topQualifiedPicks.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Sparkles size={12} color="#f59e0b" /> Best Short-Term Setups:
+            </span>
+            {topQualifiedPicks.map((p: any) => (
+              <button
+                key={p.symbol}
+                type="button"
+                onClick={() => handleStockChange(p.symbol)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  background: symbol === p.symbol ? '#2563eb' : 'rgba(255, 255, 255, 0.05)',
+                  color: symbol === p.symbol ? '#ffffff' : '#cbd5e1',
+                  border: symbol === p.symbol ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+              >
+                <span>{p.symbol}</span>
+                <span style={{ fontSize: 10, color: symbol === p.symbol ? '#bfdbfe' : '#34d399', fontWeight: 900 }}>
+                  {p.score}/100
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Active Stock Ticker Strip (if selected) */}
         {symbol && livePrice > 0 && (
@@ -640,6 +693,7 @@ export function EntryExitAnalyzer({
                 warnings={plan.warnings}
                 confirmations={plan.confirmations}
                 t2Risk={plan.t2Risk}
+                quantMetrics={plan.quantMetrics}
               />
 
               <FestivalSeasonalityCard
@@ -656,7 +710,11 @@ export function EntryExitAnalyzer({
                 loading={loading}
               />
 
-              <EntryRiskCard levels={plan.levels} currentPrice={livePrice} />
+              <EntryRiskCard
+                levels={plan.levels}
+                currentPrice={livePrice}
+                quantMetrics={plan.quantMetrics}
+              />
 
               <WhatNextPanel
                 confirmations={plan.confirmations}

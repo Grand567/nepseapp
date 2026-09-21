@@ -1134,6 +1134,108 @@ export default function Dashboard({
     return () => clearTimeout(timer);
   }, [activeBreakoutToast]);
 
+  // ── Upper Dashboard Scrolling News & Watchlist Breakout Items ──
+  const [dashboardNews, setDashboardNews] = useState([]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const loadNews = async () => {
+      try {
+        const newsItems = await servicesApi.fetchMarketNews();
+        if (!isCancelled && Array.isArray(newsItems) && newsItems.length > 0) {
+          setDashboardNews(newsItems.slice(0, 15));
+        }
+      } catch (_) {}
+    };
+    loadNews();
+    const timer = setInterval(loadNews, 180000);
+    return () => { isCancelled = true; clearInterval(timer); };
+  }, []);
+
+  const watchlistBreakoutItems = useMemo(() => {
+    if (!stocks || stocks.length === 0 || !watchedOrAlertSymbols || watchedOrAlertSymbols.length === 0) return [];
+    
+    const watchedSet = new Set(watchedOrAlertSymbols.map(s => String(s).toUpperCase().trim()));
+    const breakouts = [];
+    const seen = new Set();
+    
+    for (const stock of stocks) {
+      const sym = String(stock?.symbol || '').toUpperCase().trim();
+      if (!watchedSet.has(sym) || seen.has(sym)) continue;
+      
+      const cfg = alertConfigs[sym] || deriveDefaultBreakoutPlan(stock);
+      const ltp = Number(stock?.ltp || 0);
+      const pChange = Number(stock?.pChange || 0);
+      const rvol = calculateStockRvol(stock);
+      const targetPrice = Number(cfg?.breakoutPrice || (stock?.high20 > ltp ? stock.high20 : (ltp > 0 ? +(ltp * 1.025).toFixed(1) : 100)));
+      const targetRvol = Number(cfg?.rvolThreshold || 1.5);
+      
+      // Price condition: current price cleared target breakout price OR strong upward advance >= 2.0% reaching breakout pivot
+      const isPriceBreakout = (ltp >= targetPrice) || (pChange >= 2.0 && (Boolean(stock?.isBreakout) || (stock?.high20 && ltp >= stock.high20 * 0.99)));
+      
+      // Volume condition: RVOL >= target hurdle (default 1.5x), or volumeSurgeRatio >= 1.5, or volumeShocker
+      const isVolumeBreakout = (rvol >= targetRvol) || (rvol >= 1.5) || (Number(stock?.volumeSurgeRatio || 0) >= 1.5) || Boolean(stock?.isVolumeShocker);
+      
+      const isAlertActive = Boolean(cfg?.triggeredToday) || (activeBreakoutToast?.symbol === sym);
+      
+      if ((isPriceBreakout && isVolumeBreakout && pChange > 0) || isAlertActive) {
+        seen.add(sym);
+        breakouts.push({
+          stock,
+          symbol: sym,
+          name: stock?.name || stock?.companyName || sym,
+          ltp,
+          pChange,
+          rvol,
+          targetPrice,
+          targetRvol,
+          sector: stock?.sector || stock?.sectorName || 'NEPSE',
+          isNewlyTriggered: activeBreakoutToast?.symbol === sym
+        });
+      }
+    }
+
+    if (activeBreakoutToast?.symbol && !seen.has(activeBreakoutToast.symbol)) {
+      const st = stocks.find(s => s.symbol === activeBreakoutToast.symbol) || {
+        symbol: activeBreakoutToast.symbol,
+        ltp: activeBreakoutToast.ltp
+      };
+      breakouts.unshift({
+        stock: st,
+        symbol: activeBreakoutToast.symbol,
+        name: activeBreakoutToast.stockName || activeBreakoutToast.symbol,
+        ltp: Number(activeBreakoutToast.ltp || 0),
+        pChange: Number(st?.pChange || 0),
+        rvol: Number(activeBreakoutToast.rvol || 1.5),
+        targetPrice: Number(activeBreakoutToast.breakoutPrice || 0),
+        targetRvol: Number(activeBreakoutToast.rvolThreshold || 1.5),
+        sector: st?.sector || 'NEPSE',
+        isNewlyTriggered: true
+      });
+    }
+
+    return breakouts;
+  }, [stocks, watchedOrAlertSymbols, alertConfigs, activeBreakoutToast]);
+
+  const newsTickerItems = useMemo(() => {
+    if (dashboardNews && dashboardNews.length > 0) {
+      return dashboardNews.map((n, i) => ({
+        id: `news_${i}`,
+        type: 'news',
+        title: n.title,
+        source: n.source || 'NEPSE Media',
+        url: n.url || n.link || null
+      }));
+    }
+    return [
+      { id: 'def_1', type: 'market', title: 'NEPSE Real-Time Flow: 350+ Universe Scanned for Quantitative Volume Breakouts', source: 'NEPSE Live' },
+      { id: 'def_2', type: 'market', title: 'Risk Protocol: High RVOL (≥1.5x) dual-confirmation required to prevent festive bull traps', source: 'Risk Engine' },
+      { id: 'def_3', type: 'market', title: 'Corporate Disclosures: AGM declarations & right share book closures active', source: 'Announcements' },
+      { id: 'def_4', type: 'market', title: 'Trading Session: Sunday to Thursday 11:00 AM – 3:00 PM NPT (Pre-open 10:30 – 10:45 AM)', source: 'Exchange' }
+    ];
+  }, [dashboardNews]);
+
+
 
 
   // Hook back handlers for local modals
@@ -2282,6 +2384,239 @@ export default function Dashboard({
             )}
           </div>
         )}
+      </div>
+
+      {/* ── 2. UP DASHBOARD SCROLLING BANNER NEWS & WATCHLIST BREAKOUT TICKER ── */}
+      <div style={{
+        position: 'relative',
+        marginBottom: 10,
+        borderRadius: 12,
+        overflow: 'hidden',
+        background: watchlistBreakoutItems.length > 0 
+          ? 'linear-gradient(90deg, rgba(24, 18, 12, 0.95), rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.95))'
+          : 'linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(21, 25, 34, 0.95))',
+        border: watchlistBreakoutItems.length > 0
+          ? '1.5px solid rgba(245, 158, 11, 0.5)'
+          : '1px solid var(--border)',
+        boxShadow: watchlistBreakoutItems.length > 0
+          ? '0 4px 20px rgba(245, 158, 11, 0.18), 0 2px 6px rgba(0,0,0,0.4)'
+          : '0 4px 14px rgba(0,0,0,0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        height: 40,
+        zIndex: 5
+      }}>
+        {/* Fixed Left Header Badge - Compact, sleek & minimal */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '0 8px',
+          height: '100%',
+          flexShrink: 0,
+          background: watchlistBreakoutItems.length > 0
+            ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(239, 68, 68, 0.18))'
+            : 'rgba(56, 189, 248, 0.08)',
+          borderRight: watchlistBreakoutItems.length > 0
+            ? '1px solid rgba(245, 158, 11, 0.35)'
+            : '1px solid rgba(56, 189, 248, 0.2)',
+          zIndex: 2
+        }}>
+          {watchlistBreakoutItems.length > 0 ? (
+            <>
+              <span style={{
+                display: 'inline-block',
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                boxShadow: '0 0 6px #f59e0b',
+                animation: 'pulse-dot-anim 1.2s infinite'
+              }} />
+              <Zap size={11} color="#f59e0b" />
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: '#fbbf24',
+                letterSpacing: '0.02em',
+                whiteSpace: 'nowrap'
+              }}>
+                Breakout ({watchlistBreakoutItems.length})
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={{
+                display: 'inline-block',
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: '#38bdf8',
+                boxShadow: '0 0 5px #38bdf8'
+              }} />
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: '#38bdf8',
+                letterSpacing: '0.02em',
+                whiteSpace: 'nowrap'
+              }}>
+                News
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Scrolling Marquee Track - Slow, Calm & Readable */}
+        <div
+          style={{
+            flex: 1,
+            overflow: 'hidden',
+            position: 'relative',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+        >
+          <div
+            className="ticker-scroll"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              whiteSpace: 'nowrap',
+              animation: `ticker-move ${watchlistBreakoutItems.length > 0 ? '110s' : '90s'} linear infinite`,
+              gap: 0,
+              paddingLeft: 12
+            }}
+          >
+            {[0, 1].map((copyIndex) => (
+              <React.Fragment key={copyIndex}>
+                {/* 1. Watchlist Breakout Items - Spacious, High-Legibility Cards */}
+                {watchlistBreakoutItems.map((bo) => (
+                  <div
+                    key={`bo_${copyIndex}_${bo.symbol}`}
+                    onClick={() => handleStockClick(bo.stock)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '3px 12px',
+                      marginRight: 28,
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      borderRadius: 16,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)'}
+                    title={`Click to view ${bo.symbol} Breakout Setup Plan`}
+                  >
+                    <span style={{
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      color: '#ffffff',
+                      fontSize: 9,
+                      fontWeight: 900,
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      textTransform: 'uppercase'
+                    }}>
+                      <Zap size={9} /> BREAKOUT
+                    </span>
+                    <strong style={{ color: '#ffffff', fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 900 }}>
+                      {bo.symbol}
+                    </strong>
+                    <span style={{ color: '#34d399', fontSize: 12, fontWeight: 800 }}>
+                      Rs. {fmt(bo.ltp)} (+{bo.pChange.toFixed(2)}%)
+                    </span>
+                    <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                      • Crossed Rs. {fmt(bo.targetPrice)}
+                    </span>
+                    <span style={{
+                      color: '#fbbf24',
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      padding: '1px 6px',
+                      borderRadius: 4
+                    }}>
+                      🔥 {bo.rvol.toFixed(2)}x Vol Surge
+                    </span>
+                    <span style={{ color: '#64748b', fontSize: 10.5, textTransform: 'uppercase' }}>
+                      ({bo.sector})
+                    </span>
+                  </div>
+                ))}
+
+                {/* 2. NEPSE Market News Headlines */}
+                {newsTickerItems.map((newsItem, nIdx) => (
+                  <div
+                    key={`news_${copyIndex}_${newsItem.id || nIdx}`}
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('open_service_id', 'news');
+                        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news' } }));
+                      } catch (_) {}
+                      if (setActiveTab) setActiveTab('services');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginRight: 28,
+                      cursor: 'pointer',
+                      fontSize: 11.5,
+                      color: '#cbd5e1'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#38bdf8'}
+                    onMouseLeave={e => e.currentTarget.style.color = '#cbd5e1'}
+                  >
+                    <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: 10.5 }}>📰 {newsItem.source}:</span>
+                    <span style={{ color: '#f8fafc', fontWeight: 500 }}>{newsItem.title}</span>
+                    <span style={{ color: '#64748b', fontSize: 11 }}>•</span>
+                  </div>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick News Portal Button */}
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              localStorage.setItem('open_service_id', 'news');
+              window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'news' } }));
+            } catch (_) {}
+            if (setActiveTab) setActiveTab('services');
+          }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+            color: '#94a3b8',
+            padding: '0 10px',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'color 0.15s'
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = '#38bdf8'}
+          onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
+          title="Open Full News Feed"
+        >
+          <span>Feed</span>
+          <ArrowRight size={12} />
+        </button>
       </div>
 
       {/* ── 3. HERO INDEX CARD ── */}

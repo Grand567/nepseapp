@@ -22,7 +22,8 @@ import {
   Activity,
   BarChart3,
   Calendar,
-  ShieldAlert
+  ShieldAlert,
+  Zap
 } from 'lucide-react';
 
 export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab = 'index' }) {
@@ -558,8 +559,33 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   💡 एपमा कहाँ हेर्ने?
                 </div>
                 <div style={{ fontSize: 12, color: '#cbd5e1' }}>
-                  कुनै पनि सेयर खोल्दा तल <strong>Instant Buy/Sell Calculator</strong> मा <em>Risk-to-Reward Ratio</em> हेर्नुहोस्। यदि <strong>RRR ≥ 1.5 वा 2.0</strong> हरियो बत्ती छ भने मात्र किन्नुहोस्!
+                  कुनै पनि सेयर खोल्दा तल <strong>Instant Buy/Sell Calculator</strong> वा <strong>⚡ 1–2W Profit Plan</strong> मा <em>Risk-to-Reward Ratio</em> हेर्नुहोस्। यदि <strong>RRR ≥ 2.0</strong> हरियो बत्ती छ भने मात्र किन्नुहोस्!
                 </div>
+                <button
+                  onClick={() => {
+                    onClose();
+                    window.dispatchEvent(new CustomEvent('switch_predictor_tab', { detail: { tab: 'short_term_plan' } }));
+                  }}
+                  style={{
+                    marginTop: 10,
+                    width: '100%',
+                    padding: '9px 14px',
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                    color: '#000',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Zap size={14} />
+                  <span>⚡ १–२ हप्ताको नाफा योजना खोल्नुहोस् (Open 1–2W Profit Planner) →</span>
+                </button>
               </div>
             </>
           )}

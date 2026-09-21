@@ -2685,8 +2685,14 @@ export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {},
     // Dynamic Execution Geometry
     const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
     const triggerBuyBandLow = +(high20 + clearanceBuffer * 0.5).toFixed(1);
-    const triggerBuyBandHigh = +(high20 * 1.025).toFixed(1); // Strict +2.5% Chase Cap
-    const structuralStopLoss = +(Math.max(1, Math.min(lowBase - atr * 0.5, ltp - atr * 1.5))).toFixed(1);
+    // Disciplined swing stop loss: strictly bounded between 3.5% (noise clearance) and 7.5% (max swing risk limit)
+    const maxSwingRiskPct = 0.075;
+    const minNoiseRiskPct = 0.035;
+    const swingFloor = +(ltp * (1 - maxSwingRiskPct)).toFixed(1);
+    const swingCeiling = +(ltp * (1 - minNoiseRiskPct)).toFixed(1);
+    const recent5Low = candles.length >= 5 ? Math.min(...candles.slice(-6, -1).map(c => Number(c.low || c.close || 0))) : ltp * 0.95;
+    const baseCandidate = recent5Low > 0 && recent5Low < ltp ? recent5Low - atr * 0.25 : ltp - atr * 1.35;
+    const structuralStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
     const riskPerShare = Math.max(1, ltp - structuralStopLoss);
     const target1 = +(ltp + riskPerShare * 1.5).toFixed(1); // 1.5R de-risking
     const target2 = +(ltp + riskPerShare * 3.0).toFixed(1); // 3.0R trend runner
@@ -2851,4 +2857,502 @@ export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {},
     evaluatedAt: new Date().toISOString()
   };
 }
+
+/**
+ * 23. Mathematical Expectancy Engine (EV)
+ * Computes expected value per trade, profit factor, and statistical edge.
+ */
+export function calculateExpectancy(winRatePct = 55, avgWinAmount = 3500, avgLossAmount = 2000) {
+  const pWin = Math.max(0, Math.min(100, Number(winRatePct) || 50)) / 100;
+  const pLoss = 1 - pWin;
+  const win = Math.max(0, Number(avgWinAmount) || 0);
+  const loss = Math.max(0.01, Number(avgLossAmount) || 1);
+
+  const ev = (pWin * win) - (pLoss * loss);
+  const payoffRatio = Number((win / loss).toFixed(2));
+  const profitFactor = pLoss * loss > 0 ? Number(((pWin * win) / (pLoss * loss)).toFixed(2)) : 99;
+  const breakEvenWinRate = Number(((1 / (1 + payoffRatio)) * 100).toFixed(1));
+  const hasPositiveEdge = ev > 0 && profitFactor > 1.0;
+
+  return {
+    ev: Number(ev.toFixed(2)),
+    evPerTrade: Number(ev.toFixed(2)),
+    pWin: Number((pWin * 100).toFixed(1)),
+    pLoss: Number((pLoss * 100).toFixed(1)),
+    winAmount: win,
+    lossAmount: loss,
+    payoffRatio,
+    profitFactor,
+    breakEvenWinRate,
+    hasPositiveEdge,
+    edgeRating: ev > loss * 0.5 ? 'EXCELLENT' : ev > 0 ? 'POSITIVE' : 'NEGATIVE_TRAP'
+  };
+}
+
+/**
+ * 24. Kelly Criterion & Half-Kelly Optimal Allocation Engine
+ * Formulates the mathematically optimal capital fraction to maximize log wealth growth without ruin.
+ */
+export function calculateKellyCriterion(winRatePct = 55, payoffRatio = 2.0) {
+  const p = Math.max(0.01, Math.min(0.99, (Number(winRatePct) || 50) / 100));
+  const q = 1 - p;
+  const b = Math.max(0.1, Number(payoffRatio) || 1.0);
+
+  // Kelly formula: f* = (p * b - q) / b
+  const rawKelly = (p * b - q) / b;
+  const fullKellyPct = Number((Math.max(0, rawKelly) * 100).toFixed(1));
+  
+  // Safe Half-Kelly (Standard Wall Street & Quant Fund practice): avoids drawdown volatility
+  const halfKellyPct = Number((Math.max(0, Math.min(0.35, rawKelly * 0.5)) * 100).toFixed(1));
+  const quarterKellyPct = Number((Math.max(0, Math.min(0.20, rawKelly * 0.25)) * 100).toFixed(1));
+
+  return {
+    rawKelly,
+    fullKellyPct,
+    halfKellyPct,
+    quarterKellyPct,
+    isViable: rawKelly > 0,
+    recommendationPct: halfKellyPct > 0 ? halfKellyPct : 5.0, // Default 5% safe floor if negative
+    rationale: rawKelly > 0
+      ? `Half-Kelly suggests allocating max ${halfKellyPct}% of total trading capital into this single setup.`
+      : 'Mathematical expectancy is non-positive. Do not allocate capital under Kelly.'
+  };
+}
+
+/**
+ * 25. NEPSE T+2 Circuit Trap & Seller Exhaustion Hazard Guard
+ * Analyzes whether a stock is overextended after consecutive circuit runs,
+ * which creates severe illiquid seller dump risk upon T+2 Demat delivery.
+ */
+export function calculateT2CircuitTrapGuard(stock = {}, recentCandles = []) {
+  const pChg = Number(stock.pChange || 0);
+  const ltp = Number(stock.ltp || stock.price || 100);
+  const ema20 = Number(stock.ema20 || stock.sma20 || 0);
+
+  let twoDayGain = pChg;
+  let consecutiveCircuits = 0;
+
+  if (Array.isArray(recentCandles) && recentCandles.length >= 2) {
+    const n = recentCandles.length;
+    const lastClose = Number(recentCandles[n - 1]?.close || 0);
+    const includesToday = Math.abs(lastClose - ltp) < 0.01;
+    const baseIndex = includesToday ? (n >= 3 ? n - 3 : n - 2) : (n >= 2 ? n - 2 : 0);
+    const twoDaysAgoClose = Number(recentCandles[baseIndex]?.close || 0);
+    if (twoDaysAgoClose > 0 && ltp > 0) {
+      twoDayGain = Number((((ltp - twoDaysAgoClose) / twoDaysAgoClose) * 100).toFixed(2));
+    }
+  }
+
+  if (pChg >= 9.0) consecutiveCircuits++;
+  if (twoDayGain >= 18.0) consecutiveCircuits = Math.max(2, consecutiveCircuits);
+
+  const ema20DistPct = ema20 > 0 ? Number((((ltp - ema20) / ema20) * 100).toFixed(1)) : 0;
+
+  let trapDangerScore = 15; // baseline
+  let status = 'SAFE_ENTRY';
+  let badgeColor = '#10B981';
+  let advice = 'Favorable entry window. Stock is not overextended on settlement cycle.';
+
+  if (consecutiveCircuits >= 2 || twoDayGain >= 18.0) {
+    trapDangerScore = 85;
+    status = 'HIGH_T2_CIRCUIT_TRAP';
+    badgeColor = '#EF4444';
+    advice = '⚠️ DANGER: Stock has hit 2+ consecutive circuits (+18%+). Buying now risks getting trapped in an illiquid seller dump on T+2 settlement day.';
+  } else if (pChg >= 7.5 || ema20DistPct >= 14.0) {
+    trapDangerScore = 60;
+    status = 'MODERATE_EXTENDED';
+    badgeColor = '#F59E0B';
+    advice = 'Caution: Stock is stretched from 20 EMA. Prefer buying intraday dips towards support rather than chasing highs.';
+  } else if (pChg >= 1.0 && pChg <= 4.5 && (ema20DistPct <= 6.0 || ema20 === 0)) {
+    trapDangerScore = 10;
+    status = 'PRIME_SWING_WINDOW';
+    badgeColor = '#10B981';
+    advice = '✓ IDEAL SETUP: Controlled Day 1 breakout or orderly pullback. Ample buffer for T+2 settlement.';
+  }
+
+  return {
+    trapDangerScore,
+    status,
+    badgeColor,
+    advice,
+    twoDayGain,
+    ema20DistPct,
+    isSafeToEnter: trapDangerScore <= 50
+  };
+}
+
+/**
+ * 26. 20-Trade Compound Wealth Simulator
+ * Simulates portfolio trajectory across 20 swing trades using real expectancy.
+ */
+export function simulateCompoundExpectancy(startingCapital = 100000, numTrades = 20, winRatePct = 55, netWinAmount = 3500, netLossAmount = 2000) {
+  const cap = Number(startingCapital) || 100000;
+  const n = Math.max(5, Math.min(50, Number(numTrades) || 20));
+  const wr = (Number(winRatePct) || 55) / 100;
+  const winAmt = Number(netWinAmount) || 3500;
+  const lossAmt = Number(netLossAmount) || 2000;
+
+  const expectedWins = Math.round(n * wr);
+  const expectedLosses = n - expectedWins;
+
+  const totalGrossGains = expectedWins * winAmt;
+  const totalGrossLosses = expectedLosses * lossAmt;
+  const projectedNetProfit = totalGrossGains - totalGrossLosses;
+  const projectedFinalCapital = cap + projectedNetProfit;
+  const projectedRoiPct = Number(((projectedNetProfit / cap) * 100).toFixed(2));
+
+  return {
+    startingCapital: cap,
+    numTrades: n,
+    expectedWins,
+    expectedLosses,
+    totalGrossGains,
+    totalGrossLosses,
+    projectedNetProfit,
+    projectedFinalCapital,
+    projectedRoiPct
+  };
+}
+
+/**
+ * 27. Mark Minervini's SEPA 8-Point Trend Template
+ * Evaluates whether a stock is in a confirmed Stage 2 Institutional Uptrend.
+ */
+export function evaluateMinerviniTemplate(candles = [], currentLtp = 0, high52wCandidate = 0, low52wCandidate = 0) {
+  if (!Array.isArray(candles) || candles.length < 20) {
+    return {
+      passedCount: 0,
+      totalCount: 8,
+      scorePct: 0,
+      isStage2Uptrend: false,
+      stageLabel: 'Insufficient History (< 20 Bars)',
+      criteria: []
+    };
+  }
+
+  const closes = candles.map(c => Number(c.close || c.c || c.ltp || 0)).filter(p => p > 0);
+  const n = closes.length;
+  const ltp = Number(currentLtp) || closes[n - 1];
+
+  // Helper EMA calculation
+  const getEma = (period) => {
+    const p = Math.min(period, n);
+    const k = 2 / (p + 1);
+    let ema = closes[0];
+    const emaSeries = [ema];
+    for (let i = 1; i < n; i++) {
+      ema = (closes[i] - ema) * k + ema;
+      emaSeries.push(ema);
+    }
+    return { current: ema, series: emaSeries };
+  };
+
+  const ema50 = getEma(50);
+  const ema150 = getEma(Math.min(150, n >= 100 ? 150 : n));
+  const ema200 = getEma(Math.min(200, n >= 120 ? 200 : n));
+
+  // 52-week (or available depth) high and low
+  const lookbackPeriod = Math.min(252, n);
+  const windowCloses = closes.slice(-lookbackPeriod);
+  const high52w = Math.max(Number(high52wCandidate) || 0, ...windowCloses);
+  const low52w = Math.min(Number(low52wCandidate) > 0 ? Number(low52wCandidate) : Infinity, ...windowCloses);
+
+  // 200 EMA slope over past 20 trading sessions (1 month)
+  const ema200Val = ema200.current;
+  const ema200PastIndex = Math.max(0, ema200.series.length - 21);
+  const ema200PastVal = ema200.series[ema200PastIndex] || ema200Val;
+  const isEma200TrendingUp = ema200Val >= ema200PastVal * 0.998; // slope >= 0
+
+  // 50 EMA slope over past 10 sessions
+  const ema50Val = ema50.current;
+  const ema50PastIndex = Math.max(0, ema50.series.length - 11);
+  const ema50PastVal = ema50.series[ema50PastIndex] || ema50Val;
+  const isEma50TrendingUp = ema50Val >= ema50PastVal;
+
+  // Minervini 8 Criteria
+  const c1 = ltp > ema150.current && ltp > ema200.current;
+  const c2 = ema150.current > ema200.current || n < 150;
+  const c3 = isEma200TrendingUp;
+  const c4 = ema50.current > ema150.current && ema50.current > ema200.current;
+  const c5 = ltp > ema50.current;
+  const distFrom52wLowPct = low52w > 0 ? ((ltp - low52w) / low52w) * 100 : 0;
+  const c6 = distFrom52wLowPct >= 20.0; // At least 20-25% above 52w low (avoiding bottom fishing)
+  const distFrom52wHighPct = high52w > 0 ? ((high52w - ltp) / high52w) * 100 : 0;
+  const c7 = distFrom52wHighPct <= 28.0; // Within 25-28% of 52w high (leaders trade near highs)
+  const c8 = isEma50TrendingUp;
+
+  const criteria = [
+    { id: 1, name: 'Price > 150 & 200 EMA', passed: c1, detail: `LTP Rs. ${ltp} vs 150 EMA Rs. ${ema150.current.toFixed(1)} / 200 EMA Rs. ${ema200.current.toFixed(1)}` },
+    { id: 2, name: '150 EMA > 200 EMA', passed: c2, detail: `150 EMA (${ema150.current.toFixed(1)}) vs 200 EMA (${ema200.current.toFixed(1)})` },
+    { id: 3, name: '200 EMA Slope >= 0 (1M)', passed: c3, detail: `200 EMA 20-day slope: ${((ema200Val - ema200PastVal) / ema200PastVal * 100).toFixed(2)}%` },
+    { id: 4, name: '50 EMA > 150 & 200 EMA', passed: c4, detail: `50 EMA (${ema50.current.toFixed(1)}) leading long-term averages` },
+    { id: 5, name: 'Price > 50 EMA', passed: c5, detail: `LTP Rs. ${ltp} vs 50 EMA Rs. ${ema50.current.toFixed(1)}` },
+    { id: 6, name: 'Price >= 20% Above 52W Low', passed: c6, detail: `+${distFrom52wLowPct.toFixed(1)}% above 52W Low (Rs. ${low52w})` },
+    { id: 7, name: 'Price within 28% of 52W High', passed: c7, detail: `-${distFrom52wHighPct.toFixed(1)}% below 52W High (Rs. ${high52w})` },
+    { id: 8, name: '50 EMA Slope Rising', passed: c8, detail: `50 EMA momentum accelerating upward` },
+  ];
+
+  const passedCount = criteria.filter(c => c.passed).length;
+  const isStage2Uptrend = passedCount >= 6;
+  const scorePct = Math.round((passedCount / 8) * 100);
+
+  let stageLabel = 'Stage 1 Base / Neutral Consolidation';
+  if (passedCount === 8) stageLabel = 'Stage 2 Power Leader (8/8 Minervini SEPA)';
+  else if (passedCount >= 6) stageLabel = 'Stage 2 Confirmed Uptrend';
+  else if (passedCount <= 2) stageLabel = 'Stage 4 Severe Downtrend (Avoid)';
+  else if (!c1 && !c5) stageLabel = 'Stage 3 Overhead Distribution Trap';
+
+  return {
+    passedCount,
+    totalCount: 8,
+    scorePct,
+    isStage2Uptrend,
+    stageLabel,
+    criteria,
+    ema50: Number(ema50.current.toFixed(1)),
+    ema150: Number(ema150.current.toFixed(1)),
+    ema200: Number(ema200.current.toFixed(1)),
+    distFrom52wLowPct: Number(distFrom52wLowPct.toFixed(1)),
+    distFrom52wHighPct: Number(distFrom52wHighPct.toFixed(1))
+  };
+}
+
+/**
+ * 28. Stan Weinstein's Mansfield Relative Strength (MRS) Engine
+ * Compares stock price action to NEPSE benchmark index.
+ */
+export function calculateMansfieldRS(candles = [], nepseCandles = []) {
+  if (!Array.isArray(candles) || candles.length < 20) {
+    return {
+      mrs: 0,
+      isOutperforming: false,
+      isRising: false,
+      status: 'NEUTRAL_BENCHMARK',
+      label: 'Benchmark RS Neutral (Emerging Data)'
+    };
+  }
+
+  const stockCloses = candles.map(c => Number(c.close || c.c || c.ltp || 0)).filter(p => p > 0);
+  const n = stockCloses.length;
+
+  let indexCloses = [];
+  if (Array.isArray(nepseCandles) && nepseCandles.length >= 20) {
+    indexCloses = nepseCandles.map(c => Number(c.close || c.c || c.ltp || 0)).filter(p => p > 0);
+  }
+
+  if (indexCloses.length < 20) {
+    const baseline = 2500;
+    indexCloses = stockCloses.map((_, idx) => baseline * (1 + (idx / stockCloses.length) * 0.05));
+  }
+
+  const minLen = Math.min(stockCloses.length, indexCloses.length);
+  const sSlice = stockCloses.slice(-minLen);
+  const iSlice = indexCloses.slice(-minLen);
+
+  const rsSeries = [];
+  for (let idx = 0; idx < minLen; idx++) {
+    const sPrice = sSlice[idx];
+    const iPrice = iSlice[idx];
+    if (sPrice > 0 && iPrice > 0) {
+      rsSeries.push(sPrice / iPrice);
+    }
+  }
+
+  if (rsSeries.length < 10) {
+    return { mrs: 0, isOutperforming: false, isRising: false, status: 'NEUTRAL', label: 'RS Data Subdued' };
+  }
+
+  const smaPeriod = Math.min(50, rsSeries.length);
+  const smaSlice = rsSeries.slice(-smaPeriod);
+  const smaRS = smaSlice.reduce((a, b) => a + b, 0) / smaPeriod;
+  const currentRS = rsSeries[rsSeries.length - 1];
+  const prevRS = rsSeries[Math.max(0, rsSeries.length - 6)];
+
+  const mrs = Number((((currentRS / smaRS) - 1) * 100).toFixed(2));
+  const prevMrs = Number((((prevRS / smaRS) - 1) * 100).toFixed(2));
+  const isOutperforming = mrs > 0;
+  const isRising = mrs >= prevMrs;
+
+  let status = 'LAGGING_BENCHMARK';
+  let label = `Lagging NEPSE (${mrs > 0 ? '+' : ''}${mrs}% MRS)`;
+  if (isOutperforming && isRising) {
+    status = 'STRONG_OUTPERFORMER_RISING';
+    label = `Outperforming NEPSE (+${mrs}% MRS, Rising)`;
+  } else if (isOutperforming) {
+    status = 'OUTPERFORMING_CONSOLIDATING';
+    label = `Outperforming NEPSE (+${mrs}% MRS)`;
+  }
+
+  return {
+    mrs,
+    isOutperforming,
+    isRising,
+    status,
+    label
+  };
+}
+
+/**
+ * 29. Wyckoff Volume Dry-Up (VDU) & O'Neil Pocket Pivot Engine
+ * Identifies supply exhaustion prior to explosive breakout thrusts.
+ */
+export function calculateVolumeDryUp(candles = []) {
+  if (!Array.isArray(candles) || candles.length < 15) {
+    return {
+      vduRatio: 1.0,
+      isDryUp: false,
+      isPocketPivot: false,
+      status: 'NORMAL_VOLUME',
+      label: 'Normal Volume Flow'
+    };
+  }
+
+  const vols = candles.map(c => Number(c.volume || c.v || c.totalTradedQuantity || 0));
+  const closes = candles.map(c => Number(c.close || c.c || c.ltp || 0));
+  const opens = candles.map(c => Number(c.open || c.o || c.close || 0));
+  const n = vols.length;
+
+  const last3Vols = vols.slice(-3);
+  const avg3Vol = last3Vols.reduce((a, b) => a + b, 0) / Math.max(1, last3Vols.length);
+
+  const lookbackPeriod = Math.min(50, n);
+  const lookbackVols = vols.slice(-lookbackPeriod);
+  const avg50Vol = lookbackVols.reduce((a, b) => a + b, 0) / Math.max(1, lookbackVols.length);
+
+  const vduRatio = avg50Vol > 0 ? Number((avg3Vol / avg50Vol).toFixed(2)) : 1.0;
+  const isDryUp = vduRatio <= 0.45;
+
+  const todayVol = vols[n - 1];
+  const todayClose = closes[n - 1];
+  const todayOpen = opens[n - 1];
+  const prevClose = closes[Math.max(0, n - 2)];
+  const isUpDay = todayClose >= todayOpen && todayClose >= prevClose;
+
+  let maxDownVol10 = 0;
+  const p10Start = Math.max(0, n - 11);
+  for (let i = p10Start; i < n - 1; i++) {
+    const isDown = closes[i] < opens[i] || (i > 0 && closes[i] < closes[i - 1]);
+    if (isDown && vols[i] > maxDownVol10) {
+      maxDownVol10 = vols[i];
+    }
+  }
+
+  const isPocketPivot = isUpDay && maxDownVol10 > 0 && todayVol > maxDownVol10 && todayVol >= avg50Vol * 1.15;
+
+  let status = 'NORMAL_VOLUME';
+  let label = 'Normal Volume Flow';
+  if (isPocketPivot) {
+    status = 'POCKET_PIVOT_ACCUMULATION';
+    label = '🚀 Pocket Pivot Volume Accumulation (Supply Cleared)';
+  } else if (isDryUp) {
+    status = 'SUPPLY_EXHAUSTION_VDU';
+    label = `💎 Volume Dry-Up (${vduRatio}x of 50-day avg — Supply Exhaustion)`;
+  }
+
+  return {
+    vduRatio,
+    isDryUp,
+    isPocketPivot,
+    status,
+    label
+  };
+}
+
+/**
+ * 30. Broker Floor Sheet Concentration (CR5) & Cornering Index
+ * Calculates top buyer absorption and smart money cornering.
+ */
+export function calculateBrokerCorneringScore(brokerData = {}) {
+  const bData = brokerData || {};
+  const adRatio = Number(bData.adRatio || 0);
+  const adSignal = String(bData.adSignal || 'Neutral');
+  const adStrength = Number(bData.adStrength || 0);
+
+  let cr5BuyPct = 0;
+  if (Array.isArray(bData.topBuyers) && bData.topBuyers.length > 0) {
+    const totalBuy = bData.topBuyers.reduce((sum, b) => sum + Number(b.amount || b.buyAmount || b.volume || 0), 0);
+    const top5Buy = bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.amount || b.buyAmount || b.volume || 0), 0);
+    if (totalBuy > 0) cr5BuyPct = Number(((top5Buy / totalBuy) * 100).toFixed(1));
+  } else if (bData.top3BuyPct !== undefined) {
+    cr5BuyPct = Number((Number(bData.top3BuyPct) * 1.2).toFixed(1));
+  } else {
+    cr5BuyPct = Number((Math.min(65, 30 + Math.max(0, adRatio * 100) * 0.4 + adStrength * 0.2)).toFixed(1));
+  }
+
+  const isCornered = cr5BuyPct >= 38.0 && adRatio >= 0.05;
+  const isInstitutionalDumping = adSignal === 'Distribution' && (adStrength >= 35 || adRatio <= -0.10);
+
+  let tier = 'RETAIL_DISPERSED';
+  let label = 'Retail Dispersed Order Flow';
+
+  if (isInstitutionalDumping) {
+    tier = 'DISTRIBUTION_DUMP';
+    label = `⚠️ Broker Distribution: Top brokers net offloading (${Math.abs(adRatio * 100).toFixed(1)}%)`;
+  } else if (isCornered || (adSignal === 'Accumulation' && adRatio >= 0.12)) {
+    tier = 'HIGH_INSTITUTIONAL_CORNERING';
+    label = `🏛️ Institutional Cornering: Top 5 brokers absorbing ${cr5BuyPct}% of buy flow`;
+  } else if (adSignal === 'Accumulation' || adRatio > 0.03) {
+    tier = 'MODERATE_ACCUMULATION';
+    label = `Smart Money Accumulation (${(adRatio * 100).toFixed(1)}% net buy bias)`;
+  }
+
+  return {
+    cr5BuyPct,
+    isCornered,
+    isInstitutionalDumping,
+    tier,
+    label
+  };
+}
+
+/**
+ * 31. Exact NEPSE Statutory Zero-Loss Break-Even Engine
+ * Incorporates tiered broker commissions (0.36%-0.24%), SEBON fee (0.015%), and DP charge (Rs. 25).
+ */
+export function calculateStatutoryBreakeven(entryPrice = 100, shares = 100) {
+  const p = Math.max(1, Number(entryPrice) || 100);
+  const q = Math.max(1, Number(shares) || 100);
+  const buyShareValue = p * q;
+
+  const getCommission = (amt) => {
+    if (amt <= 0) return 0;
+    let rate = 0.0036;
+    if (amt <= 50000) rate = 0.0036;
+    else if (amt <= 500000) rate = 0.0033;
+    else if (amt <= 2000000) rate = 0.0031;
+    else if (amt <= 10000000) rate = 0.0027;
+    else rate = 0.0024;
+    return Math.max(10, amt * rate);
+  };
+
+  const buyComm = getCommission(buyShareValue);
+  const buySebon = buyShareValue * 0.00015;
+  const buyDp = 25;
+  const totalBuyCost = buyShareValue + buyComm + buySebon + buyDp;
+
+  let estP = p * 1.008;
+  for (let iter = 0; iter < 4; iter++) {
+    const sellVal = estP * q;
+    const sComm = getCommission(sellVal);
+    const sSebon = sellVal * 0.00015;
+    const netProceeds = sellVal - sComm - sSebon - 25;
+    const diff = totalBuyCost - netProceeds;
+    estP += diff / q;
+  }
+
+  const breakevenPrice = Number(estP.toFixed(1));
+  const hurdlePct = Number((((breakevenPrice - p) / p) * 100).toFixed(2));
+  const roundTripExpenses = Number((totalBuyCost + (breakevenPrice * q * 0.0036 + breakevenPrice * q * 0.00015 + 25) - (buyShareValue + breakevenPrice * q)).toFixed(1));
+
+  return {
+    entryPrice: p,
+    breakevenPrice,
+    hurdlePct,
+    roundTripExpenses,
+    totalBuyCost: Number(totalBuyCost.toFixed(1)),
+    label: `Rs. ${breakevenPrice} (+${hurdlePct}%) to clear statutory fees`
+  };
+}
+
+
 

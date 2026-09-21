@@ -1219,12 +1219,12 @@ function AppInner() {
                 onSelectStock={openStockDetail}
               />
             )}
-            {(activeTab === 'predictor' || activeTab === 'entry_exit') && (
+            {(activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan') && (
               <PredictorHub
                 stocks={stocks}
                 indices={indices}
                 onSelectStock={openStockDetail}
-                initialSubTab={activeTab === 'entry_exit' ? 'entry_exit' : undefined}
+                initialSubTab={activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
               />
             )}
 
@@ -1277,7 +1277,7 @@ function AppInner() {
           { id: 'services',   icon: LayoutGrid,      label: 'Services' },
           { id: 'ai',         icon: BrainCircuit,    label: 'Guru AI' },
         ].map(({ id, icon: Icon, label }) => {
-          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && activeTab === 'entry_exit');
+          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && (activeTab === 'entry_exit' || activeTab === 'short_term_plan'));
           return (
             <button
               key={id}

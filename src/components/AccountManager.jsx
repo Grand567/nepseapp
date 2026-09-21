@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 import { MEROSHARE_DP_LIST, pullMeroShareLivePortfolio } from '../services/meroShareService';
-import { sanitizeMeroShareHoldings } from '../utils/calculations';
+import { sanitizeMeroShareHoldings, stripHoldingForStorage } from '../utils/calculations';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
@@ -201,12 +201,43 @@ export default function AccountManager({ userId = 'guest_local' }) {
     try {
       const result = await pullMeroShareLivePortfolio(acc);
       if (result.success) {
-        const parsedHoldings = sanitizeMeroShareHoldings(result.holdings || []);
+        // Merge existing holdings so custom WACCs are preserved
+        const existingHoldings = acc.holdings || [];
+        const existingWaccMap = {};
+        existingHoldings.forEach(h => {
+          const sym = (h.script || h.scrip || h.symbol || '').toUpperCase().trim();
+          if (sym) {
+            const rate = Number(h.userWacc || h.wacc || h.purchasePrice || h.effectiveRate || 0);
+            if (rate > 0 && (h.isCustomWacc || h.waccSource === 'CUSTOM_USER_SET' || rate !== 100)) {
+              existingWaccMap[sym] = rate;
+            }
+          }
+        });
+
+        const mergedHoldings = (result.holdings || []).map(fresh => {
+          const sym = (fresh.script || fresh.scrip || fresh.symbol || '').toUpperCase().trim();
+          const savedRate = existingWaccMap[sym];
+          if (savedRate && savedRate > 0) {
+            return {
+              ...fresh,
+              userWacc: savedRate,
+              wacc: savedRate,
+              purchasePrice: savedRate,
+              effectiveRate: savedRate,
+              isCustomWacc: true,
+              waccSource: 'CUSTOM_USER_SET'
+            };
+          }
+          return fresh;
+        });
+
+        const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, userId, acc.id || acc.boid);
+        const storedHoldings = parsedHoldings.map(h => stripHoldingForStorage(h)).filter(Boolean);
 
         const updatedAccount = {
           ...acc,
           name: (result.name && result.name !== 'Unknown') ? result.name : acc.name,
-          holdings: parsedHoldings,
+          holdings: storedHoldings,
           lastSyncedAt: Date.now()
         };
 

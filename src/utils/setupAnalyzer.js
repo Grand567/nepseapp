@@ -59,6 +59,14 @@ import {
   normalizeCorporateActionPrices,
   getHydroSeasonality,
   getAccurateFestivalSeasonality,
+  evaluateMinerviniTemplate,
+  calculateMansfieldRS,
+  calculateVolumeDryUp,
+  calculateBrokerCorneringScore,
+  calculateStatutoryBreakeven,
+  calculateExpectancy,
+  calculateKellyCriterion,
+  calculateT2CircuitTrapGuard,
 } from './quantEngine.js';
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
@@ -810,8 +818,10 @@ export function scoreToVerdict(score, riskGate = {}, setupType = '') {
   if (riskGate.isOverheadResistanceCeiling) {
     return 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
   }
-  if (riskGate.isExtremeMultiple && score > 68) {
-    return 'HOLD / AVOID CHASING (EXTREME VALUATION)';
+  if (riskGate.isExtremeMultiple) {
+    return score >= 68
+      ? 'HOLD / AVOID CHASING (EXTREME VALUATION)'
+      : 'HOLD / AVOID ENTRY (ELEVATED VALUATION)';
   }
 
   if (score >= 82) return setupType === 'coiled_pre_breakout' ? 'HIGH-CONVICTION COIL (AWAITING TRIGGER)' : 'VERY STRONG SETUP';
@@ -1193,7 +1203,14 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // Harmonized dynamic execution geometry
   const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
-  const structuralStopLoss = +(Math.max(1, Math.min(lowBase - atr * 0.5, ltp - atr * 1.5))).toFixed(1);
+  // Disciplined swing stop loss: strictly bounded between 3.5% (noise clearance) and 7.5% (max swing risk limit)
+  const maxSwingRiskPct = 0.075;
+  const minNoiseRiskPct = 0.035;
+  const swingFloor = +(ltp * (1 - maxSwingRiskPct)).toFixed(1);
+  const swingCeiling = +(ltp * (1 - minNoiseRiskPct)).toFixed(1);
+  const recent5Low = closes.length >= 5 ? Math.min(...adjustedCandles.slice(-6, -1).map((c) => Number(c.low || c.close || 0))) : ltp * 0.95;
+  const baseCandidate = recent5Low > 0 && recent5Low < ltp ? recent5Low - atr * 0.25 : ltp - atr * 1.35;
+  const structuralStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
   const riskPerShare = Math.max(1, ltp - structuralStopLoss);
 
   // Apply circuit-breaker cap to T1 and T2
@@ -1270,6 +1287,9 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     t2Risk,
     recommendedPositionMultiplier: t2Risk.recommendedPositionMultiplier,
   };
+
+  const statutoryBreakeven = calculateStatutoryBreakeven(ltp, 100);
+  levels.statutoryBreakeven = statutoryBreakeven;
 
   // ── Historical analog backtest ────────────────────────────────
   const analogOptions = {
@@ -1520,6 +1540,44 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const bullishFactors = [...catalystFactors];
   const bearishFactors = [];
 
+  // ── Advanced Quant & Market Microstructure Engines ──────────
+  const minerviniTemplate = evaluateMinerviniTemplate(adjustedCandles, ltp, high52w, low52w);
+  const mansfieldRS = calculateMansfieldRS(adjustedCandles, options.nepseCandles);
+  const volumeDryUp = calculateVolumeDryUp(adjustedCandles);
+  const brokerCornering = calculateBrokerCorneringScore(options.brokerAnalysis || stock?.brokerAnalysis);
+  const t2CircuitGuard = calculateT2CircuitTrapGuard(stock, adjustedCandles);
+
+  const empiricalWinRate = analogWinRate ?? strategyWinRate ?? 52;
+  const avgWinAmt = Math.max(1, (levels.target1.price - ltp) * 100);
+  const avgLossAmt = Math.max(1, (ltp - stopLossPrice) * 100);
+  const expectancy = calculateExpectancy(empiricalWinRate, avgWinAmt, avgLossAmt);
+  const kelly = calculateKellyCriterion(empiricalWinRate, rrr1);
+
+  if (minerviniTemplate.isStage2Uptrend) {
+    combinedScore = Math.min(100, +(combinedScore + (minerviniTemplate.passedCount >= 7 ? 6 : 3)).toFixed(1));
+    bullishFactors.push(`Minervini SEPA Leader: ${minerviniTemplate.passedCount}/8 criteria met (${minerviniTemplate.stageLabel})`);
+  } else if (minerviniTemplate.passedCount <= 2) {
+    bearishFactors.push(`Minervini Stage 4: Fails structural trend template (${minerviniTemplate.passedCount}/8)`);
+  }
+
+  if (volumeDryUp.isPocketPivot) {
+    combinedScore = Math.min(100, +(combinedScore + 4).toFixed(1));
+    bullishFactors.push('🚀 Pocket Pivot Accumulation: Buying volume eclipsed 10-day peak down-volume');
+  } else if (volumeDryUp.isDryUp) {
+    combinedScore = Math.min(100, +(combinedScore + 3).toFixed(1));
+    bullishFactors.push(`💎 Volume Dry-Up (VDU ${volumeDryUp.vduRatio}x): Seller supply exhausted before pivot`);
+  }
+
+  if (mansfieldRS.isOutperforming && mansfieldRS.isRising) {
+    combinedScore = Math.min(100, +(combinedScore + 3).toFixed(1));
+    bullishFactors.push(`📈 Mansfield Relative Strength: Outperforming NEPSE (+${mansfieldRS.mrs}% MRS, Rising)`);
+  }
+
+  if (brokerCornering.isCornered) {
+    combinedScore = Math.min(100, +(combinedScore + 4).toFixed(1));
+    bullishFactors.push(`🏛️ Institutional Dominance: Top 5 brokers absorbing ${brokerCornering.cr5BuyPct}% of buy flow`);
+  }
+
   if (technicalReport?.trend) {
     const emaObj = technicalReport.trend.ema || {};
     if (emaObj.priceVsEma50Pct !== undefined && emaObj.priceVsEma50Pct !== null) {
@@ -1632,7 +1690,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   if (isExtremePE) {
-    bearishFactors.push(`Elevated valuation: P/E ratio of ${pe.toFixed(1)}x carries multiple contraction risk`);
+    bearishFactors.push(`Elevated valuation: P/E ratio of ${peVal.toFixed(1)}x carries multiple contraction risk`);
   }
 
   if (hydroSeason.isHydro) {
@@ -1705,8 +1763,18 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     combinedScore < 68
   );
 
+  const isT2CircuitExhaustion = Boolean(
+    t2CircuitGuard?.status === 'HIGH_T2_CIRCUIT_TRAP' ||
+    (Number(stock?.pChange || 0) >= 8.5 && Number(t2CircuitGuard?.twoDayGain || 0) >= 18.0)
+  );
+
+  if (isT2CircuitExhaustion) {
+    warnings.unshift('⚠️ T+2 Circuit Exhaustion Trap: Stock has surged +18%+ over 2 sessions. High risk of Demat delivery dump on settlement.');
+  }
+
   const riskGate = {
     isCircuitTrap,
+    isT2CircuitExhaustion,
     isSubFriction,
     isUnfavorableRRR,
     isInstitutionalDumping,
@@ -1719,12 +1787,13 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isCriticalT2Lockup: t2Risk.tier === 'CRITICAL',
     t2Risk,
     warning: isCircuitTrap ? `Stock is within ${distToCeilingPct}% of +15% upper circuit ceiling. Capped upside vs severe downside risk.`
+           : isT2CircuitExhaustion ? '⚠️ T+2 Circuit Exhaustion Trap: Stock surged +18%+ over 2 sessions. Fresh buyers face heavy Demat delivery dump risk on T+2.'
            : t2Risk.tier === 'CRITICAL' ? t2Risk.warning
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
            : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${resolvedRvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
            : isLossMaking ? `Fundamental Caution: Negative EPS (Rs. ${epsVal.toFixed(2)}) indicates operational losses.`
-           : isExtremeMultiple ? `Extreme Valuation Multiple: P/E × P/B multiple of ${pePbMultiple.toFixed(1)} carries severe multiple contraction risk.`
+           : isExtremeMultiple ? `Extreme Valuation Multiple: P/E of ${peVal > 0 ? peVal.toFixed(1) + 'x' : '—'} (P/E × P/B: ${pePbMultiple.toFixed(1)}) carries severe multiple contraction risk. Maintain trailing stops; avoid chasing extended breakouts.`
            : isInstitutionalDumping ? `Institutional Broker Distribution: Net ${Math.abs(brokerAdRatio * 100).toFixed(1)}% volume dumped by top institutional brokers into retail demand. Avoid fresh entry.`
            : isDeepHydroDryBreakout ? 'Deep winter hydro dry season: RoR power output severely depressed. Avoid chasing speculative spikes.'
            : isHardCeilingDowntrend ? 'Asset is below 50 EMA during a broader market bear regime.'
@@ -1780,6 +1849,18 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     dataQuality,
     riskGate,
     t2Risk,
+
+    // ── Advanced Quant Engine Metrics ──
+    quantMetrics: {
+      minerviniTemplate,
+      mansfieldRS,
+      volumeDryUp,
+      brokerCornering,
+      statutoryBreakeven,
+      expectancy,
+      kelly,
+      t2CircuitGuard
+    },
 
     // ── Levels (circuit-aware) ──
     levels,

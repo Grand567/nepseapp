@@ -15,6 +15,14 @@ interface EntryRiskCardProps {
     feeFrictionPct?: number;
     cgtTaxRatePct?: number;
     isValidTradeSetup?: boolean;
+    statutoryBreakeven?: {
+      entryPrice: number;
+      breakevenPrice: number;
+      hurdlePct: number;
+      roundTripExpenses: number;
+      totalBuyCost: number;
+      label: string;
+    };
     t2Risk?: {
       score: number;
       tier: string;
@@ -30,11 +38,26 @@ interface EntryRiskCardProps {
     recommendedPositionMultiplier?: number;
   };
   currentPrice?: number;
+  quantMetrics?: {
+    kelly?: {
+      rawKelly?: number;
+      fullKellyPct?: number;
+      halfKellyPct?: number;
+      recommendationPct?: number;
+      isViable?: boolean;
+      rationale?: string;
+    };
+    expectancy?: {
+      ev?: number;
+      profitFactor?: number;
+      breakEvenWinRate?: number;
+    };
+  };
 }
 
 const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
 
-export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
+export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskCardProps) {
   if (!levels) return null;
 
   // ── User-Configured Position Sizing State (Persisted in localStorage) ──
@@ -249,6 +272,27 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
         </div>
       </div>
 
+      {/* ── Exact Statutory Zero-Loss Break-Even Strip ── */}
+      {levels.statutoryBreakeven && (
+        <div className="flex items-center justify-between flex-wrap gap-2 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <Coins size={14} className="text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold text-white">Statutory Zero-Loss Break-Even: </span>
+              <span className="font-bold text-amber-300 font-mono text-sm">
+                Rs. {levels.statutoryBreakeven.breakevenPrice}
+              </span>
+              <span className="text-[11px] text-slate-400 ml-1.5">
+                (+{levels.statutoryBreakeven.hurdlePct}% hurdle to clear broker, SEBON & DP fees)
+              </span>
+            </div>
+          </div>
+          <span className="text-[10.5px] text-slate-500 font-mono">
+            Round-Trip Friction: ~Rs. {levels.statutoryBreakeven.roundTripExpenses}
+          </span>
+        </div>
+      )}
+
       {/* ── INTERACTIVE 1%–2% POSITION SIZING & CAPITAL ALLOCATION CALCULATOR ── */}
       <div className="rounded-xl border border-blue-900/50 bg-gradient-to-br from-blue-950/20 via-slate-900/60 to-slate-900/90 p-3.5 sm:p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -303,7 +347,7 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
               <span>Risk Tolerance Per Trade</span>
               <span className="text-rose-400 font-mono font-bold">Max Loss: Rs. {Math.round(maxCapitalAtRisk).toLocaleString()}</span>
             </label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
               {[
                 { label: '1.0% Safe', val: 1.0 },
                 { label: '1.5% Normal', val: 1.5 },
@@ -321,6 +365,19 @@ export function EntryRiskCard({ levels, currentPrice }: EntryRiskCardProps) {
                   {opt.label}
                 </button>
               ))}
+              {quantMetrics?.kelly?.recommendationPct && (
+                <button
+                  onClick={() => setRiskTolerancePct(Math.min(2.5, Math.max(1.0, Number(((quantMetrics.kelly?.recommendationPct || 10) / 10).toFixed(1)))))}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all border ${
+                    riskTolerancePct === Math.min(2.5, Math.max(1.0, Number(((quantMetrics.kelly?.recommendationPct || 10) / 10).toFixed(1))))
+                      ? 'bg-purple-600/30 border-purple-500 text-purple-200 font-bold'
+                      : 'bg-slate-900 border-purple-900/50 text-purple-300 hover:border-purple-600'
+                  }`}
+                  title={quantMetrics.kelly.rationale || 'Optimal Kelly sizing based on empirical edge'}
+                >
+                  ⚡ Kelly ({quantMetrics.kelly.recommendationPct}%)
+                </button>
+              )}
             </div>
             <div className="text-[10px] text-slate-400 pt-0.5">
               Strictly caps downside loss to {riskTolerancePct}% of your total portfolio.

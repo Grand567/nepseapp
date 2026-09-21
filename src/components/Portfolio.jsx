@@ -3,12 +3,13 @@ import {
   Plus, Trash2, ArrowUpRight, ArrowDownRight, Briefcase, PlusCircle, MinusCircle, 
   ShieldCheck, Layers, BookOpen, Sparkles, X, Loader2, RefreshCw, Key, Lock, 
   HelpCircle, ExternalLink, ArrowRight, ShieldAlert, CheckCircle2, Edit3, Check,
-  Search, TrendingUp, TrendingDown, Filter, Target, Activity
+  Search, TrendingUp, TrendingDown, Filter, Target, Activity, Flame, Trophy, AlertTriangle, Clock,
+  AlertCircle, Upload, FileText, CheckCheck, Percent
 } from 'lucide-react';
-import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap } from '../utils/calculations';
+import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap, applyDiscoveredWaccMap, classifyHoldingActionSignal, stripHoldingForStorage, safeStorageSetItem, parseBrokerTradeBook } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
 import { syncUserDataToCloud } from '../utils/firebase';
-import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST } from '../services/meroShareService';
+import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
 import { generateMockDematPortfolio } from '../utils/mockData';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
@@ -135,6 +136,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const [allocationView, setAllocationView] = useState('stock'); // 'stock', 'sector'
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPnl, setFilterPnl] = useState('all'); // 'all', 'profit', 'loss'
+  const [accountSignalFilters, setAccountSignalFilters] = useState({}); // { [accountId]: 'all' | 'profit' | 'defense' | 'breakout' | 'hold' }
   
   // Form fields
   const [type, setType] = useState('buy'); // 'buy' or 'sell'
@@ -154,12 +156,21 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const [preferredEngine, setPreferredEngine] = useState(() => localStorage.getItem('nepse_hub_preferred_ai_engine') || 'auto');
   const [showKeyInput, setShowKeyInput] = useState(false);
 
-  // WACC Management state
+  // WACC Studio & Management state
   const [showWaccModal, setShowWaccModal] = useState(false);
+  const [waccModalTab, setWaccModalTab] = useState('manual'); // 'manual' | 'tms' | 'cdsc'
+  const [waccSearch, setWaccSearch] = useState('');
+  const [waccFilterUnconfirmed, setWaccFilterUnconfirmed] = useState(false);
+  const [waccSourcesMap, setWaccSourcesMap] = useState({});
+  const [tmsRawText, setTmsRawText] = useState('');
+  const [tmsParseResult, setTmsParseResult] = useState(null);
   const [waccEditValues, setWaccEditValues] = useState({});
   const [editingScrip, setEditingScrip] = useState(null);
   const [quickWaccInput, setQuickWaccInput] = useState('');
   const [waccSaveSuccess, setWaccSaveSuccess] = useState('');
+  const [isSyncingWacc, setIsSyncingWacc] = useState(false);
+  const [waccSyncProgress, setWaccSyncProgress] = useState('');
+  const [waccSyncResult, setWaccSyncResult] = useState('');
 
   // MeroShare Holdings Sync state
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -192,7 +203,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
           const parsed = JSON.parse(savedProfiles);
           const sanitized = (Array.isArray(parsed) ? parsed : []).map(p => ({
             ...p,
-            holdings: sanitizeMeroShareHoldings(p.holdings)
+            holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
           }));
           setMeroshareProfiles(sanitized);
         }
@@ -228,13 +239,13 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
               password: acc.password,
               crn: acc.crn,
               pin: String(acc.pin || ''),
-              holdings: sanitizeMeroShareHoldings(acc.holdings),
+              holdings: sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid),
               lastSyncedAt: acc.lastSyncedAt || null
             });
             changed = true;
           } else if (acc.holdings?.length > 0) {
             if (!existing.holdings || existing.holdings.length === 0 || (acc.lastSyncedAt && (!existing.lastSyncedAt || acc.lastSyncedAt >= existing.lastSyncedAt))) {
-              existing.holdings = sanitizeMeroShareHoldings(acc.holdings);
+              existing.holdings = sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid);
               existing.lastSyncedAt = acc.lastSyncedAt || Date.now();
               if (acc.name && acc.name !== 'Unknown') existing.name = acc.name;
               changed = true;
@@ -305,12 +316,22 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   }, [marketStocks, symbol]);
 
   const saveProfilesToStorage = (newProfiles) => {
-    setMeroshareProfiles(newProfiles);
-    localStorage.setItem(profileKey, JSON.stringify(newProfiles));
-    window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
+    // Strip holdings to minimal storage fields to permanently prevent QuotaExceededError
+    const cleanedProfiles = (newProfiles || []).map(p => ({
+      ...p,
+      holdings: (p.holdings || []).map(stripHoldingForStorage).filter(Boolean)
+    }));
+
+    setMeroshareProfiles(cleanedProfiles);
+    safeStorageSetItem(profileKey, cleanedProfiles);
+    
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(cleanedProfiles) }));
+    } catch (_) {}
+
     // Cloud Sync
     try {
-      syncUserDataToCloud(userId, { profiles: newProfiles }, userEmail);
+      syncUserDataToCloud(userId, { profiles: cleanedProfiles }, userEmail);
     } catch (_) {}
   };
 
@@ -333,7 +354,46 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       }
 
       setRetrievalStep(3);
-      const parsedHoldings = sanitizeMeroShareHoldings(result.holdings || []);
+      const accountId = profile.id || profile.boid;
+      const existingHoldings = profile.holdings || [];
+      const existingMap = {};
+      existingHoldings.forEach(h => {
+        const sym = (h.symbol || h.script || h.scrip || '').toUpperCase().trim();
+        if (sym) existingMap[sym] = h;
+      });
+
+      // Auto-persist declared WACCs if discovered from CDSC
+      if (result.declaredWaccMap && Object.keys(result.declaredWaccMap).length > 0) {
+        applyDiscoveredWaccMap(result.declaredWaccMap, userId, accountId);
+      }
+
+      // Merge fresh CDSC units/LTP with declared WACCs & custom user WACCs so rates are never wiped out
+      const mergedHoldings = (result.holdings || []).map(fresh => {
+        const sym = (fresh.symbol || fresh.script || fresh.scrip || '').toUpperCase().trim();
+        const prev = existingMap[sym];
+        const freshlyDeclared = result.declaredWaccMap?.[sym];
+
+        if (freshlyDeclared && freshlyDeclared.wacc > 0) {
+          return {
+            ...fresh,
+            wacc: freshlyDeclared.wacc,
+            waccSource: 'CDSC_MY_HOLDING_DECLARED',
+            isCustomWacc: true
+          };
+        }
+
+        if (prev && (prev.isCustomWacc || prev.waccSource === 'CUSTOM_USER_SET' || prev.waccSource === 'BROKER_TMS' || (prev.wacc > 0 && prev.wacc !== 100))) {
+          return {
+            ...fresh,
+            wacc: prev.wacc,
+            waccSource: prev.waccSource || 'CUSTOM_USER_SET',
+            isCustomWacc: true
+          };
+        }
+        return fresh;
+      });
+
+      const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, userId, accountId);
 
       setRetrievalStep(4);
       await new Promise(r => setTimeout(r, 400));
@@ -344,7 +404,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
             ...p,
             name: (result.name && result.name !== 'Unknown') ? result.name : p.name,
             holdings: parsedHoldings,
-            lastSyncedAt: Date.now()
+            lastSyncedAt: Date.now(),
+            lastWaccSyncedAt: result.declaredCount > 0 ? Date.now() : p.lastWaccSyncedAt
           };
         }
         return p;
@@ -369,7 +430,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
 
       setIsRetrieving(false);
       setRetrievalStep(0);
-      setSyncSuccess(`Demat portfolio synced! Loaded ${parsedHoldings.length} scrips for ${(result.name && result.name !== 'Unknown') ? result.name : profile.name}.`);
+      const declaredMsg = result.declaredCount > 0 ? ` (with ${result.declaredCount} confirmed CDSC WACCs)` : '';
+      setSyncSuccess(`Demat portfolio synced! Loaded ${parsedHoldings.length} scrips${declaredMsg} for ${(result.name && result.name !== 'Unknown') ? result.name : profile.name}.`);
     } catch (err) {
       console.error("Demat fetch error:", err);
       setSyncError(`Failed to fetch holdings: ${err.message}.`);
@@ -594,6 +656,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   // ── WACC / Secondary Market Buy Rate Handlers ──
   const handleOpenWaccModal = () => {
     const initialMap = {};
+    const initialSources = {};
     const customMap = getCustomWaccMap(userId);
     
     // Gather all scrips from meroshare profiles and active holdings
@@ -601,97 +664,398 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       (p.holdings || []).forEach(h => {
         const sym = (h.symbol || '').toUpperCase();
         if (sym && !initialMap[sym]) {
-          initialMap[sym] = customMap[sym] || (h.wacc && h.wacc > 0 ? h.wacc : (h.currentLtp || guessScripBasePrice(sym, 100)));
+          const custVal = customMap[sym];
+          const rate = (custVal && typeof custVal === 'object') ? custVal.wacc : custVal;
+          const src = (custVal && typeof custVal === 'object') ? custVal.source : (custVal > 0 ? 'CUSTOM_USER_SET' : h.waccSource);
+          initialMap[sym] = rate || (h.wacc && h.wacc > 0 ? h.wacc : (h.currentLtp || guessScripBasePrice(sym, 100)));
+          initialSources[sym] = src || h.waccSource || 'FALLBACK_BASE_PRICE';
         }
       });
     });
     holdings.forEach(h => {
       const sym = (h.symbol || '').toUpperCase();
       if (sym && !initialMap[sym]) {
-        initialMap[sym] = customMap[sym] || (h.wacc && h.wacc > 0 ? h.wacc : (h.currentLtp || guessScripBasePrice(sym, 100)));
+        const custVal = customMap[sym];
+        const rate = (custVal && typeof custVal === 'object') ? custVal.wacc : custVal;
+        const src = (custVal && typeof custVal === 'object') ? custVal.source : (custVal > 0 ? 'CUSTOM_USER_SET' : h.waccSource);
+        initialMap[sym] = rate || (h.wacc && h.wacc > 0 ? h.wacc : (h.currentLtp || guessScripBasePrice(sym, 100)));
+        initialSources[sym] = src || h.waccSource || 'FALLBACK_BASE_PRICE';
       }
     });
 
     setWaccEditValues(initialMap);
+    setWaccSourcesMap(initialSources);
+    setWaccSearch('');
+    setWaccFilterUnconfirmed(false);
+    setTmsRawText('');
+    setTmsParseResult(null);
+    setWaccModalTab('manual');
     setShowWaccModal(true);
     setWaccSaveSuccess('');
   };
 
   const handleAutoSetAllLtp = () => {
     const updated = { ...waccEditValues };
+    const updatedSources = { ...waccSourcesMap };
+    let count = 0;
     Object.keys(updated).forEach(sym => {
       const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
       if (mStock?.ltp > 0) {
         updated[sym] = mStock.ltp;
+        updatedSources[sym] = 'ESTIMATED_LTP';
+        count++;
       }
     });
     setWaccEditValues(updated);
-    setWaccSaveSuccess('All secondary stock buy rates populated from live market LTPs. Click "Save All" to confirm.');
+    setWaccSourcesMap(updatedSources);
+    setWaccSaveSuccess(`Populated ${count} buy rates from live market LTPs. Click "Save All" to confirm.`);
   };
 
   const handleAutoSetAllPrevClose = () => {
     const updated = { ...waccEditValues };
+    const updatedSources = { ...waccSourcesMap };
+    let count = 0;
     Object.keys(updated).forEach(sym => {
       const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
       const prev = mStock?.prevClose || mStock?.previousClose;
       if (prev > 0) {
         updated[sym] = prev;
+        updatedSources[sym] = 'ESTIMATED_PREV_CLOSE';
+        count++;
       }
     });
     setWaccEditValues(updated);
-    setWaccSaveSuccess('All secondary stock buy rates populated from Previous Closing prices. Click "Save All" to confirm.');
+    setWaccSourcesMap(updatedSources);
+    setWaccSaveSuccess(`Populated ${count} buy rates from Previous Closing prices. Click "Save All" to confirm.`);
+  };
+
+  const handleAutoSetAllDiscount = (pct = 10) => {
+    const updated = { ...waccEditValues };
+    const updatedSources = { ...waccSourcesMap };
+    let count = 0;
+    Object.keys(updated).forEach(sym => {
+      const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
+      const ltp = mStock?.ltp || 0;
+      if (ltp > 0) {
+        const discounted = Number((ltp * (1 - pct / 100)).toFixed(1));
+        updated[sym] = discounted;
+        updatedSources[sym] = `ESTIMATED_DISCOUNT_${pct}PCT`;
+        count++;
+      }
+    });
+    setWaccEditValues(updated);
+    setWaccSourcesMap(updatedSources);
+    setWaccSaveSuccess(`Estimated ${count} buy rates at ${pct}% discount below current LTP. Click "Save All" to confirm.`);
+  };
+
+  const handleResetAllPar = () => {
+    const updated = { ...waccEditValues };
+    const updatedSources = { ...waccSourcesMap };
+    Object.keys(updated).forEach(sym => {
+      const base = guessScripBasePrice(sym, 100);
+      updated[sym] = base;
+      updatedSources[sym] = base === 10 ? 'NAV_PAR_FUND' : (base === 1000 ? 'PAR_VALUE_DEB' : 'FALLBACK_BASE_PRICE');
+    });
+    setWaccEditValues(updated);
+    setWaccSourcesMap(updatedSources);
+    setWaccSaveSuccess('Reset all rates to face value / par (Rs. 100 for equity, Rs. 10 for funds, Rs. 1,000 for debentures).');
+  };
+
+  const handleParseTms = () => {
+    if (!tmsRawText.trim()) return;
+    const res = parseBrokerTradeBook(tmsRawText);
+    setTmsParseResult(res);
+  };
+
+  const handleApplyTmsWacc = () => {
+    if (!tmsParseResult || !tmsParseResult.holdings) return;
+    const newCustomMap = getCustomWaccMap(userId);
+    const updatedValues = { ...waccEditValues };
+    const updatedSources = { ...waccSourcesMap };
+    let appliedCount = 0;
+
+    Object.entries(tmsParseResult.holdings).forEach(([sym, data]) => {
+      const cleanSym = sym.toUpperCase();
+      newCustomMap[cleanSym] = data.wacc;
+      updatedValues[cleanSym] = data.wacc;
+      updatedSources[cleanSym] = 'BROKER_TMS';
+      appliedCount++;
+    });
+
+    saveCustomWaccMap(newCustomMap, userId);
+    setWaccEditValues(updatedValues);
+    setWaccSourcesMap(updatedSources);
+
+    const updatedProfiles = meroshareProfiles.map(p => ({
+      ...p,
+      holdings: sanitizeMeroShareHoldings(
+        (p.holdings || []).map(h => {
+          const sym = (h.symbol || '').toUpperCase();
+          const tmsData = tmsParseResult.holdings[sym];
+          if (tmsData) {
+            return { ...h, wacc: tmsData.wacc, waccSource: 'BROKER_TMS', isCustomWacc: true };
+          }
+          return h;
+        }),
+        userId,
+        p.id || p.boid
+      )
+    }));
+
+    setMeroshareProfiles(updatedProfiles);
+    saveProfilesToStorage(updatedProfiles);
+
+    setWaccSaveSuccess(`Successfully applied ${appliedCount} broker TMS purchase rates to your portfolio!`);
+    setWaccModalTab('manual');
   };
 
   const handleSaveAllWacc = () => {
-    const customMap = getCustomWaccMap(userId);
-    Object.entries(waccEditValues).forEach(([sym, val]) => {
-      const num = parseFloat(val);
-      if (!isNaN(num) && num > 0) {
-        customMap[sym.toUpperCase()] = Number(num.toFixed(2));
-      }
-    });
-    saveCustomWaccMap(customMap, userId);
-
-    const updatedProfiles = meroshareProfiles.map(p => ({
-      ...p,
-      holdings: (p.holdings || []).map(h => {
-        const sym = (h.symbol || '').toUpperCase();
-        const customVal = customMap[sym];
-        if (customVal > 0) {
-          return { ...h, wacc: customVal, isCustomWacc: true };
+    try {
+      const customMap = getCustomWaccMap(userId);
+      Object.entries(waccEditValues).forEach(([sym, val]) => {
+        const num = parseFloat(val);
+        if (!isNaN(num) && num > 0) {
+          customMap[sym.toUpperCase()] = Number(num.toFixed(2));
         }
-        return h;
-      })
-    }));
+      });
+      saveCustomWaccMap(customMap, userId);
 
-    setMeroshareProfiles(updatedProfiles);
-    saveProfilesToStorage(updatedProfiles);
-    setWaccSaveSuccess('WACC buy rates saved permanently! Portfolio calculations updated.');
-    setTimeout(() => {
+      const updatedProfiles = meroshareProfiles.map(p => ({
+        ...p,
+        holdings: sanitizeMeroShareHoldings(
+          (p.holdings || []).map(h => {
+            const sym = (h.symbol || '').toUpperCase();
+            const customVal = customMap[sym];
+            const src = waccSourcesMap[sym] || (customVal > 0 ? 'CUSTOM_USER_SET' : h.waccSource);
+            if (customVal > 0) {
+              return { ...h, wacc: customVal, waccSource: src, isCustomWacc: true };
+            }
+            return h;
+          }),
+          userId,
+          p.id || p.boid
+        )
+      }));
+
+      setMeroshareProfiles(updatedProfiles);
+      saveProfilesToStorage(updatedProfiles);
+    } catch (err) {
+      console.warn('[SaveAllWacc Warning]', err);
+    } finally {
       setShowWaccModal(false);
       setWaccSaveSuccess('');
-    }, 800);
+    }
   };
 
-  const handleQuickSaveWacc = (symbol, newRate) => {
-    const num = parseFloat(newRate);
-    if (isNaN(num) || num <= 0) return;
-    const sym = symbol.toUpperCase().trim();
-    setScripCustomWacc(sym, num, userId);
+  const handleQuickSaveWacc = (symbol, newRate, targetAccountId = '') => {
+    try {
+      const num = parseFloat(newRate);
+      if (isNaN(num) || num <= 0) return;
+      const sym = symbol.toUpperCase().trim();
+      setScripCustomWacc(sym, num, userId, targetAccountId);
 
-    const updatedProfiles = meroshareProfiles.map(p => ({
-      ...p,
-      holdings: (p.holdings || []).map(h => {
-        if ((h.symbol || '').toUpperCase().trim() === sym) {
-          return { ...h, wacc: Number(num.toFixed(2)), isCustomWacc: true };
+      if (targetAccountId === 'manual') {
+        const updatedTxs = transactions.map(t => {
+          if ((t.symbol || '').toUpperCase().trim() === sym) {
+            return { ...t, price: Number(num.toFixed(2)) };
+          }
+          return t;
+        });
+        saveTransactions(updatedTxs);
+        return;
+      }
+
+      const updatedProfiles = meroshareProfiles.map(p => {
+        // If targetAccountId specified, only update this specific account!
+        if (targetAccountId && p.id !== targetAccountId && p.boid !== targetAccountId) {
+          return p;
+        }
+        return {
+          ...p,
+          holdings: (p.holdings || []).map(h => {
+            if ((h.symbol || '').toUpperCase().trim() === sym) {
+              return { 
+                ...h, 
+                wacc: Number(num.toFixed(2)), 
+                isCustomWacc: true,
+                waccSource: 'CUSTOM_USER_SET'
+              };
+            }
+            return h;
+          })
+        };
+      });
+
+      setMeroshareProfiles(updatedProfiles);
+      saveProfilesToStorage(updatedProfiles);
+    } catch (err) {
+      console.warn('[QuickSaveWacc Warning]', err);
+    } finally {
+      // Always immediately close the inline edit popup
+      setEditingScrip(null);
+    }
+  };
+
+  const handleOpenInEntryExitAnalyzer = (sym) => {
+    if (!sym) return;
+    const cleanSym = String(sym).trim().toUpperCase();
+    try {
+      localStorage.setItem('open_service_id', 'entry-exit-analyzer');
+      window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: cleanSym } }));
+    } catch (_) {}
+    if (onSelectStock) {
+      const found = (marketStocks || []).find(s => (s.symbol || '').toUpperCase() === cleanSym);
+      onSelectStock(found || { symbol: cleanSym });
+    }
+  };
+
+  const handleSyncWaccFromMeroShare = async (targetProfile = null) => {
+    const profile = targetProfile || (meroshareProfiles.length > 0 ? meroshareProfiles[0] : null);
+    if (!profile) {
+      alert("No MeroShare Demat profile found. Please link or select an account first.");
+      return;
+    }
+
+    const targetHoldings = profile.holdings || [];
+    if (targetHoldings.length === 0) {
+      alert("No holdings found in this Demat account to sync WACC for.");
+      return;
+    }
+
+    setIsSyncingWacc(true);
+    setWaccSyncProgress('Connecting to CDSC MeroShare...');
+    setWaccSyncResult('');
+
+    try {
+      const res = await pullMeroShareWaccBatch(profile, targetHoldings, (progress) => {
+        setWaccSyncProgress(progress.msg || `Processing (${progress.current}/${progress.total})...`);
+      });
+
+      if (!res.success) {
+        throw new Error(res.error || 'Failed to fetch WACC records from MeroShare');
+      }
+
+      const discoveredMap = res.data || {};
+      const count = Object.keys(discoveredMap).length;
+      const accountId = profile.id || profile.boid;
+
+      if (count > 0) {
+        // Persist discovered WACCs into user's custom WACC map in localStorage
+        applyDiscoveredWaccMap(discoveredMap, userId, accountId);
+
+        // Re-sanitize profile holdings with new WACCs and origin tags
+        const updatedProfiles = meroshareProfiles.map(p => {
+          if (p.id === profile.id || p.boid === profile.boid) {
+            const newHoldings = (p.holdings || []).map(h => {
+              const sym = (h.symbol || '').toUpperCase().trim();
+              const discovered = discoveredMap[sym];
+              if (discovered) {
+                return {
+                  ...h,
+                  wacc: discovered.wacc,
+                  waccSource: discovered.source,
+                  isCustomWacc: true
+                };
+              }
+              return h;
+            });
+            return {
+              ...p,
+              holdings: sanitizeMeroShareHoldings(newHoldings, userId, accountId),
+              lastWaccSyncedAt: Date.now()
+            };
+          }
+          return p;
+        });
+
+        setMeroshareProfiles(updatedProfiles);
+        saveProfilesToStorage(updatedProfiles);
+
+        setWaccSyncResult({
+          type: 'success',
+          msg: `Successfully synced ${count} authentic WACC rates from CDSC MeroShare!`,
+          accountId
+        });
+        setTimeout(() => setWaccSyncResult(null), 6000);
+      } else {
+        // CDSC has 0 records because unsold secondary holdings do not have buy rates recorded in CDSC.
+        // Provide rich explanation and instant 1-tap auto-fill actions!
+        setWaccSyncResult({
+          type: 'unconfirmed_secondary',
+          msg: 'CDSC MeroShare stores WACC records only after a sale (EDIS). Unsold secondary holdings do not have buy rates in CDSC.',
+          accountId
+        });
+      }
+    } catch (err) {
+      console.error("[WACC Sync Error]:", err);
+      setWaccSyncResult({
+        type: 'error',
+        msg: `WACC Sync Warning: ${err.message || 'Could not complete sync.'}`,
+        accountId: profile.id || profile.boid
+      });
+      setTimeout(() => setWaccSyncResult(null), 6000);
+    } finally {
+      setIsSyncingWacc(false);
+      setWaccSyncProgress('');
+    }
+  };
+
+  const handleAutoPopulateSecondaryWacc = (targetAccountId, method = 'ltp') => {
+    try {
+      const targetAcc = meroshareProfiles.find(p => (p.id === targetAccountId || p.boid === targetAccountId));
+      if (!targetAcc) return;
+
+      const currentMap = getCustomWaccMap(userId, targetAccountId);
+      let updatedCount = 0;
+
+      const newHoldings = (targetAcc.holdings || []).map(h => {
+        const sym = (h.symbol || '').toUpperCase().trim();
+        const base = guessScripBasePrice(sym, 100);
+        // Only update if it's currently at unconfirmed fallback (100) and equity share
+        if (base === 100 && (!h.isCustomWacc || h.waccSource === 'FALLBACK_BASE_PRICE' || h.wacc === 100)) {
+          const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
+          let targetPrice = method === 'prevClose' 
+            ? Number(h.prevClose || mStock?.prevClose || mStock?.previousClose || h.currentLtp || mStock?.ltp || 100)
+            : Number(h.currentLtp || mStock?.ltp || h.prevClose || 100);
+
+          if (targetPrice > 0) {
+            currentMap[sym] = Number(targetPrice.toFixed(2));
+            updatedCount++;
+            return {
+              ...h,
+              wacc: Number(targetPrice.toFixed(2)),
+              waccSource: 'CUSTOM_USER_SET',
+              isCustomWacc: true
+            };
+          }
         }
         return h;
-      })
-    }));
+      });
 
-    setMeroshareProfiles(updatedProfiles);
-    saveProfilesToStorage(updatedProfiles);
-    setEditingScrip(null);
+      saveCustomWaccMap(currentMap, userId, targetAccountId);
+
+      const updatedProfiles = meroshareProfiles.map(p => {
+        if (p.id === targetAccountId || p.boid === targetAccountId) {
+          return {
+            ...p,
+            holdings: sanitizeMeroShareHoldings(newHoldings, userId, targetAccountId)
+          };
+        }
+        return p;
+      });
+
+      setMeroshareProfiles(updatedProfiles);
+      saveProfilesToStorage(updatedProfiles);
+
+      setWaccSyncResult({
+        type: 'success',
+        msg: `Auto-populated ${updatedCount} secondary stocks with ${method === 'prevClose' ? 'Previous Close' : 'Live Market LTP'}. You can fine-tune rates anytime!`,
+        accountId: targetAccountId
+      });
+      setTimeout(() => setWaccSyncResult(null), 6000);
+    } catch (err) {
+      console.error("[AutoPopulateWacc Error]:", err);
+    }
   };
 
   // ── Unified AI Analyst Engine Integration (Gemini, Groq, Pollinations, local fallback) ──
@@ -1078,6 +1442,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
     const { price: effectivePrice, value: currentValue } = resolveScripValuation(h, valuationMode);
     const profitLoss = currentValue - h.totalInvestedCost;
     const plPercent = h.totalInvestedCost > 0 ? (profitLoss / h.totalInvestedCost) * 100 : 0;
+    const signal = classifyHoldingActionSignal(h, marketStock);
 
     return {
       ...h,
@@ -1086,7 +1451,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
       profitLoss,
       plPercent,
       stockChange: marketStock?.change || 0,
-      stockPchange: marketStock?.pChange || 0
+      stockPchange: marketStock?.pChange || 0,
+      signal
     };
   });
 
@@ -1150,7 +1516,14 @@ Based on this data, provide a robust analysis using this exact markdown structur
     }).format(value).replace('NPR', 'Rs.');
   };
 
-  const getProcessedHoldings = (rawHoldings) => {
+  const handleToggleAccountFilter = (accId, filterType) => {
+    setAccountSignalFilters(prev => ({
+      ...prev,
+      [accId]: prev[accId] === filterType ? 'all' : filterType
+    }));
+  };
+
+  const getProcessedHoldings = (rawHoldings, accountId = '', applyGlobalFilter = true) => {
     let list = rawHoldings.map(h => {
       const safeSym = (h.symbol || '').trim().toUpperCase();
       const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === safeSym);
@@ -1158,6 +1531,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
       const totalCost = h.totalInvestedCost || (h.units * (h.wacc || 100));
       const profitLoss = currentValue - totalCost;
       const plPercent = totalCost > 0 ? (profitLoss / totalCost) * 100 : 0;
+      const signal = classifyHoldingActionSignal(h, marketStock);
       return {
         ...h,
         currentPrice: effectivePrice,
@@ -1166,7 +1540,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
         plPercent,
         stockChange: marketStock?.change || 0,
         stockPchange: marketStock?.pChange || 0,
-        sector: marketStock?.sector || 'Other'
+        sector: marketStock?.sector || 'Other',
+        signal
       };
     }).filter(h => h.units > 0);
 
@@ -1175,23 +1550,59 @@ Based on this data, provide a robust analysis using this exact markdown structur
       list = list.filter(h => (h.symbol || '').toLowerCase().includes(q) || (h.name || '').toLowerCase().includes(q));
     }
 
-    if (filterPnl === 'profit') {
-      list = list.filter(h => h.profitLoss > 0);
-    } else if (filterPnl === 'loss') {
-      list = list.filter(h => h.profitLoss < 0);
+    if (applyGlobalFilter) {
+      if (filterPnl === 'profit') {
+        list = list.filter(h => h.profitLoss > 0);
+      } else if (filterPnl === 'loss') {
+        list = list.filter(h => h.profitLoss < 0);
+      } else if (filterPnl === 'book_profit') {
+        list = list.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN');
+      } else if (filterPnl === 'stop_loss') {
+        list = list.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT');
+      } else if (filterPnl === 'breakout') {
+        list = list.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE');
+      } else if (filterPnl === 'hold_ride') {
+        list = list.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT');
+      }
     }
 
     return list;
   };
 
-  const renderHoldingRow = (h) => {
+  const getFilteredAccountHoldings = (rawHoldings, accountId = '') => {
+    const allHoldings = getProcessedHoldings(rawHoldings, accountId, false);
+    const activeAccFilter = accountSignalFilters[accountId] || 'all';
+
+    let list = allHoldings;
+    if (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') {
+      list = allHoldings.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN');
+    } else if (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') {
+      list = allHoldings.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT');
+    } else if (activeAccFilter === 'breakout') {
+      list = allHoldings.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE');
+    } else if (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') {
+      list = allHoldings.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT');
+    } else if (filterPnl !== 'all') {
+      if (filterPnl === 'profit') list = allHoldings.filter(h => h.profitLoss > 0);
+      else if (filterPnl === 'loss') list = allHoldings.filter(h => h.profitLoss < 0);
+      else if (filterPnl === 'book_profit') list = allHoldings.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN');
+      else if (filterPnl === 'stop_loss') list = allHoldings.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT');
+      else if (filterPnl === 'breakout') list = allHoldings.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE');
+      else if (filterPnl === 'hold_ride') list = allHoldings.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT');
+    }
+    return list;
+  };
+
+  const renderHoldingRow = (h, accountId = '') => {
     const isProfit = h.profitLoss >= 0;
     const marketStock = marketStocks.find(s => (s.symbol || '').trim().toUpperCase() === h.symbol) || {};
     const sector = marketStock.sector || h.sector || 'Stock';
+    const rowKey = `${accountId || 'gen'}_${h.symbol}`;
+    const signal = h.signal || classifyHoldingActionSignal(h, marketStock);
 
     return (
       <div 
-        key={h.symbol} 
+        key={rowKey} 
         style={{ 
           padding: '12px 14px', 
           marginBottom: 0,
@@ -1202,108 +1613,239 @@ Based on this data, provide a robust analysis using this exact markdown structur
           boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontWeight: 900, fontSize: 14, color: 'var(--text-primary)' }}>{h.symbol}</span>
-              <span className="badge badge-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>{sector}</span>
-              {h.isCustomWacc && (
-                <span style={{ fontSize: 8.5, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>Custom WACC</span>
-              )}
-            </div>
+        {/* ── ROW 1: Symbol, Sector, and Total Value ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 900, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
+              {h.symbol}
+            </span>
+            <span className="badge badge-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>
+              {sector}
+            </span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+            {formatRs(h.currentValue)}
+          </div>
+        </div>
 
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-              <span>{h.units} Units @ {formatRs(h.currentPrice)}</span>
-              <span>•</span>
-              <span>WACC: <strong style={{ color: (h.isCustomWacc || h.wacc !== 100) ? 'var(--text-primary)' : '#fbbf24', fontFamily: 'var(--font-mono)' }}>{formatRs(h.wacc)}</strong></span>
-              <button 
-                type="button"
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  setEditingScrip(h.symbol); 
-                  setQuickWaccInput(String(h.wacc || '')); 
-                }}
-                style={{ 
-                  background: h.wacc === 100 ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.06)', 
-                  border: h.wacc === 100 ? '1px solid rgba(234,179,8,0.4)' : '1px solid rgba(255,255,255,0.1)', 
-                  color: h.wacc === 100 ? '#fbbf24' : 'var(--text-secondary)', 
-                  borderRadius: 6, 
-                  padding: '1px 6px', 
-                  fontSize: 9, 
-                  cursor: 'pointer', 
-                  display: 'inline-flex', 
-                  alignItems: 'center', 
-                  gap: 3, 
-                  fontWeight: 700 
-                }}
-                title="Edit your real purchase rate / WACC"
-              >
-                <Edit3 style={{ width: 9, height: 9 }} /> {h.wacc === 100 ? 'Fix Buy Rate' : 'Edit'}
-              </button>
-            </div>
+        {/* ── ROW 2: Badges on left, P&L Pill on right ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            {/* Action Signal Badge */}
+            {signal && (
+              <span style={{
+                fontSize: 9.5,
+                fontWeight: 900,
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: signal.bg,
+                color: signal.color,
+                border: `1px solid ${signal.border}`,
+                letterSpacing: '0.02em',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                {signal.badge}
+              </span>
+            )}
 
-            {/* Inline Quick WACC Edit Box */}
-            {editingScrip === h.symbol && (
-              <div 
-                onClick={e => e.stopPropagation()} 
-                style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0d131f', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--primary-light)', boxShadow: '0 4px 20px rgba(0,0,0,0.6)' }}
-              >
-                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  autoFocus 
-                  value={quickWaccInput} 
-                  onChange={e => setQuickWaccInput(e.target.value)} 
-                  placeholder="e.g. 350"
-                  style={{ width: 80, height: 26, fontSize: 12, padding: '0 6px', background: '#080c14', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput)} 
-                  className="btn-primary btn-xs" 
-                  style={{ padding: '3px 8px', fontSize: 10, height: 26, borderRadius: 4 }}
-                >
-                  Save
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setEditingScrip(null)} 
-                  className="btn-secondary btn-xs" 
-                  style={{ padding: '3px 6px', fontSize: 10, height: 26, borderRadius: 4 }}
-                >
-                  ✕
-                </button>
-              </div>
+            {/* CDSC / WACC Origin Badge */}
+            {h.waccSource === 'CDSC_MY_HOLDING_DECLARED' ? (
+              <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ MeroShare WACC</span>
+            ) : h.waccSource === 'BROKER_TMS' ? (
+              <span style={{ fontSize: 9, background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🏛️ Broker TMS</span>
+            ) : h.waccSource && String(h.waccSource).startsWith('ESTIMATED_') ? (
+              <span style={{ fontSize: 9, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>📊 Estimated</span>
+            ) : h.waccSource === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED' ? (
+              <span style={{ fontSize: 9, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚡ Broker Staged</span>
+            ) : h.waccSource === 'IPO_ALLOTMENT' ? (
+              <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.25)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🎯 IPO</span>
+            ) : h.waccSource === 'CUSTOM_USER_SET' || (h.isCustomWacc && h.waccSource !== 'FALLBACK_BASE_PRICE') ? (
+              <span style={{ fontSize: 9, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', border: '1px solid rgba(234,179,8,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom WACC</span>
+            ) : (
+              <span style={{ fontSize: 9, background: 'rgba(244,63,94,0.15)', color: '#f87171', border: '1px solid rgba(244,63,94,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed (Rs. 100)</span>
             )}
           </div>
 
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-              {formatRs(h.currentValue)}
-            </div>
-            <div style={{ marginTop: 3 }}>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                background: isProfit ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
-                border: `1px solid ${isProfit ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
-                color: isProfit ? 'var(--bull)' : '#f87171',
-                padding: '2px 7px', borderRadius: 6, fontSize: 10.5, fontWeight: 800
-              }}>
-                {isProfit ? <ArrowUpRight style={{ width: 11, height: 11 }} /> : <ArrowDownRight style={{ width: 11, height: 11 }} />}
-                {isProfit ? '+' : ''}{Number(h.plPercent || 0).toFixed(2)}% ({formatRs(h.profitLoss)})
-              </span>
-            </div>
-            <div style={{ marginTop: 6, display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleAnalyzeSingleStock(h); }}
-                className="btn-secondary btn-xs"
-                style={{ fontSize: 9.5, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe', borderRadius: 6, fontWeight: 700 }}
-              >
-                <Sparkles style={{ width: 10, height: 10 }} /> Guru AI
-              </button>
-            </div>
+          {/* Return P&L Badge */}
+          <div>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              background: isProfit ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
+              border: `1px solid ${isProfit ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
+              color: isProfit ? 'var(--bull)' : '#f87171',
+              padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 800,
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {isProfit ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
+              {isProfit ? '+' : ''}{Number(h.plPercent || 0).toFixed(2)}% ({formatRs(h.profitLoss)})
+            </span>
           </div>
+        </div>
+
+        {/* ── ROW 3: Holding Metrics Strip (Units @ LTP • WACC [Edit]) ── */}
+        <div style={{
+          fontSize: 11,
+          color: 'var(--text-secondary)',
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.05)',
+          borderRadius: 8,
+          padding: '6px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 6,
+          marginBottom: signal?.advice ? 8 : 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{h.units} Units</span>
+            <span style={{ color: 'var(--text-muted)' }}>@</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatRs(h.currentPrice)}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: 'var(--text-muted)' }}>WACC:</span>
+            <strong style={{ color: (h.waccSource === 'FALLBACK_BASE_PRICE') ? '#fbbf24' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+              {formatRs(h.wacc)}
+            </strong>
+            <button 
+              type="button"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setEditingScrip(rowKey); 
+                setQuickWaccInput(String(h.wacc || '')); 
+              }}
+              style={{ 
+                background: h.waccSource === 'FALLBACK_BASE_PRICE' ? 'rgba(234,179,8,0.2)' : 'rgba(255,255,255,0.08)', 
+                border: h.waccSource === 'FALLBACK_BASE_PRICE' ? '1px solid rgba(234,179,8,0.5)' : '1px solid rgba(255,255,255,0.15)', 
+                color: h.waccSource === 'FALLBACK_BASE_PRICE' ? '#fbbf24' : 'var(--text-primary)', 
+                borderRadius: 5, 
+                padding: '2px 7px', 
+                fontSize: 9.5, 
+                cursor: 'pointer', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: 3, 
+                fontWeight: 800 
+              }}
+              title={h.waccSource === 'FALLBACK_BASE_PRICE' ? "Unconfirmed purchase rate! Click to enter real buy price" : "Edit purchase rate / WACC"}
+            >
+              <Edit3 style={{ width: 10, height: 10 }} /> {h.waccSource === 'FALLBACK_BASE_PRICE' ? 'Fix Rate' : 'Edit'}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Inline Quick WACC Edit Box (If active for this row) ── */}
+        {editingScrip === rowKey && (
+          <div 
+            onClick={e => e.stopPropagation()} 
+            style={{
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#0d131f',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--primary-light)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
+            }}
+          >
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
+            <input 
+              type="number" 
+              step="0.01" 
+              autoFocus 
+              value={quickWaccInput} 
+              onChange={e => setQuickWaccInput(e.target.value)} 
+              placeholder="e.g. 350"
+              style={{ flex: 1, height: 28, fontSize: 12, padding: '0 8px', background: '#080c14', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
+            />
+            <button 
+              type="button" 
+              onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput, accountId)} 
+              className="btn-primary btn-xs" 
+              style={{ padding: '4px 10px', fontSize: 11, height: 28, borderRadius: 4, fontWeight: 800 }}
+            >
+              Save
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setEditingScrip(null)} 
+              className="btn-secondary btn-xs" 
+              style={{ padding: '4px 8px', fontSize: 11, height: 28, borderRadius: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ── ROW 4: Action Advice Box (Full Width, Tidy Typography) ── */}
+        {signal?.advice && (
+          <div style={{ 
+            marginBottom: 10,
+            fontSize: 11, 
+            color: signal.color || 'var(--text-secondary)', 
+            background: signal.bg || 'rgba(255,255,255,0.03)',
+            padding: '7px 10px',
+            borderRadius: 8,
+            border: `1px solid ${signal.border || 'var(--border)'}`,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 6,
+            lineHeight: 1.45
+          }}>
+            <span style={{ flexShrink: 0 }}>💡</span>
+            <span style={{ fontWeight: 500 }}>{signal.advice}</span>
+          </div>
+        )}
+
+        {/* ── ROW 5: Action Buttons (Entry/Exit Plan & AI Guru) ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 8 }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleOpenInEntryExitAnalyzer(h.symbol); }}
+            className="btn-secondary btn-xs"
+            style={{
+              width: '100%',
+              fontSize: 10.5,
+              padding: '6px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5,
+              background: 'rgba(56,189,248,0.12)',
+              borderColor: 'rgba(56,189,248,0.35)',
+              color: '#38bdf8',
+              borderRadius: 8,
+              fontWeight: 800
+            }}
+            title="Open full Entry/Exit Strategy Plan for this stock"
+          >
+            <Target style={{ width: 12, height: 12 }} /> Entry/Exit Plan
+          </button>
+          <button 
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleAnalyzeSingleStock(h); }}
+            className="btn-secondary btn-xs"
+            style={{
+              width: '100%',
+              fontSize: 10.5,
+              padding: '6px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5,
+              background: 'rgba(168,85,247,0.12)',
+              borderColor: 'rgba(168,85,247,0.35)',
+              color: '#d8b4fe',
+              borderRadius: 8,
+              fontWeight: 800
+            }}
+          >
+            <Sparkles style={{ width: 12, height: 12 }} /> AI Guru
+          </button>
         </div>
       </div>
     );
@@ -1521,22 +2063,28 @@ Based on this data, provide a robust analysis using this exact markdown structur
         </div>
       </div>
 
-      {/* ── 3B. P&L FILTER CHIPS ── */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+      {/* ── 3B. QUANTITATIVE ACTION & P&L FILTER CHIPS ── */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
         {[
-          { id: 'all', label: `All Scrips (${holdings.length})`, icon: Target, color: 'var(--primary-light)' },
+          { id: 'all', label: `All (${holdings.length})`, icon: Target, color: 'var(--primary-light)' },
+          { id: 'book_profit', label: `🎯 Book Profit (${holdings.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN').length})`, icon: Trophy, color: '#10B981' },
+          { id: 'stop_loss', label: `🛑 Defense/SL (${holdings.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT').length})`, icon: AlertTriangle, color: '#F43F5E' },
+          { id: 'breakout', label: `⚡ Breakout/Buy (${holdings.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE').length})`, icon: Flame, color: '#38bdf8' },
+          { id: 'hold_ride', label: `🛡️ Hold (${holdings.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT').length})`, icon: Clock, color: '#a855f7' },
           { id: 'profit', label: `In Profit (${holdings.filter(h => h.profitLoss > 0).length})`, icon: TrendingUp, color: 'var(--bull)' },
           { id: 'loss', label: `In Loss (${holdings.filter(h => h.profitLoss < 0).length})`, icon: TrendingDown, color: '#F43F5E' }
         ].map(chip => (
           <button
             key={chip.id}
+            type="button"
             onClick={() => setFilterPnl(chip.id)}
             style={{
-              background: filterPnl === chip.id ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)',
+              background: filterPnl === chip.id ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)',
               border: `1px solid ${filterPnl === chip.id ? chip.color : 'var(--border)'}`,
               color: filterPnl === chip.id ? '#ffffff' : 'var(--text-secondary)',
-              borderRadius: 10, padding: '6px 12px', fontSize: 11.5, fontWeight: 700,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s'
+              borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s',
+              whiteSpace: 'nowrap', flexShrink: 0
             }}
           >
             <chip.icon style={{ width: 12, height: 12, color: chip.color }} />
@@ -1746,34 +2294,204 @@ Based on this data, provide a robust analysis using this exact markdown structur
           {/* 1. Manual Ledger Holdings (Shown if manual ledger selected or consolidated) */}
           {(activeView === 'manual' || activeView === 'consolidated') && manualRaw.length > 0 && (
             <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <BookOpen style={{ width: 16, height: 16, color: '#f59e0b' }} />
-                  <h3 style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', margin: 0 }}>
-                    Manual Ledger Portfolio
+              {/* ── Tier 1: Identity & Value ── */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                    <BookOpen style={{ width: 16, height: 16, color: '#f59e0b', flexShrink: 0 }} />
+                    <span>Manual Ledger Portfolio</span>
                   </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Offline Ledger</span>
+                    {(() => {
+                      const processed = getProcessedHoldings(manualRaw, 'manual');
+                      return <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>• {processed.length} Scrips</span>;
+                    })()}
+                  </div>
                 </div>
                 {(() => {
-                  const processed = getProcessedHoldings(manualRaw);
+                  const processed = getProcessedHoldings(manualRaw, 'manual');
                   const subCost = processed.reduce((sum, h) => sum + h.units * h.wacc, 0);
                   const subValue = processed.reduce((sum, h) => sum + h.currentValue, 0);
                   const subPL = subValue - subCost;
                   const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
                   return (
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                         {formatRs(subValue)}
-                      </span>
-                      <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
-                        {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}%
-                      </span>
+                      </div>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                        {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
+                      </div>
                     </div>
                   );
                 })()}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {getProcessedHoldings(manualRaw).map(h => renderHoldingRow(h))}
-              </div>
+
+              {/* ── Tier 2: Summative Action Indicators & Filters ── */}
+              {(() => {
+                const processedAll = getProcessedHoldings(manualRaw, 'manual', false);
+                const bookProfitCount = processedAll.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN').length;
+                const defenseCount = processedAll.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT').length;
+                const breakoutCount = processedAll.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE').length;
+                const holdCount = processedAll.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT').length;
+                const activeAccFilter = accountSignalFilters['manual'] || 'all';
+                const displayHoldings = getFilteredAccountHoldings(manualRaw, 'manual');
+
+                return (
+                  <>
+                    {(bookProfitCount > 0 || defenseCount > 0 || breakoutCount > 0 || holdCount > 0 || activeAccFilter !== 'all') && (
+                      <div style={{ display: 'flex', gap: 5, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.06)', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {activeAccFilter !== 'all' && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccountFilter('manual', 'all')}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(255,255,255,0.08)',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid rgba(255,255,255,0.2)',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }}
+                          >
+                            ✕ All ({processedAll.length})
+                          </button>
+                        )}
+                        {bookProfitCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccountFilter('manual', 'profit')}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? 'rgba(16,185,129,0.35)' : 'rgba(16,185,129,0.12)',
+                              color: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '#ffffff' : '#34d399',
+                              border: `1px solid ${(activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '#10b981' : 'rgba(16,185,129,0.3)'}`,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              boxShadow: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '0 0 10px rgba(16,185,129,0.4)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                            title="Click to show Take Profit stocks"
+                          >
+                            🎯 {bookProfitCount} Take Profit
+                          </button>
+                        )}
+                        {defenseCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccountFilter('manual', 'defense')}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? 'rgba(244,63,94,0.35)' : 'rgba(244,63,94,0.12)',
+                              color: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '#ffffff' : '#f87171',
+                              border: `1px solid ${(activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '#f43f5e' : 'rgba(244,63,94,0.3)'}`,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              boxShadow: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '0 0 10px rgba(244,63,94,0.4)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                            title="Click to show Defense / Stop Loss stocks"
+                          >
+                            🛑 {defenseCount} Defense
+                          </button>
+                        )}
+                        {breakoutCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccountFilter('manual', 'breakout')}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: activeAccFilter === 'breakout' ? 'rgba(56,189,248,0.35)' : 'rgba(56,189,248,0.12)',
+                              color: activeAccFilter === 'breakout' ? '#ffffff' : '#38bdf8',
+                              border: `1px solid ${activeAccFilter === 'breakout' ? '#38bdf8' : 'rgba(56,189,248,0.3)'}`,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              boxShadow: activeAccFilter === 'breakout' ? '0 0 10px rgba(56,189,248,0.4)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                            title="Click to show Breakout / Buy stocks"
+                          >
+                            ⚡ {breakoutCount} Breakout
+                          </button>
+                        )}
+                        {holdCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccountFilter('manual', 'hold')}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? 'rgba(168,85,247,0.35)' : 'rgba(168,85,247,0.12)',
+                              color: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '#ffffff' : '#c084fc',
+                              border: `1px solid ${(activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '#a855f7' : 'rgba(168,85,247,0.3)'}`,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              boxShadow: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '0 0 10px rgba(168,85,247,0.4)' : 'none',
+                              transition: 'all 0.15s'
+                            }}
+                            title="Click to show Hold & Ride stocks"
+                          >
+                            🛡️ {holdCount} Hold
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {displayHoldings.length > 0 ? (
+                        displayHoldings.map(h => renderHoldingRow(h, 'manual'))
+                      ) : (
+                        <div style={{
+                          textAlign: 'center',
+                          padding: '16px 12px',
+                          borderRadius: 10,
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px dashed var(--border)',
+                          color: 'var(--text-muted)',
+                          fontSize: 12
+                        }}>
+                          No stocks currently match the "{activeAccFilter}" signal in this ledger.
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAccountFilter('manual', 'all')}
+                              className="btn-secondary btn-xs"
+                              style={{ fontSize: 10.5, padding: '3px 9px' }}
+                            >
+                              View All ({processedAll.length}) Stocks
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1781,45 +2499,322 @@ Based on this data, provide a robust analysis using this exact markdown structur
           {(activeView === 'meroshare' || activeView === 'consolidated') && meroshareProfiles.map(p => {
             const rawHoldings = p.holdings || [];
             if (rawHoldings.length === 0) return null;
-            const processed = getProcessedHoldings(rawHoldings);
-            const subCost = processed.reduce((sum, h) => sum + (h.units * (h.wacc || 100)), 0);
+            const accountId = p.id || p.boid;
+            const processedAll = getProcessedHoldings(rawHoldings, accountId, false);
+            const subCost = processedAll.reduce((sum, h) => sum + (h.units * (h.wacc || 100)), 0);
             const subCloseValue = rawHoldings.reduce((sum, h) => sum + (h.valueAsOfPrevClose > 0 ? h.valueAsOfPrevClose : (h.units * (h.prevClose || h.currentLtp || guessScripBasePrice(h.symbol, h.wacc)))), 0);
             const subLtpValue = rawHoldings.reduce((sum, h) => sum + (h.valueAsOfLTP > 0 ? h.valueAsOfLTP : (h.units * (h.currentLtp || h.prevClose || guessScripBasePrice(h.symbol, h.wacc)))), 0);
-            const subValue = processed.reduce((sum, h) => sum + h.currentValue, 0);
+            const subValue = processedAll.reduce((sum, h) => sum + h.currentValue, 0);
             const subPL = subValue - subCost;
             const subPLPct = subCost > 0 ? (subPL / subCost) * 100 : 0;
+            const bookProfitCount = processedAll.filter(h => h.signal?.type === 'BOOK_PROFIT' || h.signal?.type === 'SUPER_GAIN').length;
+            const defenseCount = processedAll.filter(h => h.signal?.type === 'STOP_LOSS' || h.signal?.type === 'DEFENSE_ALERT').length;
+            const breakoutCount = processedAll.filter(h => h.signal?.type === 'BREAKOUT' || h.signal?.type === 'ACCUMULATE').length;
+            const holdCount = processedAll.filter(h => h.signal?.type === 'HOLD_RIDE' || h.signal?.type === 'HOLD_WAIT').length;
+            const activeAccFilter = accountSignalFilters[accountId] || 'all';
+            const displayHoldings = getFilteredAccountHoldings(rawHoldings, accountId);
 
             return (
               <div key={p.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', boxShadow: 'var(--shadow-card)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 10 }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
-                      <ShieldCheck style={{ width: 16, height: 16, color: 'var(--bull)' }} /> {p.name}
+                {/* ── Tier 1: Account Identity (Left) & Net Worth / P&L (Right) ── */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <h3 style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.name}>
+                      <ShieldCheck style={{ width: 16, height: 16, color: 'var(--bull)', flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                     </h3>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>BOID: {p.boid}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: 14, fontWeight: 900, display: 'block', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(subValue)}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
-                        {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>BOID: {p.boid}</span>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                        • {displayHoldings.length === processedAll.length ? `${processedAll.length} Scrips` : `Showing ${displayHoldings.length} of ${processedAll.length} Scrips`}
                       </span>
                     </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                      {formatRs(subValue)}
+                    </div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                      {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Tier 2: Intelligence Badges (Left) & Quick Action Controls (Right) ── */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  gap: 8, 
+                  flexWrap: 'wrap', 
+                  marginBottom: 12, 
+                  paddingBottom: 10, 
+                  borderBottom: '1px solid rgba(255,255,255,0.06)' 
+                }}>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {activeAccFilter !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAccountFilter(accountId, 'all')}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: 'rgba(255,255,255,0.08)',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}
+                      >
+                        ✕ All ({processedAll.length})
+                      </button>
+                    )}
+                    {bookProfitCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAccountFilter(accountId, 'profit')}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? 'rgba(16,185,129,0.35)' : 'rgba(16,185,129,0.12)',
+                          color: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '#ffffff' : '#34d399',
+                          border: `1px solid ${(activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '#10b981' : 'rgba(16,185,129,0.3)'}`,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          boxShadow: (activeAccFilter === 'profit' || activeAccFilter === 'book_profit') ? '0 0 10px rgba(16,185,129,0.4)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Click to show Take Profit stocks in this account"
+                      >
+                        🎯 {bookProfitCount} Take Profit
+                      </button>
+                    )}
+                    {defenseCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAccountFilter(accountId, 'defense')}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? 'rgba(244,63,94,0.35)' : 'rgba(244,63,94,0.12)',
+                          color: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '#ffffff' : '#f87171',
+                          border: `1px solid ${(activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '#f43f5e' : 'rgba(244,63,94,0.3)'}`,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          boxShadow: (activeAccFilter === 'defense' || activeAccFilter === 'stop_loss') ? '0 0 10px rgba(244,63,94,0.4)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Click to show Defense / Stop Loss stocks in this account"
+                      >
+                        🛑 {defenseCount} Defense
+                      </button>
+                    )}
+                    {breakoutCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAccountFilter(accountId, 'breakout')}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: activeAccFilter === 'breakout' ? 'rgba(56,189,248,0.35)' : 'rgba(56,189,248,0.12)',
+                          color: activeAccFilter === 'breakout' ? '#ffffff' : '#38bdf8',
+                          border: `1px solid ${activeAccFilter === 'breakout' ? '#38bdf8' : 'rgba(56,189,248,0.3)'}`,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          boxShadow: activeAccFilter === 'breakout' ? '0 0 10px rgba(56,189,248,0.4)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Click to show Breakout / Buy stocks in this account"
+                      >
+                        ⚡ {breakoutCount} Breakout
+                      </button>
+                    )}
+                    {holdCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAccountFilter(accountId, 'hold')}
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? 'rgba(168,85,247,0.35)' : 'rgba(168,85,247,0.12)',
+                          color: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '#ffffff' : '#c084fc',
+                          border: `1px solid ${(activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '#a855f7' : 'rgba(168,85,247,0.3)'}`,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          boxShadow: (activeAccFilter === 'hold' || activeAccFilter === 'hold_ride') ? '0 0 10px rgba(168,85,247,0.4)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                        title="Click to show Hold & Ride stocks in this account"
+                      >
+                        🛡️ {holdCount} Hold
+                      </button>
+                    )}
+                    {bookProfitCount === 0 && defenseCount === 0 && breakoutCount === 0 && holdCount === 0 && (
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>All holdings tracked</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                     <button
                       type="button"
                       onClick={() => handleRetrievePortfolio(p.id)}
-                      disabled={isRetrieving}
+                      disabled={isRetrieving || isSyncingWacc}
                       title="Pull Live MeroShare Holdings"
                       className="btn-secondary btn-xs"
-                      style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, borderRadius: 8, fontWeight: 700 }}
+                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, borderRadius: 7, fontWeight: 700 }}
                     >
-                      <RefreshCw style={{ width: 12, height: 12 }} className={isRetrieving ? 'animate-spin' : ''} />
+                      <RefreshCw style={{ width: 11, height: 11 }} className={isRetrieving ? 'animate-spin' : ''} />
                       Sync
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSyncWaccFromMeroShare(p)}
+                      disabled={isRetrieving || isSyncingWacc}
+                      title="Fetch authentic WACC rates from CDSC MeroShare"
+                      className="btn-secondary btn-xs"
+                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, borderRadius: 7, fontWeight: 700, background: 'rgba(56,189,248,0.12)', borderColor: 'rgba(56,189,248,0.35)', color: '#38bdf8' }}
+                    >
+                      <RefreshCw style={{ width: 11, height: 11 }} className={isSyncingWacc ? 'animate-spin' : ''} />
+                      {isSyncingWacc ? 'Syncing...' : '⚡ Sync WACC'}
                     </button>
                   </div>
                 </div>
+
+                {/* WACC Sync Progress Notification Banner */}
+                {isSyncingWacc && (
+                  <div style={{
+                    marginBottom: 10,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(56,189,248,0.12)',
+                    border: '1px solid rgba(56,189,248,0.35)',
+                    color: '#7dd3fc',
+                    fontSize: 11.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
+                    <span>{waccSyncProgress || 'Syncing real WACCs from CDSC MeroShare (anti-WAF throttled)...'}</span>
+                  </div>
+                )}
+                {waccSyncResult && (waccSyncResult.accountId === accountId || typeof waccSyncResult === 'string') && (
+                  <div style={{
+                    marginBottom: 12,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? 'rgba(234,179,8,0.12)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? 'rgba(244,63,94,0.12)' : 'rgba(16,185,129,0.12)',
+                    border: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '1px solid rgba(234,179,8,0.35)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '1px solid rgba(244,63,94,0.35)' : '1px solid rgba(16,185,129,0.35)',
+                    color: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '#fbbf24' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '#f87171' : '#34d399',
+                    fontSize: 11.5,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? (
+                          <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#fbbf24' }} />
+                        ) : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? (
+                          <AlertCircle style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#f87171' }} />
+                        ) : (
+                          <CheckCircle2 style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1, color: '#34d399' }} />
+                        )}
+                        <div>
+                          {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') && (
+                            <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>CDSC Has No Unsold Purchase Records</strong>
+                          )}
+                          <span>{typeof waccSyncResult === 'string' ? waccSyncResult : waccSyncResult.msg}</span>
+                        </div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setWaccSyncResult(null)} 
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px', lineHeight: 1 }}
+                        title="Dismiss"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Quick 1-tap Actions for Secondary Holdings when CDSC has no records */}
+                    {typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary' && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid rgba(234,179,8,0.2)' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'ltp')}
+                          className="btn-primary btn-xs"
+                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800 }}
+                        >
+                          ⚡ Fill with Market LTP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'prevClose')}
+                          className="btn-secondary btn-xs"
+                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(255,255,255,0.08)' }}
+                        >
+                          📊 Fill with Prev Close
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleOpenWaccModal}
+                          className="btn-secondary btn-xs"
+                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(234,179,8,0.18)', color: '#fbbf24', borderColor: 'rgba(234,179,8,0.4)' }}
+                        >
+                          ✏️ Enter Buy Rates
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {processed.map(h => renderHoldingRow(h))}
+                  {displayHoldings.length > 0 ? (
+                    displayHoldings.map(h => renderHoldingRow(h, accountId))
+                  ) : (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '16px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px dashed var(--border)',
+                      color: 'var(--text-muted)',
+                      fontSize: 12
+                    }}>
+                      No stocks currently match the "{activeAccFilter}" signal in this account.
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAccountFilter(accountId, 'all')}
+                          className="btn-secondary btn-xs"
+                          style={{ fontSize: 10.5, padding: '3px 9px' }}
+                        >
+                          View All ({processedAll.length}) Stocks
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -2021,120 +3016,427 @@ Based on this data, provide a robust analysis using this exact markdown structur
         </div>
       )}
 
-      {/* Manage All WACCs Modal */}
+      {/* Rebuilt WACC Studio & Buy Rate Manager Modal */}
       {showWaccModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5,5,15,0.85)', backdropFilter: 'blur(5px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div className="card" style={{ width: '100%', maxWidth: 520, margin: 0, maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 18 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(5,5,15,0.85)', backdropFilter: 'blur(6px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div className="card" style={{ width: '100%', maxWidth: 640, margin: 0, maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
               <div>
-                <h3 style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Edit3 style={{ width: 16, height: 16, color: '#fbbf24' }} /> Manage Buy Prices (WACC)
+                <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <Edit3 style={{ width: 18, height: 18, color: '#fbbf24' }} /> WACC & Purchase Price Studio
                 </h3>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                  Set your actual secondary market purchase price for accurate P/L
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'block' }}>
+                  Manage authentic purchase rates (WACC) for accurate Capital Gains & P/L calculation
                 </span>
               </div>
-              <button onClick={() => setShowWaccModal(false)} className="icon-btn" style={{ width: 28, height: 28 }}>
-                <X style={{ width: 16, height: 16 }} />
+              <button onClick={() => setShowWaccModal(false)} className="icon-btn" style={{ width: 30, height: 30 }}>
+                <X style={{ width: 17, height: 17 }} />
               </button>
             </div>
 
-            <div style={{ fontSize: 10, color: 'var(--text-secondary)', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: 8, padding: '8px 10px', marginBottom: 10, lineHeight: 1.4 }}>
-              💡 MeroShare DEMAT sync supplies share units and closing prices, but does not provide purchase rates for secondary market shares (which default to Rs. 100). Enter your true buying prices below or use 1-tap Auto-Fill.
-            </div>
-
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {/* Studio Navigation Tabs */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, background: 'rgba(255,255,255,0.03)', padding: 4, borderRadius: 10, border: '1px solid var(--border)' }}>
               <button
                 type="button"
-                onClick={handleAutoSetAllLtp}
+                onClick={() => setWaccModalTab('manual')}
                 style={{
-                  flex: 1, padding: '6px 8px', fontSize: 10.5, fontWeight: 800,
-                  background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)',
-                  color: 'var(--bull)', borderRadius: 6, cursor: 'pointer'
+                  flex: 1,
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: waccModalTab === 'manual' ? 'var(--primary)' : 'transparent',
+                  color: waccModalTab === 'manual' ? '#fff' : 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5
                 }}
               >
-                ⚡ Auto-Fill All with LTP
+                <Edit3 style={{ width: 13, height: 13 }} /> Quick Rates & Estimates
               </button>
               <button
                 type="button"
-                onClick={handleAutoSetAllPrevClose}
+                onClick={() => setWaccModalTab('tms')}
                 style={{
-                  flex: 1, padding: '6px 8px', fontSize: 10.5, fontWeight: 800,
-                  background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
-                  color: '#818cf8', borderRadius: 6, cursor: 'pointer'
+                  flex: 1,
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: waccModalTab === 'tms' ? 'linear-gradient(90deg, #6366f1, #4f46e5)' : 'transparent',
+                  color: waccModalTab === 'tms' ? '#fff' : 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5
                 }}
               >
-                ⚡ Auto-Fill with Prev Close
+                <FileText style={{ width: 13, height: 13 }} /> 🏛️ Import TMS Trade Book
+              </button>
+              <button
+                type="button"
+                onClick={() => setWaccModalTab('cdsc')}
+                style={{
+                  flex: 1,
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: waccModalTab === 'cdsc' ? 'linear-gradient(90deg, #0284c7, #0369a1)' : 'transparent',
+                  color: waccModalTab === 'cdsc' ? '#fff' : 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5
+                }}
+              >
+                <RefreshCw style={{ width: 13, height: 13 }} /> ⚡ CDSC MeroShare Sync
               </button>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-              {Object.keys(waccEditValues).length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 12 }}>
-                  No stock holdings found to edit.
+            {/* TAB 1: QUICK RATES & SMART ESTIMATORS */}
+            {waccModalTab === 'manual' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                {/* 1-Tap Smart Bulk Estimator Actions */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      ⚡ 1-Tap Smart Auto-Fill (Entire Portfolio)
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      {Object.keys(waccEditValues).length} Scrips Tracked
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleAutoSetAllLtp}
+                      className="btn-secondary btn-xs"
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: 'var(--bull)' }}
+                      title="Set all buy prices to current live LTP"
+                    >
+                      ⚡ Fill with LTP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAutoSetAllPrevClose}
+                      className="btn-secondary btn-xs"
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.3)', color: '#818cf8' }}
+                      title="Set all buy prices to Previous Closing price"
+                    >
+                      📊 Fill with Prev Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoSetAllDiscount(10)}
+                      className="btn-secondary btn-xs"
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', color: '#fbbf24' }}
+                      title="Estimate buy prices at 10% discount below current LTP (Realistic entry proxy)"
+                    >
+                      📉 Fill with -10% Discount
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetAllPar}
+                      className="btn-secondary btn-xs"
+                      style={{ flex: 1, minWidth: 110, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(255,255,255,0.06)' }}
+                      title="Reset all to nominal face value (Rs. 100)"
+                    >
+                      🎯 Reset to Par
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                Object.entries(waccEditValues).map(([sym, val]) => {
-                  const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
-                  const ltp = mStock?.ltp || 0;
-                  return (
-                    <div key={sym} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--text-primary)' }}>{sym}</div>
-                        <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>
-                          LTP: Rs. {ltp > 0 ? ltp : 'N/A'}
+
+                {/* Filter & Search Bar */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search style={{ position: 'absolute', left: 9, top: 8, width: 13, height: 13, color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search stock symbol (e.g. NABIL, SHIVM)..."
+                      value={waccSearch}
+                      onChange={e => setWaccSearch(e.target.value)}
+                      style={{ width: '100%', height: 30, paddingLeft: 28, paddingRight: 8, fontSize: 11.5, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 7, color: '#fff' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWaccFilterUnconfirmed(prev => !prev)}
+                    style={{
+                      height: 30,
+                      padding: '0 10px',
+                      borderRadius: 7,
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      border: waccFilterUnconfirmed ? '1px solid #fbbf24' : '1px solid var(--border)',
+                      background: waccFilterUnconfirmed ? 'rgba(234,179,8,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: waccFilterUnconfirmed ? '#fbbf24' : 'var(--text-muted)'
+                    }}
+                  >
+                    ⚠️ Only Unconfirmed
+                  </button>
+                </div>
+
+                {/* Scrip Rows List */}
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12, minHeight: 200 }}>
+                  {(() => {
+                    const entries = Object.entries(waccEditValues).filter(([sym, val]) => {
+                      if (waccSearch && !sym.includes(waccSearch.trim().toUpperCase())) return false;
+                      if (waccFilterUnconfirmed) {
+                        const src = waccSourcesMap[sym];
+                        if (src && src !== 'FALLBACK_BASE_PRICE' && Number(val) !== 100) return false;
+                      }
+                      return true;
+                    });
+
+                    if (entries.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '30px 16px', color: 'var(--text-muted)', fontSize: 12 }}>
+                          No stocks match your filter criteria.
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {ltp > 0 && (
+                      );
+                    }
+
+                    return entries.map(([sym, val]) => {
+                      const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
+                      const ltp = mStock?.ltp || 0;
+                      const numVal = parseFloat(val) || 0;
+                      const plDiff = (ltp > 0 && numVal > 0) ? (ltp - numVal) : 0;
+                      const plPct = numVal > 0 ? ((plDiff / numVal) * 100) : 0;
+                      const src = waccSourcesMap[sym];
+
+                      return (
+                        <div 
+                          key={sym} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            padding: '8px 12px', 
+                            background: 'rgba(255,255,255,0.02)', 
+                            border: '1px solid var(--border)', 
+                            borderRadius: 9,
+                            gap: 8
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <strong style={{ fontSize: 13, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{sym}</strong>
+                              {src === 'CDSC_MY_HOLDING_DECLARED' ? (
+                                <span style={{ fontSize: 8.5, background: 'rgba(16,185,129,0.18)', color: '#34d399', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✓ CDSC</span>
+                              ) : src === 'BROKER_TMS' ? (
+                                <span style={{ fontSize: 8.5, background: 'rgba(99,102,241,0.2)', color: '#818cf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>🏛️ TMS</span>
+                              ) : src && src.startsWith('ESTIMATED_') ? (
+                                <span style={{ fontSize: 8.5, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>📊 Estimate</span>
+                              ) : src === 'CUSTOM_USER_SET' ? (
+                                <span style={{ fontSize: 8.5, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom</span>
+                              ) : (
+                                <span style={{ fontSize: 8.5, background: 'rgba(244,63,94,0.15)', color: '#f87171', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
+                              <span>LTP: Rs. {ltp > 0 ? ltp : 'N/A'}</span>
+                              {numVal > 0 && ltp > 0 && (
+                                <span style={{ color: plDiff >= 0 ? 'var(--bull)' : '#f87171', fontWeight: 700 }}>
+                                  P/L: {plDiff >= 0 ? '+' : ''}{plPct.toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {ltp > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setWaccEditValues(prev => ({ ...prev, [sym]: ltp }));
+                                  setWaccSourcesMap(prev => ({ ...prev, [sym]: 'ESTIMATED_LTP' }));
+                                }}
+                                style={{ fontSize: 9, padding: '3px 6px', background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}
+                                title="Set to LTP"
+                              >
+                                Use LTP
+                              </button>
+                            )}
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Rs.</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={val}
+                              onChange={e => {
+                                const newV = e.target.value;
+                                setWaccEditValues(prev => ({ ...prev, [sym]: newV }));
+                                setWaccSourcesMap(prev => ({ ...prev, [sym]: 'CUSTOM_USER_SET' }));
+                              }}
+                              placeholder="Buy price"
+                              style={{ width: 85, height: 28, fontSize: 12, padding: '0 8px', background: '#0d1117', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontFamily: 'var(--font-mono)' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: BROKER TMS TRADE BOOK IMPORTER */}
+            {waccModalTab === 'tms' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 9, padding: '10px 12px', marginBottom: 12, lineHeight: 1.5 }}>
+                  💡 <strong>How to import from NEPSE Broker TMS:</strong>
+                  <div style={{ marginTop: 4, fontSize: 10.5 }}>
+                    1. Open your broker's TMS (e.g. <code>tms58.nepsetms.com.np</code>) & navigate to <strong>Trade Management → Trade Book</strong>.<br />
+                    2. Copy the trade rows (or export CSV) and paste below.<br />
+                    3. The engine automatically aggregates multiple buy orders and calculates the exact WACC including broker commissions & SEBON fees!
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    Paste TMS Trade Book Text / CSV Content:
+                  </label>
+                  <textarea
+                    rows={5}
+                    placeholder="Symbol  Qty  Rate  Type... (Paste copied TMS rows or CSV text here)"
+                    value={tmsRawText}
+                    onChange={e => setTmsRawText(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 11, background: '#0d1117', border: '1px solid var(--border)', borderRadius: 8, color: '#fff', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={handleParseTms}
+                    disabled={!tmsRawText.trim()}
+                    className="btn-primary"
+                    style={{ flex: 1, padding: '8px 0', fontSize: 11.5, fontWeight: 800, background: 'linear-gradient(90deg, #6366f1, #4f46e5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
+                    <Sparkles style={{ width: 14, height: 14 }} /> ⚡ Parse & Compute WACC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTmsRawText(''); setTmsParseResult(null); }}
+                    className="btn-secondary"
+                    style={{ padding: '8px 14px', fontSize: 11.5 }}
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {/* TMS Parse Results Preview */}
+                {tmsParseResult && (
+                  <div style={{ marginTop: 6, marginBottom: 12 }}>
+                    {tmsParseResult.success ? (
+                      <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 9, padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--bull)' }}>
+                            ✓ Found {tmsParseResult.count} Unique Scrips in Trade Book
+                          </span>
                           <button
                             type="button"
-                            onClick={() => setWaccEditValues(prev => ({ ...prev, [sym]: ltp }))}
-                            style={{ fontSize: 9, padding: '3px 6px', background: 'rgba(91,94,244,0.15)', border: '1px solid rgba(91,94,244,0.3)', color: 'var(--primary-light)', borderRadius: 4, cursor: 'pointer' }}
-                            title="Set buy price to current LTP"
+                            onClick={handleApplyTmsWacc}
+                            className="btn-primary btn-xs"
+                            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 900, background: 'var(--bull)', color: '#042f2e', border: 'none', borderRadius: 6 }}
                           >
-                            Use LTP
+                            ✓ Apply All to Portfolio
                           </button>
-                        )}
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Rs.</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={val}
-                          onChange={e => setWaccEditValues(prev => ({ ...prev, [sym]: e.target.value }))}
-                          placeholder="Buy price"
-                          style={{ width: 85, height: 28, fontSize: 12, padding: '0 8px', background: '#0d1117', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontFamily: 'var(--font-mono)' }}
-                        />
+                        </div>
+                        <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {Object.values(tmsParseResult.holdings).map(h => (
+                            <div key={h.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6 }}>
+                              <span style={{ fontWeight: 800, color: '#fff' }}>{h.symbol}</span>
+                              <span style={{ color: 'var(--text-muted)' }}>{h.totalQuantity} Units ({h.transactionsCount} trades)</span>
+                              <span style={{ fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>WACC: Rs. {h.wacc}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    ) : (
+                      <div style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 9, padding: '8px 12px', color: '#f87171', fontSize: 11 }}>
+                        ⚠️ {tmsParseResult.error || 'Could not parse trade records. Make sure columns contain Symbol, Quantity, and Rate.'}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
+            {/* TAB 3: CDSC MEROSHARE LIVE SYNC */}
+            {waccModalTab === 'cdsc' && (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 9, padding: '12px 14px', marginBottom: 14, lineHeight: 1.5 }}>
+                  <strong style={{ color: '#38bdf8', display: 'block', marginBottom: 4 }}>Authentic CDSC MeroShare Extraction:</strong>
+                  This will connect directly to CDSC and query:
+                  <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                    <li><strong>Declared & Confirmed WACCs:</strong> Pulled from <code>/myHolding/</code></li>
+                    <li><strong>Unconfirmed Purchase Transactions:</strong> Throttled search via <code>/purchaseSource/search/</code></li>
+                  </ul>
+                  <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-muted)' }}>
+                    * Uses an anti-firewall 1.4s jitter delay to prevent CDSC F5 WAF IP bans.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSyncWaccFromMeroShare();
+                  }}
+                  disabled={isSyncingWacc}
+                  className="btn-primary"
+                  style={{ width: '100%', padding: '11px 0', fontSize: 12, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'linear-gradient(90deg, #0284c7, #0369a1)', border: 'none', marginBottom: 12 }}
+                >
+                  {isSyncingWacc ? <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> : <RefreshCw style={{ width: 16, height: 16 }} />}
+                  {isSyncingWacc ? 'Syncing authentic WACCs from CDSC...' : '⚡ Trigger CDSC MeroShare WACC Sync'}
+                </button>
+
+                {isSyncingWacc && (
+                  <div style={{ padding: '10px 12px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 8, color: '#7dd3fc', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Loader2 className="animate-spin" style={{ width: 14, height: 14 }} />
+                    <span>{waccSyncProgress || 'Connecting to CDSC...'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Success Banner */}
             {waccSaveSuccess && (
-              <div style={{ fontSize: 11, color: 'var(--bull)', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6, padding: '6px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
+              <div style={{ fontSize: 11, color: 'var(--bull)', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 7, padding: '7px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
                 ✓ {waccSaveSuccess}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8 }}>
+            {/* Bottom Modal Footer */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
               <button
                 type="button"
                 onClick={() => setShowWaccModal(false)}
                 className="btn-secondary"
                 style={{ flex: 1, padding: '9px 0', fontSize: 12 }}
               >
-                Cancel
+                Close
               </button>
-              <button
-                type="button"
-                onClick={handleSaveAllWacc}
-                className="btn-primary"
-                style={{ flex: 2, padding: '9px 0', fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #10B981, #059669)', border: 'none', color: '#042f2e' }}
-              >
-                Save All WACCs Permanently
-              </button>
+              {waccModalTab === 'manual' && (
+                <button
+                  type="button"
+                  onClick={handleSaveAllWacc}
+                  className="btn-primary"
+                  style={{ flex: 2, padding: '9px 0', fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #10B981, #059669)', border: 'none', color: '#042f2e' }}
+                >
+                  Save All WACCs Permanently
+                </button>
+              )}
             </div>
           </div>
         </div>

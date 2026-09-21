@@ -128,7 +128,14 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
   const triggerPrice = +(high20 + clearanceBuffer * 0.5).toFixed(1);
   const chaseCap = +(high20 * 1.025).toFixed(1); // +2.5% max chase cap
-  const structuralStopLoss = +(Math.max(1, Math.min(lowBase - atr * 0.5, ltp - atr * 1.5))).toFixed(1);
+  // Disciplined swing stop loss: strictly bounded between 3.5% (noise clearance) and 7.5% (max swing risk limit)
+  const maxSwingRiskPct = 0.075;
+  const minNoiseRiskPct = 0.035;
+  const swingFloor = +(ltp * (1 - maxSwingRiskPct)).toFixed(1);
+  const swingCeiling = +(ltp * (1 - minNoiseRiskPct)).toFixed(1);
+  const recent5Low = closes.length >= 5 ? Math.min(...adjustedCandles.slice(-6, -1).map(c => Number(c.low || c.close || 0))) : ltp * 0.95;
+  const baseCandidate = recent5Low > 0 && recent5Low < ltp ? recent5Low - atr * 0.25 : ltp - atr * 1.35;
+  const structuralStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
   const riskPerShare = Math.max(1, ltp - structuralStopLoss);
 
   const target1 = +(ltp + riskPerShare * 1.5).toFixed(1);
@@ -609,8 +616,13 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
 
       const epsVal = Number(cand.eps ?? stockObj.eps ?? 0);
       const isCriticalT2 = Boolean(plan.riskGate?.isCriticalT2Lockup || plan.t2Risk?.tier === 'CRITICAL');
+      const isCircuitExhausted = Boolean(
+        plan.riskGate?.isT2CircuitExhaustion ||
+        plan.quantMetrics?.t2CircuitGuard?.status === 'HIGH_T2_CIRCUIT_TRAP'
+      );
       const passesAll5 = 
         !Boolean(plan.riskGate?.isCircuitTrap) &&
+        !isCircuitExhausted &&
         !Boolean(plan.riskGate?.isLossMaking) &&
         !isCriticalT2 &&
         epsVal >= 0 &&
@@ -733,13 +745,25 @@ export function selectMasterPrimePick(stocks = [], priceHistories = {}, brokerDa
     }
 
     if (validatedPlans.length > 0) {
-      // TIER 1: Check if any candidate passes ALL 5 criteria with actionable BUY/ACCUMULATE signal:
-      const tier1 = validatedPlans.filter(p => p.passesAll5 && isActionableBuySignal(p));
-      const buyPlans = validatedPlans.filter(p => isActionableBuySignal(p));
-      const poolToRank = tier1.length > 0 ? tier1 : buyPlans;
+      // TIER 1: Check if any candidate passes ALL criteria with actionable BUY/ACCUMULATE signal:
+      // Exclude stocks with T+2 Circuit Exhaustion Trap
+      const nonCircuitTraps = validatedPlans.filter(p => !p.riskGate?.isT2CircuitExhaustion && !p.riskGate?.isCircuitTrap);
+      const tier1 = nonCircuitTraps.filter(p => p.passesAll5 && isActionableBuySignal(p));
+      const buyPlans = nonCircuitTraps.filter(p => isActionableBuySignal(p));
+      const poolToRank = tier1.length > 0 ? tier1 : (buyPlans.length > 0 ? buyPlans : validatedPlans.filter(p => isActionableBuySignal(p)));
 
       if (poolToRank.length > 0) {
-        poolToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
+        // Multi-Factor Quant Ranking: Setup Score + Minervini Stage 2 Bonus + Positive EV Bonus
+        poolToRank.sort((a, b) => {
+          const aMinervini = a.quantMetrics?.minerviniTemplate?.passedCount || 0;
+          const bMinervini = b.quantMetrics?.minerviniTemplate?.passedCount || 0;
+          const aEv = a.quantMetrics?.expectancy?.ev > 0 ? 5 : 0;
+          const bEv = b.quantMetrics?.expectancy?.ev > 0 ? 5 : 0;
+          const aScore = Number(a.setupScore || 0) + (aMinervini >= 6 ? 4 : 0) + aEv;
+          const bScore = Number(b.setupScore || 0) + (bMinervini >= 6 ? 4 : 0) + bEv;
+          return bScore - aScore;
+        });
+
         verifiedPrimePick = {
           ...poolToRank[0],
           qualityTier: tier1.length > 0 ? 'PRIME_5_STAR' : 'BUY_ACCUMULATE_LEADER',

@@ -34,6 +34,7 @@ import { useBackHandler } from '../context/NavigationContext';
 import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator } from './calculators';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
+import ShortTermProfitPlan from './ShortTermProfitPlan';
 import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { RegulatoryHub } from './RegulatoryHub';
 import { TradingViewChartService } from './TradingViewChartService';
@@ -151,6 +152,7 @@ interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string
 
 const ALL_SERVICES: ServiceDef[] = [
   { id: 'daily-prime-pick', name: 'Daily Prime Breakout & Buy-Zone Pick', icon: Flame, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'short-term-profit-plan', name: '1–2W Short-Term Profit Plan', icon: Zap, color: 'yellow', cat: 'flagship', star: true },
   { id: 'alpha-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'flagship', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
   { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
@@ -292,6 +294,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'price-history': StockMomentumAnalyzer,
   'advanced-charts': TradingViewChartService,
   'entry-exit-analyzer': EntryExitAnalyzer,
+  'short-term-profit-plan': ShortTermProfitPlan as ComponentType,
   'dividend-history': DividendHistoryPanel as ComponentType,
   'advanced-chart': TradingViewChartService,
   'api-status': ApiStatusService,
@@ -953,6 +956,7 @@ export default function ServicesHub({
 
   // Top Flagship Tools for Quick Access Carousel
   const QUICK_ACCESS_IDS = [
+    'short-term-profit-plan',
     'entry-exit-analyzer',
     'stock-momentum',
     'decision-probability',

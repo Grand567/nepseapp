@@ -7,6 +7,7 @@ import {
 import { getProxyBase } from '../utils/liveData';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
+import { checkSingleBoidAllotment } from '../services/meroShareService';
 
 // Same key as AccountManager
 const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
@@ -325,7 +326,7 @@ export default function IPOList({ initialTab = 'apply' }) {
       // If raw is still empty, query proxy backend
       if (!raw || raw.length === 0) {
         try {
-          const url = `${getProxyBase()}/api/ipo-result/companies`;
+          const url = `${getProxyBase()}/api/ipo-result/companies?refresh=true`;
           const data = await safeFetch(url);
           if (data && typeof data === 'object') {
             raw = data?.data || (Array.isArray(data) ? data : []);
@@ -338,27 +339,29 @@ export default function IPOList({ initialTab = 'apply' }) {
       // Final fallback to verified companies to ensure the user never gets an invalid json crash
       if (!raw || raw.length === 0) {
         raw = [
-          { id: '168', name: 'Sagarmatha Jalvidhyut Company Limited (SMJC)', scrip: 'SMJC', type: 'IPO' },
-          { id: '169', name: 'Mai Khola Hydropower Limited (MKHL)', scrip: 'MKHL', type: 'IPO' },
-          { id: '170', name: 'Bhugol Energy Development Company (BHCL)', scrip: 'BHCL', type: 'IPO' },
-          { id: '171', name: 'City Hotel Limited (CITY)', scrip: 'CITY', type: 'IPO' },
-          { id: '172', name: 'Ingwa Hydropower Limited (IHL)', scrip: 'IHL', type: 'IPO' },
-          { id: '173', name: 'Rawa Energy Development Limited (RAWA)', scrip: 'RAWA', type: 'IPO' },
-          { id: '174', name: 'Modi Energy Limited (MEL)', scrip: 'MEL', type: 'IPO' },
-          { id: '175', name: 'Ghorahi Cement Industry Limited (GCIL)', scrip: 'GCIL', type: 'IPO' },
-          { id: '176', name: 'Sonapur Minerals and Oil Limited (SONA)', scrip: 'SONA', type: 'IPO' },
-          { id: '177', name: 'Reliable Nepal Life Insurance (RNLI)', scrip: 'RNLI', type: 'IPO' },
-          { id: '178', name: 'Citizen Life Insurance (CLI)', scrip: 'CLI', type: 'IPO' },
-          { id: '179', name: 'Hathway Investment Nepal (HATHY)', scrip: 'HATHY', type: 'IPO' }
+          { id: '501', companyShareId: 501, name: 'Beni Hydropower Project Limited (Result Published)', scrip: 'BENI', type: 'IPO', nmbclId: 41, isTodayResult: true },
+          { id: '500', companyShareId: 500, name: 'Mount Everest Power Development Limited', scrip: 'MEPDL', type: 'IPO' },
+          { id: '499', companyShareId: 499, name: 'Sarvottam Paints Indutries Limited', scrip: 'SAPIL', type: 'IPO' },
+          { id: '498', companyShareId: 498, name: 'Everest Colour Ltd', scrip: 'ECL', type: 'IPO' },
+          { id: '497', companyShareId: 497, name: 'Sanigad Hydro Limited', scrip: 'SGHL', type: 'IPO' },
+          { id: '494', companyShareId: 494, name: 'Kalanga Hydro Limited', scrip: 'KAHL', type: 'IPO' },
+          { id: '179', companyShareId: 179, name: 'Hathway Investment Nepal (HATHY)', scrip: 'HATHY', type: 'IPO' }
         ];
       }
 
       // Normalize each company so id is always set (CDSC uses companyShareId)
       const companies = raw.map(c => ({
         ...c,
-        id: c.companyShareId ?? c.id,
+        id: String(c.companyShareId ?? c.id),
         name: c.companyName || c.name || 'Unknown',
       }));
+
+      // Sort so today's result is at index 0
+      companies.sort((a, b) => {
+        if (a.isTodayResult) return -1;
+        if (b.isTodayResult) return 1;
+        return (Number(b.companyShareId || b.id) || 0) - (Number(a.companyShareId || a.id) || 0);
+      });
 
       setResultCompanies(companies);
       if (companies.length > 0) {
@@ -564,75 +567,40 @@ export default function IPOList({ initialTab = 'apply' }) {
     setError(''); setSuccess(''); setIsProcessing(true); setCheckResults([]);
 
     const targetAccounts = accounts.filter(a => selectedAccounts.includes(a.id));
-    const IPO_RESULT_URL = 'https://iporesult.cdsc.com.np/api/ipo-result/public/share-allotment/check';
+    const targetCompany = resultCompanies.find(c => String(c.id) === String(selectedResultCompany)) || null;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const results = [];
 
-    if (isNative) {
-      // Direct CDSC check on Android
-      const results = [];
-      for (let i = 0; i < targetAccounts.length; i++) {
-        const acc = targetAccounts[i];
-        if (i > 0) await sleep(1500);
-        try {
-          const { CapacitorHttp } = await import('@capacitor/core');
-          const res = await CapacitorHttp.request({
-            url: IPO_RESULT_URL,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Origin': 'https://iporesult.cdsc.com.np', 'Referer': 'https://iporesult.cdsc.com.np/' },
-            data: { companyShareId: Number(selectedResultCompany), boid: acc.boid },
-          });
-          let data = parseSafeJsonBody(res.data);
-          if (!data) {
-            // Direct returned HTML (blocked by CDSC), try proxy fallback
-            const proxyRes = await safeFetch(`${proxyBase}/api/ipo-result/check`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyShareId: Number(selectedResultCompany), boid: acc.boid }),
-            });
-            data = proxyRes?.data || proxyRes;
-          }
-          const msgStr = (data?.message || '').toLowerCase();
-          const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
-          const match = data.message ? data.message.match(/\d+/) : null;
-          results.push({
-            id: acc.id, name: acc.name, boid: acc.boid,
-            status: isAllotted ? 'allotted' : (msgStr.includes('sorry') || msgStr.includes('not') ? 'not_allotted' : 'failed'),
-            message: data.message || (isAllotted ? 'Congratulations! Allotted.' : 'Not allotted.'),
-            units: isAllotted && match ? parseInt(match[0]) : 0,
-          });
-        } catch (err) {
-          results.push({ id: acc.id, name: acc.name, boid: acc.boid, status: 'failed', message: err.message, units: 0 });
-        }
-        setCheckResults([...results]);
-      }
-      setSuccess('Bulk result check completed.');
-      setIsProcessing(false);
-    } else {
-      // Web: use proxy
+    for (let i = 0; i < targetAccounts.length; i++) {
+      const acc = targetAccounts[i];
+      if (i > 0) await sleep(500);
+
       try {
-        const targetAccounts = accounts.filter(a => selectedAccounts.includes(a.id));
-        const profilesPayload = targetAccounts.map(acc => ({ id: acc.id, boid: acc.boid }));
-
-        const data = await safeFetch(`${proxyBase}/api/ipo-result/bulk-check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyShareId: Number(selectedResultCompany), profiles: profilesPayload }),
+        const check = await checkSingleBoidAllotment(selectedResultCompany, acc.boid, acc, targetCompany);
+        const isAllotted = check.allotted === true;
+        results.push({
+          id: acc.id,
+          name: acc.name || acc.boid,
+          boid: acc.boid,
+          status: isAllotted ? 'allotted' : 'not_allotted',
+          message: check.message,
+          units: check.units || (isAllotted ? 10 : 0),
         });
-        if (data.success && Array.isArray(data.results)) {
-          setCheckResults(data.results.map(r => {
-            const acc = accounts.find(a => a.id === r.id);
-            return { id: r.id, name: acc ? acc.name : r.boid, boid: r.boid, status: r.status, message: r.message, units: r.units || 0 };
-          }));
-          setSuccess('Bulk result check completed.');
-        } else {
-          throw new Error(data.error || 'Result check failed.');
-        }
       } catch (err) {
-        setError(err.message || 'Result check failed.');
-      } finally {
-        setIsProcessing(false);
+        results.push({
+          id: acc.id,
+          name: acc.name || acc.boid,
+          boid: acc.boid,
+          status: 'failed',
+          message: err.message || 'Error checking allotment',
+          units: 0,
+        });
       }
+      setCheckResults([...results]);
     }
+
+    setSuccess('Bulk result check completed.');
+    setIsProcessing(false);
   };
 
   const handleCheckSingleBoid = async (targetBoid) => {
@@ -651,61 +619,23 @@ export default function IPOList({ initialTab = 'apply' }) {
     setIsProcessing(true);
     setCheckResults([]);
 
+    const targetCompany = resultCompanies.find(c => String(c.id) === String(selectedResultCompany)) || null;
+    const matchedAccount = accounts.find(a => String(a.boid || '').trim() === boid) || null;
+
     try {
-      if (isNative) {
-        const { CapacitorHttp } = await import('@capacitor/core');
-        const res = await CapacitorHttp.request({
-          url: 'https://iporesult.cdsc.com.np/api/ipo-result/public/share-allotment/check',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Origin': 'https://iporesult.cdsc.com.np',
-            'Referer': 'https://iporesult.cdsc.com.np/'
-          },
-          data: { companyShareId: Number(selectedResultCompany), boid },
-        });
-          let data = parseSafeJsonBody(res.data);
-          if (!data) {
-            const proxyRes = await safeFetch(`${proxyBase}/api/ipo-result/check`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyShareId: Number(selectedResultCompany), boid }),
-            });
-            data = proxyRes?.data || proxyRes;
-          }
-          const msgStr = (data?.message || '').toLowerCase();
-        const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
-        const match = data?.message ? data.message.match(/\d+/) : null;
-        setCheckResults([{
-          id: 'manual',
-          name: `BOID ${boid}`,
-          boid,
-          status: isAllotted ? 'allotted' : (msgStr.includes('sorry') || msgStr.includes('not') ? 'not_allotted' : 'failed'),
-          message: data?.message || (isAllotted ? 'Congratulations! Allotted.' : 'Not allotted.'),
-          units: isAllotted && match ? parseInt(match[0]) : 0,
-        }]);
-        setSuccess('Allotment result checked.');
-      } else {
-        const data = await safeFetch(`${proxyBase}/api/ipo-result/check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyShareId: Number(selectedResultCompany), boid }),
-        });
-        const msgStr = (data?.message || data?.error || '').toLowerCase();
-        const isAllotted = data?.success === true || (msgStr.includes('allotted') && !msgStr.includes('not'));
-        const match = data?.message ? data.message.match(/\d+/) : null;
-        setCheckResults([{
-          id: 'manual',
-          name: `BOID ${boid}`,
-          boid,
-          status: isAllotted ? 'allotted' : (msgStr.includes('sorry') || msgStr.includes('not') ? 'not_allotted' : 'failed'),
-          message: data?.message || (isAllotted ? 'Congratulations! Allotted.' : 'Not allotted.'),
-          units: isAllotted && match ? parseInt(match[0]) : 0,
-        }]);
-        setSuccess('Allotment result checked.');
-      }
+      const check = await checkSingleBoidAllotment(selectedResultCompany, boid, matchedAccount, targetCompany);
+      const isAllotted = check.allotted === true;
+      setCheckResults([{
+        id: 'manual',
+        name: matchedAccount?.name || `BOID ${boid}`,
+        boid,
+        status: isAllotted ? 'allotted' : 'not_allotted',
+        message: check.message,
+        units: check.units || (isAllotted ? 10 : 0),
+      }]);
+      setSuccess('Allotment result checked.');
     } catch (err) {
-      setError(err.message || 'Failed to check IPO allotment result.');
+      setError(err.message || 'Error checking allotment.');
     } finally {
       setIsProcessing(false);
     }

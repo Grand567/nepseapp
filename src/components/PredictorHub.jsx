@@ -43,6 +43,7 @@ import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, f
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
+import ShortTermProfitPlan from './ShortTermProfitPlan';
 import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate } from '../utils/quantEngine';
 import { selectMasterPrimePick, evaluateGuruMasterSetup, isActionableBuySignal } from '../utils/guruEngine';
@@ -1086,6 +1087,7 @@ export default function PredictorHub({
         }}>
           {[
             { id: 'nepse', label: 'Index Predictor', icon: Target },
+            { id: 'short_term_plan', label: '⚡ 1–2W Profit Plan', icon: Zap },
             { id: 'stocks', label: 'Stock Screener', icon: Flame, badge: scoredStocks.length, isPro: true },
             { id: 'entry_exit', label: 'Entry/Exit Analyzer', icon: Crosshair, isPro: true },
             { id: 'macro_sentiment', label: 'Macro & Sentiment', icon: Globe, isPro: true },
@@ -1861,6 +1863,23 @@ export default function PredictorHub({
               </div>
             )}
           </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            VIEW: 1–2 WEEK SHORT-TERM PROFIT PLAN WORKSTATION
+           ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'short_term_plan' && (
+          <ShortTermProfitPlan
+            stocks={stocks}
+            indices={indices}
+            onSelectStock={onSelectStock}
+            initialSymbol={
+              selectedForAnalysis ||
+              (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') ||
+              primeDailyPick?.symbol ||
+              'NABIL'
+            }
+          />
         )}
 
         {/* ══════════════════════════════════════════════════════════

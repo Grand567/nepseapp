@@ -17,7 +17,7 @@ import {
   applyIpoDirect
 } from '../services/meroShareService';
 import { getProxyBase } from '../utils/liveData';
-import { sanitizeMeroShareHoldings, guessScripBasePrice } from '../utils/calculations';
+import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap } from '../utils/calculations';
 import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
@@ -280,7 +280,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         const raw = saved ? JSON.parse(saved) : []; 
         parsed = (Array.isArray(raw) ? raw : []).map(p => ({
           ...p,
-          holdings: sanitizeMeroShareHoldings(p.holdings)
+          holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
         }));
       } catch (_) { parsed = []; }
 
@@ -324,12 +324,12 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   password: acc.password || '',
                   crn: acc.crn || '',
                   pin: String(acc.pin || ''),
-                  holdings: sanitizeMeroShareHoldings(acc.holdings),
+                  holdings: sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid),
                   lastSyncedAt: acc.lastSyncedAt || null
                 });
                 changed = true;
               } else if (acc.holdings?.length > 0 && (!existing.holdings || existing.holdings.length === 0)) {
-                existing.holdings = sanitizeMeroShareHoldings(acc.holdings);
+                existing.holdings = sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid);
                 existing.lastSyncedAt = acc.lastSyncedAt;
                 changed = true;
               }
@@ -360,7 +360,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
             if (cloudData && (Array.isArray(cloudData.profiles) || Array.isArray(cloudData.bulkAccounts))) {
               const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
               if (cloudAccs.length > 0) {
-                const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings) }));
+                const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid) }));
                 localStorage.setItem(profileKey, JSON.stringify(sanitized));
                 localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(sanitized));
                 setProfiles(sanitized);
@@ -394,16 +394,17 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   }, [profiles]);
 
   // Load real CDSC IPOs and Allotted results
-  const loadIpoCompanies = async () => {
+  const loadIpoCompanies = async (forceRefresh = false) => {
     setIsLoadingIpos(true);
     setIpoLoadError('');
 
     try {
-      // 1. Fetch live public IPO allotment results from CDSC
-      const liveAllottedList = await fetchIpoCompanyList();
+      const primaryProfile = profiles.length > 0 ? profiles[0] : null;
+
+      // 1. Fetch live public IPO allotment results (NepaliPaisa + NMB Capital + MeroShare ASBA)
+      const liveAllottedList = await fetchIpoCompanyList(forceRefresh, primaryProfile);
 
       // 2. Fetch live currently open issues for apply
-      const primaryProfile = profiles.length > 0 ? profiles[0] : null;
       let liveOpenList = await fetchOpenIpos(primaryProfile);
 
       // Defense in depth: if liveOpenList is empty, fetch directly from live-listings
@@ -804,12 +805,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     let checkedCount = 0;
     let allottedTotal = 0;
 
+    const activeIpo = (ipoCompanies || []).find(i => String(i?.id) === String(selectedIpo)) || null;
+
     for (let i = 0; i < targetProfiles.length; i++) {
       const profile = targetProfiles[i];
 
       setCheckResults(prev => [
         ...prev.filter(r => r.id !== profile.id),
-        { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Connecting to CDSC Result Portal...' }
+        { id: profile.id, name: profile.name, boid: profile.boid, status: 'loading', resultText: 'Connecting to MeroShare ASBA / CDSC...' }
       ]);
 
       if (i > 0) {
@@ -817,7 +820,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       }
 
       try {
-        const check = await checkSingleBoidAllotment(selectedIpo, profile.boid);
+        const check = await checkSingleBoidAllotment(selectedIpo, profile.boid, profile, activeIpo);
         const status = check.allotted ? 'allotted' : 'not_allotted';
         const resultText = check.message;
         const units = check.units || 0;
@@ -1180,20 +1183,57 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       }
 
       setRetrievalStep(3);
-      const parsedHoldings = (result.holdings || []).map(h => ({
-        symbol: h.symbol,
-        name: h.name || h.companyName || h.symbol,
-        units: Number(h.units || h.totalUnits || h.currentBalance || 0),
-        totalUnits: Number(h.totalUnits || h.units || 0),
-        freeBalance: Number(h.freeBalance ?? h.units ?? 0),
-        frozenBalance: Number(h.frozenBalance || 0),
-        currentLtp: Number(h.currentLtp || h.ltp || 0),
-        prevClose: Number(h.prevClose || 0),
-        valueAsOfLTP: Number(h.valueAsOfLTP || h.currentMarketValue || 0),
-        valueAsOfPrevClose: Number(h.valueAsOfPrevClose || 0),
-        currentMarketValue: Number(h.currentMarketValue || h.valueAsOfLTP || 0),
-        wacc: Number((h.wacc || 100).toFixed(2))
-      }));
+      const accountId = profile.id || profile.boid;
+      // Auto-persist declared WACCs if discovered from CDSC
+      if (result.declaredWaccMap && Object.keys(result.declaredWaccMap).length > 0) {
+        applyDiscoveredWaccMap(result.declaredWaccMap, userId, accountId);
+      }
+
+      // Merge existing holdings so custom WACCs & declared WACCs are preserved
+      const existingHoldings = profile.holdings || [];
+      const existingWaccMap = {};
+      existingHoldings.forEach(h => {
+        const sym = (h.script || h.scrip || h.symbol || '').toUpperCase().trim();
+        if (sym) {
+          const rate = Number(h.userWacc || h.wacc || h.purchasePrice || h.effectiveRate || 0);
+          if (rate > 0 && (h.isCustomWacc || h.waccSource === 'CUSTOM_USER_SET' || h.waccSource === 'BROKER_TMS' || rate !== 100)) {
+            existingWaccMap[sym] = { rate, source: h.waccSource || 'CUSTOM_USER_SET' };
+          }
+        }
+      });
+
+      const mergedHoldings = (result.holdings || []).map(fresh => {
+        const sym = (fresh.script || fresh.scrip || fresh.symbol || '').toUpperCase().trim();
+        const freshlyDeclared = result.declaredWaccMap?.[sym];
+        if (freshlyDeclared && freshlyDeclared.wacc > 0) {
+          return {
+            ...fresh,
+            userWacc: freshlyDeclared.wacc,
+            wacc: freshlyDeclared.wacc,
+            purchasePrice: freshlyDeclared.wacc,
+            effectiveRate: freshlyDeclared.wacc,
+            isCustomWacc: true,
+            waccSource: 'CDSC_MY_HOLDING_DECLARED'
+          };
+        }
+
+        const saved = existingWaccMap[sym];
+        if (saved && saved.rate > 0) {
+          return {
+            ...fresh,
+            userWacc: saved.rate,
+            wacc: saved.rate,
+            purchasePrice: saved.rate,
+            effectiveRate: saved.rate,
+            isCustomWacc: true,
+            waccSource: saved.source || 'CUSTOM_USER_SET'
+          };
+        }
+        return fresh;
+      });
+
+      const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, userId, accountId);
+      const storedHoldings = parsedHoldings.map(h => stripHoldingForStorage(h)).filter(Boolean);
 
       // Sync and enrich with market data step
       setRetrievalStep(4);
@@ -1205,7 +1245,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           return {
             ...p,
             name: (result.name && result.name !== 'Unknown') ? result.name : p.name,
-            holdings: parsedHoldings,
+            holdings: storedHoldings,
             lastSyncedAt: Date.now()
           };
         }
@@ -1221,7 +1261,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           const updatedBulk = bulkAccounts.map(a => (a.boid === profile.boid || a.id === profile.id) ? {
             ...a,
             name: (result.name && result.name !== 'Unknown') ? result.name : a.name,
-            holdings: parsedHoldings,
+            holdings: storedHoldings,
             lastSyncedAt: Date.now()
           } : a);
           localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedBulk));
@@ -1280,44 +1320,38 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       }
 
       const msaList = portfolioData.data?.meroShareMyPortfolio || portfolioData.data?.msaList || portfolioData.data || [];
-      const parsedHoldings = msaList.map(item => {
+      const existingHoldings = profile.holdings || [];
+      const existingWaccMap = {};
+      existingHoldings.forEach(h => {
+        const sym = (h.script || h.scrip || h.symbol || '').toUpperCase().trim();
+        if (sym) {
+          const rate = Number(h.userWacc || h.wacc || h.purchasePrice || h.effectiveRate || 0);
+          if (rate > 0 && (h.isCustomWacc || h.waccSource === 'CUSTOM_USER_SET' || rate !== 100)) {
+            existingWaccMap[sym] = rate;
+          }
+        }
+      });
+
+      const mergedHoldings = (msaList || []).map(item => {
         const symbol = (item.script || item.scrip || item.symbol || '').trim().toUpperCase();
-        const name = (item.scriptDesc || item.scripName || item.companyName || symbol).trim();
-        const units = parseFloat(item.currentBalance || item.dematQty || item.units || item.totalBalance || 0);
-        const freeBalance = parseFloat(item.freeBalance || item.currentBalance || units);
-        const frozenBalance = parseFloat(item.freezeBalance || item.frozenBalance || 0);
-        
-        const base = guessScripBasePrice(symbol, parseFloat(item.wacc || item.purchasePrice || 0));
-        const ltp = parseFloat(item.lastTransactionPrice || item.lastTradedPrice || item.ltp || item.currentPrice || 0);
-        const prevClose = parseFloat(item.previousClosingPrice || item.closingPrice || item.prevClose || item.prevClosingPrice || 0);
-        
-        const currentLtp = ltp > 0 ? ltp : (prevClose > 0 ? prevClose : base);
-        const prevCloseResolved = prevClose > 0 ? prevClose : currentLtp;
+        const savedRate = existingWaccMap[symbol];
+        if (savedRate && savedRate > 0) {
+          return {
+            ...item,
+            symbol,
+            userWacc: savedRate,
+            wacc: savedRate,
+            purchasePrice: savedRate,
+            effectiveRate: savedRate,
+            isCustomWacc: true,
+            waccSource: 'CUSTOM_USER_SET'
+          };
+        }
+        return { ...item, symbol };
+      });
 
-        const valLtpRaw = parseFloat(item.valueAsOfLastTransactionPrice || item.valueOfLastTransactionPrice || item.valueAsOfLTP || item.totalAmount || item.totalValue || 0);
-        const valCloseRaw = parseFloat(item.valueAsOfPreviousClosingPrice || item.valueOfPreviousClosingPrice || item.valueAsOfPrevClose || 0);
-
-        const valueAsOfLTP = valLtpRaw > 0 ? valLtpRaw : parseFloat((units * currentLtp).toFixed(2));
-        const valueAsOfPrevClose = valCloseRaw > 0 ? valCloseRaw : parseFloat((units * prevCloseResolved).toFixed(2));
-
-        let wacc = parseFloat(item.wacc || item.purchasePrice || item.costPrice || base);
-        if (isNaN(wacc) || wacc <= 0) wacc = base;
-
-        return {
-          symbol,
-          name,
-          units,
-          totalUnits: units,
-          freeBalance,
-          frozenBalance,
-          currentLtp,
-          prevClose: prevCloseResolved,
-          valueAsOfLTP,
-          valueAsOfPrevClose,
-          currentMarketValue: valueAsOfLTP > 0 ? valueAsOfLTP : parseFloat((units * currentLtp).toFixed(2)),
-          wacc: Number(Number(wacc || 0).toFixed(2))
-        };
-      }).filter(h => h.symbol && h.units > 0);
+      const parsedHoldings = sanitizeMeroShareHoldings(mergedHoldings, userId, profile.id || profile.boid);
+      const storedHoldings = parsedHoldings.map(h => stripHoldingForStorage(h)).filter(Boolean);
 
       setRetrievalStep(4);
       await new Promise(r => setTimeout(r, 450));
@@ -1329,7 +1363,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
         if (p.id === profileId) {
           return { 
             ...p, 
-            holdings: parsedHoldings, 
+            holdings: storedHoldings, 
             totalValueOfPreviousClosingPrice: rootPrevCloseVal > 0 ? rootPrevCloseVal : undefined,
             totalValueOfLastTransactionPrice: rootLtpVal > 0 ? rootLtpVal : undefined,
             lastSyncedAt: Date.now() 
@@ -1436,15 +1470,26 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       return;
     }
 
+    const cleanSym = String(symbol || '').trim().toUpperCase();
+    setScripCustomWacc(cleanSym, wacc, userId, selectedProfileId);
+
     const updatedProfiles = profiles.map(p => {
       if (p.id === selectedProfileId) {
         const newHoldings = (p.holdings || []).map(h => {
-          if (h.symbol === symbol) {
-            return { ...h, units, wacc };
+          if ((h.symbol || '').toUpperCase() === cleanSym) {
+            return {
+              ...h,
+              units,
+              wacc: Number(wacc.toFixed(2)),
+              userWacc: Number(wacc.toFixed(2)),
+              isCustomWacc: true,
+              waccSource: 'CUSTOM_USER_SET'
+            };
           }
           return h;
         });
-        return { ...p, holdings: newHoldings };
+        const sanitized = sanitizeMeroShareHoldings(newHoldings, userId, selectedProfileId);
+        return { ...p, holdings: sanitized.map(h => stripHoldingForStorage(h)).filter(Boolean) };
       }
       return p;
     });
@@ -2041,7 +2086,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           Select Open IPO Issue
                         </label>
                         <button 
-                          onClick={() => loadIpoCompanies()} 
+                          onClick={() => loadIpoCompanies(true)} 
                           style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                         >
                           <RefreshCw style={{ width: 14, height: 14 }} /> Refresh List
@@ -2264,7 +2309,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           Select Allotted Company (CDSC Result Portal)
                         </label>
                         <button 
-                          onClick={() => loadIpoCompanies()} 
+                          onClick={() => loadIpoCompanies(true)} 
                           style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                         >
                           <RefreshCw style={{ width: 14, height: 14 }} /> Refresh List

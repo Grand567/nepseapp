@@ -279,6 +279,163 @@ export function calculateWacc(buyTransactions) {
 }
 
 /**
+ * Parses copied trade tables or CSV exports from NEPSE Broker TMS (e.g. Broker 58, 45, etc.)
+ * Extracts Buy transactions, groups by symbol, and calculates authentic WACC with commissions.
+ *
+ * @param {string} rawText - Raw text or CSV copied/exported from TMS
+ * @returns {object} { success: boolean, count: number, holdings: { [symbol]: { symbol, wacc, totalQuantity, totalCost, source } }, error?: string }
+ */
+export function parseBrokerTradeBook(rawText) {
+  if (!rawText || typeof rawText !== 'string') {
+    return { success: false, count: 0, holdings: {}, error: 'No trade book text provided.' };
+  }
+
+  const lines = rawText
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return { success: false, count: 0, holdings: {}, error: 'Empty content.' };
+  }
+
+  // Detect delimiter (tab, comma, semicolon, or pipe)
+  const firstLine = lines[0];
+  let delimiter = '\t';
+  if (firstLine.includes('\t')) delimiter = '\t';
+  else if (firstLine.includes(',')) delimiter = ',';
+  else if (firstLine.includes(';')) delimiter = ';';
+  else if (firstLine.includes('|')) delimiter = '|';
+  else delimiter = /\s+/;
+
+  const parsedRows = lines.map(line => {
+    if (delimiter instanceof RegExp) {
+      return line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+    }
+    return line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+  });
+
+  // Find header line if any
+  let headerIndex = -1;
+  let colSymbol = -1;
+  let colQty = -1;
+  let colRate = -1;
+  let colType = -1;
+
+  for (let i = 0; i < Math.min(parsedRows.length, 5); i++) {
+    const row = parsedRows[i];
+    row.forEach((cell, idx) => {
+      const c = String(cell || '').toLowerCase().trim();
+      if (colSymbol === -1 && (c.includes('symbol') || c.includes('scrip') || c.includes('script') || c === 'stock' || c === 'company')) {
+        colSymbol = idx;
+      }
+      if (colQty === -1 && (c.includes('qty') || c.includes('quantity') || c.includes('units') || c.includes('kitta') || c.includes('vol') || c === 'shares')) {
+        colQty = idx;
+      }
+      if (colRate === -1 && (c.includes('rate') || c.includes('price') || c.includes('cost') || c.includes('trade price') || c.includes('unit price'))) {
+        colRate = idx;
+      }
+      if (colType === -1 && (c.includes('side') || c.includes('type') || c.includes('action') || c.includes('buy/sell') || c.includes('b/s') || c.includes('order type'))) {
+        colType = idx;
+      }
+    });
+    if (colSymbol !== -1 || (colQty !== -1 && colRate !== -1)) {
+      headerIndex = i;
+      break;
+    }
+  }
+
+  const startRow = headerIndex >= 0 ? headerIndex + 1 : 0;
+  const buyTransactionsByScrip = {};
+
+  for (let i = startRow; i < parsedRows.length; i++) {
+    const row = parsedRows[i];
+    if (!row || row.length < 2) continue;
+
+    let symbol = '';
+    let qty = 0;
+    let rate = 0;
+    let isBuy = true;
+
+    if (colSymbol !== -1 && colQty !== -1 && colRate !== -1) {
+      symbol = String(row[colSymbol] || '').toUpperCase().trim();
+      qty = parseFloat(String(row[colQty] || '').replace(/,/g, '')) || 0;
+      rate = parseFloat(String(row[colRate] || '').replace(/,/g, '')) || 0;
+      if (colType !== -1) {
+        const typeStr = String(row[colType] || '').toUpperCase();
+        if (typeStr.includes('SELL') || typeStr === 'S') isBuy = false;
+      }
+    } else {
+      // Heuristic fallback for unstructured lines:
+      for (const token of row) {
+        const clean = token.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (/^[A-Z]{2,8}$/.test(clean) && !['BUY', 'SELL', 'TOTAL', 'DATE', 'PRICE', 'QTY', 'RATE', 'CASH', 'NRB', 'NEPSE'].includes(clean)) {
+          if (!symbol) symbol = clean;
+        }
+        if (token.toUpperCase().includes('SELL')) isBuy = false;
+      }
+      const nums = row
+        .map(t => parseFloat(String(t).replace(/,/g, '')))
+        .filter(n => !isNaN(n) && n > 0);
+
+      if (nums.length >= 2) {
+        if (nums[0] % 1 === 0 && nums[0] >= 10 && nums[1] > 10) {
+          qty = nums[0];
+          rate = nums[1];
+        } else if (nums[1] % 1 === 0 && nums[1] >= 10 && nums[0] > 10) {
+          qty = nums[1];
+          rate = nums[0];
+        } else {
+          qty = nums[0];
+          rate = nums[1];
+        }
+      }
+    }
+
+    if (symbol && isBuy && qty > 0 && rate > 0) {
+      if (!buyTransactionsByScrip[symbol]) {
+        buyTransactionsByScrip[symbol] = [];
+      }
+      buyTransactionsByScrip[symbol].push({ quantity: qty, price: rate });
+    }
+  }
+
+  const holdings = {};
+  let totalParsed = 0;
+
+  for (const [sym, txs] of Object.entries(buyTransactionsByScrip)) {
+    const waccResult = calculateWacc(txs);
+    if (waccResult.totalQuantity > 0 && waccResult.wacc > 0) {
+      holdings[sym] = {
+        symbol: sym,
+        wacc: Number(waccResult.wacc.toFixed(2)),
+        totalQuantity: waccResult.totalQuantity,
+        totalCost: Number(waccResult.totalCost.toFixed(2)),
+        source: 'BROKER_TMS',
+        transactionsCount: txs.length
+      };
+      totalParsed++;
+    }
+  }
+
+  if (totalParsed === 0) {
+    return {
+      success: false,
+      count: 0,
+      holdings: {},
+      error: 'Could not detect valid stock buy transactions. Ensure columns include Symbol, Quantity, and Rate/Price.'
+    };
+  }
+
+  return {
+    success: true,
+    count: totalParsed,
+    holdings,
+    message: `Successfully parsed ${totalParsed} scrips from TMS Trade Book.`
+  };
+}
+
+/**
  * Resolves standard face value / base price based on scrip nature
  * Debentures in Nepal: Rs. 1,000 per unit
  * Mutual Funds: Rs. 10 per unit
@@ -294,49 +451,299 @@ export function guessScripBasePrice(symbol, fallback) {
 
 /**
  * Loads the user's custom secondary market WACC map from localStorage
+ * Scoped by accountId when provided so multiple accounts holding the same stock don't collide.
  */
-export function getCustomWaccMap(userId = 'local') {
+export function getCustomWaccMap(userId = 'local', accountId = '') {
   try {
-    const raw = localStorage.getItem(`nepse_hub_${userId}_custom_wacc_map`) || localStorage.getItem('nepse_hub_custom_wacc_map');
-    return raw ? JSON.parse(raw) : {};
+    if (accountId) {
+      const cleanAccId = String(accountId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+      const accRaw = localStorage.getItem(`nepse_hub_${userId}_acc_${cleanAccId}_custom_wacc_map`);
+      return accRaw ? (JSON.parse(accRaw) || {}) : {};
+    }
+    const globalRaw = localStorage.getItem(`nepse_hub_${userId}_custom_wacc_map`) || localStorage.getItem('nepse_hub_custom_wacc_map');
+    return globalRaw ? (JSON.parse(globalRaw) || {}) : {};
   } catch (e) {
     return {};
   }
 }
 
 /**
- * Saves a custom secondary market WACC map to localStorage
+ * Safely saves data to localStorage, catching QuotaExceededError and automatically
+ * purging non-critical caches (chart history, news, prime pick cache) to prevent crashes.
  */
-export function saveCustomWaccMap(waccMap, userId = 'local') {
+export function safeStorageSetItem(key, value) {
+  const str = typeof value === 'string' ? value : JSON.stringify(value);
   try {
-    const key = `nepse_hub_${userId}_custom_wacc_map`;
-    localStorage.setItem(key, JSON.stringify(waccMap));
-    localStorage.setItem('nepse_hub_custom_wacc_map', JSON.stringify(waccMap));
+    localStorage.setItem(key, str);
+    return true;
+  } catch (err) {
+    console.warn(`[SafeStorage] Quota exceeded for '${key}'. Purging dispensable caches...`);
+    try {
+      const expendable = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (
+          k.includes('cache') ||
+          k.includes('chart') ||
+          k.includes('history') ||
+          k.includes('news') ||
+          k.startsWith('temp_') ||
+          k === 'prime_pick_plan_cache' ||
+          k === 'nepse_paper_orders'
+        ) {
+          expendable.push(k);
+        }
+      }
+      expendable.forEach(k => {
+        try { localStorage.removeItem(k); } catch (_) {}
+      });
+      localStorage.setItem(key, str);
+      return true;
+    } catch (innerErr) {
+      console.error(`[SafeStorage Critical] Failed setting '${key}' even after cache eviction:`, innerErr);
+      return false;
+    }
+  }
+}
+
+/**
+ * Strips a holding object down to essential storage attributes, eliminating
+ * volatile UI fields (signals, advice, raw nested CDSC payloads) to prevent quota blowups.
+ */
+export function stripHoldingForStorage(h) {
+  if (!h || typeof h !== 'object') return null;
+  const symbol = String(h.symbol || h.script || h.scrip || '').trim().toUpperCase();
+  if (!symbol) return null;
+  return {
+    symbol,
+    name: String(h.name || h.scriptDesc || h.companyName || symbol).trim(),
+    units: Number(h.units || h.currentBalance || h.totalUnits || 0),
+    wacc: Number(Number(h.wacc || 100).toFixed(2)),
+    waccSource: h.waccSource || 'FALLBACK_BASE_PRICE',
+    isCustomWacc: Boolean(h.isCustomWacc),
+    currentLtp: Number(h.currentLtp || h.lastTransactionPrice || 0),
+    prevClose: Number(h.prevClose || h.previousClosingPrice || 0),
+    valueAsOfLTP: Number(h.valueAsOfLTP || 0),
+    valueAsOfPrevClose: Number(h.valueAsOfPrevClose || 0),
+    freeBalance: Number(h.freeBalance ?? h.units ?? 0),
+    frozenBalance: Number(h.frozenBalance || h.freezeBalance || 0)
+  };
+}
+
+/**
+ * Saves a custom secondary market WACC map to localStorage
+ * Scoped by accountId when provided.
+ */
+export function saveCustomWaccMap(waccMap, userId = 'local', accountId = '') {
+  try {
+    if (accountId) {
+      const cleanAccId = String(accountId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+      const key = `nepse_hub_${userId}_acc_${cleanAccId}_custom_wacc_map`;
+      safeStorageSetItem(key, waccMap);
+    } else {
+      const key = `nepse_hub_${userId}_custom_wacc_map`;
+      safeStorageSetItem(key, waccMap);
+      safeStorageSetItem('nepse_hub_custom_wacc_map', waccMap);
+    }
   } catch (e) {
     console.error("Failed to save custom WACC map:", e);
   }
 }
 
 /**
- * Updates or sets WACC for a specific symbol
+ * Updates or sets WACC for a specific symbol, optionally scoped to a specific Demat account
  */
-export function setScripCustomWacc(symbol, wacc, userId = 'local') {
-  const map = getCustomWaccMap(userId);
+export function setScripCustomWacc(symbol, wacc, userId = 'local', accountId = '') {
+  const map = getCustomWaccMap(userId, accountId);
   const sym = String(symbol || '').trim().toUpperCase();
   if (sym && Number(wacc) > 0) {
     map[sym] = Number(Number(wacc).toFixed(2));
-    saveCustomWaccMap(map, userId);
+    saveCustomWaccMap(map, userId, accountId);
   }
   return map;
 }
 
 /**
- * Sanitizes and repairs MeroShare holdings records with full CDSC field compatibility
- * and preserves user's secondary market custom WACC rates.
+ * Merges discovered WACC rates from CDSC into user's custom WACC map, optionally scoped to account
  */
-export function sanitizeMeroShareHoldings(holdings = [], userId = 'local') {
+export function applyDiscoveredWaccMap(discoveredMap = {}, userId = 'local', accountId = '') {
+  if (!discoveredMap || typeof discoveredMap !== 'object') return getCustomWaccMap(userId, accountId);
+  const currentMap = getCustomWaccMap(userId, accountId);
+  let updated = false;
+
+  for (const [sym, data] of Object.entries(discoveredMap)) {
+    const cleanSym = String(sym || '').trim().toUpperCase();
+    const rate = typeof data === 'object' ? Number(data.wacc) : Number(data);
+    if (cleanSym && rate > 0) {
+      currentMap[cleanSym] = Number(rate.toFixed(2));
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    saveCustomWaccMap(currentMap, userId, accountId);
+  }
+  return currentMap;
+}
+
+/**
+ * Evaluates quantitative action signals (Breakout, Book Profit, Stop Loss, Hold)
+ * for a portfolio holding based on cost basis, live market metrics, and technical setup.
+ */
+export function classifyHoldingActionSignal(holding, marketStock = null, plan = null) {
+  if (!holding) return null;
+
+  const wacc = Number(holding.wacc || 0);
+  const currentPrice = Number(holding.currentPrice || holding.currentLtp || marketStock?.ltp || 0);
+  const pChange = Number(marketStock?.pChange || marketStock?.percentageChange || 0);
+  const rvol = Number(
+    marketStock?.rvol || 
+    marketStock?.volumeSurgeRatio || 
+    (marketStock?.volume && marketStock?.avgVolume ? (marketStock.volume / marketStock.avgVolume) : 
+    (marketStock?.volume && marketStock?.averageVolume ? (marketStock.volume / marketStock.averageVolume) : 1))
+  );
+  const rsi = Number(marketStock?.rsi || 50);
+
+  const gainPct = wacc > 0 && currentPrice > 0 
+    ? ((currentPrice - wacc) / wacc) * 100 
+    : Number(holding.plPercent || 0);
+
+  // 1. Target 2 Super Gain (Gain >= 25% or above Target 2)
+  if (gainPct >= 25.0 || (plan?.levels?.target2?.price && currentPrice >= Number(plan.levels.target2.price))) {
+    return {
+      type: 'SUPER_GAIN',
+      category: 'profit',
+      label: 'TARGET 2 REACHED',
+      badge: `🏆 Super Gain (+${gainPct.toFixed(1)}%)`,
+      action: 'Secure 75% Profit',
+      color: '#10b981',
+      bg: 'rgba(16, 185, 129, 0.15)',
+      border: 'rgba(16, 185, 129, 0.35)',
+      icon: 'trophy',
+      advice: 'Target 2 reached! Take 75% profit off the table and let the remaining 25% ride with a trailing stop.'
+    };
+  }
+
+  // 2. Target 1 Book Profit (Gain >= 12% or above Target 1)
+  if (gainPct >= 12.0 || (plan?.levels?.target1?.price && currentPrice >= Number(plan.levels.target1.price))) {
+    return {
+      type: 'BOOK_PROFIT',
+      category: 'profit',
+      label: 'BOOK 50% PROFIT',
+      badge: `🎯 Book Profit (+${gainPct.toFixed(1)}%)`,
+      action: 'Sell 50% & Trail Stop',
+      color: '#34d399',
+      bg: 'rgba(16, 185, 129, 0.12)',
+      border: 'rgba(16, 185, 129, 0.3)',
+      icon: 'target',
+      advice: 'Zero-Loss Rule: Sell 50% here to lock in solid alpha, then trail your stop loss to your entry price.'
+    };
+  }
+
+  // 3. Stop Loss Violation (Loss >= 8% or below Entry/Exit plan Stop Loss)
+  if (gainPct <= -8.0 || (plan?.levels?.stopLoss?.price && currentPrice <= Number(plan.levels.stopLoss.price))) {
+    return {
+      type: 'STOP_LOSS',
+      category: 'risk',
+      label: 'STOP LOSS RISK',
+      badge: `🛑 Stop Loss (${gainPct.toFixed(1)}%)`,
+      action: 'Capital Defense Exit',
+      color: '#f43f5e',
+      bg: 'rgba(244, 63, 94, 0.15)',
+      border: 'rgba(244, 63, 94, 0.35)',
+      icon: 'shield-alert',
+      advice: 'Downside risk limit breached. Cut loss or hedge immediately to preserve capital and prevent compounding drawdown.'
+    };
+  }
+
+  // 4. Heavy Selling Pressure Warning
+  if (gainPct < -3.0 && pChange <= -3.5) {
+    return {
+      type: 'DEFENSE_ALERT',
+      category: 'risk',
+      label: 'DEFENSE ALERT',
+      badge: `⚠️ Selling Pressure (${pChange.toFixed(1)}%)`,
+      action: 'Tighten Stop Loss',
+      color: '#fb7185',
+      bg: 'rgba(251, 113, 133, 0.12)',
+      border: 'rgba(251, 113, 133, 0.3)',
+      icon: 'alert-triangle',
+      advice: 'Heavy distribution observed today. Tighten your stop loss to protect against gap-downs.'
+    };
+  }
+
+  // 5. Breakout Volume Surge (RVOL >= 1.5x and Price >= +2.0%)
+  if (rvol >= 1.5 && pChange >= 2.0) {
+    return {
+      type: 'BREAKOUT',
+      category: 'opportunity',
+      label: 'BREAKOUT SURGE',
+      badge: `🚀 Breakout (${rvol.toFixed(1)}x Vol)`,
+      action: 'Opportunity to Add',
+      color: '#fbbf24',
+      bg: 'rgba(245, 158, 11, 0.15)',
+      border: 'rgba(245, 158, 11, 0.35)',
+      icon: 'flame',
+      advice: 'High institutional buying surge detected with RVOL > 1.5x. Good momentum candidate to scale in.'
+    };
+  }
+
+  // 6. Upward Accumulation Setup (Healthy RSI and Positive Trend)
+  if (rsi >= 55 && rsi <= 68 && pChange > 0) {
+    return {
+      type: 'ACCUMULATE',
+      category: 'opportunity',
+      label: 'ACCUMULATE',
+      badge: '🟢 Accumulate',
+      action: 'Buy on Pullback',
+      color: '#38bdf8',
+      bg: 'rgba(56, 189, 248, 0.12)',
+      border: 'rgba(56, 189, 248, 0.3)',
+      icon: 'trending-up',
+      advice: 'Constructive bullish structure. Quality consolidation setup suitable for gradual accumulation.'
+    };
+  }
+
+  // 7. Profitable Position Trend Intact (Hold & Ride)
+  if (gainPct > 0) {
+    return {
+      type: 'HOLD_RIDE',
+      category: 'hold',
+      label: 'HOLD & RIDE',
+      badge: `🛡️ Trend Intact (+${gainPct.toFixed(1)}%)`,
+      action: 'Ride Trend',
+      color: '#60a5fa',
+      bg: 'rgba(96, 165, 250, 0.12)',
+      border: 'rgba(96, 165, 250, 0.3)',
+      icon: 'shield-check',
+      advice: 'Position is green and trading healthily above cost. Continue holding with an upward trailing stop.'
+    };
+  }
+
+  // 8. Normal Consolidation / Rangebound
+  return {
+    type: 'HOLD_WAIT',
+    category: 'hold',
+    label: 'HOLD / WAIT',
+    badge: '⏸️ Hold & Watch',
+    action: 'Watch Support',
+    color: '#94a3b8',
+    bg: 'rgba(148, 163, 184, 0.1)',
+    border: 'rgba(148, 163, 184, 0.25)',
+    icon: 'clock',
+    advice: 'Price consolidating within normal volatility bounds. Maintain risk discipline.'
+  };
+}
+
+/**
+ * Sanitizes and repairs MeroShare holdings records with full CDSC field compatibility
+ * and preserves user's secondary market custom WACC rates and CDSC origin tiers.
+ * Scoped by accountId when provided.
+ */
+export function sanitizeMeroShareHoldings(holdings = [], userId = 'local', accountId = '') {
   if (!Array.isArray(holdings)) return [];
-  const customMap = getCustomWaccMap(userId);
+  const customMap = getCustomWaccMap(userId, accountId);
 
   return holdings.map(h => {
     const symbol = (h.symbol || h.script || h.scrip || '').trim().toUpperCase();
@@ -356,24 +763,55 @@ export function sanitizeMeroShareHoldings(holdings = [], userId = 'local') {
 
     const valueAsOfLTP = valLtpRaw > 0 ? valLtpRaw : Number((units * currentLtp).toFixed(2));
     const valueAsOfPrevClose = valCloseRaw > 0 ? valCloseRaw : Number((units * prevClose).toFixed(2));
+    const currentMarketValue = valueAsOfLTP > 0 ? valueAsOfLTP : (units * currentLtp);
 
-    // Custom secondary market WACC priority:
-    // 1. Saved custom WACC from customMap
-    // 2. Holding's own customized WACC (if not 100 or marked isCustomWacc)
-    // 3. Fallback base (100 for equity, 1000 for debenture, 10 for MF)
+    // Custom secondary market WACC priority & origin classification:
     let wacc = base;
-    if (customMap[symbol] && customMap[symbol] > 0) {
-      wacc = customMap[symbol];
+    let waccSource = 'FALLBACK_BASE_PRICE';
+
+    const customEntry = customMap[symbol];
+    const customRate = (customEntry && typeof customEntry === 'object') ? Number(customEntry.wacc) : Number(customEntry);
+    const customSource = (customEntry && typeof customEntry === 'object' && customEntry.source) ? customEntry.source : 'CUSTOM_USER_SET';
+
+    if (customRate > 0) {
+      wacc = customRate;
+      waccSource = customSource;
+    } else if (h.waccSource === 'CDSC_MY_HOLDING_DECLARED' || h.source === 'CDSC_MY_HOLDING_DECLARED') {
+      wacc = Number(h.wacc || h.purchasePrice || base);
+      waccSource = 'CDSC_MY_HOLDING_DECLARED';
+    } else if (h.waccSource === 'BROKER_TMS' || h.source === 'BROKER_TMS') {
+      wacc = Number(h.wacc || h.purchasePrice || base);
+      waccSource = 'BROKER_TMS';
+    } else if (h.waccSource && String(h.waccSource).startsWith('ESTIMATED_')) {
+      wacc = Number(h.wacc || base);
+      waccSource = h.waccSource;
+    } else if (h.waccSource === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED' || h.source === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED') {
+      wacc = Number(h.wacc || h.purchasePrice || base);
+      waccSource = 'CDSC_PURCHASE_SOURCE_UNCONFIRMED';
     } else if (h.isCustomWacc && Number(h.wacc) > 0) {
       wacc = Number(h.wacc);
+      waccSource = 'CUSTOM_USER_SET';
+    } else if (h.isIPO || h.isAllotted || h.waccSource === 'IPO_ALLOTMENT') {
+      wacc = base;
+      waccSource = 'IPO_ALLOTMENT';
     } else if (h.wacc && Number(h.wacc) > 0 && Number(h.wacc) !== 100) {
       wacc = Number(h.wacc);
+      waccSource = 'CUSTOM_USER_SET';
     } else if (h.purchasePrice && Number(h.purchasePrice) > 0 && Number(h.purchasePrice) !== 100) {
       wacc = Number(h.purchasePrice);
+      waccSource = 'CUSTOM_USER_SET';
+    } else {
+      // If base is 10 (Mutual fund) or 1000 (Debenture)
+      if (base === 10) waccSource = 'NAV_PAR_FUND';
+      else if (base === 1000) waccSource = 'PAR_VALUE_DEB';
+      else waccSource = 'FALLBACK_BASE_PRICE';
     }
 
+    const totalInvestment = Number((units * wacc).toFixed(2));
+    const profitLoss = Number((currentMarketValue - totalInvestment).toFixed(2));
+    const plPercent = totalInvestment > 0 ? Number(((profitLoss / totalInvestment) * 100).toFixed(2)) : 0;
+
     return {
-      ...h,
       symbol,
       name: h.name || h.scriptDesc || h.companyName || symbol,
       units,
@@ -384,9 +822,13 @@ export function sanitizeMeroShareHoldings(holdings = [], userId = 'local') {
       prevClose,
       valueAsOfLTP,
       valueAsOfPrevClose,
-      currentMarketValue: valueAsOfLTP > 0 ? valueAsOfLTP : (units * currentLtp),
+      currentMarketValue,
+      totalInvestment,
+      profitLoss,
+      plPercent,
       wacc: Number(wacc.toFixed(2)),
-      isCustomWacc: Boolean(customMap[symbol] > 0 || (h.isCustomWacc && wacc > 0) || (wacc !== base))
+      waccSource,
+      isCustomWacc: Boolean(waccSource !== 'FALLBACK_BASE_PRICE')
     };
   }).filter(h => h.symbol && h.units > 0);
 }

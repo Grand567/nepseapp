@@ -101,9 +101,11 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
   const ltp = Number(d?.ltp || entryExitPlan.ltp || 100);
   const setupScore = Math.round(entryExitPlan.setupScore || entryExitPlan.combinedScore || 70);
   const verdict = entryExitPlan.verdict || 'BUY / ACCUMULATE';
-  const isBull = verdict.includes('BUY') || verdict.includes('ACCUMULATE');
-  const isAvoid = verdict.includes('AVOID') || verdict.includes('EXIT') || verdict.includes('NO TRADE') || verdict.includes('REDUCE') || setupScore < 45;
-  const isHoldWait = !isAvoid && (verdict.includes('HOLD') || verdict.includes('WAIT') || verdict.includes('NEUTRAL') || (setupScore >= 45 && setupScore < 60));
+  const isExtremeValuation = verdict.includes('EXTREME VALUATION') || verdict.includes('ELEVATED VALUATION') || verdict.includes('AVOID CHASING');
+  const isLossMaking = verdict.includes('OPERATING LOSS') || entryExitPlan?.riskGate?.isLossMaking;
+  const isBull = (verdict.includes('BUY') || verdict.includes('ACCUMULATE') || verdict.includes('STRONG ENTRY') || verdict.includes('HIGH-CONVICTION')) && !verdict.startsWith('HOLD') && !verdict.startsWith('REDUCE') && !verdict.startsWith('NO TRADE') && !verdict.startsWith('EXIT');
+  const isAvoid = (verdict.startsWith('NO TRADE') || verdict.startsWith('REDUCE') || verdict.startsWith('EXIT') || (verdict.startsWith('AVOID') && !verdict.startsWith('HOLD')) || setupScore < 40) && !isExtremeValuation;
+  const isHoldWait = !isBull && !isAvoid;
 
   const entryLow = entryExitPlan.levels?.entryZone?.min || entryExitPlan.levels?.entryZone?.low || (ltp * 0.985).toFixed(1);
   const entryHigh = entryExitPlan.levels?.entryZone?.max || entryExitPlan.levels?.entryZone?.high || (ltp * 1.015).toFixed(1);
@@ -219,32 +221,34 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
       }}>
         {/* Box 1: Stance / Buy Zone */}
         <div style={{
-          background: isAvoid ? 'rgba(244, 63, 94, 0.06)' : isHoldWait ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
+          background: isAvoid ? 'rgba(244, 63, 94, 0.06)' : (isHoldWait || isExtremeValuation) ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
           borderRadius: 8,
-          padding: (isAvoid || isHoldWait) ? '4px 6px' : 0
+          padding: (isAvoid || isHoldWait || isExtremeValuation) ? '4px 6px' : 0
         }}>
-          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : isHoldWait ? '#fbbf24' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Action / Stance' : isHoldWait ? 'Confirmation Corridor' : (isBreakoutAboveLtp ? 'Breakout Buy Zone (Pivot)' : 'Recommended Buy Zone')}
+          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : (isHoldWait || isExtremeValuation) ? '#fbbf24' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isExtremeValuation ? 'Action / Stance' : isAvoid ? 'Action / Stance' : isHoldWait ? 'Confirmation Corridor' : (isBreakoutAboveLtp ? 'Breakout Buy Zone (Pivot)' : 'Recommended Buy Zone')}
           </div>
           <div style={{
             fontSize: 13,
             fontWeight: 800,
-            color: isAvoid ? '#f43f5e' : isHoldWait ? '#fbbf24' : '#38bdf8',
+            color: isAvoid ? '#f43f5e' : (isHoldWait || isExtremeValuation) ? '#fbbf24' : '#38bdf8',
             fontFamily: 'var(--font-mono)',
             marginTop: 2
           }}>
-            {isAvoid ? 'NO BUY ZONE' : `Rs. ${entryLow} – ${entryHigh}`}
+            {isExtremeValuation ? 'HOLD / DO NOT CHASE' : isAvoid ? 'NO BUY ZONE' : `Rs. ${entryLow} – ${entryHigh}`}
           </div>
-          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : isHoldWait ? '#fde68a' : '#64748b', marginTop: 1 }}>
-            {isAvoid
-              ? `Avoid Entry • High Downside Risk`
+          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : (isHoldWait || isExtremeValuation) ? '#fde68a' : '#64748b', marginTop: 1 }}>
+            {isExtremeValuation
+              ? 'High Valuation Multiple • Trail Stop Losses'
+              : isAvoid
+              ? `Avoid Entry • Capital Protection Priority`
               : isHoldWait
                 ? (isBreakoutAboveLtp ? `Requires close above Rs. ${entryLow} on volume` : 'Awaiting Breakout Confirmation • Do Not Front-Run')
                 : (isBreakoutAboveLtp
                     ? `Triggers above Rs. ${entryLow} (LTP: Rs. ${fmt(ltp)})`
                     : 'Optimal Accumulation')}
           </div>
-          {isAvoid && isBreakoutAboveLtp && (
+          {(isAvoid || isExtremeValuation) && isBreakoutAboveLtp && (
             <div style={{ fontSize: 8.5, color: '#94a3b8', marginTop: 2 }}>
               Overhead Pivot: Rs. {entryLow} – {entryHigh}
             </div>
@@ -254,7 +258,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
         {/* Box 2: Target 1 / Resistance 1 */}
         <div>
           <div style={{ fontSize: 9.5, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Overhead Resistance (T1)' : isHoldWait ? 'Target 1 (Post-Trigger 1.5R)' : 'Target 1 (Swing 1.5R)'}
+            {isExtremeValuation ? 'Target 1 (Trailing Target)' : isAvoid ? 'Overhead Resistance (T1)' : isHoldWait ? 'Target 1 (Post-Trigger 1.5R)' : 'Target 1 (Swing 1.5R)'}
           </div>
           <div style={{
             fontSize: 13,
@@ -299,20 +303,43 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
 
         {/* Box 4: Structural Invalidation / Stop */}
         <div>
-          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
-            {isAvoid ? 'Cut-Loss Floor (Exit)' : 'Stop Loss (Structural)'}
+          <div style={{ fontSize: 9.5, color: isAvoid ? '#f87171' : isExtremeValuation ? '#fbbf24' : '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>
+            {isExtremeValuation ? 'Trailing Stop (Floor)' : isAvoid ? 'Cut-Loss Floor (Exit)' : 'Stop Loss (Structural)'}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: isExtremeValuation ? '#fbbf24' : '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
             Rs. {slPrice} (-{slPct}%)
           </div>
-          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : '#64748b', marginTop: 1 }}>
-            {isAvoid ? 'Protect capital if holding' : 'Invalidation Point'}
+          <div style={{ fontSize: 9, color: isAvoid ? '#fca5a5' : isExtremeValuation ? '#fde68a' : '#64748b', marginTop: 1 }}>
+            {isExtremeValuation ? 'Protect capital if holding' : isAvoid ? 'Protect capital if holding' : 'Invalidation Point'}
           </div>
         </div>
       </div>
 
+      {/* Extreme Valuation Alert Box */}
+      {isExtremeValuation && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: 10,
+          padding: '8px 12px',
+          marginBottom: 10,
+          fontSize: 11,
+          color: '#fde68a',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          lineHeight: 1.45
+        }}>
+          <AlertTriangle style={{ width: 15, height: 15, color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <span style={{ fontWeight: 800, color: '#f59e0b' }}>Valuation Prudence Alert: </span>
+            This asset exhibits strong technical momentum (Score: {setupScore}/100), but trades at an elevated valuation multiple ({entryExitPlan?.riskGate?.warning || 'High multiple contraction risk'}). Existing holders should trail stop loss at Rs. {slPrice}. Fresh buy capital should NOT chase extended moves at current pivots.
+          </div>
+        </div>
+      )}
+
       {/* Avoid Warning Alert Box */}
-      {isAvoid && (
+      {isAvoid && !isExtremeValuation && (
         <div style={{
           background: 'rgba(244, 63, 94, 0.08)',
           border: '1px solid rgba(244, 63, 94, 0.25)',
@@ -335,6 +362,8 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
               <>Circuit Ceiling Trap: Asset is within proximity of the daily circuit ceiling. Upside is mechanically capped against sudden gap-down risk.</>
             ) : entryExitPlan?.riskGate?.isLossMaking ? (
               <>Operating Loss Caution: Company reported negative operational earnings (EPS: Rs. {entryExitPlan?.fundamental?.eps ?? '—'}).</>
+            ) : setupScore >= 50 ? (
+              <>Risk Guard: Despite a setup score of {setupScore}/100, risk gates triggered for this asset ({entryExitPlan?.riskGate?.warning || 'Downside risk or overhead resistance'}). Fresh buy positions should not be initiated at current levels.</>
             ) : (
               <>This asset exhibits an unfavorable quantitative score ({setupScore}/100){winRate != null ? ` and sub-50% analog win rate (${winRate}%)` : ''}. Current market price (Rs. {fmt(ltp)}) trades below overhead resistance. Fresh buy positions should not be initiated.</>
             )}
@@ -343,7 +372,7 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
       )}
 
       {/* Hold / Wait Confirmation Alert Box */}
-      {isHoldWait && (
+      {isHoldWait && !isExtremeValuation && (
         <div style={{
           background: 'rgba(245, 158, 11, 0.08)',
           border: '1px solid rgba(245, 158, 11, 0.25)',
