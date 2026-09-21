@@ -1656,12 +1656,15 @@ app.post('/api/ipo-result/check', async (req, res) => {
     if (error.response && error.response.data) {
       return res.json({ success: true, data: error.response.data });
     }
-    // Return friendly result instead of crashing
+    // Return explicit error status instead of falsely claiming "not allotted"
     return res.json({
-      success: true,
+      success: false,
+      error: 'cdsc_busy',
+      message: 'CDSC Result Portal busy or security blocked. Please verify via MeroShare login.',
       data: {
         success: false,
-        message: 'शेयर परेको छैन वा CDSC सर्भर व्यस्त छ (Sorry, not allotted or portal busy)',
+        isError: true,
+        message: 'CDSC Result Portal busy or security blocked. Please verify via MeroShare login.',
         body: { alloted: false, quantity: 0 }
       }
     });
@@ -1727,6 +1730,15 @@ app.post('/api/ipo-result/bulk-check', async (req, res) => {
         companyShareId, boid: cleanBoid, nmbclId, companyName
       }, { timeout: 10000 });
       const d = resp.data?.data;
+      if (d?.isError || resp.data?.error) {
+        results.push({
+          id: profile.id, name: profile.name, boid: cleanBoid,
+          status: 'failed',
+          units: 0,
+          message: 'CDSC नतिजा पोर्टल व्यस्त छ (Portal Busy). कृपया मेरोशेयर खाताबाट जाँच गर्नुहोस्।'
+        });
+        continue;
+      }
       const isAllotted = d?.success === true || d?.body?.alloted === true;
       const units = isAllotted ? (d?.body?.quantity || 10) : 0;
       results.push({
@@ -1738,9 +1750,9 @@ app.post('/api/ipo-result/bulk-check', async (req, res) => {
     } catch (err) {
       results.push({
         id: profile.id, name: profile.name, boid: cleanBoid,
-        status: 'not_allotted',
+        status: 'failed',
         units: 0,
-        message: 'शेयर परेको छैन (Not allotted)'
+        message: 'CDSC नतिजा पोर्टल व्यस्त छ (Portal Busy). कृपया मेरोशेयर खाताबाट जाँच गर्नुहोस्।'
       });
     }
   }

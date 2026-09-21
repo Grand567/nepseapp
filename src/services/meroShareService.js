@@ -989,6 +989,20 @@ export async function fetchUserApplicationReports(account) {
     return [];
   }
   const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
+  const allReports = [];
+  const seenIds = new Set();
+
+  const addReport = (item) => {
+    if (!item) return;
+    const fid = item.applicantFormId || item.id || (item.companyShare && item.companyShare.id);
+    const key = fid ? String(fid) : `${item.companyShareId}_${item.companyName}`;
+    if (!seenIds.has(key)) {
+      seenIds.add(key);
+      allReports.push(item);
+    }
+  };
+
+  // 1. Fetch recent & active application reports (up to 200)
   try {
     const res = await cdscRequest({
       url: `${MEROSHARE_BASE}/applicantForm/active/search/`,
@@ -1002,19 +1016,70 @@ export async function fetchUserApplicationReports(account) {
       data: {
         filterFieldParams: [],
         page: 1,
-        size: 50,
+        size: 200,
         searchRoleViewConstants: "VIEW_APPLICANT_FORM_COMPLETE",
         filterDateParams: []
       }
     });
     if (res.ok && res.data) {
       const items = Array.isArray(res.data) ? res.data : (res.data.object || []);
-      return Array.isArray(items) ? items : [];
+      if (Array.isArray(items)) items.forEach(addReport);
     }
   } catch (err) {
-    console.warn('[MeroShare] fetchUserApplicationReports error:', err.message);
+    console.warn('[MeroShare] fetchUserApplicationReports active error:', err.message);
   }
-  return [];
+
+  // 2. Fetch older / migrated past application reports
+  try {
+    const migRes = await cdscRequest({
+      url: `${MEROSHARE_BASE}/migrated/applicantForm/search/`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${rawToken}`,
+        'Origin': 'https://meroshare.cdsc.com.np',
+        'Referer': 'https://meroshare.cdsc.com.np/',
+        'Content-Type': 'application/json'
+      },
+      data: {
+        filterFieldParams: [],
+        page: 1,
+        size: 100,
+        searchRoleViewConstants: "VIEW_APPLICANT_FORM_COMPLETE",
+        filterDateParams: []
+      }
+    });
+    if (migRes.ok && migRes.data) {
+      const items = Array.isArray(migRes.data) ? migRes.data : (migRes.data.object || []);
+      if (Array.isArray(items)) items.forEach(addReport);
+    }
+  } catch (_) {}
+
+  return allReports;
+}
+
+// ─── Fetch Detailed Allotment Report for a Specific Form ─────────────────────
+export async function fetchApplicantFormDetail(account, applicantFormId) {
+  if (!account || !applicantFormId) return null;
+  const auth = await authenticateMeroShare(account);
+  if (!auth.success || !auth.token) return null;
+  const rawToken = auth.token.trim().replace(/^Bearer\s+/i, '');
+  try {
+    const res = await cdscRequest({
+      url: `${MEROSHARE_BASE}/applicantForm/report/detail/${applicantFormId}`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${rawToken}`,
+        'Origin': 'https://meroshare.cdsc.com.np',
+        'Referer': 'https://meroshare.cdsc.com.np/'
+      }
+    });
+    if (res.ok && res.data) {
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('[fetchApplicantFormDetail] error:', err.message);
+  }
+  return null;
 }
 
 // ─── Live IPO Company List (Public CDSC Result Portal & NepaliPaisa) ────────
@@ -1123,6 +1188,43 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
     };
   }
 
+  const cleanTokenStr = (s) => String(s || '')
+    .toLowerCase()
+    .replace(/\b(limited|ltd|project|company|prabhakar|general|public|ordinary|shares|ipo|result|published)\b/gi, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .trim();
+
+  // 0. IMMEDIATE STRATEGY: Check account's Demat Portfolio / Holdings
+  // If the user's Demat account already holds shares of this company, it is 100% ALLOTTED!
+  if (account && Array.isArray(account.holdings) && account.holdings.length > 0) {
+    const targetScrip = String(companyObj?.scrip || '').trim().toUpperCase();
+    const targetName = String(companyObj?.name || '').trim();
+    const cleanTarget = cleanTokenStr(targetName);
+
+    const foundHolding = account.holdings.find(h => {
+      const hSym = String(h.scrip || h.symbol || '').trim().toUpperCase();
+      const hName = String(h.name || h.companyName || '').trim();
+      const cleanH = cleanTokenStr(hName);
+
+      if (targetScrip && hSym && targetScrip === hSym) return true;
+      if (cleanTarget && cleanH && (cleanTarget.includes(cleanH) || cleanH.includes(cleanTarget))) return true;
+      return false;
+    });
+
+    if (foundHolding) {
+      const qty = Number(foundHolding.currentBalance || foundHolding.totalQuantity || foundHolding.balance || foundHolding.units || 10);
+      if (qty > 0) {
+        return {
+          success: true,
+          allotted: true,
+          units: qty,
+          message: `🎉 बधाई! ${qty} कित्ता शेयर डिम्याट खातामा जम्मा छ (Allotted ${qty} Units verified in Demat)`,
+          source: 'demat-holdings'
+        };
+      }
+    }
+  }
+
   // 1. PRIMARY STRATEGY: Check official MeroShare Application Report if account has credentials
   if (account && account.username && account.password) {
     try {
@@ -1131,12 +1233,6 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
         const targetCleanId = Number(String(companyShareId).replace(/\D+/g, ''));
         const targetName = companyObj?.name || '';
         const targetScrip = companyObj?.scrip || '';
-
-        const cleanTokenStr = (s) => String(s || '')
-          .toLowerCase()
-          .replace(/\b(limited|ltd|project|company|prabhakar|general|public|ordinary|shares|ipo|result|published)\b/gi, '')
-          .replace(/[^a-z0-9]/g, ' ')
-          .trim();
 
         const cleanTarget = cleanTokenStr(targetName);
         const targetWords = cleanTarget.split(/\s+/).filter(w => w.length >= 3);
@@ -1163,29 +1259,44 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
         });
 
         if (match) {
-          const statusName = String(match.statusName || '').toUpperCase();
+          let statusName = String(match.statusName || '').toUpperCase();
+          let units = parseInt(match.allotedQuantity, 10) || 0;
+          let remark = match.meroshareRemark || '';
+
+          // If statusName is missing or pending, query official detailed report for exact kitta
+          const formId = match.applicantFormId || match.id;
+          if (formId && (!statusName || statusName.includes('VERIFIED') || units === 0)) {
+            try {
+              const detail = await fetchApplicantFormDetail(account, formId);
+              if (detail) {
+                if (detail.statusName) statusName = String(detail.statusName).toUpperCase();
+                if (detail.allotedQuantity) units = parseInt(detail.allotedQuantity, 10) || units;
+                if (detail.meroshareRemark) remark = detail.meroshareRemark;
+              }
+            } catch (_) {}
+          }
+
           const isAllotted = statusName.includes('ALLOTTED') && !statusName.includes('NOT');
-          const units = isAllotted ? (parseInt(match.allotedQuantity, 10) || 10) : 0;
+          if (isAllotted && units === 0) units = 10;
+
           let message = '';
           if (isAllotted) {
             message = `🎉 बधाई! ${units} कित्ता शेयर परेको छ (Allotted ${units} Units)`;
-          } else if (statusName.includes('NOT')) {
+          } else if (statusName.includes('NOT') || statusName.includes('REJECTED')) {
             message = 'शेयर परेको छैन (Sorry, not allotted)';
           } else if (statusName.includes('VERIFIED') || statusName.includes('APPLIED')) {
             message = 'आवेदन स्वीकृत भएको छ, नतिजा प्रक्रियामा छ (Application Verified - Result Pending)';
           } else {
-            message = match.meroshareRemark || match.statusName || 'शेयर परेको छैन (Not allotted)';
+            message = remark || match.statusName || 'शेयर परेको छैन (Not allotted)';
           }
           return {
             success: true,
             allotted: isAllotted,
-            units,
+            units: isAllotted ? units : 0,
             message,
             source: 'meroshare-asba'
           };
         }
-        // If not matched in user's online MeroShare reports (e.g. physical application, or different naming),
-        // do not abort! Fall through to Strategy 2 (Issue Manager API) and Strategy 3 to verify against official registry.
         console.log('[checkSingleBoidAllotment] Not found in MeroShare ASBA reports, falling through to Issue Manager API...');
       }
     } catch (asbaErr) {
@@ -1264,6 +1375,16 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
       const pData = await pRes.json();
       if (pData.success && pData.data) {
         const d = pData.data;
+        if (d.isError || d.error) {
+          // CDSC was busy or blocked — do not falsely report "not allotted"
+          return {
+            success: false,
+            allotted: false,
+            units: 0,
+            message: 'CDSC नतिजा सर्भर व्यस्त छ (Portal Busy)। कृपया मेरोशेयर खाता लगइन गरी हेर्नुहोस्।',
+            source: 'proxy-error'
+          };
+        }
         const isAllotted = d.success === true || d.body?.alloted === true;
         const units = isAllotted ? (parseInt(d.body?.quantity, 10) || 10) : 0;
         return {
@@ -1278,10 +1399,10 @@ export async function checkSingleBoidAllotment(companyShareId, boid, account = n
   } catch (_) {}
 
   return {
-    success: true,
+    success: false,
     allotted: false,
     units: 0,
-    message: 'शेयर परेको छैन (Sorry, not allotted for this BOID)'
+    message: 'CDSC बाट नतिजा प्राप्त हुन सकेन (CDSC Busy/Not Found)। कृपया मेरोशेयर लगइन गरी जाँच गर्नुहोस्।'
   };
 }
 
@@ -1466,7 +1587,7 @@ export async function checkBoidAlreadyApplied(account, companyShareId) {
 }
 
 // ─── Direct C-ASBA IPO Apply ──────────────────────────────────────────────
-export async function applyIpoDirect(account, companyShareId, appliedKitta = 10) {
+export async function applyIpoDirect(account, companyShareId, appliedKitta = 10, companyObj = null) {
   const cleanCompanyShareId = Number(String(companyShareId || '').replace(/\D+/g, '')) || Number(companyShareId);
 
   // 1. Verify CRN and Transaction PIN are present
@@ -1496,7 +1617,13 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
   };
 
   try {
-    // 3. Resolve exact companyShareId directly from user's active applicable issues if possible
+    const cleanTokenStr = (s) => String(s || '')
+      .toLowerCase()
+      .replace(/\b(limited|ltd|project|company|prabhakar|general|public|ordinary|shares|ipo|result|published)\b/gi, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .trim();
+
+    // 3. Resolve exact companyShareId directly from user's active applicable issues on CDSC
     let targetCompanyShareId = cleanCompanyShareId;
     try {
       const issuesRes = await cdscRequest({
@@ -1513,13 +1640,27 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       });
       if (issuesRes.ok && issuesRes.data?.object && Array.isArray(issuesRes.data.object)) {
         const list = issuesRes.data.object;
-        const match = list.find(item => 
-          Number(item.companyShareId) === cleanCompanyShareId ||
-          (item.scrip && String(item.scrip).toUpperCase() === 'BENI') ||
-          (item.companyName && item.companyName.toLowerCase().includes('beni'))
-        );
+        const targetScrip = String(companyObj?.scrip || '').trim().toUpperCase();
+        const targetCleanName = cleanTokenStr(companyObj?.name || '');
+
+        const match = list.find(item => {
+          const itemScrip = String(item.scrip || '').trim().toUpperCase();
+          const itemCleanName = cleanTokenStr(item.companyName || '');
+          const itemId = Number(item.companyShareId);
+
+          if (itemId && itemId === cleanCompanyShareId) return true;
+          if (targetScrip && itemScrip && targetScrip === itemScrip) return true;
+          if (targetCleanName && itemCleanName) {
+            if (targetCleanName.includes(itemCleanName) || itemCleanName.includes(targetCleanName)) return true;
+          }
+          return false;
+        });
+
         if (match && match.companyShareId) {
           targetCompanyShareId = Number(match.companyShareId);
+        } else if (list.length === 1 && list[0].companyShareId) {
+          // If only 1 applicable issue is open, automatically use it!
+          targetCompanyShareId = Number(list[0].companyShareId);
         }
       }
     } catch (err) {
@@ -1554,8 +1695,13 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
         method: 'GET',
         headers: cdscHeaders
       });
-      if (custRes.ok && Array.isArray(custRes.data) && custRes.data.length > 0) {
-        customer = custRes.data[0];
+      const custData = custRes.data;
+      if (custRes.ok) {
+        if (Array.isArray(custData) && custData.length > 0) {
+          customer = custData[0];
+        } else if (custData && typeof custData === 'object' && (custData.accountNumber || custData.id)) {
+          customer = custData;
+        }
       }
     } catch {}
 
@@ -1581,10 +1727,10 @@ export async function applyIpoDirect(account, companyShareId, appliedKitta = 10)
       companyShareId: Number(targetCompanyShareId),
       bankId: Number(bankId),
       accountNumber: String(customer.accountNumber || '').trim(),
-      accountBranchId: Number(customer.accountBranchId || 1),
+      accountBranchId: Number(customer.accountBranchId || customer.branchId || 1),
       accountTypeId: Number(customer.accountTypeId || 1),
       customerId: Number(customer.id),
-      appliedKitta: Number(appliedKitta),
+      appliedKitta: String(appliedKitta),
       crnNumber: crnNumber,
       transactionPIN: transactionPIN,
       demat: String(account.boid || auth.boid || '').trim(),

@@ -992,7 +992,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       ]);
 
       const targetCompanyId = String(activeIpo.id || selectedIpo || '').trim();
-      const res = await applyIpoDirect(profile, targetCompanyId, totalKitta);
+      const res = await applyIpoDirect(profile, targetCompanyId, totalKitta, activeIpo);
       if (res.success) successCount++;
       else failCount++;
 
