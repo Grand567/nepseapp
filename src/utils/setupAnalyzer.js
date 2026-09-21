@@ -1226,7 +1226,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const t2Cap = circuitAwareTarget(ltp, target2Candidate, holdDays);
 
   const prevCloseVal = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
-  const maxAllowedEntry = prevCloseVal > 0 ? +(prevCloseVal * 1.075).toFixed(1) : +(ltp * 1.075).toFixed(1); // At least 2.5% below +10% upper circuit
+  const maxAllowedEntry = prevCloseVal > 0 ? +(prevCloseVal * 1.125).toFixed(1) : +(ltp * 1.125).toFixed(1); // At least 2.5% below +15% upper circuit
   const rawEntryZoneMax = isCoilingNearPivot ? +(high20 * 1.025).toFixed(1) : (rawLevels.entryZone?.max ?? rawLevels.entryZone?.high);
   const entryZoneMin = isCoilingNearPivot ? +(high20 * 0.99).toFixed(1) : (rawLevels.entryZone?.min ?? rawLevels.entryZone?.low);
   const entryZoneMax = Math.min(rawEntryZoneMax, maxAllowedEntry);
@@ -1743,9 +1743,9 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // ── Risk & Execution Gate (Section 1, 6.2, 6.3) ───────────────
   const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
-  const upperCeiling = +(prevClose * 1.10).toFixed(1); // Standard NEPSE +10% daily upper circuit
-  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 10;
-  const isCircuitTrap = distToCeilingPct <= 1.5 || (prevClose > 0 && ltp >= prevClose * 1.085); // Within 1.5% of +10% ceiling
+  const upperCeiling = +(prevClose * 1.15).toFixed(1); // Standard individual stock daily circuit limit is ±15%
+  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
+  const isCircuitTrap = distToCeilingPct <= 2.0 || (prevClose > 0 && ltp >= prevClose * 1.13); // Within 2% of +15% ceiling
 
   const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
   // Round-trip fee friction requires ~0.8-0.9% gain to clear commission, SEBON fee & CGT
@@ -1792,7 +1792,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isFestiveLowVolumeTrap,
     isCriticalT2Lockup: t2Risk.tier === 'CRITICAL',
     t2Risk,
-    warning: isCircuitTrap ? `Stock is within 1.5% of +10% upper circuit ceiling (Rs. ${upperCeiling}). Capped upside vs severe downside risk.`
+    warning: isCircuitTrap ? `Stock is within 2% of +15% upper circuit ceiling (Rs. ${upperCeiling}). Capped upside vs severe downside risk.`
            : isT2CircuitExhaustion ? '⚠️ T+2 Circuit Exhaustion Trap: Stock surged +18%+ over 2 sessions. Fresh buyers face heavy Demat delivery dump risk on T+2.'
            : t2Risk.tier === 'CRITICAL' ? t2Risk.warning
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
