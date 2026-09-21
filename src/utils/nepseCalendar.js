@@ -172,12 +172,14 @@ let dynamicHaltMemory = null;
  */
 export function setDynamicMarketHalt(haltInfo) {
   dynamicHaltMemory = haltInfo;
-  if (typeof window !== 'undefined' && window.localStorage) {
+  if (typeof window !== 'undefined') {
     try {
       if (haltInfo) {
         localStorage.setItem('nepse_dynamic_emergency_halt', JSON.stringify(haltInfo));
+        window.dispatchEvent(new CustomEvent('nepse_market_halt_triggered', { detail: haltInfo }));
       } else {
         localStorage.removeItem('nepse_dynamic_emergency_halt');
+        window.dispatchEvent(new CustomEvent('nepse_market_halt_cleared'));
       }
     } catch (_) {}
   }

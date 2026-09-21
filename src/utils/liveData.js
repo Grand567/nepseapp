@@ -1499,8 +1499,30 @@ export async function fetchCompanyFinancials(symbol) {
 }
 
 // fetchMarketStatus — returns authentic real-time market open/close status using nepseCalendar
+// Autonomously detects and enforces Emergency Market Halt if trading hours have zero turnover verified by news
 export async function fetchMarketStatus() {
-  const status = getDetailedMarketStatus();
+  let status = getDetailedMarketStatus();
+
+  // If clock says market is open, verify whether live data or news indicates a sudden halt
+  if (status.isOpen && !status.isEmergencyHalt) {
+    const nptMins = status.nptTotalMinutes;
+    // Check after 11:15 AM (allow 15 mins opening delay)
+    if (nptMins >= 11 * 60 + 15 && nptMins < 15 * 60) {
+      const isZeroTurnover = (Number(MEM_SUMMARY?.totalTurnover || 0) === 0);
+      const isZeroTransactions = (Number(MEM_SUMMARY?.totalTransactions || 0) === 0);
+
+      if (isZeroTurnover && isZeroTransactions) {
+        try {
+          const { detectMarketHaltFromNews } = await import('../services/merolaganiNewsService.js');
+          const halt = await detectMarketHaltFromNews();
+          if (halt && (halt.isHalted || halt.isEmergencyHalt)) {
+            status = getDetailedMarketStatus();
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
   return status;
 }
 

@@ -386,6 +386,23 @@ function AppInner() {
     return unsubscribe;
   }, []);
 
+  // ── Listen for Emergency Market Halt Broadcasts ──
+  useEffect(() => {
+    const handleHaltChange = () => {
+      const updatedStatus = getDetailedMarketStatus();
+      setMarketStatus(updatedStatus);
+      if (!updatedStatus.isOpen) {
+        setApiStatus('yesterday');
+      }
+    };
+    window.addEventListener('nepse_market_halt_triggered', handleHaltChange);
+    window.addEventListener('nepse_market_halt_cleared', handleHaltChange);
+    return () => {
+      window.removeEventListener('nepse_market_halt_triggered', handleHaltChange);
+      window.removeEventListener('nepse_market_halt_cleared', handleHaltChange);
+    };
+  }, []);
+
   // ── Market data fetching (Adaptive Polling with Market Hours & Backoff) ──
   useEffect(() => {
     if (!user) return; // Don't fetch if not logged in
