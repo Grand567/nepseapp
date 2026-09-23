@@ -4476,6 +4476,21 @@ app.get('/api/market/promoter-shares', (req, res) => {
   });
 });
 
+// Forward /api/prime-pick/daily-verified to Render proxy service
+app.get('/api/prime-pick/daily-verified', async (req, res) => {
+  try {
+    const qs = req.url.includes('?') ? `?${req.url.split('?')[1]}` : '';
+    const renderUrl = `https://nepseapp.onrender.com/api/prime-pick/daily-verified${qs}`;
+    const r = await axios.get(renderUrl, { timeout: 15000 });
+    return res.status(r.status).json(r.data);
+  } catch (err) {
+    if (err.response) {
+      return res.status(err.response.status).json(err.response.data);
+    }
+    return res.status(502).json({ success: false, error: 'Proxy upstream error fetching daily verified prime pick' });
+  }
+});
+
 export default app;
 
 
