@@ -25,8 +25,8 @@ import { SubscriptionProvider, useSubscription } from './context/SubscriptionCon
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
 import { getUpcomingHolidays } from './utils/bikramSambat.js';
 
-import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices } from './utils/liveData';
-import { getDetailedMarketStatus } from './utils/nepseCalendar';
+import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
+import { getDetailedMarketStatus, clearDynamicMarketHalt } from './utils/nepseCalendar';
 import { MOCK_DATA_DISABLED } from './utils/mockData';
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 
@@ -58,6 +58,9 @@ function AppInner() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef(null);
   const avatarBtnRef = useRef(null);
+
+  // ── Render cold-start warm-up — fire ASAP so server is ready before fetchMarket runs ──
+  useEffect(() => { warmUpServer().catch(() => {}); }, []);
 
   // Close account menu on any click or touch outside
   useEffect(() => {
@@ -418,6 +421,7 @@ function AppInner() {
 
     const fetchMarket = async () => {
       let isMarketOpen = false;
+      let isPreOpen = false;
       let hadError = false;
 
       try {
@@ -426,6 +430,7 @@ function AppInner() {
         if (isMounted && status) {
           setMarketStatus(status);
           isMarketOpen = Boolean(status.isOpen);
+          isPreOpen = Boolean(status.isPreOpen);
         }
 
         const [response, liveIndices] = await Promise.all([
@@ -439,28 +444,38 @@ function AppInner() {
         let hasFreshData = false;
 
         // 1. Process Stock Data if available
-        if (response && response.data && response.data.length > 0) {
+        const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
+        const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
+
+        if (isRealFeed || (!hasExistingRealStocks && response?.data?.length > 0)) {
           // ✅ Real data only, no mock fallback
           currentStocks = response.data;
           liveStocksRef.current = currentStocks;
           setStocks(currentStocks);
           const isLive = Boolean(status?.isOpen);
-          setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
-          saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
+          setApiStatus(isLive ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+          if (isRealFeed) saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
           hasFreshData = true;
         }
 
         // 2. Process Indices — always prioritize real live exchange index from proxy/market
-        if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
+        if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder) {
           setIndices(liveIndices);
           saveCachedIndices(liveIndices);
           hasFreshData = true;
         } else if (currentStocks && currentStocks.length > 0) {
-          setIndices(calculateIndices(currentStocks));
+          const computed = calculateIndices(currentStocks);
+          setIndices(computed);
+          // Only persist if it's not a placeholder (i.e. MEM_SUMMARY has real live nepseIndex)
+          if (!computed.isPlaceholder) saveCachedIndices(computed);
           hasFreshData = true;
         }
 
         if (hasFreshData) {
+          clearDynamicMarketHalt();
+          const freshStatus = getDetailedMarketStatus();
+          setMarketStatus(freshStatus);
+          setApiStatus(freshStatus.isOpen ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
           setLastSyncTime(new Date());
           consecutiveErrors = 0;
         }
@@ -473,7 +488,7 @@ function AppInner() {
       if (!isMounted) return;
 
       // Adaptive intervals: 12s during active market trading (Sun-Thu 11am-3pm NPT), 120s when closed
-      const baseInterval = isMarketOpen ? 12000 : 120000;
+      const baseInterval = isMarketOpen ? 12000 : (isPreOpen ? 30000 : 120000);
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
         // Exponential backoff up to 120s on network/server errors
@@ -522,30 +537,39 @@ function AppInner() {
       let currentStocks = stocks;
       let hasFreshData = false;
 
-      if (response && response.data && response.data.length > 0) {
+      const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
+      const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
+
+      if (isRealFeed || (!hasExistingRealStocks && response?.data?.length > 0)) {
         // ✅ Real data only, no mock fallback
         currentStocks = response.data;
         liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
         const isLive = Boolean(status?.isOpen);
-        setApiStatus(isLive ? 'live' : (response.source === 'closing' ? 'closing' : 'yesterday'));
-        saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
+        setApiStatus(isLive ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+        if (isRealFeed) saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
         hasFreshData = true;
       }
 
       // Process Indices in manual refresh
-      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0) {
+      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder) {
         setIndices(liveIndices);
         saveCachedIndices(liveIndices);
         hasFreshData = true;
       } else if (currentStocks && currentStocks.length > 0) {
-        setIndices(calculateIndices(currentStocks));
+        const computed = calculateIndices(currentStocks);
+        setIndices(computed);
+        if (!computed.isPlaceholder) saveCachedIndices(computed);
         hasFreshData = true;
       }
 
 
 
       if (hasFreshData) {
+        clearDynamicMarketHalt();
+        const freshStatus = getDetailedMarketStatus();
+        setMarketStatus(freshStatus);
+        setApiStatus(freshStatus.isOpen ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
         setLastSyncTime(new Date());
       }
     } catch (err) {
@@ -647,8 +671,8 @@ function AppInner() {
               title="Click to view NEPSE Calendar & Holidays"
             >
               <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                {Number(indices?.nepse?.value ?? 2624.36).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
-                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 11.93).toFixed(2)} pts ({nepseChange >= 0 ? '+' : '-'}{Math.abs(indices?.nepse?.pChange ?? 0.45).toFixed(2)}%)
+                {Number(indices?.nepse?.value ?? 2654.28).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
+                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 7.06).toFixed(2)} pts ({nepseChange >= 0 ? '+' : '-'}{Math.abs(indices?.nepse?.pChange ?? 0.26).toFixed(2)}%)
               </span>
             </div>
           </div>
@@ -1216,9 +1240,21 @@ function AppInner() {
       )}
 
       {/* ── Content ── */}
-      <main style={{ flex: 1, overflowY: activeTab === 'dashboard' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', paddingBottom: 'calc(65px + env(safe-area-inset-bottom))' }}>
+      <main
+        style={{
+          flex: 1,
+          height: '100%',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorY: 'contain',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          paddingBottom: 'calc(85px + env(safe-area-inset-bottom, 0px))'
+        }}
+      >
         <ErrorBoundary>
-          <div style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
             {activeTab === 'dashboard'  && (
               <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
                 <Dashboard

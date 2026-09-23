@@ -39,7 +39,7 @@ import {
   Crown,
   Lock
 } from 'lucide-react';
-import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth } from '../utils/liveData';
+import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
@@ -509,8 +509,8 @@ export default function PredictorHub({
           },
           model_version: 'quant-v2.2-institutional',
           explanation: dir === 'up'
-            ? `NEPSE (Rs. ${nepseIdx.toFixed(1)}) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). [${fiscal.phase}]: ${fiscal.detail} Tactical upside target set at Rs. ${target1} (extension Rs. ${target2}) with trailing stop floor at Rs. ${stopFloor} (RRR ${rrr}:1).`
-            : `NEPSE (Rs. ${nepseIdx.toFixed(1)}) indicates consolidation near benchmark levels. [${fiscal.phase}]: ${fiscal.detail} Support floor: Rs. ${stopFloor}, Resistance ceiling: Rs. ${target1}.`
+            ? `NEPSE (Rs. ${nepseIdx.toFixed(1)}) displays bullish bias driven by favorable sector breadth (${advances} advances vs ${declines} declines). Tactical upside target set at Rs. ${target1} (extension Rs. ${target2}) with trailing stop floor at Rs. ${stopFloor} (RRR ${rrr}:1).`
+            : `NEPSE (Rs. ${nepseIdx.toFixed(1)}) indicates consolidation near benchmark levels. Support floor: Rs. ${stopFloor}, Resistance ceiling: Rs. ${target1}.`
         });
 
         // Dynamic recent trading day generator (Mon-Fri, excluding Sat/Sun)
@@ -775,6 +775,35 @@ export default function PredictorHub({
     return searchFiltered;
   }, [scoredStocks, stockFilter, searchQuery]);
 
+  // ── Authoritative Verified Prime Pick Hydration ─────────────────────────
+  const [hydratedPrimePick, setHydratedPrimePick] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const status = getDetailedMarketStatus();
+    fetchVerifiedDailyPrimePick().then(res => {
+      if (isMounted && res && res.data && res.data.symbol && res.data.levels) {
+        if (isActionableBuySignal(res.data)) {
+          const lockedPick = {
+            ...res.data,
+            sessionDate: res.data.sessionDate || status.targetSessionDate,
+            isLockedForSession: true
+          };
+          setHydratedPrimePick(lockedPick);
+          try {
+            localStorage.setItem('prime_pick_plan_cache', JSON.stringify({
+              symbol: lockedPick.symbol,
+              sessionDate: lockedPick.sessionDate,
+              plan: lockedPick,
+              ts: Date.now()
+            }));
+          } catch (_) {}
+        }
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
+
   // ── Master Breakout & Prime Pick Pipeline (Unified with Dashboard) ──
   const masterPipeline = useMemo(() => {
     if (!Array.isArray(stocks) || stocks.length === 0) {
@@ -790,8 +819,8 @@ export default function PredictorHub({
       const b = getCachedRealBrokerAnalysis(sym);
       if (b) brokerDataMap[sym] = b;
     });
-    return selectMasterPrimePick(stocks, priceHistories, brokerDataMap);
-  }, [stocks]);
+    return selectMasterPrimePick(stocks, priceHistories, brokerDataMap, { cachedPrimePick: hydratedPrimePick });
+  }, [stocks, hydratedPrimePick]);
 
   const [externalPlanVersion, setExternalPlanVersion] = useState(0);
   useEffect(() => {
@@ -804,6 +833,13 @@ export default function PredictorHub({
 
   const primeDailyPick = useMemo(() => {
     const status = getDetailedMarketStatus();
+    // Prioritize authoritative backend-verified post-market pick
+    if (hydratedPrimePick && hydratedPrimePick.symbol && isActionableBuySignal(hydratedPrimePick)) {
+      if (!hydratedPrimePick.sessionDate || hydratedPrimePick.sessionDate === status.targetSessionDate) {
+        return hydratedPrimePick;
+      }
+    }
+
     try {
       const raw = localStorage.getItem('prime_pick_plan_cache');
       if (raw) {
@@ -825,7 +861,7 @@ export default function PredictorHub({
       return rawPick;
     }
     return null;
-  }, [masterPipeline.primeDailyPick, externalPlanVersion]);
+  }, [hydratedPrimePick, masterPipeline.primeDailyPick, externalPlanVersion]);
   const cashDefenseActive = masterPipeline.cashDefenseActive || false;
 
   // ── AUTO-ANALYSIS: Run full Entry/Exit Analyzer engine on Prime Pick top stock ──
@@ -841,6 +877,12 @@ export default function PredictorHub({
 
     // Skip if we already have a valid plan for this exact symbol (no re-run)
     if (primePlan && primePlan.symbol === sym && !primePlanError) return;
+
+    // If primeDailyPick already has a verified backtested plan from the authoritative server, use it directly!
+    if (primeDailyPick.isPlanVerified && primeDailyPick.levels?.entryZone?.min && primeDailyPick.analogResult) {
+      setPrimePlan(primeDailyPick);
+      return;
+    }
 
     let cancelled = false;
     setPrimePlanLoading(true);
@@ -1087,7 +1129,7 @@ export default function PredictorHub({
         }}>
           {[
             { id: 'nepse', label: 'Index Predictor', icon: Target },
-            { id: 'short_term_plan', label: '⚡ 1–2W Profit Plan', icon: Zap },
+            { id: 'short_term_plan', label: '⚡ 1–2W Profit Plan', icon: Zap, isPro: true },
             { id: 'stocks', label: 'Stock Screener', icon: Flame, badge: scoredStocks.length, isPro: true },
             { id: 'entry_exit', label: 'Entry/Exit Analyzer', icon: Crosshair, isPro: true },
             { id: 'macro_sentiment', label: 'Macro & Sentiment', icon: Globe, isPro: true },
@@ -1162,7 +1204,7 @@ export default function PredictorHub({
       </div>
 
       {/* ── Tab Content Container ── */}
-      <div style={{ flex: 1, padding: '16px' }}>
+      <div style={{ flex: 1, padding: activeTab === 'short_term_plan' ? '8px 4px' : '16px 12px' }} className="predictor-tab-content">
 
         {/* ══════════════════════════════════════════════════════════
             VIEW 1: NEPSE INDEX DIRECTION PREDICTOR
@@ -1869,17 +1911,18 @@ export default function PredictorHub({
             VIEW: 1–2 WEEK SHORT-TERM PROFIT PLAN WORKSTATION
            ══════════════════════════════════════════════════════════ */}
         {activeTab === 'short_term_plan' && (
-          <ShortTermProfitPlan
-            stocks={stocks}
-            indices={indices}
-            onSelectStock={onSelectStock}
-            initialSymbol={
-              selectedForAnalysis ||
-              (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') : '') ||
-              primeDailyPick?.symbol ||
-              'NABIL'
-            }
-          />
+          <ProGate
+            featureName="1–2 Week Short-Term Profit Plan"
+            description="Unlock algorithmic 1–2 week swing setups, dynamic ATR target ladders, T+2 circuit trap prevention, and quantitative Kelly position sizing with a Pro pass."
+          >
+            <ShortTermProfitPlan
+              stocks={stocks}
+              indices={indices}
+              onSelectStock={onSelectStock}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              initialSymbol={selectedForAnalysis || ''}
+            />
+          </ProGate>
         )}
 
         {/* ══════════════════════════════════════════════════════════
@@ -2079,6 +2122,38 @@ export default function PredictorHub({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 99,
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        color: '#a5b4fc',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <Calendar size={11} /> Target Session: {primeDailyPick.sessionDate || getDetailedMarketStatus().targetSessionDate}
+                      </span>
+
+                      {primeDailyPick.isLockedForSession && (
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: 99,
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#34d399',
+                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}>
+                          <Lock size={10} /> Sealed Post-Market Pick
+                        </span>
+                      )}
+
                       {primePlanLoading ? (
                         <span style={{
                           fontSize: 11,

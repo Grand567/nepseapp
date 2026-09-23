@@ -582,7 +582,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
     const s = resolvedStock || { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
-    const ltp = Number(liveDetail?.closePrice || liveDetail?.marketPrice || s.ltp || s.closePrice || 0);
+    
+    // Live exchange price from active market feed (allStocks) ALWAYS takes absolute priority over fundamentals
+    const liveLtp = Number(s.ltp || s.closePrice || s.latestPrice || 0);
+    const ltp = liveLtp > 0 ? liveLtp : Number(liveDetail?.closePrice || liveDetail?.marketPrice || 0);
+
+    const livePChange = Number(s.pChange !== undefined ? s.pChange : (s.percentageChange !== undefined ? s.percentageChange : (liveDetail?.pChange || 0)));
+    const liveChange = Number(s.change !== undefined ? s.change : (liveDetail?.change || 0));
+    const liveOpen = Number(s.open || s.openPrice || liveDetail?.openPrice || ltp);
+    const liveHigh = Number(s.high || s.highPrice || liveDetail?.highPrice || ltp);
+    const liveLow = Number(s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
+    const livePrevClose = Number(s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
 
     // Derive 52W High / Low from real price history if not in liveDetail
     let histHigh = 0;
@@ -593,8 +603,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       if (lows.length > 0) histLow = Math.min(...lows);
     }
 
-    const high52w = Number(liveDetail?.high52w || s.high52w || (histHigh > 0 ? histHigh : (ltp > 0 ? ltp : 0)));
-    const low52w = Number(liveDetail?.low52w || s.low52w || (histLow > 0 ? histLow : (ltp > 0 ? ltp : 0)));
+    const high52w = Number(s.high52w || liveDetail?.high52w || (histHigh > 0 ? histHigh : (ltp > 0 ? ltp : 0)));
+    const low52w = Number(s.low52w || liveDetail?.low52w || (histLow > 0 ? histLow : (ltp > 0 ? ltp : 0)));
 
     const eps = Number(liveDetail?.eps > 0 ? liveDetail.eps : (s.eps > 0 ? s.eps : 0));
     const bookValue = Number(liveDetail?.bookValue > 0 ? liveDetail.bookValue : (s.bookValue > 0 ? s.bookValue : 0));
@@ -603,31 +613,31 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
     const listedShares = Number(liveDetail?.listedShares || liveDetail?.sharesOutstanding || s.listedShares || 0);
     const paidUpCapital = Number(liveDetail?.paidUpCapital || s.paidUpCapital || 0);
-    const marketCap = Number(liveDetail?.marketCap || s.marketCap || (listedShares > 0 && ltp > 0 ? listedShares * ltp : 0));
+    const marketCap = Number(s.marketCap || liveDetail?.marketCap || (listedShares > 0 && ltp > 0 ? listedShares * ltp : 0));
 
     const promoterPercentage = Number(liveDetail?.promoterPercentage || s.promoterPercentage || 0);
     const publicPercentage = Number(liveDetail?.publicPercentage || s.publicPercentage || (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0));
 
-    const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
     const stockVol = Number(s.volume || s.totalTradedQuantity || 0);
-    const volume = liveVol > 0 ? liveVol : stockVol;
+    const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
+    const volume = stockVol > 0 ? stockVol : liveVol;
 
-    const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
     const stockTurnover = Number(s.turnover || s.totalTradedValue || 0);
-    const turnover = liveTurnover > 0 ? liveTurnover : stockTurnover;
+    const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
+    const turnover = stockTurnover > 0 ? stockTurnover : liveTurnover;
 
-    const rvol = Number(liveDetail?.rvol || s.rvol || s.volumeSurgeRatio || 0) || undefined;
-    const avgVolume20D = Number(liveDetail?.avgVolume20D || s.avgVolume20D || 0) || undefined;
+    const rvol = Number(s.rvol || s.volumeSurgeRatio || liveDetail?.rvol || 0) || undefined;
+    const avgVolume20D = Number(s.avgVolume20D || liveDetail?.avgVolume20D || 0) || undefined;
 
     return {
       ...s,
       ltp: ltp > 0 ? ltp : Number(s.ltp || 0),
-      pChange: Number(liveDetail?.pChange !== undefined ? liveDetail.pChange : (s.pChange || 0)),
-      change: Number(liveDetail?.change !== undefined ? liveDetail.change : (s.change || 0)),
-      open: Number(liveDetail?.openPrice || s.open || ltp),
-      high: Number(liveDetail?.highPrice || s.high || ltp),
-      low: Number(liveDetail?.lowPrice || s.low || ltp),
-      prevClose: Number(liveDetail?.prevClose || s.prevClose || (ltp - (s.change || 0))),
+      pChange: livePChange,
+      change: liveChange,
+      open: liveOpen,
+      high: liveHigh,
+      low: liveLow,
+      prevClose: livePrevClose,
       volume,
       turnover,
       rvol,
@@ -645,8 +655,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       publicPercentage,
       bonusShare: Number(liveDetail?.bonus || s.bonusShare || 0),
       cashDiv: Number(liveDetail?.dividend || s.cashDiv || 0),
-      companyName: liveDetail?.companyName || s.companyName || s.name || s.symbol,
-      sector: liveDetail?.sector || s.sector || 'Others',
+      companyName: s.companyName || s.name || liveDetail?.companyName || s.symbol,
+      sector: (s.sector && s.sector !== 'Unknown') ? s.sector : (liveDetail?.sector || 'Others'),
       isin: liveDetail?.isin || s.isin || '',
       listingDate: liveDetail?.listingDate || s.listingDate || ''
     };
@@ -1010,12 +1020,29 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   // Real market depth
   const marketDepth = useMemo(() => {
     if (realMarketDepth && (realMarketDepth.bids?.length > 0 || realMarketDepth.asks?.length > 0)) {
+      const bids = realMarketDepth.bids?.map(b => ({
+        price: Number(b.price || b.rate || 0),
+        qty: Number(b.quantity || b.qty || 0),
+        quantity: Number(b.quantity || b.qty || 0),
+        orders: Number(b.orders || b.orderCount || 1)
+      })) || [];
+      const asks = realMarketDepth.asks?.map(a => ({
+        price: Number(a.price || a.rate || 0),
+        qty: Number(a.quantity || a.qty || 0),
+        quantity: Number(a.quantity || a.qty || 0),
+        orders: Number(a.orders || a.orderCount || 1)
+      })) || [];
+      const totalBuyQty = realMarketDepth.totalBidQty || bids.reduce((s, b) => s + b.qty, 0);
+      const totalSellQty = realMarketDepth.totalAskQty || asks.reduce((s, a) => s + a.qty, 0);
+
       return {
         ...realMarketDepth,
-        buyOrders: realMarketDepth.bids?.map(b => ({ price: b.price, qty: b.quantity, orders: b.orders })) || [],
-        sellOrders: realMarketDepth.asks?.map(a => ({ price: a.price, qty: a.quantity, orders: a.orders })) || [],
-        totalBuyQty: realMarketDepth.totalBidQty || 0,
-        totalSellQty: realMarketDepth.totalAskQty || 0,
+        bids,
+        asks,
+        buyOrders: bids,
+        sellOrders: asks,
+        totalBuyQty,
+        totalSellQty,
         isDemandHigh: (realMarketDepth.obir || 0) > 0,
         demandStatus: realMarketDepth.obir > 0.1 ? 'Demand Heavy' : realMarketDepth.obir < -0.1 ? 'Supply Heavy' : 'Balanced Flow',
         source: realMarketDepth.source || 'live'
@@ -2451,8 +2478,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   {(filteredFloorsheet || []).slice(0, 20).map((r, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: r.isReal ? 'rgba(16, 185, 129,0.02)' : 'transparent' }}>
                       <td style={{ padding: '8px', fontWeight: 800, color: '#ffffff' }}>{d.symbol}</td>
-                      <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--bull)', fontWeight: 700 }}>{r.buyerBroker}</td>
-                      <td style={{ padding: '8px 4px', textAlign: 'center', color: '#F43F5E', fontWeight: 700 }}>{r.sellerBroker}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--bull)', fontWeight: 700 }}>{r.buyerBroker || r.buyer || '–'}</td>
+                      <td style={{ padding: '8px 4px', textAlign: 'center', color: '#F43F5E', fontWeight: 700 }}>{r.sellerBroker || r.seller || '–'}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontWeight: 700 }}>{(r.qty || r.quantity || 0).toLocaleString()}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontWeight: 800, color: '#ffffff' }}>{Number(r.rate || 0).toFixed(1)}</td>
                       <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{fmt(r.amount)}</td>

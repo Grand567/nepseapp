@@ -54,6 +54,7 @@ import { getCachedRealPriceHistory, fetchPriceHistory, getCachedStockFundamental
 import { calculateEMA } from '../utils/indicators';
 import { toAscendingCandles } from '../utils/setupAnalyzer';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
+import { useNavigation } from '../context/NavigationContext';
 
 /**
  * Checks if a NEPSE scrip is a mutual fund, debenture, bond, promoter share, or penny security.
@@ -69,7 +70,7 @@ export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 
   if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
 
   // NEPSE Debenture / Promoter / Bond ticker patterns (e.g. ADBLD83, KBLD86, NMB50, ACLBSLP)
-  if (s.endsWith('PO') || s.endsWith('P') || s.includes('DEB') || s.startsWith('NMB50') || s.startsWith('ADBLD')) return true;
+  if (s.endsWith('PO') || (s.endsWith('P') && s !== 'NADEP') || s.includes('DEB') || s.startsWith('NMB50') || s.startsWith('ADBLD')) return true;
   if (/\d+$/.test(s) && (s.includes('D') || s.includes('B') || s.includes('F'))) return true;
 
   // Price floor: All NEPSE mutual funds have par 10 and trade below Rs. 25. Regular equities trade >= Rs. 60
@@ -389,16 +390,42 @@ export default function ShortTermProfitPlan({
     if (initialSymbol && typeof initialSymbol === 'string' && initialSymbol.trim()) {
       return initialSymbol.trim().toUpperCase();
     }
-    try {
-      const stored = localStorage.getItem('selected_entry_exit_symbol');
-      if (stored && typeof stored === 'string' && stored.trim()) return stored.trim().toUpperCase();
-    } catch (_) {}
     return '';
   });
 
+  const { openStockDetail } = useNavigation();
   const [searchFilter, setSearchFilter] = useState('');
-  const [candidateFilter, setCandidateFilter] = useState('all'); // 'all' (only qualified 7/7), 'breakout', 'broker_accum', 'all_universe'
+  const [candidateFilter, setCandidateFilter] = useState('all'); // 'all', 'near_qualified', 'breakout', 'broker_accum', 'all_universe'
   const [showCriteriaDetails, setShowCriteriaDetails] = useState(true);
+  const [displayLimit, setDisplayLimit] = useState(30);
+
+  // Reset display limit when candidate category changes
+  useEffect(() => {
+    setDisplayLimit(30);
+  }, [candidateFilter]);
+
+  // Unified stock selection for in-situ 1–2W Profit Plan analysis
+  const handleStockClick = (stockOrSymbol) => {
+    if (!stockOrSymbol) return;
+    const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+    if (!sym) return;
+    const cleanSym = String(sym).trim().toUpperCase();
+    setSelectedSymbol(cleanSym);
+
+    // Reset custom overrides for the newly selected stock
+    setCustomEntryPrice(null);
+    setCustomStopLoss(null);
+    setCustomTarget1(null);
+    setCustomQuantity(null);
+
+    // Smoothly scroll down to the 1–2W profit plan analysis workstation
+    setTimeout(() => {
+      const el = document.getElementById('short-term-analysis-workstation');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 50);
+  };
 
   // ── 2. Capital & Position Sizing Inputs ──
   const [totalCapital, setTotalCapital] = useState(100000); // Rs. 1 Lakh default
@@ -578,6 +605,38 @@ export default function ShortTermProfitPlan({
     }
   }, [selectedSymbol, bestPickCandidate, nearQualifiedCandidates]);
 
+  // Breakout Candidates: Real NEPSE breakout setups (52W high proximity, volume surges, price thrusts, or technical breakout)
+  const breakoutCandidates = useMemo(() => {
+    return allEvaluatedCandidates.filter(c => {
+      const is52WBreakout = Boolean(c.high52 && c.ltp >= c.high52 * 0.95 && c.pChg >= 0);
+      const isVolumeThrust = Boolean(c.pChg >= 1.5 && (c.vsr >= 1.15 || c.vol >= 3000));
+      const isPriceSurge = Boolean(c.pChg >= 2.5);
+      const isPatternBreakout = Boolean(c.isBreakout || c.setupType === 'ACTIVE_BREAKOUT');
+      const isMomentumCoil = Boolean(c.score >= 65 && c.vsr >= 1.1);
+      return isPatternBreakout || is52WBreakout || isVolumeThrust || isPriceSurge || isMomentumCoil;
+    }).sort((a, b) => {
+      const aMetric = (Number(a.pChg || 0) * 2) + (Number(a.vsr || 1) * 5) + (Number(a.score || 50) * 0.5);
+      const bMetric = (Number(b.pChg || 0) * 2) + (Number(b.vsr || 1) * 5) + (Number(b.score || 50) * 0.5);
+      return bMetric - aMetric;
+    });
+  }, [allEvaluatedCandidates]);
+
+  // Smart Money Candidates: Institutional volume footprint, high turnover favorites, broker accumulation
+  const smartMoneyCandidates = useMemo(() => {
+    return allEvaluatedCandidates.filter(c => {
+      const isHighTurnover = Boolean(c.turnover >= 2500000 && c.pChg >= 0);
+      const isHugeTurnover = Boolean(c.turnover >= 8000000);
+      const isVolumeShock = Boolean(c.vsr >= 1.25 && c.pChg >= 0);
+      const isBrokerAccum = Boolean(c.isBrokerAccum || c.setupType === 'SMART_MONEY_ACCUM');
+      const isHighParticipation = Boolean(c.score >= 58 && c.vol >= 10000);
+      return isBrokerAccum || isHighTurnover || isHugeTurnover || isVolumeShock || isHighParticipation;
+    }).sort((a, b) => {
+      const aVal = (Number(a.turnover) || 0) + (Number(a.vsr || 1) * 1000000);
+      const bVal = (Number(b.turnover) || 0) + (Number(b.vsr || 1) * 1000000);
+      return bVal - aVal;
+    });
+  }, [allEvaluatedCandidates]);
+
   // Filtered Candidates according to user selection
   const filteredCandidates = useMemo(() => {
     let pool = [];
@@ -587,9 +646,9 @@ export default function ShortTermProfitPlan({
     } else if (candidateFilter === 'near_qualified') {
       pool = nearQualifiedCandidates;
     } else if (candidateFilter === 'breakout') {
-      pool = allEvaluatedCandidates.filter(c => c.setupType === 'ACTIVE_BREAKOUT');
+      pool = breakoutCandidates;
     } else if (candidateFilter === 'broker_accum') {
-      pool = allEvaluatedCandidates.filter(c => c.isBrokerAccum);
+      pool = smartMoneyCandidates;
     } else if (candidateFilter === 'all_universe') {
       pool = allEvaluatedCandidates;
     } else {
@@ -598,21 +657,34 @@ export default function ShortTermProfitPlan({
 
     if (searchFilter.trim()) {
       const q = searchFilter.toLowerCase().trim();
-      pool = allEvaluatedCandidates.filter(c => 
+      const poolMatches = pool.filter(c => 
+        c.symbol.toLowerCase().includes(q) || 
+        String(c.sector || '').toLowerCase().includes(q) ||
+        String(c.name || '').toLowerCase().includes(q)
+      );
+      if (poolMatches.length > 0) {
+        return poolMatches;
+      }
+      return allEvaluatedCandidates.filter(c => 
         c.symbol.toLowerCase().includes(q) || 
         String(c.sector || '').toLowerCase().includes(q) ||
         String(c.name || '').toLowerCase().includes(q)
       );
     }
 
-    return pool.sort((a, b) => b.compositeRankScore - a.compositeRankScore);
-  }, [allEvaluatedCandidates, qualifiedCandidates, nearQualifiedCandidates, candidateFilter, searchFilter]);
+    return pool;
+  }, [allEvaluatedCandidates, qualifiedCandidates, nearQualifiedCandidates, breakoutCandidates, smartMoneyCandidates, candidateFilter, searchFilter]);
 
   // ── 8. Currently Selected Stock Details ──
   const activeStock = useMemo(() => {
     const sym = (selectedSymbol || bestPickCandidate?.symbol || nearQualifiedCandidates[0]?.symbol || 'NABIL').trim().toUpperCase();
-    const found = allEvaluatedCandidates.find(c => c.symbol === sym);
-    if (found) return found;
+    const foundEvaluated = allEvaluatedCandidates.find(c => c.symbol.toUpperCase() === sym);
+    if (foundEvaluated) return foundEvaluated;
+
+    const foundUniverse = fullUniverseStocks.find(s => s.symbol.toUpperCase() === sym);
+    if (foundUniverse) {
+      return evaluateShortTermCriteria(foundUniverse, indices);
+    }
 
     if (bestPickCandidate) return bestPickCandidate;
     if (nearQualifiedCandidates[0]) return nearQualifiedCandidates[0];
@@ -623,7 +695,7 @@ export default function ShortTermProfitPlan({
       pChange: 0,
       sector: 'Commercial Bank'
     }, indices);
-  }, [allEvaluatedCandidates, selectedSymbol, bestPickCandidate, nearQualifiedCandidates, indices]);
+  }, [allEvaluatedCandidates, fullUniverseStocks, selectedSymbol, bestPickCandidate, nearQualifiedCandidates, indices]);
 
   // Reset custom overrides when switching symbol
   useEffect(() => {
@@ -732,15 +804,27 @@ export default function ShortTermProfitPlan({
 
   const handleOpenInEntryExit = (sym) => {
     if (!sym) return;
+    const cleanSym = String(sym).trim().toUpperCase();
     try {
-      localStorage.setItem('selected_entry_exit_symbol', sym);
+      localStorage.setItem('selected_entry_exit_symbol', cleanSym);
       localStorage.setItem('open_service_id', 'entry-exit-analyzer');
-      window.dispatchEvent(new CustomEvent('open_service', {
-        detail: { serviceId: 'entry-exit-analyzer', symbol: sym }
+      
+      // 1. Dispatch tab switch for PredictorHub
+      window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+        detail: { tab: 'entry_exit', symbol: cleanSym }
       }));
+
+      // 2. Dispatch symbol synchronization
       window.dispatchEvent(new CustomEvent('set_entry_exit_symbol', {
-        detail: { symbol: sym, source: 'short_term_profit_plan' }
+        detail: { symbol: cleanSym, source: 'short_term_profit_plan' }
       }));
+
+      // 3. Dispatch open service for ServicesHub
+      window.dispatchEvent(new CustomEvent('open_service', {
+        detail: { serviceId: 'entry-exit-analyzer', symbol: cleanSym }
+      }));
+
+      // 4. Call parent callback if provided
       if (onNavigateTab) {
         onNavigateTab('entry_exit');
       }
@@ -748,20 +832,29 @@ export default function ShortTermProfitPlan({
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      padding: '12px 10px',
-      maxWidth: 1200,
-      margin: '0 auto',
-      color: 'var(--text-primary)',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      boxSizing: 'border-box',
-      width: '100%',
-      overflowX: 'hidden'
-    }}>
+    <div 
+      className="stpp-root-container"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        padding: '12px 10px',
+        maxWidth: 1200,
+        margin: '0 auto',
+        color: 'var(--text-primary)',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        boxSizing: 'border-box',
+        width: '100%',
+        overflowX: 'hidden'
+      }}
+    >
       <style>{`
+        .stpp-root-container {
+          width: 100% !important;
+          max-width: 1200px;
+          margin: 0 auto;
+          box-sizing: border-box;
+        }
         .stpp-workstation-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
@@ -770,15 +863,23 @@ export default function ShortTermProfitPlan({
           box-sizing: border-box;
         }
         @media (max-width: 768px) {
+          .stpp-root-container {
+            padding: 4px 1px !important;
+            max-width: 100% !important;
+            width: 100% !important;
+          }
           .stpp-workstation-grid {
             grid-template-columns: 1fr !important;
-            gap: 14px !important;
+            gap: 12px !important;
+            width: 100% !important;
           }
           .stpp-card-padding {
-            padding: 14px 10px !important;
+            padding: 12px 8px !important;
+            border-radius: 14px !important;
           }
           .stpp-header-banner {
-            padding: 14px 12px !important;
+            padding: 12px 10px !important;
+            border-radius: 14px !important;
             flex-direction: column !important;
             align-items: stretch !important;
           }
@@ -860,6 +961,17 @@ export default function ShortTermProfitPlan({
               }}>
                 QUANT EDGE
               </span>
+              <span style={{
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 7px',
+                borderRadius: 6,
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: '#A5B4FC',
+                border: '1px solid rgba(99, 102, 241, 0.3)'
+              }}>
+                Session: {getDetailedMarketStatus().targetSessionDate}
+              </span>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
               Identify volume breakouts, calculate position size, and lock profits with strict 2:1 risk control.
@@ -932,6 +1044,28 @@ export default function ShortTermProfitPlan({
                 {qualifiedCandidates.length} QUALIFIED (8/8)
               </span>
             </div>
+            {bestPickCandidate && selectedSymbol !== bestPickCandidate.symbol && (
+              <button
+                onClick={() => setSelectedSymbol(bestPickCandidate.symbol)}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.18)',
+                  border: '1px solid rgba(59, 130, 246, 0.45)',
+                  color: '#60A5FA',
+                  borderRadius: 8,
+                  padding: '4px 10px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  transition: 'all 0.2s'
+                }}
+                title={`Jump back to #1 Qualified Pick: ${bestPickCandidate.symbol}`}
+              >
+                ⭐ View #1 Pick ({bestPickCandidate.symbol})
+              </button>
+            )}
           </div>
 
           {/* Universe Scanned & Criteria Indicator Banner */}
@@ -998,9 +1132,9 @@ export default function ShortTermProfitPlan({
               {[
                 { id: 'all', label: `⭐ Qualified (${qualifiedCandidates.length})` },
                 { id: 'near_qualified', label: `👀 Watchlist (${nearQualifiedCandidates.length})` },
-                { id: 'breakout', label: '⚡ Breakouts' },
-                { id: 'broker_accum', label: '👑 Smart Money' },
-                { id: 'all_universe', label: `🌐 Equities (${fullUniverseStocks.length})` }
+                { id: 'breakout', label: `⚡ Breakouts (${breakoutCandidates.length})` },
+                { id: 'broker_accum', label: `👑 Smart Money (${smartMoneyCandidates.length})` },
+                { id: 'all_universe', label: `🌐 Equities (${allEvaluatedCandidates.length})` }
               ].map(f => (
                 <button
                   key={f.id}
@@ -1074,202 +1208,239 @@ export default function ShortTermProfitPlan({
                 )}
               </div>
             ) : (
-              filteredCandidates.slice(0, 30).map((item, idx) => {
-                const isSelected = item.symbol === activeStock.symbol;
-                const isTopPick = bestPickCandidate && item.symbol === bestPickCandidate.symbol;
-                const isT2Trap = item.t2Guard?.status === 'HIGH_T2_CIRCUIT_TRAP';
-                return (
-                  <div
-                    key={item.symbol}
-                    onClick={() => setSelectedSymbol(item.symbol)}
+              <>
+                {filteredCandidates.slice(0, displayLimit).map((item, idx) => {
+                  const isSelected = item.symbol === activeStock.symbol;
+                  const isTopPick = bestPickCandidate && item.symbol === bestPickCandidate.symbol;
+                  const isT2Trap = item.t2Guard?.status === 'HIGH_T2_CIRCUIT_TRAP';
+                  const isBreakoutSetup = Boolean(item.isBreakout || item.setupType === 'ACTIVE_BREAKOUT' || (item.high52 && item.ltp >= item.high52 * 0.95 && item.pChg >= 0.5) || item.pChg >= 2.5);
+                  const isSmartMoneySetup = Boolean(item.isBrokerAccum || item.turnover >= 2500000 || item.vsr >= 1.25);
+
+                  return (
+                    <div
+                      key={item.symbol}
+                      onClick={() => handleStockClick(item)}
+                      title="Tap to view 1–2W profit plan analysis"
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 14,
+                        background: isSelected ? 'rgba(99, 102, 241, 0.14)' : 'rgba(255, 255, 255, 0.02)',
+                        border: isSelected ? '1px solid #6366F1' : (isTopPick ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(255, 255, 255, 0.05)'),
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        position: 'relative',
+                        boxSizing: 'border-box',
+                        width: '100%',
+                        minWidth: 0
+                      }}
+                    >
+                      {/* Row 1: Symbol & Sector on left, Price on right */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: 14, color: '#FFF', letterSpacing: '0.02em', minWidth: 0 }}>
+                            {item.symbol}
+                          </strong>
+                          {isTopPick && (
+                            <span style={{
+                              fontSize: 9,
+                              fontWeight: 900,
+                              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                              color: '#000',
+                              padding: '1px 5px',
+                              borderRadius: 4
+                            }}>
+                              TOP PICK
+                            </span>
+                          )}
+                          <span style={{
+                            fontSize: 9.5,
+                            color: 'var(--text-muted)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            maxWidth: 110,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {item.sector}
+                          </span>
+                        </div>
+
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 900, color: '#FFF' }}>
+                            Rs. {item.ltp}
+                          </span>
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            marginLeft: 4,
+                            color: item.pChg >= 0 ? '#34D399' : '#FB7185'
+                          }}>
+                            {item.pChg >= 0 ? '+' : ''}{Number(item.pChg || 0).toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Setup Badges & T+2 Status */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {isBreakoutSetup && (
+                          <span style={{
+                            fontSize: 9,
+                            fontWeight: 900,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#34D399',
+                            border: '1px solid rgba(16, 185, 129, 0.4)'
+                          }}>
+                            ⚡ BREAKOUT
+                          </span>
+                        )}
+                        {isSmartMoneySetup && (
+                          <span style={{
+                            fontSize: 9,
+                            fontWeight: 900,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: 'rgba(245, 158, 11, 0.2)',
+                            color: '#FBBF24',
+                            border: '1px solid rgba(245, 158, 11, 0.4)'
+                          }}>
+                            👑 SMART MONEY
+                          </span>
+                        )}
+
+                        {isT2Trap ? (
+                          <span style={{
+                            fontSize: 9,
+                            fontWeight: 900,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: 'rgba(239, 68, 68, 0.2)',
+                            color: '#F87171'
+                          }}>
+                            ⚠️ T+2 TRAP
+                          </span>
+                        ) : (
+                          <span style={{
+                            fontSize: 9,
+                            fontWeight: 900,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#34D399',
+                            border: '1px solid rgba(16, 185, 129, 0.4)'
+                          }}>
+                            🛡️ T+2 SAFE
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStockClick(item);
+                          }}
+                          title="Load 1–2W profit plan analysis"
+                          style={{
+                            marginLeft: 'auto',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            border: '1px solid rgba(99, 102, 241, 0.35)',
+                            borderRadius: 6,
+                            padding: '2px 8px',
+                            fontSize: 10,
+                            fontWeight: 800,
+                            color: '#A5B4FC',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3
+                          }}
+                        >
+                          <Sparkles size={10} /> Plan
+                        </button>
+                      </div>
+
+                      {/* Row 3: Targets & Levels Row */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                        gap: 4,
+                        fontSize: 10.5,
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        padding: '6px 6px',
+                        borderRadius: 8,
+                        textAlign: 'center'
+                      }}>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ color: 'var(--text-muted)', fontSize: 8.5, whiteSpace: 'nowrap' }}>BUY CORRIDOR</div>
+                          <div style={{ fontWeight: 800, color: '#94A3B8', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.entryMin} – {item.entryMax}
+                          </div>
+                        </div>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ color: '#34D399', fontSize: 8.5, whiteSpace: 'nowrap' }}>1–2W TARGET</div>
+                          <div style={{ fontWeight: 900, color: '#34D399', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.target1} (+{item.target1Pct}%)
+                          </div>
+                        </div>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ color: '#FB7185', fontSize: 8.5, whiteSpace: 'nowrap' }}>STOP-LOSS</div>
+                          <div style={{ fontWeight: 800, color: '#FB7185', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.stopLoss} (-{item.stopLossPct}%)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Setup & Score Badges */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5 }}>
+                        <span style={{
+                          fontWeight: 800,
+                          color: item.score >= 70 ? '#34D399' : item.score >= 60 ? '#FBBF24' : '#F87171',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}>
+                          <Sparkles size={11} /> Score: {item.score}/100
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                          RRR: <strong style={{ color: item.rrr >= 1.5 ? '#34D399' : '#FB7185' }}>{item.rrr}:1</strong> · RVOL: <strong>{item.vsr}×</strong>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {filteredCandidates.length > displayLimit && (
+                  <button
+                    type="button"
+                    onClick={() => setDisplayLimit(prev => prev + 30)}
                     style={{
-                      padding: '10px 12px',
-                      borderRadius: 14,
-                      background: isSelected ? 'rgba(99, 102, 241, 0.14)' : 'rgba(255, 255, 255, 0.02)',
-                      border: isSelected ? '1px solid #6366F1' : (isTopPick ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(255, 255, 255, 0.05)'),
+                      padding: '10px 16px',
+                      borderRadius: 10,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      color: '#A5B4FC',
+                      fontSize: 12,
+                      fontWeight: 800,
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                      position: 'relative',
-                      boxSizing: 'border-box',
+                      margin: '6px 0 10px',
                       width: '100%',
-                      minWidth: 0
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6
                     }}
                   >
-                    {/* Row 1: Symbol & Sector on left, Price on right */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 900,
-                          padding: '1px 5px',
-                          borderRadius: 4,
-                          background: isTopPick ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-                          color: isTopPick ? '#FBBF24' : '#94A3B8',
-                          flexShrink: 0
-                        }}>
-                          #{idx + 1}
-                        </span>
-
-                        <span style={{ fontSize: 15, fontWeight: 900, color: '#FFF', flexShrink: 0 }}>
-                          {item.symbol}
-                        </span>
-
-                        <span style={{
-                          fontSize: 10,
-                          color: 'var(--text-muted)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          maxWidth: 110
-                        }}>
-                          {item.sector}
-                        </span>
-                      </div>
-
-                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: '#FFF' }}>Rs. {item.ltp}</div>
-                        <div style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: item.pChg >= 0 ? 'var(--bull)' : 'var(--bear)'
-                        }}>
-                          {item.pChg >= 0 ? '+' : ''}{item.pChg.toFixed(2)}%
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 2: Badges cleanly separated */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                      {isTopPick && (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 900,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(245, 158, 11, 0.25)',
-                          color: '#FBBF24',
-                          border: '1px solid rgba(245, 158, 11, 0.4)'
-                        }}>
-                          🏆 #1 PICK
-                        </span>
-                      )}
-
-                      {item.passesAll ? (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 900,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(16, 185, 129, 0.2)',
-                          color: '#34D399',
-                          border: '1px solid rgba(16, 185, 129, 0.35)'
-                        }}>
-                          ✅ 8/8 PASSED
-                        </span>
-                      ) : (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(245, 158, 11, 0.15)',
-                          color: '#FBBF24',
-                          border: '1px solid rgba(245, 158, 11, 0.3)'
-                        }}>
-                          ⚠️ {item.passedCount}/8 WATCH
-                        </span>
-                      )}
-
-                      {item.isBrokerAccum && (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(168, 85, 247, 0.2)',
-                          color: '#C084FC'
-                        }}>
-                          ACCUM
-                        </span>
-                      )}
-
-                      {isT2Trap ? (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#F87171'
-                        }}>
-                          ⚠️ T+2 TRAP
-                        </span>
-                      ) : (
-                        <span style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          background: 'rgba(16, 185, 129, 0.12)',
-                          color: '#34D399'
-                        }}>
-                          🛡️ T+2 SAFE
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Row 3: Targets & Levels Row */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                      gap: 4,
-                      fontSize: 10.5,
-                      background: 'rgba(0, 0, 0, 0.25)',
-                      padding: '6px 6px',
-                      borderRadius: 8,
-                      textAlign: 'center'
-                    }}>
-                      <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 8.5, whiteSpace: 'nowrap' }}>BUY CORRIDOR</div>
-                        <div style={{ fontWeight: 800, color: '#94A3B8', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {item.entryMin} – {item.entryMax}
-                        </div>
-                      </div>
-                      <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                        <div style={{ color: '#34D399', fontSize: 8.5, whiteSpace: 'nowrap' }}>1–2W TARGET</div>
-                        <div style={{ fontWeight: 900, color: '#34D399', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {item.target1} (+{item.target1Pct}%)
-                        </div>
-                      </div>
-                      <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                        <div style={{ color: '#FB7185', fontSize: 8.5, whiteSpace: 'nowrap' }}>STOP-LOSS</div>
-                        <div style={{ fontWeight: 800, color: '#FB7185', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {item.stopLoss} (-{item.stopLossPct}%)
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 4: Setup & Score Badges */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5 }}>
-                      <span style={{
-                        fontWeight: 800,
-                        color: item.score >= 70 ? '#34D399' : item.score >= 60 ? '#FBBF24' : '#F87171',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4
-                      }}>
-                        <Sparkles size={11} /> Score: {item.score}/100
-                      </span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
-                        RRR: <strong style={{ color: item.rrr >= 1.5 ? '#34D399' : '#FB7185' }}>{item.rrr}:1</strong> · RVOL: <strong>{item.vsr}×</strong>
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
+                    <span>View More Candidates ({filteredCandidates.length - displayLimit} remaining)</span>
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1278,6 +1449,7 @@ export default function ShortTermProfitPlan({
             RIGHT COLUMN: Profit Plan Calculator & Quantitative Modules
         ════════════════════════════════════════════════════════════ */}
         <div 
+          id="short-term-analysis-workstation"
           className="stpp-card-padding"
           style={{
             background: 'rgba(15, 23, 42, 0.65)',
@@ -1304,7 +1476,14 @@ export default function ShortTermProfitPlan({
           }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 22, fontWeight: 900, color: '#FFF' }}>{activeStock.symbol}</span>
+                <span 
+                  style={{ fontSize: 22, fontWeight: 900, color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {activeStock.symbol}
+                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', border: '1px solid rgba(99, 102, 241, 0.4)' }}>
+                    1–2W PLAN
+                  </span>
+                </span>
                 <span style={{
                   fontSize: 11,
                   padding: '2px 8px',
@@ -1381,29 +1560,6 @@ export default function ShortTermProfitPlan({
                 <ExternalLink size={13} />
                 Entry/Exit Analyzer
               </button>
-
-              {onSelectStock && (
-                <button
-                  type="button"
-                  onClick={() => onSelectStock(activeStock)}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#FFF',
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4
-                  }}
-                >
-                  <BarChart3 size={13} />
-                  Chart
-                </button>
-              )}
 
               <button
                 type="button"

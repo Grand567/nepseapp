@@ -188,11 +188,127 @@ app.get('/api/market-summary', async (req, res) => {
   res.status(200).json({ success: false, message: 'No live trading data currently available.', stocks: [] });
 });
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════════════════════════
+   /api/mero/market-summary — liveData.js primary stock list source
+   Returns the same data as /api/market-summary but with full company names,
+   sector info enriched from MeroLagani, and correct turnover per stock.
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get('/api/mero/market-summary', async (req, res) => {
+  const cacheKey = 'mero-market-summary';
+  const cached = getCache(cacheKey);
+  if (cached) return res.json({ success: true, data: cached, source: 'cached' });
+
+  // 1. Try MeroLagani full market_summary — has turnover detail, pChange, open/high/low per stock
+  try {
+    const r = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', {
+      headers: { ...HEADERS, 'Referer': 'https://merolagani.com/', 'Accept': 'application/json, text/plain, */*' },
+      timeout: 8000
+    });
+    const ml = r.data;
+    const stockDetails = ml?.stock?.detail || [];
+    const turnoverDetails = ml?.turnover?.detail || [];
+    const turnoverMap = {};
+    turnoverDetails.forEach(t => { if (t?.s) turnoverMap[t.s] = t; });
+
+    const stocks = stockDetails.map(item => {
+      const symbol = item.s;
+      const ltp = Number(item.lp) || 0;
+      const change = Number(item.c) || 0;
+      const volume = Number(item.q) || 0;
+      const prevClose = ltp - change;
+      const t = turnoverMap[symbol] || {};
+      const pChange = t.pc != null ? Number(t.pc) : (prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0);
+      const high = Number(t.h || item.h || ltp);
+      const low  = Number(t.l || item.l || ltp);
+      const open = Number(t.op || item.op || prevClose || ltp);
+      const turnover = Number(t.t || 0) || Math.round(ltp * volume);
+      return {
+        symbol,
+        name: symbol,       // MeroLagani handler doesn't return full names; name=symbol is enriched client-side
+        ltp, change: +change.toFixed(2), pChange: +pChange.toFixed(2),
+        open: +open.toFixed(2), high: +high.toFixed(2), low: +low.toFixed(2),
+        prevClose: +(prevClose > 0 ? prevClose : ltp).toFixed(2),
+        volume: Number(t.q || volume), turnover: +turnover.toFixed(2),
+        sector: 'Unknown',  // enriched client-side via NEPSE_UNIVERSE lookup
+        source: 'merolagani-live'
+      };
+    }).filter(s => s.symbol && s.ltp > 0);
+
+    // Also capture total market turnover from overall block
+    const overall = ml?.overall || {};
+    if (stocks.length > 20) {
+      const payload = { stocks, totalTurnover: Number(overall.t || 0), totalTradedShares: Number(overall.q || 0), totalTransactions: Number(overall.tn || 0) };
+      setCache(cacheKey, payload, 30000);
+      return res.json({ success: true, data: payload.stocks, turnover: payload.totalTurnover, source: 'merolagani-live' });
+    }
+  } catch (e) {
+    console.warn('[mero/market-summary] MeroLagani failed:', e.message);
+  }
+
+  // 2. Fall back to the standard /api/market-summary endpoint
+  try {
+    const r = await axios.get(`http://localhost:${PORT}/api/market-summary`, { timeout: 12000 });
+    const data = r.data?.data || (Array.isArray(r.data) ? r.data : null);
+    if (Array.isArray(data) && data.length > 20) {
+      setCache(cacheKey, data, 30000);
+      return res.json({ success: true, data, source: 'live-fallback' });
+    }
+    return res.json(r.data); // pass through as-is
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   /api/mero/stock-details/:symbol — liveData.js fundamental enrichment source
+   Returns book value, EPS, PE, sector for a given stock from MeroLagani.
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get('/api/mero/stock-details/:symbol', async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase().trim();
+  const cacheKey = `mero-stock-details-${symbol}`;
+  const cached = getCache(cacheKey);
+  if (cached) return res.json({ success: true, data: cached, source: 'cached' });
+
+  try {
+    // MeroLagani stock summary handler — has BookValue, PE, EPS, sector
+    const r = await axios.get(`https://merolagani.com/handlers/webrequesthandler.ashx?type=stock_summary&symbol=${encodeURIComponent(symbol)}`, {
+      headers: { ...HEADERS, 'Referer': 'https://merolagani.com/', 'Accept': 'application/json, text/plain, */*' },
+      timeout: 7000
+    });
+    const d = r.data;
+    if (d && (d.BookValue || d.EPS || d.PE || d.LastTradedPrice)) {
+      const detail = {
+        symbol,
+        bookValue: Number(d.BookValue || 0),
+        eps:       Number(d.EPS || 0),
+        pe:        Number(d.PE  || 0),
+        pbv:       Number(d.PBV || (d.BookValue > 0 && d.LastTradedPrice ? d.LastTradedPrice / d.BookValue : 0)),
+        marketPrice: Number(d.LastTradedPrice || 0),
+        sharesOutstanding: Number(d.TotalListedShares || 0),
+        sector: d.Sector || d.sector || 'Others',
+        source: 'merolagani'
+      };
+      setCache(cacheKey, detail, 300000); // 5-min TTL for fundamentals
+      return res.json({ success: true, data: detail });
+    }
+  } catch (e) {
+    console.warn(`[mero/stock-details/${symbol}] MeroLagani failed:`, e.message);
+  }
+
+  // Fallback to /api/stock-detail/:symbol
+  try {
+    const r = await axios.get(`http://localhost:${PORT}/api/stock-detail/${encodeURIComponent(symbol)}`, { timeout: 7000 });
+    return res.json(r.data);
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/* â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
    ENDPOINT 2 â€” Today's / Last Closing Prices
    Source: https://www.sharesansar.com/today-share-price
    Available even AFTER market close â€” shows last session data
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â•  */
 app.get('/api/today-prices', async (req, res) => {
   const cacheKey = 'today-prices';
   const cached = getCache(cacheKey);
@@ -547,15 +663,13 @@ app.get('/api/market-indices', async (req, res) => {
     return res.json({ success: true, data: indices });
   }
 
+  // All live sources failed — return a clearly tagged placeholder so clients can detect it
   res.status(200).json({
-    success: true,
-    data: {
-      nepse: { value: 2557.31, change: -1.04, pChange: -0.04, turnover: 3786455070 },
-      float: { value: 176.45, change: -0.15, pChange: -0.08 },
-      sensitive: { value: 451.12, change: -0.54, pChange: -0.12 },
-      subIndices: []
-    },
-    source: 'default'
+    success: false,
+    data: null,
+    source: 'unavailable',
+    isPlaceholder: true,
+    message: 'Live index data temporarily unavailable. All scraping sources failed.'
   });
 });
 
@@ -3692,13 +3806,69 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 
    ────────────────────────────────────────────────────────────────────────── */
 
-// /api/market/summary — alias for /api/market-summary (liveData.js line 323)
+// /api/market/summary — returns nepseIndex + market-wide aggregates for liveData.js fetchMarketSummary
 app.get('/api/market/summary', async (req, res) => {
   try {
-    const cached = getCache('market-summary');
-    if (cached) return res.json({ success: true, data: cached });
-    const r = await axios.get(`http://localhost:${PORT}/api/market-summary`, { timeout: 15000 });
-    return res.json(r.data);
+    // 1. Check in-memory cache for market-indices (most authoritative source for nepseIndex)
+    const cachedIndices = getCache('market-indices');
+    if (cachedIndices && cachedIndices.nepse && Number(cachedIndices.nepse.value) > 0) {
+      const nepseVal = Number(cachedIndices.nepse.value);
+      const nepseChg = Number(cachedIndices.nepse.change || 0);
+      const prevClose = nepseVal > 0 && nepseChg !== 0 ? +(nepseVal - nepseChg).toFixed(2) : nepseVal;
+      const pChg = Number(cachedIndices.nepse.pChange || (prevClose > 0 ? +((nepseChg / prevClose) * 100).toFixed(2) : 0));
+      const cachedStocks = getCache('market-summary');
+      const stocks = Array.isArray(cachedStocks) ? cachedStocks : [];
+      const totalTurnover = Number(cachedIndices.nepse.turnover || stocks.reduce((a, s) => a + (s.turnover || 0), 0));
+      return res.json({
+        success: true,
+        data: {
+          nepseIndex: nepseVal,
+          change: nepseChg,
+          changePercent: pChg,
+          totalTurnover,
+          totalTradedShares: stocks.reduce((a, s) => a + (s.volume || 0), 0),
+          totalTransactions: stocks.reduce((a, s) => a + (s.transactions || 0), 0),
+          advances: stocks.filter(s => (s.pChange || 0) > 0).length,
+          declines: stocks.filter(s => (s.pChange || 0) < 0).length,
+          unchanged: stocks.filter(s => (s.pChange || 0) === 0).length,
+        },
+        source: 'live-cached'
+      });
+    }
+
+    // 2. Fetch both sources in parallel — avoid serial self-loop
+    const [indicesResult, stocksResult] = await Promise.allSettled([
+      axios.get(`http://localhost:${PORT}/api/market-indices`, { timeout: 12000 }),
+      Promise.resolve(getCache('market-summary'))  // use cached stocks if available
+    ]);
+
+    const indicesData = indicesResult.status === 'fulfilled' ? indicesResult.value?.data?.data : null;
+    const cachedStocks = Array.isArray(stocksResult.value) ? stocksResult.value : [];
+
+    if (indicesData && indicesData.nepse && Number(indicesData.nepse.value) > 0) {
+      const nepseVal = Number(indicesData.nepse.value);
+      const nepseChg = Number(indicesData.nepse.change || 0);
+      const prevClose = nepseVal > 0 && nepseChg !== 0 ? +(nepseVal - nepseChg).toFixed(2) : nepseVal;
+      const pChg = Number(indicesData.nepse.pChange || (prevClose > 0 ? +((nepseChg / prevClose) * 100).toFixed(2) : 0));
+      const totalTurnover = Number(indicesData.nepse.turnover || 0);
+      return res.json({
+        success: true,
+        data: {
+          nepseIndex: nepseVal,
+          change: nepseChg,
+          changePercent: pChg,
+          totalTurnover,
+          totalTradedShares: cachedStocks.reduce((a, s) => a + (s.volume || 0), 0),
+          totalTransactions: cachedStocks.reduce((a, s) => a + (s.transactions || 0), 0),
+          advances: cachedStocks.filter(s => (s.pChange || 0) > 0).length,
+          declines: cachedStocks.filter(s => (s.pChange || 0) < 0).length,
+          unchanged: cachedStocks.filter(s => (s.pChange || 0) === 0).length,
+        },
+        source: 'live'
+      });
+    }
+
+    return res.status(200).json({ success: false, data: null, isPlaceholder: true, message: 'NEPSE index data temporarily unavailable' });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -3734,22 +3904,66 @@ app.get('/api/nepse/full-index', async (req, res) => {
   }
 });
 
-// /api/nepse/intraday-graph â€” liveData.js fetchMarketIndices
+// /api/nepse/intraday-graph — returns real NEPSE index intraday ticks for liveData.js fetchMarketIndices
+// Source: MeroLagani intraday graph handler (returns actual index points over time, not stock prices)
 app.get('/api/nepse/intraday-graph', async (req, res) => {
+  const cacheKey = 'nepse-intraday-graph';
+  const cached = getCache(cacheKey);
+  if (cached) return res.json({ success: true, data: cached });
+
+  // 1. Primary: MeroLagani intraday index graph (returns array of { date, open, high, low, close } points)
   try {
-    // Return today's market summary as intraday proxy
-    const r = await axios.get(`http://localhost:${PORT}/api/market-summary`, { timeout: 15000 });
-    const data = r.data?.data || r.data || [];
-    // Build a simple intraday shape from today-price data
-    const points = Array.isArray(data) ? data.slice(0, 50).map((s, i) => ({
-      time: i,
-      nepseIndex: parseFloat(s.ltp || s.price || 0),
-      symbol: s.symbol || s.scrip || ''
-    })) : [];
-    return res.json({ success: true, data: points });
+    const mlUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=get_index_graph&symbol=NEPSE';
+    const r = await axios.get(mlUrl, {
+      headers: {
+        ...HEADERS,
+        'Referer': 'https://merolagani.com/',
+        'Origin': 'https://merolagani.com',
+        'Accept': 'application/json, text/plain, */*'
+      },
+      timeout: 8000
+    });
+    const quotes = r.data?.quotes || r.data;
+    if (Array.isArray(quotes) && quotes.length > 0) {
+      // Normalize to { time, open, high, low, close } — close is the NEPSE index value at that tick
+      const points = quotes.map((q, i) => ({
+        time: i,
+        open:  Number(q.open  || q.close || q.value || 0),
+        high:  Number(q.high  || q.close || q.value || 0),
+        low:   Number(q.low   || q.close || q.value || 0),
+        close: Number(q.close || q.value || q.ltp   || 0),
+        value: Number(q.close || q.value || q.ltp   || 0),
+        date:  q.date || q.time || null
+      })).filter(p => p.close > 0);
+
+      if (points.length > 0) {
+        setCache(cacheKey, points, 60000); // 1-min TTL during market hours
+        return res.json({ success: true, data: points, source: 'merolagani-intraday' });
+      }
+    }
   } catch (e) {
-    return res.status(500).json({ success: false, error: e.message });
+    console.warn('[nepse/intraday-graph] MeroLagani failed:', e.message);
   }
+
+  // 2. Fallback: Build a single-point snapshot from the cached market-indices value
+  // This at least gives liveData.js a valid close value to work with
+  try {
+    const cachedIndices = getCache('market-indices');
+    if (cachedIndices && cachedIndices.nepse && Number(cachedIndices.nepse.value) > 0) {
+      const idx = cachedIndices.nepse;
+      const point = {
+        time: 0,
+        open:  Number(idx.open  || idx.prevClose || idx.value),
+        high:  Number(idx.high  || idx.value),
+        low:   Number(idx.low   || idx.prevClose || idx.value),
+        close: Number(idx.value),
+        value: Number(idx.value),
+      };
+      return res.json({ success: true, data: [point], source: 'indices-snapshot' });
+    }
+  } catch (_) {}
+
+  return res.json({ success: true, data: [], source: 'unavailable' });
 });
 
 // /api/nepse/intraday-graph/:symbol â€” for individual stock intraday
@@ -3763,8 +3977,8 @@ app.get('/api/nepse/intraday-graph/:symbol', async (req, res) => {
   }
 });
 
-// /api/nepse/market-depth/:symbol â€” liveData.js market depth
-app.get('/api/nepse/market-depth/:symbol', async (req, res) => {
+// /api/nepse/market-depth/:symbol & /api/market-depth/:symbol — liveData.js market depth
+app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const cacheKey = `market-depth-${symbol}`;
   const cached = getCache(cacheKey);
@@ -3777,7 +3991,9 @@ app.get('/api/nepse/market-depth/:symbol', async (req, res) => {
       headers: { ...HEADERS, 'Referer': 'https://merolagani.com/', 'Origin': 'https://merolagani.com' },
       timeout: 10000
     });
-    const d = r.data;
+    const d = r.data || {};
+    const bids = (d.Buys || []).map(b => ({ price: b.Price || b.price || 0, qty: b.Quantity || b.quantity || b.qty || 0, quantity: b.Quantity || b.quantity || b.qty || 0, orders: b.Orders || b.orders || 1 }));
+    const asks = (d.Sells || []).map(a => ({ price: a.Price || a.price || 0, qty: a.Quantity || a.quantity || a.qty || 0, quantity: a.Quantity || a.quantity || a.qty || 0, orders: a.Orders || a.orders || 1 }));
     const depth = {
       symbol,
       ltp: d.LastTradedPrice || d.ltp || 0,
@@ -3786,10 +4002,12 @@ app.get('/api/nepse/market-depth/:symbol', async (req, res) => {
       lowPrice: d.LowPrice || 0,
       previousClose: d.PreviousClose || 0,
       volume: d.TotalTradeQuantity || d.volume || 0,
-      asks: d.Sells || [],
-      bids: d.Buys || [],
+      asks,
+      bids,
+      totalBidQty: bids.reduce((s, b) => s + b.qty, 0),
+      totalAskQty: asks.reduce((s, a) => s + a.qty, 0)
     };
-    setCache(cacheKey, depth, 30000); // 30s cache
+    setCache(cacheKey, depth, 15000); // 15s cache
     return res.json({ success: true, data: depth });
   } catch (e) {
     return res.json({ success: true, data: { symbol, ltp: 0, asks: [], bids: [], error: 'Market depth unavailable' } });

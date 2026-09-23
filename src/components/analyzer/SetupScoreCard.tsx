@@ -87,8 +87,16 @@ interface SetupScoreCardProps {
 
 function getVerdictColor(score: number, verdict?: string) {
   const vUpper = (verdict || '').toUpperCase();
+  // Hard gates — red
   if (vUpper.startsWith('NO TRADE') || vUpper.startsWith('REDUCE') || vUpper.startsWith('EXIT') || (vUpper.startsWith('AVOID') && !vUpper.startsWith('HOLD'))) {
     return { bg: 'rgba(239, 68, 68, 0.16)', border: 'rgba(239, 68, 68, 0.5)', text: '#f87171', badge: 'bg-rose-500/20 text-rose-300' };
+  }
+  // Soft-gate caution overrides — teal/amber hybrid (high score but a risk note)
+  if (vUpper.startsWith('CAUTION')) {
+    return { bg: 'rgba(20, 184, 166, 0.14)', border: 'rgba(20, 184, 166, 0.45)', text: '#2dd4bf', badge: 'bg-teal-500/20 text-teal-300' };
+  }
+  if (vUpper.includes('VERIFY CURRENT EARNINGS') || vUpper.includes('200-EMA OVERHEAD')) {
+    return { bg: 'rgba(59, 130, 246, 0.14)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa', badge: 'bg-blue-500/20 text-blue-300' };
   }
   if (vUpper.includes('EXTREME VALUATION') || vUpper.includes('AVOID CHASING') || vUpper.startsWith('HOLD')) {
     return { bg: 'rgba(234, 179, 8, 0.16)', border: 'rgba(234, 179, 8, 0.5)', text: '#facc15', badge: 'bg-amber-500/20 text-amber-300' };
@@ -126,7 +134,7 @@ export function SetupScoreCard({
       {/* ── Top Header Row ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-black uppercase tracking-wider text-slate-400">
               Technical Setup Score
             </span>
@@ -135,6 +143,10 @@ export function SetupScoreCard({
                 ? '🛑 NO TRADE / CAPITAL PRESERVATION'
                 : (verdict?.toUpperCase().startsWith('REDUCE') || verdict?.toUpperCase().startsWith('EXIT') || (verdict?.toUpperCase().startsWith('AVOID') && !verdict?.toUpperCase().startsWith('HOLD')))
                 ? '🛑 AVOID / DISTRIBUTION RISK'
+                : verdict?.toUpperCase().startsWith('CAUTION')
+                ? '⚡ HIGH SCORE — CAUTION FLAG ACTIVE'
+                : (verdict?.toUpperCase().includes('VERIFY CURRENT EARNINGS') || verdict?.toUpperCase().includes('200-EMA OVERHEAD'))
+                ? '📊 BUY / ACCUMULATE — MONITOR RISK NOTE'
                 : (verdict?.toUpperCase().includes('EXTREME VALUATION') || verdict?.toUpperCase().includes('AVOID CHASING'))
                 ? '🟡 VALUATION CAUTION (HOLD / DO NOT CHASE)'
                 : verdict?.toUpperCase().startsWith('HOLD')
@@ -162,7 +174,26 @@ export function SetupScoreCard({
           <div className="text-2xl sm:text-3xl font-black mt-1" style={{ color: theme.text }}>
             {verdict}
           </div>
+
+          {/* ── Contradiction notice: high score but a soft risk gate is active ── */}
+          {score >= 78 && verdict && (
+            verdict.toUpperCase().startsWith('CAUTION') ||
+            verdict.toUpperCase().includes('VERIFY CURRENT EARNINGS') ||
+            verdict.toUpperCase().includes('200-EMA OVERHEAD')
+          ) && (
+            <div
+              className="mt-2 rounded-xl p-3 text-xs leading-relaxed border"
+              style={{ background: 'rgba(20, 184, 166, 0.08)', borderColor: 'rgba(20, 184, 166, 0.3)', color: '#94a3b8' }}
+            >
+              <span style={{ color: '#2dd4bf', fontWeight: 700 }}>ℹ️ Why does a high score show a caution notice?</span>
+              <br />
+              This setup scores <strong style={{ color: '#fff' }}>{score}/100</strong> — a strong multi-factor signal. However, a <strong style={{ color: '#fbbf24' }}>secondary risk flag</strong> (e.g. borderline risk/reward ratio, proximity to T1 target, or potentially stale EPS data) is also active.
+              <br /><br />
+              The caution does <em>not</em> invalidate the setup. You may still enter at the entry zone and aim for <strong>Target 2 (T2)</strong> for full reward. Verify the flagged condition manually before committing full position size.
+            </div>
+          )}
         </div>
+
 
         {/* Large Score Metric */}
         <div className="flex items-baseline gap-2 sm:text-right">

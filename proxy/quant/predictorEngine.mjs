@@ -235,12 +235,7 @@ export async function predictIndexDirection(options = {}) {
   const pctBreadth = Math.round((features.weighted_breadth_pct ?? features.sector_breadth_pct ?? 0.5) * 100);
   explanationParts.push(`Market-cap weighted sector breadth is ${pctBreadth}% positive with turnover tracking at ${tRatio}x of its 20-day rolling average.`);
 
-  // 5. Fiscal Cycle
-  if (features.fiscal_cycle?.phase) {
-    explanationParts.push(`[${features.fiscal_cycle.phase}]: ${features.fiscal_cycle.detail}`);
-  }
-
-  // 5b. Float Index & Sensitive Float Divergence (Section 2.1 & 4.4)
+  // 5. Float Index & Sensitive Float Divergence (Section 2.1 & 4.4)
   if (features.float_divergence?.explanation) {
     explanationParts.push(features.float_divergence.explanation);
   }

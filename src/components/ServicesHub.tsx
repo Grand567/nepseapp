@@ -49,6 +49,7 @@ import { AlphaPlaybookService } from './AlphaPlaybookService';
 import ProGate from './ProGate';
 
 export const PRO_SERVICE_IDS = new Set<string>([
+  'short-term-profit-plan',
   'daily-prime-pick',
   'prime-breakout-pick',
   'entry-exit-analyzer',
@@ -1052,7 +1053,7 @@ export default function ServicesHub({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base, #0B0E14)', color: '#ffffff', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))', fontFamily: 'var(--font-sans)' }}>
+    <div style={{ minHeight: '100%', background: 'var(--bg-base, #0B0E14)', color: '#ffffff', paddingBottom: 'calc(40px + env(safe-area-inset-bottom))', fontFamily: 'var(--font-sans)' }}>
       {/* ── STICKY RESPONSIVE MOBILE HEADER ── */}
       <div className="services-mobile-header">
         {/* Tier 1: Title + Counter + Status */}

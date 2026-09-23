@@ -6,7 +6,7 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getProxyBase } from '../utils/liveData.js';
-import { setDynamicMarketHalt, getDynamicMarketHalt, getIsoDateInNPT } from '../utils/nepseCalendar.js';
+import { setDynamicMarketHalt, clearDynamicMarketHalt, getDynamicMarketHalt, getIsoDateInNPT } from '../utils/nepseCalendar.js';
 
 let cachedNews = null;
 let lastFetchTime = 0;
@@ -221,24 +221,34 @@ export async function detectMarketHaltFromNews(articles = null) {
     return existingHalt || { isHalted: false, isEmergencyHalt: false, reason: null };
   }
 
-  const haltTerms = [
+  // Strict terms that unambiguously designate an exchange-wide market closure:
+  const marketWideHaltTerms = [
     'आज शेयर बजार नखुल्ने',
-    'शेयर बजार नखुल्ने',
-    'बजार नखुल्ने',
-    'कारोबार स्थगित',
-    'कारोबार नहुने',
+    'आज नेप्से बन्द',
+    'नेप्सेमा कारोबार स्थगित',
+    'नेप्से बजार बन्द',
+    'नेप्सेको कारोबार स्थगित',
+    'नेपाल स्टक एक्सचेन्जको कारोबार स्थगित',
     'आकस्मिक बजार बन्द',
-    'trading halted',
-    'market halt',
-    'डाटा सेन्टरमा र्‍यानसमवेयर',
-    'र्यान्समवेयर आक्रमण'
+    'डाटा सेन्टरमा र्‍यानसमवेयर आक्रमणका कारण बजार',
+    'nepse trading halted',
+    'nepse market halt'
+  ];
+
+  // Exclude articles that refer only to single scrips, dividends, or AGMs
+  const singleCompanyTerms = [
+    'कम्पनी', 'लघुवित्त', 'हाइड्रो', 'बैंक', 'इन्स्योरेन्स', 'हकप्रद',
+    'लाभांश', 'बोनस', 'साधारण सभा', 'म्युचुअल फन्ड', 'डिबेन्चर', 'इकाइ'
   ];
 
   for (const article of newsList) {
     const title = (article.title || article.headline || '').trim();
     if (!title) continue;
 
-    const matched = haltTerms.some(term => title.includes(term));
+    const isSingleCompany = singleCompanyTerms.some(m => title.includes(m)) && !title.includes('सम्पूर्ण कारोबार') && !title.includes('नेप्से परिसूचक');
+    if (isSingleCompany) continue;
+
+    const matched = marketWideHaltTerms.some(term => title.includes(term));
     if (matched) {
       const haltInfo = {
         isHalted: true,
@@ -255,6 +265,7 @@ export async function detectMarketHaltFromNews(articles = null) {
     }
   }
 
-  const existingHalt = getDynamicMarketHalt();
-  return existingHalt || { isHalted: false, isEmergencyHalt: false, reason: null };
+  // If news is fresh and no market-wide emergency halt is active, clear any false halt!
+  clearDynamicMarketHalt();
+  return { isHalted: false, isEmergencyHalt: false, reason: null };
 }

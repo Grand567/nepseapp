@@ -460,19 +460,28 @@ app.get('/api/market-summary', async (req, res) => {
       setCache(cacheKey, stocks, 15000);
       return res.json({ success: true, data: stocks, source: 'live' });
     } else {
-      throw new Error('No live trading data found');
+      throw new Error('No live trading data found from ShareSansar');
     }
   } catch (err) {
-    console.error('Scrape Live summary error:', err.message);
+    console.warn('[proxy] ShareSansar live summary error, trying MeroLagani fallback:', err.message);
+    try {
+      const mero = await fetchInternalMeroMarketSummary();
+      if (mero && mero.stocks && mero.stocks.length > 0) {
+        setCache(cacheKey, mero.stocks, 15000);
+        return res.json({ success: true, data: mero.stocks, source: 'merolagani-live' });
+      }
+    } catch (meroErr) {
+      console.error('[proxy] MeroLagani fallback error:', meroErr.message);
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 let LAST_GOOD_INDICES = {
-  nepse: { value: 2624.36, change: 11.93, pChange: 0.45, open: 2616.40, high: 2637.58, low: 2615.69, prevClose: 2612.43, turnover: 5499316643.52 },
-  sensitive: { value: 465.75, change: 2.07, pChange: 0.44, open: 464.20, high: 467.58, low: 464.12, prevClose: 463.68 },
-  float: { value: 180.58, change: 1.05, pChange: 0.58, open: 179.80, high: 181.20, low: 179.50, prevClose: 179.53 },
-  sensitiveFloat: { value: 157.12, change: 0.88, pChange: 0.56, open: 156.50, high: 157.60, low: 156.20, prevClose: 156.24 },
+  nepse: { value: 2654.28, change: 7.06, pChange: 0.26, open: 2650.19, high: 2662.71, low: 2637.57, prevClose: 2647.22, turnover: 7050398624.96 },
+  sensitive: { value: 473.79, change: 2.71, pChange: 0.57, open: 471.51, high: 473.94, low: 469.90, prevClose: 471.08 },
+  float: { value: 182.99, change: 0.53, pChange: 0.29, open: 182.81, high: 183.53, low: 181.82, prevClose: 182.46 },
+  sensitiveFloat: { value: 160.00, change: 0.68, pChange: 0.42, open: 159.45, high: 160.29, low: 158.80, prevClose: 159.32 },
   subIndices: []
 };
 
@@ -548,23 +557,7 @@ export async function getMarketIndicesInternal() {
     console.warn('[proxy] nepseClient indices error:', err.message);
   }
 
-  // Fallback 1: Fast MeroLagani Market Summary (real-time turnover & stock counts)
-  try {
-    const mero = await fetchInternalMeroMarketSummary().catch(() => null);
-    if (mero && mero.turnover && LAST_GOOD_INDICES?.nepse) {
-      const merged = {
-        ...LAST_GOOD_INDICES,
-        nepse: {
-          ...LAST_GOOD_INDICES.nepse,
-          turnover: Number(mero.turnover) || LAST_GOOD_INDICES.nepse.turnover
-        }
-      };
-      setCache(cacheKey, merged, 10000);
-      return merged;
-    }
-  } catch (_) {}
-
-  // Fallback 2: ShareSansar market table
+  // Fallback 1: Direct ShareSansar Market Table (authoritative real-time indices with 3:00 PM closing)
   try {
     const response = await axios.get('https://www.sharesansar.com/market', {
       headers: HEADERS,
@@ -605,7 +598,25 @@ export async function getMarketIndicesInternal() {
       LAST_GOOD_INDICES = indices;
       return indices;
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn('[proxy] ShareSansar market table error:', err.message);
+  }
+
+  // Fallback 2: Fast MeroLagani Market Summary (enrich turnover if needed)
+  try {
+    const mero = await fetchInternalMeroMarketSummary().catch(() => null);
+    if (mero && mero.turnover && LAST_GOOD_INDICES?.nepse) {
+      const merged = {
+        ...LAST_GOOD_INDICES,
+        nepse: {
+          ...LAST_GOOD_INDICES.nepse,
+          turnover: Number(mero.turnover) || LAST_GOOD_INDICES.nepse.turnover
+        }
+      };
+      setCache(cacheKey, merged, 10000);
+      return merged;
+    }
+  } catch (_) {}
 
   return LAST_GOOD_INDICES;
 }
@@ -2069,7 +2080,21 @@ export async function fetchInternalMeroMarketSummary() {
       }).filter(s => s.symbol && s.ltp > 0);
 
       if (stocks.length > 0) {
-        const result = { stocks, turnover: parseMoney(json.overall?.t), date: json.overall?.d };
+        const totalTurnover = parseMoney(json.overall?.t);
+        const totalTradedShares = parseMoney(json.overall?.q);
+        const totalTransactions = parseMoney(json.overall?.tn);
+        const totalScrips = parseMoney(json.overall?.st);
+        const result = {
+          stocks,
+          turnover: totalTurnover,
+          totalTurnover,
+          totalTradedShares,
+          totalVolume: totalTradedShares,
+          totalTransactions,
+          totalTrades: totalTransactions,
+          totalScrips,
+          date: json.overall?.d
+        };
         setCache(cacheKey, result, 20000);
         return result;
       }
@@ -2460,6 +2485,43 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
     }
   } catch (ssErr) {
     console.warn(`[price-history] ShareSansar fallback failed for ${symbol}:`, ssErr.message);
+  }
+
+  // Method 3: Direct MeroLagani company graph fallback (highly reliable for all equities)
+  if (!INDEX_MAP[rawSymbol]) {
+    try {
+      const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(rawSymbol)}`;
+      const mlRes = await axios.get(mlUrl, { headers: HEADERS, timeout: 8000 });
+      if (mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
+        const formatted = mlRes.data.quotes.map(q => {
+          let dateIso = q.date;
+          if (q.date && q.date.includes('/')) {
+            const parts = q.date.split('/');
+            if (parts.length === 3) {
+              dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+          return {
+            date: dateIso,
+            open: parseFloat(q.open || q.close || 0),
+            high: parseFloat(q.high || q.close || 0),
+            low: parseFloat(q.low || q.close || 0),
+            close: parseFloat(q.close || 0),
+            volume: parseFloat(q.volume || 0),
+            rsi: parseFloat(q.rsi || 0),
+            isReal: true
+          };
+        }).filter(d => d.close > 0);
+
+        formatted.sort((a, b) => new Date(a.date) - new Date(b.date));
+        if (formatted.length > 0) {
+          setCache(cacheKey, formatted, 2 * 60 * 60 * 1000);
+          return formatted;
+        }
+      }
+    } catch (mlErr) {
+      console.warn(`[price-history] MeroLagani fallback failed for ${rawSymbol}:`, mlErr.message);
+    }
   }
 
   return [];
@@ -2897,7 +2959,7 @@ app.get('/api/nepse/live-index', async (req, res) => {
  * GET /api/nepse/market-depth/:symbol
  * Returns Level-2 bid/ask order book for a given stock symbol.
  */
-app.get('/api/nepse/market-depth/:symbol', async (req, res) => {
+app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async (req, res) => {
   const symbol = req.params.symbol.toUpperCase();
   const cacheKey = `market-depth-${symbol}`;
   const cached = getCache(cacheKey);
@@ -2906,26 +2968,30 @@ app.get('/api/nepse/market-depth/:symbol', async (req, res) => {
   try {
     let depthRaw = null;
     try {
-      depthRaw = await nepseClient.getStockSupplyDemand(symbol);
+      depthRaw = await nepseClient.getMarketDepth(symbol);
     } catch (_) {}
 
-    if (depthRaw && (depthRaw.buyDemand || depthRaw.sellSupply)) {
-      const bids = (depthRaw.buyDemand || []).slice(0, 10).map(b => ({
-        price: Number(b.rate || b.price || 0),
+    if (depthRaw && (depthRaw.marketDepth || depthRaw.buyDemand || depthRaw.sellSupply)) {
+      const buyList = depthRaw.marketDepth?.buyMarketDepthList || depthRaw.buyDemand || [];
+      const sellList = depthRaw.marketDepth?.sellMarketDepthList || depthRaw.sellSupply || [];
+      const bids = buyList.slice(0, 10).map(b => ({
+        price: Number(b.orderBookOrderPrice || b.rate || b.price || 0),
         quantity: Number(b.quantity || b.qty || 0),
-        orders: Number(b.numberOfOrders || b.orders || 1)
+        qty: Number(b.quantity || b.qty || 0),
+        orders: Number(b.orderCount || b.numberOfOrders || b.orders || 1)
       }));
-      const asks = (depthRaw.sellSupply || []).slice(0, 10).map(a => ({
-        price: Number(a.rate || a.price || 0),
+      const asks = sellList.slice(0, 10).map(a => ({
+        price: Number(a.orderBookOrderPrice || a.rate || a.price || 0),
         quantity: Number(a.quantity || a.qty || 0),
-        orders: Number(a.numberOfOrders || a.orders || 1)
+        qty: Number(a.quantity || a.qty || 0),
+        orders: Number(a.orderCount || a.numberOfOrders || a.orders || 1)
       }));
-      const totalBidQty = bids.reduce((s, b) => s + b.quantity, 0);
-      const totalAskQty = asks.reduce((s, a) => s + a.quantity, 0);
+      const totalBidQty = Number(depthRaw.totalBuyQty) || bids.reduce((s, b) => s + b.quantity, 0);
+      const totalAskQty = Number(depthRaw.totalSellQty) || asks.reduce((s, a) => s + a.quantity, 0);
       const obir = (totalBidQty + totalAskQty) > 0
         ? Number(((totalBidQty - totalAskQty) / (totalBidQty + totalAskQty)).toFixed(4)) : 0;
       const data = { symbol, bids, asks, totalBidQty, totalAskQty, obir, source: 'nepse-api', fetchedAt: new Date().toISOString() };
-      setCache(cacheKey, data, 15 * 1000);
+      setCache(cacheKey, data, 10 * 1000);
       return res.json({ success: true, data });
     }
 
@@ -4331,10 +4397,10 @@ app.get('/api/market/summary', async (req, res) => {
     const nepseVal = Number(nepseIndexItem?.currentValue || nepseIndexItem?.close || internalIndices?.nepse?.value || LAST_GOOD_INDICES?.nepse?.value || 2624.36);
     const nepseChg = Number(nepseIndexItem?.change ?? internalIndices?.nepse?.change ?? LAST_GOOD_INDICES?.nepse?.change ?? 11.93);
     const nepsePChg = Number(nepseIndexItem?.perChange ?? internalIndices?.nepse?.pChange ?? LAST_GOOD_INDICES?.nepse?.pChange ?? 0.45);
-    const turnover = Number(summary?.['Total Turnover Rs:'] || internalIndices?.nepse?.turnover || meroSummary?.totalTurnover || LAST_GOOD_INDICES?.nepse?.turnover || 5499316643.52);
-    const tradedShares = Number(summary?.['Total Traded Shares'] || meroSummary?.totalVolume || 11077590);
-    const transactions = Number(summary?.['Total Transactions'] || meroSummary?.totalTrades || 47440);
-    const scrips = Number(summary?.['Total Scrips Traded'] || meroSummary?.stocks?.length || 258);
+    const turnover = Number(summary?.['Total Turnover Rs:'] || internalIndices?.nepse?.turnover || meroSummary?.totalTurnover || meroSummary?.turnover || LAST_GOOD_INDICES?.nepse?.turnover || 5499316643.52);
+    const tradedShares = Number(summary?.['Total Traded Shares'] || meroSummary?.totalTradedShares || meroSummary?.totalVolume || 11077590);
+    const transactions = Number(summary?.['Total Transactions'] || meroSummary?.totalTransactions || meroSummary?.totalTrades || 47440);
+    const scrips = Number(summary?.['Total Scrips Traded'] || meroSummary?.totalScrips || meroSummary?.stocks?.length || 258);
     const marketCap = Number(summary?.['Total Market Capitalization Rs:'] || 0);
 
     res.json({
@@ -7805,9 +7871,11 @@ app.get('/api/playbook/pdf', (req, res) => {
 app.get('/api/prime-pick/daily-verified', async (req, res) => {
   try {
     const marketStatus = getDetailedMarketStatus();
-    const cacheKey = 'prime-pick-daily-verified';
-    const cached = getCache(cacheKey) || getVerifiedPostMarketPrimePick();
+    const targetSessionDate = marketStatus.targetSessionDate;
+    const cacheKey = `prime-pick-daily-verified-${targetSessionDate}`;
+    const cached = getCache(cacheKey) || getCache('prime-pick-daily-verified') || getVerifiedPostMarketPrimePick();
 
+    // 1. Session-Lock Check: If we already have a sealed verified pick for targetSessionDate, SERVE IT IMMEDIATELY
     if (cached && cached.symbol && (!req.query.force || req.query.force !== 'true')) {
       const vUpper = String(cached.verdict || '').toUpperCase();
       const isBad = 
@@ -7828,23 +7896,64 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         vUpper.includes('COIL');
 
       if (!isBad && hasBuyKeyword && Number(cached.setupScore || cached.score || 0) >= 55) {
-        return res.json({
-          success: true,
-          data: {
-            ...cached,
-            sessionDate: cached.sessionDate || marketStatus.targetSessionDate,
-            isLockedForSession: true
-          },
-          session: marketStatus.session,
-          sessionDate: marketStatus.targetSessionDate,
-          isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
-          source: 'cache'
-        });
+        // If cached pick is for targetSessionDate, return it
+        if (!cached.sessionDate || cached.sessionDate === targetSessionDate) {
+          return res.json({
+            success: true,
+            data: {
+              ...cached,
+              sessionDate: cached.sessionDate || targetSessionDate,
+              isLockedForSession: true
+            },
+            session: marketStatus.session,
+            sessionDate: targetSessionDate,
+            isPostMarket: marketStatus.session === 'POST_MARKET' || marketStatus.session === 'POST_CLOSE_RECONCILING' || !marketStatus.isOpen,
+            source: 'cache'
+          });
+        }
       } else {
         // Stale or non-buy plan in cache — purge it
         cache.delete(cacheKey);
         setVerifiedPostMarketPrimePick(null);
       }
+    }
+
+    // STRICT USER DIRECTIVE: Day Prime Pick must be picked AFTER market close with at least 5-10+ mins
+    // for collecting and analyzing all data present and past (floorsheet reconciliation 15:05-15:15 NPT).
+    const nptMins = marketStatus.nptTotalMinutes;
+    const isTradingDay = marketStatus.isTradingDay;
+    const isDuringTrading = isTradingDay && nptMins >= 11 * 60 && nptMins < 15 * 60;
+    const isClosingOrReconciling = isTradingDay && nptMins >= 15 * 60 && nptMins < (15 * 60 + 15);
+
+    // During active continuous trading (11:00 AM - 3:00 PM), do NOT generate tomorrow's pick on intraday noise
+    if (isDuringTrading && (!req.query.force || req.query.force !== 'true')) {
+      if (cached && cached.symbol) {
+        return res.json({
+          success: true,
+          data: {
+            ...cached,
+            sessionDate: cached.sessionDate || targetSessionDate,
+            isLockedForSession: true
+          },
+          session: marketStatus.session,
+          sessionDate: targetSessionDate,
+          isPostMarket: false,
+          source: 'active-session-lock'
+        });
+      }
+    }
+
+    // During closing session & floorsheet reconciliation (3:00 PM - 3:15 PM NPT)
+    if (isClosingOrReconciling && (!req.query.force || req.query.force !== 'true')) {
+      return res.json({
+        success: true,
+        reconciling: true,
+        data: cached || null,
+        message: 'Reconciling 50+ broker floorsheets & official closing prices (3:05–3:15 PM NPT) — Finalizing Day Prime Pick...',
+        session: marketStatus.session,
+        sessionDate: targetSessionDate,
+        isPostMarket: true
+      });
     }
 
     // Identify candidate from latest closing data
@@ -8058,7 +8167,9 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
     }
 
     if (winner) {
-      setCache(cacheKey, winner, 60 * 60 * 1000); // 1 hour cache
+      const ttl24h = 24 * 60 * 60 * 1000; // 24-hour cache covering until tomorrow's close
+      setCache(cacheKey, winner, ttl24h);
+      setCache('prime-pick-daily-verified', winner, ttl24h);
       setVerifiedPostMarketPrimePick(winner);
     } else {
       cache.delete(cacheKey);

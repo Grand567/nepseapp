@@ -10,11 +10,12 @@
 //   2. localStorage cache
 //   3. Deterministic enriched simulation (240+ real symbols)
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso } from './nepseCalendar';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar';
 import { idbGet, idbSet } from './indexedDb.js';
 
 
@@ -37,6 +38,57 @@ if (typeof window !== 'undefined') {
     }
   }).catch(() => {});
 }
+
+// ── Render Server Warm-Up ──────────────────────────────────────────────────
+// The Render free tier sleeps after inactivity and takes 45-60s to wake up.
+// We fire a ping IMMEDIATELY when this module loads (before auth, before fetch)
+// so the server is warm by the time fetchMarket() runs.
+let _serverWarmTs = 0;      // timestamp of the last warm-up ping response
+let _serverWarmPending = false;
+
+export async function warmUpServer() {
+  if (_serverWarmPending) return; // already in flight
+  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PROXY_URL)
+    ? import.meta.env.VITE_PROXY_URL.replace(/\/$/, '')
+    : 'https://nepseapp.onrender.com';
+
+  _serverWarmPending = true;
+  const started = Date.now();
+
+  const ping = async (timeout) => {
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), timeout);
+      const r = await fetch(`${base}/api/ping`, { signal: ctrl.signal, cache: 'no-store' });
+      clearTimeout(tid);
+      if (r.ok) {
+        _serverWarmTs = Date.now();
+        console.log(`[warmUp] Render server ready in ${Date.now() - started}ms`);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  // First attempt: 90s timeout (survives full cold-start)
+  const ok = await ping(90000);
+  if (!ok) {
+    // Second attempt if first failed (network blip)
+    await ping(30000);
+  }
+  _serverWarmPending = false;
+}
+
+// Returns true if the server has responded to warm-up within the last 5 minutes
+export function isServerWarm() {
+  return _serverWarmTs > 0 && (Date.now() - _serverWarmTs) < 300000;
+}
+
+// Fire warm-up immediately on module load (no await — pure background)
+if (typeof window !== 'undefined') {
+  warmUpServer().catch(() => {});
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function getCachedStocks() {
   if (MEM_STOCKS && MEM_STOCKS.length) return MEM_STOCKS;
@@ -103,13 +155,13 @@ function buildEnrichedSnapshot() {
   const totalVol = stocks.reduce((a, s) => a + s.volume, 0);
   const totalTx = stocks.reduce((a, s) => a + s.transactions, 0);
   const avgChg = stocks.reduce((a, s) => a + s.pChange, 0) / stocks.length;
-  const nepseIndex = 2624.36;
+  const nepseIndex = 2654.28;
 
   const marketStatusObj = getDetailedMarketStatus();
   const isOpen = marketStatusObj.isOpen;
 
   const summary = {
-    nepseIndex, change: 11.93, changePercent: 0.45,
+    nepseIndex, change: 7.06, changePercent: 0.26,
     totalTurnover, totalTradedShares: totalVol, totalTransactions: totalTx,
     advances, declines, unchanged,
     marketStatus: isOpen ? 'OPEN' : 'CLOSED',
@@ -136,9 +188,10 @@ function ensureSnapshot() {
 }
 
 // HTTP helper with timeout and native CapacitorHttp support
-async function tryFetchJSON(url, timeoutMs = 12000) {
+async function tryFetchJSON(url, timeoutMs = 15000) {
   try {
-    if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+    if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
       const res = await CapacitorHttp.request({
         url,
         method: 'GET',
@@ -147,7 +200,11 @@ async function tryFetchJSON(url, timeoutMs = 12000) {
         readTimeout: timeoutMs
       });
       if (res && res.status >= 200 && res.status < 300) {
-        return typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        if (typeof res.data === 'string') {
+          if (res.data.trim().startsWith('<')) return null;
+          try { return JSON.parse(res.data); } catch { return null; }
+        }
+        return res.data;
       }
       return null;
     }
@@ -158,20 +215,276 @@ async function tryFetchJSON(url, timeoutMs = 12000) {
     clearTimeout(t);
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
+    if (ct.includes('text/html')) return null;
     if (ct.includes('application/json')) return await res.json();
     const txt = await res.text();
+    if (!txt || txt.trim().startsWith('<')) return null;
     try { return JSON.parse(txt); } catch { return null; }
   } catch { return null; }
 }
 
-// Persistent cache helpers for authentic real exchange data
+// HTTP text helper (for HTML scraping) with native CapacitorHttp support
+async function tryFetchText(url, timeoutMs = 12000) {
+  try {
+    const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+    if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
+      const res = await CapacitorHttp.request({
+        url,
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        },
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs
+      });
+      if (res && res.status >= 200 && res.status < 300) {
+        return typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+      }
+      return null;
+    }
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+export function parseShareSansarMarketHtml(html) {
+  if (!html || typeof html !== 'string') return null;
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match;
+  const indices = {};
+  const subIndices = [];
+
+  while ((match = rowRegex.exec(html)) !== null) {
+    const rowHtml = match[1];
+    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const tds = [];
+    let tdMatch;
+    while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {
+      tds.push(tdMatch[1].replace(/<[^>]+>/g, '').trim());
+    }
+    if (tds.length >= 7) {
+      const name = tds[0];
+      const open = parseFloat(tds[1].replace(/,/g, '')) || 0;
+      const high = parseFloat(tds[2].replace(/,/g, '')) || 0;
+      const low = parseFloat(tds[3].replace(/,/g, '')) || 0;
+      const value = parseFloat(tds[4].replace(/,/g, '')) || 0;
+      const change = parseFloat(tds[5].replace(/,/g, '')) || 0;
+      const pChange = parseFloat(tds[6].replace(/,/g, '')) || 0;
+      const turnover = parseFloat(tds[7].replace(/,/g, '')) || 0;
+      if (name && value > 0) {
+        const prevClose = (change !== 0 && value > 0) ? +(value - change).toFixed(2) : value;
+        const obj = {
+          index: name,
+          open: open || prevClose,
+          high: high || value,
+          low: low || value,
+          value,
+          change,
+          pChange: +(pChange).toFixed(2),
+          turnover,
+          prevClose
+        };
+        if (name === 'NEPSE Index') indices.nepse = obj;
+        else if (name === 'Sensitive Index') indices.sensitive = obj;
+        else if (name === 'Float Index') indices.float = obj;
+        else if (name === 'Sensitive Float Index') indices.sensitiveFloat = obj;
+        else subIndices.push(obj);
+      }
+    }
+  }
+
+  if (indices.nepse && indices.nepse.value > 0) {
+    indices.subIndices = subIndices;
+    return indices;
+  }
+  return null;
+}
+
+export function parseMeroLaganiJson(json) {
+  if (!json) return [];
+  const turnoverMap = {};
+  if (json.turnover && Array.isArray(json.turnover.detail)) {
+    json.turnover.detail.forEach(t => { if (t && t.s) turnoverMap[t.s] = t; });
+  }
+  const stockDetails = (json.stock && Array.isArray(json.stock.detail)) ? json.stock.detail : [];
+  if (stockDetails.length === 0 && Array.isArray(json.turnover?.detail)) {
+    return json.turnover.detail.map(item => ({
+      symbol: item.s,
+      ltp: Number(item.lp) || 0,
+      pChange: Number(item.pc) || 0,
+      open: Number(item.op) || Number(item.lp) || 0,
+      high: Number(item.h) || Number(item.lp) || 0,
+      low: Number(item.l) || Number(item.lp) || 0,
+      turnover: Number(item.t) || 0,
+      volume: Number(item.q) || 0,
+      change: Number(item.c) || 0,
+      source: 'merolagani-live'
+    })).filter(s => s.symbol && s.ltp > 0);
+  }
+
+  return stockDetails.map(item => {
+    const symbol = item.s;
+    const ltp = Number(item.lp) || 0;
+    const change = Number(item.c) || 0;
+    const volume = Number(item.q) || 0;
+    const tInfo = turnoverMap[symbol] || {};
+    const prevClose = ltp - change;
+    const pChange = tInfo.pc != null ? Number(tInfo.pc) : (prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0);
+    const high = tInfo.h != null ? Number(tInfo.h) : Math.max(ltp, ltp + change);
+    const low = tInfo.l != null ? Number(tInfo.l) : Math.min(ltp, ltp + change);
+    const open = tInfo.op != null ? Number(tInfo.op) : (prevClose || ltp);
+    const turnover = tInfo.t != null ? Number(tInfo.t) : (ltp * volume);
+    return {
+      symbol,
+      ltp,
+      change: Number(change.toFixed(2)),
+      pChange: Number(pChange.toFixed(2)),
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      prevClose: Number((prevClose || ltp).toFixed(2)),
+      volume: tInfo.q != null ? Number(tInfo.q) : volume,
+      turnover: Number(turnover.toFixed(2)),
+      source: 'merolagani-live'
+    };
+  }).filter(s => s.symbol && s.ltp > 0);
+}
+
+// ── Parse ShareSansar company/NEPSE historical price table ──────────────────
+// Used as a fallback source for NEPSE index daily OHLCV when the proxy returns
+// HTTP 500 for /api/price-history/NEPSE and localStorage/IDB is empty (fresh install).
+// URL: https://www.sharesansar.com/company/NEPSE
+// Table columns (by order): Date, Conf, Open, High, Low, Close, % Change, Vol, Turnover
+export function parseShareSansarHistoryHtml(html) {
+  if (!html || typeof html !== 'string') return [];
+  const candles = [];
+  // Match each table row
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const rowHtml = rowMatch[1];
+    // Skip header rows
+    if (/<th/i.test(rowHtml)) continue;
+    // Extract text from each <td>
+    const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells = [];
+    let tdMatch;
+    while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {
+      cells.push(tdMatch[1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim());
+    }
+    if (cells.length < 6) continue;
+    // Columns: [0]=Date [1]=Conf [2]=Open [3]=High [4]=Low [5]=Close [6]=% Change [7]=Vol [8]=Turnover
+    // Some pages omit Conf column — detect by checking if cells[0] looks like a date
+    let dateStr = '', openStr, highStr, lowStr, closeStr, volStr, toStr;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cells[0]) || /\d{4}\/\d{2}\/\d{2}/.test(cells[0])) {
+      // Date is first column (no Conf), 8+ cells
+      dateStr  = cells[0].replace(/\//g, '-').trim();
+      openStr  = cells[1]; highStr = cells[2]; lowStr = cells[3];
+      closeStr = cells[4]; volStr  = cells[6] || cells[5]; toStr = cells[7] || '';
+    } else if (cells.length >= 9) {
+      // Date may be in cells[0] in a different format, Conf in cells[1]
+      dateStr  = cells[0].replace(/\//g, '-').trim();
+      openStr  = cells[2]; highStr = cells[3]; lowStr = cells[4];
+      closeStr = cells[5]; volStr  = cells[7] || '0'; toStr = cells[8] || '';
+    } else {
+      continue;
+    }
+
+    // Normalize date: "2026-09-22" already ISO; "22-Sep-2026" → ISO
+    let isoDate = dateStr;
+    const ddMonYYYY = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(dateStr);
+    if (ddMonYYYY) {
+      const months = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
+      const mon = months[ddMonYYYY[2]] || '01';
+      isoDate = `${ddMonYYYY[3]}-${mon}-${ddMonYYYY[1].padStart(2,'0')}`;
+    }
+
+    const close = parseFloat(closeStr);
+    if (!isoDate || isNaN(close) || close <= 0) continue;
+
+    candles.push({
+      date:     isoDate,
+      open:     parseFloat(openStr)  || close,
+      high:     parseFloat(highStr)  || close,
+      low:      parseFloat(lowStr)   || close,
+      close,
+      volume:   parseFloat(volStr)   || 0,
+      turnover: parseFloat(toStr)    || 0,
+      isReal:   true,
+    });
+  }
+  // Sort ascending by date
+  candles.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return candles;
+}
+
+// ── Price History Cache — Dual-tier: localStorage LRU (fast, synchronous) + IndexedDB (unlimited)
+// Problem: localStorage is limited to 5MB. After viewing ~80–100 stocks, the quota fills and new
+// historical data is silently dropped (QuotaExceededError swallowed). Solution: IDB is primary
+// (fire-and-forget write, async read fallback). localStorage holds the last 15 viewed symbols
+// as a fast read-through cache — evicting the oldest when the LRU ring is full.
+
+const HIST_LS_PREFIX  = 'nepse_hist_prices_';
+const HIST_LRU_KEY    = 'nepse_hist_lru_ring';
+const HIST_LRU_MAX    = 15;
+
+function _getHistLRU() {
+  try { return JSON.parse(localStorage.getItem(HIST_LRU_KEY) || '[]'); } catch (_) { return []; }
+}
+
+function _setHistLRU(ring) {
+  try { localStorage.setItem(HIST_LRU_KEY, JSON.stringify(ring)); } catch (_) {}
+}
+
+function _lruTouch(sym) {
+  const ring = _getHistLRU().filter(s => s !== sym);
+  ring.push(sym);
+  if (ring.length > HIST_LRU_MAX) {
+    // Evict oldest entry from localStorage to free space
+    const evicted = ring.shift();
+    try { localStorage.removeItem(HIST_LS_PREFIX + evicted); } catch (_) {}
+  }
+  _setHistLRU(ring);
+}
+
 export function getCachedRealPriceHistory(sym) {
   if (!sym || typeof window === 'undefined') return null;
+  const key = sym.toUpperCase();
+  // Fast path: check localStorage LRU ring first (synchronous)
   try {
-    const raw = localStorage.getItem(`nepse_hist_prices_${sym.toUpperCase()}`);
+    const raw = localStorage.getItem(HIST_LS_PREFIX + key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_) {}
+  // IDB read is async — callers that need IDB fallback should use getCachedRealPriceHistoryAsync
+  return null;
+}
+
+// Async variant: checks localStorage first, then falls back to IndexedDB
+export async function getCachedRealPriceHistoryAsync(sym) {
+  if (!sym || typeof window === 'undefined') return null;
+  const key = sym.toUpperCase();
+  // 1. Try localStorage LRU ring (fast)
+  const sync = getCachedRealPriceHistory(key);
+  if (sync) return sync;
+  // 2. Try IndexedDB (unlimited quota, no eviction)
+  try {
+    const idbData = await idbGet(HIST_LS_PREFIX + key);
+    if (Array.isArray(idbData) && idbData.length > 0) {
+      // Warm the localStorage cache so next sync read hits
+      try { localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(idbData)); } catch (_) {}
+      _lruTouch(key);
+      return idbData;
     }
   } catch (_) {}
   return null;
@@ -179,9 +492,22 @@ export function getCachedRealPriceHistory(sym) {
 
 export function setCachedRealPriceHistory(sym, data) {
   if (!sym || !data || !data.length || typeof window === 'undefined') return;
+  const key = sym.toUpperCase();
+  // Write to localStorage with LRU eviction (sync, immediate availability)
+  _lruTouch(key);
   try {
-    localStorage.setItem(`nepse_hist_prices_${sym.toUpperCase()}`, JSON.stringify(data));
-  } catch (_) {}
+    localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(data));
+  } catch (e) {
+    // QuotaExceededError — evict all LRU entries and retry once
+    try {
+      const ring = _getHistLRU();
+      ring.forEach(s => { try { localStorage.removeItem(HIST_LS_PREFIX + s); } catch (_) {} });
+      _setHistLRU([key]);
+      localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(data));
+    } catch (_) {}
+  }
+  // Fire-and-forget write to IndexedDB (unlimited quota, no eviction)
+  idbSet(HIST_LS_PREFIX + key, data).catch(() => {});
 }
 
 export function getCachedRealBrokerAnalysis(sym) {
@@ -334,15 +660,33 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   return null;
 }
 
-// Multi-source backend proxy caller that automatically tries configured proxy and falls back to
-// Render production backend (https://nepseapp.onrender.com) so real exchange data is always reached.
+// Multi-source backend proxy caller — automatically retries once on transient failure (Render cold-start)
+// then falls back to Render production backend so real exchange data is always reached.
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
-  try {
-    const res = await tryFetchJSON(`${base}${path}`, timeoutMs);
-    if (res && res.success !== false) return res;
-  } catch (_) {}
 
+  // If the server hasn't responded to our warm-up ping yet, use an extended timeout on
+  // the first attempt (60s) so we can survive a full Render cold-start (45-60s wake time).
+  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.max(timeoutMs, 60000);
+
+  // Primary: try configured proxy with one retry (helps with Render cold-start 45–60s wake)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const t = attempt === 0 ? firstAttemptTimeout : timeoutMs;
+      const res = await tryFetchJSON(`${base}${path}`, t);
+      if (res && res.success !== false) {
+        // Mark server as warm on first successful response
+        if (!isServerWarm()) { _serverWarmTs = Date.now(); }
+        return res;
+      }
+    } catch (_) {}
+    if (attempt === 0) {
+      // Wait 1.5s before retry (jitter backoff — negligible for hot servers, recovers cold ones)
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+
+  // Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
   if (base !== 'https://nepseapp.onrender.com') {
     try {
       const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
@@ -356,7 +700,26 @@ const NEPSE_BASE = 'https://newweb.nepalstock.com.np/api/nots';
 const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
 
 async function attemptLiveMarket() {
-  // 1. Primary: Real-time Live Intraday trading feed (/api/market-summary)
+  // 1. Primary: /api/mero/market-summary — best source: full company names, correct sectors, all fields
+  //    Fields: symbol, name, ltp, change, pChange, open, high, low, prevClose, volume, turnover, sector
+  //    Also provides top-level `date` and `turnover` (total market turnover)
+  try {
+    const j = await fetchFromBackend('/api/mero/market-summary', 12000);
+    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+    if (Array.isArray(arr) && arr.length > 20) {
+      const normalized = normalizeLiveArray(arr);
+      if (normalized && normalized.length > 20) {
+        if (j.turnover) {
+          if (!MEM_SUMMARY) ensureSnapshot();
+          if (MEM_SUMMARY) MEM_SUMMARY.totalTurnover = Number(j.turnover);
+        }
+        return normalized;
+      }
+    }
+  } catch (_) {}
+
+  // 2. Secondary: /api/market-summary — same stocks but sector:"Unknown", name=symbol only
+  //    normalizeLiveArray's NEPSE_UNIVERSE lookup fixes name/sector automatically
   try {
     const j = await fetchFromBackend('/api/market-summary', 12000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
@@ -366,7 +729,31 @@ async function attemptLiveMarket() {
     }
   } catch (_) {}
 
-  // 2. Secondary: Today's prices / closing prices (/api/today-prices)
+  // 3. Direct Native or Web fetch to MeroLagani handler (Zero-proxy dependency for native mobile!)
+  try {
+    const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
+    const j = await tryFetchJSON(directUrl, 10000);
+    if (j && (j.stock?.detail || j.turnover?.detail)) {
+      const parsed = parseMeroLaganiJson(j);
+      if (parsed && parsed.length > 20) {
+        const normalized = normalizeLiveArray(parsed);
+        if (normalized && normalized.length > 20) {
+          if (j.overall?.t) {
+            if (!MEM_SUMMARY) ensureSnapshot();
+            if (MEM_SUMMARY) {
+              MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
+              MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
+              MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
+            }
+          }
+          return normalized;
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 4. Tertiary: Today's prices / closing prices (/api/today-prices)
+  //    Has extra fields: high52w, low52w; source:"closing"
   try {
     const j = await fetchFromBackend('/api/today-prices', 12000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
@@ -376,21 +763,23 @@ async function attemptLiveMarket() {
     }
   } catch (_) {}
 
-  // 3. Fallback: Direct NOTS candidates
-  const candidates = [
-    PROXY(`${NEPSE_BASE}/nepse-data/today-price`),
-    PROXY(`${NEPSE_BASE}/live-market`),
+  // 5. Quaternary: Web CORS proxy candidates for MeroLagani
+  const corsProxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`,
   ];
-  for (const u of candidates) {
-    const j = await tryFetchJSON(u, 6000);
-    const arr = j?.data ?? j?.content ?? j?.stocks ?? j;
-    if (Array.isArray(arr) && arr.length > 20) {
-      try {
-        const normalized = normalizeLiveArray(arr);
-        if (normalized && normalized.length > 20) return normalized;
-      } catch { /* continue */ }
-    }
+  for (const u of corsProxies) {
+    try {
+      const j = await tryFetchJSON(u, 8000);
+      if (j && (j.stock?.detail || j.turnover?.detail)) {
+        const parsed = parseMeroLaganiJson(j);
+        if (parsed && parsed.length > 20) {
+          const normalized = normalizeLiveArray(parsed);
+          if (normalized && normalized.length > 20) return normalized;
+        }
+      }
+    } catch { /* continue */ }
   }
+
   return null;
 }
 
@@ -423,9 +812,10 @@ function normalizeLiveArray(arr) {
     const lo52 = Number(r.low52w ?? r.fiftyTwoWeekLow ?? prev?.low52w ?? +(ltp * 0.85).toFixed(1));
 
     // Preserve authentic company name and sector from universe map if incoming is only symbol
+    const uni = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.find(u => u && u.symbol === sym) : null;
     const fullIncomingName = (r.name && r.name !== sym) ? r.name : (r.companyName && r.companyName !== sym ? r.companyName : null);
-    const companyName = fullIncomingName || prev?.companyName || prev?.name || sym;
-    const sector = (r.sector && r.sector !== 'Unknown') ? r.sector : (prev?.sector || 'Others');
+    const companyName = fullIncomingName || uni?.name || prev?.companyName || prev?.name || sym;
+    const sector = (r.sector && r.sector !== 'Unknown') ? r.sector : (uni?.sector || prev?.sector || 'Others');
 
     let realEma50 = r.ema50 ? Number(r.ema50) : (prev?.isRealEma ? prev.ema50 : null);
     let realEma20 = r.ema20 ? Number(r.ema20) : (prev?.isRealEma ? prev.ema20 : null);
@@ -536,13 +926,15 @@ function normalizeLiveArray(arr) {
 // PUBLIC API
 export async function fetchLiveMarket() {
   ensureSnapshot();
-  const marketStatus = getDetailedMarketStatus();
   const live = await attemptLiveMarket();
   if (live && live.length) {
     persistStocks(live);
+    clearDynamicMarketHalt();
+    const marketStatus = getDetailedMarketStatus();
     LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
     return { data: live, source: LAST_SOURCE, marketStatus };
   }
+  const marketStatus = getDetailedMarketStatus();
   LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'simulated-live' : 'yesterday');
   return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus };
 }
@@ -552,58 +944,84 @@ export async function fetchMarketSummary() {
   let marketStatus = getDetailedMarketStatus();
   const defaultSource = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
 
-  // Trigger background news cross-verification if market is seemingly open but stagnant turnover
+  // Trigger background news cross-verification only if clock says open but turnover is literally zero after 11:30 AM
   if (marketStatus.isOpen && !marketStatus.isEmergencyHalt) {
     const memTurnover = Number(MEM_SUMMARY?.totalTurnover || 0);
-    if (memTurnover === 0) {
+    const nptMins = marketStatus.nptTotalMinutes || 0;
+    if (memTurnover === 0 && nptMins >= 11 * 60 + 30) {
       import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
     }
   }
 
-  // 1. Try backend proxy /api/market/summary or /api/market-indices
+  // 1. Try backend proxy /api/market/summary
   try {
-    const pSum = await fetchFromBackend(`/api/market/summary`, 3500);
+    const pSum = await fetchFromBackend(`/api/market/summary`, 10000);
     const d = pSum?.data;
     if (d && (d.nepseIndex || d.totalTurnover !== undefined)) {
       const isZeroTurnover = Number(d.totalTurnover || 0) === 0;
-      if (isZeroTurnover && marketStatus.isOpen) {
+      if (!isZeroTurnover) {
+        clearDynamicMarketHalt();
+        marketStatus = getDetailedMarketStatus();
+      } else if (marketStatus.isOpen && (marketStatus.nptTotalMinutes || 0) >= 11 * 60 + 30) {
         import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
+      }
+      if (MEM_SUMMARY) {
+        if (d.nepseIndex) MEM_SUMMARY.nepseIndex = Number(d.nepseIndex);
+        if (d.change) MEM_SUMMARY.change = Number(d.change);
+        if (d.changePercent) MEM_SUMMARY.changePercent = Number(d.changePercent);
+        if (d.totalTurnover) MEM_SUMMARY.totalTurnover = Number(d.totalTurnover);
+        if (d.totalTradedShares) MEM_SUMMARY.totalTradedShares = Number(d.totalTradedShares);
+        if (d.totalTransactions) MEM_SUMMARY.totalTransactions = Number(d.totalTransactions);
       }
       return {
         data: {
-          nepseIndex: Number(d.nepseIndex || MEM_SUMMARY.nepseIndex),
-          change: Number(d.change || MEM_SUMMARY.change),
-          changePercent: Number(d.changePercent || MEM_SUMMARY.changePercent),
-          totalTurnover: Number(d.totalTurnover || MEM_SUMMARY.totalTurnover),
-          totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY.totalTradedShares),
-          totalTransactions: Number(d.totalTransactions || MEM_SUMMARY.totalTransactions),
+          nepseIndex: Number(d.nepseIndex || MEM_SUMMARY?.nepseIndex || 2654.28),
+          change: Number(d.change || MEM_SUMMARY?.change || 7.06),
+          changePercent: Number(d.changePercent || MEM_SUMMARY?.changePercent || 0.26),
+          totalTurnover: Number(d.totalTurnover || MEM_SUMMARY?.totalTurnover || 0),
+          totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY?.totalTradedShares || 0),
+          totalTransactions: Number(d.totalTransactions || MEM_SUMMARY?.totalTransactions || 0),
           marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen && !isZeroTurnover ? 'OPEN' : 'CLOSED'),
-          advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
+          advances: MEM_SUMMARY?.advances, declines: MEM_SUMMARY?.declines, unchanged: MEM_SUMMARY?.unchanged,
         },
         source: defaultSource,
       };
     }
   } catch (_) {}
 
-  const live = await tryFetchJSON(PROXY(`${NEPSE_BASE}/market-summary/`), 3500);
-  const d = live?.[0] ?? live?.data ?? live;
-  if (d && (d.nepseIndex || d.indexValue || d.totalTurnover !== undefined)) {
-    const isZeroTurnover = Number(d.totalTurnover ?? d.turnover ?? 0) === 0;
-    if (isZeroTurnover && marketStatus.isOpen) {
-      import('../services/merolaganiNewsService.js').then(m => m.detectMarketHaltFromNews()).catch(() => {});
+  // 2. Direct MeroLagani market_summary handler for overall live turnover & trade counts
+  try {
+    const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
+    const j = await tryFetchJSON(directUrl, 8000);
+    if (j?.overall && j.overall.t) {
+      const totalTurnover = Number(j.overall.t) || MEM_SUMMARY?.totalTurnover || 0;
+      const totalTradedShares = Number(j.overall.q) || MEM_SUMMARY?.totalTradedShares || 0;
+      const totalTransactions = Number(j.overall.tn) || MEM_SUMMARY?.totalTransactions || 0;
+      if (totalTurnover > 0) {
+        clearDynamicMarketHalt();
+        marketStatus = getDetailedMarketStatus();
+      }
+      if (MEM_SUMMARY) {
+        MEM_SUMMARY.totalTurnover = totalTurnover;
+        MEM_SUMMARY.totalTradedShares = totalTradedShares;
+        MEM_SUMMARY.totalTransactions = totalTransactions;
+      }
+      return {
+        data: {
+          nepseIndex: Number(MEM_SUMMARY?.nepseIndex || 2654.28),
+          change: Number(MEM_SUMMARY?.change || 7.06),
+          changePercent: Number(MEM_SUMMARY?.changePercent || 0.26),
+          totalTurnover,
+          totalTradedShares,
+          totalTransactions,
+          marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen ? 'OPEN' : 'CLOSED'),
+          advances: MEM_SUMMARY?.advances, declines: MEM_SUMMARY?.declines, unchanged: MEM_SUMMARY?.unchanged,
+        },
+        source: defaultSource,
+      };
     }
-    return {
-      data: {
-        nepseIndex: Number(d.nepseIndex ?? d.indexValue ?? MEM_SUMMARY.nepseIndex),
-        changePercent: Number(d.changePercent ?? d.perChange ?? MEM_SUMMARY.changePercent),
-        totalTurnover: Number(d.totalTurnover ?? d.turnover ?? MEM_SUMMARY.totalTurnover),
-        totalTradedShares: Number(d.totalTradedShares ?? d.volume ?? MEM_SUMMARY.totalTradedShares),
-        totalTransactions: Number(d.totalTransactions ?? MEM_SUMMARY.totalTransactions),
-        marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen && !isZeroTurnover ? 'OPEN' : 'CLOSED'),
-        advances: MEM_SUMMARY.advances, declines: MEM_SUMMARY.declines, unchanged: MEM_SUMMARY.unchanged,
-      }, source: defaultSource,
-    };
-  }
+  } catch (_) {}
+
   return { data: MEM_SUMMARY, source: LAST_SOURCE };
 }
 
@@ -776,8 +1194,8 @@ export async function fetchPriceHistory(symbol, days = 365) {
     return out;
   };
 
-  // 1. Check local persistent cache of real historical candles
-  const cachedHistory = getCachedRealPriceHistory(symKey);
+  // 1. Check local persistent cache of real historical candles (IDB-aware async read)
+  const cachedHistory = await getCachedRealPriceHistoryAsync(symKey);
 
   // 2. Fetch fresh real historical records from backend (with automatic fallback to Render proxy)
   try {
@@ -805,6 +1223,108 @@ export async function fetchPriceHistory(symbol, days = 365) {
       return fullWithToday;
     }
   } catch (_) {}
+
+  // 2B. Direct MeroLagani company graph fallback for individual equities
+  if (!isNepseOrIndex && symKey) {
+    try {
+      const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(symKey)}`;
+      const j = await tryFetchJSON(mlUrl, 8000);
+      if (j && Array.isArray(j.quotes) && j.quotes.length > 0) {
+        const mapped = j.quotes.map(q => {
+          let dateIso = q.date;
+          if (q.date && q.date.includes('/')) {
+            const parts = q.date.split('/');
+            if (parts.length === 3) {
+              dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+          return {
+            date: dateIso,
+            open: Number(q.open || q.close),
+            high: Number(q.high || q.close),
+            low: Number(q.low || q.close),
+            close: Number(q.close),
+            volume: Number(q.volume || 0),
+            rsi: Number(q.rsi || 0),
+            isReal: true
+          };
+        });
+        const fullWithToday = appendTodayIfMissing(mapped);
+        setCachedRealPriceHistory(symKey, fullWithToday);
+        fullWithToday.isRealData = true;
+        fullWithToday.dataSource = 'merolagani_real';
+        return fullWithToday;
+      }
+    } catch (_) {}
+  }
+
+  // 2C. NEPSE index fallback: /api/price-history/NEPSE returns 500 on the proxy.
+  // Build today's real OHLCV candle from live intraday tick data and merge with cached history.
+  if (isNepseOrIndex) {
+    try {
+      const intraRes = await fetchFromBackend('/api/nepse/intraday-graph', 8000);
+      const ticks = intraRes?.data ?? (Array.isArray(intraRes) ? intraRes : null);
+      if (Array.isArray(ticks) && ticks.length > 1) {
+        const closes = ticks.map(t => Number(t.close || 0)).filter(v => v > 0);
+        const highs  = ticks.map(t => Number(t.high  || t.close || 0)).filter(v => v > 0);
+        const lows   = ticks.map(t => Number(t.low   || t.close || 0)).filter(v => v > 0);
+        const opens  = ticks.map(t => Number(t.open  || t.close || 0)).filter(v => v > 0);
+        if (closes.length > 0) {
+          const todayClose    = closes[closes.length - 1];
+          const officialChg   = Number(MEM_SUMMARY?.change ?? 22.85);
+          const officialPChg  = Number(MEM_SUMMARY?.changePercent ?? 0.87);
+          const truePrevClose = (officialChg !== 0 && todayClose > 0) ? +(todayClose - officialChg).toFixed(2) : todayClose;
+          const todayCandle = {
+            date: latestTradingDate,
+            open: opens[0] || truePrevClose,
+            high: Math.max(...highs),
+            low:  Math.min(...lows),
+            close: todayClose,
+            volume:   Number(MEM_SUMMARY?.totalTradedShares || 0),
+            turnover: Number(MEM_SUMMARY?.totalTurnover     || 0),
+            change: officialChg,
+            pChange: officialPChg,
+            isReal: true,
+            isToday: true
+          };
+          // Merge: if we have cached daily candles, append/replace today's bar
+          let history = cachedHistory && cachedHistory.length > 0 ? [...cachedHistory] : [];
+          const lastBar = history[history.length - 1];
+          const lastDate = lastBar?.date ? String(lastBar.date).slice(0, 10) : '';
+          if (lastDate === latestTradingDate) {
+            history[history.length - 1] = { ...lastBar, ...todayCandle };
+          } else if (history.length > 0) {
+            history.push(todayCandle);
+          } else {
+            history = [todayCandle];
+          }
+          setCachedRealPriceHistory(symKey, history);
+          history.isRealData = true;
+          history.dataSource = 'nepse_intraday_agg';
+          return history;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2D. NEPSE index daily history from ShareSansar company page
+  // Fires when the proxy returns 500 AND the intraday agg was either unavailable or only gave
+  // today's single candle (not enough for 1W/1M/1Y charts). Native CapacitorHttp bypasses CORS.
+  if (isNepseOrIndex && (!cachedHistory || cachedHistory.length < 5)) {
+    try {
+      const ssHistHtml = await tryFetchText('https://www.sharesansar.com/company/NEPSE', 12000);
+      if (ssHistHtml) {
+        const ssCandles = parseShareSansarHistoryHtml(ssHistHtml);
+        if (ssCandles && ssCandles.length >= 5) {
+          const withToday = appendTodayIfMissing(ssCandles);
+          setCachedRealPriceHistory(symKey, withToday);
+          withToday.isRealData = true;
+          withToday.dataSource = 'sharesansar_history';
+          return withToday;
+        }
+      }
+    } catch (_) {}
+  }
 
   // 3. If network fetch failed/timed out, preserve and return real historical cached candles
   if (cachedHistory && cachedHistory.length > 0) {
@@ -932,10 +1452,10 @@ export function calculateIndices(stocks) {
   const sumTurnover = list.reduce((a, s) => a + (s.turnover || 0), 0);
   const turnover = cachedTurnover > 0 ? cachedTurnover : (sumTurnover > 0 ? sumTurnover : 5499316643.52);
 
-  const nepseVal = Number(cached?.nepse?.value || MEM_SUMMARY?.nepseIndex || 2624.36);
-  const nepseChg = Number(cached?.nepse?.change ?? MEM_SUMMARY?.change ?? 11.93);
-  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : 2624.36;
-  const nepsePChg = Number(cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0.45));
+  const nepseVal = Number(MEM_SUMMARY?.nepseIndex || cached?.nepse?.value || 2654.28);
+  const nepseChg = Number(MEM_SUMMARY?.change ?? cached?.nepse?.change ?? 7.06);
+  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : 2647.22;
+  const nepsePChg = Number(MEM_SUMMARY?.changePercent ?? cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0.26));
 
   const bySector = {};
   list.forEach(s => {
@@ -956,6 +1476,8 @@ export function calculateIndices(stocks) {
   }));
 
   const obj = {
+    // isPlaceholder: true when nepseIndex is coming from the hardcoded seed (MEM_SUMMARY not yet live)
+    isPlaceholder: !MEM_SUMMARY?.nepseIndex || MEM_SUMMARY.nepseIndex === 2654.28,
     nepse: {
       value: nepseVal,
       change: nepseChg,
@@ -1008,17 +1530,21 @@ export function getCachedIndices() {
     }
   } catch (_) {}
   return {
-    nepse: { value: 2624.36, change: 11.93, pChange: 0.45, open: 2616.40, high: 2637.58, low: 2615.69, prevClose: 2612.43, turnover: 5499316643.52 },
-    sensitive: { value: 465.75, change: 2.07, pChange: 0.44, open: 464.20, high: 467.58, low: 464.12, turnover: 2148463089.2 },
-    float: { value: 180.58, change: 1.05, pChange: 0.58, open: 179.80, high: 181.20, low: 179.50, turnover: 4395416485.5 },
-    sensitiveFloat: { value: 157.12, change: 0.88, pChange: 0.56, open: 156.50, high: 157.60, low: 156.20, turnover: 1856123696.6 },
+    isPlaceholder: true,
+    nepse: { value: 2654.28, change: 7.06, pChange: 0.26, open: 2650.19, high: 2662.71, low: 2637.57, prevClose: 2647.22, turnover: 7050398624.96 },
+    sensitive: { value: 473.79, change: 2.71, pChange: 0.57, open: 471.51, high: 473.94, low: 469.90, turnover: 2750821038.5 },
+    float: { value: 182.99, change: 0.53, pChange: 0.29, open: 182.81, high: 183.53, low: 181.82, turnover: 6980162833.3 },
+    sensitiveFloat: { value: 160.00, change: 0.68, pChange: 0.42, open: 159.45, high: 160.29, low: 158.80, turnover: 2750821038.5 },
     subIndices: []
   };
 }
 
 export async function fetchMarketIndices() {
   try {
-    // 1. Fetch official real-time NOTS indices, sector subindices, and intraday graph in parallel
+    let indicesData = null;
+
+    // 1. Primary Source: Backend proxy endpoints (Official NEPSE NOTS API via nepseClient & live scrapers)
+    // Always query backend first for real-time tick-by-tick exchange index & subindices
     const [indicesRes, sectorRes, intradayRes, summaryRes, legacyRes] = await Promise.all([
       fetchFromBackend(`/api/indices`, 10000).catch(() => null),
       fetchFromBackend(`/api/indices/sector`, 10000).catch(() => null),
@@ -1027,75 +1553,169 @@ export async function fetchMarketIndices() {
       fetchFromBackend(`/api/market-indices`, 10000).catch(() => null)
     ]);
 
-    let indicesData = null;
-    const rawList = indicesRes?.data ?? (Array.isArray(indicesRes) ? indicesRes : null);
+    // ── Case A: /api/indices or /api/market-indices returns object form { nepse: {...}, float: {...}, ... }
+    const primaryObj = (indicesRes?.data?.nepse?.value > 0 ? indicesRes.data : null)
+      || (legacyRes?.data?.nepse?.value > 0 ? legacyRes.data : null);
 
-    if (Array.isArray(rawList) && rawList.length > 0) {
-      const nepseItem = rawList.find(i => i.index === 'NEPSE Index' || i.id === 58);
-      const sensitiveItem = rawList.find(i => i.index === 'Sensitive Index' || i.id === 57);
-      const floatItem = rawList.find(i => i.index === 'Float Index' || i.id === 62);
-      const sensFloatItem = rawList.find(i => i.index === 'Sensitive Float Index' || i.id === 63);
-
-      const sectorList = sectorRes?.data ?? (Array.isArray(sectorRes) ? sectorRes : []);
-      const subIndices = Array.isArray(sectorList) ? sectorList.map(s => ({
-        index: s.index || s.name,
-        value: Number(s.currentValue || s.close || s.value || 0),
-        change: Number(s.change || 0),
-        pChange: Number(s.perChange || s.pChange || 0),
-        high: Number(s.high || 0),
-        low: Number(s.low || 0),
-        open: Number(s.open || s.previousClose || 0),
-        prevClose: Number(s.previousClose || s.close || 0)
-      })) : [];
-
-      const turnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
-
-      const buildIndexObj = (item) => {
-        if (!item) return null;
-        const liveVal = Number(item.currentValue || item.close || 0);
-        const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
-        // In NEPSE NOTS API, item.close is frequently yesterday's close (e.g. 2559.49),
-        // while item.previousClose can be the pre-close tick (e.g. 2585.05).
-        // The true previous close is ALWAYS: liveVal - chg! (2585.04 - 25.55 = 2559.49)
-        let truePrevClose = 0;
-        if (chg !== 0 && liveVal > 0) {
-          truePrevClose = +(liveVal - chg).toFixed(2);
-        } else if (item.close && item.currentValue && Number(item.close) !== Number(item.currentValue)) {
-          truePrevClose = Number(item.close);
-        } else {
-          truePrevClose = Number(item.previousClose || item.close || 0);
-        }
-
-        const pChg = Number(item.perChange !== undefined && item.perChange !== null
-          ? item.perChange
-          : (truePrevClose > 0 ? (chg / truePrevClose) * 100 : 0));
-
-        return {
-          value: liveVal,
-          change: chg,
-          pChange: +(pChg).toFixed(2),
-          prevClose: truePrevClose,
-          open: Number(item.open || truePrevClose),
-          high: Number(item.high || liveVal),
-          low: Number(item.low || liveVal),
-          turnover: turnover > 0 ? turnover : Number(item.turnover || 0)
-        };
+    if (primaryObj && primaryObj.nepse && Number(primaryObj.nepse.value) > 0) {
+      const authTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || primaryObj.nepse.turnover || 0);
+      const nepseObj = { ...primaryObj.nepse };
+      if (authTurnover > 0 && (!nepseObj.turnover || authTurnover > nepseObj.turnover)) {
+        nepseObj.turnover = authTurnover;
+      }
+      indicesData = {
+        nepse: nepseObj,
+        sensitive: primaryObj.sensitive || null,
+        float: primaryObj.float || null,
+        sensitiveFloat: primaryObj.sensitiveFloat || null,
+        subIndices: Array.isArray(primaryObj.subIndices) && primaryObj.subIndices.length > 0
+          ? primaryObj.subIndices
+          : (Array.isArray(sectorRes?.data) ? sectorRes.data.map(s => ({
+              index: s.index || s.name,
+              value: Number(s.currentValue || s.close || 0),
+              change: Number(s.change || 0),
+              pChange: Number(s.perChange || s.pChange || 0)
+            })) : [])
       };
+    }
 
-      if (nepseItem) {
-        indicesData = {
-          nepse: buildIndexObj(nepseItem),
-          sensitive: buildIndexObj(sensitiveItem) || { value: 452.86, change: 3.36, pChange: 0.74, prevClose: 449.50 },
-          float: buildIndexObj(floatItem) || { value: 175.40, change: 1.05, pChange: 0.60, prevClose: 174.35 },
-          sensitiveFloat: buildIndexObj(sensFloatItem) || { value: 152.89, change: 1.15, pChange: 0.76, prevClose: 151.74 },
-          subIndices
+    // ── Case B: /api/indices returns NOTS-style array [ { index: 'NEPSE Index', currentValue, ... }, ... ]
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      const rawList = Array.isArray(indicesRes?.data) ? indicesRes.data
+        : Array.isArray(indicesRes) ? indicesRes
+        : (Array.isArray(legacyRes?.data) ? legacyRes.data : null);
+
+      if (Array.isArray(rawList) && rawList.length > 0) {
+        const nepseItem = rawList.find(i => i.index === 'NEPSE Index' || i.id === 58);
+        const sensitiveItem = rawList.find(i => i.index === 'Sensitive Index' || i.id === 57);
+        const floatItem = rawList.find(i => i.index === 'Float Index' || i.id === 62);
+        const sensFloatItem = rawList.find(i => i.index === 'Sensitive Float Index' || i.id === 63);
+
+        const sectorList = sectorRes?.data ?? (Array.isArray(sectorRes) ? sectorRes : []);
+        const subIndices = Array.isArray(sectorList) ? sectorList.map(s => ({
+          index: s.index || s.name,
+          value: Number(s.currentValue || s.close || s.value || 0),
+          change: Number(s.change || 0),
+          pChange: Number(s.perChange || s.pChange || 0),
+          high: Number(s.high || 0),
+          low: Number(s.low || 0),
+          open: Number(s.open || s.previousClose || 0),
+          prevClose: Number(s.previousClose || s.close || 0)
+        })) : [];
+
+        const turnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || 0);
+
+        const buildIndexObj = (item) => {
+          if (!item) return null;
+          const liveVal = Number(item.currentValue || item.close || 0);
+          const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
+          let truePrevClose = 0;
+          if (chg !== 0 && liveVal > 0) {
+            truePrevClose = +(liveVal - chg).toFixed(2);
+          } else if (item.close && item.currentValue && Number(item.close) !== Number(item.currentValue)) {
+            truePrevClose = Number(item.close);
+          } else {
+            truePrevClose = Number(item.previousClose || item.close || 0);
+          }
+
+          const pChg = Number(item.perChange !== undefined && item.perChange !== null
+            ? item.perChange
+            : (truePrevClose > 0 ? (chg / truePrevClose) * 100 : 0));
+
+          return {
+            value: liveVal,
+            change: chg,
+            pChange: +(pChg).toFixed(2),
+            prevClose: truePrevClose,
+            open: Number(item.open || truePrevClose),
+            high: Number(item.high || liveVal),
+            low: Number(item.low || liveVal),
+            turnover: turnover > 0 ? turnover : Number(item.turnover || 0)
+          };
+        };
+
+        if (nepseItem) {
+          indicesData = {
+            nepse: buildIndexObj(nepseItem),
+            sensitive: buildIndexObj(sensitiveItem) || null,
+            float: buildIndexObj(floatItem) || null,
+            sensitiveFloat: buildIndexObj(sensFloatItem) || null,
+            subIndices
+          };
+        }
+      }
+    }
+
+    // ── Case C: Fallback to /api/market/summary if still unpopulated
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      const sumData = summaryRes?.data || summaryRes;
+      const authNepse = Number(sumData?.nepseIndex || 0);
+      if (authNepse > 0) {
+        indicesData = { subIndices: [] };
+        const authChg  = Number(sumData?.change ?? 0);
+        const authPChg = Number(sumData?.changePercent ?? 0);
+        const authTo   = Number(sumData?.totalTurnover || 0);
+        const authPrev = (authNepse > 0 && authChg !== 0) ? +(authNepse - authChg).toFixed(2) : authNepse;
+        indicesData.nepse = {
+          value: authNepse,
+          change: authChg,
+          pChange: +(authPChg).toFixed(2),
+          prevClose: authPrev,
+          open: authPrev,
+          high: authNepse,
+          low: authPrev,
+          turnover: authTo
         };
       }
     }
 
-    // Fallback to legacy endpoint if /api/indices wasn't available
-    if (!indicesData && legacyRes?.success && legacyRes.data?.nepse) {
-      indicesData = { ...legacyRes.data };
+    // 2. Secondary Fallback: Direct ShareSansar Market Table fetch
+    // ONLY executed if all backend proxy NOTS sources above failed.
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      try {
+        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 8000);
+        if (ssHtml) {
+          const parsedSS = parseShareSansarMarketHtml(ssHtml);
+          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
+            indicesData = parsedSS;
+          }
+        }
+      } catch (_) {}
+    } else {
+      // Enrich turnover from summaryRes if missing or larger
+      const authTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
+      if (authTurnover > 0 && indicesData?.nepse && (!indicesData.nepse.turnover || indicesData.nepse.turnover < authTurnover)) {
+        indicesData.nepse.turnover = authTurnover;
+      }
+      // If subindices empty, enrich from sectorRes
+      if ((!indicesData.subIndices || indicesData.subIndices.length === 0) && Array.isArray(sectorRes?.data)) {
+        indicesData.subIndices = sectorRes.data.map(s => ({
+          index: s.index || s.name,
+          value: Number(s.currentValue || s.close || 0),
+          change: Number(s.change || 0),
+          pChange: Number(s.perChange || s.pChange || 0)
+        }));
+      }
+    }
+
+    // Sync MEM_SUMMARY from live index data so hero card, calculateIndices(), and status
+    // always reflect the real live NEPSE value immediately after fetchMarketIndices completes.
+    // Also persist to localStorage/IDB immediately so the next cold-boot session uses this
+    // fresh value instead of the hardcoded seed fallback.
+    if (indicesData?.nepse?.value > 0) {
+      ensureSnapshot();
+      if (MEM_SUMMARY) {
+        MEM_SUMMARY.nepseIndex    = indicesData.nepse.value;
+        MEM_SUMMARY.change        = indicesData.nepse.change;      // always overwrite — never let seed persist
+        MEM_SUMMARY.changePercent = indicesData.nepse.pChange;     // always overwrite
+        if (indicesData.nepse.turnover > 0) MEM_SUMMARY.totalTurnover = indicesData.nepse.turnover;
+        // Persist sensitive/float/subindices back to indicesData so saveCachedIndices captures them
+        if (!indicesData.sensitive && MEM_SUMMARY.sensitiveIndex > 0) {
+          indicesData.sensitive = { value: MEM_SUMMARY.sensitiveIndex, change: 0, pChange: 0 };
+        }
+      }
+      // Fire-and-forget: persist to localStorage + IDB so next session starts warm
+      saveCachedIndices(indicesData);
     }
 
     // Only fallback to intraday graph point if live index was not available from /api/indices or /api/market-indices
@@ -1108,19 +1728,50 @@ export async function fetchMarketIndices() {
           if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
           if (!indicesData.nepse) indicesData.nepse = {};
 
-          const officialChange = Number(summaryRes?.data?.change || 0);
-          const truePrevClose = (officialChange !== 0) ? +(liveClose - officialChange).toFixed(2) : +(liveClose - 11.93).toFixed(2);
+          const officialChange = Number(summaryRes?.data?.change || summaryRes?.change || 0);
+          const truePrevClose = (officialChange !== 0) ? +(liveClose - officialChange).toFixed(2) : +(liveClose - 22.85).toFixed(2);
           indicesData.nepse = {
             value: liveClose,
-            change: officialChange || 11.93,
-            pChange: truePrevClose > 0 ? +((officialChange / truePrevClose) * 100).toFixed(2) : 0.45,
+            change: officialChange || 22.85,
+            pChange: truePrevClose > 0 ? +((officialChange / truePrevClose) * 100).toFixed(2) : 0.87,
             prevClose: truePrevClose,
             open: Number(intradayPts[0]?.open || liveClose),
             high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveClose))),
             low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveClose))),
-            turnover: Number(summaryRes?.data?.totalTurnover || 5499316643.52)
+            turnover: Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || 2215533871.54)
           };
+          // Sync MEM_SUMMARY from intraday fallback too
+          ensureSnapshot();
+          if (MEM_SUMMARY) {
+            MEM_SUMMARY.nepseIndex = indicesData.nepse.value;
+            MEM_SUMMARY.change = indicesData.nepse.change;
+            MEM_SUMMARY.changePercent = indicesData.nepse.pChange;
+            if (indicesData.nepse.turnover > 0) MEM_SUMMARY.totalTurnover = indicesData.nepse.turnover;
+          }
         }
+      }
+    }
+
+    // Direct fallback to market summary endpoint / cache if index is still not populated
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      const sum = summaryRes?.data || summaryRes;
+      const sumNepse = Number(sum?.nepseIndex || MEM_SUMMARY?.nepseIndex || 0);
+      if (sumNepse > 0) {
+        const chg = Number(sum?.change ?? MEM_SUMMARY?.change ?? 0);
+        const prevC = (sumNepse > 0 && chg !== 0) ? +(sumNepse - chg).toFixed(2) : sumNepse;
+        const pChg = Number(sum?.changePercent ?? MEM_SUMMARY?.changePercent ?? (prevC > 0 ? +((chg / prevC) * 100).toFixed(2) : 0));
+        const to = Number(sum?.totalTurnover || MEM_SUMMARY?.totalTurnover || 0);
+        if (!indicesData) indicesData = { subIndices: [] };
+        indicesData.nepse = {
+          value: sumNepse,
+          change: chg,
+          pChange: +(pChg).toFixed(2),
+          prevClose: prevC,
+          open: prevC,
+          high: sumNepse,
+          low: prevC,
+          turnover: to
+        };
       }
     } else {
       // Enrich turnover from summary if missing or newer
@@ -1366,15 +2017,7 @@ export function getProxyBase() {
     if (env && env.trim()) return env.trim().replace(/\/$/, '');
   } catch (_) {}
 
-  // 3. Localhost on PC web browser development ONLY (never on native Android/iOS Capacitor)
-  if (typeof window !== 'undefined') {
-    const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
-    if (!isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      return 'http://localhost:5000';
-    }
-  }
-
-  // 4. Default production proxy on Render (reliable public backend)
+  // 3. Default production proxy on Render (reliable public backend)
   return 'https://nepseapp.onrender.com';
 }
 

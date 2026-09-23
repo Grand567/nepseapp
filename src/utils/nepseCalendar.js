@@ -112,7 +112,6 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-08-28': 'Gai Jatra (Public Holiday)',
   '2026-09-04': 'Krishna Janmashtami',
   '2026-09-19': 'Constitution Day (Sambidhan Diwas)',
-  '2026-09-21': 'Emergency Market Halt (आकस्मिक बजार बन्द — NEPSE Data Center Breach)',
   '2026-09-25': 'Indra Jatra',
   '2026-10-10': 'Ghatasthapana',
   '2026-10-17': 'Dashain (Phulpati)',
@@ -167,37 +166,59 @@ export function getIsoDateInNPT(date = new Date()) {
 let dynamicHaltMemory = null;
 
 /**
+ * Clears any dynamic emergency market halt immediately and broadcasts update event.
+ */
+export function clearDynamicMarketHalt() {
+  dynamicHaltMemory = null;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.removeItem('nepse_dynamic_emergency_halt');
+      window.dispatchEvent(new CustomEvent('nepse_market_halt_cleared'));
+    } catch (_) {}
+  }
+}
+
+/**
  * Sets or clears a dynamic market halt (e.g., detected by news scraper or server breach).
  * Persists to localStorage for resilience across page reloads.
  */
 export function setDynamicMarketHalt(haltInfo) {
+  if (!haltInfo || !haltInfo.isHalted) {
+    clearDynamicMarketHalt();
+    return;
+  }
   dynamicHaltMemory = haltInfo;
   if (typeof window !== 'undefined') {
     try {
-      if (haltInfo) {
-        localStorage.setItem('nepse_dynamic_emergency_halt', JSON.stringify(haltInfo));
-        window.dispatchEvent(new CustomEvent('nepse_market_halt_triggered', { detail: haltInfo }));
-      } else {
-        localStorage.removeItem('nepse_dynamic_emergency_halt');
-        window.dispatchEvent(new CustomEvent('nepse_market_halt_cleared'));
-      }
+      localStorage.setItem('nepse_dynamic_emergency_halt', JSON.stringify(haltInfo));
+      window.dispatchEvent(new CustomEvent('nepse_market_halt_triggered', { detail: haltInfo }));
     } catch (_) {}
   }
 }
 
 /**
  * Retrieves currently active dynamic market halt, if any.
+ * Stale records from previous dates are automatically purged.
  */
 export function getDynamicMarketHalt() {
-  if (dynamicHaltMemory) return dynamicHaltMemory;
+  if (dynamicHaltMemory) {
+    const todayIso = getIsoDateInNPT();
+    if (!dynamicHaltMemory.date || dynamicHaltMemory.date === todayIso) {
+      return dynamicHaltMemory;
+    }
+    dynamicHaltMemory = null;
+  }
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const item = localStorage.getItem('nepse_dynamic_emergency_halt');
       if (item) {
         const parsed = JSON.parse(item);
         const todayIso = getIsoDateInNPT();
-        if (!parsed.date || parsed.date === todayIso) {
+        if (parsed && (!parsed.date || parsed.date === todayIso)) {
           return parsed;
+        } else {
+          // Stale past date halt; purge immediately
+          localStorage.removeItem('nepse_dynamic_emergency_halt');
         }
       }
     } catch (_) {}

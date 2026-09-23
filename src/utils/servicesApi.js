@@ -10,10 +10,6 @@ const getProxy = () => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
       if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
-      const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
-      if (!isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-        return 'http://localhost:5000';
-      }
     }
     return 'https://nepseapp.onrender.com';
   } catch {
@@ -57,73 +53,84 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
     ? Math.min(ttlMs, 30 * 1000)
     : (ttlMs <= 360000 ? Math.max(ttlMs, 10 * 60 * 1000) : Math.min(ttlMs, 24 * 3600 * 1000));
 
-  try {
-    const url = PROXY + path;
-    const isNative = Capacitor.isNativePlatform();
+  const primary = getProxy();
+  const bases = [primary];
+  if (primary !== 'https://nepseapp.onrender.com') {
+    bases.push('https://nepseapp.onrender.com');
+  }
 
-    if (isNative) {
-      const res = await CapacitorHttp.request({
-        url,
-        method: options.body ? 'POST' : 'GET',
+  for (const base of bases) {
+    try {
+      const url = base + path;
+      const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+
+      if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
+        const res = await CapacitorHttp.request({
+          url,
+          method: options.body ? 'POST' : 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
+            ...(options.headers || {})
+          },
+          data: options.body || undefined,
+          connectTimeout: options.timeout || 15000,
+          readTimeout: options.timeout || 15000
+        });
+        if (res && res.status >= 200 && res.status < 300) {
+          const raw = res.data;
+          let json = null;
+          if (typeof raw === 'string') {
+            if (raw.trim().startsWith('<')) continue;
+            try { json = JSON.parse(raw); } catch { continue; }
+          } else {
+            json = raw;
+          }
+          if (json && json.success !== false) {
+            const data = json.data ?? json.results ?? json;
+            _setCache(cacheKey, data, ttlMs);
+            idbSet(cacheKey, data, idbTtl).catch(() => {});
+            return data;
+          }
+        }
+        continue;
+      }
+
+      const method = options.body ? 'POST' : 'GET';
+      const resp = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
-          ...(options.headers || {})
+          ...options.headers
         },
-        data: options.body || undefined,
-        connectTimeout: options.timeout || 25000,
-        readTimeout: options.timeout || 25000
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: AbortSignal.timeout(options.timeout || 15000),
       });
-      if (res.status >= 200 && res.status < 300) {
-        const json = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        if (json && json.success !== false) {
-          const data = json.data ?? json.results ?? json;
-          _setCache(cacheKey, data, ttlMs);
-          idbSet(cacheKey, data, idbTtl).catch(() => {});
-          return data;
-        }
-      }
-      // If network status fails, try stale IndexedDB cache for offline mode
-      const stale = await idbGet(cacheKey, true);
-      if (stale !== null) return stale;
-      return null;
-    }
+      if (!resp.ok) continue;
+      const ct = resp.headers.get('content-type') || '';
+      if (ct.includes('text/html')) continue; // Reject HTML response (e.g. SPA fallback)
 
-    const method = options.body ? 'POST' : 'GET';
-    const resp = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(forceRefresh ? { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } : {}),
-        ...options.headers
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: AbortSignal.timeout(options.timeout || 25000),
-    });
-    if (!resp.ok) {
-      const stale = await idbGet(cacheKey, true);
-      if (stale !== null) return stale;
-      return null;
+      const txt = await resp.text();
+      if (txt.trim().startsWith('<')) continue;
+      const json = JSON.parse(txt);
+      if (json && json.success !== false) {
+        const data = json.data ?? json.results ?? json;
+        _setCache(cacheKey, data, ttlMs);
+        idbSet(cacheKey, data, idbTtl).catch(() => {});
+        return data;
+      }
+    } catch (_) {
+      // Continue to next base proxy
     }
-    const json = await resp.json();
-    if (json.success === false) {
-      const stale = await idbGet(cacheKey, true);
-      if (stale !== null) return stale;
-      return null;
-    }
-    const data = json.data ?? json.results ?? json;
-    _setCache(cacheKey, data, ttlMs);
-    idbSet(cacheKey, data, idbTtl).catch(() => {});
-    return data;
-  } catch (err) {
-    console.warn('[servicesApi] Request failed:', path, err.message);
-    // Offline resilience: provide cached data from IndexedDB
-    try {
-      const stale = await idbGet(cacheKey, true);
-      if (stale !== null) return stale;
-    } catch (_) {}
-    return null;
   }
+
+  // Offline resilience: provide cached data from IndexedDB if all bases failed
+  try {
+    const stale = await idbGet(cacheKey, true);
+    if (stale !== null) return stale;
+  } catch (_) {}
+  return null;
 };
 
 export const fetchLiveStocks = () => _proxyFetch('/api/market-summary', {}, 15000);
@@ -138,7 +145,46 @@ export const fetchFloorsheet = (symbol, page, size, date) => {
   return _proxyFetch(path, {}, 300000);
 };
 
-export const fetchPriceHistory = (symbol, length) => _proxyFetch('/api/price-history/' + symbol + '?length=' + (length || 365), {}, 7200000);
+export const fetchPriceHistory = async (symbol, length) => {
+  const sym = String(symbol || '').toUpperCase().trim();
+  try {
+    const res = await _proxyFetch('/api/price-history/' + sym + '?length=' + (length || 365), {}, 7200000);
+    const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+    if (data && data.length > 0) return data;
+  } catch (_) {}
+
+  // Direct MeroLagani company graph fallback for individual equities
+  if (sym && sym !== 'NEPSE') {
+    try {
+      const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(sym)}`;
+      const resp = await fetch(mlUrl, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const j = await resp.json();
+        if (j && Array.isArray(j.quotes) && j.quotes.length > 0) {
+          return j.quotes.map(q => {
+            let dateIso = q.date;
+            if (q.date && q.date.includes('/')) {
+              const parts = q.date.split('/');
+              if (parts.length === 3) {
+                dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+              }
+            }
+            return {
+              date: dateIso,
+              open: Number(q.open || q.close),
+              high: Number(q.high || q.close),
+              low: Number(q.low || q.close),
+              close: Number(q.close),
+              volume: Number(q.volume || 0),
+              rsi: Number(q.rsi || 0)
+            };
+          });
+        }
+      }
+    } catch (_) {}
+  }
+  return [];
+};
 
 export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
   const sym = (!symbol || symbol === 'NEPSE Index' || symbol === 'nepse' || symbol === 'NEPSE')
@@ -185,6 +231,31 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
             close: t.rate,
             volume: t.qty
           }));
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Tier 3: Last-resort — synthesize today's session bar from locally-cached daily candle.
+  // Shown only when proxy AND floorsheet both failed (Render offline). Prevents blank 1D chart.
+  if (sym !== 'NEPSE') {
+    try {
+      const { getCachedRealPriceHistory } = await import('./liveData.js');
+      const hist = getCachedRealPriceHistory(sym);
+      if (Array.isArray(hist) && hist.length > 0) {
+        const last = hist[hist.length - 1];
+        if (last && last.close > 0) {
+          // Build a minimal 2-point intraday line: open at 11:00, close at current time / 15:00
+          const nowNPT = new Date(Date.now() + (5 * 60 + 45) * 60000);
+          const hNPT = nowNPT.getUTCHours();
+          const mNPT = nowNPT.getUTCMinutes();
+          const isMktOpen = hNPT >= 11 && (hNPT < 15 || (hNPT === 15 && mNPT === 0));
+          const openTs = Math.floor(new Date(Date.UTC(nowNPT.getUTCFullYear(), nowNPT.getUTCMonth(), nowNPT.getUTCDate(), 11 - 5, 60 - 45)).getTime() / 1000);
+          const closeTs = isMktOpen ? Math.floor(Date.now() / 1000) : Math.floor(new Date(Date.UTC(nowNPT.getUTCFullYear(), nowNPT.getUTCMonth(), nowNPT.getUTCDate(), 15 - 5, 60 - 45)).getTime() / 1000);
+          return [
+            { timestamp: openTs,  time: '11:00 AM', open: last.open  || last.close, high: last.high || last.close, low: last.low || last.close, close: last.open  || last.close, volume: 0, isCachedFallback: true },
+            { timestamp: closeTs, time: isMktOpen ? 'Now' : '3:00 PM', open: last.open || last.close, high: last.high || last.close, low: last.low || last.close, close: last.close, volume: last.volume || 0, isCachedFallback: true },
+          ];
         }
       }
     } catch (_) {}

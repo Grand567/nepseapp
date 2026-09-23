@@ -250,13 +250,28 @@ export async function runFullUniversePrimePick() {
   }
 }
 
+let lastPostMarketSessionAnalyzed = null;
+
 // Scheduled post-market close floorsheet reconciliation & prime pick verification worker
-export async function runPostMarketCloseAnalysis() {
-  console.log('[Post-Market Worker] Running post-market floorsheet & prime pick analysis...');
+export async function runPostMarketCloseAnalysis(force = false) {
+  const marketStatus = getDetailedMarketStatus();
+  const targetDate = marketStatus.targetSessionDate;
+
+  // STRICT USER DIRECTIVE: Day Prime Pick is selected ONCE after market close (>= 15:15 NPT)
+  // after collecting all present & past data. Once picked, it MUST remain the same until tomorrow before trading.
+  if (!force && lastPostMarketSessionAnalyzed === targetDate && cachedPostMarketPrimePick) {
+    console.log(`[Post-Market Worker] Day Prime Pick already finalized for ${targetDate} (${cachedPostMarketPrimePick.symbol}) — maintaining sealed pick.`);
+    return;
+  }
+
+  console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
+    if (cachedPostMarketPrimePick) {
+      lastPostMarketSessionAnalyzed = targetDate;
+    }
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
   }
@@ -267,22 +282,23 @@ export function startWorkers() {
   // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
 
-  // Check every 10 minutes to run post-close reconciliation after 3:15 PM NPT
+  // Check every 5 minutes: after 3:15 PM NPT (915 mins), run post-market close analysis ONCE
   setInterval(() => {
     try {
-      const now = new Date();
-      // UTC+5:45
-      const nptOffset = 5 * 60 + 45;
-      const utcMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-      const nptMins = (utcMins + nptOffset) % (24 * 60);
-      const isTradingDay = now.getUTCDay() >= 0 && now.getUTCDay() <= 4; // Sun-Thu
+      const status = getDetailedMarketStatus();
+      const nptMins = status.nptTotalMinutes;
+      const isTradingDay = status.isTradingDay;
 
-      // Between 3:15 PM (15:15 = 915 mins) and 11:59 PM (1439 mins) — full post-market window
+      // STRICT TIMING: Run AFTER market close with at least 10-15 minutes for data collection
+      // & floorsheet reconciliation (>= 15:15 NPT = 915 mins).
+      // Once picked, it stays locked for targetSessionDate until tomorrow!
       if (isTradingDay && nptMins >= 915 && nptMins <= 1439) {
-        runPostMarketCloseAnalysis();
+        if (lastPostMarketSessionAnalyzed !== status.targetSessionDate) {
+          runPostMarketCloseAnalysis();
+        }
       }
     } catch (_) {}
-  }, 10 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
   console.log('Background analytical workers started (Floorsheet + Post-Market Full-Universe Prime Pick Scanner).');
 }

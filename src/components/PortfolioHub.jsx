@@ -28,7 +28,7 @@ export default function PortfolioHub({
   }, [initialSubTab]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: 1 }}>
       {/* ── Institutional Segmented Navigation Switcher ── */}
       <div style={{
         position: 'sticky',

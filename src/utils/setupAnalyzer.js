@@ -791,6 +791,9 @@ function computeEffectiveWeights(availabilityMap, { analogSampleSize = 15 } = {}
 }
 
 export function scoreToVerdict(score, riskGate = {}, setupType = '') {
+  // ── HARD GATES (execution-safety) — never overridden by score ──────────
+  // These represent situations where trade execution itself is impossible or
+  // catastrophically risky regardless of how good the technical setup is.
   if (riskGate.isCircuitTrap) {
     return 'NO TRADE (CIRCUIT CEILING TRAP)';
   }
@@ -800,29 +803,43 @@ export function scoreToVerdict(score, riskGate = {}, setupType = '') {
   if (riskGate.isCriticalT2Lockup) {
     return 'NO TRADE (CRITICAL T+2 SETTLEMENT RISK)';
   }
+  if (riskGate.isInstitutionalDumping) {
+    return 'REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)';
+  }
+  if (riskGate.isHardCeilingDowntrend) {
+    return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
+  }
+  if (riskGate.isDeepHydroDryBreakout) {
+    return 'REDUCE / AVOID ENTRY (HYDRO DRY SEASON OVERHANG)';
+  }
+
+  // ── SOFT GATES (risk cautions) — high-conviction setups (score >= 78) ──
+  // receive a CAUTION notice rather than a hard veto, because a strong
+  // multi-factor score can legitimately outweigh these secondary concerns.
+  const highConviction = score >= 78;
+
   if (riskGate.isSubFriction) {
-    return 'NO TRADE (UPSIDE < TRANSACTION FRICTION)';
+    return highConviction
+      ? 'CAUTION — NEAR T1 TARGET (REVIEW T2 UPSIDE)'
+      : 'NO TRADE (UPSIDE < TRANSACTION FRICTION)';
   }
   if (riskGate.isUnfavorableRRR) {
-    return 'NO TRADE (UNFAVORABLE RISK/REWARD)';
+    return highConviction
+      ? 'CAUTION — RRR BORDERLINE (USE T2 FOR FULL R:R)'
+      : 'NO TRADE (UNFAVORABLE RISK/REWARD)';
   }
   if (riskGate.isFestiveLowVolumeTrap && score < 68) {
     return 'NO TRADE (FESTIVE CASH DRAIN / LOW RVOL)';
   }
   if (riskGate.isLossMaking) {
-    return 'HOLD / AVOID NEW ENTRY (OPERATING LOSS)';
-  }
-  if (riskGate.isInstitutionalDumping) {
-    return 'REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)';
-  }
-  if (riskGate.isDeepHydroDryBreakout) {
-    return 'REDUCE / AVOID ENTRY (HYDRO DRY SEASON OVERHANG)';
-  }
-  if (riskGate.isHardCeilingDowntrend) {
-    return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
+    return highConviction
+      ? 'HOLD / ACCUMULATE (VERIFY CURRENT EARNINGS — EPS MAY BE STALE)'
+      : 'HOLD / AVOID NEW ENTRY (OPERATING LOSS)';
   }
   if (riskGate.isOverheadResistanceCeiling) {
-    return 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
+    return highConviction
+      ? 'BUY / ACCUMULATE (200-EMA OVERHEAD — WATCH FOR BREAKOUT)'
+      : 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
   }
   if (riskGate.isExtremeMultiple) {
     return score >= 68
@@ -830,6 +847,7 @@ export function scoreToVerdict(score, riskGate = {}, setupType = '') {
       : 'HOLD / AVOID ENTRY (ELEVATED VALUATION)';
   }
 
+  // ── SCORE-BASED VERDICTS — reached when all gates pass or are overridden ─
   if (score >= 82) return setupType === 'coiled_pre_breakout' ? 'HIGH-CONVICTION COIL (AWAITING TRIGGER)' : 'VERY STRONG SETUP';
   if (score >= 70) return setupType === 'coiled_pre_breakout' ? 'COILED BASE (PRE-BREAKOUT RADAR)' : 'STRONG ENTRY ZONE';
   if (score >= 58) return 'BUY / ACCUMULATE';
@@ -1427,11 +1445,30 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const peVal = Number(stock?.peRatio || stock?.pe || 0);
   const pbVal = Number(stock?.pb || stock?.pbv || stock?.priceToBook || 0);
   const pePbMultiple = epsVal > 0 && peVal > 0 && pbVal > 0 ? peVal * pbVal : 0;
-  const isLossMaking = stock?.eps !== undefined && epsVal < 0;
+
+  // Guard against stale EPS: NEPSE announces annual results during Ashwin-Poush (Oct-Jan).
+  // If the stored EPS is from a fiscal year > 2 years ago, it may reflect a prior loss that
+  // has since been reversed — treat as potentially stale and apply only a soft penalty.
+  const epsYear = Number(stock?.epsYear || stock?.fiscalYear || 0);
+  const epsUpdatedAt = stock?.epsUpdatedAt || stock?.fundamentalsUpdatedAt || null;
+  let epsIsStale = false;
+  if (epsYear > 0) {
+    epsIsStale = (new Date().getFullYear() - epsYear) > 2;
+  } else if (epsUpdatedAt) {
+    const updatedMs = typeof epsUpdatedAt === 'string' ? new Date(epsUpdatedAt).getTime() : Number(epsUpdatedAt);
+    epsIsStale = !isNaN(updatedMs) && (Date.now() - updatedMs) > 2 * 365 * 24 * 60 * 60 * 1000;
+  }
+
+  // isLossMaking triggers the hard gate. Only activate when EPS is confirmed negative
+  // AND the data is not potentially stale (within the last 2 fiscal years).
+  const isLossMaking = stock?.eps !== undefined && epsVal < 0 && !epsIsStale;
   const isExtremeMultiple = pePbMultiple > 50 || peVal > 75;
 
   if (isLossMaking) {
     combinedScore = Math.max(10, +(combinedScore - 15).toFixed(1));
+  } else if (epsVal < 0 && epsIsStale) {
+    // Stale negative EPS: apply a lighter penalty (5 pts) and warn but don't hard-gate
+    combinedScore = Math.max(20, +(combinedScore - 5).toFixed(1));
   } else if (isExtremeMultiple) {
     combinedScore = Math.max(15, +(combinedScore - 8).toFixed(1));
   }
@@ -1748,10 +1785,15 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const isCircuitTrap = distToCeilingPct <= 2.0 || (prevClose > 0 && ltp >= prevClose * 1.13); // Within 2% of +15% ceiling
 
   const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
-  // Round-trip fee friction requires ~0.8-0.9% gain to clear commission, SEBON fee & CGT
-  const isSubFriction = target1UpsidePct > 0 && target1UpsidePct < 0.90;
+  const target2UpsidePct = ltp > 0 ? ((levels.target2.price - ltp) / ltp) * 100 : 0;
+  // Only block if BOTH T1 and T2 upside fail to clear round-trip friction.
+  // When T2 still has meaningful upside (>= 1.8%), the investor should target T2.
+  const isSubFriction = target1UpsidePct > 0 && target1UpsidePct < 0.90 && target2UpsidePct < 1.80;
 
-  const isUnfavorableRRR = levels.rrr1 > 0 && levels.rrr1 < 1.4;
+  // Only block if BOTH T1 and T2 have unfavorable risk/reward.
+  // When T2 offers >= 1.8:1 R:R, the setup can still be valid — investor
+  // should target T2 instead of T1 for acceptable reward.
+  const isUnfavorableRRR = levels.rrr1 > 0 && levels.rrr1 < 1.4 && levels.rrr2 > 0 && levels.rrr2 < 1.8;
 
   const ema50Val = technicalReport?.trend?.ema?.ema50 || 0;
   const ema200Val = technicalReport?.trend?.ema?.ema200 || Number(stock?.ema200 || stock?.sma200 || 0);

@@ -20,8 +20,9 @@ export default function PullToRefresh({
   // Check if container is scrolled to top
   const isAtTop = useCallback(() => {
     if (!containerRef.current) return true;
-    const el = containerRef.current;
-    return el.scrollTop <= 0;
+    const mainEl = containerRef.current.closest('main');
+    if (mainEl && mainEl.scrollTop > 0) return false;
+    return containerRef.current.scrollTop <= 0 && (typeof window !== 'undefined' ? window.scrollY <= 0 : true);
   }, []);
 
   // Touch Start
@@ -51,6 +52,9 @@ export default function PullToRefresh({
         e.preventDefault();
       }
     } else {
+      if (diff < -5) {
+        isDraggingRef.current = false;
+      }
       setPullDistance(0);
       setIsPulling(false);
     }
@@ -141,9 +145,6 @@ export default function PullToRefresh({
       style={{
         position: 'relative',
         width: '100%',
-        height: '100%',
-        overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
         touchAction: isPulling ? 'none' : 'pan-y'
       }}
     >
