@@ -87,7 +87,7 @@ export function BrokerFlowDominanceService({
       const days = DAYS_MAP[activeTf] || 1;
       const [liveDataRes, fsRes, hmRes] = await Promise.allSettled([
         loadNepseData(),
-        fetchFloorSheet(),
+        fetchFloorSheet(500),
         fetchBrokerHeatmap({ days })
       ]);
       if (liveDataRes.status === 'fulfilled') {

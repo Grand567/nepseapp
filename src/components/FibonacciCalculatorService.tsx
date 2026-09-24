@@ -15,14 +15,15 @@ export function FibonacciCalculatorService() {
   useEffect(() => {
     loadNepseData().then(({ stocks }) => {
       setStocks(stocks);
-      const sel = stocks.find(s => (s.symbol || '').toUpperCase() === 'NABIL');
+      const sel = stocks.find(s => (s.symbol || '').toUpperCase() === 'NABIL') || stocks[0];
       if (sel) {
-        const ltp = Number(sel.ltp || 540);
-        const hi = Number(sel.high52w || ltp * 1.3);
-        const lo = Number(sel.low52w || ltp * 0.7);
+        const ltp = Number(sel.ltp || sel.closePrice || 100);
+        const hi = Number(sel.high52w || (sel.high ? sel.high * 1.05 : ltp * 1.25));
+        const lo = Number(sel.low52w || (sel.low ? sel.low * 0.95 : ltp * 0.75));
+        setSymbol(sel.symbol || 'NABIL');
         setCurrentLtp(ltp);
-        setHighPrice(hi);
-        setLowPrice(lo);
+        setHighPrice(Math.round(hi));
+        setLowPrice(Math.round(lo));
       }
     });
   }, []);

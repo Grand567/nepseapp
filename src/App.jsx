@@ -27,7 +27,7 @@ import { getUpcomingHolidays } from './utils/bikramSambat.js';
 
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
 import { getDetailedMarketStatus, clearDynamicMarketHalt } from './utils/nepseCalendar';
-import { MOCK_DATA_DISABLED } from './utils/mockData';
+// MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
 
 // Real data only - No mock fallback
@@ -444,6 +444,7 @@ function AppInner() {
         let hasFreshData = false;
 
         // 1. Process Stock Data if available
+        const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
         const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
         const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
 
@@ -453,29 +454,30 @@ function AppInner() {
           liveStocksRef.current = currentStocks;
           setStocks(currentStocks);
           const isLive = Boolean(status?.isOpen);
-          setApiStatus(isLive ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
-          if (isRealFeed) saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
-          hasFreshData = true;
+          setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+          if (isFresh) {
+            saveCachedStocks(currentStocks);
+            hasFreshData = true;
+          }
         }
 
         // 2. Process Indices — always prioritize real live exchange index from proxy/market
-        if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder) {
+        const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
+        if (hasFreshIndices) {
           setIndices(liveIndices);
           saveCachedIndices(liveIndices);
           hasFreshData = true;
         } else if (currentStocks && currentStocks.length > 0) {
           const computed = calculateIndices(currentStocks);
           setIndices(computed);
-          // Only persist if it's not a placeholder (i.e. MEM_SUMMARY has real live nepseIndex)
           if (!computed.isPlaceholder) saveCachedIndices(computed);
-          hasFreshData = true;
         }
 
         if (hasFreshData) {
           clearDynamicMarketHalt();
           const freshStatus = getDetailedMarketStatus();
           setMarketStatus(freshStatus);
-          setApiStatus(freshStatus.isOpen ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+          setApiStatus(freshStatus.isOpen ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
           setLastSyncTime(new Date());
           consecutiveErrors = 0;
         }
@@ -537,6 +539,7 @@ function AppInner() {
       let currentStocks = stocks;
       let hasFreshData = false;
 
+      const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
       const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
       const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
 
@@ -546,13 +549,16 @@ function AppInner() {
         liveStocksRef.current = currentStocks;
         setStocks(currentStocks);
         const isLive = Boolean(status?.isOpen);
-        setApiStatus(isLive ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
-        if (isRealFeed) saveCachedStocks(currentStocks); // persist for next session as "yesterday's data"
-        hasFreshData = true;
+        setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+        if (isFresh) {
+          saveCachedStocks(currentStocks);
+          hasFreshData = true;
+        }
       }
 
       // Process Indices in manual refresh
-      if (liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder) {
+      const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
+      if (hasFreshIndices) {
         setIndices(liveIndices);
         saveCachedIndices(liveIndices);
         hasFreshData = true;
@@ -560,16 +566,13 @@ function AppInner() {
         const computed = calculateIndices(currentStocks);
         setIndices(computed);
         if (!computed.isPlaceholder) saveCachedIndices(computed);
-        hasFreshData = true;
       }
-
-
 
       if (hasFreshData) {
         clearDynamicMarketHalt();
         const freshStatus = getDetailedMarketStatus();
         setMarketStatus(freshStatus);
-        setApiStatus(freshStatus.isOpen ? 'live' : (response?.source === 'closing' ? 'closing' : 'yesterday'));
+        setApiStatus(freshStatus.isOpen ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
         setLastSyncTime(new Date());
       }
     } catch (err) {
@@ -671,8 +674,14 @@ function AppInner() {
               title="Click to view NEPSE Calendar & Holidays"
             >
               <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                {Number(indices?.nepse?.value ?? 2654.28).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
-                {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(indices?.nepse?.change != null ? Number(indices.nepse.change) : 7.06).toFixed(2)} pts ({nepseChange >= 0 ? '+' : '-'}{Math.abs(indices?.nepse?.pChange ?? 0.26).toFixed(2)}%)
+                {indices?.nepse?.value > 0 ? (
+                  <>
+                    {Number(indices.nepse.value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
+                    {nepseChange >= 0 ? '▲ +' : '▼ -'}{Math.abs(Number(indices?.nepse?.change || 0)).toFixed(2)} pts ({nepseChange >= 0 ? '+' : '-'}{Math.abs(Number(indices?.nepse?.pChange || 0)).toFixed(2)}%)
+                  </>
+                ) : (
+                  'NEPSE Index — Fetching Live...'
+                )}
               </span>
             </div>
           </div>

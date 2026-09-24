@@ -86,6 +86,26 @@ export function BreakoutPanel({ breakout, setupType }: BreakoutPanelProps) {
           <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-800/40 text-xs text-emerald-300 leading-relaxed">
             {breakout.description}
           </div>
+
+          {(breakout as any).bullTrapRisk && (
+            <div className="p-3 rounded-xl bg-red-950/30 border border-red-800/50 text-xs text-red-300 leading-relaxed flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-red-200">⚠️ NEPSE T+2 Bull Trap Warning:</span>{' '}
+                Upper wick rejection indicates supply hit bids near the highs. Avoid chasing this move today to prevent being trapped in unexecutable drawdowns before shares arrive in your Demat (T+2). Wait for a confirmed retest.
+              </div>
+            </div>
+          )}
+
+          {breakout.retestConfirmed && (
+            <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-700/50 text-xs text-emerald-300 leading-relaxed flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-emerald-200">🟢 High-Conviction T+2 Retest:</span>{' '}
+                Prior resistance has flipped into confirmed support on contracting volume (Dry Up). Supply from the initial breakout has been absorbed by institutional buyers.
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/80 text-center space-y-1">

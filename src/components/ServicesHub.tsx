@@ -46,6 +46,8 @@ import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
 import { AlphaPlaybookService } from './AlphaPlaybookService';
+import { AccumulationDistributionRadar } from './AccumulationDistributionRadar';
+import { BreakoutTrapRadar } from './BreakoutTrapRadar';
 import ProGate from './ProGate';
 
 export const PRO_SERVICE_IDS = new Set<string>([
@@ -157,7 +159,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'alpha-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'flagship', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
   { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
-  { id: 'stealth-accumulation-tracker', name: 'Stealth Accumulation', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'stealth-accumulation-tracker', name: 'Accumulation & Distribution Radar', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
   { id: 'graham-intrinsic', name: 'Graham Intrinsic Value', icon: Award, color: 'blue', cat: 'flagship', star: true },
   { id: 'decision-probability', name: 'Decision Probability', icon: Target, color: 'purple', cat: 'flagship', star: true },
   { id: 'dividend-history', name: 'Dividend Track Record', icon: TrendingUp, color: 'emerald', cat: 'flagship', star: true },
@@ -169,7 +171,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
 
   { id: 'ai-momentum', name: 'AI Momentum', icon: Zap, color: 'emerald', cat: 'traders', star: true },
-  { id: 'breakout-stocks', name: 'Breakout Stocks', icon: Flame, color: 'rose', cat: 'traders', star: true },
+  { id: 'breakout-stocks', name: 'Breakout & Trap Radar', icon: Zap, color: 'purple', cat: 'flagship', star: true },
   { id: 'volume-shockers', name: 'Volume Shockers', icon: Zap, color: 'yellow', cat: 'traders', star: true },
   { id: 'technical-ratings', name: 'Technical Ratings', icon: Award, color: 'emerald', cat: 'traders', star: true },
   { id: 'players-choices', name: 'Players Choices', icon: Users, color: 'purple', cat: 'traders', star: true },
@@ -314,11 +316,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'success', text: 'Momentum with volume confirmation. Wired to /top-gainer + /PriceVolume.' }}
       insight="Momentum + 2× volume often continues for 3–5 sessions. Trail stops under prior-day low." />
   ),
-  'breakout-stocks': () => (
-    <UniversalScreener filterFn={(s) => s.isBreakout} sortFn={(a, b) => b.volume - a.volume}
-      banner={{ type: 'success', text: 'Volume-confirmed breakouts (52W proximity + 3% thrust). Wired to /today-price + /trading-average.' }}
-      insight="Enter in the first 30 minutes with a 5–7% stop-loss. Avoid breakouts on thin volume." />
-  ),
+  'breakout-stocks': BreakoutTrapRadar,
   'volume-shockers': () => (
     <UniversalScreener filterFn={(s) => s.isVolumeShocker} sortFn={(a, b) => b.volumeZScore - a.volumeZScore}
       customCols={[{ key: 'volumeZScore', label: 'Z-Score', align: 'right', bold: true, format: (v) => (v != null ? `${v.toFixed(1)}σ` : '—') }]}
@@ -481,12 +479,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'info', text: 'What % of free float traded today. Wired to /supplydemand.' }}
       insight="Float turnover above 2% = unusually high activity — something is happening." />
   ),
-  'stealth-accumulation': () => (
-    <UniversalScreener sortFn={(a, b) => b.stealthAccumulation - a.stealthAccumulation} filterFn={(s) => s.stealthAccumulation > 40}
-      customCols={[{ key: 'stealthAccumulation', label: 'Accum.', align: 'right', bold: true, format: (v) => (v ? `${v.toFixed(0)}%` : '—') }]}
-      banner={{ type: 'success', text: 'Quiet accumulation detector — flat price + rising volume.' }}
-      insight="Stealth phases last 2–4 weeks before major moves. Position before the crowd." />
-  ),
+  'stealth-accumulation': AccumulationDistributionRadar,
 
   // Live data
   'live-market': () => (
@@ -742,22 +735,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'edit': PreferencesSettingsService,
 
   // Smart money
-  'stealth-accumulation-tracker': () => (
-    <UniversalScreener sortFn={(a, b) => b.stealthAccumulation - a.stealthAccumulation} filterFn={(s) => s.stealthAccumulation > 40}
-      customCols={[{ key: 'stealthAccumulation', label: 'Score', align: 'right', bold: true, format: (v) => `${v}%` }]}
-      banner={{ type: 'success', text: 'Stealth accumulation tracker — quiet buying before the move.' }}
-      insight="Position before the public notices; confirm with a volume breakout." />
-  ),
+  'stealth-accumulation-tracker': AccumulationDistributionRadar,
   'aggressive-accumulators': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio > 2}
       banner={{ type: 'success', text: 'Aggressive buying: green day on 2×+ volume.' }}
       insight="Follow strong hands accumulating with size." />
   ),
-  'distribution-leaders': () => (
-    <UniversalScreener filterFn={(s) => s.pChange < 0 && s.volume > 20000} sortFn={(a, b) => a.pChange - b.pChange}
-      banner={{ type: 'warning', text: 'Distribution-phase names — heavy selling into weakness.' }}
-      insight="Exit or avoid where distribution is confirmed; do not bottom-fish." />
-  ),
+  'distribution-leaders': AccumulationDistributionRadar,
   'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
   'aggressive-holdings': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 2 && s.volumeSurgeRatio > 1.5}

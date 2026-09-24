@@ -11,7 +11,7 @@
  *   - ./mockData.js (calculatePivotPoints, calculateFibonacci)
  */
 
-import { calculatePivotPoints, calculateFibonacci } from './mockData.js';
+import { calculatePivotPoints, calculateFibonacci } from './indicators.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // 1. SWING EXTRACTOR & MARKET STRUCTURE

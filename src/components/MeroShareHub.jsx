@@ -17,7 +17,7 @@ import {
   applyIpoDirect
 } from '../services/meroShareService';
 import { getProxyBase } from '../utils/liveData';
-import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap } from '../utils/calculations';
+import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap, calculateIpoAllotmentProbability } from '../utils/calculations';
 import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
@@ -2180,6 +2180,38 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                               </div>
                             </div>
                           </div>
+
+                          {(() => {
+                            const allotment = calculateIpoAllotmentProbability({
+                              generalPublicUnits: activeIpo.generalPublicUnits || activeIpo.units,
+                              totalApplicants: activeIpo.totalApplicants || activeIpo.applicants,
+                              oversubscriptionTimes: activeIpo.oversubscriptionTimes || activeIpo.times,
+                              appliedKitta: Number(customAppliedKitta) || 10
+                            });
+                            return (
+                              <div style={{ background: 'rgba(59, 130, 246, 0.05)', border: '1.5px solid rgba(59, 130, 246, 0.2)', padding: 14, marginBottom: 16, borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <h4 style={{ fontSize: 14, fontWeight: 800, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                                    <ShieldCheck style={{ width: 16, height: 16 }} /> SEBON 10-Kitta Allotment Probability
+                                  </h4>
+                                  <span style={{
+                                    fontSize: 11.5,
+                                    fontWeight: 800,
+                                    padding: '3px 8px',
+                                    borderRadius: 6,
+                                    background: allotment.probabilityPct >= 100 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                                    color: allotment.probabilityPct >= 100 ? '#10b981' : '#38bdf8',
+                                    border: allotment.probabilityPct >= 100 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(56, 189, 248, 0.3)'
+                                  }}>
+                                    {allotment.probabilityPct != null ? `${allotment.probabilityPct}% (${allotment.allotmentType === 'guaranteed' ? 'Guaranteed' : 'Lottery'})` : 'Subscription Pending'}
+                                  </span>
+                                </div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}>
+                                  {allotment.explanation}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })()}
@@ -3076,9 +3108,9 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                             onClick={handleResetHoldings}
                             className="btn-secondary"
                             style={{ fontSize: 9, padding: '2px 6px', color: 'var(--text-muted)', borderColor: 'var(--border)', cursor: 'pointer', height: 'auto' }}
-                            title="Reset portfolio to default mock holdings"
+                            title="Clear cached holdings and re-fetch from CDSC"
                           >
-                            Reset Defaults
+                            Reset Holdings
                           </button>
                           <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>CDSC Secure Feed</span>
                         </div>

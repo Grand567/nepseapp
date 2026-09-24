@@ -71,6 +71,7 @@ import {
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
+import { getCachedRealPriceHistory } from './liveData.js';
 
 // ══════════════════════════════════════════════════════════════════
 // 0.  CONSTANTS
@@ -1192,13 +1193,22 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   // ── Normalise & guard ──────────────────────────────────────────
-  const candles = toAscendingCandles(rawCandles);
+  let candles = toAscendingCandles(rawCandles);
+
+  if (candles.length < MIN_HISTORY_DAYS && stock?.symbol) {
+    const cached = getCachedRealPriceHistory(stock.symbol);
+    if (Array.isArray(cached) && cached.length >= MIN_HISTORY_DAYS) {
+      candles = toAscendingCandles(cached);
+      dataSource = { real: true, source: 'cached_real', disclosed: true };
+    }
+  }
 
   if (candles.length < MIN_HISTORY_DAYS) {
     return {
       supported: false,
-      reason: `Need at least ${MIN_HISTORY_DAYS} trading days of price history — this stock has ${candles.length}.`,
-      dataSource,
+      status: 'insufficient_history',
+      reason: `Insufficient trading history: Need at least ${MIN_HISTORY_DAYS} genuine trading days of historical price data — scrip has ${candles.length}. Real data only.`,
+      dataSource: { real: false, source: 'insufficient_history', disclosed: true },
     };
   }
 
@@ -1352,8 +1362,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   // ── Technical / momentum snapshots ─
-  let technicalScore   = technicalReport?.score ?? 50;
-  let momentumScore100 = technicalReport?.momentum?.score ?? 50;
+  let technicalScore   = technicalReport?.score ?? (calculateCompositeTechnicalScore(stock)?.normalizedScore || 50);
+  let momentumScore100 = technicalReport?.momentum?.score ?? Math.max(15, Math.min(85, Math.round(50 + (Number(stock?.pChange || 0) * 4.5))));
   let techDataAvailable = Boolean(technicalReport?.supported);
 
   try {
@@ -1590,7 +1600,15 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const brokerCornering = calculateBrokerCorneringScore(options.brokerAnalysis || stock?.brokerAnalysis);
   const t2CircuitGuard = calculateT2CircuitTrapGuard(stock, adjustedCandles);
 
-  const empiricalWinRate = analogWinRate ?? strategyWinRate ?? 52;
+  const dynamicBaseWinRate = Math.max(32, Math.min(76, +(
+    42 + 
+    (minerviniTemplate.passedCount * 2.2) + 
+    (minerviniTemplate.isStage2Uptrend ? 4 : -4) +
+    (volumeDryUp.isPocketPivot ? 4 : volumeDryUp.isDryUp ? 2 : 0) +
+    (((brokerCornering?.score || 50) - 50) * 0.15) +
+    (pChange > 0 ? Math.min(4, pChange * 0.8) : Math.max(-5, pChange * 0.8))
+  ).toFixed(1)));
+  const empiricalWinRate = analogWinRate ?? strategyWinRate ?? dynamicBaseWinRate;
   const avgWinAmt = Math.max(1, (levels.target1.price - ltp) * 100);
   const avgLossAmt = Math.max(1, (ltp - stopLossPrice) * 100);
   const expectancy = calculateExpectancy(empiricalWinRate, avgWinAmt, avgLossAmt);
@@ -1645,26 +1663,37 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   }
 
   if (technicalReport?.momentum) {
-    if (technicalReport.momentum.rsi14 >= 50 && technicalReport.momentum.rsi14 <= 70) {
-      bullishFactors.push(`Healthy RSI momentum at ${technicalReport.momentum.rsi14.toFixed(1)} with upward room`);
-    } else if (technicalReport.momentum.rsi14 > 70) {
-      bearishFactors.push(`RSI extended in overbought territory (${technicalReport.momentum.rsi14.toFixed(1)}) — potential pullback risk`);
-    } else {
-      bearishFactors.push(`RSI momentum subdued at ${technicalReport.momentum.rsi14.toFixed(1)}`);
+    const rsiRaw = technicalReport.momentum.rsi14;
+    if (rsiRaw !== null && rsiRaw !== undefined && !isNaN(Number(rsiRaw))) {
+      const rsiNum = Number(rsiRaw);
+      if (rsiNum >= 50 && rsiNum <= 70) {
+        bullishFactors.push(`Healthy RSI momentum at ${rsiNum.toFixed(1)} with upward room`);
+      } else if (rsiNum > 70) {
+        bearishFactors.push(`RSI extended in overbought territory (${rsiNum.toFixed(1)}) — potential pullback risk`);
+      } else {
+        bearishFactors.push(`RSI momentum subdued at ${rsiNum.toFixed(1)}`);
+      }
     }
-    const macdHist = technicalReport.momentum.macd?.histogram ?? technicalReport.momentum.macdHistogram ?? 0;
-    if (macdHist > 0) {
-      bullishFactors.push(`Positive MACD histogram (+${macdHist.toFixed(2)}) indicating bullish acceleration`);
-    } else {
-      bearishFactors.push(`Negative MACD histogram (${macdHist.toFixed(2)}) reflecting downward pressure`);
+    const macdHistRaw = technicalReport.momentum.macd?.histogram ?? technicalReport.momentum.macdHistogram ?? 0;
+    const macdHist = Number(macdHistRaw || 0);
+    if (!isNaN(macdHist) && macdHist !== 0) {
+      if (macdHist > 0) {
+        bullishFactors.push(`Positive MACD histogram (+${macdHist.toFixed(2)}) indicating bullish acceleration`);
+      } else {
+        bearishFactors.push(`Negative MACD histogram (${macdHist.toFixed(2)}) reflecting downward pressure`);
+      }
     }
   }
 
   if (technicalReport?.volume) {
-    if (technicalReport.volume.rvol >= 1.2) {
-      bullishFactors.push(`Volume surge: RVOL is ${technicalReport.volume.rvol.toFixed(2)}x above 20-day baseline`);
-    } else if (technicalReport.volume.rvol < 0.8) {
-      bearishFactors.push(`Subdued trading activity: RVOL is ${technicalReport.volume.rvol.toFixed(2)}x baseline`);
+    const rvolRaw = technicalReport.volume.rvol;
+    if (rvolRaw !== null && rvolRaw !== undefined && !isNaN(Number(rvolRaw))) {
+      const rvolNum = Number(rvolRaw);
+      if (rvolNum >= 1.2) {
+        bullishFactors.push(`Volume surge: RVOL is ${rvolNum.toFixed(2)}x above 20-day baseline`);
+      } else if (rvolNum < 0.8) {
+        bearishFactors.push(`Subdued trading activity: RVOL is ${rvolNum.toFixed(2)}x baseline`);
+      }
     }
     if (technicalReport.volume.trend === 'accumulating') {
       bullishFactors.push('Smart money volume accumulation signature detected on up days');
@@ -1774,8 +1803,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     ...(festivalSeason.isFestiveLull ? [`⚠️ Festive Seasonality Alert: ${festivalSeason.detail} (RVOL hurdle: ${festivalSeason.rvolThreshold}x)`] : []),
     ...(festivalSeason.isTaxDrain ? [`⚠️ Advance Corporate Tax Outflow: ${festivalSeason.detail}`] : []),
     ...(priceActionReport?.breakout?.bullTrapRisk ? ['⚠️ Potential bull trap: candle formed upper rejection wick > 40% of range'] : []),
-    ...(technicalReport?.momentum?.rsi14 > 75 ? [`⚠️ Extreme overbought condition (RSI ${technicalReport.momentum.rsi14.toFixed(1)}) — avoid chasing extended moves`] : []),
-    ...(resolvedRvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${resolvedRvol.toFixed(2)}x) — risk of exit slippage`] : []),
+    ...(technicalReport?.momentum?.rsi14 != null && !isNaN(Number(technicalReport.momentum.rsi14)) && Number(technicalReport.momentum.rsi14) > 75 ? [`⚠️ Extreme overbought condition (RSI ${Number(technicalReport.momentum.rsi14).toFixed(1)}) — avoid chasing extended moves`] : []),
+    ...(resolvedRvol < 0.7 ? [`⚠️ Low volume participation (RVOL ${(Number(resolvedRvol) || 1).toFixed(2)}x) — risk of exit slippage`] : []),
   ];
 
   // ── Risk & Execution Gate (Section 1, 6.2, 6.3) ───────────────

@@ -12,12 +12,11 @@ import ProGate from './ProGate';
 import {
   generateSparkline,
   SECTORS,
-  calculatePivotPoints,
-  calculateFibonacci,
   getPeerStocks,
-  runStockScanners,
   getMarketNews
-} from '../utils/mockData';
+} from '../utils/calculations';
+import { calculatePivotPoints, calculateFibonacci } from '../utils/indicators';
+import { runStockScanners } from '../utils/quantEngine';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
@@ -1447,6 +1446,8 @@ export default function Dashboard({
     return false;
   }, Boolean(activeScanner || breadthModalTab || showSubIndicesModal || showTVModal), 30);
 
+  const primeDailyPickRef = useRef(null);
+
   const handleStockClick = (stock) => {
     if (!stock) return;
     const sym = String(typeof stock === 'string' ? stock : (stock.symbol || stock.scrip || '')).toUpperCase().trim();
@@ -1457,15 +1458,16 @@ export default function Dashboard({
       targetStock = { ...foundMaster, ...targetStock };
     }
 
-    if (primeDailyPick && String(primeDailyPick.symbol || '').toUpperCase().trim() === sym) {
+    const currentPrimePick = primeDailyPickRef.current;
+    if (currentPrimePick && String(currentPrimePick.symbol || '').toUpperCase().trim() === sym) {
       targetStock = {
         ...targetStock,
-        ...primeDailyPick,
+        ...currentPrimePick,
         isPlanVerified: true,
-        companyName: targetStock.companyName || targetStock.name || primeDailyPick.companyName || sym,
+        companyName: targetStock.companyName || targetStock.name || currentPrimePick.companyName || sym,
         sector: (targetStock.sector && targetStock.sector !== 'Unknown' && targetStock.sector !== 'NEPSE') 
           ? targetStock.sector 
-          : (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' ? primeDailyPick.sector : 'Commercial Banks')
+          : (currentPrimePick.sector && currentPrimePick.sector !== 'Unknown' ? currentPrimePick.sector : 'Commercial Banks')
       };
     }
 
@@ -1528,7 +1530,7 @@ export default function Dashboard({
   const [heroChartMode, setHeroChartMode] = useState('line');
   const [activeHeroIndex, setActiveHeroIndex] = useState(() => {
     const cached = getCachedIndices();
-    const fallbackNepse = cached?.nepse || { value: 2654.28, change: 7.06, pChange: 0.26, turnover: 7050398624.96 };
+    const fallbackNepse = (cached?.nepse?.value > 0) ? cached.nepse : { value: 0, change: 0, pChange: 0, turnover: 0 };
     return {
       name: "NEPSE Index",
       key: "nepse",
@@ -1645,8 +1647,8 @@ export default function Dashboard({
         if ((!data || !Array.isArray(data) || data.length === 0) && sym !== 'NEPSE') {
           const nepseData = await fetchPriceHistory('NEPSE', 500);
           if (nepseData && Array.isArray(nepseData) && nepseData.length > 0) {
-            const nepseClose = Number(nepseData[nepseData.length - 1]?.close || 2654.28);
-            const targetVal = Number(currentHeroValue || 1000);
+            const nepseClose = Number(nepseData[nepseData.length - 1]?.close || currentHeroValue || 0);
+            const targetVal = Number(currentHeroValue || nepseClose || 0);
             const scaleFactor = nepseClose > 0 ? (targetVal / nepseClose) : 1;
             data = nepseData.map(d => ({
               ...d,
@@ -1857,11 +1859,15 @@ export default function Dashboard({
     });
     const priorityCandidates = Array.from(candidateMap.values()).slice(0, 25);
 
+    const todayStr = new Date().toISOString().slice(0, 10);
     const neededFetches = priorityCandidates.filter(s => {
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
       const h = getCachedRealPriceHistory(sym);
       const b = getCachedRealBrokerAnalysis(sym);
-      return !h || h.length < 60 || !b;
+      if (!h || h.length < 60 || !b) return true;
+      const lastCandle = h[h.length - 1];
+      const lastDate = lastCandle?.date ? String(lastCandle.date).slice(0, 10) : '';
+      return Boolean(lastDate && lastDate < todayStr);
     });
 
     if (neededFetches.length === 0) return;
@@ -1871,7 +1877,12 @@ export default function Dashboard({
       neededFetches.map(async (s) => {
         const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
         const promises = [];
-        if (!getCachedRealPriceHistory(sym)) {
+        const h = getCachedRealPriceHistory(sym);
+        const lastCandle = h?.[h.length - 1];
+        const lastDate = lastCandle?.date ? String(lastCandle.date).slice(0, 10) : '';
+        const isHistoryStale = !h || h.length < 60 || (lastDate && lastDate < todayStr);
+
+        if (isHistoryStale) {
           promises.push(fetchPriceHistory(sym, 500));
         }
         if (!getCachedRealBrokerAnalysis(sym)) {
@@ -2010,6 +2021,7 @@ export default function Dashboard({
       candidate = masterBreakoutPipeline.primeDailyPick;
     }
 
+    primeDailyPickRef.current = candidate;
     return candidate;
   }, [masterBreakoutPipeline.primeDailyPick, hydratedPrimePick]);
 
@@ -2444,12 +2456,13 @@ export default function Dashboard({
     });
   }, [watchedStocks, alertConfigs]);
 
-  const fallbackHero = getCachedIndices()?.nepse || { value: 2654.28, change: 7.06, pChange: 0.26, turnover: 7050398624.96 };
+  const cachedNepseHero = getCachedIndices()?.nepse;
+  const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : { value: 0, change: 0, pChange: 0, turnover: 0 };
   const heroVal = activeHeroIndex?.isStock
-    ? (activeHeroIndex.val || { value: 100, change: 0, pChange: 0 })
-    : (((activeHeroIndex.key === 'nepse' || activeHeroIndex.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
+    ? (activeHeroIndex.val || { value: 0, change: 0, pChange: 0, turnover: 0 })
+    : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
         ? indices.nepse
-        : (activeHeroIndex.val || indices?.nepse || fallbackHero));
+        : (activeHeroIndex?.val || indices?.nepse || fallbackHero));
   const isHeroBull = (heroVal.pChange || 0) >= 0 || (heroVal.change || 0) >= 0;
 
   const heroTfStats = useMemo(() => {
@@ -2966,7 +2979,7 @@ export default function Dashboard({
                       {bo.symbol}
                     </strong>
                     <span style={{ color: '#34d399', fontSize: 11.5, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      Rs. {fmt(bo.ltp)} (+{bo.pChange.toFixed(2)}%)
+                      Rs. {fmt(bo.ltp)} (+{(Number(bo.pChange) || 0).toFixed(2)}%)
                     </span>
                     <span style={{
                       color: '#fbbf24',
@@ -2976,7 +2989,7 @@ export default function Dashboard({
                       padding: '1px 5px',
                       borderRadius: 4
                     }}>
-                      Vol: {bo.rvol >= 1 ? `${bo.rvol.toFixed(1)}x` : fmt(bo.volume)}
+                      Vol: {bo.rvol != null && Number(bo.rvol) >= 1 ? `${(Number(bo.rvol) || 1).toFixed(1)}x` : fmt(bo.volume)}
                     </span>
                   </div>
                 ))}
@@ -3074,8 +3087,7 @@ export default function Dashboard({
               if (activeHeroIndex?.isStock) {
                 setActiveHeroIndex({
                   name: "NEPSE Index",
-                  key: "nepse",
-                  val: indices?.nepse || { value: 2654.28, change: 7.06, pChange: 0.26, turnover: 7050398624.96 }
+                  val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
                 });
               } else {
                 setShowSubIndicesModal(true);

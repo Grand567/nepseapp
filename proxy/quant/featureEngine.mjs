@@ -432,23 +432,15 @@ async function getSentimentFeatures(hours = 24) {
     return { avgSentiment: +avgSentiment.toFixed(3), nrbPolicyFlag, politicalNewsVolume, sampleSize: items.length };
   }
 
-  // 3. Hardcoded baseline
-  return { avgSentiment: 0.28, nrbPolicyFlag: true, politicalNewsVolume: 3, sampleSize: 14 };
+  // 3. Authentic state: Return 0 when no sentiment data is ingested
+  return { avgSentiment: 0.0, nrbPolicyFlag: false, politicalNewsVolume: 0, sampleSize: 0, status: 'no_data' };
 }
 
 /**
  * Macro features from NRB releases.
- * Priority: DB → in-memory macroCache (scraped) → hardcoded defaults
+ * Priority: DB → in-memory macroCache (scraped) → authentic null state
  */
 export async function getMacroFeatures() {
-  const defaults = {
-    m2_growth_pct: 12.8,
-    interest_rate_pct: 5.5,
-    cpi_inflation_pct: 4.25,
-    npr_usd_rate: 134.8,
-    remittance_growth_pct: 16.4,
-  };
-
   // 1. Try DB
   if (pool) {
     try {
@@ -460,7 +452,14 @@ export async function getMacroFeatures() {
          ORDER BY as_of_date DESC`
       );
       if (rows.length > 0) {
-        const latest = { ...defaults };
+        const latest = {
+          m2_growth_pct: null,
+          interest_rate_pct: null,
+          cpi_inflation_pct: null,
+          npr_usd_rate: null,
+          remittance_growth_pct: null,
+          status: 'live_db'
+        };
         for (const r of rows) {
           if (r.indicator) latest[r.indicator] = Number(r.value);
         }
@@ -471,11 +470,18 @@ export async function getMacroFeatures() {
 
   // 2. Use in-memory macro cache (populated by server.mjs scraper)
   if (hasMacroCache()) {
-    return getMacroCache();
+    return { ...getMacroCache(), status: 'scraped_cache' };
   }
 
-  // 3. Hardcoded defaults
-  return defaults;
+  // 3. Authentic missing state (No hardcoded fake macro constants)
+  return {
+    m2_growth_pct: null,
+    interest_rate_pct: null,
+    cpi_inflation_pct: null,
+    npr_usd_rate: null,
+    remittance_growth_pct: null,
+    status: 'insufficient_history'
+  };
 }
 
 /**
@@ -517,8 +523,16 @@ export async function computeIndexFeatures(options = {}) {
 
   // Request up to 220 closes for reliable 50 and 200 EMA
   const closes = await getIndexCloses(220, memoryCloses);
-  const latestClose = closes.length > 0 ? closes[closes.length - 1] : 2650;
-  const rsi14 = computeRSI(closes, 14);
+  const latestClose = closes.length > 0 ? closes[closes.length - 1] : Number(memorySummary?.currentValue || memorySummary?.nepseIndex || 0);
+  if (latestClose <= 0) {
+    return {
+      date,
+      status: 'insufficient_history',
+      error: 'No authentic live or historical index close available'
+    };
+  }
+
+  const rsi14 = closes.length >= 15 ? computeRSI(closes, 14) : null;
   const ema20 = computeEMA(closes, 20);
   const ema50 = computeEMA(closes, 50);
   const ema200 = computeEMA(closes, 200);
@@ -537,7 +551,7 @@ export async function computeIndexFeatures(options = {}) {
   const macro = await getMacroFeatures();
   const politicalEvent = await getPoliticalEventFlag(date);
   const fiscalCycle = computeFiscalCycle(date);
-  const prevClose = closes.length > 1 ? closes[closes.length - 2] : latestClose;
+  const prevClose = closes.length > 1 ? closes[closes.length - 2] : (latestClose - Number(memorySummary?.pointChange || memorySummary?.change || 0));
   const headlinePChange = prevClose > 0 ? ((latestClose - prevClose) / prevClose) * 100 : Number(memorySummary?.percentageChange || memorySummary?.pChange || 0);
   const floatDivergence = computeFloatDivergence(memoryIndices, headlinePChange);
   const indexAtr = computeIndexATR(memoryHistory || closes.map(c => ({ high: c, low: c, close: c })), 14);
@@ -545,6 +559,8 @@ export async function computeIndexFeatures(options = {}) {
   return {
     date,
     latest_close: latestClose,
+    prev_close: prevClose,
+    headline_p_change: headlinePChange,
     rsi_14: rsi14,
     ema_20: ema20,
     ema_50: ema50,
@@ -593,10 +609,9 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
     const pChange = Number(stockData.pChange || stockData.percentageChange || 0);
     const volume = Number(stockData.volume || stockData.totalTradedQuantity || 10000);
     const volumeSurgeRatio = Number(stockData.volumeSurgeRatio || (volume > 20000 ? 1.45 : 0.95));
-    // Attempt real RSI from DB price history; fall back to pChange estimate
+    // Attempt real RSI from DB price history; return null if insufficient
     let rsi14 = Number(stockData.rsi || 0);
     if (!rsi14 || Math.abs(rsi14 - 50) < 0.1) {
-      // stockData.rsi is absent or the approximated 50 default — try DB
       if (pool) {
         try {
           const { rows: histRows } = await pool.query(
@@ -611,8 +626,7 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
         } catch (_) {}
       }
       if (!rsi14 || Math.abs(rsi14 - 50) < 0.1) {
-        // Final fallback: pChange-based approximation
-        rsi14 = Math.max(10, Math.min(90, 50 + pChange * 3));
+        rsi14 = null; // Authentic missing data
       }
     }
     const macdSignal = pChange > 1.2 ? 'bullish' : pChange < -1.2 ? 'bearish' : 'neutral';

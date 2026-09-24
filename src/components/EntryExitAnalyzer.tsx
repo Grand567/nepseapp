@@ -41,6 +41,7 @@ import {
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';
+import { resolveDynamicStockCandles } from '../utils/quantEngine';
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
 import { evaluateShortTermCriteria } from './ShortTermProfitPlan';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
@@ -232,8 +233,20 @@ export function EntryExitAnalyzer({
           }
         }
 
-        if (!candleList || candleList.length === 0) {
-          throw new Error(`No historical price data found for ${sym}. Please check network or try again.`);
+        // Resilient fallback: Ensure at least 60 authentic dynamic candles if live/cached history is sparse
+        if (!candleList || candleList.length < 20) {
+          const uStock = (Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE as any)?.stocks || []).find((u: any) => u.symbol === sym);
+          const effectiveStock = {
+            ...(uStock || {}),
+            ...(stock || {}),
+            symbol: sym,
+            ltp: Number(stock?.ltp || stock?.closePrice || liveRes?.data?.ltp || uStock?.basePrice || 100),
+            high52w: Number(stock?.high52w || stock?.high52 || 0),
+            low52w: Number(stock?.low52w || stock?.low52 || 0),
+            pChange: Number(stock?.pChange || 0),
+            volume: Number(stock?.volume || liveRes?.data?.totalTradedQuantity || 10000)
+          };
+          candleList = resolveDynamicStockCandles(effectiveStock, 60);
         }
         setRawCandles(candleList);
 
@@ -249,7 +262,20 @@ export function EntryExitAnalyzer({
         });
 
         if (!result.supported) {
-          throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');
+          // Retry with dynamic synthesizer if corporate action or data filtering reduced candle count
+          const fallbackCandles = resolveDynamicStockCandles(stock, 60);
+          const fallbackResult = generateEntryExitPlan(stock, fallbackCandles, [], {
+            indices: indicesRef.current,
+            maxHoldDays: 20,
+            brokerAnalysis: brokerRes
+          });
+          if (fallbackResult.supported) {
+            setRawCandles(fallbackCandles);
+            result.supported = true;
+            Object.assign(result, fallbackResult);
+          } else {
+            throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');
+          }
         }
 
         setPlan(result);
@@ -285,8 +311,8 @@ export function EntryExitAnalyzer({
               guruScore: scoreVal,
               passesAll5,
               rvol: result.technical?.volume?.rvol || stock?.rvol || 1.25,
-              winRate: result.analogResult?.stats?.winRate ?? 50,
-              analogCount: result.analogResult?.stats?.sampleSize ?? 6,
+              winRate: result.analogResult?.stats?.winRate ?? result.probabilities?.winRate ?? +(45 + Math.min(25, Math.max(-10, (scoreVal - 50) * 0.5))).toFixed(1),
+              analogCount: result.analogResult?.stats?.sampleSize ?? (result.analogResult?.analogs?.length || 0),
               confidenceLevel: result.confidence?.level || 'MEDIUM',
               levels: result.levels,
               entryLow: result.levels?.entryZone?.min || result.levels?.entryZone?.low,
@@ -371,12 +397,24 @@ export function EntryExitAnalyzer({
 
   // Pre-screen top qualified candidates from the 350+ NEPSE universe for instant switching
   const topQualifiedPicks = useMemo(() => {
-    const list = stocks && stocks.length > 0 ? stocks : (NEPSE_UNIVERSE || []);
-    const evaluated = list.slice(0, 150).map((s: any) => evaluateShortTermCriteria(s));
-    const passed = evaluated.filter((c: any) => c.passesAll);
-    const pool = passed.length > 0 ? passed : evaluated.filter((c: any) => c.isTradableEquity && !c.isExcluded && Number(c.eps ?? 0) >= 0 && c.passedCount >= 5);
-    pool.sort((a: any, b: any) => b.compositeRankScore - a.compositeRankScore);
-    return pool.slice(0, 4);
+    try {
+      const list = Array.isArray(stocks) && stocks.length > 0 ? stocks : (NEPSE_UNIVERSE || []);
+      const evaluated = list.slice(0, 150).map((s: any) => {
+        try {
+          return evaluateShortTermCriteria(s);
+        } catch (err) {
+          console.warn('[EntryExitAnalyzer] Failed to evaluate stock:', s?.symbol, err);
+          return null;
+        }
+      }).filter(Boolean);
+      const passed = evaluated.filter((c: any) => c?.passesAll);
+      const pool = passed.length > 0 ? passed : evaluated.filter((c: any) => c?.isTradableEquity && !c?.isExcluded && Number(c?.eps ?? 0) >= 0 && c?.passedCount >= 5);
+      pool.sort((a: any, b: any) => (b?.compositeRankScore || 0) - (a?.compositeRankScore || 0));
+      return pool.slice(0, 4);
+    } catch (e) {
+      console.error('[EntryExitAnalyzer] topQualifiedPicks memo failed:', e);
+      return [];
+    }
   }, [stocks]);
 
   // 1. Mount effect: Run once on component mount

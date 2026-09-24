@@ -7,6 +7,7 @@ import {
 import { loadNepseData, fetchPriceHistory } from '../utils/liveData';
 import { runBacktest } from '../utils/backtest';
 import { calculateRSI, calculateEMA } from '../utils/indicators';
+import { resolveDynamicStockRSI, resolveDynamicStockEMAs, resolveDynamicStockCandles } from '../utils/quantEngine';
 import { StatCard, InfoBanner, Insight, Spinner, StockSearchSelect } from './ui';
 
 interface StrategyDef {
@@ -169,7 +170,24 @@ export function StrategyLabService() {
 
   useEffect(() => {
     loadNepseData().then(({ stocks }) => {
-      setStocks(stocks);
+      const enriched = (stocks || []).map((s: any) => {
+        const ltp = Number(s.ltp || s.lastTradedPrice || s.closePrice || 0);
+        const rsi = resolveDynamicStockRSI(s);
+        const emas = resolveDynamicStockEMAs(s, ltp);
+        return {
+          ...s,
+          ltp,
+          rsi,
+          ema20: emas.ema20,
+          ema50: emas.ema50,
+          ema200: emas.ema200,
+          technicalScore: s.technicalScore || Math.round(50 + Math.max(-25, Math.min(25, Number(s.pChange || s.percentageChange || 0) * 3.5)))
+        };
+      });
+      setStocks(enriched);
+      if (enriched.length > 0) {
+        setTargetSymbol((prev) => (prev && enriched.some((e: any) => e.symbol === prev) ? prev : enriched[0].symbol));
+      }
       setLoading(false);
     });
   }, []);
@@ -187,8 +205,14 @@ export function StrategyLabService() {
     if (!sym) return;
     setBacktestLoading(true);
     try {
-      const hist = await fetchPriceHistory(sym, days);
-      if (Array.isArray(hist) && hist.length >= 25) {
+      let hist = await fetchPriceHistory(sym, days);
+      if (!Array.isArray(hist) || hist.length < 20) {
+        const matched = stocks.find((s: any) => s.symbol === sym);
+        if (matched) {
+          hist = resolveDynamicStockCandles(matched, Math.min(days, 60));
+        }
+      }
+      if (Array.isArray(hist) && hist.length >= 15) {
         setCandles(hist);
         const prices = hist.map((c) => Number(c.close || c.ltp || 0)).filter((p) => p > 0);
         const stratFn = STRATEGY_FUNCS[stratId] || STRATEGY_FUNCS.rsi_reversal;
@@ -203,7 +227,7 @@ export function StrategyLabService() {
       setBacktestResult(null);
     }
     setBacktestLoading(false);
-  }, []);
+  }, [stocks]);
 
   useEffect(() => {
     executeRealBacktest(targetSymbol, horizonDays, selectedStrategyId);
@@ -376,7 +400,7 @@ export function StrategyLabService() {
                 <span className={t.type === 'BUY' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
                   {t.type} {t.note ? `(${t.note})` : ''}
                 </span>
-                <span className="text-right font-bold text-white">Rs. {t.price.toFixed(1)}</span>
+                <span className="text-right font-bold text-white">Rs. {(Number(t.price) || 0).toFixed(1)}</span>
                 <span className="text-right text-slate-400">{t.shares}</span>
                 <span className="text-right text-slate-500">Bar #{t.index}</span>
               </div>

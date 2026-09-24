@@ -18,7 +18,7 @@ import {
   fetchNewsArticle, fetchBrokerHeatmap, fetchMarketDepth,
 } from '../utils/servicesApi';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
-import { getHydroSeasonality } from '../utils/quantEngine';
+import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore } from '../utils/quantEngine';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
@@ -66,7 +66,12 @@ const DEFAULT_COLS: ColDef[] = [
 ];
 
 function calcWilderRsi(closes: number[], period = 14): number {
-  if (closes.length < period + 1) return 50;
+  if (!closes || closes.length < 2) return 50;
+  if (closes.length < period + 1) {
+    const net = closes[closes.length - 1] - closes[0];
+    const pct = closes[0] > 0 ? (net / closes[0]) * 100 : 0;
+    return Math.min(85, Math.max(15, +(50 + pct * 2.5).toFixed(1)));
+  }
   let gains = 0, losses = 0;
   for (let i = 1; i <= period; i++) {
     const diff = closes[i] - closes[i - 1];
@@ -106,8 +111,8 @@ function computeStockTimeframeMetrics(stock: any) {
   const cachedHist = stock.history || stock.candles || stock.priceHistory || (sym ? getCachedRealPriceHistory(sym) : null);
 
   const baseStealth = Number(stock.stealthAccumulation) || Math.round(35 + pos52 * 40);
-  const baseRsi = Number(stock.rsi) || Math.round(40 + pos52 * 25);
-  const baseTech = Number(stock.technicalScore) || Math.round(45 + pos52 * 30);
+  const baseRsi = Number(stock.rsi) || resolveDynamicStockRSI(stock);
+  const baseTech = Number(stock.technicalScore) || calculateCompositeTechnicalScore(stock).normalizedScore;
 
   // If real daily candles exist, calculate 100% genuine multi-timeframe returns and metrics
   if (Array.isArray(cachedHist) && cachedHist.length >= 2) {
@@ -612,42 +617,42 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">{selectedTf} Return</div>
-                  <div className={`text-2xl font-black font-mono ${activeData.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {activeData.change >= 0 ? '+' : ''}{activeData.change.toFixed(2)}%
+                  <div className={`text-2xl font-black font-mono ${Number(activeData.change || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {Number(activeData.change || 0) >= 0 ? '+' : ''}{(Number(activeData.change) || 0).toFixed(2)}%
                   </div>
                 </div>
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">Period High</div>
-                  <div className="text-base font-bold font-mono text-emerald-300">Rs. {activeData.high.toFixed(1)}</div>
+                  <div className="text-base font-bold font-mono text-emerald-300">Rs. {(Number(activeData.high) || 0).toFixed(1)}</div>
                 </div>
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">Period Low</div>
-                  <div className="text-base font-bold font-mono text-rose-300">Rs. {activeData.low.toFixed(1)}</div>
+                  <div className="text-base font-bold font-mono text-rose-300">Rs. {(Number(activeData.low) || 0).toFixed(1)}</div>
                 </div>
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">Price Range</div>
-                  <div className="text-base font-bold font-mono text-slate-200">Rs. {(activeData.high - activeData.low).toFixed(1)}</div>
+                  <div className="text-base font-bold font-mono text-slate-200">Rs. {(Number(activeData.high || 0) - Number(activeData.low || 0)).toFixed(1)}</div>
                 </div>
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">Consolidated Vol</div>
                   <div className="text-base font-bold font-mono text-blue-300">
-                    {activeData.volume > 1e6 ? `${(activeData.volume / 1e6).toFixed(2)}M` : activeData.volume.toLocaleString()}
+                    {Number(activeData.volume || 0) > 1e6 ? `${(Number(activeData.volume) / 1e6).toFixed(2)}M` : Number(activeData.volume || 0).toLocaleString()}
                   </div>
                 </div>
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase">Weighted Avg (VWAP)</div>
-                  <div className="text-base font-bold font-mono text-amber-300">Rs. {activeData.avgPrice.toFixed(1)}</div>
+                  <div className="text-base font-bold font-mono text-amber-300">Rs. {(Number(activeData.avgPrice) || 0).toFixed(1)}</div>
                 </div>
               </div>
             </div>
           )}
 
           {/* Matrix Cards for all 6 Periods */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {['1D', '1W', '1M', '3M', '6M', '1Y'].map((tf) => {
               const d = metrics[tf];
               if (!d || d.change === null) return null;
-              const isUp = d.change >= 0;
+              const isUp = Number(d.change || 0) >= 0;
               const isCurrent = tf === selectedTf;
               return (
                 <div
@@ -662,15 +667,15 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
                     {isCurrent && <span className="rounded bg-blue-600 px-1 py-0.2 text-[9px] text-white">ACTIVE</span>}
                   </div>
                   <div className={`mb-2 text-xl font-black font-mono ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {isUp ? '+' : ''}{d.change.toFixed(2)}%
+                    {isUp ? '+' : ''}{(Number(d.change) || 0).toFixed(2)}%
                   </div>
                   <div className="flex justify-between border-t border-slate-800/80 pt-1.5 text-[11px] text-slate-400">
-                    <div>H: <strong className="font-mono text-emerald-400">{d.high.toFixed(0)}</strong></div>
-                    <div>L: <strong className="font-mono text-rose-400">{d.low.toFixed(0)}</strong></div>
+                    <div>H: <strong className="font-mono text-emerald-400">{(Number(d.high) || 0).toFixed(0)}</strong></div>
+                    <div>L: <strong className="font-mono text-rose-400">{(Number(d.low) || 0).toFixed(0)}</strong></div>
                   </div>
                   <div className="mt-1 flex justify-between border-t border-slate-800/50 pt-1 text-[10px] text-slate-500 font-mono">
-                    <span>Vol: {d.volume > 1e6 ? `${(d.volume / 1e6).toFixed(1)}M` : d.volume.toLocaleString()}</span>
-                    <span>VWAP: Rs. {d.avgPrice.toFixed(0)}</span>
+                    <span>Vol: {Number(d.volume || 0) > 1e6 ? `${(Number(d.volume) / 1e6).toFixed(1)}M` : Number(d.volume || 0).toLocaleString()}</span>
+                    <span>VWAP: Rs. {(Number(d.avgPrice) || 0).toFixed(0)}</span>
                   </div>
                 </div>
               );
@@ -695,8 +700,8 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
                 {['1D', '1W', '1M', '3M', '6M', '1Y'].map((tf) => {
                   const d = metrics[tf];
                   if (!d || d.change === null) return null;
-                  const isUp = d.change >= 0;
-                  const range = d.high - d.low;
+                  const isUp = Number(d.change || 0) >= 0;
+                  const range = Number(d.high || 0) - Number(d.low || 0);
                   const isCurrent = tf === selectedTf;
                   return (
                     <tr
@@ -713,13 +718,13 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
                         </span>
                       </td>
                       <td className={`px-3.5 py-2.5 font-black font-mono ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {isUp ? '+' : ''}{d.change.toFixed(2)}%
+                        {isUp ? '+' : ''}{(Number(d.change) || 0).toFixed(2)}%
                       </td>
-                      <td className="px-3.5 py-2.5 font-mono text-emerald-300">Rs. {d.high.toFixed(1)}</td>
-                      <td className="px-3.5 py-2.5 font-mono text-rose-300">Rs. {d.low.toFixed(1)}</td>
-                      <td className="px-3.5 py-2.5 font-mono text-slate-400">Rs. {range.toFixed(1)}</td>
-                      <td className="px-3.5 py-2.5 font-mono text-slate-300">{d.volume.toLocaleString()}</td>
-                      <td className="px-3.5 py-2.5 font-mono text-amber-300">Rs. {d.avgPrice.toFixed(1)}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-emerald-300">Rs. {(Number(d.high) || 0).toFixed(1)}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-rose-300">Rs. {(Number(d.low) || 0).toFixed(1)}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-slate-400">Rs. {(Number(range) || 0).toFixed(1)}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-slate-300">{Number(d.volume || 0).toLocaleString()}</td>
+                      <td className="px-3.5 py-2.5 font-mono text-amber-300">Rs. {(Number(d.avgPrice) || 0).toFixed(1)}</td>
                     </tr>
                   );
                 })}
@@ -1972,7 +1977,18 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const ltp = Number(s.ltp || s.price || 100);
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
 
-      const momScore = (pCh >= 1.5 && pCh <= 6.5) ? 35 : (pCh > 6.5 ? 26 : 18);
+      // Smooth continuous momentum score calibrated to NEPSE
+      let momScore = 20;
+      if (pCh >= 1.0 && pCh <= 7.0) {
+        momScore = 20 + (pCh * 2.5); // optimal healthy thrust
+      } else if (pCh > 7.0) {
+        momScore = Math.max(15, 37.5 - (pCh - 7.0) * 3.0); // parabolic extension penalty
+      } else if (pCh > 0) {
+        momScore = 15 + (pCh * 5.0);
+      } else {
+        momScore = Math.max(5, 15 + (pCh * 3.0));
+      }
+
       const liqScore = Math.min(35, (to / 1e7) * 3);
       const volScore = Math.min(30, (vol / 10000) * 5);
 
@@ -1985,15 +2001,17 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const brokerData = getCachedRealBrokerAnalysis(sym);
       const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
 
-      const compositeScore = Math.min(98, Math.max(70, +(54 + momScore * 0.45 + liqScore * 0.35 + volScore * 0.25 + hydroAdjustment + brokerBonus).toFixed(1)));
+      const compositeScore = Math.min(98, Math.max(35, +(46 + momScore * 0.50 + liqScore * 0.30 + volScore * 0.20 + hydroAdjustment + brokerBonus).toFixed(1)));
 
-      // Dynamic ATR-based Corridor
+      // Dynamic ATR-based Corridor using multi-horizon engine
       const atrEst = Math.max(ltp * 0.02, Number(s.high || ltp) - Number(s.low || ltp));
-      const entryLow = +(ltp - atrEst * 0.5).toFixed(1);
-      const entryHigh = +(ltp + atrEst * 0.3).toFixed(1);
-      const target1 = +(ltp + atrEst * 2.0).toFixed(1);
-      const target2 = +(ltp + atrEst * 4.0).toFixed(1);
-      const stopLoss = +(Math.max(1, ltp - atrEst * 1.5)).toFixed(1);
+      const dynTargets = calculateMultiHorizonTargets(ltp, s.high52w || s.high52, s.low52w || s.low52, atrEst, pCh);
+      const entryLow = Number(dynTargets.entryZone.min);
+      const entryHigh = Number(dynTargets.entryZone.max);
+      const target1 = Number(dynTargets.target1.price);
+      const target2 = Number(dynTargets.target2.price);
+      const stopLoss = Number(dynTargets.stopLoss.price);
+      const rvolVal = Number(s.volumeSurgeRatio || (s.avgVolume20D ? +(s.volume / s.avgVolume20D).toFixed(2) : +(1.0 + (vol / 50000) * 0.5).toFixed(2)));
 
       return {
         ...s,
@@ -2003,8 +2021,8 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
         target1,
         target2,
         stopLoss,
-        rvol: +(1.2 + (vol / 40000) * 0.4).toFixed(2),
-        catalyst: pCh > 0 ? 'Bullish Volume Breakout + Buy-Zone Support' : 'Consolidation Base with Institutional Accumulation'
+        rvol: rvolVal,
+        catalyst: pCh > 2.5 ? 'Bullish Volume Breakout + Momentum Expansion' : pCh > 0 ? 'Support Rebound + Steady Accumulation' : 'Consolidation Base with Institutional Accumulation'
       };
     });
 

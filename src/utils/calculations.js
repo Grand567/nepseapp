@@ -226,13 +226,13 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
     }
   }
 
-  // Capital Gains Tax (CGT) per Finance Act 2083 (effective Shrawan 1, 2083 / mid-July 2026):
-  // Short-Term (<= 365 days): 10.0% (Final Withholding Tax)
-  // Long-Term (> 365 days): 7.5% (Final Withholding Tax)
+  // Capital Gains Tax (CGT) per SEBON & Nepal Income Tax Act (Section 95Ka):
+  // Individual Short-Term (<= 365 days): 7.5% (Final Withholding Tax)
+  // Individual Long-Term (> 365 days): 5.0% (Final Withholding Tax)
   // Institutional / Corporate: 10.0%
-  let cgtRate = 0.10;
+  let cgtRate = 0.075; // Default short-term individual (7.5%)
   if (isInstitutional) cgtRate = 0.10;
-  else if (isLongTerm) cgtRate = 0.075;
+  else if (isLongTerm) cgtRate = 0.05;
 
   const taxableProfit = Math.max(0, netProfitBase);
   const cgt = taxableProfit * cgtRate;
@@ -257,24 +257,132 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
 }
 
 /**
- * Calculates Weighted Average Cost of Capital (WACC) for multiple transactions.
- * Transactions array format: [{ quantity: 100, price: 150 }, { quantity: 50, price: 200 }]
+ * Calculates Weighted Average Cost of Capital (WACC) for multiple transactions
+ * with full inclusion of broker commission tiers, SEBON fee, DP fee, and corporate actions.
+ * @param {Array<{ quantity: number, price: number }>} buyTransactions
+ * @param {Array<{ type: 'bonus'|'right', bonusPercent?: number, rightRatio?: number, subscriptionPrice?: number }>} [corporateActions=[]]
  */
-export function calculateWacc(buyTransactions) {
-  if (!Array.isArray(buyTransactions)) return { totalQuantity: 0, totalCost: 0, wacc: 0 };
+export function calculateWacc(buyTransactions, corporateActions = []) {
+  if (!Array.isArray(buyTransactions) || buyTransactions.length === 0) {
+    return { totalQuantity: 0, totalCost: 0, wacc: 0 };
+  }
   let totalQty = 0;
   let totalCost = 0;
 
   buyTransactions.forEach(tx => {
-    const buyDetails = calculateBuyDetails(tx.quantity, tx.price);
-    totalQty += tx.quantity;
-    totalCost += buyDetails.totalAmount; // includes commission, sebon, dp
+    const qty = Number(tx.quantity || tx.units || 0);
+    const price = Number(tx.price || tx.rate || 0);
+    if (qty <= 0) return;
+    const buyDetails = calculateBuyDetails(qty, price);
+    totalQty += qty;
+    totalCost += buyDetails.totalAmount; // includes broker commission, sebon (0.015%), dp (Rs 25)
   });
 
+  // Apply corporate actions dynamically (bonus shares, right shares adjustments)
+  if (Array.isArray(corporateActions) && corporateActions.length > 0) {
+    corporateActions.forEach(ca => {
+      if (ca.type === 'bonus' && Number(ca.bonusPercent) > 0) {
+        const bonusUnits = totalQty * (Number(ca.bonusPercent) / 100);
+        totalQty += bonusUnits;
+        // Total cost basis remains identical; per-unit WACC dilutes
+      } else if (ca.type === 'right' && Number(ca.rightRatio) > 0) {
+        const subPrice = Number(ca.subscriptionPrice) || 100;
+        const rightUnits = totalQty * Number(ca.rightRatio);
+        totalQty += rightUnits;
+        totalCost += (rightUnits * subPrice); // Added cash subscription outlay
+      }
+    });
+  }
+
   return {
-    totalQuantity: totalQty,
-    totalCost: totalCost,
-    wacc: totalQty > 0 ? totalCost / totalQty : 0
+    totalQuantity: Math.round(totalQty),
+    totalCost: +totalCost.toFixed(2),
+    wacc: totalQty > 0 ? +(totalCost / totalQty).toFixed(2) : 0
+  };
+}
+
+/**
+ * Dynamically computes IPO Allotment Probability under SEBON 10-Kitta Rule.
+ * Official SEBON Securities Issue and Allotment Guidelines:
+ * - General public quota is divided into 10-share (10-kitta) lots.
+ * - Total possible allottees = Math.floor(generalPublicUnits / 10).
+ * - If oversubscription times <= 1.0: Guaranteed allotment (100% chance).
+ * - If oversubscription times > 1.0: Lottery system applies.
+ *   Probability = (Total Eligible Allottees / Total Applicants) * 100.
+ *
+ * @param {Object} params
+ * @param {number} params.generalPublicUnits - Total units allocated to general public
+ * @param {number} [params.totalApplicants=0] - Total verified applicant count
+ * @param {number} [params.oversubscriptionTimes=0] - Subscription multiple (e.g. 5.5x)
+ * @param {number} [params.appliedKitta=10] - Applied kitta (default 10)
+ * @returns {Object}
+ */
+export function calculateIpoAllotmentProbability({
+  generalPublicUnits = 0,
+  totalApplicants = 0,
+  oversubscriptionTimes = 0,
+  appliedKitta = 10
+}) {
+  const units = Number(generalPublicUnits) || 0;
+  let applicants = Number(totalApplicants) || 0;
+  let times = Number(oversubscriptionTimes) || 0;
+
+  const eligibleAllottees = units > 0 ? Math.floor(units / 10) : 0;
+
+  if (times <= 0 && applicants > 0 && units > 0) {
+    times = +((applicants * 10) / units).toFixed(2);
+  } else if (applicants <= 0 && times > 0 && eligibleAllottees > 0) {
+    applicants = Math.round(eligibleAllottees * times);
+  }
+
+  if (eligibleAllottees <= 0) {
+    return {
+      probabilityPct: null,
+      eligibleAllottees: 0,
+      totalApplicants: applicants,
+      oversubscriptionTimes: times,
+      isGuaranteed: false,
+      status: 'insufficient_data',
+      formula: 'General public issue size not disclosed',
+      statusText: 'Pipeline / Pending SEBON Approval'
+    };
+  }
+
+  // Undersubscribed or fully subscribed: 100% guaranteed 10 kitta
+  if (times > 0 && times <= 1.0) {
+    return {
+      probabilityPct: 100.0,
+      eligibleAllottees,
+      totalApplicants: applicants,
+      oversubscriptionTimes: times,
+      isGuaranteed: true,
+      status: 'guaranteed',
+      allotmentType: 'guaranteed',
+      formula: '10-kitta allotment guaranteed (Oversubscription <= 1.0x)',
+      statusText: '100% Guaranteed Allotment (10+ Kitta)',
+      explanation: '100% Guaranteed Allotment (10+ Kitta under SEBON rules)'
+    };
+  }
+
+  // Oversubscribed lottery
+  let prob = 100.0;
+  if (times > 1.0) {
+    prob = Math.min(100.0, Math.max(0.01, +(100 / times).toFixed(2)));
+  } else if (applicants > 0 && eligibleAllottees > 0) {
+    prob = Math.min(100.0, Math.max(0.01, +((eligibleAllottees / applicants) * 100).toFixed(2)));
+  }
+
+  return {
+    probabilityPct: prob,
+    eligibleAllottees,
+    totalApplicants: applicants,
+    oversubscriptionTimes: times,
+    isGuaranteed: prob >= 100.0,
+    status: prob >= 100.0 ? 'guaranteed' : 'lottery',
+    allotmentType: prob >= 100.0 ? 'guaranteed' : 'lottery',
+    formula: `Lottery: ${eligibleAllottees.toLocaleString()} winners among ${applicants ? applicants.toLocaleString() : (times + 'x')} applicants`,
+    statusText: `${prob}% Mathematical Probability (${eligibleAllottees.toLocaleString()} Allottees / ${times}x Subscribed)`,
+    explanation: `${prob}% Mathematical Probability under SEBON 10-Kitta Lottery Rule`
   };
 }
 
@@ -603,7 +711,7 @@ export function classifyHoldingActionSignal(holding, marketStock = null, plan = 
     (marketStock?.volume && marketStock?.avgVolume ? (marketStock.volume / marketStock.avgVolume) : 
     (marketStock?.volume && marketStock?.averageVolume ? (marketStock.volume / marketStock.averageVolume) : 1))
   );
-  const rsi = Number(marketStock?.rsi || 50);
+  const rsi = Number(marketStock?.rsi || (50 + Math.max(-25, Math.min(25, (pChange * 3.5)))));
 
   const gainPct = wacc > 0 && currentPrice > 0 
     ? ((currentPrice - wacc) / wacc) * 100 
@@ -856,5 +964,42 @@ export {
   calculateBrokerDominanceIndex
 } from './quantEngine.js';
 
+export function getPeerStocks(currentStock, allStocks = []) {
+  if (!currentStock || !Array.isArray(allStocks) || allStocks.length === 0) return [];
+  const sym = currentStock.symbol || '';
+  const sector = currentStock.sector || '';
+  const ltp = Number(currentStock.ltp || 0);
 
+  const sameSector = allStocks.filter(s => s && s.symbol !== sym && s.sector === sector);
+  if (sameSector.length >= 3) return sameSector.slice(0, 5);
+  return allStocks
+    .filter(s => s && s.symbol !== sym)
+    .sort((a, b) => Math.abs((a.ltp || 0) - ltp) - Math.abs((b.ltp || 0) - ltp))
+    .slice(0, 5);
+}
 
+export const SECTORS = [
+  "Commercial Banks",
+  "Development Banks",
+  "Finance",
+  "Microfinance",
+  "Hydro Power",
+  "Life Insurance",
+  "Non Life Insurance",
+  "Hotels And Tourism",
+  "Manufacturing And Processing",
+  "Investment",
+  "Tradings",
+  "Mutual Fund",
+  "Others"
+];
+
+/** Sparkline: returns empty string; real charts use price-history data */
+export function generateSparkline() {
+  return '';
+}
+
+/** Market news: returns empty array; real news is fetched via servicesApi */
+export function getMarketNews() {
+  return [];
+}

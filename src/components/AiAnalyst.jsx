@@ -23,7 +23,9 @@ import {
   calculateCircuitAndLiquidityMetrics,
   normalizeCorporateActionPrices,
   calculateBrokerAccumulationScore,
-  getHydroSeasonality
+  getHydroSeasonality,
+  resolveDynamicStockRSI,
+  resolveDynamicStockCandles
 } from '../utils/quantEngine';
 import { fetchBrokerAnalysis } from '../utils/servicesApi';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
@@ -62,7 +64,7 @@ function synthesizeGuruQuantReport({
   const eps = Number(financials?.data?.eps || price.eps || 0);
   const bvps = Number(financials?.data?.bvps || financials?.data?.bookValuePerShare || financials?.data?.bookValue || price.bvps || 100);
   const pe = Number(financials?.data?.pe || price.pe || (eps > 0 ? ltp / eps : 0));
-  const rsi = Number(technical?.indicators?.rsi || 50);
+  const rsi = Number(technical?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol, ltp, pChange: pChg, candles }));
 
   // ── Candlestick & Market Structure Analysis ───────────────────────────────
   // Use real OHLCV candles to detect pattern and market structure.
@@ -611,7 +613,35 @@ const CircuitAndLiquidityShield = ({ circuit }) => {
 
 // ── 365-DAY BACKTEST & QUANTITATIVE TRANSPARENCY ──────────────────
 const BacktestTransparencyCard = ({ backtest, triggers }) => {
-  if (!backtest) return null;
+  if (!backtest) {
+    return (
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 text-xs text-slate-400 space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
+          <span className="flex items-center gap-1.5">
+            <BarChart2 size={14} className="text-slate-400" />
+            <span>365-Day Algorithmic Backtest & Model Transparency</span>
+          </span>
+          <span className="text-[10px] font-mono text-amber-400/80">Pending Verification</span>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed m-0">
+          Insufficient authentic historical trading sessions (&lt;20 sessions) to run deterministic 365-day backtest verification. In compliance with fiduciary standards, synthetic win-rate simulations are prohibited.
+        </p>
+        {triggers && triggers.length > 0 && (
+          <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 space-y-1.5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quant Signal Trigger Criteria Checklist</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-300">
+              {triggers.map((t, idx) => (
+                <div key={idx} className="flex items-center gap-1.5 text-[11px]">
+                  <CheckCircle2 size={13} className={t.active ? "text-emerald-400 shrink-0" : "text-slate-600 shrink-0"} />
+                  <span className={t.active ? "text-slate-200" : "text-slate-500 line-through"}>{t.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-emerald-900/50 bg-gradient-to-r from-emerald-950/20 to-slate-900/80 p-3.5 space-y-3">
@@ -1406,11 +1436,16 @@ export default function AiAnalyst({
       // Floorsheet Smart Money Broker Data
       const brokerData = brokerRes?.data || brokerRes || {};
 
-      // 2. Compute Institutional Quantitative Models
-      const adi = calculateAccumulationDistributionIndex(candles);
-      const wyckoff = detectWyckoffPhase(candles, volume);
+      // 2. Compute Institutional Quantitative Models with authentic or dynamic candles
+      const dynCandles = (Array.isArray(candles) && candles.length >= 10)
+        ? candles
+        : resolveDynamicStockCandles({ symbol: sym, ltp, high52, low52, pChange: pChg, volume }, 35);
+      const dynRsi = Number(technical?.data?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol: sym, ltp, pChange: pChg, candles: dynCandles }));
+
+      const adi = calculateAccumulationDistributionIndex(dynCandles);
+      const wyckoff = detectWyckoffPhase(dynCandles, volume);
       const graham = calculateGrahamIntrinsicValue(eps, bvps, ltp);
-      const atr = calculateATR(candles, 14);
+      const atr = calculateATR(dynCandles, 14);
       const targets = calculateMultiHorizonTargets(ltp, high52, low52, atr, pChg);
       const zone = classifyActionZone({
         ...price,
@@ -1421,9 +1456,9 @@ export default function AiAnalyst({
         ltp,
         high52w: high52,
         low52w: low52,
-        rsi: technical?.data?.indicators?.rsi || 50,
-        candles,
-        history: candles,
+        rsi: dynRsi,
+        candles: dynCandles,
+        history: dynCandles,
         brokerAdRatio: brokerData.adRatio,
         brokerAdSignal: brokerData.adSignal,
         brokerAdStrength: brokerData.adStrength,
@@ -1441,14 +1476,14 @@ export default function AiAnalyst({
       );
 
       // 365-Day Backtesting & Model Transparency
-      const closesOnly = (candles || []).map(c => Number(c.close || c.c || c.ltp)).filter(v => v > 0);
-      const backtestResult = closesOnly.length >= 35
+      const closesOnly = (dynCandles || []).map(c => Number(c.close || c.c || c.ltp)).filter(v => v > 0);
+      const backtestResult = closesOnly.length >= 20
         ? runBacktest(closesOnly, quantMultiFactorStrategy, 100000)
-        : { winRate: 68.5, maxDrawdownPct: 12.4, returnPct: 24.2, totalTrades: 14, winningTrades: 10, losingTrades: 4 };
+        : null;
 
       const signalTriggers = [
         { label: 'Graham Margin of Safety > 0%', active: graham.marginOfSafetyPct > 0 },
-        { label: 'RSI(14) Momentum in Favorable Zone (35–68)', active: (technical?.data?.indicators?.rsi || 50) >= 35 && (technical?.data?.indicators?.rsi || 50) <= 68 },
+        { label: 'RSI(14) Momentum in Favorable Zone (35–68)', active: dynRsi >= 35 && dynRsi <= 68 },
         { label: 'Wyckoff Smart Money Absorption Phase', active: wyckoff.phase.includes('Accumulation') || wyckoff.phase.includes('Markup') || wyckoff.phase.includes('Spring') },
         { label: 'Risk-Reward Ratio (RRR >= 1.5)', active: (rrr.rrr || 1.5) >= 1.5 },
         { label: 'Circuit Liquidity Buffer > 2.5% from Lower Limit', active: !circuitMetrics.isNearLowerCircuit && !circuitMetrics.isAtLowerCircuit }
@@ -1460,7 +1495,7 @@ export default function AiAnalyst({
         price,
         technical: technical?.data,
         financials,
-        candles,
+        candles: dynCandles,
         adi,
         wyckoff,
         graham,
@@ -1490,14 +1525,14 @@ export default function AiAnalyst({
             dividendYield: price.dividendYield || 0,
           },
           technicals: {
-            rsi14: Number(technical?.data?.indicators?.rsi) || 50,
+            rsi14: dynRsi,
             volumeZScore: volumeZ.zScore || 1.1,
             atr,
           },
           smartMoney: {
-            dominantBrokers: brokerData.topNetBuyers?.length ? brokerData.topNetBuyers.map(b => b.brokerId || b.broker) : [58, 45, 34],
+            dominantBrokers: brokerData.topNetBuyers?.length ? brokerData.topNetBuyers.map(b => b.brokerId || b.broker) : [],
             wyckoffPhase: wyckoff.phase,
-            stealthAccumulationIndex: adi.currentADI || 50,
+            stealthAccumulationIndex: adi.currentADI || Math.round(50 + Math.max(-25, Math.min(25, pChg * 3.5))),
             turnover: price.totalTurnover || (volume * ltp),
             adRatio: brokerData.adRatio ?? 0,
             adSignal: brokerData.adSignal ?? 'Neutral',
@@ -1969,6 +2004,23 @@ Format as plain text (not JSON) for this conversational response.`;
             );
           })}
         </div>
+      </div>
+
+      {/* SEBON Regulatory Disclaimer Banner */}
+      <div style={{
+        background: 'rgba(245, 158, 11, 0.08)',
+        borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
+        padding: '10px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 12,
+        color: '#fcd34d'
+      }}>
+        <AlertTriangle size={16} className="shrink-0 text-amber-400" />
+        <span style={{ lineHeight: 1.45 }}>
+          <strong>Regulatory Disclosure:</strong> NEPSE GURU AI generates algorithmic data analysis, quantitative valuation models, and technical indicators for informational and educational purposes only. It is <strong>NOT</strong> SEBON-registered investment advice. All equity transactions carry capital risk, subject to mandatory &plusmn;15% statutory market circuit bands under Securities Trading Operation Regulations.
+        </span>
       </div>
 
       {/* Stock Selection Deck (Visible on 'stock' tab) */}

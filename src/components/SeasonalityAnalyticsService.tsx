@@ -113,7 +113,7 @@ export function SeasonalityAnalyticsService() {
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-white">{calendarMode === 'BS' ? m.bsMonth : m.adMonth}</span>
                   <span className={`font-mono font-black ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {isPos ? '+' : ''}{m.avgReturn.toFixed(1)}%
+                    {isPos ? '+' : ''}{(Number(m.avgReturn) || 0).toFixed(1)}%
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400 mt-1">

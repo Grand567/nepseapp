@@ -10,7 +10,6 @@ import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, g
 import { getProxyBase } from '../utils/liveData';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
-import { generateMockDematPortfolio } from '../utils/mockData';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
 

@@ -8,6 +8,7 @@ import { getProxyBase } from '../utils/liveData';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
 import { checkSingleBoidAllotment } from '../services/meroShareService';
+import { calculateIpoAllotmentProbability } from '../utils/calculations';
 
 // Same key as AccountManager
 const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
@@ -727,24 +728,53 @@ export default function IPOList({ initialTab = 'apply' }) {
                   ))}
                 </select>
 
-                {getActiveIpoDetails() && (
-                  <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Min Quantity:</span>
-                      <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{getActiveIpoDetails().minKitta} Shares</span>
+                {getActiveIpoDetails() && (() => {
+                  const ipo = getActiveIpoDetails();
+                  const allotment = calculateIpoAllotmentProbability({
+                    generalPublicUnits: ipo.generalPublicUnits || ipo.units,
+                    totalApplicants: ipo.totalApplicants || ipo.applicants,
+                    oversubscriptionTimes: ipo.oversubscriptionTimes || ipo.times,
+                    appliedKitta: Number(appliedKitta) || 10
+                  });
+                  return (
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Min Quantity:</span>
+                        <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{ipo.minKitta} Shares</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Price per share:</span>
+                        <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>Rs. {ipo.amountPerShare}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Closing Date:</span>
+                        <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                          {ipo.closeDate ? ipo.closeDate.split('T')[0] : 'N/A'}
+                        </span>
+                      </div>
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ color: 'var(--primary-light)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Award style={{ width: 13, height: 13 }} /> SEBON 10-Kitta Probability:
+                          </span>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            background: allotment.probabilityPct >= 100 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                            color: allotment.probabilityPct >= 100 ? '#10b981' : '#38bdf8'
+                          }}>
+                            {allotment.probabilityPct != null ? `${allotment.probabilityPct}% (${allotment.allotmentType === 'guaranteed' ? 'Guaranteed' : 'Lottery'})` : 'Subscription Pending'}
+                          </span>
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.4 }}>
+                          {allotment.explanation}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Price per share:</span>
-                      <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>Rs. {getActiveIpoDetails().amountPerShare}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>Closing Date:</span>
-                      <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                        {getActiveIpoDetails().closeDate ? getActiveIpoDetails().closeDate.split('T')[0] : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div>
                   <label className="input-label">Quantity to Apply (Kitta)</label>

@@ -48,7 +48,9 @@ import {
   calculateT2CircuitTrapGuard,
   calculateOrderBookImbalanceRatio,
   calculateRelativeStrength,
-  simulateCompoundExpectancy
+  simulateCompoundExpectancy,
+  resolveDynamicStockRSI,
+  resolveDynamicStockEMAs
 } from '../utils/quantEngine';
 import { getCachedRealPriceHistory, fetchPriceHistory, getCachedStockFundamentals } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
@@ -98,9 +100,10 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const pChg = Number(stock.pChange || stock.percentageChange || 0);
   const vol = Number(stock.volume || stock.totalTradedQuantity || 0);
   const turnover = Number(stock.turnover || stock.totalTurnover || (ltp * vol) || 0);
-  const ema20 = Number(stock.ema20 || 0);
-  const ema50 = Number(stock.ema50 || stock.sma50 || 0);
-  const rsi = Number(stock.rsi || 50);
+  const dynEMAs = resolveDynamicStockEMAs(stock, ltp);
+  const ema20 = Number(stock.ema20 || dynEMAs.ema20);
+  const ema50 = Number(stock.ema50 || stock.sma50 || dynEMAs.ema50);
+  const rsi = resolveDynamicStockRSI(stock);
   const cachedFund = getCachedStockFundamentals(sym);
   const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (stock.eps ?? 0));
   const bookValue = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock.bookValue ?? stock.bvps ?? 100));
@@ -127,26 +130,26 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
     const trueRange = Math.max(tr1, tr2, tr3);
     dynamicAtr = Math.max(2, trueRange > 0 ? trueRange : ltp * 0.032);
   }
-  const atrPct = Number(((dynamicAtr / ltp) * 100).toFixed(2));
+  const atrPct = Number((((Number(dynamicAtr) || 0) / (ltp || 100)) * 100).toFixed(2));
   const volTier = atrPct < 2.5 ? 'Low-Beta Blue-Chip' : atrPct <= 4.2 ? 'Moderate Volatility' : 'High-Beta Momentum';
 
   // Multi horizon & Targets calculation calibrated with true dynamic ATR
-  const levels = calculateMultiHorizonTargets(ltp, stock.high52, stock.low52, dynamicAtr, pChg);
-  const t2Guard = calculateT2CircuitTrapGuard(stock);
+  const levels = calculateMultiHorizonTargets(ltp, stock.high52, stock.low52, dynamicAtr, pChg) || {};
+  const t2Guard = calculateT2CircuitTrapGuard(stock) || { isSafeToEnter: true, status: 'SAFE_ENTRY', advice: 'Safe' };
 
   // Suggested Entry, Stop Loss, Target 1
   const entryMin = Number(levels.entryZone?.min || (ltp * 0.985).toFixed(1));
   const entryMax = Number(levels.entryZone?.max || (ltp * 1.015).toFixed(1));
-  const target1 = Number(levels.target1?.price || (ltp + dynamicAtr * 1.5).toFixed(1));
-  const target1Pct = Number(levels.target1?.pct || (((target1 - ltp) / ltp) * 100).toFixed(2));
-  const stopLoss = Number(levels.stopLoss?.price || (ltp - Math.min(ltp * 0.065, Math.max(ltp * 0.035, dynamicAtr * 1.25))).toFixed(1));
-  const stopLossPct = Number(levels.stopLoss?.pct || (((ltp - stopLoss) / ltp) * 100).toFixed(2));
+  const target1 = Number(levels.target1?.price || (ltp + (Number(dynamicAtr) || 5) * 1.5).toFixed(1));
+  const target1Pct = Number(levels.target1?.pct ?? (((target1 - ltp) / (ltp || 100)) * 100).toFixed(2));
+  const stopLoss = Number(levels.stopLoss?.price || (ltp - Math.min(ltp * 0.065, Math.max(ltp * 0.035, (Number(dynamicAtr) || 5) * 1.25))).toFixed(1));
+  const stopLossPct = Number(levels.stopLoss?.pct ?? (((ltp - stopLoss) / (ltp || 100)) * 100).toFixed(2));
 
   // Geometric sanity guard: Target must be above entry and stop loss must be below entry
   const isGeometricallySound = stopLoss < ltp * 0.99 && target1 > ltp * 1.025;
   const riskPerShare = isGeometricallySound ? (ltp - stopLoss) : Math.max(0.5, ltp - stopLoss);
   const rewardPerShare = isGeometricallySound ? (target1 - ltp) : 0;
-  const netRRR = isGeometricallySound && riskPerShare > 0 ? Number((rewardPerShare / riskPerShare).toFixed(2)) : 0;
+  const netRRR = isGeometricallySound && riskPerShare > 0 ? Number(((rewardPerShare / riskPerShare) || 0).toFixed(2)) : 0;
 
   // Broker accumulation
   const broker = stock.brokerAnalysis || {};
@@ -268,23 +271,23 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       name: '2. Trend & Moving Average Structure',
       passed: passTrend,
       detail: passTrend 
-        ? `Holding ${effEma20 > 0 ? 'EMA 20 (Rs. ' + effEma20 + ')' : effEma50 > 0 ? 'EMA 50 (Rs. ' + effEma50 + ')' : '52W Mid-band'} · RSI ${rsi.toFixed(1)} (Healthy 38–74 range)`
-        : `Fails trend structure (${!isAboveMovingAvg ? 'Below EMA/Trend structure' : `RSI ${rsi.toFixed(1)} out of 38-74 bounds`})`
+        ? `Holding ${effEma20 > 0 ? 'EMA 20 (Rs. ' + effEma20 + ')' : effEma50 > 0 ? 'EMA 50 (Rs. ' + effEma50 + ')' : '52W Mid-band'} · RSI ${rsi != null ? Number(rsi).toFixed(1) : '—'} (Healthy 38–74 range)`
+        : `Fails trend structure (${!isAboveMovingAvg ? 'Below EMA/Trend structure' : `RSI ${rsi != null ? Number(rsi).toFixed(1) : '—'} out of 38-74 bounds`})`
     },
     {
       id: 'volume',
       name: '3. Volume Surge & Smart Money Flow',
       passed: passVolume,
       detail: passVolume 
-        ? `VSR ${vsr.toFixed(1)}× ${isBrokerAccum ? '· Broker Accumulating' : '· Strong Buying Interest'}`
-        : `Thin buying volume (VSR ${vsr.toFixed(1)}× < 1.05×)`
+        ? `VSR ${(Number(vsr) || 1).toFixed(1)}× ${isBrokerAccum ? '· Broker Accumulating' : '· Strong Buying Interest'}`
+        : `Thin buying volume (VSR ${(Number(vsr) || 1).toFixed(1)}× < 1.05×)`
     },
     {
       id: 'rrr',
       name: '4. Dynamic ATR Risk/Reward (≥ 1.5 : 1)',
       passed: passRRR,
       detail: passRRR 
-        ? `RRR ${netRRR} : 1 · ATR Rs. ${dynamicAtr.toFixed(1)} (${volTier}) · Target 1 +${target1Pct}% · Stop -${stopLossPct}%`
+        ? `RRR ${netRRR} : 1 · ATR Rs. ${(Number(dynamicAtr) || 0).toFixed(1)} (${volTier}) · Target 1 +${target1Pct}% · Stop -${stopLossPct}%`
         : !isGeometricallySound
         ? `Invalid trade geometry (Stop Loss Rs. ${stopLoss} >= Entry or Target Rs. ${target1} <= Entry)`
         : `Fails ATR RRR hurdle (RRR ${netRRR}:1 < 1.45:1 or Target < 4.5%)`
@@ -294,16 +297,16 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       name: '5. Sector Relative Strength (RS)',
       passed: passSector,
       detail: passSector 
-        ? `${sectorName} RS ${sectorRsRatio.toFixed(2)}x ${sectorChange >= 0 ? '(Tailwind)' : '(Aligned)'}`
-        : `${sectorName} lagging benchmark (RS ${sectorRsRatio.toFixed(2)}x < 0.96x drag)`
+        ? `${sectorName} RS ${(Number(sectorRsRatio) || 1).toFixed(2)}x ${sectorChange >= 0 ? '(Tailwind)' : '(Aligned)'}`
+        : `${sectorName} lagging benchmark (RS ${(Number(sectorRsRatio) || 1).toFixed(2)}x < 0.96x drag)`
     },
     {
       id: 'vsa',
       name: '6. Volume Spread & Anti-Trap Guard',
       passed: passVSA,
       detail: passVSA 
-        ? `Clean candle spread · Upper wick ${(upperWickRatio * 100).toFixed(0)}% (No smart money rejection)`
-        : `⚠️ Bull Trap Wick: High-volume rejection at upper wick (${(upperWickRatio * 100).toFixed(0)}% > 42%)`
+        ? `Clean candle spread · Upper wick ${(Number(upperWickRatio || 0) * 100).toFixed(0)}% (No smart money rejection)`
+        : `⚠️ Bull Trap Wick: High-volume rejection at upper wick (${(Number(upperWickRatio || 0) * 100).toFixed(0)}% > 42%)`
     },
     {
       id: 't2_guard',
@@ -318,11 +321,11 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
       name: '8. Solvency & Conviction Score',
       passed: passFundamentals && passConviction,
       detail: (passFundamentals && passConviction)
-        ? `EPS Rs. ${eps >= 0 ? eps.toFixed(1) : '—'} (Solvent) · Conviction Score: ${score}/100 (BUY / ACCUMULATE)`
-        : eps < 0
-        ? `Fails solvency (Negative EPS: Rs. ${eps.toFixed(1)} indicates operating losses)`
-        : bookValue < 75
-        ? `Fails capital solvency (Book Value Rs. ${bookValue.toFixed(1)} < Rs. 75 capital preservation floor)`
+        ? `EPS Rs. ${eps !== null && !isNaN(Number(eps)) && Number(eps) >= 0 ? Number(eps).toFixed(1) : '—'} (Solvent) · Conviction Score: ${score}/100 (BUY / ACCUMULATE)`
+        : (eps !== null && !isNaN(Number(eps)) && Number(eps) < 0)
+        ? `Fails solvency (Negative EPS: Rs. ${Number(eps).toFixed(1)} indicates operating losses)`
+        : (bookValue !== null && !isNaN(Number(bookValue)) && Number(bookValue) < 75)
+        ? `Fails capital solvency (Book Value Rs. ${Number(bookValue).toFixed(1)} < Rs. 75 capital preservation floor)`
         : `Fails conviction threshold (${score}/100 < 55 minimum hurdle)`
     }
   ];
@@ -404,30 +407,7 @@ export default function ShortTermProfitPlan({
     setDisplayLimit(30);
   }, [candidateFilter]);
 
-  // Unified stock selection for in-situ 1–2W Profit Plan analysis
-  const handleStockClick = (stockOrSymbol) => {
-    if (!stockOrSymbol) return;
-    const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-    if (!sym) return;
-    const cleanSym = String(sym).trim().toUpperCase();
-    setSelectedSymbol(cleanSym);
-
-    // Reset custom overrides for the newly selected stock
-    setCustomEntryPrice(null);
-    setCustomStopLoss(null);
-    setCustomTarget1(null);
-    setCustomQuantity(null);
-
-    // Smoothly scroll down to the 1–2W profit plan analysis workstation
-    setTimeout(() => {
-      const el = document.getElementById('short-term-analysis-workstation');
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 50);
-  };
-
-  // ── 2. Capital & Position Sizing Inputs ──
+  // ── 2. Capital & Position Sizing Inputs (Declared first to avoid TDZ) ──
   const [totalCapital, setTotalCapital] = useState(100000); // Rs. 1 Lakh default
   const [riskPercent, setRiskPercent] = useState(2.0); // 2% max risk per trade default
   const [customEntryPrice, setCustomEntryPrice] = useState(null);
@@ -451,6 +431,29 @@ export default function ShortTermProfitPlan({
     }
   });
 
+  // Unified stock selection for in-situ 1–2W Profit Plan analysis
+  const handleStockClick = (stockOrSymbol) => {
+    if (!stockOrSymbol) return;
+    const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+    if (!sym) return;
+    const cleanSym = String(sym).trim().toUpperCase();
+    setSelectedSymbol(cleanSym);
+
+    // Reset custom overrides for the newly selected stock
+    setCustomEntryPrice(null);
+    setCustomStopLoss(null);
+    setCustomTarget1(null);
+    setCustomQuantity(null);
+
+    // Smoothly scroll down to the 1–2W profit plan analysis workstation
+    setTimeout(() => {
+      const el = document.getElementById('short-term-analysis-workstation');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 50);
+  };
+
   const [planSaveToast, setPlanSaveToast] = useState(null);
 
   // Sync active plans to localStorage
@@ -464,8 +467,8 @@ export default function ShortTermProfitPlan({
 
   // ── 5. Market Regime Assessment ──
   const marketRegime = useMemo(() => {
-    const nepseLtp = Number(indices?.nepse?.current || indices?.nepse?.ltp || 0);
-    const nepsePChange = Number(indices?.nepse?.pChange || 0);
+    const nepseLtp = Number(indices?.nepse?.value || indices?.nepse?.current || indices?.nepse?.ltp || 0);
+    const nepsePChange = Number(indices?.nepse?.pChange ?? indices?.nepse?.changePercent ?? 0);
     const isBullish = nepsePChange >= 0;
 
     return {
@@ -526,7 +529,7 @@ export default function ShortTermProfitPlan({
         low52: Number(live?.low52 ?? live?.low52w ?? 0),
         ema20: Number(live?.ema20 ?? 0),
         ema50: Number(live?.ema50 ?? live?.sma50 ?? 0),
-        rsi: Number(live?.rsi ?? 50),
+        rsi: Number(live?.rsi ?? resolveDynamicStockRSI({ ...u, ...(live || {}), ltp })),
         eps: Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (live?.eps ?? 0)),
         bookValue: Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (live?.bookValue ?? live?.bvps ?? 100)),
         pe: Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (live?.pe ?? 0)),
@@ -594,17 +597,6 @@ export default function ShortTermProfitPlan({
     return null;
   }, [qualifiedCandidates]);
 
-  // Auto-select initial symbol cleanly
-  useEffect(() => {
-    if (!selectedSymbol) {
-      if (bestPickCandidate?.symbol) {
-        setSelectedSymbol(bestPickCandidate.symbol);
-      } else if (nearQualifiedCandidates[0]?.symbol) {
-        setSelectedSymbol(nearQualifiedCandidates[0].symbol);
-      }
-    }
-  }, [selectedSymbol, bestPickCandidate, nearQualifiedCandidates]);
-
   // Breakout Candidates: Real NEPSE breakout setups (52W high proximity, volume surges, price thrusts, or technical breakout)
   const breakoutCandidates = useMemo(() => {
     return allEvaluatedCandidates.filter(c => {
@@ -637,14 +629,35 @@ export default function ShortTermProfitPlan({
     });
   }, [allEvaluatedCandidates]);
 
+  // Auto-select initial symbol cleanly
+  useEffect(() => {
+    if (!selectedSymbol) {
+      if (bestPickCandidate?.symbol) {
+        setSelectedSymbol(bestPickCandidate.symbol);
+      } else if (nearQualifiedCandidates[0]?.symbol) {
+        setSelectedSymbol(nearQualifiedCandidates[0].symbol);
+      } else if (breakoutCandidates[0]?.symbol) {
+        setSelectedSymbol(breakoutCandidates[0].symbol);
+      } else if (allEvaluatedCandidates[0]?.symbol) {
+        setSelectedSymbol(allEvaluatedCandidates[0].symbol);
+      }
+    }
+  }, [selectedSymbol, bestPickCandidate, nearQualifiedCandidates, breakoutCandidates, allEvaluatedCandidates]);
+
   // Filtered Candidates according to user selection
   const filteredCandidates = useMemo(() => {
     let pool = [];
 
     if (candidateFilter === 'all') {
-      pool = qualifiedCandidates;
+      pool = qualifiedCandidates.length > 0 
+        ? qualifiedCandidates 
+        : nearQualifiedCandidates.length > 0 
+        ? nearQualifiedCandidates 
+        : breakoutCandidates.length > 0 
+        ? breakoutCandidates 
+        : allEvaluatedCandidates;
     } else if (candidateFilter === 'near_qualified') {
-      pool = nearQualifiedCandidates;
+      pool = nearQualifiedCandidates.length > 0 ? nearQualifiedCandidates : allEvaluatedCandidates.filter(c => c.passedCount >= 5);
     } else if (candidateFilter === 'breakout') {
       pool = breakoutCandidates;
     } else if (candidateFilter === 'broker_accum') {
@@ -677,7 +690,8 @@ export default function ShortTermProfitPlan({
 
   // ── 8. Currently Selected Stock Details ──
   const activeStock = useMemo(() => {
-    const sym = (selectedSymbol || bestPickCandidate?.symbol || nearQualifiedCandidates[0]?.symbol || 'NABIL').trim().toUpperCase();
+    const fallbackSym = bestPickCandidate?.symbol || nearQualifiedCandidates[0]?.symbol || breakoutCandidates[0]?.symbol || allEvaluatedCandidates[0]?.symbol || 'NABIL';
+    const sym = (selectedSymbol || fallbackSym).trim().toUpperCase();
     const foundEvaluated = allEvaluatedCandidates.find(c => c.symbol.toUpperCase() === sym);
     if (foundEvaluated) return foundEvaluated;
 
@@ -688,6 +702,8 @@ export default function ShortTermProfitPlan({
 
     if (bestPickCandidate) return bestPickCandidate;
     if (nearQualifiedCandidates[0]) return nearQualifiedCandidates[0];
+    if (breakoutCandidates[0]) return breakoutCandidates[0];
+    if (allEvaluatedCandidates[0]) return allEvaluatedCandidates[0];
 
     return evaluateShortTermCriteria({
       symbol: sym,
@@ -695,7 +711,7 @@ export default function ShortTermProfitPlan({
       pChange: 0,
       sector: 'Commercial Bank'
     }, indices);
-  }, [allEvaluatedCandidates, fullUniverseStocks, selectedSymbol, bestPickCandidate, nearQualifiedCandidates, indices]);
+  }, [allEvaluatedCandidates, fullUniverseStocks, selectedSymbol, bestPickCandidate, nearQualifiedCandidates, breakoutCandidates, indices]);
 
   // Reset custom overrides when switching symbol
   useEffect(() => {
@@ -706,13 +722,13 @@ export default function ShortTermProfitPlan({
   }, [selectedSymbol]);
 
   // ── 8. Pricing & Profit Calculations ──
-  const entryPrice = customEntryPrice !== null ? Number(customEntryPrice) : Number(activeStock.ltp || 100);
+  const entryPrice = customEntryPrice !== null ? Number(customEntryPrice) : Number(activeStock?.ltp || 100);
   const stopLossPrice = customStopLoss !== null
     ? Number(customStopLoss)
-    : Number(activeStock.stopLoss || (entryPrice * 0.96).toFixed(1));
+    : Number(activeStock?.stopLoss || (entryPrice * 0.96).toFixed(1));
   const target1Price = customTarget1 !== null
     ? Number(customTarget1)
-    : Number(activeStock.target1 || (entryPrice * 1.08).toFixed(1));
+    : Number(activeStock?.target1 || (entryPrice * 1.08).toFixed(1));
 
   // Risk & Position Sizing Math
   const riskAmount = (Number(totalCapital) * (Number(riskPercent) / 100)); // e.g. 100,000 * 2% = Rs. 2,000
@@ -999,7 +1015,7 @@ export default function ShortTermProfitPlan({
             <span style={{ color: marketRegime.color, fontWeight: 900 }}>{marketRegime.label}</span>
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#FFF' }}>
-            {marketRegime.ltp > 0 ? `NEPSE ${marketRegime.ltp.toFixed(1)} (${marketRegime.pChange >= 0 ? '+' : ''}${marketRegime.pChange.toFixed(2)}%)` : 'Market Open'}
+            {Number(marketRegime.ltp) > 0 ? `NEPSE ${Number(marketRegime.ltp).toFixed(1)} (${Number(marketRegime.pChange) >= 0 ? '+' : ''}${Number(marketRegime.pChange).toFixed(2)}%)` : 'Market Open'}
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>
             {marketRegime.desc}
@@ -1927,7 +1943,7 @@ export default function ShortTermProfitPlan({
                       Rs. {formatSouthAsian(buyCalculations.totalAmount)}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                      Cost per share: Rs. {buyCalculations.costPerShare.toFixed(2)}
+                      Cost per share: Rs. {(Number(buyCalculations?.costPerShare) || 0).toFixed(2)}
                     </div>
                   </div>
 
@@ -1937,7 +1953,7 @@ export default function ShortTermProfitPlan({
                       +Rs. {formatSouthAsian(netTakeHomeProfit)}
                     </div>
                     <div style={{ fontSize: 10, color: '#34D399', fontWeight: 800 }}>
-                      Net +{netTakeHomePct.toFixed(2)}% (After Fees & Tax)
+                      Net +{(Number(netTakeHomePct) || 0).toFixed(2)}% (After Fees & Tax)
                     </div>
                   </div>
                 </div>
@@ -1955,11 +1971,11 @@ export default function ShortTermProfitPlan({
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Broker Commission (Buy + Sell):</span>
-                    <span>Rs. {(buyCalculations.commission + target1SellCalculations.commission).toFixed(2)}</span>
+                    <span>Rs. {((Number(buyCalculations?.commission) || 0) + (Number(target1SellCalculations?.commission) || 0)).toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>SEBON Fee (0.015% × 2):</span>
-                    <span>Rs. {(buyCalculations.sebonFee + target1SellCalculations.sebonFee).toFixed(2)}</span>
+                    <span>Rs. {((Number(buyCalculations?.sebonFee) || 0) + (Number(target1SellCalculations?.sebonFee) || 0)).toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>DP Charge (Rs. 25 × 2):</span>
@@ -1967,7 +1983,7 @@ export default function ShortTermProfitPlan({
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
                     <span>Short-Term CGT (7.5% - 10.0% Final Tax):</span>
-                    <span>Rs. {target1SellCalculations.cgt.toFixed(2)}</span>
+                    <span>Rs. {(Number(target1SellCalculations?.cgt) || 0).toFixed(2)}</span>
                   </div>
                   <div style={{
                     display: 'flex',
@@ -1978,7 +1994,7 @@ export default function ShortTermProfitPlan({
                     fontWeight: 800
                   }}>
                     <span style={{ color: '#FB7185' }}>Downside if Stop-Loss Hits:</span>
-                    <span style={{ color: '#FB7185' }}>-Rs. {formatSouthAsian(netRiskLoss)} (-{netRiskPct.toFixed(2)}%)</span>
+                    <span style={{ color: '#FB7185' }}>-Rs. {formatSouthAsian(netRiskLoss)} (-{(Number(netRiskPct) || 0).toFixed(2)}%)</span>
                   </div>
                 </div>
 
@@ -1992,10 +2008,10 @@ export default function ShortTermProfitPlan({
                 }}>
                   <span>Net Risk-to-Reward Ratio (RRR):</span>
                   <span style={{
-                    color: netRRR >= 1.8 ? '#34D399' : '#FBBF24',
+                    color: (Number(netRRR) || 0) >= 1.8 ? '#34D399' : '#FBBF24',
                     fontSize: 14
                   }}>
-                    {netRRR.toFixed(2)} : 1 {netRRR >= 1.8 ? '✓ Passes Golden Rule' : '⚠️ Sub-optimal'}
+                    {(Number(netRRR) || 0).toFixed(2)} : 1 {(Number(netRRR) || 0) >= 1.8 ? '✓ Passes Golden Rule' : '⚠️ Sub-optimal'}
                   </span>
                 </div>
               </div>
@@ -2059,7 +2075,7 @@ export default function ShortTermProfitPlan({
                 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)' }}>EXPECTED VALUE (EV) / TRADE</div>
                   <div style={{ fontSize: 17, fontWeight: 900, color: expectancyData.hasPositiveEdge ? '#34D399' : '#FB7185', marginTop: 2 }}>
-                    {expectancyData.ev >= 0 ? '+' : ''}Rs. {expectancyData.ev.toFixed(2)}
+                    {(Number(expectancyData?.ev) || 0) >= 0 ? '+' : ''}Rs. {(Number(expectancyData?.ev) || 0).toFixed(2)}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
                     Profit Factor: <strong style={{ color: '#FFF' }}>{expectancyData.profitFactor}x</strong>
@@ -2078,7 +2094,7 @@ export default function ShortTermProfitPlan({
                     {expectancyData.breakEvenWinRate}%
                   </div>
                   <div style={{ fontSize: 10, color: '#34D399', marginTop: 2, fontWeight: 700 }}>
-                    +{ (assumedWinRate - expectancyData.breakEvenWinRate).toFixed(1) }% Statistical Buffer
+                    +{ (Number(assumedWinRate || 0) - Number(expectancyData?.breakEvenWinRate || 0)).toFixed(1) }% Statistical Buffer
                   </div>
                 </div>
               </div>
@@ -2475,7 +2491,7 @@ export default function ShortTermProfitPlan({
                           fontSize: 11,
                           color: currentDiffPct >= 0 ? 'var(--bull)' : 'var(--bear)'
                         }}>
-                          {currentDiffPct >= 0 ? '+' : ''}{currentDiffPct.toFixed(2)}%
+                          {(Number(currentDiffPct) || 0) >= 0 ? '+' : ''}{(Number(currentDiffPct) || 0).toFixed(2)}%
                         </div>
                       </div>
 

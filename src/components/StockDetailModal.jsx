@@ -10,11 +10,8 @@ import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
 import { getWatchlistAlertConfig, calculateStockRvol } from '../utils/watchlistAlerts';
-import {
-  calculatePivotPoints,
-  calculateFibonacci,
-  getPeerStocks
-} from '../utils/mockData';
+import { calculatePivotPoints, calculateFibonacci } from '../utils/indicators';
+import { getPeerStocks } from '../utils/calculations';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import {
   calculateGrahamIntrinsicValue,
@@ -49,6 +46,11 @@ import { DividendHistoryPanel } from './DividendHistoryPanel';
 import { toggleWatchlist, isWatched } from '../utils/watchlist';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';
+import {
+  calculateBrokerConcentration,
+  getBrokerName,
+  formatBrokerAmount
+} from '../utils/accumulationDistributionEngine';
 
 
 
@@ -1095,6 +1097,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     return [];
   }, [realFloorsheet]);
 
+  // Comprehensive Broker Accumulation & Distribution Concentration
+  const brokerConcentration = useMemo(() => {
+    return calculateBrokerConcentration(floorsheet, d?.symbol, {
+      ...d,
+      realBrokerAnalysis
+    });
+  }, [floorsheet, d, realBrokerAnalysis]);
+
   // Real 12-Month Historical OHLCV
   const history12M = useMemo(() => {
     let days = 365;
@@ -1899,6 +1909,125 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               )}
             </div>
 
+            {/* ── Broker Accumulation & Distribution Footprint Preview ── */}
+            <div style={{
+              background: '#151922',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 14,
+              padding: '14px 16px',
+              marginBottom: 16
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                  <Layers style={{ width: 15, height: 15, color: '#6366f1' }} />
+                  Broker Footprint Ledger (कुन ब्रोकरले कति किन्यो र बेच्यो?)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: brokerConcentration.smartMoneyBias.includes('Cornering') ? 'rgba(16, 185, 129, 0.15)' : brokerConcentration.smartMoneyBias.includes('Offloading') ? 'rgba(244, 63, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                    color: brokerConcentration.smartMoneyBias.includes('Cornering') ? '#34d399' : brokerConcentration.smartMoneyBias.includes('Offloading') ? '#f87171' : '#38bdf8'
+                  }}>
+                    {brokerConcentration.smartMoneyBias}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('depth_broker')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#60a5fa',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2
+                    }}
+                  >
+                    Full Details <ArrowRight style={{ width: 12, height: 12 }} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 2-column quick snapshot */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginTop: 8 }}>
+                {/* Buyers */}
+                <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.18)', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Top Accumulators (खरिद)</span>
+                    <span>BCR₅: {brokerConcentration.bcr5BuyPct}%</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {brokerConcentration.topBuyerBrokers.slice(0, 3).map((b, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                        <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ color: '#94a3b8', fontSize: 10 }}>#{b.broker}</span>
+                          <span style={{ maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={b.brokerName}>
+                            {b.brokerName}
+                          </span>
+                        </span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ color: '#34d399', fontWeight: 800 }}>+{b.volume.toLocaleString()}</span>
+                          <span style={{ color: '#94a3b8', fontSize: 9.5, marginLeft: 4 }}>({formatBrokerAmount(b.amount)})</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(!brokerConcentration.topBuyerBrokers || brokerConcentration.topBuyerBrokers.length === 0) && (
+                      <div style={{ color: '#64748b', fontSize: 10.5, textAlign: 'center', padding: '6px 0' }}>No buyer records</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sellers */}
+                <div style={{ background: 'rgba(244, 63, 94, 0.04)', border: '1px solid rgba(244, 63, 94, 0.18)', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Top Distributors (बिक्री)</span>
+                    <span>Ticket Ratio: {brokerConcentration.tradeSizeRatio}x</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {brokerConcentration.topSellerBrokers.slice(0, 3).map((s, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                        <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ color: '#94a3b8', fontSize: 10 }}>#{s.broker}</span>
+                          <span style={{ maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={s.brokerName}>
+                            {s.brokerName}
+                          </span>
+                        </span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ color: '#f87171', fontWeight: 800 }}>-{s.volume.toLocaleString()}</span>
+                          <span style={{ color: '#94a3b8', fontSize: 9.5, marginLeft: 4 }}>({formatBrokerAmount(s.amount)})</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(!brokerConcentration.topSellerBrokers || brokerConcentration.topSellerBrokers.length === 0) && (
+                      <div style={{ color: '#64748b', fontSize: 10.5, textAlign: 'center', padding: '6px 0' }}>No seller records</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Accumulators Chip Bar */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.05)', fontSize: 10.5 }}>
+                <span style={{ color: '#94a3b8', fontWeight: 600 }}>Top Net Buyers:</span>
+                {(brokerConcentration.topNetAccumulators || []).slice(0, 2).map((b, i) => (
+                  <span key={i} style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>
+                    #{b.broker} {b.brokerName.split(' ')[0]}: +{b.netQty.toLocaleString()}
+                  </span>
+                ))}
+                <span style={{ color: '#64748b' }}>•</span>
+                <span style={{ color: '#94a3b8', fontWeight: 600 }}>Top Net Sellers:</span>
+                {(brokerConcentration.topNetDistributors || []).slice(0, 2).map((s, i) => (
+                  <span key={i} style={{ background: 'rgba(244, 63, 94, 0.12)', color: '#f87171', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>
+                    #{s.broker} {s.brokerName.split(' ')[0]}: {s.netQty.toLocaleString()}
+                  </span>
+                ))}
+              </div>
+            </div>
+
             {/* ── ShareHub Interactive Chart ── */}
             <div style={{
               background: '#151922',
@@ -2332,48 +2461,146 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               )}
             </div>
 
-            {/* Top Buyer & Seller Brokers */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-              <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--bull)' }}>Top Buyers</div>
-                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(16, 185, 129,0.15)', color: '#10B981', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
-                  {brokerAnalysisLoading && <RefreshCw style={{ width: 11, height: 11, color: 'var(--text-muted)', animation: 'spin 1s linear infinite' }} />}
+            {/* ── Comprehensive Broker Accumulation vs Distribution Ledger ── */}
+            <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 6 }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Layers style={{ width: 16, height: 16, color: '#60a5fa' }} />
+                    Broker Accumulation vs Distribution Ledger (कुन ब्रोकरले कति किन्यो र बेच्यो?)
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
+                    Institutional order block flow, trade ticket concentration & net position
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(brokerAnalysis?.topBuyers && brokerAnalysis.topBuyers.length > 0) ? (
-                    brokerAnalysis.topBuyers.map((b, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo || b.buyerMemberId || b.buyerBroker || b.memberId || b.id || 'N/A'}</span>
-                        <span style={{ color: 'var(--bull)', fontWeight: 700 }}>+{(b.buyQty || b.shares || b.qty || 0).toLocaleString()}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: '10px 0' }}>
-                      {brokerAnalysisLoading ? 'Fetching...' : 'No buy orders recorded'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9.5, background: 'rgba(16, 185, 129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>● LIVE EXCHANGE</span>}
+                  {brokerAnalysisLoading && <RefreshCw style={{ width: 12, height: 12, color: 'var(--text-muted)', animation: 'spin 1s linear infinite' }} />}
+                </div>
+              </div>
+
+              {/* 2-Column Responsive Tables */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                {/* Buyers */}
+                <div style={{ background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.18)', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase' }}>
+                      Top Buying Brokers (खरिदकर्ता)
+                    </span>
+                    <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                      Total: {brokerConcentration.totalBuyVolume.toLocaleString()} kitta
+                    </span>
+                  </div>
+
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8', fontSize: 10, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <th style={{ textAlign: 'left', padding: '4px 0' }}>Broker</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Buy Qty</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Turnover</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brokerConcentration.topBuyerBrokers.map((b, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                          <td style={{ padding: '6px 0' }}>
+                            <div style={{ fontWeight: 800, color: '#ffffff' }}>#{b.broker}</div>
+                            <div style={{ fontSize: 9.5, color: '#94a3b8', maxWidth: 110, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={b.brokerName}>
+                              {b.brokerName}
+                            </div>
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', color: 'var(--bull)', fontWeight: 800 }}>
+                            +{b.volume.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', color: '#cbd5e1', fontSize: 10 }}>
+                            {formatBrokerAmount(b.amount)}
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 800, fontSize: 10.5 }}>
+                            <span style={{ color: b.netQty >= 0 ? '#34d399' : '#f87171' }}>
+                              {b.netQty >= 0 ? '+' : ''}{b.netQty.toLocaleString()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {brokerConcentration.topBuyerBrokers.length === 0 && (
+                    <div style={{ color: '#94a3b8', fontSize: 11, textAlign: 'center', padding: '12px 0' }}>
+                      {brokerAnalysisLoading ? 'Fetching broker flow…' : 'No buy records'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sellers */}
+                <div style={{ background: 'rgba(244, 63, 94, 0.03)', border: '1px solid rgba(244, 63, 94, 0.18)', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#F43F5E', textTransform: 'uppercase' }}>
+                      Top Selling Brokers (बिक्रीकर्ता)
+                    </span>
+                    <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                      Total: {brokerConcentration.totalSellVolume.toLocaleString()} kitta
+                    </span>
+                  </div>
+
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ color: '#94a3b8', fontSize: 10, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <th style={{ textAlign: 'left', padding: '4px 0' }}>Broker</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Sell Qty</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Turnover</th>
+                        <th style={{ textAlign: 'right', padding: '4px 0' }}>Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brokerConcentration.topSellerBrokers.map((s, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                          <td style={{ padding: '6px 0' }}>
+                            <div style={{ fontWeight: 800, color: '#ffffff' }}>#{s.broker}</div>
+                            <div style={{ fontSize: 9.5, color: '#94a3b8', maxWidth: 110, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.brokerName}>
+                              {s.brokerName}
+                            </div>
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', color: '#F43F5E', fontWeight: 800 }}>
+                            -{s.volume.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', color: '#cbd5e1', fontSize: 10 }}>
+                            {formatBrokerAmount(s.amount)}
+                          </td>
+                          <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 800, fontSize: 10.5 }}>
+                            <span style={{ color: s.netQty <= 0 ? '#f87171' : '#34d399' }}>
+                              {s.netQty > 0 ? '+' : ''}{s.netQty.toLocaleString()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {brokerConcentration.topSellerBrokers.length === 0 && (
+                    <div style={{ color: '#94a3b8', fontSize: 11, textAlign: 'center', padding: '12px 0' }}>
+                      {brokerAnalysisLoading ? 'Fetching broker flow…' : 'No sell records'}
                     </div>
                   )}
                 </div>
               </div>
 
-              <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#F43F5E' }}>Top Sellers</div>
-                  {brokerAnalysis?.isReal && <span style={{ fontSize: 9, background: 'rgba(244, 63, 94,0.12)', color: '#F43F5E', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>● LIVE</span>}
+              {/* Net Position Summary */}
+              <div style={{ marginTop: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>Top Net Accumulators:</span>
+                  {(brokerConcentration.topNetAccumulators || []).slice(0, 3).map((b, i) => (
+                    <span key={i} style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                      #{b.broker} {b.brokerName.split(' ')[0]}: +{b.netQty.toLocaleString()} kitta
+                    </span>
+                  ))}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(brokerAnalysis?.topSellers && brokerAnalysis.topSellers.length > 0) ? (
-                    brokerAnalysis.topSellers.map((b, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5 }}>
-                        <span style={{ fontWeight: 800, color: '#ffffff' }}>Broker #{b.broker || b.brokerNo || b.sellerMemberId || b.sellerBroker || b.memberId || b.id || 'N/A'}</span>
-                        <span style={{ color: '#F43F5E', fontWeight: 700 }}>-{(b.sellQty || b.shares || b.qty || 0).toLocaleString()}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: '10px 0' }}>
-                      {brokerAnalysisLoading ? 'Fetching...' : 'No sell orders recorded'}
-                    </div>
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ color: '#94a3b8', fontWeight: 600 }}>Top Net Distributors:</span>
+                  {(brokerConcentration.topNetDistributors || []).slice(0, 3).map((s, i) => (
+                    <span key={i} style={{ background: 'rgba(244, 63, 94, 0.12)', color: '#f87171', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                      #{s.broker} {s.brokerName.split(' ')[0]}: {s.netQty.toLocaleString()} kitta
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>

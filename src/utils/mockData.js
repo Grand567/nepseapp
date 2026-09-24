@@ -162,13 +162,13 @@ export function calculateIndices(stocks = []) {
   });
 
   const ratio = baseCap > 0 ? totalCap / baseCap : 1;
-  const nepse = Number((2000 * ratio).toFixed(2));
-  const prevNepse = 2000;
+  const pChange = Number(((ratio - 1) * 100).toFixed(2));
 
   return {
-    nepse: { value: nepse, change: Number((nepse - prevNepse).toFixed(2)), pChange: Number(((nepse - prevNepse) / prevNepse * 100).toFixed(2)) },
-    float: { value: Number((120 * ratio).toFixed(2)), change: 0, pChange: 0 },
-    sensitive: { value: Number((380 * ratio).toFixed(2)), change: 0, pChange: 0 }
+    status: baseCap > 0 ? 'complete' : 'insufficient_history',
+    nepse: { value: null, change: null, pChange, marketCapChangePct: pChange },
+    float: { value: null, change: null, pChange: null },
+    sensitive: { value: null, change: null, pChange: null }
   };
 }
 

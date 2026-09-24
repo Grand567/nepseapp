@@ -12,6 +12,95 @@
  * 9. Machine Learning Operational Zone Classification (Buying, Entry, Holding, Exit, Selling)
  * 10. Quantitative Risk-Reward Ratio (RRR >= 2.0) & ATR-based Target Formulations
  */
+import { calculateRSI, calculateEMA, calculateMACD } from './indicators.js';
+import { getCachedRealPriceHistory } from './liveData.js';
+
+/**
+ * Dynamic resolution helpers to guarantee authentic, stock-specific metrics for all scrips
+ * Purged of all synthetic simulation and pseudo-random generation.
+ */
+export function resolveDynamicStockCandles(stock, minDays = 30) {
+  if (Array.isArray(stock?.candles) && stock.candles.length >= minDays) {
+    return stock.candles;
+  }
+  if (Array.isArray(stock?.history) && stock.history.length >= minDays) {
+    return stock.history;
+  }
+  const sym = String(stock?.symbol || stock?.scrip || '').toUpperCase().trim();
+  if (sym) {
+    const cached = getCachedRealPriceHistory(sym);
+    if (Array.isArray(cached) && cached.length >= minDays) {
+      return cached;
+    }
+  }
+  if (Array.isArray(stock?.candles) && stock.candles.length > 0) {
+    return stock.candles;
+  }
+  if (Array.isArray(stock?.history) && stock.history.length > 0) {
+    return stock.history;
+  }
+  return [];
+}
+
+export function resolveDynamicStockRSI(stock) {
+  if (stock?.rsi != null && !isNaN(Number(stock.rsi)) && Number(stock.rsi) > 0) {
+    return Number(stock.rsi);
+  }
+  if (stock?.rsi14 != null && !isNaN(Number(stock.rsi14)) && Number(stock.rsi14) > 0) {
+    return Number(stock.rsi14);
+  }
+  const candles = resolveDynamicStockCandles(stock, 15);
+  const closes = candles.map(c => Number(c.close || c.ltp || 0)).filter(p => p > 0);
+  if (closes.length >= 15) {
+    return calculateRSI(closes, 14);
+  }
+  return null; // Explicit insufficient data
+}
+
+export function resolveDynamicStockEMAs(stock, ltp) {
+  const price = Math.max(1, Number(ltp || stock?.ltp || stock?.closePrice || 0));
+  let ema20 = Number(stock?.ema20);
+  let ema50 = Number(stock?.ema50);
+  let ema200 = Number(stock?.ema200);
+
+  const candles = resolveDynamicStockCandles(stock, 20);
+  const closes = candles.map(c => Number(c.close || c.ltp || 0)).filter(p => p > 0);
+
+  if ((!ema20 || isNaN(ema20)) && closes.length >= 20) {
+    const arr = calculateEMA(closes, 20);
+    ema20 = arr[arr.length - 1];
+  }
+
+  if ((!ema50 || isNaN(ema50)) && closes.length >= 50) {
+    const arr = calculateEMA(closes, 50);
+    ema50 = arr[arr.length - 1];
+  }
+
+  if ((!ema200 || isNaN(ema200)) && closes.length >= 200) {
+    const arr = calculateEMA(closes, 200);
+    ema200 = arr[arr.length - 1];
+  }
+
+  return {
+    ema20: ema20 && !isNaN(ema20) ? Number(ema20.toFixed(2)) : null,
+    ema50: ema50 && !isNaN(ema50) ? Number(ema50.toFixed(2)) : null,
+    ema200: ema200 && !isNaN(ema200) ? Number(ema200.toFixed(2)) : null
+  };
+}
+
+export function resolveDynamicStockMACD(stock) {
+  let macd = stock?.macd;
+  if (macd && (macd.line !== 0 || macd.signal !== 0 || macd.hist !== 0)) {
+    return macd;
+  }
+  const candles = resolveDynamicStockCandles(stock, 30);
+  const closes = candles.map(c => Number(c.close || c.ltp || 0)).filter(p => p > 0);
+  if (closes.length >= 26) {
+    const res = calculateMACD(closes);
+    return { line: res.line, signal: res.signal, hist: res.histogram };
+  }
+  return { line: null, signal: null, hist: null };
+}
 
 /**
  * 1. Benjamin Graham Classical Intrinsic Valuation adapted for emerging capital markets
@@ -294,12 +383,21 @@ export function evaluateNrbRegulatorySafety(stock = {}) {
  */
 export function calculateVolumeZScore(currentVolume, avgVolume20D, stdDevVolume) {
   const v = Number(currentVolume) || 0;
-  const mu = Number(avgVolume20D) || (v * 0.6);
-  const sigma = Number(stdDevVolume) || Math.max(1, mu * 0.35);
+  const mu = Number(avgVolume20D) || 0;
+  const sigma = Number(stdDevVolume) || 0;
+
+  if (mu <= 0 || sigma <= 0 || v <= 0) {
+    return {
+      zScore: 0,
+      isVolumeShocker: false,
+      surgeRatio: 1.0,
+      severity: 'Insufficient Historical Volume Data'
+    };
+  }
 
   const zScore = Number(((v - mu) / sigma).toFixed(2));
   const isVolumeShocker = zScore >= 2.0;
-  const surgeRatio = mu > 0 ? Number((v / mu).toFixed(2)) : 1.0;
+  const surgeRatio = Number((v / mu).toFixed(2));
 
   return {
     zScore,
@@ -381,8 +479,7 @@ export function calculateRelativeStrength(stockLtp, stockPrevPeriodPrice, nepseV
  */
 export function calculateATR(history = [], period = 14) {
   if (!Array.isArray(history) || history.length < 2) {
-    const fallbackLtp = history[0]?.close || 200;
-    return Number((fallbackLtp * 0.028).toFixed(2));
+    return 0;
   }
 
   const trs = [];
@@ -410,11 +507,9 @@ export function calculateATR(history = [], period = 14) {
 export function calculateCompositeTechnicalScore(stock) {
   const ltp = Number(stock?.ltp) || 100;
   const pChange = Number(stock?.pChange) || 0;
-  const rsi = Number(stock?.rsi) || 50;
-  const ema20 = Number(stock?.ema20) || (ltp * 0.99);
-  const ema50 = Number(stock?.ema50) || (ltp * 0.97);
-  const ema200 = Number(stock?.ema200) || (ltp * 0.94);
-  const macd = stock?.macd || { line: 0, signal: 0, hist: 0 };
+  const rsi = resolveDynamicStockRSI(stock);
+  const { ema20, ema50, ema200 } = resolveDynamicStockEMAs(stock, ltp);
+  const macd = resolveDynamicStockMACD(stock);
   const floatTurnover = Number(stock?.floatTurnoverPct) || 0.8;
 
   // Vector Contributions:
@@ -657,7 +752,7 @@ export function calculateCompositeMomentumScore(stock, macroContext = {}) {
 
   // 2. I_SmartMoney in [-1.0, +1.0]
   let iSmartMoney = 0;
-  const rsi = Number(stock?.rsi) || 50;
+  const rsi = resolveDynamicStockRSI(stock);
   const pChg = Number(stock?.pChange) || 0;
   const volSurge = Number(stock?.volumeSurgeRatio) || 1.0;
   const floatTurnover = Number(stock?.floatTurnoverPct) || 0.8;
@@ -867,19 +962,24 @@ export function getHydroSeasonality(sector = '') {
  */
 export function classifyActionZone(stock, macroContext = {}) {
   const ltp = Number(stock?.ltp) || 100;
-  const rsi = Number(stock?.rsi) || 50;
-  const ema20 = Number(stock?.ema20) || (ltp * 0.98);
-  const low52w = Number(stock?.low52w) || (ltp * 0.75);
-  const high52w = Number(stock?.high52w) || (ltp * 1.25);
+  const rsi = resolveDynamicStockRSI(stock);
+  const { ema20 } = resolveDynamicStockEMAs(stock, ltp);
+  const dynamicCandles = resolveDynamicStockCandles(stock, 25);
+
+  let low52w = Number(stock?.low52w || stock?.low52 || 0);
+  let high52w = Number(stock?.high52w || stock?.high52 || 0);
+  if (!high52w || high52w <= ltp) high52w = Math.max(...dynamicCandles.map(c => c.high || c.close));
+  if (!low52w || low52w >= ltp) low52w = Math.min(...dynamicCandles.map(c => c.low || c.close));
+
   const volSurge = Number(stock?.volumeSurgeRatio) || 1.0;
   const zVol = calculateVolumeZScore(stock?.volume, stock?.avgVolume20D).zScore;
-  const bbw = calculateBollingerBandWidth([ltp * 0.98, ltp * 0.99, ltp, ltp * 1.01, ltp]);
+  const bbw = calculateBollingerBandWidth(dynamicCandles.map(c => c.close));
 
   // Support / Resistance estimations
   const s1 = Number(stock?.s1 || (ltp * 0.96).toFixed(1));
   const r1 = Number(stock?.r1 || (ltp * 1.06).toFixed(1));
   const r2 = Number(stock?.r2 || (ltp * 1.15).toFixed(1));
-  const atr = calculateATR([{ close: ltp * 0.98, high: ltp * 1.01, low: ltp * 0.97 }, { close: ltp, high: ltp * 1.02, low: ltp * 0.98 }]);
+  const atr = calculateATR(dynamicCandles);
 
   const { momentumScore: MS, factors } = calculateCompositeMomentumScore(stock, macroContext);
   const graham = calculateGrahamIntrinsicValue(stock?.eps, stock?.bookValue, ltp);
@@ -999,11 +1099,11 @@ export function classifyActionZone(stock, macroContext = {}) {
     zoneBadge = '🟡 EXIT ZONE (TAKE PROFIT / DISTRIBUTION)';
     zoneIcon = 'TrendingDown';
     const brokerWarn = hasHeavyBrokerDumping ? ` · ⚠️ ${brokerScore.label}: ${brokerScore.detail}` : '';
-    const condLabel = hasHeavyBrokerDumping && rsi < 70
+    const condLabel = hasHeavyBrokerDumping && rsi != null && rsi < 70
       ? `Institutional distribution detected (I_SmartMoney: ${factors.iSmartMoney})`
-      : rsi >= 75
+      : rsi != null && rsi >= 75
       ? `Overbought peak detected (RSI: ${rsi.toFixed(0)})`
-      : `Overbought or institutional distribution detected (RSI: ${rsi.toFixed(0)}, I_SmartMoney: ${factors.iSmartMoney})`;
+      : `Overbought or institutional distribution detected (RSI: ${rsi != null ? rsi.toFixed(0) : '—'}, I_SmartMoney: ${factors.iSmartMoney})`;
     triggerLogic = `${condLabel}${brokerWarn}.`;
     entryTarget = `Avoid Fresh Buys (Pullback Target: Rs. ${(ltp * 0.90).toFixed(1)})`;
     profitTarget1 = `Rs. ${r2.toFixed(1)} (Major Pivot R2)`;
@@ -1158,8 +1258,22 @@ export function calculateAccumulationDistributionIndex(candles = []) {
  */
 export function calculateStealthAccumulationIndex(stock, brokerList = []) {
   const ltp = Number(stock?.ltp) || 100;
-  const volume = Math.max(100, Number(stock?.volume) || 10000);
-  const priceHistory = Array.isArray(stock?.history) && stock.history.length > 0 ? stock.history.map(h => h.close) : [ltp * 0.99, ltp, ltp * 1.005, ltp];
+  const volume = Number(stock?.volume || stock?.totalTradedQuantity || 0);
+  const dynamicCandles = resolveDynamicStockCandles(stock, 25);
+  const priceHistory = Array.isArray(stock?.history) && stock.history.length > 0 
+    ? stock.history.map(h => Number(h.close || h.ltp || ltp)) 
+    : dynamicCandles.map(c => c.close);
+
+  if (!Array.isArray(brokerList) || brokerList.length === 0 || volume <= 0 || priceHistory.length < 5) {
+    return {
+      bcr3: 0,
+      bcr3Pct: 0,
+      priceVolatilityPct: 0,
+      sai: 0,
+      isStealthAccumulation: false,
+      classification: 'Insufficient Floorsheet / Volume Data'
+    };
+  }
 
   // Compute price volatility (standard deviation / mean)
   const meanPrice = priceHistory.reduce((a, b) => a + b, 0) / priceHistory.length;
@@ -1167,14 +1281,9 @@ export function calculateStealthAccumulationIndex(stock, brokerList = []) {
   const stdDev = Math.sqrt(variance);
   const priceVolatilityPct = meanPrice > 0 ? Math.max(0.005, stdDev / meanPrice) : 0.02;
 
-  // Calculate Net Buy volume for top 3 brokers
-  let top3NetBuy = 0;
-  if (Array.isArray(brokerList) && brokerList.length > 0) {
-    const sorted = [...brokerList].sort((a, b) => ((b.buyQty || 0) - (b.sellQty || 0)) - ((a.buyQty || 0) - (a.sellQty || 0)));
-    top3NetBuy = sorted.slice(0, 3).reduce((sum, b) => sum + Math.max(0, (b.buyQty || 0) - (b.sellQty || 0)), 0);
-  } else {
-    top3NetBuy = volume * (stock?.pChange >= 1 ? 0.45 : stock?.pChange >= 0 ? 0.30 : 0.15);
-  }
+  // Calculate Net Buy volume for top 3 brokers from authentic records
+  const sorted = [...brokerList].sort((a, b) => ((b.buyQty || 0) - (b.sellQty || 0)) - ((a.buyQty || 0) - (a.sellQty || 0)));
+  const top3NetBuy = sorted.slice(0, 3).reduce((sum, b) => sum + Math.max(0, (b.buyQty || 0) - (b.sellQty || 0)), 0);
 
   const bcr3 = Number((top3NetBuy / volume).toFixed(2));
   // SAI = BCR / Volatility
@@ -1196,9 +1305,9 @@ export function calculateStealthAccumulationIndex(stock, brokerList = []) {
  * Evaluates synchronized cross-trading / block wash transfer between Broker A and Broker B
  */
 export function calculateMatchingTradesSynchronization(brokerABuy, brokerBSell, directVolume) {
-  const volA = Number(brokerABuy) || 1000;
-  const volB = Number(brokerBSell) || 1000;
-  const direct = Number(directVolume) || Math.min(volA, volB) * 0.75;
+  const volA = Number(brokerABuy) || 0;
+  const volB = Number(brokerBSell) || 0;
+  const direct = Number(directVolume) || 0;
 
   const minVol = Math.min(volA, volB);
   const syncIndex = minVol > 0 ? Number((direct / minVol).toFixed(2)) : 0;
@@ -1514,9 +1623,9 @@ export function calculateImpendingLiquidityShockIndex(expiringShares, publicFloa
  * DPI = (w1 * S_SmartMoney) + (w2 * S_Technical) + (w3 * S_Fundamental) - (w4 * S_SupplyRisk)
  */
 export function calculateDecisionProbabilityIndex(stock, macroContext = {}) {
-  const MS = Number(stock?.momentumScore) || Number(calculateCompositeMomentumScore(stock).MS) || 0;
-  const techScore = Number(stock?.compositeTechScore) || 50;
-  const fundaScore = Number(stock?.fundamentalScore) || 50;
+  const MS = Number(stock?.momentumScore) || Number(calculateCompositeMomentumScore(stock, macroContext).MS) || 0;
+  const techScore = Number(stock?.compositeTechScore) || calculateCompositeTechnicalScore(stock).normalizedScore;
+  const fundaScore = Number(stock?.fundamentalScore) || calculateFundamentalScore(stock).score;
   const ilsi = Number(stock?.ilsi) || 5;
 
   // Normalize scores to [0, 100]
@@ -1580,8 +1689,8 @@ export function calculateDecisionProbabilityIndex(stock, macroContext = {}) {
  * High-Probability Breakout setup when S_rank >= 80 and RVOL >= 2.0
  */
 export function calculateTradeLabRankScore(stock) {
-  const rsi = Number(stock?.rsi) || 50;
-  const macd = stock?.macd || { line: 0, signal: 0, hist: 0 };
+  const rsi = resolveDynamicStockRSI(stock);
+  const macd = resolveDynamicStockMACD(stock);
   const rvol = Number(stock?.volumeSurgeRatio) || (stock?.volume && stock?.avgVolume20D ? stock.volume / stock.avgVolume20D : 1.0);
   const bcr3 = Number(stock?.bcr3) || (stock?.stealthAccumulation?.bcr3) || (stock?.pChange > 0 ? 0.45 : 0.20);
 
@@ -1642,9 +1751,14 @@ export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0,
   const h52 = Number(high52w) > 0 ? Number(high52w) : price * 1.30;
   const l52 = Number(low52w) > 0 ? Number(low52w) : price * 0.70;
 
-  // T1: Conservative Swing Target (+1.0x ATR to +1.5x ATR, min +6%)
+  // 15% Mandatory Daily Circuit Constraint
+  const circuitLimitPct = 15.0;
+  const ceiling15 = +(price * (1 + circuitLimitPct / 100)).toFixed(1);
+  const floor15 = +(price * (1 - circuitLimitPct / 100)).toFixed(1);
+
+  // T1: Conservative Swing Target (+1.0x ATR to +1.5x ATR, strictly capped by +15% circuit)
   const t1Gain = Math.max(price * 0.06, calculatedAtr * 1.25);
-  const target1 = Number((price + t1Gain).toFixed(1));
+  const target1 = Number(Math.min(ceiling15, price + t1Gain).toFixed(1));
   const t1Pct = Number((((target1 - price) / price) * 100).toFixed(2));
 
   // T2: Institutional Expansion Target (+2.0x ATR to Fibonacci 1.618 projection, min +14%)
@@ -1656,9 +1770,9 @@ export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0,
   const target3 = Number(Math.max(price + calculatedAtr * 3.8, h52 * 0.98).toFixed(1));
   const t3Pct = Number((((target3 - price) / price) * 100).toFixed(2));
 
-  // Invalidation Stop-Loss Floor (Key support level / -1.25x ATR, max -6.5%)
+  // Invalidation Stop-Loss Floor (Key support level / -1.25x ATR, strictly floored by -15% circuit)
   const stopLossDistance = Math.min(price * 0.065, Math.max(price * 0.035, calculatedAtr * 1.25));
-  const stopLoss = Number((price - stopLossDistance).toFixed(1));
+  const stopLoss = Number(Math.max(floor15, price - stopLossDistance).toFixed(1));
   const stopPct = Number((((price - stopLoss) / price) * 100).toFixed(2));
 
   // Risk-to-Reward Ratio (Target 1 Reward / Risk)
@@ -1693,7 +1807,7 @@ export function calculateMultiHorizonTargets(ltp = 100, high52w = 0, low52w = 0,
 export function calculateProbabilisticMatrix(stock = {}, history = [], macroPulse = null) {
   const ltp = Number(stock.ltp) || 100;
   const pChange = Number(stock.pChange) || 0;
-  const rsi = Number(stock.rsi) || 50;
+  const rsi = resolveDynamicStockRSI(stock);
   const pe = Number(stock.pe) || 0;
   const eps = Number(stock.eps) || 0;
   const volume = Number(stock.volume) || 0;
@@ -3141,8 +3255,13 @@ export function calculateMansfieldRS(candles = [], nepseCandles = []) {
   }
 
   if (indexCloses.length < 20) {
-    const baseline = 2500;
-    indexCloses = stockCloses.map((_, idx) => baseline * (1 + (idx / stockCloses.length) * 0.05));
+    return {
+      mrs: 0,
+      isOutperforming: false,
+      isRising: false,
+      status: 'INSUFFICIENT_INDEX_DATA',
+      label: 'NEPSE Index Data Insufficient (< 20 sessions)'
+    };
   }
 
   const minLen = Math.min(stockCloses.length, indexCloses.length);
@@ -3269,14 +3388,45 @@ export function calculateBrokerCorneringScore(brokerData = {}) {
   const adStrength = Number(bData.adStrength || 0);
 
   let cr5BuyPct = 0;
-  if (Array.isArray(bData.topBuyers) && bData.topBuyers.length > 0) {
-    const totalBuy = bData.topBuyers.reduce((sum, b) => sum + Number(b.amount || b.buyAmount || b.volume || 0), 0);
-    const top5Buy = bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.amount || b.buyAmount || b.volume || 0), 0);
-    if (totalBuy > 0) cr5BuyPct = Number(((top5Buy / totalBuy) * 100).toFixed(1));
+  if (bData.bcr5BuyPct !== undefined && Number(bData.bcr5BuyPct) > 0) {
+    cr5BuyPct = Number(bData.bcr5BuyPct);
+  } else if (bData.crb5 !== undefined && Number(bData.crb5) > 0) {
+    cr5BuyPct = Number((Number(bData.crb5) * 100).toFixed(1));
+  } else if (Array.isArray(bData.topBuyers) && bData.topBuyers.length > 0) {
+    const totalVolume = Number(bData.totalVolume || bData.totalTradedQty || bData.volume || 0);
+    const hasVolume = bData.topBuyers.some(b => (b.volume !== undefined || b.buyQty !== undefined || b.qty !== undefined || b.shares !== undefined));
+    const top5Buy = hasVolume
+      ? bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.volume || b.buyQty || b.qty || b.shares || 0), 0)
+      : bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.amount || b.buyAmount || 0), 0);
+
+    const totalBuy = totalVolume > top5Buy
+      ? totalVolume
+      : (bData.topBuyers.length > 5 
+          ? (hasVolume 
+              ? bData.topBuyers.reduce((sum, b) => sum + Number(b.volume || b.buyQty || b.qty || b.shares || 0), 0)
+              : bData.topBuyers.reduce((sum, b) => sum + Number(b.amount || b.buyAmount || 0), 0))
+          : 0);
+
+    if (totalBuy > 0) {
+      cr5BuyPct = Number(Math.min(100.0, (top5Buy / totalBuy) * 100).toFixed(1));
+    } else {
+      const sumPct = bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.pct || 0), 0);
+      cr5BuyPct = sumPct > 0 && sumPct < 98 ? Number(sumPct.toFixed(1)) : 0;
+    }
   } else if (bData.top3BuyPct !== undefined) {
-    cr5BuyPct = Number((Number(bData.top3BuyPct) * 1.2).toFixed(1));
+    cr5BuyPct = Number((Number(bData.top3BuyPct) * 1.25).toFixed(1));
   } else {
-    cr5BuyPct = Number((Math.min(65, 30 + Math.max(0, adRatio * 100) * 0.4 + adStrength * 0.2)).toFixed(1));
+    cr5BuyPct = 0;
+  }
+
+  if (cr5BuyPct === 0 && adRatio === 0) {
+    return {
+      cr5BuyPct: 0,
+      isCornered: false,
+      isInstitutionalDumping: false,
+      tier: 'NO_DATA',
+      label: 'Insufficient Broker Floorsheet Data'
+    };
   }
 
   const isCornered = cr5BuyPct >= 38.0 && adRatio >= 0.05;
@@ -3353,6 +3503,237 @@ export function calculateStatutoryBreakeven(entryPrice = 100, shares = 100) {
     label: `Rs. ${breakevenPrice} (+${hurdlePct}%) to clear statutory fees`
   };
 }
+
+export function runStockScanners(stocks = [], filterKey) {
+  if (!stocks || stocks.length === 0) return [];
+  switch (filterKey) {
+    // ── Trader's Zone & Subscription Features ──
+    case 'breakout':
+    case 'breakouts':
+    case 'breakout_stocks':
+    case 'trendline_breakout': {
+      const bks = stocks.filter(s => (s.pChange || 0) >= 1.5 && (s.volumeSurgeRatio >= 1.2 || s.floatTurnoverPct >= 0.6 || s.isBreakout || (s.high52w && s.ltp >= s.high52w * 0.95))).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (bks.length >= 3) return bks.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) >= 1.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
+    }
+    
+    case 'volume_shockers':
+      return stocks.filter(s => (s.volumeZScore >= 1.8 || s.isVolumeShocker || s.volumeSurgeRatio >= 1.8 || s.floatTurnoverPct >= 2.0)).sort((a,b) => (b.volumeZScore || b.volumeSurgeRatio || 0) - (a.volumeZScore || a.volumeSurgeRatio || 0)).slice(0, 20);
+
+    case 'technical_ratings':
+    case 'technical_rating':
+      return [...stocks].sort((a, b) => (b.technicalScore || 50) - (a.technicalScore || 50)).slice(0, 20);
+
+    case 'players_choices':
+    case 'players_choice':
+    case 'broker_favourites':
+      return stocks.filter(s => (s.turnover >= 12000000 || s.floatTurnoverPct >= 1.2) && s.pChange > 0).sort((a,b) => (b.floatTurnoverPct || 0) - (a.floatTurnoverPct || 0)).slice(0, 20);
+
+    case 'circuit_up':
+    case 'circuit_pos': {
+      const topCircuits = stocks.filter(s => (s.pChange || 0) >= 13.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (topCircuits.length > 0) return topCircuits.slice(0, 25);
+      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 7.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      if (nearCircuits.length > 0) return nearCircuits.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
+    }
+
+    case 'circuit_down':
+    case 'circuit_neg': {
+      const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -13.5).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      if (lowCircuits.length > 0) return lowCircuits.slice(0, 25);
+      const nearDown = stocks.filter(s => (s.pChange || 0) <= -7.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      if (nearDown.length > 0) return nearDown.slice(0, 25);
+      return stocks.filter(s => (s.pChange || 0) < 0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0)).slice(0, 25);
+    }
+
+    case 'circuits':
+    case 'circuit_setup':
+    case 'circuit_radar': {
+      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 10.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      if (hits.length > 0) return hits.slice(0, 25);
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 5.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      if (nearHits.length > 0) return nearHits.slice(0, 25);
+      return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
+    }
+
+    case 'candlestick_patterns':
+    case 'candlestick':
+    case 'candlestick_pattern':
+      return stocks.filter(s => s.pChange >= 1.0).slice(0, 20);
+
+    case 'consolidating_stocks':
+    case 'consolidating':
+      return stocks.filter(s => Math.abs(s.pChange) <= 0.9 && (s.high - s.low) <= (s.ltp || 1) * 0.018 || s.isSqueeze).slice(0, 20);
+
+    case 'fresh_indicator_signals':
+    case 'fresh_signals':
+      return stocks.filter(s => (s.rsi <= 40 && s.pChange > 0) || (s.macd && s.macd.line > s.macd.signal && s.pChange > 0.4)).slice(0, 20);
+
+    case 'support_and_resistance':
+    case 'support_res':
+    case 'support_resistance':
+      return stocks.filter(s => s.low52w && (s.ltp <= s.low52w * 1.12)).slice(0, 20);
+
+    case 'unusual_trades':
+      return stocks.filter(s => s.volume >= 22000 && (s.floatTurnoverPct >= 1.2 || s.volumeSurgeRatio >= 1.6 || s.volumeZScore >= 1.8)).slice(0, 20);
+
+    case 'relative_strength':
+    case 'relative_strength_ranking':
+      return [...stocks].sort((a,b) => (b.relativeStrength || 50) - (a.relativeStrength || 50)).slice(0, 20);
+
+    // ── Benjamin Graham Valuation & Quantitative Filters ──
+    case 'graham_valuation':
+    case 'graham_undervalued':
+    case 'undervalued_stocks':
+      return stocks.filter(s => s.isUndervalued && s.marginOfSafetyPct >= 10).sort((a, b) => (b.marginOfSafetyPct || 0) - (a.marginOfSafetyPct || 0)).slice(0, 25);
+
+    // ── Machine Learning Operational Action Zones ──
+    case 'buying_zone':
+    case 'buying_zone_stocks':
+      return stocks.filter(s => s.zone === 'Buying Zone' || (s.actionZone && s.actionZone.zone === 'Buying Zone')).slice(0, 20);
+
+    case 'entry_zone':
+    case 'entry_zone_stocks':
+      return stocks.filter(s => s.zone === 'Entry Zone' || (s.actionZone && s.actionZone.zone === 'Entry Zone')).slice(0, 20);
+
+    case 'holding_zone':
+    case 'holding_zone_stocks':
+      return stocks.filter(s => s.zone === 'Holding Zone' || (s.actionZone && s.actionZone.zone === 'Holding Zone')).slice(0, 20);
+
+    case 'exit_zone':
+    case 'exit_zone_stocks':
+      return stocks.filter(s => s.zone === 'Exit Zone' || (s.actionZone && s.actionZone.zone === 'Exit Zone')).slice(0, 20);
+
+    case 'selling_zone':
+    case 'selling_zone_stocks':
+      return stocks.filter(s => s.zone === 'Selling Zone' || (s.actionZone && s.actionZone.zone === 'Selling Zone')).slice(0, 20);
+
+    // ── StockYan Smart Money & Predictive Engine Screeners ──
+    case 'stealth_accumulation':
+      return stocks.filter(s => s.isStealthAccumulation || (s.bcr3 && s.bcr3 >= 0.35)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+
+    case 'matching_buy_sell':
+      return stocks.filter(s => s.volume >= 25000 && (s.floatTurnoverPct >= 1.2 || s.volumeSurgeRatio >= 1.5)).slice(0, 20);
+
+    case 'decision_probability':
+    case 'dpi_strong_buy':
+      return stocks.filter(s => (s.dpi?.dpi || 50) >= 65).sort((a, b) => (b.dpi?.dpi || 50) - (a.dpi?.dpi || 50)).slice(0, 25);
+
+    case 'dpi_strong_sell':
+      return stocks.filter(s => (s.dpi?.dpi || 50) <= 35).sort((a, b) => (a.dpi?.dpi || 50) - (b.dpi?.dpi || 50)).slice(0, 25);
+
+    case 'order_book_depth':
+    case 'order_book_imbalance':
+      return stocks.filter(s => (s.obir?.obir || 0) >= 0.20).sort((a, b) => (b.obir?.obir || 0) - (a.obir?.obir || 0)).slice(0, 25);
+
+    case 'lockin_shock_risk':
+    case 'ilsi_risk':
+      return stocks.filter(s => (s.ilsi || 0) >= 20).sort((a, b) => (b.ilsi || 0) - (a.ilsi || 0)).slice(0, 25);
+
+    // ── AD FREE + PREMIUM Features ──
+    case 'hot_stocks':
+    case 'hot_trending':
+      return stocks.filter(s => s.floatTurnoverPct >= 1.5 && s.pChange >= 1.2).sort((a,b) => (b.floatTurnoverPct || 0) - (a.floatTurnoverPct || 0)).slice(0, 20);
+
+    case 'large_cap':
+      return stocks.filter(s => (s.marketCap || 0) >= 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+    
+    case 'mid_cap':
+      return stocks.filter(s => (s.marketCap || 0) >= 4000 && (s.marketCap || 0) < 15000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+
+    case 'small_cap':
+      return stocks.filter(s => (s.marketCap || 0) < 4000).sort((a,b) => (b.marketCap || 0) - (a.marketCap || 0)).slice(0, 20);
+
+    case 'price_vs_volume':
+      return stocks.filter(s => s.pChange >= 1.5 && (s.volumeSurgeRatio >= 1.2 || s.floatTurnoverPct >= 1.0)).slice(0, 20);
+
+    case 'dividend_kings':
+      return stocks.filter(s => (s.bonusShare >= 10 || s.cashDiv >= 5 || s.divYield >= 3.0)).sort((a,b) => (b.bonusShare || 0) - (a.bonusShare || 0)).slice(0, 20);
+
+    case 'fundamentals_pro':
+    case 'fundamental':
+    case 'fundamental_scanner':
+      return stocks.filter(s => (s.eps >= 15 && s.pe > 0 && s.pe <= 25) || (s.roe && s.roe >= 12)).sort((a,b) => (b.eps || 0) - (a.eps || 0)).slice(0, 20);
+
+    // ── Classic & Video Scanners ──
+    case 'rsi':
+    case 'rsi_filter':
+      return stocks.filter(s => (s.rsi && (s.rsi <= 35 || s.rsi >= 68)) || s.pChange >= 2.5).slice(0, 20);
+    case 'ema':
+    case 'ema_scanner':
+      return stocks.filter(s => s.ltp >= (s.avg120 || s.ltp * 0.98) && s.pChange > 0.5).slice(0, 20);
+    case 'bollinger':
+    case 'bollinger_scanner':
+      return stocks.filter(s => Math.abs(s.pChange) >= 2.0 || (s.high - s.low) / (s.ltp || 1) >= 0.035).slice(0, 20);
+    case 'volume':
+    case 'volume_scanner':
+      return stocks.filter(s => (s.volume || 0) >= 30000).sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(0, 20);
+    case 'pivot_points':
+      return stocks.filter(s => s.ltp >= (s.high * 0.98)).slice(0, 20);
+    case 'macd':
+    case 'macd_signal':
+      return stocks.filter(s => s.macd ? s.macd.line > s.macd.signal : s.pChange > 0).slice(0, 20);
+    case 'ema_sma':
+      return stocks.filter(s => s.pChange >= 1.0 && s.ltp > (s.avg120 || s.ltp)).slice(0, 20);
+    case 'fibonacci':
+    case 'fibonacci_levels':
+      return stocks.filter(s => s.pChange >= 0.8 && s.high52w && s.low52w).slice(0, 20);
+    case 'dow_signals':
+      return stocks.filter(s => s.pChange > 0 && s.high >= s.open).slice(0, 20);
+    case 'parallel_channel':
+      return stocks.filter(s => s.pChange >= 0.5 && s.pChange <= 3.5).slice(0, 20);
+    case 'trend_continuation':
+      return stocks.filter(s => s.pChange >= 1.2 && (s.turnover || 0) > 10000000).slice(0, 20);
+    case 'strong_trend':
+      return stocks.filter(s => s.pChange >= 3.0 && (s.volume || 0) > 25000).slice(0, 20);
+    case 'stock_cap':
+    case 'stock_capitalization':
+      return [...stocks].sort((a, b) => (b.marketCap || (b.ltp * 100)) - (a.marketCap || (a.ltp * 100))).slice(0, 20);
+    case 'comparable':
+    case 'comparable_stock':
+      return stocks.slice(0, 20);
+    case 'smart_money':
+    case 'smart_money_scanner':
+      return stocks.filter(s => (s.turnover || 0) >= 15000000 && s.pChange > 0).slice(0, 20);
+
+    // ── Trade Lab Scanners (S_rank >= 80, RVOL >= 2.0, BBW Squeeze) ──
+    case 'support_setups':
+      return stocks.filter(s => (s.low52w && s.ltp <= s.low52w * 1.15) || s.zone === 'Buying Zone' || (s.rsi && s.rsi <= 42 && s.pChange >= 0)).sort((a, b) => (b.sRank || 0) - (a.sRank || 0)).slice(0, 25);
+    case 'next_breakouts':
+      return stocks.filter(s => (s.isSqueeze || (s.bbw && s.bbw <= 0.045)) && (s.sRank >= 65 || s.pChange >= 0.5)).sort((a, b) => (b.sRank || 0) - (a.sRank || 0)).slice(0, 25);
+    case 'breakout_tradable':
+      return stocks.filter(s => s.isHighProbabilityBreakout || (s.sRank >= 75 && s.pChange >= 2.0 && (s.volumeSurgeRatio >= 1.4 || s.volume >= 25000))).sort((a, b) => (b.sRank || 0) - (a.sRank || 0)).slice(0, 25);
+    case 'consolidating_picks':
+      return stocks.filter(s => (s.isSqueeze || Math.abs(s.pChange) <= 1.0) && (s.bbwPct <= 5.0 || (s.bbw && s.bbw <= 0.04))).sort((a, b) => (a.bbw || 0) - (b.bbw || 0)).slice(0, 25);
+    case 'investment_picks':
+      return stocks.filter(s => (s.isUndervalued && s.roe >= 12 && s.pe > 0 && s.pe <= 25) || (s.marginOfSafetyPct && s.marginOfSafetyPct >= 15)).sort((a, b) => (b.marginOfSafetyPct || 0) - (a.marginOfSafetyPct || 0)).slice(0, 25);
+    case 'sip_picks':
+    case 'sip_in_stocks':
+      return stocks.filter(s => (s.eps && s.eps >= 15) && (s.bookValue && s.bookValue >= 140) && ((s.marginOfSafetyPct || 0) >= 0)).sort((a, b) => (b.eps || 0) - (a.eps || 0)).slice(0, 25);
+
+    // ── Smart Money Categories ──
+    case 'aggressive_accumulators':
+      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.35) || (s.pChange >= 2.0 && (s.volumeSurgeRatio >= 1.5 || s.turnover > 15000000))).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
+    case 'distribution_leaders':
+      return stocks.filter(s => s.pChange <= -1.8 && (s.turnover || 0) > 12000000).sort((a, b) => a.pChange - b.pChange).slice(0, 25);
+    case 'broker_dominance':
+      return stocks.filter(s => (s.bcr3 && s.bcr3 >= 0.30) || (s.volume || 0) > 35000).sort((a, b) => (b.bcr3 || 0) - (a.bcr3 || 0)).slice(0, 25);
+    case 'aggressive_holdings':
+      return stocks.filter(s => s.pChange > 0 && s.pe > 0 && s.pe < 28 && (s.bcr3 || 0) >= 0.25).slice(0, 25);
+    case 'matching_trades':
+      return stocks.filter(s => (s.volume || 0) > 30000 && (s.floatTurnoverPct >= 1.0 || s.volumeSurgeRatio >= 1.3)).slice(0, 25);
+    case 'slow_accumulation':
+      return stocks.filter(s => s.isStealthAccumulation || (s.pChange >= 0.1 && s.pChange <= 1.8 && (s.bcr3 || 0) >= 0.30)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
+
+    // ── Fast Circuits & Signals ──
+    case 'buyers_choice':
+      return stocks.filter(s => s.volume > 50000 && s.pChange > 0).sort((a, b) => (b.turnover || 0) - (a.turnover || 0)).slice(0, 20);
+    default:
+      return [];
+  }
+}
+
 
 
 

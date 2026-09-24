@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Play, Activity, AlertOctagon, ShieldAlert, Cpu } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
-import { checkIpoAllotmentMock } from '../utils/mockData';
+// checkIpoAllotmentMock: stub — live CDSC check is used in production
+const checkIpoAllotmentMock = async (shareId, boid) => {
+  const boidValid = typeof boid === 'string' && boid.length >= 10 && /^\d+$/.test(boid);
+  if (!boidValid) return { success: false, message: 'Invalid BOID format' };
+  return { status: 'mock_disabled', success: false, message: 'Mock disabled. Use live CDSC results.' };
+};
 
 export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setApiStatus }) {
   const [testLogs, setTestLogs] = useState([
@@ -45,22 +50,26 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       passed = false;
     }
 
-    // Test 2: Seller Calculations (Short Term vs Long Term CGT - Finance Act 2083)
+    // Test 2: Seller Calculations (SEBON Individual 7.5% Short-Term vs 5.0% Long-Term CGT)
     await new Promise(r => setTimeout(r, 300));
-    addLog('info', '🧪 Test 2: Seller Calculations (Short-term Individual 10.0% Final Tax)');
+    addLog('info', '🧪 Test 2: Seller Calculations (Short-term 7.5% & Long-term 5.0% CGT)');
     try {
       const sellShort = calculateSellDetails(100, 200, 150, 'short');
-      const expectedCGT = 490.0;
-      const expectedReceivable = 19410.0;
+      const expectedShortCGT = 367.50; // 7.5% of 4900 net profit
+      const expectedShortReceivable = 19532.50;
+
+      const sellLong = calculateSellDetails(100, 200, 150, 'long');
+      const expectedLongCGT = 245.0; // 5.0% of 4900 net profit
+      const expectedLongReceivable = 19655.0;
 
       const tolerance = 0.01;
-      const diffCGT = Math.abs(sellShort.cgt - expectedCGT);
-      const diffReceivable = Math.abs(sellShort.netReceivable - expectedReceivable);
+      const passShort = Math.abs(sellShort.cgt - expectedShortCGT) < tolerance && Math.abs(sellShort.netReceivable - expectedShortReceivable) < tolerance;
+      const passLong = Math.abs(sellLong.cgt - expectedLongCGT) < tolerance && Math.abs(sellLong.netReceivable - expectedLongReceivable) < tolerance;
 
-      if (diffCGT < tolerance && diffReceivable < tolerance) {
-        addLog('success', '✅ Test 2 Passed: Short-term (10.0%) CGT and receivables match Finance Act 2083.');
+      if (passShort && passLong) {
+        addLog('success', '✅ Test 2 Passed: Individual Short-term (7.5%) and Long-term (5.0%) CGT conform to SEBON regulations.');
       } else {
-        throw new Error(`Expected CGT: ${expectedCGT}, Got: ${sellShort.cgt}. Expected Net: ${expectedReceivable}, Got: ${sellShort.netReceivable}`);
+        throw new Error(`Short CGT: ${sellShort.cgt} (exp ${expectedShortCGT}), Long CGT: ${sellLong.cgt} (exp ${expectedLongCGT})`);
       }
     } catch (err) {
       addLog('error', `❌ Test 2 Failed: ${err.message}`);

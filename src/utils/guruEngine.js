@@ -18,7 +18,10 @@ import {
   getHydroSeasonality,
   calculateMultiHorizonTargets,
   evaluatePreOpenExecutionGate,
-  evaluateNrbRegulatorySafety
+  evaluateNrbRegulatorySafety,
+  resolveDynamicStockRSI,
+  resolveDynamicStockCandles,
+  resolveDynamicStockEMAs
 } from './quantEngine.js';
 
 import { getDetailedMarketStatus } from './nepseCalendar.js';
@@ -44,7 +47,15 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   const pCh = Number(stock?.pChange || 0);
   const vol = Number(stock?.volume || stock?.totalTradedQuantity || 0);
 
-  const candles = toAscendingCandles(rawCandles);
+  let candles = toAscendingCandles(rawCandles);
+  if (candles.length < 20 && sym) {
+    const cached = getCachedRealPriceHistory(sym);
+    if (Array.isArray(cached) && cached.length >= 20) {
+      candles = toAscendingCandles(cached);
+    } else {
+      candles = resolveDynamicStockCandles(stock, 35);
+    }
+  }
   const historyDays = candles.length;
 
   // Floor sheet broker metrics
@@ -71,8 +82,9 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     } catch (_) {}
   }
 
-  const ema50 = Number(stock?.ema50 || stock?.sma50 || technicalReport?.trend?.ema?.ema50 || (closes.length >= 50 ? closes[closes.length - 1] * 0.98 : 0));
-  const ema200 = Number(stock?.ema200 || stock?.sma200 || technicalReport?.trend?.ema?.ema200 || (closes.length >= 200 ? closes[closes.length - 1] * 0.95 : 0));
+  const dynEMAs = resolveDynamicStockEMAs(stock, ltp);
+  const ema50 = Number(stock?.ema50 || stock?.sma50 || technicalReport?.trend?.ema?.ema50 || dynEMAs.ema50);
+  const ema200 = Number(stock?.ema200 || stock?.sma200 || technicalReport?.trend?.ema?.ema200 || dynEMAs.ema200);
 
   const isAbove50 = ema50 > 0 ? ltp >= ema50 : null;
   const isAbove200 = ema200 > 0 ? ltp >= ema200 : null;
@@ -135,11 +147,21 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   const swingCeiling = +(ltp * (1 - minNoiseRiskPct)).toFixed(1);
   const recent5Low = closes.length >= 5 ? Math.min(...adjustedCandles.slice(-6, -1).map(c => Number(c.low || c.close || 0))) : ltp * 0.95;
   const baseCandidate = recent5Low > 0 && recent5Low < ltp ? recent5Low - atr * 0.25 : ltp - atr * 1.35;
-  const structuralStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
+  // Circuit band bounds (±15% limit under Fourth Amendment Regulations 2082)
+  const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
+  const upperCeiling = +(prevClose * 1.15).toFixed(1);
+  const lowerFloor = +(prevClose * 0.85).toFixed(1);
+  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
+  const isCircuitCeilingTrap = distToCeilingPct <= 3.5; // Within 3.5% of +15% ceiling
+
+  const rawStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
+  const structuralStopLoss = Math.max(lowerFloor, rawStopLoss);
   const riskPerShare = Math.max(1, ltp - structuralStopLoss);
 
-  const target1 = +(ltp + riskPerShare * 1.5).toFixed(1);
-  const target2 = +(ltp + riskPerShare * 3.0).toFixed(1);
+  const rawTarget1 = +(ltp + riskPerShare * 1.5).toFixed(1);
+  const rawTarget2 = +(ltp + riskPerShare * 3.0).toFixed(1);
+  const target1 = Math.min(upperCeiling, rawTarget1);
+  const target2 = Math.min(upperCeiling, rawTarget2);
   const rrr1 = +((target1 - ltp) / Math.max(0.5, ltp - structuralStopLoss)).toFixed(2);
   const rrr2 = +((target2 - ltp) / Math.max(0.5, ltp - structuralStopLoss)).toFixed(2);
 
@@ -148,12 +170,6 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
   let setupClass = 'Consolidation';
   let isPrimeCandidate = true;
   let disqualificationReason = null;
-
-  // Circuit ceiling check (±15% limit)
-  const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
-  const upperCeiling = +(prevClose * 1.15).toFixed(1);
-  const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-  const isCircuitCeilingTrap = distToCeilingPct <= 3.5; // Within 3.5% of +15% ceiling (raised from 2.0)
 
   // Promoter Lock-In Expiry Blackout (60-Day window — synced with PromoterSharesService Critical Shock tier)
   let isPromoterUnlockRisk = false;
@@ -225,11 +241,12 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     setupClass = 'Seasonal Headwind';
     isPrimeCandidate = false;
     disqualificationReason = 'Winter RoR hydrology cash flows depressed';
-  } else if (Number(stock?.rsi || stock?.rsi14 || 50) >= 70) {
+  } else if (resolveDynamicStockRSI(stock) >= 70) {
+    const dynRsi = resolveDynamicStockRSI(stock);
     actionState = 'OVERBOUGHT_DISTRIBUTION';
     setupClass = 'Overbought Peak (Take Profit / Exit)';
     isPrimeCandidate = false;
-    disqualificationReason = `RSI extended at ${Number(stock?.rsi || stock?.rsi14 || 50).toFixed(1)} (>= 70) — overbought exhaustion / distribution risk`;
+    disqualificationReason = `RSI extended at ${dynRsi.toFixed(1)} (>= 70) — overbought exhaustion / distribution risk`;
   } else if (pCh >= 8.0) {
     // GAP-4: Anti-FOMO gate — stock already up 8%+ on the day is an extended breakout
     // Entry at this level means buying into a parabolic move with T+2 freeze risk

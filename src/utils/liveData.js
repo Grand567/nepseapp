@@ -27,7 +27,7 @@ function todayKey() {
 // In-memory + localStorage cache
 let MEM_STOCKS = null;
 let MEM_SUMMARY = null;
-let LAST_SOURCE = 'simulated-live';
+let LAST_SOURCE = 'live';
 const LS_STOCKS = 'nepse_enriched_v3';
 
 // Hydrate from IndexedDB on startup
@@ -104,7 +104,11 @@ export function getCachedStocks() {
 
 function persistStocks(s) {
   MEM_STOCKS = s;
-  try { localStorage.setItem(LS_STOCKS, JSON.stringify(s)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(LS_STOCKS, JSON.stringify(s));
+    localStorage.setItem('nepse_stocks_saved_at', new Date().toISOString());
+    localStorage.setItem('nepse_stocks_session_date', getLatestTradingDateStr());
+  } catch { /* quota */ }
   idbSet(LS_STOCKS, s).catch(() => {});
 }
 
@@ -154,14 +158,17 @@ function buildEnrichedSnapshot() {
   const totalTurnover = stocks.reduce((a, s) => a + s.turnover, 0);
   const totalVol = stocks.reduce((a, s) => a + s.volume, 0);
   const totalTx = stocks.reduce((a, s) => a + s.transactions, 0);
-  const avgChg = stocks.reduce((a, s) => a + s.pChange, 0) / stocks.length;
-  const nepseIndex = 2654.28;
+  const avgChg = stocks.length > 0 ? stocks.reduce((a, s) => a + (s.pChange || 0), 0) / stocks.length : 0;
+  const cachedIdx = getCachedIndices();
+  const nepseIndex = cachedIdx?.nepse?.value || null;
+  const change = cachedIdx?.nepse?.change || 0;
+  const changePercent = cachedIdx?.nepse?.pChange || 0;
 
   const marketStatusObj = getDetailedMarketStatus();
   const isOpen = marketStatusObj.isOpen;
 
   const summary = {
-    nepseIndex, change: 7.06, changePercent: 0.26,
+    nepseIndex, change, changePercent,
     totalTurnover, totalTradedShares: totalVol, totalTransactions: totalTx,
     advances, declines, unchanged,
     marketStatus: isOpen ? 'OPEN' : 'CLOSED',
@@ -169,7 +176,8 @@ function buildEnrichedSnapshot() {
     bsFormattedNp: marketStatusObj.bsFormattedNp,
     statusLabel: marketStatusObj.statusLabel,
     floatMktCap: Math.floor(totalTurnover * 310),
-    totalMktCap: Math.floor(stocks.reduce((a, s) => a + s.marketCap, 0)),
+    totalMktCap: Math.floor(stocks.reduce((a, s) => a + (s.marketCap || 0), 0)),
+    status: nepseIndex ? 'complete' : 'insufficient_history'
   };
   return { stocks, summary };
 }
@@ -665,11 +673,10 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
 
-  // If the server hasn't responded to our warm-up ping yet, use an extended timeout on
-  // the first attempt (60s) so we can survive a full Render cold-start (45-60s wake time).
-  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.max(timeoutMs, 60000);
+  // Reasonable timeout to survive Render wake without freezing the mobile UI
+  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 8000), 15000);
 
-  // Primary: try configured proxy with one retry (helps with Render cold-start 45–60s wake)
+  // Primary: try configured proxy with one retry
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const t = attempt === 0 ? firstAttemptTimeout : timeoutMs;
@@ -681,8 +688,7 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
       }
     } catch (_) {}
     if (attempt === 0) {
-      // Wait 1.5s before retry (jitter backoff — negligible for hot servers, recovers cold ones)
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 
@@ -700,11 +706,37 @@ const NEPSE_BASE = 'https://newweb.nepalstock.com.np/api/nots';
 const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
 
 async function attemptLiveMarket() {
-  // 1. Primary: /api/mero/market-summary — best source: full company names, correct sectors, all fields
-  //    Fields: symbol, name, ltp, change, pChange, open, high, low, prevClose, volume, turnover, sector
-  //    Also provides top-level `date` and `turnover` (total market turnover)
+  const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+
+  // 1. Fast Path for Native Mobile (Capacitor Android/iOS):
+  // Zero-CORS, sub-second (700ms) direct MeroLagani handler fetch — bypasses proxy latency completely!
+  if (isNative) {
+    try {
+      const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
+      const j = await tryFetchJSON(directUrl, 8000);
+      if (j && (j.stock?.detail || j.turnover?.detail)) {
+        const parsed = parseMeroLaganiJson(j);
+        if (parsed && parsed.length > 20) {
+          const normalized = normalizeLiveArray(parsed);
+          if (normalized && normalized.length > 20) {
+            if (j.overall?.t) {
+              if (!MEM_SUMMARY) ensureSnapshot();
+              if (MEM_SUMMARY) {
+                MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
+                MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
+                MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
+              }
+            }
+            return normalized;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. Primary Web/Proxy: /api/mero/market-summary — best source with company names, sectors, and live prices
   try {
-    const j = await fetchFromBackend('/api/mero/market-summary', 12000);
+    const j = await fetchFromBackend('/api/mero/market-summary', 8000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -718,21 +750,10 @@ async function attemptLiveMarket() {
     }
   } catch (_) {}
 
-  // 2. Secondary: /api/market-summary — same stocks but sector:"Unknown", name=symbol only
-  //    normalizeLiveArray's NEPSE_UNIVERSE lookup fixes name/sector automatically
-  try {
-    const j = await fetchFromBackend('/api/market-summary', 12000);
-    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-    if (Array.isArray(arr) && arr.length > 20) {
-      const normalized = normalizeLiveArray(arr);
-      if (normalized && normalized.length > 20) return normalized;
-    }
-  } catch (_) {}
-
-  // 3. Direct Native or Web fetch to MeroLagani handler (Zero-proxy dependency for native mobile!)
+  // 3. Direct or CORS fetch to MeroLagani handler
   try {
     const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
-    const j = await tryFetchJSON(directUrl, 10000);
+    const j = await tryFetchJSON(directUrl, 8000);
     if (j && (j.stock?.detail || j.turnover?.detail)) {
       const parsed = parseMeroLaganiJson(j);
       if (parsed && parsed.length > 20) {
@@ -753,9 +774,8 @@ async function attemptLiveMarket() {
   } catch (_) {}
 
   // 4. Tertiary: Today's prices / closing prices (/api/today-prices)
-  //    Has extra fields: high52w, low52w; source:"closing"
   try {
-    const j = await fetchFromBackend('/api/today-prices', 12000);
+    const j = await fetchFromBackend('/api/today-prices', 8000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
@@ -763,13 +783,23 @@ async function attemptLiveMarket() {
     }
   } catch (_) {}
 
-  // 5. Quaternary: Web CORS proxy candidates for MeroLagani
+  // 5. Quaternary: /api/market-summary fallback
+  try {
+    const j = await fetchFromBackend('/api/market-summary', 8000);
+    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+    if (Array.isArray(arr) && arr.length > 20) {
+      const normalized = normalizeLiveArray(arr);
+      if (normalized && normalized.length > 20) return normalized;
+    }
+  } catch (_) {}
+
+  // 6. Quaternary: Web CORS proxy candidates for MeroLagani
   const corsProxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`,
   ];
   for (const u of corsProxies) {
     try {
-      const j = await tryFetchJSON(u, 8000);
+      const j = await tryFetchJSON(u, 6000);
       if (j && (j.stock?.detail || j.turnover?.detail)) {
         const parsed = parseMeroLaganiJson(j);
         if (parsed && parsed.length > 20) {
@@ -858,36 +888,40 @@ function normalizeLiveArray(arr) {
     }
 
     // Authentic Indicators: calculated from genuine candle series when cached
-    const rsi = Number(realRsi ?? r.rsi ?? prev?.rsi ?? Math.max(8, Math.min(94, +(50 + pCh * 4.2).toFixed(1))));
+    const rsi = realRsi ?? r.rsi ?? prev?.rsi ?? null;
     const macd = realMacd || ((r.macd && typeof r.macd === 'object' && r.macd.histogram !== undefined)
       ? r.macd
-      : (prev?.macd || { macdLine: +((pCh * 0.35) + 0.5).toFixed(2), signal: 0.5, histogram: +(pCh * 0.35).toFixed(2) }));
+      : (prev?.macd || null));
 
-    const ema20 = realEma20 || (prev?.ema20 ? Number(prev.ema20) : +(ltp * 0.98).toFixed(1));
+    const ema20 = realEma20 || (prev?.ema20 ? Number(prev.ema20) : null);
     const ema50 = realEma50 || (prev?.ema50 ? Number(prev.ema50) : null);
     const sma20 = ema20;
     const sma50 = ema50;
-    const bollinger = prev?.bollinger || {
-      upper: +(ltp * 1.05).toFixed(1),
-      middle: +ltp.toFixed(1),
-      lower: +(ltp * 0.95).toFixed(1),
-      squeeze: false
-    };
+    const bollinger = prev?.bollinger || null;
 
-    const volumeSurgeRatio = Number(r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? 1.0);
-    const volumeZScore = Number(r.volumeZScore ?? prev?.volumeZScore ?? +((volumeSurgeRatio - 1.2) * 1.5).toFixed(2));
-    const technicalScore = prev?.technicalScore ?? Math.max(10, Math.min(95, Math.round(50 + pCh * 3)));
+    const volumeSurgeRatio = Number(r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? null);
+    const volumeZScore = Number(r.volumeZScore ?? prev?.volumeZScore ?? null);
+    const technicalScore = prev?.technicalScore ?? null;
     const technicalRating = prev?.technicalRating ?? (technicalScore >= 65 ? 'Buy' : technicalScore <= 40 ? 'Sell' : 'Neutral');
-    const dpi = prev?.dpi ?? Math.max(10, Math.min(99, Math.round(technicalScore * 0.75 + (pCh > 0 ? 8 : -4))));
-    const stealthAccumulation = prev?.stealthAccumulation ?? Math.round(35 + volumeSurgeRatio * 15);
+    const dayRange = (high || ltp) - (low || ltp);
+    const clv = dayRange > 0 ? (((ltp - (low || ltp)) - ((high || ltp) - ltp)) / dayRange) : 0;
+    const stealthAccumulation = prev?.stealthAccumulation ?? null;
 
-    const sharesM = prev?.sharesOut || 10;
-    const marketCap = prev?.marketCap || Math.floor(ltp * sharesM * 1e6);
+    const sharesM = prev?.sharesOut || null;
+    const marketCap = prev?.marketCap || (sharesM ? Math.floor(ltp * sharesM * 1e6) : null);
     const cachedFund = getCachedStockFundamentals(sym);
-    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (prev?.eps ?? 0));
-    const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (prev?.bvps ?? prev?.bookValue ?? 140));
-    const pe = Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (eps > 0 ? +(ltp / eps).toFixed(2) : 0));
-    const pb = Number(cachedFund?.pbv !== undefined && cachedFund?.pbv !== null ? cachedFund.pbv : (bvps > 0 ? +(ltp / bvps).toFixed(2) : 0));
+    const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (prev?.eps ?? null));
+    const bvps = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (prev?.bvps ?? prev?.bookValue ?? null));
+    const pe = Number(cachedFund?.pe !== undefined && cachedFund?.pe !== null ? cachedFund.pe : (eps && eps > 0 ? +(ltp / eps).toFixed(2) : null));
+    const pb = Number(cachedFund?.pbv !== undefined && cachedFund?.pbv !== null ? cachedFund.pbv : (bvps && bvps > 0 ? +(ltp / bvps).toFixed(2) : null));
+
+    // Mandatory 15% Daily Circuit Limits
+    const circuitLimitPct = 15.0;
+    const circuitCeiling = +(prevClose * (1 + circuitLimitPct / 100)).toFixed(1);
+    const circuitFloor = +(prevClose * (1 - circuitLimitPct / 100)).toFixed(1);
+    const isUpperCircuit = pCh >= 14.85;
+    const isLowerCircuit = pCh <= -14.85;
+    const isCircuitHit = isUpperCircuit || isLowerCircuit;
 
     out.push({
       ...(prev || {}),
@@ -903,20 +937,26 @@ function normalizeLiveArray(arr) {
       turnover, totalTurnover: turnover,
       transactions: tx, totalTransactions: tx,
       high52w: hi52, low52w: lo52,
-      week52HighDist: +(((ltp - hi52) / hi52) * 100).toFixed(2),
-      week52LowDist: +(((ltp - lo52) / lo52) * 100).toFixed(2),
+      week52HighDist: hi52 ? +(((ltp - hi52) / hi52) * 100).toFixed(2) : null,
+      week52LowDist: lo52 ? +(((ltp - lo52) / lo52) * 100).toFixed(2) : null,
       pe, eps, bvps, bookValue: bvps, pb, pbv: pb, marketCap, sharesOut: sharesM,
       rsi, macd, ema20, ema50, sma20, sma50, bollinger,
       volumeZScore, volumeSurgeRatio,
       technicalScore, technicalRating, dpi,
-      stealthAccumulation, floatTurnoverPct: +((turnover / Math.max(1, marketCap)) * 100).toFixed(3),
-      isBreakout: pCh >= 3 || ltp >= hi52 * 0.98,
-      isVolumeShocker: volumeZScore >= 1.5,
+      stealthAccumulation, floatTurnoverPct: (turnover && marketCap) ? +((turnover / Math.max(1, marketCap)) * 100).toFixed(3) : 0,
+      isBreakout: pCh >= 3 || (hi52 && ltp >= hi52 * 0.98),
+      isVolumeShocker: volumeZScore && volumeZScore >= 1.5,
       candlestickPattern: prev?.candlestickPattern || null,
-      promoterHolding: prev?.promoterHolding || 51,
-      beta: prev?.beta || 1.0,
-      dividendYield: prev?.dividendYield || 0,
-      listedShares: sharesM * 1e6,
+      promoterHolding: Number(cachedFund?.promoterHolding ?? prev?.promoterHolding ?? null),
+      beta: Number(prev?.beta ?? null),
+      dividendYield: Number(cachedFund?.dividendYield ?? prev?.dividendYield ?? 0),
+      listedShares: sharesM ? sharesM * 1e6 : null,
+      circuitLimitPct,
+      circuitCeiling,
+      circuitFloor,
+      isCircuitHit,
+      isUpperCircuit,
+      isLowerCircuit
     });
   }
 
@@ -932,11 +972,13 @@ export async function fetchLiveMarket() {
     clearDynamicMarketHalt();
     const marketStatus = getDetailedMarketStatus();
     LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
-    return { data: live, source: LAST_SOURCE, marketStatus };
+    return { data: live, source: LAST_SOURCE, marketStatus, isFreshFeed: true };
   }
   const marketStatus = getDetailedMarketStatus();
-  LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'simulated-live' : 'yesterday');
-  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus };
+  const lastSavedDate = typeof window !== 'undefined' ? localStorage.getItem('nepse_stocks_session_date') : null;
+  const isTodaySession = lastSavedDate && lastSavedDate === getLatestTradingDateStr();
+  LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (isTodaySession ? (marketStatus.isOpen ? 'live' : 'closing') : 'yesterday');
+  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false };
 }
 
 export async function fetchMarketSummary() {
@@ -973,11 +1015,12 @@ export async function fetchMarketSummary() {
         if (d.totalTradedShares) MEM_SUMMARY.totalTradedShares = Number(d.totalTradedShares);
         if (d.totalTransactions) MEM_SUMMARY.totalTransactions = Number(d.totalTransactions);
       }
+      const cachedNepse = getCachedIndices()?.nepse;
       return {
         data: {
-          nepseIndex: Number(d.nepseIndex || MEM_SUMMARY?.nepseIndex || 2654.28),
-          change: Number(d.change || MEM_SUMMARY?.change || 7.06),
-          changePercent: Number(d.changePercent || MEM_SUMMARY?.changePercent || 0.26),
+          nepseIndex: d.nepseIndex ? Number(d.nepseIndex) : (MEM_SUMMARY?.nepseIndex ? Number(MEM_SUMMARY.nepseIndex) : (cachedNepse?.value || null)),
+          change: d.change != null ? Number(d.change) : (MEM_SUMMARY?.change != null ? Number(MEM_SUMMARY.change) : (cachedNepse?.change ?? null)),
+          changePercent: d.changePercent != null ? Number(d.changePercent) : (MEM_SUMMARY?.changePercent != null ? Number(MEM_SUMMARY.changePercent) : (cachedNepse?.pChange ?? null)),
           totalTurnover: Number(d.totalTurnover || MEM_SUMMARY?.totalTurnover || 0),
           totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY?.totalTradedShares || 0),
           totalTransactions: Number(d.totalTransactions || MEM_SUMMARY?.totalTransactions || 0),
@@ -1006,11 +1049,12 @@ export async function fetchMarketSummary() {
         MEM_SUMMARY.totalTradedShares = totalTradedShares;
         MEM_SUMMARY.totalTransactions = totalTransactions;
       }
+      const cachedNepseDirect = getCachedIndices()?.nepse;
       return {
         data: {
-          nepseIndex: Number(MEM_SUMMARY?.nepseIndex || 2654.28),
-          change: Number(MEM_SUMMARY?.change || 7.06),
-          changePercent: Number(MEM_SUMMARY?.changePercent || 0.26),
+          nepseIndex: MEM_SUMMARY?.nepseIndex ? Number(MEM_SUMMARY.nepseIndex) : (cachedNepseDirect?.value || null),
+          change: MEM_SUMMARY?.change != null ? Number(MEM_SUMMARY.change) : (cachedNepseDirect?.change ?? null),
+          changePercent: MEM_SUMMARY?.changePercent != null ? Number(MEM_SUMMARY.changePercent) : (cachedNepseDirect?.pChange ?? null),
           totalTurnover,
           totalTradedShares,
           totalTransactions,
@@ -1105,7 +1149,17 @@ export async function fetchFloorsheet() { return fetchFloorSheet(50); }
 
 export async function fetchSupplyDemand() {
   ensureSnapshot();
-  return { data: [...MEM_STOCKS].sort((a, b) => b.volume - a.volume).slice(0, 30).map(s => ({ symbol: s.symbol, supply: Math.floor(s.volume * 0.6), demand: Math.floor(s.volume * 0.72), ltp: s.ltp })) };
+  return {
+    data: [...MEM_STOCKS]
+      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+      .slice(0, 30)
+      .map(s => ({
+        symbol: s.symbol,
+        supply: Number(s.totalAskQty || s.totalSellQty || 0),
+        demand: Number(s.totalBidQty || s.totalBuyQty || 0),
+        ltp: Number(s.ltp || 0)
+      }))
+  };
 }
 
 export function getLatestTradingDateStr() {
@@ -1450,59 +1504,57 @@ export function calculateIndices(stocks) {
   const cached = getCachedIndices();
   const cachedTurnover = Number(cached?.nepse?.turnover || MEM_SUMMARY?.totalTurnover || 0);
   const sumTurnover = list.reduce((a, s) => a + (s.turnover || 0), 0);
-  const turnover = cachedTurnover > 0 ? cachedTurnover : (sumTurnover > 0 ? sumTurnover : 5499316643.52);
+  const turnover = cachedTurnover > 0 ? cachedTurnover : sumTurnover;
 
-  const nepseVal = Number(MEM_SUMMARY?.nepseIndex || cached?.nepse?.value || 2654.28);
-  const nepseChg = Number(MEM_SUMMARY?.change ?? cached?.nepse?.change ?? 7.06);
-  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : 2647.22;
-  const nepsePChg = Number(MEM_SUMMARY?.changePercent ?? cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0.26));
+  const nepseVal = Number(MEM_SUMMARY?.nepseIndex || cached?.nepse?.value || 0);
+  const nepseChg = Number(MEM_SUMMARY?.change ?? cached?.nepse?.change ?? 0);
+  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : (nepseVal > 0 ? nepseVal : 0);
+  const nepsePChg = Number(MEM_SUMMARY?.changePercent ?? cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0));
 
   const bySector = {};
   list.forEach(s => {
     const k = s.sector || 'Others';
-    (bySector[k] = bySector[k] || { index: k, count: 0, chg: 0, vol: 0, turnover: 0 });
+    (bySector[k] = bySector[k] || { index: k, count: 0, chg: 0, vol: 0, turnover: 0, totalCap: 0, prevCap: 0 });
     bySector[k].count++;
     bySector[k].chg += (s.pChange || 0);
     bySector[k].vol += (s.volume || 0);
     bySector[k].turnover += (s.turnover || 0);
+    const shares = Number(s.listedShares || 1000000);
+    const ltp = Number(s.ltp || 0);
+    const prev = Number(s.prevClose || ltp);
+    bySector[k].totalCap += (ltp * shares);
+    bySector[k].prevCap += (prev * shares);
   });
 
-  const subIndices = Object.values(bySector).map(x => ({
-    index: x.index,
-    value: +(1500 * (1 + x.chg / (x.count || 1) / 100)).toFixed(2),
-    change: +(15 * (x.chg / (x.count || 1))).toFixed(2),
-    pChange: +(x.chg / (x.count || 1)).toFixed(2),
-    turnover: x.turnover
-  }));
+  const subIndices = Object.values(bySector).map(x => {
+    const pChange = x.prevCap > 0 
+      ? +(((x.totalCap - x.prevCap) / x.prevCap) * 100).toFixed(2)
+      : (x.count > 0 ? +(x.chg / x.count).toFixed(2) : 0);
+    return {
+      index: x.index,
+      name: x.index,
+      value: null,
+      change: null,
+      pChange,
+      changePercent: pChange,
+      turnover: x.turnover,
+      volume: x.vol
+    };
+  });
 
   const obj = {
-    // isPlaceholder: true when nepseIndex is coming from the hardcoded seed (MEM_SUMMARY not yet live)
-    isPlaceholder: !MEM_SUMMARY?.nepseIndex || MEM_SUMMARY.nepseIndex === 2654.28,
+    isPlaceholder: nepseVal <= 0,
+    status: nepseVal > 0 ? 'complete' : 'insufficient_history',
     nepse: {
-      value: nepseVal,
-      change: nepseChg,
-      pChange: nepsePChg,
+      value: nepseVal > 0 ? nepseVal : null,
+      change: nepseVal > 0 ? nepseChg : null,
+      pChange: nepseVal > 0 ? nepsePChg : null,
       turnover,
-      prevClose: truePrevClose
+      prevClose: truePrevClose > 0 ? truePrevClose : null
     },
-    float: cached?.float || {
-      value: 180.58,
-      change: 1.05,
-      pChange: 0.58,
-      turnover: 4395416485.5
-    },
-    sensitive: cached?.sensitive || {
-      value: 465.75,
-      change: 2.07,
-      pChange: 0.44,
-      turnover: 2148463089.2
-    },
-    sensitiveFloat: cached?.sensitiveFloat || {
-      value: 157.12,
-      change: 0.88,
-      pChange: 0.56,
-      turnover: 1856123696.6
-    },
+    float: cached?.float || null,
+    sensitive: cached?.sensitive || null,
+    sensitiveFloat: cached?.sensitiveFloat || null,
     subIndices: (cached?.subIndices?.length > 0) ? cached.subIndices : subIndices,
     advances: adv,
     declines: dec,
@@ -1530,11 +1582,11 @@ export function getCachedIndices() {
     }
   } catch (_) {}
   return {
-    isPlaceholder: true,
-    nepse: { value: 2654.28, change: 7.06, pChange: 0.26, open: 2650.19, high: 2662.71, low: 2637.57, prevClose: 2647.22, turnover: 7050398624.96 },
-    sensitive: { value: 473.79, change: 2.71, pChange: 0.57, open: 471.51, high: 473.94, low: 469.90, turnover: 2750821038.5 },
-    float: { value: 182.99, change: 0.53, pChange: 0.29, open: 182.81, high: 183.53, low: 181.82, turnover: 6980162833.3 },
-    sensitiveFloat: { value: 160.00, change: 0.68, pChange: 0.42, open: 159.45, high: 160.29, low: 158.80, turnover: 2750821038.5 },
+    status: 'insufficient_history',
+    nepse: null,
+    sensitive: null,
+    float: null,
+    sensitiveFloat: null,
     subIndices: []
   };
 }
@@ -1543,47 +1595,38 @@ export async function fetchMarketIndices() {
   try {
     let indicesData = null;
 
-    // 1. Primary Source: Backend proxy endpoints (Official NEPSE NOTS API via nepseClient & live scrapers)
-    // Always query backend first for real-time tick-by-tick exchange index & subindices
-    const [indicesRes, sectorRes, intradayRes, summaryRes, legacyRes] = await Promise.all([
-      fetchFromBackend(`/api/indices`, 10000).catch(() => null),
-      fetchFromBackend(`/api/indices/sector`, 10000).catch(() => null),
-      fetchFromBackend(`/api/nepse/intraday-graph`, 10000).catch(() => null),
-      fetchFromBackend(`/api/market/summary`, 10000).catch(() => null),
-      fetchFromBackend(`/api/market-indices`, 10000).catch(() => null)
-    ]);
-
-    // ── Case A: /api/indices or /api/market-indices returns object form { nepse: {...}, float: {...}, ... }
-    const primaryObj = (indicesRes?.data?.nepse?.value > 0 ? indicesRes.data : null)
-      || (legacyRes?.data?.nepse?.value > 0 ? legacyRes.data : null);
-
-    if (primaryObj && primaryObj.nepse && Number(primaryObj.nepse.value) > 0) {
-      const authTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || primaryObj.nepse.turnover || 0);
-      const nepseObj = { ...primaryObj.nepse };
-      if (authTurnover > 0 && (!nepseObj.turnover || authTurnover > nepseObj.turnover)) {
-        nepseObj.turnover = authTurnover;
+    // 1. Fast Primary Source: Consolidated /api/market-indices endpoint (sub-second official NEPSE NOTS + sector indices)
+    try {
+      const fastRes = await fetchFromBackend('/api/market-indices', 5000);
+      const d = fastRes?.data || fastRes;
+      if (d && d.nepse && Number(d.nepse.value) > 0) {
+        indicesData = {
+          nepse: {
+            ...d.nepse,
+            value: Number(d.nepse.value),
+            change: Number(d.nepse.change || 0),
+            pChange: Number(d.nepse.pChange || 0),
+            turnover: Number(d.nepse.turnover || 0),
+            prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
+          },
+          sensitive: d.sensitive || null,
+          float: d.float || null,
+          sensitiveFloat: d.sensitiveFloat || null,
+          subIndices: Array.isArray(d.subIndices) ? d.subIndices : []
+        };
       }
-      indicesData = {
-        nepse: nepseObj,
-        sensitive: primaryObj.sensitive || null,
-        float: primaryObj.float || null,
-        sensitiveFloat: primaryObj.sensitiveFloat || null,
-        subIndices: Array.isArray(primaryObj.subIndices) && primaryObj.subIndices.length > 0
-          ? primaryObj.subIndices
-          : (Array.isArray(sectorRes?.data) ? sectorRes.data.map(s => ({
-              index: s.index || s.name,
-              value: Number(s.currentValue || s.close || 0),
-              change: Number(s.change || 0),
-              pChange: Number(s.perChange || s.pChange || 0)
-            })) : [])
-      };
-    }
+    } catch (_) {}
 
-    // ── Case B: /api/indices returns NOTS-style array [ { index: 'NEPSE Index', currentValue, ... }, ... ]
+    // 2. Secondary Fallback: Multi-endpoint query if /api/market-indices was not immediately available
     if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      const [indicesRes, sectorRes, summaryRes] = await Promise.all([
+        fetchFromBackend(`/api/indices`, 6000).catch(() => null),
+        fetchFromBackend(`/api/indices/sector`, 6000).catch(() => null),
+        fetchFromBackend(`/api/market/summary`, 6000).catch(() => null)
+      ]);
+
       const rawList = Array.isArray(indicesRes?.data) ? indicesRes.data
-        : Array.isArray(indicesRes) ? indicesRes
-        : (Array.isArray(legacyRes?.data) ? legacyRes.data : null);
+        : Array.isArray(indicesRes) ? indicesRes : null;
 
       if (Array.isArray(rawList) && rawList.length > 0) {
         const nepseItem = rawList.find(i => i.index === 'NEPSE Index' || i.id === 58);
@@ -1848,7 +1891,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30) {
   try {
     const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?days=${days}`, 7500);
     const d = res?.data || res;
-    if (d && (d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0)) {
+    const isSyntheticFallback = res?.source === 'trading-profile-fallback' || d?.source === 'trading-profile-fallback' || res?.source === 'empty_no_floorsheet_records';
+    if (!isSyntheticFallback && d && (d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0)) {
       const enriched = {
         ...d,
         symbol: sym,

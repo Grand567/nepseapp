@@ -383,17 +383,11 @@ const setCache = (key, data, ttlMs) => {
 
 // Utility to generate a pseudo RSI based on % change
 const calcRSI = (pChange) => {
-  let base = 50;
-  if (pChange > 0) base += Math.min(25, pChange * 5);
-  if (pChange < 0) base -= Math.min(25, Math.abs(pChange) * 5);
-  return Math.max(10, Math.min(90, base));
+  // Disabled synthetic RSI; real RSI not available in this endpoint
+  return null;
 };
 
-const calcMACD = (pChange) => ({
-  line: pChange * 2,
-  signal: pChange * 1.5,
-  histogram: pChange * 0.5
-});
+const calcMACD = (pChange) => null;
 
 const parseMoney = (str) => {
   if (!str) return 0;
@@ -2690,87 +2684,32 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
       }
     }
 
-    // Tier 3: Resilient closed-market fallback using security trading fundamentals
+    // Tier 3: Zero-simulation fiduciary fallback. When no exchange floorsheet records exist, return authentic empty records.
     if (!raw || raw.length === 0) {
-      const summary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
-      const stockInfo = (summary?.stocks || []).find(s => (s.symbol || '').toUpperCase() === symbol) || { ltp: 450, volume: 25000, pChange: 1.2 };
-      const ltp = Number(stockInfo.ltp || stockInfo.closePrice || 400);
-      const vol = Math.max(15000, Number(stockInfo.volume || 25000));
-      
-      const majorBrokers = [
-        { id: 58, name: 'Naasa Securities' },
-        { id: 45, name: 'Imperial Securities' },
-        { id: 34, name: 'Vision Securities' },
-        { id: 49, name: 'Online Securities' },
-        { id: 17, name: 'ABC Securities' },
-        { id: 28, name: 'Shree Krishna Securities' },
-        { id: 42, name: 'Sani Securities' },
-        { id: 57, name: 'Aryatara Investment' },
-        { id: 38, name: 'Dipshikha Dhitopatra' },
-        { id: 59, name: 'Premier Securities' },
-      ];
-
-      let hash = 0;
-      for (let i = 0; i < symbol.length; i++) hash = (Math.imul(31, hash) + symbol.charCodeAt(i)) | 0;
-      const tfMultiplier = days <= 7 ? 1.2 : days <= 30 ? 4.5 : days <= 90 ? 12.0 : 25.0;
-
-      const buyers = majorBrokers.slice(0, 5).map((b, i) => {
-        const share = 0.28 - (i * 0.042);
-        const buyQty = Math.round(vol * share * tfMultiplier);
-        const buyAmount = Math.round(buyQty * ltp);
-        return {
-          brokerId: b.id,
-          brokerName: b.name,
-          buyQty,
-          buyAmount,
-          avgRate: +(ltp * (0.991 + (i * 0.003))).toFixed(1),
-          netQty: Math.round(buyQty * 0.65)
-        };
-      });
-
-      const sellers = [...majorBrokers].reverse().slice(0, 5).map((b, i) => {
-        const share = 0.24 - (i * 0.038);
-        const sellQty = Math.round(vol * share * tfMultiplier);
-        const sellAmount = Math.round(sellQty * ltp);
-        return {
-          brokerId: b.id,
-          brokerName: b.name,
-          sellQty,
-          sellAmount,
-          avgRate: +(ltp * (1.009 - (i * 0.003))).toFixed(1),
-          netQty: -Math.round(sellQty * 0.55)
-        };
-      });
-
-      const totalBuyVol = buyers.reduce((s, b) => s + b.buyQty, 0);
-      const totalTurnover = buyers.reduce((s, b) => s + b.buyAmount, 0);
-      const top3Buy = buyers.slice(0, 3).reduce((s, b) => s + b.buyQty, 0);
-      const concentrationPct = +((top3Buy / totalBuyVol) * 100).toFixed(1);
-
       const data = {
         symbol,
         period: `${days} days`,
         timeframe: days <= 7 ? '1W' : days <= 30 ? '1M' : days <= 90 ? '3M' : days <= 180 ? '6M' : '1Y',
-        tradingDays: Math.min(days, 22),
-        totalTrades: Math.round(totalBuyVol / 120),
-        totalVolume: totalBuyVol,
-        totalAmount: totalTurnover,
-        totalTurnover,
-        concentrationPct,
-        buyers,
-        sellers,
-        topAccumulator: buyers[0],
-        topDistributor: sellers[0],
-        smartMoneyPhase: 'Institutional Accumulation',
-        adSignal: 'Accumulation',
-        adStrength: '74.2%',
-        adRatio: 0.185,
-        brokers: [...buyers, ...sellers],
+        tradingDays: 0,
+        totalTrades: 0,
+        totalVolume: 0,
+        totalAmount: 0,
+        totalTurnover: 0,
+        concentrationPct: 0,
+        buyers: [],
+        sellers: [],
+        topAccumulator: null,
+        topDistributor: null,
+        smartMoneyPhase: 'Neutral / Insufficient Data',
+        adSignal: 'Neutral',
+        adStrength: '0%',
+        adRatio: 0,
+        brokers: [],
         dailyFlow: []
       };
 
-      setCache(cacheKey, data, 30 * 60 * 1000);
-      return res.json({ success: true, data, source: 'trading-profile-fallback' });
+      setCache(cacheKey, data, 5 * 60 * 1000);
+      return res.json({ success: true, data, source: 'empty_no_floorsheet_records' });
     }
 
     // Filter to N trading days
@@ -2865,7 +2804,7 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
       avgRate: b.avgSellRate
     }));
     const top3Buy = buyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
-    const concentrationPct = totalBuyVol > 0 ? +((top3Buy / totalBuyVol) * 100).toFixed(1) : 28.5;
+    const concentrationPct = totalBuyVol > 0 ? +((top3Buy / totalBuyVol) * 100).toFixed(1) : 0;
     const topAccumulator = topNetBuyers[0] ? {
       brokerId: parseInt(topNetBuyers[0].broker, 10) || topNetBuyers[0].broker,
       brokerName: topNetBuyers[0].name,

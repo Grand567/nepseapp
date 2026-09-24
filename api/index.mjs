@@ -61,19 +61,10 @@ const setCache = (key, data, ttlMs) => {
   cache.set(key, { data, expiresAt: Date.now() + ttlMs });
 };
 
-// Utility to generate a pseudo RSI based on % change
-const calcRSI = (pChange) => {
-  let base = 50;
-  if (pChange > 0) base += Math.min(25, pChange * 5);
-  if (pChange < 0) base -= Math.min(25, Math.abs(pChange) * 5);
-  return Math.max(10, Math.min(90, base));
-};
-
-const calcMACD = (pChange) => ({
-  line: pChange * 2,
-  signal: pChange * 1.5,
-  histogram: pChange * 0.5
-});
+// calcRSI / calcMACD — Disabled. Single-day pChange approximation is not real RSI/MACD.
+// Real RSI/MACD must be computed from 14+ sessions of OHLCV via /api/price-history/:symbol.
+const calcRSI = (_pChange) => null;
+const calcMACD = (_pChange) => null;
 
 const parseMoney = (str) => {
   if (!str) return 0;
@@ -3147,8 +3138,7 @@ app.get('/api/scanner/bulk', async (req, res) => {
           const high52w = tds.length >= 23 ? parseMoney($(tds[22]).text()) : NaN;
           const low52w = tds.length >= 24 ? parseMoney($(tds[23]).text()) : NaN;
           if (symbol && ltp > 0) {
-            const rsi = calcRSI(isNaN(pChange) ? 0 : pChange);
-            stocks.push({ symbol, name: symbol, ltp, pChange: isNaN(pChange) ? 0 : pChange, volume: isNaN(volume) ? 0 : volume, prevClose: isNaN(prevClose) ? ltp : prevClose, turnover: isNaN(turnover) ? 0 : turnover, high52w: isNaN(high52w) ? ltp * 1.2 : high52w, low52w: isNaN(low52w) ? ltp * 0.8 : low52w, rsi });
+            stocks.push({ symbol, name: symbol, ltp, pChange: isNaN(pChange) ? 0 : pChange, volume: isNaN(volume) ? 0 : volume, prevClose: isNaN(prevClose) ? ltp : prevClose, turnover: isNaN(turnover) ? 0 : turnover, high52w: isNaN(high52w) ? null : high52w, low52w: isNaN(low52w) ? null : low52w, rsi: null });
           }
         }
       });

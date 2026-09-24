@@ -145,6 +145,12 @@ export async function predictIndexDirection(options = {}) {
   const atr = features.index_atr || 32.0;
   let target1, target2, stopFloor, rrr, marketRegime;
 
+  // ── 15% MANDATORY DAILY CIRCUIT BAND ENFORCEMENT ──────────────────
+  const circuitLimitPct = 15.0; // Securities Trading Operation Fourth Amendment Regulations 2082
+  const prevClose = Number(features.prev_close || (features.latest_close ? (features.latest_close - (features.headline_p_change ? (features.latest_close * features.headline_p_change / 100) : 0)) : close)) || close;
+  const circuitCeiling = +(prevClose * (1 + circuitLimitPct / 100)).toFixed(1);
+  const circuitFloor = +(prevClose * (1 - circuitLimitPct / 100)).toFixed(1);
+
   if (direction === 'up') {
     target1 = +(close + atr * 1.5).toFixed(1);
     target2 = +(close + atr * 3.2).toFixed(1);
@@ -175,9 +181,14 @@ export async function predictIndexDirection(options = {}) {
     }
   }
 
-  // ── PROBABILISTIC EXPECTED RETURN RANGE (90% Confidence Interval) ─────
-  // NEPSE forecasts are modeled as probabilistic return distributions with
-  // uncertainty intervals, rather than rigid point forecasts.
+  // Strictly clamp all targets to the ±15% circuit band
+  target1 = Math.max(circuitFloor, Math.min(circuitCeiling, target1));
+  target2 = Math.max(circuitFloor, Math.min(circuitCeiling, target2));
+  stopFloor = Math.max(circuitFloor, Math.min(circuitCeiling, stopFloor));
+
+  // ── PROBABILISTIC EXPECTED RETURN RANGE (Strict 15% Circuit Bounded) ─
+  // NEPSE forecasts are modeled as probabilistic return distributions bounded
+  // strictly by the daily circuit limits (±15%).
   const baselineVolPct = close > 0 ? (atr / close) * 100 : 1.2;
   let uncertaintyMultiplier = 1.0;
   if (features.political_event_flagged) {
@@ -190,15 +201,23 @@ export async function predictIndexDirection(options = {}) {
     uncertaintyMultiplier += 0.15; // Float divergence adds distribution dispersion
   }
 
-  const expectedMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
+  const rawMeanPct = +(rawScore * baselineVolPct * 1.5).toFixed(2);
+  const expectedMeanPct = Math.max(-circuitLimitPct, Math.min(circuitLimitPct, rawMeanPct));
   const zScore90 = 1.645;
   const margin90 = +(zScore90 * baselineVolPct * uncertaintyMultiplier).toFixed(2);
+  const rawLower = +(expectedMeanPct - margin90).toFixed(2);
+  const rawUpper = +(expectedMeanPct + margin90).toFixed(2);
+  const lower90 = Math.max(-circuitLimitPct, rawLower);
+  const upper90 = Math.min(circuitLimitPct, rawUpper);
+
   const expectedReturnRange = {
     mean: expectedMeanPct,
-    lower90: +(expectedMeanPct - margin90).toFixed(2),
-    upper90: +(expectedMeanPct + margin90).toFixed(2),
-    intervalWidth: +(2 * margin90).toFixed(2),
+    lower90,
+    upper90,
+    intervalWidth: +(upper90 - lower90).toFixed(2),
     confidenceLevel: 90,
+    circuitLimitPct,
+    isCircuitBounded: lower90 !== rawLower || upper90 !== rawUpper,
     uncertaintyMultiplier: +uncertaintyMultiplier.toFixed(2),
     isEventWidened: Boolean(features.political_event_flagged || features.float_divergence?.divergenceDetected || tRatio < 0.75)
   };
@@ -636,62 +655,6 @@ export async function getScoredNewsSentiment(limit = 20) {
     return getNewsCache(limit);
   }
 
-  // 3. Last resort: hardcoded fallback
-  return [
-    {
-      id: 1,
-      source: 'sharesansar',
-      headline: 'NRB leaves policy rate steady, cites resilient remittance and banking system liquidity surge',
-      url: 'https://sharesansar.com',
-      published_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-      sentiment_score: 0.65,
-      category: 'nrb_policy',
-      related_symbols: ['NABIL', 'NICA', 'GBIME'],
-      scored_by: 'quant-nlp'
-    },
-    {
-      id: 2,
-      source: 'merolagani',
-      headline: 'Commercial banks record 14.2% expansion in non-interest income and deposit inflows',
-      url: 'https://merolagani.com',
-      published_at: new Date(Date.now() - 5 * 3600000).toISOString(),
-      sentiment_score: 0.58,
-      category: 'earnings',
-      related_symbols: ['SCB', 'EBL', 'SBI'],
-      scored_by: 'quant-nlp'
-    },
-    {
-      id: 3,
-      source: 'nepalipaisa',
-      headline: 'SEBON approves public issuance for two major hydropower developers with local quotas',
-      url: 'https://nepalipaisa.com',
-      published_at: new Date(Date.now() - 8 * 3600000).toISOString(),
-      sentiment_score: 0.42,
-      category: 'ipo',
-      related_symbols: ['UPPER', 'CHCL', 'SHIVM'],
-      scored_by: 'quant-nlp'
-    },
-    {
-      id: 4,
-      source: 'sharesansar',
-      headline: 'Supreme Court concludes hearing on market regulatory appeals; clears path for smooth trading operations',
-      url: 'https://sharesansar.com',
-      published_at: new Date(Date.now() - 14 * 3600000).toISOString(),
-      sentiment_score: 0.35,
-      category: 'political',
-      related_symbols: ['NEPSE'],
-      scored_by: 'quant-nlp'
-    },
-    {
-      id: 5,
-      source: 'merolagani',
-      headline: 'Insurance Board directs timely claim settlements; sector capital reserves cross required minimums',
-      url: 'https://merolagani.com',
-      published_at: new Date(Date.now() - 20 * 3600000).toISOString(),
-      sentiment_score: 0.28,
-      category: 'nrb_policy',
-      related_symbols: ['NLIC', 'LICN', 'SICL'],
-      scored_by: 'quant-nlp'
-    }
-  ];
+  // 3. Authentic data only: Return empty array when live news is unavailable
+  return [];
 }
