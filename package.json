@@ -28,6 +28,7 @@
     "firebase": "^12.13.0",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.395.0",
+    "nepseman-api": "^1.0.0",
     "node-cache": "^5.1.2",
     "pg": "^8.23.0",
     "react": "^18.3.1",

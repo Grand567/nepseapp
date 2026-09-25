@@ -13,7 +13,7 @@
  * 10. Quantitative Risk-Reward Ratio (RRR >= 2.0) & ATR-based Target Formulations
  */
 import { calculateRSI, calculateEMA, calculateMACD } from './indicators.js';
-import { getCachedRealPriceHistory } from './liveData.js';
+import { getCachedRealPriceHistory } from './historyCache.js';
 
 /**
  * Dynamic resolution helpers to guarantee authentic, stock-specific metrics for all scrips

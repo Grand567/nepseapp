@@ -35,7 +35,7 @@ import {
 } from './setupAnalyzer.js';
 
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
-import { getCachedStockFundamentals, getCachedRealPriceHistory } from './liveData.js';
+import { getCachedStockFundamentals, getCachedRealPriceHistory } from './historyCache.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 
 /**

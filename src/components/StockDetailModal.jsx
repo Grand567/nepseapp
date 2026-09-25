@@ -997,6 +997,30 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       } catch (err) {
         console.warn('[StockDetailModal] Failed to fetch intraday for ' + d.symbol, err);
       }
+    } else if (tf === '2Y' || tf === 'ALL' || tf === 'MAX') {
+      const daysNeeded = tf === '2Y' ? 730 : 3650;
+      // If we don't already have enough data, fetch more from the proxy
+      if (!realPriceHistory || realPriceHistory.length < (daysNeeded > 1000 ? 550 : 300)) {
+        try {
+          const fullHistory = await fetchRealPriceHistory(d.symbol, daysNeeded);
+          if (fullHistory && fullHistory.length > 0) {
+            setRealPriceHistory(fullHistory);
+            const formatted = fullHistory.map(item => ({
+              date: item.date,
+              time: item.date,
+              open: Number(item.open) || Number(item.close),
+              high: Number(item.high) || Number(item.close),
+              low: Number(item.low) || Number(item.close),
+              close: Number(item.close),
+              volume: Number(item.volume) || 0
+            }));
+            setHistory(formatted);
+            return;
+          }
+        } catch (e) {
+          console.warn('[StockDetailModal] Failed to fetch extended history', e);
+        }
+      }
     }
 
     if (realPriceHistory && realPriceHistory.length > 0) {

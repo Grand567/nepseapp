@@ -35,6 +35,7 @@ interface StockCandlestickChartProps {
   levels?: ChartLevels;
   symbol: string;
   ltp?: number;
+  onFetchMore?: (days: number) => void;
 }
 
 const TIMEFRAMES = [
@@ -51,6 +52,7 @@ export function StockCandlestickChart({
   levels,
   symbol,
   ltp,
+  onFetchMore,
 }: StockCandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -481,7 +483,12 @@ export function StockCandlestickChart({
           {TIMEFRAMES.map((t) => (
             <button
               key={t.id}
-              onClick={() => setTimeframe(t.id)}
+              onClick={() => {
+                setTimeframe(t.id);
+                if (onFetchMore && t.days > ascendingCandles.length + 30) {
+                  onFetchMore(t.days);
+                }
+              }}
               className={`px-2.5 py-1 rounded-md font-bold transition ${
                 timeframe === t.id
                   ? 'bg-blue-600 text-white shadow'

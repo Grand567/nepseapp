@@ -7,7 +7,7 @@
  * of short selling, and transparent public floor sheet broker-level tracking).
  */
 
-import { getCachedRealPriceHistory } from './liveData';
+import { getCachedRealPriceHistory } from './historyCache';
 
 export interface Candle {
   date?: string;

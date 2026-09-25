@@ -1604,24 +1604,31 @@ export default function Dashboard({
           if (intraday && Array.isArray(intraday) && intraday.length > 0) {
             if (!active) return;
 
-            // Ensure the latest intraday candle reflects the real-time live price from NOTS
+            // Ensure the latest intraday candle reflects the real-time live price from NOTS only during open market hours
             if (sym === 'NEPSE') {
               const officialVal = Number(indices?.nepse?.value || 0);
-              if (officialVal > 0 && !indices?.isPlaceholder) {
+              const isMarketOpen = Boolean(marketStatus?.isOpen);
+              if (officialVal > 0 && !indices?.isPlaceholder && isMarketOpen) {
                 const lastPt = intraday[intraday.length - 1];
                 const nowNpt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' });
                 const updatedIntraday = [...intraday];
                 // Only push if drift is small (< 80 points) to prevent appending stale/divergent index values
                 if (lastPt && Math.abs(Number(lastPt.close) - officialVal) > 0.01 && Math.abs(Number(lastPt.close) - officialVal) < 80) {
-                  updatedIntraday.push({
-                    time: nowNpt,
-                    timestamp: Math.floor(Date.now() / 1000),
-                    open: officialVal,
-                    high: Math.max(Number(lastPt.high || officialVal), officialVal),
-                    low: Math.min(Number(lastPt.low || officialVal), officialVal),
-                    close: officialVal,
-                    volume: 0
-                  });
+                  if (lastPt.time === nowNpt) {
+                    lastPt.close = officialVal;
+                    lastPt.high = Math.max(Number(lastPt.high || officialVal), officialVal);
+                    lastPt.low = Math.min(Number(lastPt.low || officialVal), officialVal);
+                  } else {
+                    updatedIntraday.push({
+                      time: nowNpt,
+                      timestamp: Math.floor(Date.now() / 1000),
+                      open: officialVal,
+                      high: Math.max(Number(lastPt.high || officialVal), officialVal),
+                      low: Math.min(Number(lastPt.low || officialVal), officialVal),
+                      close: officialVal,
+                      volume: 0
+                    });
+                  }
                 }
                 setHeroHistory(updatedIntraday);
               } else {
@@ -2359,26 +2366,24 @@ export default function Dashboard({
   // High-Level Market Statistics & Aggregate Summary
   const marketSummaryStats = useMemo(() => {
     let totalTurnover = Number(indices?.nepse?.turnover || 0);
+    let calculatedTurnover = 0;
     let totalVolume = 0;
     let totalTrades = 0;
 
     stocks.forEach(s => {
-      const vol = Number(s.volume || 0);
+      const vol = Number(s.volume || s.totalTradedQuantity || 0);
       const ltp = Number(s.ltp || 0);
-      const to = Number(s.turnover || (ltp * vol));
-      if (!totalTurnover) totalTurnover += to;
+      const to = Number(s.turnover || s.totalTradedValue || (ltp * vol) || 0);
+      calculatedTurnover += to;
       totalVolume += vol;
-      totalTrades += Number(s.trades || s.transactions || Math.round(vol / 120));
+      totalTrades += Number(s.trades || s.transactions || s.totalTrades || 0);
     });
 
-    if (!totalTurnover || totalTurnover < 10000000) {
-      totalTurnover = 3465201042.79;
+    if (!totalTurnover || totalTurnover <= 0) {
+      totalTurnover = calculatedTurnover > 0 ? calculatedTurnover : Number(getCachedIndices()?.nepse?.turnover || 0);
     }
-    if (!totalVolume || totalVolume < 10000) {
-      totalVolume = 8452100;
-    }
-    if (!totalTrades || totalTrades < 100) {
-      totalTrades = 42815;
+    if (!totalVolume || totalVolume <= 0) {
+      totalVolume = stocks.reduce((sum, s) => sum + Number(s.volume || s.totalTradedQuantity || 0), 0);
     }
 
     const adv = stocks.filter(s => (s.pChange || 0) > 0).length;

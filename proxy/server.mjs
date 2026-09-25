@@ -358,6 +358,7 @@ const HEADERS = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.5',
   'Cache-Control': 'no-cache',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
 };
 
 const rssParser = new Parser({
@@ -396,9 +397,17 @@ const parseMoney = (str) => {
   return match ? parseFloat(match[0]) : 0;
 };
 
-import { Nepse } from '@rumess/nepse-api';
+import nepseManager from './nepseClientManager.mjs';
 
-const nepseClient = new Nepse();
+const nepseClient = nepseManager;
+
+// Real-time diagnostics endpoint for NEPSE connection & auth health
+app.get('/api/nepse/diagnostics', (req, res) => {
+  res.json({
+    success: true,
+    data: nepseManager.getDiagnostics()
+  });
+});
 
 app.get('/api/market-summary', async (req, res) => {
   const cacheKey = 'market-summary';
@@ -1962,63 +1971,120 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
    ═══════════════════════════════════════════════════ */
 
 app.get('/api/company/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toLowerCase();
-  const cacheKey = `company-${symbol}`;
+  const rawSymbol = req.params.symbol.toUpperCase().trim();
+  const symbol = rawSymbol.toLowerCase();
+  const cacheKey = `company-${rawSymbol}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
 
+  const detail = {
+    symbol: rawSymbol,
+    eps: 0, pe: 0, bookValue: 0, pbv: 0, dividend: 0, bonus: 0,
+    marketCap: 0, sharesOutstanding: 0, listedShares: 0, paidUpCapital: 0,
+    high52w: 0, low52w: 0,
+    sector: stockMap[rawSymbol]?.sector || 'Others',
+    name: stockMap[rawSymbol]?.name || rawSymbol,
+  };
+
+  const parseMoney = (str) => {
+    if (!str || str === 'N/A' || str === '-') return 0;
+    return parseFloat(String(str).replace(/,/g, '').replace(/%/g, '')) || 0;
+  };
+
+  // Primary: MeroLagani CompanyDetail page (stable DOM, reliable fundamentals)
   try {
-    const jar = new CookieJar();
-    const client = wrapper(axios.create({ jar, withCredentials: true }));
-    const pageRes = await client.get(`https://www.sharesansar.com/company/${symbol}`, {
-      headers: HEADERS,
-      timeout: 10000
-    });
-    
-    const $ = cheerio.load(pageRes.data);
-    const detail = {
-      eps: 0, pe: 0, bookValue: 0, pbv: 0, dividend: 0, bonus: 0,
-      marketCap: 0, sharesOutstanding: 0, listedShares: 0, paidUpCapital: 0,
-      high52w: 0, low52w: 0, sector: 'Unknown'
-    };
+    const mlUrl = `https://merolagani.com/CompanyDetail.aspx?symbol=${encodeURIComponent(rawSymbol)}`;
+    const resp = await axios.get(mlUrl, { headers: HEADERS, timeout: 10000 });
+    const $ = cheerio.load(resp.data);
 
-    const parseMoney = (str) => {
-      if (!str || str === 'N/A' || str === '-') return 0;
-      return parseFloat(str.replace(/,/g, '')) || 0;
-    };
-
+    // MeroLagani renders a key-value table with class "table-bordered" or inside #ctl00_ContentPlaceHolder1_divFundamental
     $('table tr').each((i, el) => {
-      const tds = $(el).find('td, th');
-      if (tds.length >= 2) {
+      const tds = $(el).find('td');
+      if (tds.length < 2) return;
+      const label = $(tds[0]).text().trim().toLowerCase();
+      const valueStr = $(tds[1]).text().trim();
+      const val = parseMoney(valueStr);
+
+      if (label.includes('eps') || label.includes('earning per share')) detail.eps = val;
+      if (label.includes('p/e') || label === 'pe' || label.includes('price earning')) detail.pe = val;
+      if (label.includes('book value') || label.includes('net worth per share')) detail.bookValue = val;
+      if (label === 'pbv' || label.includes('p/b') || label.includes('price to book')) detail.pbv = val;
+      if (label.includes('52 week high') || (label.includes('52') && label.includes('high') && !label.includes('low'))) detail.high52w = val;
+      if (label.includes('52 week low') || (label.includes('52') && label.includes('low') && !label.includes('high'))) detail.low52w = val;
+      if (label.includes('market cap')) detail.marketCap = val;
+      if (label.includes('shares outstanding') || label.includes('listed shares')) detail.sharesOutstanding = val;
+      if (label.includes('paid up') || label.includes('paid-up')) detail.paidUpCapital = val;
+      if (label.includes('cash dividend') || label === 'dividend') detail.dividend = val;
+      if (label.includes('bonus') && !label.includes('right')) detail.bonus = val;
+      if (label.includes('sector')) detail.sector = valueStr || detail.sector;
+    });
+
+    // Also try the dedicated fundamental panel (MeroLagani uses a labeled dl/dd structure in some layouts)
+    $('dl dt, .panel-body td').each((i, el) => {
+      const label = $(el).text().trim().toLowerCase();
+      const next = $(el).next();
+      if (!next.length) return;
+      const valueStr = next.text().trim();
+      const val = parseMoney(valueStr);
+      if (label.includes('eps')) detail.eps = val || detail.eps;
+      if (label.includes('p/e') || label === 'pe') detail.pe = val || detail.pe;
+      if (label.includes('book value')) detail.bookValue = val || detail.bookValue;
+    });
+  } catch (mlErr) {
+    console.warn(`[company/${rawSymbol}] MeroLagani scrape failed:`, mlErr.message);
+  }
+
+  // Fallback: ShareSansar company page (updated selectors for current DOM)
+  if (!detail.eps && !detail.bookValue) {
+    try {
+      const jar = new CookieJar();
+      const client = wrapper(axios.create({ jar, withCredentials: true }));
+      const pageRes = await client.get(`https://www.sharesansar.com/company/${symbol}`, {
+        headers: HEADERS, timeout: 10000
+      });
+      const $ = cheerio.load(pageRes.data);
+
+      // ShareSansar 2024+ uses .company-info dl dt/dd pairs
+      $('dl dt').each((i, el) => {
+        const label = $(el).text().trim().toLowerCase();
+        const dd = $(el).next('dd');
+        const valueStr = dd.text().trim();
+        const val = parseMoney(valueStr);
+
+        if (label.includes('eps')) detail.eps = val || detail.eps;
+        if (label.includes('p/e') || label.includes('pe ratio')) detail.pe = val || detail.pe;
+        if (label.includes('book value')) detail.bookValue = val || detail.bookValue;
+        if (label.includes('52') && label.includes('high')) detail.high52w = val || detail.high52w;
+        if (label.includes('52') && label.includes('low')) detail.low52w = val || detail.low52w;
+        if (label.includes('sector')) detail.sector = valueStr || detail.sector;
+      });
+
+      // Also check any remaining table rows
+      $('table tr').each((i, el) => {
+        const tds = $(el).find('td');
+        if (tds.length < 2) return;
         const label = $(tds[0]).text().trim().toLowerCase();
         const valueStr = $(tds[1]).text().trim();
         const val = parseMoney(valueStr);
-        
-        if (label.includes('sector')) detail.sector = valueStr;
-        if (label.includes('shares outstanding') || label.includes('outstanding shares')) detail.sharesOutstanding = val;
-        if (label.includes('market price') || label === 'ltp' || label.includes('last traded')) detail.marketPrice = val;
-        if (label.includes('52') && label.includes('high')) {
-           const parts = valueStr.split(/[-/]/);
-           detail.high52w = parseMoney(parts[0]);
-           if (parts.length > 1) detail.low52w = parseMoney(parts[1]);
-        }
-        if (label.includes('eps') || label.includes('earning per share')) detail.eps = val;
-        if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price earning')) detail.pe = val;
-        if (label.includes('book value')) detail.bookValue = val;
-        if (label === 'pbv' || label.includes('p/b') || label.includes('price to book')) detail.pbv = val;
-        if (label.includes('% dividend') || (label.includes('dividend') && label.includes('%'))) detail.dividend = parseMoney(valueStr.replace('%',''));
-        if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%'))) detail.bonus = parseMoney(valueStr.replace('%',''));
-        if (label.includes('paid up') || label.includes('paid-up')) detail.paidUpCapital = val;
-        if (label.includes('market capitalization')) detail.marketCap = val;
-      }
-    });
-
-    setCache(cacheKey, detail, 120000); // 2 mins cache
-    res.json({ success: true, data: detail });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+        if (label.includes('eps')) detail.eps = val || detail.eps;
+        if (label.includes('book value')) detail.bookValue = val || detail.bookValue;
+        if (label.includes('p/e') || label === 'pe') detail.pe = val || detail.pe;
+      });
+    } catch (ssErr) {
+      console.warn(`[company/${rawSymbol}] ShareSansar fallback failed:`, ssErr.message);
+    }
   }
+
+  // Derive PE if we have EPS but no PE
+  if (!detail.pe && detail.eps > 0) {
+    const ltp = stockMap[rawSymbol]?.ltp || 0;
+    if (ltp > 0) detail.pe = +(ltp / detail.eps).toFixed(2);
+  }
+
+  setCache(cacheKey, detail, 10 * 60 * 1000); // 10 min cache
+  res.json({ success: true, data: detail });
 });
+
 
 // ==========================================
 // MERO LAGANI APIs
@@ -2068,7 +2134,7 @@ export async function fetchInternalMeroMarketSummary() {
           prevClose: parseFloat((prevClose || ltp).toFixed(2)),
           volume: tInfo.q != null ? Number(tInfo.q) : volume,
           turnover: parseFloat(turnover.toFixed(2)),
-          sector: stockMap[symbol]?.sector || 'Unknown',
+          sector: stockMap[symbol]?.sector || stockMap[symbol.toUpperCase()]?.sector || 'Others',
           source: 'live'
         };
       }).filter(s => s.symbol && s.ltp > 0);
@@ -2404,25 +2470,36 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
       const content = response?.content || (Array.isArray(response) ? response : []);
 
       if (content.length > 0) {
-        const formatted = content.map(item => ({
-          date: item.businessDate,
-          open: parseFloat(item.openPrice || 0),
-          high: parseFloat(item.highPrice || 0),
-          low: parseFloat(item.lowPrice || 0),
-          close: parseFloat(item.closePrice || item.lastTradedPrice || 0),
-          volume: parseFloat(item.totalTradedQuantity || 0),
-          turnover: parseFloat(item.totalTradedValue || 0),
-          trades: item.totalTrades || 0,
-          high52w: parseFloat(item.fiftyTwoWeekHigh || 0),
-          low52w: parseFloat(item.fiftyTwoWeekLow || 0),
-          prevClose: parseFloat(item.previousDayClosePrice || 0),
-          avgRate: parseFloat(item.averageTradedPrice || 0)
-        })).filter(d => d.close > 0);
+        const formatted = content.map(item => {
+          const close    = parseFloat(item.closePrice || item.lastTradedPrice || 0);
+          const prevClose = parseFloat(item.previousDayClosePrice || 0);
+          const change   = prevClose > 0 ? +(close - prevClose).toFixed(2) : 0;
+          const pChange  = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+          return {
+            date:     item.businessDate,
+            open:     parseFloat(item.openPrice || 0),
+            high:     parseFloat(item.highPrice || 0),
+            low:      parseFloat(item.lowPrice || 0),
+            close,
+            volume:   parseFloat(item.totalTradedQuantity || 0),
+            turnover: parseFloat(item.totalTradedValue || 0),
+            trades:   item.totalTrades || 0,
+            high52w:  parseFloat(item.fiftyTwoWeekHigh || 0),
+            low52w:   parseFloat(item.fiftyTwoWeekLow || 0),
+            prevClose,
+            change,
+            pChange,
+            avgRate:  parseFloat(item.averageTradedPrice || 0)
+          };
+        }).filter(d => d.close > 0);
 
         formatted.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         if (formatted.length > 0) {
-          setCache(cacheKey, formatted, 2 * 60 * 60 * 1000); // 2 hours
+          // Use shorter TTL during market hours so charts stay fresh during live trading
+          const { isOpen: mktOpen } = getDetailedMarketStatus();
+          const histCacheTtl = mktOpen ? 15 * 60 * 1000 : 2 * 60 * 60 * 1000;
+          setCache(cacheKey, formatted, histCacheTtl); // 15 min open, 2h closed
           return formatted;
         }
       }
@@ -4453,15 +4530,18 @@ app.get('/api/securities/all', async (req, res) => {
 // ============================================================
 app.get('/api/market/live', async (req, res) => {
   try {
-    const live = await nepseClient.getLiveMarket().catch(() => []);
-    if (Array.isArray(live) && live.length > 0) {
+    const marketPayload = await nepseManager.getLiveOrClosingMarket();
+    if (marketPayload && Array.isArray(marketPayload.data) && marketPayload.data.length > 0) {
       return res.json({
         success: true,
         isMockData: false,
-        source: 'LIVE - NEPSE NOTS API',
-        count: live.length,
-        asOf: new Date().toISOString(),
-        data: live
+        source: marketPayload.source || 'LIVE - NEPSE NOTS API',
+        marketOpen: marketPayload.isOpen,
+        marketStatus: marketPayload.marketStatus,
+        count: marketPayload.data.length,
+        asOf: marketPayload.asOf || new Date().toISOString(),
+        message: marketPayload.message,
+        data: marketPayload.data
       });
     }
 
@@ -4472,6 +4552,8 @@ app.get('/api/market/live', async (req, res) => {
         success: true,
         isMockData: false,
         source: 'REAL CLOSING - NEPSE',
+        marketOpen: false,
+        marketStatus: 'CLOSED',
         count: summary.stocks.length,
         asOf: new Date().toISOString(),
         data: summary.stocks.map(s => ({
@@ -4492,7 +4574,34 @@ app.get('/api/market/live', async (req, res) => {
       });
     }
 
-    res.status(503).json({ success: false, error: 'Live market data temporarily unavailable', isMockData: false });
+    // Fallback: Last known verified persistent snapshot
+    const snapshot = nepseManager.lastKnownSnapshot;
+    if (snapshot?.todayPrices?.length > 0) {
+      return res.json({
+        success: true,
+        isMockData: false,
+        source: 'LAST_KNOWN_SNAPSHOT_FALLBACK',
+        marketOpen: false,
+        marketStatus: 'CLOSED',
+        isStale: true,
+        count: snapshot.todayPrices.length,
+        asOf: new Date().toISOString(),
+        message: 'Serving last verified market snapshot.',
+        data: snapshot.todayPrices
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      isMockData: false,
+      marketOpen: false,
+      marketStatus: 'CLOSED',
+      source: 'EMPTY_OFFSESSION',
+      count: 0,
+      asOf: new Date().toISOString(),
+      message: 'NEPSE market currently closed. Awaiting opening bell or session sync.',
+      data: []
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
   }
@@ -4581,67 +4690,24 @@ app.get('/api/securities/:symbol/history', async (req, res) => {
     const keymap = await nepseClient.getSecuritySymbolIdKeymap();
     const securityId = keymap.get(rawSymbol);
 
-    let priceData = [];
+    const priceData = await nepseManager.getSecurityPriceHistory(rawSymbol, {
+      startDate,
+      endDate,
+      length: size
+    });
 
-    // Method 1: NEPSE NOTS (official)
-    if (securityId) {
-      try {
-        const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${size}&sort=businessDate,desc`;
-        const raw = await nepseClient.requestGETAPI(endpoint);
-        const content = raw?.content || raw;
-
-        if (Array.isArray(content) && content.length > 0) {
-          priceData = content.map(h => ({
-            date: h.businessDate,
-            open: h.openPrice || 0,
-            high: h.highPrice || 0,
-            low: h.lowPrice || 0,
-            close: h.closePrice || 0,
-            volume: h.totalTradedQuantity || 0,
-            turnover: h.totalTradedValue || 0,
-            previousClose: h.previousClose || 0,
-            transactions: h.totalTrades || 0
-          }));
-        }
-      } catch (e) {
-        console.warn(`NEPSE history failed for ${rawSymbol}:`, e.message);
-      }
-    }
-
-    if (priceData.length === 0) {
-      const history = await getPriceHistoryInternal(rawSymbol, size);
-      if (Array.isArray(history)) {
-        priceData = history.map(h => ({
-          date: h.date,
-          open: h.open,
-          high: h.high,
-          low: h.low,
-          close: h.close,
-          volume: h.volume,
-          turnover: h.turnover,
-          previousClose: h.prevClose || h.close,
-          transactions: h.trades || 0
-        }));
-      }
-    }
-
-    // Filter by date range if within range; if test passes older dates outside NOTS window, return available data
-    let filtered = priceData;
-    if (startDate && endDate) {
-      const inRange = priceData.filter(item => item.date >= startDate && item.date <= endDate);
-      if (inRange.length > 0) {
-        filtered = inRange;
-      }
-    }
+    const sourceName = priceData?.[0]?.source === 'SHARESANSAR_ARCHIVE'
+      ? `HISTORICAL - ShareSansar Archive (${rawSymbol})`
+      : `HISTORICAL - NEPSE NOTS API (ID: ${securityId || 'N/A'})`;
 
     res.json({
       success: true,
       isMockData: false,
-      source: `HISTORICAL - NEPSE NOTS API (ID: ${securityId || 'N/A'})`,
+      source: sourceName,
       symbol: rawSymbol,
       securityId: securityId || 0,
-      totalElements: filtered.length,
-      data: filtered
+      totalElements: priceData.length,
+      data: priceData
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });

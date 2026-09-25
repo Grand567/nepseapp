@@ -57,6 +57,7 @@ import { calculateEMA } from '../utils/indicators';
 import { toAscendingCandles } from '../utils/setupAnalyzer';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { useNavigation } from '../context/NavigationContext';
+import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 
 /**
  * Checks if a NEPSE scrip is a mutual fund, debenture, bond, promoter share, or penny security.

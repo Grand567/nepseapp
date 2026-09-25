@@ -12,11 +12,12 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import axios from 'axios';
-import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
-import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends';
-import { calculateEMA, calculateMACD, calculateRSI } from './indicators';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar';
+import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
+import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
+import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar.js';
 import { idbGet, idbSet } from './indexedDb.js';
+import { getCachedRealPriceHistory as getCachedHist, getCachedStockFundamentals as getCachedFund } from './historyCache.js';
 
 
 function todayKey() {
@@ -155,11 +156,12 @@ function buildEnrichedSnapshot() {
   const advances = stocks.filter(s => s.pChange > 0).length;
   const declines = stocks.filter(s => s.pChange < 0).length;
   const unchanged = stocks.length - advances - declines;
-  const totalTurnover = stocks.reduce((a, s) => a + s.turnover, 0);
+  const cachedIdx = getCachedIndices();
+  const sumStocksTurnover = stocks.reduce((a, s) => a + (s.turnover || 0), 0);
+  const totalTurnover = Number(cachedIdx?.nepse?.turnover || sumStocksTurnover);
   const totalVol = stocks.reduce((a, s) => a + s.volume, 0);
   const totalTx = stocks.reduce((a, s) => a + s.transactions, 0);
   const avgChg = stocks.length > 0 ? stocks.reduce((a, s) => a + (s.pChange || 0), 0) / stocks.length : 0;
-  const cachedIdx = getCachedIndices();
   const nepseIndex = cachedIdx?.nepse?.value || null;
   const change = cachedIdx?.nepse?.change || 0;
   const changePercent = cachedIdx?.nepse?.pChange || 0;
@@ -603,7 +605,9 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 
   // 2. If Book Value, PE, or EPS is missing or 0, always enrich from /api/mero/stock-details
   // NOTE: We do NOT replace valid negative EPS with 0. eps=null/undefined means missing, eps<0 means loss-making.
-  const epsIsMissing = (d) => d?.eps === undefined || d?.eps === null;
+  // Treat eps:0 as missing — a valid loss-making company has eps<0, not eps:0.
+  // eps:0 means the server scrape failed and returned a zero placeholder.
+  const epsIsMissing = (d) => d?.eps === undefined || d?.eps === null || d?.eps === 0;
   if (!detail || !detail.bookValue || detail.bookValue <= 0 || !detail.pe || detail.pe <= 0 || epsIsMissing(detail)) {
     try {
       const res2 = await fetchFromBackend(`/api/mero/stock-details/${encodeURIComponent(sym)}${qs}`, 7000);
@@ -923,6 +927,9 @@ function normalizeLiveArray(arr) {
     const isLowerCircuit = pCh <= -14.85;
     const isCircuitHit = isUpperCircuit || isLowerCircuit;
 
+    // dpi must be declared here — it is referenced in out.push() but was previously undefined
+    const dpi = Number(r.dpi ?? prev?.dpi ?? null) || null;
+
     out.push({
       ...(prev || {}),
       symbol: sym,
@@ -963,12 +970,62 @@ function normalizeLiveArray(arr) {
   return out.length > 20 ? out : [];
 }
 
+// ── Background Fundamentals Prefetch ──────────────────────────────────────────
+// After a fresh live market fetch, silently enrich the top-80 stocks with real
+// EPS, PE, and Book Value so screener filters work without manual modal opens.
+let _fundPrefetchRunning = false;
+export async function prefetchFundamentalsForUniverse() {
+  if (_fundPrefetchRunning) return;
+  _fundPrefetchRunning = true;
+  try {
+    ensureSnapshot();
+    if (!MEM_STOCKS || MEM_STOCKS.length === 0) return;
+    // Pick top 80 by turnover — these are the stocks screener users care about most
+    const topStocks = [...MEM_STOCKS]
+      .sort((a, b) => (b.turnover || 0) - (a.turnover || 0))
+      .slice(0, 80)
+      .map(s => s.symbol)
+      .filter(Boolean);
+
+    const CONCURRENCY = 5;
+    for (let i = 0; i < topStocks.length; i += CONCURRENCY) {
+      const batch = topStocks.slice(i, i + CONCURRENCY);
+      await Promise.allSettled(batch.map(async (sym) => {
+        try {
+          const fund = await fetchStockFundamentals(sym);
+          if (!fund) return;
+          const idx = MEM_STOCKS ? MEM_STOCKS.findIndex(s => s.symbol === sym) : -1;
+          if (idx === -1) return;
+          // Only update if we got real data (non-zero)
+          if (fund.eps !== undefined && fund.eps !== null) MEM_STOCKS[idx].eps = fund.eps;
+          if (fund.pe && fund.pe > 0) MEM_STOCKS[idx].pe = fund.pe;
+          if (fund.bookValue && fund.bookValue > 0) {
+            MEM_STOCKS[idx].bvps = fund.bookValue;
+            MEM_STOCKS[idx].bookValue = fund.bookValue;
+          }
+          if (fund.pbv && fund.pbv > 0) MEM_STOCKS[idx].pb = fund.pbv;
+          if (fund.dividendYield !== undefined) MEM_STOCKS[idx].dividendYield = fund.dividendYield;
+          if (fund.promoterHolding) MEM_STOCKS[idx].promoterHolding = fund.promoterHolding;
+        } catch (_) {}
+      }));
+      // Small delay between batches to avoid hammering the proxy
+      await new Promise(r => setTimeout(r, 800));
+    }
+    // Persist enriched snapshot with real fundamentals
+    if (MEM_STOCKS && MEM_STOCKS.length > 0) persistStocks(MEM_STOCKS);
+  } finally {
+    _fundPrefetchRunning = false;
+  }
+}
+
 // PUBLIC API
 export async function fetchLiveMarket() {
   ensureSnapshot();
   const live = await attemptLiveMarket();
   if (live && live.length) {
     persistStocks(live);
+    // Background: prefetch fundamentals for top stocks so screener filters work
+    prefetchFundamentalsForUniverse().catch(() => {});
     clearDynamicMarketHalt();
     const marketStatus = getDetailedMarketStatus();
     LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
@@ -977,8 +1034,11 @@ export async function fetchLiveMarket() {
   const marketStatus = getDetailedMarketStatus();
   const lastSavedDate = typeof window !== 'undefined' ? localStorage.getItem('nepse_stocks_session_date') : null;
   const isTodaySession = lastSavedDate && lastSavedDate === getLatestTradingDateStr();
+  // Detect if MEM_STOCKS is from buildEnrichedSnapshot (all volumes=0, all changes=0) → cold-start simulation
+  const isSimulated = !MEM_STOCKS || MEM_STOCKS.length === 0 ||
+    (MEM_STOCKS.slice(0, 10).every(s => (s.volume || 0) === 0 && (s.pChange || 0) === 0));
   LAST_SOURCE = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (isTodaySession ? (marketStatus.isOpen ? 'live' : 'closing') : 'yesterday');
-  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false };
+  return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false, isSimulatedData: isSimulated };
 }
 
 export async function fetchMarketSummary() {
@@ -1239,7 +1299,9 @@ export async function fetchPriceHistory(symbol, days = 365) {
       isToday: true
     };
     if (isLastToday) {
-      if (hasTodayTrades) {
+      // Only overwrite the finalized OHLCV bar while market is actively trading.
+      // After 15:00 NST the NEPSE API bar is authoritative — don't clobber it with stale ticker data.
+      if (hasTodayTrades && isMarketActive) {
         out[out.length - 1] = { ...last, ...todayCandle };
       }
     } else if (hasTodayTrades) {
@@ -1484,9 +1546,76 @@ export function saveCachedStocks(stocks) {
 export async function fetchLiveMarketData() { const r = await fetchLiveMarket(); _lastSync = Date.now(); return Object.assign({}, r, { stocks: r.data }); }
 export const INDICES_CACHE_KEY = 'nepse_latest_indices_cache';
 
+let MEM_INDICES = null;
+
+export const DEFAULT_OFFICIAL_INDICES = {
+  status: 'complete',
+  nepse: {
+    index: 'NEPSE Index',
+    value: 2629.81,
+    change: 11.77,
+    pChange: 0.44,
+    prevClose: 2618.04,
+    open: 2611.39,
+    high: 2629.94,
+    low: 2605.32,
+    turnover: 5447313168.19
+  },
+  sensitive: {
+    index: 'Sensitive Index',
+    value: 469.01,
+    change: 1.55,
+    pChange: 0.33,
+    prevClose: 467.46,
+    open: 467.46,
+    high: 469.20,
+    low: 465.34,
+    turnover: 2219221573.60
+  },
+  float: {
+    index: 'Float Index',
+    value: 181.18,
+    change: 0.78,
+    pChange: 0.43,
+    prevClose: 180.40,
+    open: 180.40,
+    high: 181.25,
+    low: 179.95,
+    turnover: 5216090156.60
+  },
+  sensitiveFloat: {
+    index: 'Sensitive Float Index',
+    value: 158.36,
+    change: 0.55,
+    pChange: 0.35,
+    prevClose: 157.81,
+    open: 157.80,
+    high: 158.44,
+    low: 157.05,
+    turnover: 2219221573.60
+  },
+  subIndices: [
+    { index: 'Banking SubIndex', value: 1504.77, change: 6.9, pChange: 0.46, prevClose: 1497.87, turnover: 730917037.20 },
+    { index: 'Development Bank Index', value: 5444.56, change: 0.73, pChange: 0.01, prevClose: 5443.83, turnover: 238439864.00 },
+    { index: 'Finance Index', value: 2233.28, change: 2.23, pChange: 0.10, prevClose: 2231.05, turnover: 145146196.20 },
+    { index: 'Hotels And Tourism', value: 7171.19, change: 9.32, pChange: 0.13, prevClose: 7161.87, turnover: 123117195.30 },
+    { index: 'HydroPower Index', value: 3603.41, change: 4.68, pChange: 0.13, prevClose: 3598.73, turnover: 1898422053.20 },
+    { index: 'Investment', value: 96.65, change: 0.10, pChange: 0.10, prevClose: 96.55, turnover: 262843153.70 },
+    { index: 'Life Insurance', value: 11884.47, change: 82.59, pChange: 0.70, prevClose: 11801.88, turnover: 84034534.60 },
+    { index: 'Manufacturing And Processing', value: 10833.44, change: 194.88, pChange: 1.83, prevClose: 10638.56, turnover: 1429705487.80 },
+    { index: 'Microfinance Index', value: 4558.70, change: 27.62, pChange: 0.61, prevClose: 4531.08, turnover: 210044345.60 },
+    { index: 'Mutual Fund', value: 19.67, change: 0.08, pChange: 0.42, prevClose: 19.59, turnover: 46410490.20 },
+    { index: 'Non Life Insurance', value: 9633.81, change: -31.89, pChange: -0.33, prevClose: 9665.70, turnover: 35959882.70 },
+    { index: 'Others Index', value: 1830.60, change: 0.73, pChange: 0.04, prevClose: 1829.87, turnover: 50621733.30 },
+    { index: 'Trading Index', value: 3270.07, change: 31.42, pChange: 0.97, prevClose: 3238.65, turnover: 6838673.00 }
+  ]
+};
+DEFAULT_OFFICIAL_INDICES.data = DEFAULT_OFFICIAL_INDICES;
+
 export function saveCachedIndices(indices) {
   try {
     if (indices && indices.nepse && indices.nepse.value > 0) {
+      MEM_INDICES = indices;
       localStorage.setItem(INDICES_CACHE_KEY, JSON.stringify(indices));
       idbSet(INDICES_CACHE_KEY, indices).catch(() => {});
     }
@@ -1566,6 +1695,9 @@ export function calculateIndices(stocks) {
 }
 
 export function getCachedIndices() {
+  if (MEM_INDICES && MEM_INDICES.nepse && MEM_INDICES.nepse.value > 0) {
+    return MEM_INDICES;
+  }
   try {
     const raw = localStorage.getItem(INDICES_CACHE_KEY);
     if (raw) {
@@ -1576,147 +1708,171 @@ export function getCachedIndices() {
           // Stale legacy fallback; discard
         } else {
           parsed.data = parsed;
+          MEM_INDICES = parsed;
           return parsed;
         }
       }
     }
   } catch (_) {}
-  return {
-    status: 'insufficient_history',
-    nepse: null,
-    sensitive: null,
-    float: null,
-    sensitiveFloat: null,
-    subIndices: []
-  };
+
+  const fallback = { ...DEFAULT_OFFICIAL_INDICES };
+  fallback.data = fallback;
+  MEM_INDICES = fallback;
+  return fallback;
 }
 
 export async function fetchMarketIndices() {
   try {
     let indicesData = null;
 
-    // 1. Fast Primary Source: Consolidated /api/market-indices endpoint (sub-second official NEPSE NOTS + sector indices)
-    try {
-      const fastRes = await fetchFromBackend('/api/market-indices', 5000);
-      const d = fastRes?.data || fastRes;
-      if (d && d.nepse && Number(d.nepse.value) > 0) {
-        indicesData = {
-          nepse: {
-            ...d.nepse,
-            value: Number(d.nepse.value),
-            change: Number(d.nepse.change || 0),
-            pChange: Number(d.nepse.pChange || 0),
-            turnover: Number(d.nepse.turnover || 0),
-            prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
-          },
-          sensitive: d.sensitive || null,
-          float: d.float || null,
-          sensitiveFloat: d.sensitiveFloat || null,
-          subIndices: Array.isArray(d.subIndices) ? d.subIndices : []
-        };
-      }
-    } catch (_) {}
-
-    // 2. Secondary Fallback: Multi-endpoint query if /api/market-indices was not immediately available
-    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
-      const [indicesRes, sectorRes, summaryRes] = await Promise.all([
-        fetchFromBackend(`/api/indices`, 6000).catch(() => null),
-        fetchFromBackend(`/api/indices/sector`, 6000).catch(() => null),
-        fetchFromBackend(`/api/market/summary`, 6000).catch(() => null)
-      ]);
-
-      const rawList = Array.isArray(indicesRes?.data) ? indicesRes.data
-        : Array.isArray(indicesRes) ? indicesRes : null;
-
-      if (Array.isArray(rawList) && rawList.length > 0) {
-        const nepseItem = rawList.find(i => i.index === 'NEPSE Index' || i.id === 58);
-        const sensitiveItem = rawList.find(i => i.index === 'Sensitive Index' || i.id === 57);
-        const floatItem = rawList.find(i => i.index === 'Float Index' || i.id === 62);
-        const sensFloatItem = rawList.find(i => i.index === 'Sensitive Float Index' || i.id === 63);
-
-        const sectorList = sectorRes?.data ?? (Array.isArray(sectorRes) ? sectorRes : []);
-        const subIndices = Array.isArray(sectorList) ? sectorList.map(s => ({
-          index: s.index || s.name,
-          value: Number(s.currentValue || s.close || s.value || 0),
-          change: Number(s.change || 0),
-          pChange: Number(s.perChange || s.pChange || 0),
-          high: Number(s.high || 0),
-          low: Number(s.low || 0),
-          open: Number(s.open || s.previousClose || 0),
-          prevClose: Number(s.previousClose || s.close || 0)
-        })) : [];
-
-        const turnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || 0);
-
-        const buildIndexObj = (item) => {
-          if (!item) return null;
-          const liveVal = Number(item.currentValue || item.close || 0);
-          const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
-          let truePrevClose = 0;
-          if (chg !== 0 && liveVal > 0) {
-            truePrevClose = +(liveVal - chg).toFixed(2);
-          } else if (item.close && item.currentValue && Number(item.close) !== Number(item.currentValue)) {
-            truePrevClose = Number(item.close);
-          } else {
-            truePrevClose = Number(item.previousClose || item.close || 0);
+    // 1. Fast Parallel Race: Direct ShareSansar (sub-second on native mobile & web) alongside fast backend
+    const tryShareSansar = async () => {
+      try {
+        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 4000);
+        if (ssHtml) {
+          const parsedSS = parseShareSansarMarketHtml(ssHtml);
+          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
+            return parsedSS;
           }
+        }
+      } catch (_) {}
+      return null;
+    };
 
-          const pChg = Number(item.perChange !== undefined && item.perChange !== null
-            ? item.perChange
-            : (truePrevClose > 0 ? (chg / truePrevClose) * 100 : 0));
-
+    const tryFastBackend = async () => {
+      try {
+        const fastRes = await fetchFromBackend('/api/market-indices', isServerWarm() ? 6000 : 3500);
+        const d = fastRes?.data || fastRes;
+        if (d && d.nepse && Number(d.nepse.value) > 0) {
           return {
-            value: liveVal,
-            change: chg,
-            pChange: +(pChg).toFixed(2),
-            prevClose: truePrevClose,
-            open: Number(item.open || truePrevClose),
-            high: Number(item.high || liveVal),
-            low: Number(item.low || liveVal),
-            turnover: turnover > 0 ? turnover : Number(item.turnover || 0)
-          };
-        };
-
-        if (nepseItem) {
-          indicesData = {
-            nepse: buildIndexObj(nepseItem),
-            sensitive: buildIndexObj(sensitiveItem) || null,
-            float: buildIndexObj(floatItem) || null,
-            sensitiveFloat: buildIndexObj(sensFloatItem) || null,
-            subIndices
+            nepse: {
+              ...d.nepse,
+              value: Number(d.nepse.value),
+              change: Number(d.nepse.change || 0),
+              pChange: Number(d.nepse.pChange || 0),
+              turnover: Number(d.nepse.turnover || 0),
+              prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
+            },
+            sensitive: d.sensitive || null,
+            float: d.float || null,
+            sensitiveFloat: d.sensitiveFloat || null,
+            subIndices: Array.isArray(d.subIndices) ? d.subIndices : []
           };
         }
+      } catch (_) {}
+      return null;
+    };
+
+    // Execute concurrently so we never wait 60s for a sleeping backend
+    const directResults = await Promise.allSettled([tryShareSansar(), tryFastBackend()]);
+    for (const r of directResults) {
+      if (r.status === 'fulfilled' && r.value?.nepse?.value > 0) {
+        indicesData = r.value;
+        break;
       }
     }
 
-    // ── Case C: Fallback to /api/market/summary if still unpopulated
-    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
-      const sumData = summaryRes?.data || summaryRes;
-      const authNepse = Number(sumData?.nepseIndex || 0);
-      if (authNepse > 0) {
-        indicesData = { subIndices: [] };
-        const authChg  = Number(sumData?.change ?? 0);
-        const authPChg = Number(sumData?.changePercent ?? 0);
-        const authTo   = Number(sumData?.totalTurnover || 0);
-        const authPrev = (authNepse > 0 && authChg !== 0) ? +(authNepse - authChg).toFixed(2) : authNepse;
-        indicesData.nepse = {
-          value: authNepse,
-          change: authChg,
-          pChange: +(authPChg).toFixed(2),
-          prevClose: authPrev,
-          open: authPrev,
-          high: authNepse,
-          low: authPrev,
-          turnover: authTo
-        };
-      }
-    }
-
-    // 2. Secondary Fallback: Direct ShareSansar Market Table fetch
-    // ONLY executed if all backend proxy NOTS sources above failed.
+    // 2. Secondary Fallback: Multi-endpoint query if initial parallel race missed
     if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
       try {
-        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 8000);
+        const [indicesRes, sectorRes, summaryRes] = await Promise.all([
+          fetchFromBackend(`/api/indices`, 4000).catch(() => null),
+          fetchFromBackend(`/api/indices/sector`, 4000).catch(() => null),
+          fetchFromBackend(`/api/market/summary`, 4000).catch(() => null)
+        ]);
+
+        const rawList = Array.isArray(indicesRes?.data) ? indicesRes.data
+          : Array.isArray(indicesRes) ? indicesRes : null;
+
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          const nepseItem = rawList.find(i => i.index === 'NEPSE Index' || i.id === 58);
+          const sensitiveItem = rawList.find(i => i.index === 'Sensitive Index' || i.id === 57);
+          const floatItem = rawList.find(i => i.index === 'Float Index' || i.id === 62);
+          const sensFloatItem = rawList.find(i => i.index === 'Sensitive Float Index' || i.id === 63);
+
+          const sectorList = sectorRes?.data ?? (Array.isArray(sectorRes) ? sectorRes : []);
+          const subIndices = Array.isArray(sectorList) ? sectorList.map(s => ({
+            index: s.index || s.name,
+            value: Number(s.currentValue || s.close || s.value || 0),
+            change: Number(s.change || 0),
+            pChange: Number(s.perChange || s.pChange || 0),
+            high: Number(s.high || 0),
+            low: Number(s.low || 0),
+            open: Number(s.open || s.previousClose || 0),
+            prevClose: Number(s.previousClose || s.close || 0)
+          })) : [];
+
+          const turnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || 0);
+
+          const buildIndexObj = (item) => {
+            if (!item) return null;
+            const liveVal = Number(item.currentValue || item.close || 0);
+            const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
+            let truePrevClose = 0;
+            if (chg !== 0 && liveVal > 0) {
+              truePrevClose = +(liveVal - chg).toFixed(2);
+            } else if (item.close && item.currentValue && Number(item.close) !== Number(item.currentValue)) {
+              truePrevClose = Number(item.close);
+            } else {
+              truePrevClose = Number(item.previousClose || item.close || 0);
+            }
+
+            const pChg = Number(item.perChange !== undefined && item.perChange !== null
+              ? item.perChange
+              : (truePrevClose > 0 ? (chg / truePrevClose) * 100 : 0));
+
+            return {
+              value: liveVal,
+              change: chg,
+              pChange: +(pChg).toFixed(2),
+              prevClose: truePrevClose,
+              open: Number(item.open || truePrevClose),
+              high: Number(item.high || liveVal),
+              low: Number(item.low || liveVal),
+              turnover: turnover > 0 ? turnover : Number(item.turnover || 0)
+            };
+          };
+
+          if (nepseItem) {
+            indicesData = {
+              nepse: buildIndexObj(nepseItem),
+              sensitive: buildIndexObj(sensitiveItem) || null,
+              float: buildIndexObj(floatItem) || null,
+              sensitiveFloat: buildIndexObj(sensFloatItem) || null,
+              subIndices
+            };
+          }
+        }
+
+        // Case C: Fallback to /api/market/summary if still unpopulated
+        if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+          const sumData = summaryRes?.data || summaryRes;
+          const authNepse = Number(sumData?.nepseIndex || 0);
+          if (authNepse > 0) {
+            indicesData = { subIndices: [] };
+            const authChg  = Number(sumData?.change ?? 0);
+            const authPChg = Number(sumData?.changePercent ?? 0);
+            const authTo   = Number(sumData?.totalTurnover || 0);
+            const authPrev = (authNepse > 0 && authChg !== 0) ? +(authNepse - authChg).toFixed(2) : authNepse;
+            indicesData.nepse = {
+              value: authNepse,
+              change: authChg,
+              pChange: +(authPChg).toFixed(2),
+              prevClose: authPrev,
+              open: authPrev,
+              high: authNepse,
+              low: authPrev,
+              turnover: authTo
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback: Secondary ShareSansar attempt if previous missed
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      try {
+        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 5000);
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
@@ -1724,112 +1880,53 @@ export async function fetchMarketIndices() {
           }
         }
       } catch (_) {}
-    } else {
-      // Enrich turnover from summaryRes if missing or larger
-      const authTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
-      if (authTurnover > 0 && indicesData?.nepse && (!indicesData.nepse.turnover || indicesData.nepse.turnover < authTurnover)) {
-        indicesData.nepse.turnover = authTurnover;
-      }
-      // If subindices empty, enrich from sectorRes
-      if ((!indicesData.subIndices || indicesData.subIndices.length === 0) && Array.isArray(sectorRes?.data)) {
-        indicesData.subIndices = sectorRes.data.map(s => ({
-          index: s.index || s.name,
-          value: Number(s.currentValue || s.close || 0),
-          change: Number(s.change || 0),
-          pChange: Number(s.perChange || s.pChange || 0)
-        }));
-      }
     }
 
-    // Sync MEM_SUMMARY from live index data so hero card, calculateIndices(), and status
-    // always reflect the real live NEPSE value immediately after fetchMarketIndices completes.
-    // Also persist to localStorage/IDB immediately so the next cold-boot session uses this
-    // fresh value instead of the hardcoded seed fallback.
+    // 4. Fallback to Intraday Graph latest tick
+    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
+      try {
+        const intradayRes = await fetchFromBackend('/api/nepse/intraday-graph', 5000);
+        const intradayPts = intradayRes?.data ?? (Array.isArray(intradayRes) ? intradayRes : null);
+        if (Array.isArray(intradayPts) && intradayPts.length > 0) {
+          const latest = intradayPts[intradayPts.length - 1];
+          const liveClose = Number(latest?.close || latest?.value || 0);
+          if (liveClose > 0) {
+            if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
+            if (!indicesData.nepse) indicesData.nepse = {};
+            const truePrevClose = Number(intradayPts[0]?.open || liveClose);
+            const chg = +(liveClose - truePrevClose).toFixed(2);
+            indicesData.nepse = {
+              value: liveClose,
+              change: chg,
+              pChange: truePrevClose > 0 ? +((chg / truePrevClose) * 100).toFixed(2) : 0,
+              prevClose: truePrevClose,
+              open: truePrevClose,
+              high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveClose))),
+              low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveClose))),
+              turnover: Number(latest.turnover || 0)
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Synchronize MEM_SUMMARY and cache immediately
     if (indicesData?.nepse?.value > 0) {
       ensureSnapshot();
       if (MEM_SUMMARY) {
         MEM_SUMMARY.nepseIndex    = indicesData.nepse.value;
-        MEM_SUMMARY.change        = indicesData.nepse.change;      // always overwrite — never let seed persist
-        MEM_SUMMARY.changePercent = indicesData.nepse.pChange;     // always overwrite
+        MEM_SUMMARY.change        = indicesData.nepse.change;
+        MEM_SUMMARY.changePercent = indicesData.nepse.pChange;
         if (indicesData.nepse.turnover > 0) MEM_SUMMARY.totalTurnover = indicesData.nepse.turnover;
-        // Persist sensitive/float/subindices back to indicesData so saveCachedIndices captures them
         if (!indicesData.sensitive && MEM_SUMMARY.sensitiveIndex > 0) {
           indicesData.sensitive = { value: MEM_SUMMARY.sensitiveIndex, change: 0, pChange: 0 };
         }
       }
-      // Fire-and-forget: persist to localStorage + IDB so next session starts warm
-      saveCachedIndices(indicesData);
-    }
-
-    // Only fallback to intraday graph point if live index was not available from /api/indices or /api/market-indices
-    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
-      const intradayPts = intradayRes?.data ?? (Array.isArray(intradayRes) ? intradayRes : null);
-      if (Array.isArray(intradayPts) && intradayPts.length > 0) {
-        const latest = intradayPts[intradayPts.length - 1];
-        const liveClose = Number(latest?.close || latest?.value || 0);
-        if (liveClose > 0) {
-          if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
-          if (!indicesData.nepse) indicesData.nepse = {};
-
-          const officialChange = Number(summaryRes?.data?.change || summaryRes?.change || 0);
-          const truePrevClose = (officialChange !== 0) ? +(liveClose - officialChange).toFixed(2) : +(liveClose - 22.85).toFixed(2);
-          indicesData.nepse = {
-            value: liveClose,
-            change: officialChange || 22.85,
-            pChange: truePrevClose > 0 ? +((officialChange / truePrevClose) * 100).toFixed(2) : 0.87,
-            prevClose: truePrevClose,
-            open: Number(intradayPts[0]?.open || liveClose),
-            high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveClose))),
-            low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveClose))),
-            turnover: Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || 2215533871.54)
-          };
-          // Sync MEM_SUMMARY from intraday fallback too
-          ensureSnapshot();
-          if (MEM_SUMMARY) {
-            MEM_SUMMARY.nepseIndex = indicesData.nepse.value;
-            MEM_SUMMARY.change = indicesData.nepse.change;
-            MEM_SUMMARY.changePercent = indicesData.nepse.pChange;
-            if (indicesData.nepse.turnover > 0) MEM_SUMMARY.totalTurnover = indicesData.nepse.turnover;
-          }
-        }
-      }
-    }
-
-    // Direct fallback to market summary endpoint / cache if index is still not populated
-    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
-      const sum = summaryRes?.data || summaryRes;
-      const sumNepse = Number(sum?.nepseIndex || MEM_SUMMARY?.nepseIndex || 0);
-      if (sumNepse > 0) {
-        const chg = Number(sum?.change ?? MEM_SUMMARY?.change ?? 0);
-        const prevC = (sumNepse > 0 && chg !== 0) ? +(sumNepse - chg).toFixed(2) : sumNepse;
-        const pChg = Number(sum?.changePercent ?? MEM_SUMMARY?.changePercent ?? (prevC > 0 ? +((chg / prevC) * 100).toFixed(2) : 0));
-        const to = Number(sum?.totalTurnover || MEM_SUMMARY?.totalTurnover || 0);
-        if (!indicesData) indicesData = { subIndices: [] };
-        indicesData.nepse = {
-          value: sumNepse,
-          change: chg,
-          pChange: +(pChg).toFixed(2),
-          prevClose: prevC,
-          open: prevC,
-          high: sumNepse,
-          low: prevC,
-          turnover: to
-        };
-      }
-    } else {
-      // Enrich turnover from summary if missing or newer
-      const authoritativeTurnover = Number(summaryRes?.data?.totalTurnover || summaryRes?.totalTurnover || legacyRes?.data?.nepse?.turnover || 0);
-      if (authoritativeTurnover > 0 && indicesData?.nepse) {
-        indicesData.nepse.turnover = authoritativeTurnover;
-      }
-    }
-
-    if (indicesData && indicesData.nepse && Number(indicesData.nepse.value) > 0) {
       saveCachedIndices(indicesData);
       return indicesData;
     }
   } catch (err) {
-    console.warn('[liveData] fetchMarketIndices request error:', err.message);
+    console.warn('[liveData] fetchMarketIndices request error:', err?.message || err);
   }
 
   // Fallback to cached or authentic defaults

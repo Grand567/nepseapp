@@ -14,6 +14,23 @@
   </head>
   <body class="bg-dark text-white font-sans overflow-x-hidden antialiased">
     <div id="root"></div>
+    <script>
+      if (window.location.protocol === 'file:') {
+        setTimeout(function() {
+          var root = document.getElementById('root');
+          if (root && (!root.children || root.children.length === 0)) {
+            root.innerHTML = '<div style="background:#0B0E14;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;padding:24px;text-align:center;">' +
+              '<div style="font-size:42px;margin-bottom:12px;">📈</div>' +
+              '<h2 style="color:#5b5ef4;margin-bottom:8px;">Drabyashree NEPSE</h2>' +
+              '<p style="color:#94a3b8;max-width:440px;font-size:13px;line-height:1.6;">' +
+              'Browsers block JavaScript modules when opening files directly via <b>file://</b>.<br><br>' +
+              'To run on desktop, double-click <b>Launch-NEPSE-App.bat</b> or run <b>npm run dev</b>.<br>' +
+              'To run on mobile, install <b>Drabyashree-NEPSE-release.apk</b>.' +
+              '</p></div>';
+          }
+        }, 1500);
+      }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

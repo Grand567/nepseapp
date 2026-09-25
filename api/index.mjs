@@ -1955,25 +1955,38 @@ app.get('/api/price-history/:symbol', async (req, res) => {
       throw new Error(`Could not parse CSRF token or companyId for ${symbol}`);
     }
 
-    const postData = new URLSearchParams();
-    postData.append('company', companyId);
-    postData.append('draw', '1');
-    postData.append('start', '0');
-    postData.append('length', String(length));
+    let allRecords = [];
+    let start = 0;
+    const pageSize = 50;
+    const maxBatches = Math.min(Math.ceil(length / pageSize), 10);
 
-    const historyRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
-      headers: {
-        ...HEADERS,
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'X-CSRF-Token': token,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': `https://www.sharesansar.com/company/${symbol.toLowerCase()}`
-      },
-      timeout: 15000
-    });
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const postData = new URLSearchParams();
+      postData.append('company', companyId);
+      postData.append('draw', String(batch + 1));
+      postData.append('start', String(start));
+      postData.append('length', '50');
 
-    if (historyRes.data && Array.isArray(historyRes.data.data)) {
-      const formatted = historyRes.data.data.map(item => ({
+      const historyRes = await client.post('https://www.sharesansar.com/company-price-history', postData.toString(), {
+        headers: {
+          ...HEADERS,
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-CSRF-Token': token,
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': `https://www.sharesansar.com/company/${symbol.toLowerCase()}`
+        },
+        timeout: 15000
+      });
+
+      const batchData = historyRes.data?.data;
+      if (!Array.isArray(batchData) || batchData.length === 0) break;
+      allRecords.push(...batchData);
+      start += pageSize;
+      if (allRecords.length >= length) break;
+    }
+
+    if (allRecords.length > 0) {
+      const formatted = allRecords.map(item => ({
         date: item.published_date,
         open: parseFloat(item.open) || 0,
         high: parseFloat(item.high) || 0,

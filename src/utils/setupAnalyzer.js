@@ -71,7 +71,7 @@ import {
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
-import { getCachedRealPriceHistory } from './liveData.js';
+import { getCachedRealPriceHistory } from './historyCache.js';
 
 // ══════════════════════════════════════════════════════════════════
 // 0.  CONSTANTS
@@ -1218,6 +1218,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   // ── Compute base stats ────────────────────────────────────────
   const ltp    = Number(stock?.ltp) || adjustedCandles[adjustedCandles.length - 1].close;
+  const pChange = Number(stock?.pChange ?? stock?.percentageChange ?? 0);
   const closes = adjustedCandles.map((c) => c.close);
   const high52w = Math.max(...closes.slice(-252));
   const low52w  = Math.min(...closes.slice(-252));
@@ -1227,7 +1228,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const t2Risk = calculateT2LockupRisk(adjustedCandles, ltp, atr, stock);
 
   // ── Risk levels (circuit-capped) ─────────────────────────────
-  const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, Number(stock?.pChange) || 0);
+  const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChange);
   const holdDays  = options.maxHoldDays ?? 20;
 
   const high20 = closes.length >= 20 ? Math.max(...adjustedCandles.slice(-21, -1).map((c) => Number(c.high || c.close || 0))) : ltp * 1.02;
