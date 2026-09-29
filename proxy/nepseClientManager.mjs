@@ -450,17 +450,36 @@ export class UnifiedNepseClient {
       console.warn('[nepse-manager] Nepseman loadSymbolMap failed:', e.message);
     }
 
-    // 2. Try Rumess
+    // 2. Try Rumess (single attempt to avoid hanging cloud servers if NEPSE firewall drops sockets)
     try {
-      const map = await this.executeWithBackoff(() => this.rumess.getSecuritySymbolIdKeymap(force), 'getSecuritySymbolIdKeymap (Rumess)');
+      const map = await this.executeWithBackoff(() => this.rumess.getSecuritySymbolIdKeymap(force), 'getSecuritySymbolIdKeymap (Rumess)', 0);
       if (map && map.size > 0) {
         this.cachedKeymap = map;
         this.cachedKeymapTime = now;
         return map;
       }
     } catch (err1) {
-      console.warn('[nepse-manager] Rumess symbol map failed:', err1.message);
+      console.warn('[nepse-manager] Rumess symbol map failed. Using fallback stockmap.json:', err1.message);
     }
+
+    // 3. Fallback: Load authentic symbols from stockmap.json
+    try {
+      const stockmapPath = path.join(__dirname, 'stockmap.json');
+      if (fs.existsSync(stockmapPath)) {
+        const rawMap = JSON.parse(fs.readFileSync(stockmapPath, 'utf8'));
+        const fallbackMap = new Map();
+        let fallbackId = 100;
+        for (const [sym, info] of Object.entries(rawMap)) {
+          fallbackMap.set(sym, { id: fallbackId++, symbol: sym, securityName: info.name, sector: info.sector });
+        }
+        if (fallbackMap.size > 0) {
+          this.cachedKeymap = fallbackMap;
+          this.cachedKeymapTime = now;
+          console.log(`[nepse-manager] Loaded ${fallbackMap.size} symbols from fallback stockmap.json.`);
+          return this.cachedKeymap;
+        }
+      }
+    } catch (_) {}
 
     if (this.cachedKeymap) return this.cachedKeymap;
     return new Map();
@@ -478,8 +497,23 @@ export class UnifiedNepseClient {
 
     // 2. Try Rumess
     try {
-      const list2 = await this.executeWithBackoff(() => this.rumess.getSecurityList(force), 'getSecurityList (Rumess)');
+      const list2 = await this.executeWithBackoff(() => this.rumess.getSecurityList(force), 'getSecurityList (Rumess)', 0);
       if (Array.isArray(list2) && list2.length > 0) return list2;
+    } catch (_) {}
+
+    try {
+      const stockmapPath = path.join(__dirname, 'stockmap.json');
+      if (fs.existsSync(stockmapPath)) {
+        const rawMap = JSON.parse(fs.readFileSync(stockmapPath, 'utf8'));
+        return Object.entries(rawMap).map(([sym, info], idx) => ({
+          id: 100 + idx,
+          symbol: sym,
+          securityName: info.name,
+          name: info.name,
+          sectorName: info.sector,
+          sector: info.sector
+        }));
+      }
     } catch (_) {}
     return [];
   }
@@ -496,9 +530,11 @@ export class UnifiedNepseClient {
 
     // 2. Try Rumess
     try {
-      const list2 = await this.executeWithBackoff(() => this.rumess.getCompanyList(force), 'getCompanyList (Rumess)');
+      const list2 = await this.executeWithBackoff(() => this.rumess.getCompanyList(force), 'getCompanyList (Rumess)', 0);
       if (Array.isArray(list2) && list2.length > 0) return list2;
     } catch (_) {}
+
+    return this.getSecurityList(force);
     return [];
   }
 
