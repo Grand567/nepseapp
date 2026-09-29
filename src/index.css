@@ -195,6 +195,38 @@ body {
   }
 }
 
+/* ── Main Content Area & Sticky Credit Footer ── */
+.app-main-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.app-content-body {
+  flex: 1 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding-bottom: calc(85px + env(safe-area-inset-bottom, 0px));
+}
+
+.app-credit-footer {
+  text-align: center;
+  padding: 16px 20px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: auto;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* ── Scrollbars ── */
 ::-webkit-scrollbar { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1238,5 +1270,157 @@ button, a, input, select, .card, .nav-btn {
 .scrollbar-none::-webkit-scrollbar {
   display: none !important;
 }
+
+/* ── Predictor Hub Responsive Header Bar ── */
+.predictor-header-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(10, 14, 24, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.predictor-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.predictor-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.predictor-header-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.predictor-header-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.predictor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.predictor-action-btn {
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  min-height: 32px;
+  box-sizing: border-box;
+}
+
+.predictor-btn-full-label {
+  display: inline;
+}
+
+.predictor-btn-short-label {
+  display: none;
+}
+
+.predictor-subtabs-wrap {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+
+.predictor-subtabs-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile Responsive Optimization for Predictor Header & Controls */
+@media (max-width: 580px) {
+  .predictor-header-bar {
+    padding: 8px 10px 6px;
+    gap: 6px;
+  }
+
+  .predictor-header-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .predictor-header-brand {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .predictor-header-title {
+    font-size: 15px;
+  }
+
+  .predictor-header-sub {
+    display: none;
+  }
+
+  .predictor-header-actions {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+  }
+
+  .predictor-action-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 11.5px;
+    gap: 4px;
+  }
+
+  .predictor-action-btn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .predictor-btn-full-label {
+    display: none;
+  }
+
+  .predictor-btn-short-label {
+    display: inline;
+  }
+}
+
 
 

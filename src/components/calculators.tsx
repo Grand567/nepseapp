@@ -1,22 +1,63 @@
-import { useState } from 'react';
-import { InfoBanner, StatCard } from './ui';
+import { useState, useEffect } from 'react';
+import { InfoBanner, StatCard, StockSearchSelect } from './ui';
 
 const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base sm:text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 box-border';
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
 
-export function GrahamValuation() {
+export function GrahamValuation({
+  stocks = [],
+  initialSymbol = '',
+}: {
+  stocks?: any[];
+  initialSymbol?: string;
+} = {}) {
   const [modelType, setModelType] = useState<'classical' | 'interest_adjusted'>('classical');
+  const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
   const [form, setForm] = useState({ eps: '', bvps: '', price: '', growthRate: '7.0', fdRate: '7.5' });
   const [result, setResult] = useState<any>(null);
+  const [validationError, setValidationError] = useState('');
+
+  const handleStockSelect = (sym: string) => {
+    setSelectedSym(sym);
+    if (!sym) return;
+    const found = stocks.find((s: any) => s.symbol?.toUpperCase() === sym.toUpperCase());
+    if (found) {
+      const epsVal = found.eps ? String(found.eps) : '';
+      const bvpsVal = found.bvps || found.bookValue ? String(found.bvps || found.bookValue) : '';
+      const priceVal = found.ltp || found.closePrice ? String(found.ltp || found.closePrice) : '';
+      setForm((prev) => ({
+        ...prev,
+        eps: epsVal || prev.eps,
+        bvps: bvpsVal || prev.bvps,
+        price: priceVal || prev.price,
+      }));
+      setValidationError('');
+    }
+  };
+
+  useEffect(() => {
+    if (initialSymbol) {
+      handleStockSelect(initialSymbol);
+    } else if (stocks.length > 0 && !selectedSym) {
+      handleStockSelect(stocks[0]?.symbol || 'NABIL');
+    }
+  }, [initialSymbol, stocks]);
 
   const calc = () => {
     const eps = parseFloat(form.eps);
     const price = parseFloat(form.price) || 0;
-    if (!eps || eps <= 0) return;
+    if (!eps || eps <= 0) {
+      setValidationError('Please enter a positive EPS. Benjamin Graham valuation requires profitable operations.');
+      return;
+    }
 
     if (modelType === 'classical') {
       const bvps = parseFloat(form.bvps);
-      if (!bvps || bvps <= 0) return;
+      if (!bvps || bvps <= 0) {
+        setValidationError('Please enter a positive BVPS (Book Value Per Share) for classical Graham valuation.');
+        return;
+      }
+      setValidationError('');
       const intrinsic = Math.sqrt(22.5 * eps * bvps);
       const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
       const verdict = mos > 20 ? { text: 'UNDERVALUED — Strong Margin of Safety', color: '#10b981' }
@@ -26,6 +67,7 @@ export function GrahamValuation() {
     } else {
       const g = Math.max(0, Math.min(25, parseFloat(form.growthRate) || 7.0));
       const y = Math.max(2.0, parseFloat(form.fdRate) || 7.5);
+      setValidationError('');
       // V = (EPS * (8.5 + 2g) * 4.4) / Y
       const growthFactor = 8.5 + (2 * g);
       const intrinsic = (eps * growthFactor * 4.4) / y;
@@ -60,18 +102,29 @@ export function GrahamValuation() {
         </div>
       </div>
 
+      {/* Auto-fill from stock */}
+      <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-400">Auto-fill Fundamentals from NEPSE Scrip (Optional):</label>
+        <StockSearchSelect
+          value={selectedSym}
+          onChange={handleStockSelect}
+          placeholder="Pick stock (e.g. NABIL, CIT, SHIVM)..."
+          stocks={stocks}
+        />
+      </div>
+
       {/* Model Selection Tabs */}
       <div className="grid grid-cols-2 gap-2 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
         <button
           type="button"
-          onClick={() => { setModelType('classical'); setResult(null); }}
+          onClick={() => { setModelType('classical'); setResult(null); setValidationError(''); }}
           className={`py-2 text-xs font-bold rounded-lg transition-all ${modelType === 'classical' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
         >
           Classical Graham Number (V*)
         </button>
         <button
           type="button"
-          onClick={() => { setModelType('interest_adjusted'); setResult(null); }}
+          onClick={() => { setModelType('interest_adjusted'); setResult(null); setValidationError(''); }}
           className={`py-2 text-xs font-bold rounded-lg transition-all ${modelType === 'interest_adjusted' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
         >
           Interest-Adjusted (Nepal FD Y)
@@ -84,17 +137,36 @@ export function GrahamValuation() {
         <InfoBanner><strong>Macro Formula:</strong> V = [EPS × (8.5 + 2g) × 4.4] / Y. Dynamically adjusts fair value to Nepal commercial bank Fixed Deposit rate (Y).</InfoBanner>
       )}
 
+      {validationError && (
+        <InfoBanner type="warning">{validationError}</InfoBanner>
+      )}
+
       <div className="mb-4 grid gap-3">
-        <input type="number" placeholder="EPS — e.g. 35.50" value={form.eps} onChange={(e) => setForm((f) => ({ ...f, eps: e.target.value }))} className={inputCls} />
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-1">Trailing 12M EPS (Rs.)</label>
+          <input type="number" placeholder="EPS — e.g. 35.50" value={form.eps} onChange={(e) => setForm((f) => ({ ...f, eps: e.target.value }))} className={inputCls} />
+        </div>
         {modelType === 'classical' ? (
-          <input type="number" placeholder="BVPS — e.g. 182.50" value={form.bvps} onChange={(e) => setForm((f) => ({ ...f, bvps: e.target.value }))} className={inputCls} />
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1">Book Value Per Share (BVPS Rs.)</label>
+            <input type="number" placeholder="BVPS — e.g. 182.50" value={form.bvps} onChange={(e) => setForm((f) => ({ ...f, bvps: e.target.value }))} className={inputCls} />
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" placeholder="5Y Exp. Growth g % (e.g. 7.0)" value={form.growthRate} onChange={(e) => setForm((f) => ({ ...f, growthRate: e.target.value }))} className={inputCls} />
-            <input type="number" placeholder="Nepal Bank FD Rate Y % (e.g. 7.5)" value={form.fdRate} onChange={(e) => setForm((f) => ({ ...f, fdRate: e.target.value }))} className={inputCls} />
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">5Y Exp. Growth g %</label>
+              <input type="number" placeholder="e.g. 7.0" value={form.growthRate} onChange={(e) => setForm((f) => ({ ...f, growthRate: e.target.value }))} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 mb-1">Nepal Bank FD Rate Y %</label>
+              <input type="number" placeholder="e.g. 7.5" value={form.fdRate} onChange={(e) => setForm((f) => ({ ...f, fdRate: e.target.value }))} className={inputCls} />
+            </div>
           </div>
         )}
-        <input type="number" placeholder="Current market price (optional)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className={inputCls} />
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-1">Current Market Price / LTP (Rs.)</label>
+          <input type="number" placeholder="Current market price (optional)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className={inputCls} />
+        </div>
       </div>
 
       <button onClick={calc} className={btnCls}>Calculate Intrinsic Value</button>
@@ -135,7 +207,7 @@ export function GrahamValuation() {
 }
 
 export function BrokerageCalculator() {
-  const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short', slabType: 'statutory' });
+  const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short', slabType: 'jestha_2081' });
   const [result, setResult] = useState<any>(null);
 
   const getBrokerage = (amount: number, slab: string) => {
@@ -209,7 +281,7 @@ export function BrokerageCalculator() {
           <option value="long">Individual Long &gt;365d — 5.0% CGT</option>
           <option value="institutional">Institutional / Corporate — 10% CGT</option>
         </select>
-        <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={inputCls}>
+        <select value={form.slabType} onChange={(e) => setForm((f) => ({ ...f, slabType: e.target.value }))} className={`${inputCls} col-span-2 md:col-span-1`}>
           <option value="jestha_2081">Current Active Slabs (0.36% – 0.24%)</option>
           <option value="statutory">Legacy Statutory Slabs (0.40% – 0.27%)</option>
         </select>
@@ -246,40 +318,79 @@ export function BrokerageCalculator() {
 }
 
 export function DividendCalculator() {
-  const [form, setForm] = useState({ shares: '', fv: '100', cash: '', bonus: '' });
+  const [form, setForm] = useState({ shares: '', fv: '100', cash: '', bonus: '', price: '' });
   const [result, setResult] = useState<any>(null);
 
   const calc = () => {
-    const s = parseFloat(form.shares), fv = parseFloat(form.fv);
+    const s = parseFloat(form.shares), fv = parseFloat(form.fv) || 100;
     const c = parseFloat(form.cash) || 0, b = parseFloat(form.bonus) || 0;
-    if (!s || !fv || s <= 0) return;
+    const pr = parseFloat(form.price) || 0;
+    if (!s || s <= 0) return;
     const grossCash = (fv * c / 100) * s;
     const tax = grossCash * 0.05;
-    setResult({ grossCash, tax, netCash: grossCash - tax, bonusShares: Math.floor((s * b) / 100), newTotal: s + Math.floor((s * b) / 100) });
+    const netCash = grossCash - tax;
+    const bonusShares = Math.floor((s * b) / 100);
+    const newTotal = s + bonusShares;
+    
+    // Dividend Yield calculations
+    const dps = (fv * c) / 100;
+    const cashYield = pr > 0 ? (dps / pr) * 100 : null;
+    const bonusValue = pr > 0 ? bonusShares * pr : 0;
+    const totalYield = pr > 0 ? (((grossCash + bonusValue) / (s * pr)) * 100) : null;
+
+    setResult({
+      grossCash,
+      tax,
+      netCash,
+      bonusShares,
+      newTotal,
+      dps,
+      cashYield,
+      totalYield,
+      price: pr,
+    });
   };
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
-          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Dividend &amp; Bonus Share Tax Calculator</h3>
-          <p className="text-xs text-slate-400">Calculate gross cash, 5% TDS, net cash in hand, and bonus share credit.</p>
+          <h3 className="text-base font-bold text-white tracking-wide">NEPSE Dividend Yield &amp; Bonus Share Tax Calculator</h3>
+          <p className="text-xs text-slate-400">Calculate gross cash, 5% TDS, net cash in hand, bonus share credit, and dividend yield %.</p>
         </div>
       </div>
-      <InfoBanner>Cash dividend: 5% TDS deducted at source. Bonus shares credited via CDSC directly to Demat.</InfoBanner>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <InfoBanner>Cash dividend: 5% TDS deducted at source. Bonus shares credited via CDSC directly to Demat. Enter Market Price to calculate Dividend Yield %.</InfoBanner>
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
         <input type="number" placeholder="Shares Held" value={form.shares} onChange={(e) => setForm((f) => ({ ...f, shares: e.target.value }))} className={inputCls} />
-        <input type="number" placeholder="Face Value" value={form.fv} onChange={(e) => setForm((f) => ({ ...f, fv: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Face Value (Default 100)" value={form.fv} onChange={(e) => setForm((f) => ({ ...f, fv: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Cash Div %" value={form.cash} onChange={(e) => setForm((f) => ({ ...f, cash: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Bonus %" value={form.bonus} onChange={(e) => setForm((f) => ({ ...f, bonus: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Market Price LTP (Rs.)" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className={`${inputCls} col-span-2 md:col-span-1`} />
       </div>
-      <button onClick={calc} className={btnCls}>Calculate Dividend</button>
+      <button onClick={calc} className={btnCls}>Calculate Dividend &amp; Yield</button>
       {result && (
-        <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3">
-          <StatCard label="Gross Cash" value={`Rs. ${result.grossCash.toFixed(2)}`} />
-          <StatCard label="TDS (5%)" value={`-Rs. ${result.tax.toFixed(2)}`} color="#dc2626" />
-          <StatCard label="Net Cash" value={`Rs. ${result.netCash.toFixed(2)}`} color="#16a34a" big />
-          <StatCard label="Bonus Shares" value={result.bonusShares} color="#7c3aed" />
-          <StatCard label="Total Shares" value={result.newTotal.toLocaleString()} big />
+        <div className="mt-5 space-y-3">
+          {result.cashYield != null && (
+            <div className="rounded-xl border border-emerald-800/60 bg-emerald-950/40 p-4 text-center">
+              <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Cash Dividend Yield</div>
+              <div className="text-3xl font-black font-mono text-emerald-400">{result.cashYield.toFixed(2)}%</div>
+              <div className="mt-1 text-xs text-slate-300">
+                Annual DPS: Rs. {result.dps.toFixed(2)} per share @ LTP Rs. {result.price.toLocaleString()}
+                {result.totalYield != null && (
+                  <span className="ml-2 text-blue-400 font-semibold">• Total Yield (incl. Bonus): {result.totalYield.toFixed(2)}%</span>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+            <StatCard label="Gross Cash Dividend" value={`Rs. ${result.grossCash.toFixed(2)}`} />
+            <StatCard label="TDS at Source (5%)" value={`-Rs. ${result.tax.toFixed(2)}`} color="#dc2626" />
+            <StatCard label="Net Cash Credited" value={`Rs. ${result.netCash.toFixed(2)}`} color="#16a34a" big />
+            <StatCard label="Bonus Shares Credited" value={`+${result.bonusShares} Units`} color="#7c3aed" />
+            <StatCard label="Total Shares in Demat" value={result.newTotal.toLocaleString()} big />
+            {result.cashYield != null && (
+              <StatCard label="Cash Yield" value={`${result.cashYield.toFixed(2)}%`} color="#10b981" />
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -324,38 +435,85 @@ export function SIPCalculator() {
 }
 
 export function RiskRewardCalculator() {
-  const [form, setForm] = useState({ entry: '', target: '', stop: '' });
+  const [form, setForm] = useState({ entry: '', target: '', stop: '', capital: '100000', riskPct: '2' });
   const [result, setResult] = useState<any>(null);
 
   const calc = () => {
     const e = parseFloat(form.entry), t = parseFloat(form.target), s = parseFloat(form.stop);
+    const cap = parseFloat(form.capital) || 100000;
+    const rPct = parseFloat(form.riskPct) || 2;
     if (!e || !t || !s || e <= 0) return;
     const reward = Math.abs(t - e), risk = Math.abs(e - s);
     if (risk === 0) return;
-    setResult({ reward, risk, ratio: reward / risk, rewardPct: (reward / e) * 100, riskPct: (risk / e) * 100 });
+
+    const ratio = reward / risk;
+    const rewardPct = (reward / e) * 100;
+    const riskPct = (risk / e) * 100;
+    const maxCashRisk = cap * (rPct / 100);
+    const positionUnits = Math.max(1, Math.floor(maxCashRisk / risk));
+    const totalPositionCost = positionUnits * e;
+    const totalPotentialProfit = positionUnits * reward;
+    const totalPotentialLoss = positionUnits * risk;
+    const allocationPct = (totalPositionCost / cap) * 100;
+
+    setResult({
+      reward,
+      risk,
+      ratio,
+      rewardPct,
+      riskPct,
+      maxCashRisk,
+      positionUnits,
+      totalPositionCost,
+      totalPotentialProfit,
+      totalPotentialLoss,
+      allocationPct,
+    });
   };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
-          <h3 className="text-base font-bold text-white tracking-wide">Trade Risk-to-Reward &amp; Position Sizer</h3>
-          <p className="text-xs text-slate-400">Measure risk-reward ratio before entry. Professional swing trades aim for 2:1 or better.</p>
+          <h3 className="text-base font-bold text-white tracking-wide">Trade Risk-to-Reward &amp; Position Sizing Engine</h3>
+          <p className="text-xs text-slate-400">Calculate R:R ratio, maximum cash risk, and exact position size in shares based on portfolio capital.</p>
         </div>
       </div>
-      <InfoBanner>Professional traders only take trades with 2:1 or better risk-reward. Risk max 1–2% of capital per trade.</InfoBanner>
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <input type="number" placeholder="Entry" value={form.entry} onChange={(e) => setForm((f) => ({ ...f, entry: e.target.value }))} className={inputCls} />
-        <input type="number" placeholder="Target" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} className={inputCls} />
-        <input type="number" placeholder="Stop-Loss" value={form.stop} onChange={(e) => setForm((f) => ({ ...f, stop: e.target.value }))} className={inputCls} />
+      <InfoBanner>
+        <strong>Risk Rule:</strong> Professional traders never risk more than 1–2% of trading capital on a single idea. Aim for a minimum 2:1 Reward-to-Risk ratio.
+      </InfoBanner>
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <input type="number" placeholder="Entry Price (Rs.)" value={form.entry} onChange={(e) => setForm((f) => ({ ...f, entry: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Target Price (Rs.)" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Stop-Loss Price (Rs.)" value={form.stop} onChange={(e) => setForm((f) => ({ ...f, stop: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Total Capital (Default 1L)" value={form.capital} onChange={(e) => setForm((f) => ({ ...f, capital: e.target.value }))} className={inputCls} />
+        <input type="number" placeholder="Risk % per Trade (Default 2%)" value={form.riskPct} onChange={(e) => setForm((f) => ({ ...f, riskPct: e.target.value }))} className={`${inputCls} col-span-2 md:col-span-1`} />
       </div>
-      <button onClick={calc} className={btnCls}>Calculate Risk / Reward</button>
+      <button onClick={calc} className={btnCls}>Calculate Sizing &amp; Risk / Reward</button>
       {result && (
-        <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3">
-          <StatCard label="Potential Reward" value={`Rs. ${result.reward.toFixed(2)}`} color="#16a34a" />
-          <StatCard label="Potential Risk" value={`Rs. ${result.risk.toFixed(2)}`} color="#dc2626" />
-          <StatCard label="R:R Ratio" value={`1 : ${result.ratio.toFixed(2)}`} color={result.ratio >= 2 ? '#16a34a' : '#d97706'} big />
-          <StatCard label="Reward %" value={`+${result.rewardPct.toFixed(2)}%`} color="#16a34a" />
-          <StatCard label="Risk %" value={`-${result.riskPct.toFixed(2)}%`} color="#dc2626" />
+        <div className="mt-5 space-y-3">
+          <div className={`rounded-xl border p-4 text-center ${result.ratio >= 2 ? 'border-emerald-800/60 bg-emerald-950/40' : result.ratio >= 1.5 ? 'border-amber-800/60 bg-amber-950/40' : 'border-rose-800/60 bg-rose-950/40'}`}>
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+              {result.ratio >= 2 ? 'Favorable Swing Setup (R:R ≥ 2:1)' : result.ratio >= 1.5 ? 'Moderate Setup (1.5:1 to 2:1)' : 'Unfavorable Setup — Poor Risk/Reward'}
+            </div>
+            <div className={`text-4xl font-black font-mono ${result.ratio >= 2 ? 'text-emerald-400' : result.ratio >= 1.5 ? 'text-amber-400' : 'text-rose-400'}`}>
+              1 : {result.ratio.toFixed(2)}
+            </div>
+            <div className="mt-1 text-xs text-slate-300">
+              Reward: <span className="text-emerald-400 font-bold">+{result.rewardPct.toFixed(1)}%</span> vs Risk: <span className="text-rose-400 font-bold">-{result.riskPct.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <StatCard label="Recommended Position Size" value={`${result.positionUnits.toLocaleString()} Units`} color="#38bdf8" big />
+            <StatCard label="Total Capital Required" value={`Rs. ${Math.round(result.totalPositionCost).toLocaleString()}`} big />
+            <StatCard label="Max Risk in Cash" value={`-Rs. ${Math.round(result.totalPotentialLoss).toLocaleString()}`} color="#f43f5e" />
+            <StatCard label="Potential Target Profit" value={`+Rs. ${Math.round(result.totalPotentialProfit).toLocaleString()}`} color="#10b981" />
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 text-xs text-slate-300 flex items-center justify-between flex-wrap gap-2">
+            <span>Portfolio Allocation: <strong className="text-white">{result.allocationPct.toFixed(1)}%</strong> of total account</span>
+            <span>Risk per Share: <strong className="text-rose-400">Rs. {result.risk.toFixed(2)}</strong></span>
+            <span>Reward per Share: <strong className="text-emerald-400">Rs. {result.reward.toFixed(2)}</strong></span>
+          </div>
         </div>
       )}
     </div>

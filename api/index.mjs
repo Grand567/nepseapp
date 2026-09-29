@@ -251,6 +251,72 @@ app.get('/api/mero/market-summary', async (req, res) => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   /api/market/live — Real-time live market feed forwarder for liveData.js
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get('/api/market/live', async (req, res) => {
+  try {
+    const r = await axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', {
+      headers: { ...HEADERS, 'Referer': 'https://merolagani.com/', 'Accept': 'application/json, text/plain, */*' },
+      timeout: 8000
+    });
+    const ml = r.data;
+    const stockDetails = ml?.stock?.detail || [];
+    const turnoverDetails = ml?.turnover?.detail || [];
+    const turnoverMap = {};
+    turnoverDetails.forEach(t => { if (t?.s) turnoverMap[t.s] = t; });
+
+    const stocks = stockDetails.map(item => {
+      const symbol = item.s;
+      const ltp = Number(item.lp) || 0;
+      const change = Number(item.c) || 0;
+      const volume = Number(item.q) || 0;
+      const prevClose = ltp - change;
+      const t = turnoverMap[symbol] || {};
+      const pChange = t.pc != null ? Number(t.pc) : (prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0);
+      const high = Number(t.h || item.h || ltp);
+      const low  = Number(t.l || item.l || ltp);
+      const open = Number(t.op || item.op || prevClose || ltp);
+      const turnover = Number(t.t || 0) || Math.round(ltp * volume);
+      return {
+        symbol,
+        securityName: symbol,
+        ltp,
+        lastTradedPrice: ltp,
+        lastUpdatedPrice: ltp,
+        closePrice: ltp,
+        openPrice: +open.toFixed(2),
+        highPrice: +high.toFixed(2),
+        lowPrice: +low.toFixed(2),
+        previousClose: +prevClose.toFixed(2),
+        previousDayClosePrice: +prevClose.toFixed(2),
+        change: +change.toFixed(2),
+        pointChange: +change.toFixed(2),
+        pChange: +pChange.toFixed(2),
+        percentageChange: +pChange.toFixed(2),
+        volume,
+        totalTradedQuantity: volume,
+        turnover,
+        totalTradedValue: turnover,
+        businessDate: new Date().toISOString().split('T')[0]
+      };
+    }).filter(s => s.symbol && s.ltp > 0);
+
+    return res.json({
+      success: true,
+      isMockData: false,
+      source: 'LIVE - MEROLAGANI REAL-TIME',
+      marketOpen: true,
+      marketStatus: 'OPEN',
+      count: stocks.length,
+      asOf: new Date().toISOString(),
+      data: stocks
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, isMockData: false });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
    /api/mero/stock-details/:symbol — liveData.js fundamental enrichment source
    Returns book value, EPS, PE, sector for a given stock from MeroLagani.
    ══════════════════════════════════════════════════════════════════════════════ */

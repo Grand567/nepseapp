@@ -105,7 +105,7 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const ema20 = Number(stock.ema20 || dynEMAs.ema20);
   const ema50 = Number(stock.ema50 || stock.sma50 || dynEMAs.ema50);
   const rsi = resolveDynamicStockRSI(stock);
-  const cachedFund = getCachedStockFundamentals(sym);
+  const cachedFund = stock.cachedFund || (stock.eps !== undefined ? stock : getCachedStockFundamentals(sym));
   const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (stock.eps ?? 0));
   const bookValue = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock.bookValue ?? stock.bvps ?? 100));
   const vsr = Number(stock.volumeSurgeRatio || (vol > 15000 ? 1.4 : vol > 4000 ? 1.15 : 0.95));
@@ -119,7 +119,7 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const prevClose = Number(stock.previousClose || stock.prevClose || (pChg !== 0 ? ltp / (1 + pChg / 100) : ltp));
   
   let dynamicAtr = 0;
-  const cachedHistory = getCachedRealPriceHistory(sym);
+  const cachedHistory = stock.history || stock.candles || getCachedRealPriceHistory(sym);
   if (Array.isArray(cachedHistory) && cachedHistory.length >= 5) {
     dynamicAtr = calculateATR(cachedHistory, 14);
   } else if (stock.atr && Number(stock.atr) > 0) {
@@ -506,14 +506,14 @@ export default function ShortTermProfitPlan({
       if (!sym || seen.has(sym)) continue;
 
       const live = liveMap.get(sym);
-      const cachedFund = getCachedStockFundamentals(sym);
-      const ltp = Number(live?.ltp ?? live?.closePrice ?? cachedFund?.ltp ?? u.basePrice ?? 100);
+      const ltp = Number(live?.ltp ?? live?.closePrice ?? u.basePrice ?? 100);
       const sector = live?.sector || u.sector || 'Others';
       const name = live?.name || u.name || sym;
 
       // Filter out non-tradable equities (mutual funds, debentures, promoter shares)
       if (isMutualFundOrDebenture(sym, sector, name, ltp)) continue;
 
+      const cachedFund = getCachedStockFundamentals(sym);
       seen.add(sym);
       merged.push({
         ...u,
@@ -2201,21 +2201,21 @@ export default function ShortTermProfitPlan({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>2-Day Cumulative Gain</div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.twoDayGain >= 15 ? '#F87171' : '#34D399', marginTop: 2 }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.twoDayGain >= 25 ? '#F87171' : '#34D399', marginTop: 2 }}>
                     {t2GuardData.twoDayGain >= 0 ? '+' : ''}{t2GuardData.twoDayGain}%
                   </div>
                   <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {t2GuardData.twoDayGain >= 18 ? 'Extreme circuit surge' : 'Healthy expansion'}
+                    {t2GuardData.twoDayGain >= 27 ? 'Extreme 15% circuit surge' : 'Healthy expansion'}
                   </div>
                 </div>
 
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Distance from 20 EMA</div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.ema20DistPct >= 12 ? '#FBBF24' : '#FFF', marginTop: 2 }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.ema20DistPct >= 18 ? '#FBBF24' : '#FFF', marginTop: 2 }}>
                     +{t2GuardData.ema20DistPct}%
                   </div>
                   <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {t2GuardData.ema20DistPct <= 6 ? 'Close to support base' : 'Stretched from average'}
+                    {t2GuardData.ema20DistPct <= 8 ? 'Close to support base' : 'Stretched from average'}
                   </div>
                 </div>
               </div>
@@ -2230,7 +2230,7 @@ export default function ShortTermProfitPlan({
                 color: '#CBD5E1',
                 lineHeight: 1.5
               }}>
-                <strong style={{ color: '#FBBF24' }}>NEPSE Microstructure Law:</strong> In Nepal, shares bought today settle on T+2 evening. If you buy a stock that has already printed 2 consecutive 10% circuits, you cannot sell for 3 sessions. Early institutional buyers who bought at support will dump on Day 3 morning, leaving late circuit buyers trapped with no exit liquidity.
+                <strong style={{ color: '#FBBF24' }}>NEPSE Microstructure Law:</strong> In Nepal, shares bought today settle on T+2 evening. Under the ±15% daily circuit regime, if you buy a stock that has already printed 2 consecutive 15% circuits (+30%+), you cannot sell for 3 sessions. Early institutional buyers who bought at support will dump on Day 3 morning, leaving late circuit buyers trapped with no exit liquidity.
               </div>
             </div>
           )}

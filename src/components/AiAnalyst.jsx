@@ -1843,7 +1843,7 @@ Format as plain text (not JSON) for this conversational response.`;
   ];
 
   return (
-    <div className="flex flex-col text-white font-sans" style={{ backgroundColor: '#0B0E14', minHeight: '100%', paddingBottom: '32px' }}>
+    <div className="flex flex-col text-white font-sans" style={{ backgroundColor: '#0B0E14', minHeight: '100%', flex: '1 0 auto', paddingBottom: '32px' }}>
       {/* Header Bar */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 20,

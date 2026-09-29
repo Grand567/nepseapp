@@ -70,7 +70,7 @@ export default function Resources({ onNavigateTab }) {
   );
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: '16px 16px 20px', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
       {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>

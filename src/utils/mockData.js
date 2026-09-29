@@ -218,9 +218,9 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuits':
     case 'circuit_setup':
     case 'circuit_radar': {
-      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 10.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 13.5).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (hits.length > 0) return hits.slice(0, 25);
-      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 5.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 8.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (nearHits.length > 0) return nearHits.slice(0, 25);
       return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
     }

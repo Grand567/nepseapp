@@ -755,21 +755,21 @@ export function BreakoutTrapRadar({
               <div className="p-3.5 rounded-xl bg-slate-950 border border-red-500/20">
                 <div className="text-xs font-bold text-red-400 mb-1">१. पहिलो दिन: FOMO सर्किट चेस</div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  अपरेटरले बिहानै १०% सर्किट लगाएर सेयर पम्प गर्छ। खुद्रा लगानीकर्ताले ब्रेकआउट ठानेर सर्किटमा किन्छन्। तर सेयर तुरुन्त डिम्याटमा आउँदैन।
+                  अपरेटरले बिहानै १५% सर्किट लगाएर सेयर पम्प गर्छ। खुद्रा लगानीकर्ताले ब्रेकआउट ठानेर सर्किटमा किन्छन्। तर सेयर तुरुन्त डिम्याटमा आउँदैन।
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-950 border border-orange-500/20">
                 <div className="text-xs font-bold text-orange-400 mb-1">२. दोस्रो दिन: अपरेटर डम्प सुरु</div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  अपरेटरले आफूसँग पहिले नै रहेको पुरानो कित्ता बजारमा फाल्न थाल्छ। मूल्य घटेर -५% पुग्छ। हिजो किन्नेले बेच्न पाउँदैनन् किनकि सेयर हातमा छैन।
+                  अपरेटरले आफूसँग पहिले नै रहेको पुरानो कित्ता बजारमा फाल्न थाल्छ। मूल्य घटेर -५% देखि -८% पुग्छ। हिजो किन्नेले बेच्न पाउँदैनन् किनकि सेयर हातमा छैन।
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-950 border border-purple-500/20">
                 <div className="text-xs font-bold text-purple-400 mb-1">३. तेस्रो दिन: लोअर सर्किट र फस्ने अवस्था</div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  साँझ मात्र MeroShare मा सेयर आउँछ। तर भोलिपल्ट बजार खुल्दा -१०% लोअर सर्किट लाग्छ र खरिदकर्ता शून्य (Zero Bids) हुन्छ। लगानीकर्ता २५-३०% नोक्सानीमा फस्छन्।
+                  साँझ मात्र MeroShare मा सेयर आउँछ। तर भोलिपल्ट बजार खुल्दा -१५% लोअर सर्किट लाग्छ र खरिदकर्ता शून्य (Zero Bids) हुन्छ। लगानीकर्ता ३०-४०% नोक्सानीमा फस्छन्।
                 </p>
               </div>
             </div>
@@ -785,7 +785,7 @@ export function BreakoutTrapRadar({
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                 <span className="font-bold text-emerald-400">नियम १: पहिलो दिन कहिल्यै नकिन्नुहोस् (Never Chase Day 1)</span>
                 <p className="text-slate-400 text-[11px] mt-0.5">
-                  ब्रेकआउट भएको दिन शेयर सर्किट वा +७-१०% मा पुगिसकेको हुन्छ। त्यहाँ किन्दा फाइदा भन्दा T+2 डम्पको जोखिम धेरै हुन्छ।
+                  ब्रेकआउट भएको दिन शेयर सर्किट वा +१०-१५% मा पुगिसकेको हुन्छ। त्यहाँ किन्दा फाइदा भन्दा T+2 डम्पको जोखिम धेरै हुन्छ।
                 </p>
               </div>
 

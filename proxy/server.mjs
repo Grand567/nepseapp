@@ -534,7 +534,7 @@ export async function getMarketIndicesInternal() {
       });
 
       // Enrich turnover from marketSummaryData
-      const officialTurnover = Number(marketSummaryData?.['Total Turnover Rs:'] || 0);
+      const officialTurnover = Number(marketSummaryData?.['Total Turnover Rs:'] || marketSummaryData?.totalTurnover || 0);
       if (indices.nepse) {
         indices.nepse.turnover = officialTurnover > 0 ? officialTurnover : (LAST_GOOD_INDICES?.nepse?.turnover || 0);
       }
@@ -675,6 +675,46 @@ app.get('/api/today-prices', async (req, res) => {
     } catch (e) {
       console.warn('[proxy] MDP today-prices query error, falling back to scrapers:', e.message);
     }
+  }
+
+  // Tier 2: Official NEPSE NOTS API via nepseManager (WASM prover)
+  try {
+    const market = await nepseManager.getLiveOrClosingMarket();
+    if (market && Array.isArray(market.data) && market.data.length > 50) {
+      const normalized = market.data.map(item => {
+        const sym = item.symbol;
+        const ltp = Number(item.lastTradedPrice || item.closePrice || 0);
+        const prevClose = Number(item.previousClose || item.previousDayClosePrice || item.prevClose || ltp);
+        const change = Number(item.pointChange != null ? item.pointChange : (item.change != null ? item.change : (ltp - prevClose)));
+        const pChange = Number(item.percentageChange != null ? item.percentageChange : (item.pChange != null ? item.pChange : (prevClose > 0 ? ((change / prevClose) * 100) : 0)));
+        return {
+          symbol: sym,
+          name: item.securityName || item.companyName || stockMap[sym]?.name || sym,
+          ltp,
+          change: Number(change.toFixed(2)),
+          pChange: Number(pChange.toFixed(2)),
+          open: Number(item.openPrice || item.open || ltp),
+          high: Number(item.highPrice || item.high || ltp),
+          low: Number(item.lowPrice || item.low || ltp),
+          prevClose,
+          volume: Number(item.totalTradedQuantity || item.volume || 0),
+          turnover: Number(item.totalTradedValue || item.turnover || (ltp * (item.totalTradedQuantity || 0))),
+          high52w: Number(item.fiftyTwoWeekHigh || item.high52w || NaN),
+          low52w: Number(item.fiftyTwoWeekLow || item.low52w || NaN),
+          rsi: calcRSI(pChange),
+          macd: calcMACD(pChange),
+          sector: item.sectorName || stockMap[sym]?.sector || 'Unknown',
+          source: market.source || 'nepse-nots'
+        };
+      }).filter(s => s.symbol && s.ltp > 0);
+
+      if (normalized.length > 50) {
+        setCache(cacheKey, normalized, 30000);
+        return res.json({ success: true, data: normalized, source: market.source || 'nepse-nots', count: normalized.length });
+      }
+    }
+  } catch (notsErr) {
+    console.warn('[today-prices] NOTS query error, falling back to ShareSansar:', notsErr.message);
   }
 
   try {
@@ -2460,49 +2500,15 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
     }
   }
 
-  // Method 1: Direct NEPSE API via nepseClient (official data for equities)
+  // Method 1: Direct NEPSE API via nepseClient (official data for equities with dual-engine failover)
   try {
-    const keymap = await nepseClient.getSecuritySymbolIdKeymap();
-    const securityId = keymap.get(rawSymbol);
-    if (securityId) {
-      const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${length}&sort=businessDate,desc`;
-      const response = await nepseClient.requestGETAPI(endpoint);
-      const content = response?.content || (Array.isArray(response) ? response : []);
-
-      if (content.length > 0) {
-        const formatted = content.map(item => {
-          const close    = parseFloat(item.closePrice || item.lastTradedPrice || 0);
-          const prevClose = parseFloat(item.previousDayClosePrice || 0);
-          const change   = prevClose > 0 ? +(close - prevClose).toFixed(2) : 0;
-          const pChange  = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
-          return {
-            date:     item.businessDate,
-            open:     parseFloat(item.openPrice || 0),
-            high:     parseFloat(item.highPrice || 0),
-            low:      parseFloat(item.lowPrice || 0),
-            close,
-            volume:   parseFloat(item.totalTradedQuantity || 0),
-            turnover: parseFloat(item.totalTradedValue || 0),
-            trades:   item.totalTrades || 0,
-            high52w:  parseFloat(item.fiftyTwoWeekHigh || 0),
-            low52w:   parseFloat(item.fiftyTwoWeekLow || 0),
-            prevClose,
-            change,
-            pChange,
-            avgRate:  parseFloat(item.averageTradedPrice || 0)
-          };
-        }).filter(d => d.close > 0);
-
-        formatted.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        if (formatted.length > 0) {
-          // Use shorter TTL during market hours so charts stay fresh during live trading
-          const { isOpen: mktOpen } = getDetailedMarketStatus();
-          const histCacheTtl = mktOpen ? 15 * 60 * 1000 : 2 * 60 * 60 * 1000;
-          setCache(cacheKey, formatted, histCacheTtl); // 15 min open, 2h closed
-          return formatted;
-        }
-      }
+    const formatted = await nepseClient.getSecurityPriceHistory(rawSymbol, { length });
+    if (Array.isArray(formatted) && formatted.length > 0) {
+      // Use shorter TTL during market hours so charts stay fresh during live trading
+      const { isOpen: mktOpen } = getDetailedMarketStatus();
+      const histCacheTtl = mktOpen ? 15 * 60 * 1000 : 2 * 60 * 60 * 1000;
+      setCache(cacheKey, formatted, histCacheTtl); // 15 min open, 2h closed
+      return formatted;
     }
   } catch (nepseErr) {
     console.warn(`[price-history] NEPSE API failed for ${symbol}:`, nepseErr.message);
@@ -2629,25 +2635,45 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     const options = { page, size };
     if (symbol) options.symbol = symbol;
     if (businessDate) options.date = businessDate;
-    const result = await nepseClient.getFloorSheet(options);
 
-    const raw = result?.floorsheets?.content || result?.content || [];
-    const totalPages = result?.floorsheets?.totalPages || result?.totalPages || 1;
+    let result = null;
+    try {
+      result = await Promise.race([
+        nepseClient.getFloorSheet(options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Floorsheet timeout from upstream exchange')), 5000))
+      ]);
+    } catch (e1) {
+      console.warn(`[floorsheet] nepseClient floorsheet unavailable: ${e1.message}`);
+    }
+
+    const raw = result?.floorsheets?.content || result?.content || (Array.isArray(result) ? result : []);
+    const totalPages = result?.floorsheets?.totalPages || result?.totalPages || (raw.length > 0 ? 1 : 0);
     const totalElements = result?.floorsheets?.totalElements || result?.totalElements || raw.length;
 
-    const rows = raw.map(item => ({
-      contractId: item.contractId,
-      buyerBroker: String(item.buyerMemberId || item.buyerBroker || ''),
-      buyerBrokerName: item.buyerBrokerName || `Broker ${item.buyerMemberId || item.buyerBroker}`,
-      sellerBroker: String(item.sellerMemberId || item.sellerBroker || ''),
-      sellerBrokerName: item.sellerBrokerName || `Broker ${item.sellerMemberId || item.sellerBroker}`,
-      qty: item.contractQuantity || 0,
-      rate: parseFloat(item.contractRate || 0),
-      amount: parseFloat(item.contractAmount || 0),
-      businessDate: item.businessDate || businessDate,
-      tradeTime: item.tradeTime || '',
-      stockSymbol: item.stockSymbol || symbol
-    }));
+    const rows = raw.map((item, idx) => {
+      const q = item.contractQuantity || item.qty || item.quantity || 0;
+      const rate = parseFloat(item.contractRate || item.rate || 0);
+      const amt = parseFloat(item.contractAmount || item.amount || (q * rate));
+      const sym = item.stockSymbol || item.symbol || symbol;
+      const bBroker = String(item.buyerMemberId || item.buyerBroker || item.buyerBrokerCode || item.buyer || '');
+      const sBroker = String(item.sellerMemberId || item.sellerBroker || item.sellerBrokerCode || item.seller || '');
+
+      return {
+        contractId: item.contractId || `${idx + 1}`,
+        buyerBroker: bBroker,
+        buyerBrokerName: item.buyerBrokerName || (bBroker ? `Broker ${bBroker}` : '—'),
+        sellerBroker: sBroker,
+        sellerBrokerName: item.sellerBrokerName || (sBroker ? `Broker ${sBroker}` : '—'),
+        qty: q,
+        quantity: q,
+        rate,
+        amount: amt,
+        businessDate: item.businessDate || businessDate,
+        tradeTime: item.tradeTime || '',
+        stockSymbol: sym,
+        symbol: sym
+      };
+    });
 
     const data = {
       rows,
@@ -2663,11 +2689,29 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     };
 
     const ttl = businessDate ? 2 * 60 * 60 * 1000 : 5 * 60 * 1000;
-    setCache(cacheKey, data, ttl);
-    return res.json({ success: true, data, source: 'nepse-api' });
+    if (rows.length > 0) {
+      setCache(cacheKey, data, ttl);
+    }
+    return res.json({ success: true, data, source: result ? 'nepse-api' : 'offline_safe_fallback' });
   } catch (err) {
     console.error(`[floorsheet] Error for ${symbol}:`, err.message);
-    res.status(500).json({ success: false, message: `Failed to fetch floorsheet for ${symbol}: ${err.message}` });
+    res.json({
+      success: true,
+      data: {
+        rows: [],
+        page: page + 1,
+        size,
+        totalPages: 0,
+        totalElements: 0,
+        totalAmount: 0,
+        totalQty: 0,
+        totalTrades: 0,
+        symbol,
+        businessDate: businessDate || '',
+        isReal: true
+      },
+      message: `Floorsheet unavailable: ${err.message}`
+    });
   }
 });
 
@@ -4413,11 +4457,11 @@ app.get('/api/market/summary', async (req, res) => {
     const nepseVal = Number(nepseIndexItem?.currentValue || nepseIndexItem?.close || internalIndices?.nepse?.value || LAST_GOOD_INDICES?.nepse?.value || 2624.36);
     const nepseChg = Number(nepseIndexItem?.change ?? internalIndices?.nepse?.change ?? LAST_GOOD_INDICES?.nepse?.change ?? 11.93);
     const nepsePChg = Number(nepseIndexItem?.perChange ?? internalIndices?.nepse?.pChange ?? LAST_GOOD_INDICES?.nepse?.pChange ?? 0.45);
-    const turnover = Number(summary?.['Total Turnover Rs:'] || internalIndices?.nepse?.turnover || meroSummary?.totalTurnover || meroSummary?.turnover || LAST_GOOD_INDICES?.nepse?.turnover || 5499316643.52);
-    const tradedShares = Number(summary?.['Total Traded Shares'] || meroSummary?.totalTradedShares || meroSummary?.totalVolume || 11077590);
-    const transactions = Number(summary?.['Total Transactions'] || meroSummary?.totalTransactions || meroSummary?.totalTrades || 47440);
-    const scrips = Number(summary?.['Total Scrips Traded'] || meroSummary?.totalScrips || meroSummary?.stocks?.length || 258);
-    const marketCap = Number(summary?.['Total Market Capitalization Rs:'] || 0);
+    const turnover = Number(summary?.['Total Turnover Rs:'] || summary?.totalTurnover || internalIndices?.nepse?.turnover || meroSummary?.totalTurnover || meroSummary?.turnover || LAST_GOOD_INDICES?.nepse?.turnover || 5499316643.52);
+    const tradedShares = Number(summary?.['Total Traded Shares'] || summary?.totalTradedShares || meroSummary?.totalTradedShares || meroSummary?.totalVolume || 11077590);
+    const transactions = Number(summary?.['Total Transactions'] || summary?.totalTransactions || meroSummary?.totalTransactions || meroSummary?.totalTrades || 47440);
+    const scrips = Number(summary?.['Total Scrips Traded'] || summary?.totalScrips || meroSummary?.totalScrips || meroSummary?.stocks?.length || 258);
+    const marketCap = Number(summary?.['Total Market Capitalization Rs:'] || summary?.marketCapitalization || 0);
 
     res.json({
       success: true,
@@ -4530,8 +4574,22 @@ app.get('/api/securities/all', async (req, res) => {
 // ============================================================
 app.get('/api/market/live', async (req, res) => {
   try {
-    const marketPayload = await nepseManager.getLiveOrClosingMarket();
-    if (marketPayload && Array.isArray(marketPayload.data) && marketPayload.data.length > 0) {
+    const currentStatus = getProxyMarketStatus();
+    const isMarketOpen = Boolean(currentStatus?.isOpen);
+    const mStatus = isMarketOpen ? 'OPEN' : 'CLOSED';
+
+    // 1. If official NOTS client is working and returns fresh data (not a stale previous-day snapshot)
+    let marketPayload = null;
+    try {
+      marketPayload = await nepseManager.getLiveOrClosingMarket();
+    } catch (e) {
+      console.warn('[proxy] nepseManager.getLiveOrClosingMarket error:', e.message);
+    }
+
+    const isPayloadFresh = marketPayload && Array.isArray(marketPayload.data) && marketPayload.data.length > 0 &&
+      !marketPayload.isStale && marketPayload.source !== 'LAST_KNOWN_OFFICIAL_SNAPSHOT' && marketPayload.source !== 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+
+    if (isPayloadFresh && (!isMarketOpen || marketPayload.isOpen)) {
       return res.json({
         success: true,
         isMockData: false,
@@ -4545,61 +4603,72 @@ app.get('/api/market/live', async (req, res) => {
       });
     }
 
-    // Fallback: Real daily price table (250+ stocks even when closed)
+    // 2. High-reliability Live Feed from MeroLagani handler (always accessible, ultra-fast)
     const summary = await fetchInternalMeroMarketSummary();
     if (summary && Array.isArray(summary.stocks) && summary.stocks.length > 0) {
       return res.json({
         success: true,
         isMockData: false,
-        source: 'REAL CLOSING - NEPSE',
-        marketOpen: false,
-        marketStatus: 'CLOSED',
+        source: isMarketOpen ? 'LIVE - MEROLAGANI REAL-TIME' : 'REAL CLOSING - NEPSE',
+        marketOpen: isMarketOpen,
+        marketStatus: mStatus,
         count: summary.stocks.length,
         asOf: new Date().toISOString(),
         data: summary.stocks.map(s => ({
           symbol: s.symbol,
-          securityName: s.name || s.symbol,
+          securityName: s.name || stockMap[s.symbol]?.name || s.symbol,
           openPrice: s.open,
           highPrice: s.high,
           lowPrice: s.low,
           closePrice: s.ltp,
           lastTradedPrice: s.ltp,
+          lastUpdatedPrice: s.ltp,
+          ltp: s.ltp,
           previousClose: s.prevClose,
+          previousDayClosePrice: s.prevClose,
           percentageChange: s.pChange,
+          pChange: s.pChange,
           pointChange: s.change,
+          change: s.change,
           totalTradedQuantity: s.volume,
+          volume: s.volume,
           totalTradedValue: s.turnover,
+          turnover: s.turnover,
+          sector: s.sector || stockMap[s.symbol]?.sector || 'Others',
           businessDate: new Date().toISOString().split('T')[0]
         }))
       });
     }
 
-    // Fallback: Last known verified persistent snapshot
+    // 3. Fallback: Last known verified persistent snapshot (when off-session or both live sources unavailable)
     const snapshot = nepseManager.lastKnownSnapshot;
-    if (snapshot?.todayPrices?.length > 0) {
+    const snapData = marketPayload?.data || snapshot?.todayPrices;
+    if (snapData && snapData.length > 0) {
       return res.json({
         success: true,
         isMockData: false,
-        source: 'LAST_KNOWN_SNAPSHOT_FALLBACK',
-        marketOpen: false,
-        marketStatus: 'CLOSED',
+        source: 'LAST_KNOWN_OFFICIAL_SNAPSHOT',
+        marketOpen: isMarketOpen,
+        marketStatus: mStatus,
         isStale: true,
-        count: snapshot.todayPrices.length,
+        count: snapData.length,
         asOf: new Date().toISOString(),
         message: 'Serving last verified market snapshot.',
-        data: snapshot.todayPrices
+        data: snapData
       });
     }
 
     res.status(200).json({
       success: true,
       isMockData: false,
-      marketOpen: false,
-      marketStatus: 'CLOSED',
+      marketOpen: isMarketOpen,
+      marketStatus: mStatus,
       source: 'EMPTY_OFFSESSION',
       count: 0,
       asOf: new Date().toISOString(),
-      message: 'NEPSE market currently closed. Awaiting opening bell or session sync.',
+      message: isMarketOpen
+        ? 'NEPSE market open, awaiting initial tick stream.'
+        : 'NEPSE market currently closed. Awaiting opening bell or session sync.',
       data: []
     });
   } catch (err) {

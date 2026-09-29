@@ -51,14 +51,17 @@ function SummaryCard({ label, value, sub, icon: Icon, color }: any) {
 
 export function DividendHistoryPanel({
   stocks = [],
-  symbol: initialSymbol = '',
+  symbol: propSymbol = '',
+  initialSymbol = '',
   hideSearch = false,
 }: {
   stocks?: any[];
   symbol?: string;
+  initialSymbol?: string;
   hideSearch?: boolean;
 }) {
-  const [symbol, setSymbol]   = useState(initialSymbol);
+  const defaultSym = initialSymbol || propSymbol || (stocks && stocks.length > 0 ? stocks[0]?.symbol : '') || 'NABIL';
+  const [symbol, setSymbol]   = useState(defaultSym);
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState<any>(null);
   const [error, setError]     = useState('');
@@ -80,8 +83,9 @@ export function DividendHistoryPanel({
   }, []);
 
   useEffect(() => {
-    if (initialSymbol) {
-      analyze(initialSymbol);
+    const target = initialSymbol || symbol || defaultSym;
+    if (target) {
+      analyze(target);
     }
   }, [initialSymbol, analyze]);
 
@@ -105,6 +109,7 @@ export function DividendHistoryPanel({
               value={symbol}
               onChange={(s: string) => analyze(s)}
               placeholder="Type company name or symbol…"
+              stocks={stocks}
             />
           </div>
           <button

@@ -44,6 +44,7 @@ import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import ShortTermProfitPlan from './ShortTermProfitPlan';
+import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
 import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate, resolveDynamicStockRSI, resolveDynamicStockEMAs } from '../utils/quantEngine';
 import { selectMasterPrimePick, evaluateGuruMasterSetup, isActionableBuySignal } from '../utils/guruEngine';
@@ -239,7 +240,8 @@ export default function PredictorHub({
 
       const cachedHist = getCachedRealPriceHistory(sym);
       if (Array.isArray(cachedHist) && cachedHist.length >= 15) {
-        const sorted = cachedHist.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+        const isSorted = cachedHist.length <= 1 || (cachedHist[0].date <= cachedHist[cachedHist.length - 1].date);
+        const sorted = isSorted ? cachedHist : cachedHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
         const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
         if (closes.length >= 15) {
           const ema50Arr = calculateEMA(closes, Math.min(50, closes.length));
@@ -944,6 +946,10 @@ export default function PredictorHub({
         }
 
         setPrimePlanStep('Running backtested analysis, finding historical analogs…');
+        // Yield to the browser so React can update the DOM and render the progress step
+        await new Promise(resolve => setTimeout(resolve, 30));
+        if (cancelled) return;
+
         const result = generateEntryExitPlan(
           primeDailyPick,
           candleList,
@@ -1039,22 +1045,11 @@ export default function PredictorHub({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100%', background: 'var(--bg-main)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100%', background: 'var(--bg-main)', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* ── Top Header Navigation Bar ── */}
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 40,
-        background: 'rgba(10, 14, 24, 0.95)',
-        backdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--border)',
-        padding: '12px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="predictor-header-bar">
+        <div className="predictor-header-top">
+          <div className="predictor-header-brand">
             <div style={{
               width: 34,
               height: 34,
@@ -1063,49 +1058,44 @@ export default function PredictorHub({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 16px rgba(59, 130, 246, 0.35)'
+              boxShadow: '0 0 16px rgba(59, 130, 246, 0.35)',
+              flexShrink: 0
             }}>
               <TrendingUp style={{ width: 18, height: 18, color: '#fff' }} />
             </div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 6 }}>
-                NEPSE Predictor
-                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary-light)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="predictor-header-title">
+                <span>NEPSE Predictor</span>
+                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary-light)', border: '1px solid rgba(59, 130, 246, 0.3)', flexShrink: 0 }}>
                   AI QUANT
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              <div className="predictor-header-sub">
                 Index forecasting, composite momentum screener & entry-exit engine
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="predictor-header-actions">
             <button
+              className="predictor-action-btn predictor-btn-guide"
               onClick={() => {
                 setGuideTab(activeTab === 'nepse' ? 'index' : 'buy');
                 setShowGuideModal(true);
               }}
               style={{
-                padding: '6px 12px',
-                borderRadius: 10,
                 background: 'rgba(16, 185, 129, 0.15)',
                 border: '1px solid rgba(16, 185, 129, 0.35)',
-                color: '#34d399',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
+                color: '#34d399'
               }}
               title="Investor Decision Guide: How to Buy, Sell & Hold for Profit"
             >
-              <BookOpen style={{ width: 13, height: 13 }} />
+              <BookOpen style={{ width: 13, height: 13, flexShrink: 0 }} />
               <span>Guide</span>
             </button>
 
             <button
+              className="predictor-action-btn predictor-btn-playbook"
               onClick={() => {
                 try {
                   localStorage.setItem('open_service_id', 'alpha-playbook');
@@ -1113,56 +1103,40 @@ export default function PredictorHub({
                 } catch (_) {}
               }}
               style={{
-                padding: '6px 12px',
-                borderRadius: 10,
                 background: 'rgba(99, 102, 241, 0.15)',
                 border: '1px solid rgba(99, 102, 241, 0.35)',
-                color: '#a5b4fc',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
+                color: '#a5b4fc'
               }}
               title="NEPSE Alpha Playbook: 3-Tier Edge & Execution Guide"
             >
-              <ShieldCheck style={{ width: 13, height: 13 }} />
-              <span>Alpha Playbook</span>
+              <ShieldCheck style={{ width: 13, height: 13, flexShrink: 0 }} />
+              <span className="predictor-btn-full-label">Alpha Playbook</span>
+              <span className="predictor-btn-short-label">Playbook</span>
             </button>
 
             <button
+              className="predictor-action-btn predictor-btn-sync"
               onClick={fetchPredictionData}
               disabled={loading}
+              title="Sync Live NEPSE & AI Quant Prediction Engine"
               style={{
-                padding: '6px 12px',
-                borderRadius: 10,
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid var(--border)',
-                color: 'var(--text-secondary)',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
+                background: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.35)',
+                color: '#60a5fa',
+                opacity: loading ? 0.75 : 1,
+                cursor: loading ? 'wait' : 'pointer'
               }}
             >
-              <RefreshCw style={{ width: 13, height: 13, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
-              <span>Sync</span>
+              <RefreshCw style={{ width: 13, height: 13, flexShrink: 0, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+              <span>{loading ? 'Syncing…' : 'Sync'}</span>
             </button>
           </div>
         </div>
 
         {/* ── Subtabs Controller ── */}
-        <div style={{
-          display: 'flex',
-          gap: 6,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          paddingBottom: 2
-        }}>
+        <div className="predictor-subtabs-wrap">
           {[
+            { id: 'master_100_profit', label: '👑 100% Master Guide', icon: Crown },
             { id: 'nepse', label: 'Index Predictor', icon: Target },
             { id: 'short_term_plan', label: '⚡ 1–2W Profit Plan', icon: Zap, isPro: true },
             { id: 'stocks', label: 'Stock Screener', icon: Flame, badge: scoredStocks.length, isPro: true },
@@ -1198,6 +1172,7 @@ export default function PredictorHub({
                   color: isActive ? '#fff' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   boxShadow: isActive ? '0 0 14px rgba(59, 130, 246, 0.35)' : 'none',
                   transition: 'all 0.15s ease'
                 }}
@@ -1240,6 +1215,17 @@ export default function PredictorHub({
 
       {/* ── Tab Content Container ── */}
       <div style={{ flex: 1, padding: activeTab === 'short_term_plan' ? '8px 4px' : '16px 12px' }} className="predictor-tab-content">
+
+        {/* ══════════════════════════════════════════════════════════
+            VIEW 0: UNIFIED MASTER 100% PROFIT WORKSTATION
+           ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'master_100_profit' && (
+          <Master100ProfitWorkstation
+            stocks={stocks}
+            indices={indices}
+            onSelectStock={onSelectStock}
+          />
+        )}
 
         {/* ══════════════════════════════════════════════════════════
             VIEW 1: NEPSE INDEX DIRECTION PREDICTOR

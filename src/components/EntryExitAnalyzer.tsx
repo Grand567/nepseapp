@@ -62,6 +62,7 @@ import { SignalAgreement } from './analyzer/SignalAgreement';
 import { EvidencePanel } from './analyzer/EvidencePanel';
 import { WhatNextPanel } from './analyzer/WhatNextPanel';
 import { DataQualityPanel } from './analyzer/DataQualityPanel';
+import { SmartMoneyBrokerFlowCard } from './analyzer/SmartMoneyBrokerFlowCard';
 
 interface EntryExitAnalyzerProps {
   stocks?: any[];
@@ -276,6 +277,10 @@ export function EntryExitAnalyzer({
           } else {
             throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');
           }
+        }
+
+        if (brokerRes) {
+          result.brokerAnalysis = brokerRes;
         }
 
         setPlan(result);
@@ -779,6 +784,14 @@ export function EntryExitAnalyzer({
                 confirmations={plan.confirmations}
                 t2Risk={plan.t2Risk}
                 quantMetrics={plan.quantMetrics}
+              />
+
+              <SmartMoneyBrokerFlowCard
+                symbol={plan.symbol || symbol}
+                brokerAnalysis={plan.brokerAnalysis || stockInfo?.brokerAnalysis}
+                quantMetrics={plan.quantMetrics}
+                pChange={pChange}
+                ltp={livePrice}
               />
 
               <FestivalSeasonalityCard

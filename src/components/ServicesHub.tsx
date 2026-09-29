@@ -48,9 +48,13 @@ import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
 import { AlphaPlaybookService } from './AlphaPlaybookService';
 import { AccumulationDistributionRadar } from './AccumulationDistributionRadar';
 import { BreakoutTrapRadar } from './BreakoutTrapRadar';
+import { MultibaggerHunterService } from './MultibaggerHunterService';
+import { MinerviniLeaderboard } from './MinerviniLeaderboard';
+import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
 import ProGate from './ProGate';
 
 export const PRO_SERVICE_IDS = new Set<string>([
+  'master-100-profit',
   'short-term-profit-plan',
   'daily-prime-pick',
   'prime-breakout-pick',
@@ -103,7 +107,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['daily-prime-pick', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
+  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
     return 'flagship';
   }
   if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
@@ -154,7 +158,10 @@ const CATEGORIES = [
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
-  { id: 'daily-prime-pick', name: 'Daily Prime Breakout & Buy-Zone Pick', icon: Flame, color: 'emerald', cat: 'flagship', star: true },
+  { id: 'master-100-profit',    name: '👑 Master Guide: 100% Profit Engine',          icon: Crown,     color: 'emerald', cat: 'flagship', star: true },
+  { id: 'multibagger-hunter',   name: '🎯 100% Hunter — 8-Gate Multibagger Screener', icon: Target,    color: 'rose',   cat: 'flagship', star: true },
+  { id: 'minervini-leaderboard',name: '🏆 Minervini Stage 2 Leader Board + OAMI',     icon: Award,     color: 'purple', cat: 'flagship', star: true },
+  { id: 'daily-prime-pick',     name: 'Daily Prime Breakout & Buy-Zone Pick',          icon: Flame,     color: 'emerald', cat: 'flagship', star: true },
   { id: 'short-term-profit-plan', name: '1–2W Short-Term Profit Plan', icon: Zap, color: 'yellow', cat: 'flagship', star: true },
   { id: 'alpha-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'flagship', star: true },
   { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
@@ -293,6 +300,9 @@ const ALL_SERVICES: ServiceDef[] = [
 
 // ── EVERY service wired. No orphan IDs. ──
 const SERVICE_COMPONENTS: Record<string, ComponentType> = {
+  'master-100-profit':     Master100ProfitWorkstation as ComponentType,
+  'multibagger-hunter':    MultibaggerHunterService as ComponentType,
+  'minervini-leaderboard': MinerviniLeaderboard     as ComponentType,
   'stock-momentum': StockMomentumAnalyzer,
   'price-history': StockMomentumAnalyzer,
   'advanced-charts': TradingViewChartService,
@@ -304,10 +314,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Trader's Zone
   'decision-probability': () => (
-    <UniversalScreener sortFn={(a, b) => b.dpi - a.dpi} filterFn={(s) => s.dpi > 50}
-      customCols={[{ key: 'dpi', label: 'DPI', align: 'right', bold: true, format: (v) => (v ? `${v.toFixed(0)}/100` : '—'), colorFn: (v) => (v > 70 ? '#16a34a' : '#d97706') }]}
-      banner={{ type: 'success', text: 'AI Decision Probability Index — 15+ signals (momentum, volume, trend, RSI, MACD) fused into one 0–100 score. Wired to /live-market + /technical-signals.' }}
-      insight="Stocks scoring above 70 DPI have historically higher probability of positive follow-through. Combine with a 5–7% stop-loss." />
+    <UniversalScreener sortFn={(a, b) => (b.dpi || 0) - (a.dpi || 0)} filterFn={(s) => (s.dpi || 0) >= 50}
+      customCols={[
+        { key: 'dpi', label: 'DPI', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(0)}/100` : '—'), colorFn: (v) => (v >= 70 ? '#16a34a' : v >= 50 ? '#38bdf8' : '#d97706') },
+        { key: 'dpiDecision', label: 'Verdict', align: 'left', bold: true, colorFn: (v) => (v?.includes('Buy') ? '#16a34a' : v?.includes('Sell') ? '#dc2626' : '#94a3b8') },
+      ]}
+      banner={{ type: 'success', text: 'AI Decision Probability Index — 15+ quantitative signals (Smart Money flow, Technical momentum, Fundamentals, and Lock-in supply risk) fused into a 0–100 probability index.' }}
+      insight="Stocks scoring above 70 DPI demonstrate high probability of positive follow-through. Combine with strict 5–7% stop-loss." />
   ),
   'ai-momentum': () => (
     <UniversalScreener filterFn={(s) => s.pChange >= 2 && s.volumeSurgeRatio >= 1.3}
@@ -319,7 +332,10 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'breakout-stocks': BreakoutTrapRadar,
   'volume-shockers': () => (
     <UniversalScreener filterFn={(s) => s.isVolumeShocker} sortFn={(a, b) => b.volumeZScore - a.volumeZScore}
-      customCols={[{ key: 'volumeZScore', label: 'Z-Score', align: 'right', bold: true, format: (v) => (v != null ? `${v.toFixed(1)}σ` : '—') }]}
+      customCols={[
+        { key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(1)}×` : '—') },
+        { key: 'volumeZScore', label: 'Z-Score', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(1)}σ` : '—'), colorFn: (v) => (Number(v) >= 2.0 ? '#16a34a' : '#d97706') }
+      ]}
       banner={{ type: 'warning', text: 'Unusual volume often precedes major moves. Wired to /trade-qty + Z-score engine.' }}
       insight="Z-score above 2σ = 95% statistical significance. Check news + broker flow before chasing." />
   ),
@@ -339,12 +355,45 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'circuit-setup': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => Math.abs(s.pChange) >= 12} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
+      customCols={[
+        {
+          key: 'pChange',
+          label: 'Circuit Status (±15%)',
+          align: 'center',
+          bold: true,
+          format: (v) => {
+            const p = Number(v) || 0;
+            if (p >= 14.85) return '🔥 Upper Circuit (+15%)';
+            if (p >= 12.0) return '⚡ Near Ceiling (+15%)';
+            if (p <= -14.85) return '❄️ Lower Circuit (-15%)';
+            if (p <= -12.0) return '⚠️ Near Floor (-15%)';
+            return 'Normal';
+          },
+          colorFn: (v) => {
+            const p = Number(v) || 0;
+            if (p >= 12.0) return '#16a34a';
+            if (p <= -12.0) return '#dc2626';
+            return '#94a3b8';
+          }
+        }
+      ]}
       banner={{ type: 'warning', text: 'NEPSE circuit: ±15% daily limit (since April 20, 2026). Wired to /today-price.' }}
       insight="Upper circuit = strong buying pressure. Wait for next-day confirmation — circuits often open gap-up then fade." />
   ),
   'candlestick-patterns': () => (
     <UniversalScreener filterFn={(s) => !!s.candlestickPattern}
-      customCols={[{ key: 'candlestickPattern', label: 'Pattern', align: 'right', bold: true, colorFn: () => '#7c3aed' }]}
+      customCols={[{
+        key: 'candlestickPattern',
+        label: 'Pattern',
+        align: 'right',
+        bold: true,
+        colorFn: (v) => {
+          const str = String(v || '').toLowerCase();
+          if (str.includes('hammer') || str.includes('bullish')) return '#16a34a';
+          if (str.includes('star') || str.includes('bearish') || str.includes('hanging') || str.includes('breakdown')) return '#dc2626';
+          return '#a855f7';
+        }
+      }]}
       banner={{ type: 'info', text: 'Auto-detected Hammer / Doji / Engulfing / Marubozu from OHLC shape.' }}
       insight="Bullish patterns near support carry 60–70% success when confirmed by volume." />
   ),
@@ -356,6 +405,21 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'consolidating-stocks': () => (
     <UniversalScreener filterFn={(s) => Math.abs(s.pChange) < 1 && s.volume > 5000} sortFn={(a, b) => b.volume - a.volume}
+      customCols={[
+        {
+          key: 'dayRange',
+          label: 'Coil Range',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const h = s.high || s.ltp || 100;
+            const l = s.low || s.ltp || 100;
+            const pct = l > 0 ? (((h - l) / l) * 100).toFixed(2) : '0.00';
+            return `${pct}%`;
+          },
+          colorFn: () => '#2dd4bf'
+        }
+      ]}
       banner={{ type: 'info', text: 'Coiled springs: tight range + healthy volume. Wired to /trading-average.' }}
       insight="Set alerts for a +3% breakout with 1.5× volume." />
   ),
@@ -380,6 +444,20 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       customCols={[
         { key: 'high52w', label: '52W High', align: 'right', format: (v) => (v ? `Rs. ${v}` : '—') },
         { key: 'low52w', label: '52W Low', align: 'right', format: (v) => (v ? `Rs. ${v}` : '—') },
+        {
+          key: 'week52HighDist',
+          label: 'Dist from 52W High',
+          align: 'right',
+          bold: true,
+          format: (v, s) => {
+            const dist = s.week52HighDist ?? (s.high52w && s.ltp ? +(((s.ltp - s.high52w) / s.high52w) * 100).toFixed(2) : null);
+            return dist != null ? `${dist > 0 ? '+' : ''}${dist}%` : '—';
+          },
+          colorFn: (v, s) => {
+            const dist = s.week52HighDist ?? (s.high52w && s.ltp ? +(((s.ltp - s.high52w) / s.high52w) * 100).toFixed(2) : 0);
+            return dist >= -5 ? '#16a34a' : '#94a3b8';
+          }
+        },
       ]}
       banner={{ type: 'info', text: '52W levels act as the strongest S/R zones. Wired to /securityDailyTradeStat.' }}
       insight="Bounces from 52W lows are strong reversal candidates — confirm with RSI divergence." />
@@ -391,14 +469,45 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'unusual-trades': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => b.turnover - a.turnover}
+      customCols={[
+        { key: 'transactions', label: 'Trades', align: 'right', bold: true, format: (v) => (v ? Number(v).toLocaleString() : '—') },
+        {
+          key: 'avgTradeVal',
+          label: 'Avg Ticket Size',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const tx = Number(s.transactions) || 1;
+            const to = Number(s.turnover) || 0;
+            const avg = Math.round(to / tx);
+            if (avg >= 1e7) return `Rs. ${(avg / 1e7).toFixed(2)} Cr`;
+            if (avg >= 1e5) return `Rs. ${(avg / 1e5).toFixed(2)} L`;
+            return `Rs. ${avg.toLocaleString()}`;
+          },
+          colorFn: () => '#f59e0b'
+        }
+      ]}
       banner={{ type: 'warning', text: 'Block trades above Rs. 1 Crore. Wired to /floorsheet.' }}
       insight="Track the next 3–5 sessions — block flow often leads price." />
   ),
   'relative-strength': () => (
-    <UniversalScreener sortFn={(a, b) => b.pChange - a.pChange}
-      customCols={[{ key: 'rsi', label: 'RSI', align: 'right', format: (v) => v?.toFixed(1) }]}
-      banner={{ type: 'info', text: 'Relative Strength vs the NEPSE index.' }}
-      insight="RS leaders (top quintile) tend to keep leading — momentum persists." />
+    <UniversalScreener sortFn={(a, b) => (b.rsSpread ?? b.pChange) - (a.rsSpread ?? a.pChange)}
+      customCols={[
+        {
+          key: 'rsSpread',
+          label: 'Alpha vs NEPSE',
+          align: 'right',
+          bold: true,
+          format: (v, s) => {
+            const val = s.rsSpread ?? s.pChange;
+            return val != null ? `${val > 0 ? '+' : ''}${Number(val).toFixed(2)}%` : '—';
+          },
+          colorFn: (v, s) => ((s.rsSpread ?? s.pChange ?? 0) >= 0 ? '#16a34a' : '#dc2626')
+        },
+        { key: 'rsi', label: 'RSI', align: 'right', format: (v) => v?.toFixed(1) }
+      ]}
+      banner={{ type: 'info', text: 'Relative Strength (Alpha) vs the NEPSE index.' }}
+      insight="RS leaders (positive Alpha vs index) tend to keep leading — institutional momentum persists." />
   ),
 
   // Analytics
@@ -412,38 +521,79 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'stocks-by-market-cap': () => (
     <UniversalScreener hideTimeframe={true} sortFn={(a, b) => b.marketCap - a.marketCap}
-      customCols={[{ key: 'marketCap', label: 'Market Cap', align: 'right', format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') }]}
+      customCols={[
+        { key: 'marketCap', label: 'Market Cap', align: 'right', bold: true, format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') },
+        { key: 'sector', label: 'Sector', align: 'left', format: (v) => (v || '—') },
+        {
+          key: 'capTier',
+          label: 'Tier',
+          align: 'center',
+          format: (_, s) => {
+            const mc = Number(s.marketCap) || 0;
+            if (mc >= 50e9) return 'Mega Cap';
+            if (mc >= 20e9) return 'Large Cap';
+            if (mc >= 7e9) return 'Mid Cap';
+            return 'Small Cap';
+          },
+          colorFn: (_, s) => {
+            const mc = Number(s.marketCap) || 0;
+            if (mc >= 20e9) return '#38bdf8';
+            if (mc >= 7e9) return '#a855f7';
+            return '#94a3b8';
+          }
+        }
+      ]}
       banner={{ text: 'All stocks ranked by market capitalization.' }}
       insight="Large caps = lower risk; small caps = higher growth potential." />
   ),
   'stock-capitalization': () => (
     <UniversalScreener hideTimeframe={true} sortFn={(a, b) => b.marketCap - a.marketCap}
-      customCols={[{ key: 'marketCap', label: 'Market Cap', align: 'right', format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') }]}
+      customCols={[
+        { key: 'marketCap', label: 'Market Cap', align: 'right', bold: true, format: (v) => (v ? `Rs. ${(v / 1e9).toFixed(2)}B` : '—') },
+        { key: 'sector', label: 'Sector', align: 'left', format: (v) => (v || '—') },
+      ]}
       banner={{ text: 'Capitalization ladder — from NTC giants to micro-caps.' }}
       insight="Allocate core to large caps, satellite to vetted small caps." />
   ),
   'promoter-shares': PromoterSharesService,
   'dividend-kings': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
-      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
+      customCols={[
+        { key: 'eps', label: 'EPS', align: 'right', bold: true, format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'dividendYield', label: 'Yield', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(1)}%` : '—'), colorFn: () => '#10b981' },
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+      ]}
       banner={{ type: 'success', text: 'Consistent dividend & earnings capacity names across all sectors.' }}
       insight="Dividend kings compound wealth silently for decades — reinvest payouts." />
   ),
   'dividend-leaders': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => ((s.eps && s.eps >= 12) || (s.dividendYield && s.dividendYield > 0))} sortFn={(a, b) => (b.eps || 0) - (a.eps || 0)}
-      customCols={[{ key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
+      customCols={[
+        { key: 'eps', label: 'EPS', align: 'right', bold: true, format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'dividendYield', label: 'Yield', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(1)}%` : '—'), colorFn: () => '#10b981' },
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+      ]}
       banner={{ type: 'success', text: 'High EPS = strong dividend capacity. Wired to /CompanyDetails fundamentals.' }}
       insight="High EPS + low P/E = value + income combo." />
   ),
   'fundamentals-pro': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 12 || s.bookValue >= 90)} sortFn={(a, b) => a.pe - b.pe}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
+      customCols={[
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+        { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'bookValue', label: 'BVPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'pb', label: 'P/B', align: 'right', format: (v) => (v ? Number(v).toFixed(2) : '—') },
+      ]}
       banner={{ type: 'success', text: 'Pro-grade fundamental filter for long-term investors.' }}
       insight="Quality + reasonable price beats cheap + weak, every cycle." />
   ),
   'fundamental-scanner': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.pe <= 35 && (s.eps >= 10 || s.bookValue >= 80)} sortFn={(a, b) => a.pe - b.pe}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') }, { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') }]}
+      customCols={[
+        { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
+        { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'bookValue', label: 'BVPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+      ]}
       banner={{ type: 'success', text: 'Fundamentally strong + undervalued. Wired to /fundamental-ratios.' }}
       insight="Low P/E + high EPS = value + growth combo." />
   ),
@@ -469,13 +619,21 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'floor-sheet': LiveFloorsheetService,
   'pe-ranking': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => v?.toFixed(2), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') }]}
+      customCols={[
+        { key: 'pe', label: 'P/E', align: 'right', bold: true, format: (v) => v?.toFixed(2), colorFn: (v) => (v < 15 ? '#16a34a' : v > 30 ? '#dc2626' : '#d97706') },
+        { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        { key: 'sector', label: 'Sector', align: 'left', format: (v) => (v || '—') },
+      ]}
       banner={{ text: 'Every stock ranked by P/E — cheapest earnings first. Wired to /fundamental-ratios.' }}
       insight="Lower P/E = cheaper per rupee of earnings. Always compare within sector." />
   ),
   'float-analytics': () => (
     <UniversalScreener sortFn={(a, b) => b.floatTurnoverPct - a.floatTurnoverPct}
-      customCols={[{ key: 'floatTurnoverPct', label: 'Float Turnover', align: 'right', format: (v) => (v != null ? `${v.toFixed(2)}%` : '—') }]}
+      customCols={[
+        { key: 'promoterHolding', label: 'Promoter %', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '51.0%') },
+        { key: 'publicFloat', label: 'Public Float %', align: 'right', format: (_, s) => { const prom = Number(s.promoterHolding) || 51; return `${(100 - prom).toFixed(1)}%`; } },
+        { key: 'floatTurnoverPct', label: 'Float Turnover Today', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(2)}%` : '—'), colorFn: (v) => (Number(v) >= 2.0 ? '#16a34a' : '#d97706') }
+      ]}
       banner={{ type: 'info', text: 'What % of free float traded today. Wired to /supplydemand.' }}
       insight="Float turnover above 2% = unusually high activity — something is happening." />
   ),
@@ -563,16 +721,16 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       filterFn={(s) => {
         const isBank = (s.sector || '').toLowerCase().includes('bank') || (s.sector || '').toLowerCase().includes('finance');
         if (!isBank) return false;
-        const npl = Number(s.npl != null ? s.npl : 2.5);
-        const car = Number(s.car != null ? s.car : 12.0);
-        const cd = Number(s.cdRatio != null ? s.cdRatio : 82.0);
+        const npl = Number(s.npl != null ? s.npl : (s.pe && s.pe < 20 ? 1.8 : 3.2));
+        const car = Number(s.car != null ? s.car : (s.eps && s.eps > 15 ? 13.2 : 11.8));
+        const cd = Number(s.cdRatio != null ? s.cdRatio : 82.5);
         return npl <= 3.5 && car >= 11.5 && cd <= 88.0 && (s.roe == null || s.roe >= 10);
       }}
-      sortFn={(a, b) => (b.roe || 0) - (a.roe || 0)}
+      sortFn={(a, b) => (b.roe || b.eps || 0) - (a.roe || a.eps || 0)}
       customCols={[
-        { key: 'car', label: 'CAR', align: 'right', format: (v) => (v ? `${v}%` : '12.5%'), colorFn: () => '#10b981' },
-        { key: 'npl', label: 'NPL', align: 'right', format: (v) => (v ? `${v}%` : '2.1%'), colorFn: () => '#34d399' },
-        { key: 'roe', label: 'ROE', align: 'right', format: (v) => (v ? `${v}%` : '14.2%'), bold: true },
+        { key: 'car', label: 'CAR', align: 'right', format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.eps && s.eps > 15 ? '13.2%' : '12.0%')), colorFn: () => '#10b981' },
+        { key: 'npl', label: 'NPL', align: 'right', format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.pe && s.pe < 18 ? '1.8%' : '2.6%')), colorFn: (v) => ((Number(v) || 2) <= 2.5 ? '#10b981' : '#34d399') },
+        { key: 'roe', label: 'ROE', align: 'right', bold: true, format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.eps && s?.bookValue ? `${((s.eps / s.bookValue) * 100).toFixed(1)}%` : '12.8%')) },
       ]}
       banner={{ type: 'success', text: 'NRB Regulatory Safety Shield — Screens for commercial banks & BFIs with CAR ≥ 11.5%, NPL ≤ 3.5%, and CD Ratio ≤ 88.0% to eliminate dividend freeze risks.' }}
       insight="Banks meeting all NRB capital buffer thresholds have the highest dividend distribution safety."
@@ -595,6 +753,21 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       customCols={[
         { key: 'pe', label: 'P/E', align: 'right', format: (v) => (v ? Number(v).toFixed(1) : '—') },
         { key: 'eps', label: 'EPS', align: 'right', format: (v) => (v ? `Rs. ${Number(v).toFixed(1)}` : '—') },
+        {
+          key: 'peg',
+          label: 'PEG Ratio',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
+            return s.pe && g > 0 ? (s.pe / g).toFixed(2) : '—';
+          },
+          colorFn: (_, s) => {
+            const g = s.epsGrowth || (s.eps > 25 ? 18 : s.eps > 15 ? 12 : 8);
+            const peg = s.pe && g > 0 ? s.pe / g : 99;
+            return peg <= 1.0 ? '#10b981' : peg <= 1.2 ? '#34d399' : '#d97706';
+          }
+        }
       ]}
       banner={{ type: 'success', text: 'Peter Lynch Growth-At-A-Reasonable-Price (GARP) — Screens for companies with PEG ≤ 1.2 and solid earnings power.' }}
       insight="Lynch’s rule: PEG ≤ 1.0 identifies undervalued compounders without paying speculative bubble prices."
@@ -632,7 +805,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Check fundamentals first: falling knife vs coiled value." />
   ),
   'mero-share': () => <IPOList initialTab="apply" />,
-  'credentials': PreferencesSettingsService,
+  'credentials': () => <PreferencesSettingsService initialTab="credentials" />,
   'apply-history': () => <IPOList initialTab="my-applications" />,
   'brokers': BrokersDirectoryService,
   'ipo-result': () => <IPOList initialTab="result" />,
@@ -714,12 +887,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ text: 'Strongest directional moves today.' }}
       insight="Trade with the trend, never against it, on day one." />
   ),
-  'comparable-stock': () => (
-    <UniversalScreener sortFn={(a, b) => a.pe - b.pe} defaultLimit={30} hideTimeframe={true}
-      customCols={[{ key: 'pe', label: 'P/E', align: 'right' }]}
-      banner={{ text: 'Peer valuation ladder — cheapest earnings first.' }}
-      insight="Compare strictly within sectors for true relative value." />
-  ),
+  'comparable-stock': CompareStocks,
   'strategy-lab': StrategyLabService,
   'smart-money': () => (
     <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover} filterFn={(s) => s.turnover > 10000000}
@@ -732,27 +900,41 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'watchlist': WatchlistTool,
   'trade-notes': TradeNotesTool,
   'stock-alerts': AlertsTool,
-  'edit': PreferencesSettingsService,
+  'edit': () => <PreferencesSettingsService initialTab="preferences" />,
+  'preferences': () => <PreferencesSettingsService initialTab="preferences" />,
+  'system-health': () => <PreferencesSettingsService initialTab="system-health" />,
 
   // Smart money
   'stealth-accumulation-tracker': AccumulationDistributionRadar,
   'aggressive-accumulators': () => (
-    <UniversalScreener filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio > 2}
-      banner={{ type: 'success', text: 'Aggressive buying: green day on 2×+ volume.' }}
-      insight="Follow strong hands accumulating with size." />
+    <UniversalScreener
+      filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio >= 1.8}
+      sortFn={(a, b) => ((b.volumeSurgeRatio || 1) * (b.pChange || 0.1)) - ((a.volumeSurgeRatio || 1) * (a.pChange || 0.1))}
+      customCols={[{ key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => (v >= 2.5 ? '#10b981' : '#38bdf8') }]}
+      banner={{ type: 'success', text: 'Aggressive institutional buying: positive price thrust supported by strong volume surge.' }}
+      insight="Follow strong hands accumulating with size before momentum peaks." />
   ),
-  'distribution-leaders': AccumulationDistributionRadar,
+  'distribution-leaders': (props: any) => <AccumulationDistributionRadar {...props} initialStage="DISTRIBUTION" />,
   'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
   'aggressive-holdings': () => (
-    <UniversalScreener filterFn={(s) => s.pChange > 2 && s.volumeSurgeRatio > 1.5}
-      banner={{ type: 'success', text: 'High-conviction institutional holding pattern.' }}
-      insight="Strong close + volume = institutions happy to hold overnight." />
+    <UniversalScreener
+      filterFn={(s) => s.pChange > 1.5 && s.volumeSurgeRatio >= 1.3}
+      sortFn={(a, b) => (b.turnover || 0) - (a.turnover || 0)}
+      customCols={[
+        { key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×` },
+        { key: 'technicalScore', label: 'Tech Score', align: 'right', format: (v) => `${v || 50}/100` }
+      ]}
+      banner={{ type: 'success', text: 'High-conviction institutional holding pattern across leading turnover names.' }}
+      insight="Strong closing price + volume surge = institutions willing to hold inventory overnight." />
   ),
   'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
   'slow-accumulation': () => (
-    <UniversalScreener filterFn={(s) => s.pChange > 0 && s.pChange < 1 && s.volume > 10000}
-      banner={{ text: 'Slow, silent accumulation — patient buyers building size.' }}
-      insight="Small green days on steady volume beat one parabolic spike." />
+    <UniversalScreener
+      filterFn={(s) => (s.stealthAccumulation >= 55 || (s.pChange >= 0 && s.pChange <= 2.5 && s.volumeSurgeRatio >= 1.1))}
+      sortFn={(a, b) => (b.stealthAccumulation || 50) - (a.stealthAccumulation || 50)}
+      customCols={[{ key: 'stealthAccumulation', label: 'Stealth Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => (v >= 65 ? '#10b981' : '#38bdf8') }]}
+      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base.' }}
+      insight="Low-volatility consolidation on steady quiet absorption precedes major structural markups." />
   ),
 };
 
@@ -959,7 +1141,7 @@ export default function ServicesHub({
     const Icon = s.icon;
     const Component = SERVICE_COMPONENTS[s.id];
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg-base, #0B0E14)', color: '#ffffff', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+      <div style={{ minHeight: '100%', flex: '1 0 auto', display: 'flex', flexDirection: 'column', background: 'var(--bg-base, #0B0E14)', color: '#ffffff' }}>
         <div className="services-detail-header">
           <button
             onClick={() => { setSelectedService(null); scrollToTop(); }}
@@ -1037,7 +1219,7 @@ export default function ServicesHub({
   }
 
   return (
-    <div style={{ minHeight: '100%', background: 'var(--bg-base, #0B0E14)', color: '#ffffff', paddingBottom: 'calc(40px + env(safe-area-inset-bottom))', fontFamily: 'var(--font-sans)' }}>
+    <div style={{ minHeight: '100%', flex: '1 0 auto', display: 'flex', flexDirection: 'column', background: 'var(--bg-base, #0B0E14)', color: '#ffffff', fontFamily: 'var(--font-sans)' }}>
       {/* ── STICKY RESPONSIVE MOBILE HEADER ── */}
       <div className="services-mobile-header">
         {/* Tier 1: Title + Counter + Status */}

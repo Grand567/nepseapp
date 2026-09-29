@@ -5,7 +5,7 @@ import {
   Calendar, Layers, Activity
 } from 'lucide-react';
 import { loadNepseData, fetchPriceHistory } from '../utils/liveData';
-import { runBacktest } from '../utils/backtest';
+import { runBacktest, runOHLCVBacktest } from '../utils/backtest';
 import { calculateRSI, calculateEMA } from '../utils/indicators';
 import { resolveDynamicStockRSI, resolveDynamicStockEMAs, resolveDynamicStockCandles } from '../utils/quantEngine';
 import { StatCard, InfoBanner, Insight, Spinner, StockSearchSelect } from './ui';
@@ -167,6 +167,9 @@ export function StrategyLabService() {
   const [candles, setCandles] = useState<any[]>([]);
   const [backtestLoading, setBacktestLoading] = useState(false);
   const [backtestResult, setBacktestResult] = useState<any>(null);
+  const [ohlcvResult, setOhlcvResult] = useState<any>(null);
+
+  const displayResult = (ohlcvResult && !ohlcvResult.error) ? ohlcvResult : backtestResult;
 
   useEffect(() => {
     loadNepseData().then(({ stocks }) => {
@@ -218,13 +221,23 @@ export function StrategyLabService() {
         const stratFn = STRATEGY_FUNCS[stratId] || STRATEGY_FUNCS.rsi_reversal;
         const res = runBacktest(prices, stratFn, 100000);
         setBacktestResult(res);
+
+        const ohlcvRes = Array.isArray(hist) && hist.length >= 40
+          ? runOHLCVBacktest(hist, stratFn, {
+              initialCapital: 100000, stopLossPct: 5, takeProfitPct: 15,
+              slippagePct: 0.15, brokeragePct: 0.36, riskPerTradePct: 2
+            })
+          : null;
+        setOhlcvResult(ohlcvRes);
       } else {
         setCandles([]);
         setBacktestResult(null);
+        setOhlcvResult(null);
       }
     } catch (_) {
       setCandles([]);
       setBacktestResult(null);
+      setOhlcvResult(null);
     }
     setBacktestLoading(false);
   }, [stocks]);
@@ -235,25 +248,25 @@ export function StrategyLabService() {
 
   // Compute effective telemetry metrics: real empirical backtest if trades exist, else calibrated benchmark
   const effectiveWinRate = useMemo(() => {
-    if (backtestResult && backtestResult.totalTrades > 0) {
-      return backtestResult.winRate;
+    if (displayResult && displayResult.totalTrades > 0) {
+      return displayResult.winRate;
     }
     return activeStrategy.benchmarkWinRate;
-  }, [backtestResult, activeStrategy]);
+  }, [displayResult, activeStrategy]);
 
   const effectiveDrawdown = useMemo(() => {
-    if (backtestResult && backtestResult.maxDrawdownPct != null) {
-      return backtestResult.maxDrawdownPct;
+    if (displayResult && displayResult.maxDrawdownPct != null) {
+      return displayResult.maxDrawdownPct;
     }
     return activeStrategy.benchmarkMaxDrawdown;
-  }, [backtestResult, activeStrategy]);
+  }, [displayResult, activeStrategy]);
 
   const effectiveReturn = useMemo(() => {
-    if (backtestResult && backtestResult.returnPct != null) {
-      return backtestResult.returnPct;
+    if (displayResult && displayResult.returnPct != null) {
+      return displayResult.returnPct;
     }
     return activeStrategy.benchmarkProfitFactor * 10;
-  }, [backtestResult, activeStrategy]);
+  }, [displayResult, activeStrategy]);
 
   // Adjusted expectancy formula: (WinRate * Target) - (LossRate * StopLoss)
   const expectancy = useMemo(() => {
@@ -348,16 +361,25 @@ export function StrategyLabService() {
       ) : (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <StatCard
-            label="Historical Win Rate"
+            label={
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span>Historical Win Rate</span>
+                {displayResult?.dataQuality === 'ohlcv' ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">🟢 OHLCV Backtest (Realistic)</span>
+                ) : displayResult?.dataQuality === 'close_only' ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800">🟡 Close-Price Only</span>
+                ) : null}
+              </div>
+            }
             value={`${effectiveWinRate}%`}
-            subtitle={backtestResult?.totalTrades ? `${backtestResult.winningTrades}W / ${backtestResult.losingTrades}L (${backtestResult.totalTrades} Trades)` : 'Calibrated Benchmark'}
+            subtitle={displayResult?.totalTrades ? `${displayResult.winningTrades}W / ${displayResult.losingTrades}L (${displayResult.totalTrades} Trades)` : 'Calibrated Benchmark'}
             big
             color="#10b981"
           />
           <StatCard
             label="Strategy Return"
             value={`${effectiveReturn >= 0 ? '+' : ''}${effectiveReturn.toFixed(1)}%`}
-            subtitle={backtestResult ? `Starting Rs. 100K → Rs. ${(backtestResult.finalCapital / 1e3).toFixed(1)}K` : 'Profit Factor'}
+            subtitle={displayResult ? `Starting Rs. 100K → Rs. ${(displayResult.finalCapital / 1e3).toFixed(1)}K` : 'Profit Factor'}
             color={effectiveReturn >= 0 ? '#3b82f6' : '#f43f5e'}
           />
           <StatCard
@@ -375,16 +397,26 @@ export function StrategyLabService() {
         </div>
       )}
 
+      {displayResult?.dataQuality === 'ohlcv' && (
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] font-mono text-slate-400 mt-2 bg-slate-900/50 p-2.5 rounded-xl border border-slate-800">
+          <span>Avg Win: <strong className="text-emerald-400">+{displayResult.avgWinPct}%</strong></span>
+          <span>Avg Loss: <strong className="text-rose-400">{displayResult.avgLossPct}%</strong></span>
+          <span>Profit Factor: <strong className="text-white">{displayResult.profitFactor}×</strong></span>
+          <span>Total Brokerage: <strong className="text-white">Rs. {displayResult.totalBrokerage.toLocaleString()}</strong></span>
+          <span>Expectancy: <strong className="text-white">Rs. {displayResult.expectancy.toLocaleString()} per trade</strong></span>
+        </div>
+      )}
+
       {/* Simulated Trade Execution Log on Target Stock */}
-      {backtestResult && backtestResult.trades && backtestResult.trades.length > 0 && (
+      {displayResult && displayResult.trades && displayResult.trades.length > 0 && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
               <Activity size={14} className="text-blue-400" />
-              Executed Trade Signals on {targetSymbol} ({backtestResult.trades.length} Actions)
+              Executed Trade Signals on {targetSymbol} ({displayResult.trades.length} Actions)
             </h4>
             <span className="text-[11px] text-slate-400 font-mono">
-              Net Gain: <strong className={backtestResult.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{backtestResult.returnPct >= 0 ? '+' : ''}{backtestResult.returnPct}%</strong>
+              Net Gain: <strong className={displayResult.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{displayResult.returnPct >= 0 ? '+' : ''}{displayResult.returnPct}%</strong>
             </span>
           </div>
 
@@ -395,14 +427,14 @@ export function StrategyLabService() {
               <span className="text-right">Shares</span>
               <span className="text-right">Session #</span>
             </div>
-            {backtestResult.trades.slice(-12).map((t: any, idx: number) => (
+            {displayResult.trades.slice(-12).map((t: any, idx: number) => (
               <div key={idx} className="grid grid-cols-4 py-1 border-b border-slate-900/60 text-slate-300">
                 <span className={t.type === 'BUY' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
                   {t.type} {t.note ? `(${t.note})` : ''}
                 </span>
-                <span className="text-right font-bold text-white">Rs. {(Number(t.price) || 0).toFixed(1)}</span>
+                <span className="text-right font-bold text-white">Rs. {(Number(t.price || t.entryPrice || t.exitPrice) || 0).toFixed(1)}</span>
                 <span className="text-right text-slate-400">{t.shares}</span>
-                <span className="text-right text-slate-500">Bar #{t.index}</span>
+                <span className="text-right text-slate-500">Bar #{t.index || t.holdingDays || 0}</span>
               </div>
             ))}
           </div>

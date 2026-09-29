@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Combines classical mathematical models (Marc Chaikin ADL & CMF, Granville OBV,
  * Tom Williams Volume Spread Analysis, Richard Wyckoff Schematics) with NEPSE's
- * unique market microstructure (T+2 settlement, 10% daily circuit bands, absence
+ * unique market microstructure (T+2 settlement, 15% daily circuit bands, absence
  * of short selling, and transparent public floor sheet broker-level tracking).
  */
 

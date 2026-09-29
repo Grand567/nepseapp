@@ -489,7 +489,7 @@ function AppInner() {
 
       if (!isMounted) return;
 
-      // Adaptive intervals: 12s during active market trading (Sun-Thu 11am-3pm NPT), 120s when closed
+      // Adaptive intervals: 12s during active market trading (Mon-Fri 11am-3pm NPT, Sun & Sat closed), 120s when closed
       const baseInterval = isMarketOpen ? 12000 : (isPreOpen ? 30000 : 120000);
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
@@ -1249,93 +1249,84 @@ function AppInner() {
       )}
 
       {/* ── Content ── */}
-      <main
-        style={{
-          flex: 1,
-          height: '100%',
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehaviorY: 'contain',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          paddingBottom: 'calc(85px + env(safe-area-inset-bottom, 0px))'
-        }}
-      >
-        <ErrorBoundary>
-          <div style={{ flex: 1, minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-            {activeTab === 'dashboard'  && (
-              <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
-                <Dashboard
+      <main className="app-main-content">
+        <div className="app-content-body">
+          <ErrorBoundary>
+            <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {activeTab === 'dashboard'  && (
+                <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
+                  <Dashboard
+                    stocks={stocks}
+                    indices={indices}
+                    onRefresh={triggerTick}
+                    isRefreshing={isRefreshing}
+                    triggerTick={triggerTick}
+                    apiStatus={apiStatus}
+                    marketStatus={marketStatus}
+                    lastSyncTime={lastSyncTime}
+                    onSelectStock={openStockDetail}
+                    onOpenCalendar={() => setShowCalendarModal(true)}
+                  />
+                </PullToRefresh>
+              )}
+              {(activeTab === 'portfolio' || activeTab === 'bulk_ipo') && (
+                <PortfolioHub
+                  marketStocks={stocks}
+                  userId={user?.uid}
+                  userEmail={user?.email}
+                  apiStatus={apiStatus}
+                  initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
+                  onSelectStock={openStockDetail}
+                />
+              )}
+              {(activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') && (
+                <PredictorHub
                   stocks={stocks}
                   indices={indices}
-                  onRefresh={triggerTick}
-                  isRefreshing={isRefreshing}
-                  triggerTick={triggerTick}
-                  apiStatus={apiStatus}
-                  marketStatus={marketStatus}
-                  lastSyncTime={lastSyncTime}
                   onSelectStock={openStockDetail}
-                  onOpenCalendar={() => setShowCalendarModal(true)}
+                  initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
                 />
-              </PullToRefresh>
-            )}
-            {(activeTab === 'portfolio' || activeTab === 'bulk_ipo') && (
-              <PortfolioHub
-                marketStocks={stocks}
-                userId={user?.uid}
-                userEmail={user?.email}
-                apiStatus={apiStatus}
-                initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
-                onSelectStock={openStockDetail}
-              />
-            )}
-            {(activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan') && (
-              <PredictorHub
-                stocks={stocks}
-                indices={indices}
-                onSelectStock={openStockDetail}
-                initialSubTab={activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
-              />
-            )}
+              )}
 
-            {activeTab === 'services'   && (
-              <ServicesHub
-                stocks={stocks}
-                indices={indices}
-                apiStatus={apiStatus}
-                userId={user?.uid}
-                onNavigateTab={setActiveTab}
-                onSelectStock={openStockDetail}
-                onAskGuruAi={(stockOrSymbol) => {
-                  const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-                  setAiTargetStock(sym);
-                  setActiveTab('ai');
-                }}
-              />
-            )}
-            {activeTab === 'calculator' && <Calculator />}
-            {activeTab === 'ai'         && (
-              <AiAnalyst
-                marketStocks={stocks}
-                initialStock={aiTargetStock}
-                onClearInitialStock={() => setAiTargetStock(null)}
-              />
-            )}
-            {activeTab === 'resources'  && <Resources />}
+              {activeTab === 'services'   && (
+                <ServicesHub
+                  stocks={stocks}
+                  indices={indices}
+                  apiStatus={apiStatus}
+                  userId={user?.uid}
+                  onNavigateTab={setActiveTab}
+                  onSelectStock={openStockDetail}
+                  onAskGuruAi={(stockOrSymbol) => {
+                    const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                    setAiTargetStock(sym);
+                    setActiveTab('ai');
+                  }}
+                />
+              )}
+              {activeTab === 'calculator' && <Calculator />}
+              {activeTab === 'ai'         && (
+                <AiAnalyst
+                  marketStocks={stocks}
+                  initialStock={aiTargetStock}
+                  onClearInitialStock={() => setAiTargetStock(null)}
+                />
+              )}
+              {activeTab === 'resources'  && <Resources onNavigateTab={setActiveTab} />}
 
-            {/* ── Global ShareHub-Style Stock Detail Modal ── */}
-            {selectedStock && (
-              <StockDetailModal
-                stock={selectedStock}
-                allStocks={stocks}
-                onClose={closeStockDetail}
-              />
-            )}
-          </div>
-        </ErrorBoundary>
-        <div style={{ textAlign: 'center', padding: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          Built by <span style={{ fontWeight: 600, color: 'var(--bull)' }}>Rexsh K Suwal, a Computer Engineer</span>
+              {/* ── Global ShareHub-Style Stock Detail Modal ── */}
+              {selectedStock && (
+                <StockDetailModal
+                  stock={selectedStock}
+                  allStocks={stocks}
+                  onClose={closeStockDetail}
+                />
+              )}
+            </div>
+          </ErrorBoundary>
+
+          <footer className="app-credit-footer">
+            Built by <span style={{ fontWeight: 600, color: 'var(--bull)' }}>Rexsh K Suwal, a Computer Engineer</span>
+          </footer>
         </div>
       </main>
 
@@ -1348,7 +1339,7 @@ function AppInner() {
           { id: 'services',   icon: LayoutGrid,      label: 'Services' },
           { id: 'ai',         icon: BrainCircuit,    label: 'Guru AI' },
         ].map(({ id, icon: Icon, label }) => {
-          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && (activeTab === 'entry_exit' || activeTab === 'short_term_plan'));
+          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && (activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit'));
           return (
             <button
               key={id}

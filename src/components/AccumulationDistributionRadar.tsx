@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  TrendingUp, TrendingDown, AlertTriangle, ShieldAlert, ShieldCheck,
+  TrendingUp, TrendingDown, AlertTriangle, ShieldAlert, ShieldCheck, Shield,
   Search, RefreshCw, Zap, Crosshair, BarChart3, Info, BookOpen,
   Filter, Layers, ArrowUpRight, ArrowDownRight, Activity, Flame,
   CheckCircle2, XCircle, HelpCircle
@@ -24,17 +24,20 @@ import {
 
 interface AccumulationDistributionRadarProps {
   initialSymbol?: string;
+  initialStage?: string;
   onSelectStock?: (stock: any) => void;
   onAskGuruAi?: (stock: any) => void;
 }
 
 export function AccumulationDistributionRadar({
   initialSymbol,
+  initialStage,
   onSelectStock,
   onAskGuruAi
 }: AccumulationDistributionRadarProps) {
   const [activeTab, setActiveTab] = useState<'radar' | 'diagnostic' | 'playbook'>('radar');
-  const [selectedStage, setSelectedStage] = useState<string>('ALL');
+  const [selectedStage, setSelectedStage] = useState<string>(initialStage || 'ALL');
+  const [step4Filter, setStep4Filter] = useState<'ALL' | 'ACCUMULATION' | 'TRAP'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStockSymbol, setSelectedStockSymbol] = useState(initialSymbol || 'NABIL');
   const [loading, setLoading] = useState(true);
@@ -161,6 +164,35 @@ export function AccumulationDistributionRadar({
       list = list.filter((s) => s.wyckoff.stage.includes(selectedStage));
     }
 
+    if (step4Filter === 'ACCUMULATION') {
+      list = list.filter((s) => {
+        const bcr3Buy = s.brokerData?.bcr3BuyPct || 0;
+        const bcr3Sell = s.brokerData?.bcr3SellPct || 0;
+        const pChange = Number(s.pChange || 0);
+        const topSellers = s.brokerData?.topSellerBrokers || [];
+        const topBuyers = s.brokerData?.topBuyerBrokers || [];
+        const topSellerNetDumping = topSellers.slice(0, 3).some((sel: any) => {
+          const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+          return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((s.brokerData?.totalSellVolume || 1) * 0.15);
+        }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
+        const isTrap = (pChange >= 0 || s.wyckoff?.stage?.includes('PUMP')) && (topSellerNetDumping || s.brokerData?.smartMoneyBias === 'Operator Offloading');
+        return bcr3Buy >= 40.0 && !isTrap;
+      });
+    } else if (step4Filter === 'TRAP') {
+      list = list.filter((s) => {
+        const bcr3Buy = s.brokerData?.bcr3BuyPct || 0;
+        const bcr3Sell = s.brokerData?.bcr3SellPct || 0;
+        const pChange = Number(s.pChange || 0);
+        const topSellers = s.brokerData?.topSellerBrokers || [];
+        const topBuyers = s.brokerData?.topBuyerBrokers || [];
+        const topSellerNetDumping = topSellers.slice(0, 3).some((sel: any) => {
+          const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+          return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((s.brokerData?.totalSellVolume || 1) * 0.15);
+        }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
+        return (pChange >= 0 || s.wyckoff?.stage?.includes('PUMP')) && (topSellerNetDumping || s.brokerData?.smartMoneyBias === 'Operator Offloading');
+      });
+    }
+
     return list.sort((a, b) => {
       if (sortBy === 'stealth') return b.wyckoff.stealthScore - a.wyckoff.stealthScore;
       if (sortBy === 'dumpRisk') return b.wyckoff.pumpDumpRiskScore - a.wyckoff.pumpDumpRiskScore;
@@ -169,7 +201,7 @@ export function AccumulationDistributionRadar({
       if (sortBy === 'cmf') return b.wyckoff.cmf - a.wyckoff.cmf;
       return 0;
     });
-  }, [analyzedStocks, searchQuery, selectedStage, sortBy]);
+  }, [analyzedStocks, searchQuery, selectedStage, sortBy, step4Filter]);
 
   // Currently inspected stock for Deep Diagnostic
   const activeStock = useMemo(() => {
@@ -187,6 +219,8 @@ export function AccumulationDistributionRadar({
     let distributionCount = 0;
     let dumpCount = 0;
     let totalCMF = 0;
+    let step4AccumulationCount = 0;
+    let step4TrapCount = 0;
 
     analyzedStocks.forEach((s) => {
       const st = s.wyckoff.stage;
@@ -195,6 +229,19 @@ export function AccumulationDistributionRadar({
       if (st.includes('DISTRIBUTION')) distributionCount++;
       if (st.includes('DUMP')) dumpCount++;
       totalCMF += s.wyckoff.cmf;
+
+      const bcr3Buy = s.brokerData?.bcr3BuyPct || 0;
+      const bcr3Sell = s.brokerData?.bcr3SellPct || 0;
+      const pChange = Number(s.pChange || 0);
+      const topSellers = s.brokerData?.topSellerBrokers || [];
+      const topBuyers = s.brokerData?.topBuyerBrokers || [];
+      const topSellerNetDumping = topSellers.slice(0, 3).some((sel: any) => {
+        const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+        return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((s.brokerData?.totalSellVolume || 1) * 0.15);
+      }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
+      const isTrap = (pChange >= 0 || st.includes('PUMP')) && (topSellerNetDumping || s.brokerData?.smartMoneyBias === 'Operator Offloading');
+      if (isTrap) step4TrapCount++;
+      else if (bcr3Buy >= 40.0) step4AccumulationCount++;
     });
 
     const avgCMF = analyzedStocks.length > 0 ? totalCMF / analyzedStocks.length : 0;
@@ -203,6 +250,8 @@ export function AccumulationDistributionRadar({
       pumpCount,
       distributionCount,
       dumpCount,
+      step4AccumulationCount,
+      step4TrapCount,
       avgCMF: Number(avgCMF.toFixed(3)),
       marketBias: avgCMF > 0.03 ? 'Institutional Accumulation' : avgCMF < -0.03 ? 'Distribution Pressure' : 'Balanced'
     };
@@ -324,7 +373,64 @@ export function AccumulationDistributionRadar({
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'radar' && (
         <div className="space-y-4">
-          {/* Controls: Search, Stage Filter, Sort */}
+          {/* ── STEP 4: VERIFY SMART MONEY BROKER FLOW HUD ── */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800/80 pb-3 mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black text-xs tracking-wider">
+                  STEP 4
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-400" />
+                    Verify "Smart Money" Broker Flow (Radar Tab)
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Rule-based audit: Identify genuine block cornering &gt;40% and eliminate high-risk retail distribution dump traps.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  🟢 {stats.step4AccumulationCount} Accumulating (&gt;40%)
+                </span>
+                <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                  🚨 {stats.step4TrapCount} Distribution Traps
+                </span>
+                <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                  SEBON Circuit: ±15% Band
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/30 flex items-start gap-2.5">
+                <span className="text-xl shrink-0">🟢</span>
+                <div>
+                  <div className="font-extrabold text-emerald-300 uppercase tracking-wide flex items-center gap-1.5">
+                    1. Institutional Accumulation (&gt;40% Buy Share)
+                  </div>
+                  <div className="text-slate-300 mt-1 leading-relaxed">
+                    Top 3 brokers (e.g. Broker 58, 45, 34) account for <strong>&gt;40% of all buy volume</strong> in large blocks, while selling is distributed across dozens of retail brokers.
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-950/25 border border-rose-500/30 flex items-start gap-2.5">
+                <span className="text-xl shrink-0">🚨</span>
+                <div>
+                  <div className="font-extrabold text-rose-300 uppercase tracking-wide flex items-center gap-1.5">
+                    2. Distribution Trap Warning (Do Not Buy)
+                  </div>
+                  <div className="text-slate-300 mt-1 leading-relaxed">
+                    If top brokers are <strong>net selling (dumping) into retail excitement</strong>, <strong>DO NOT BUY</strong>, even if the chart looks green or seeking circuit. High probability of dump!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Controls: Search, Stage Filter, Step 4 Filter, Sort */}
           <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
             {/* Search Input */}
             <div className="relative flex-1">
@@ -351,7 +457,7 @@ export function AccumulationDistributionRadar({
                 <button
                   key={btn.id}
                   onClick={() => setSelectedStage(btn.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
                     selectedStage === btn.id
                       ? 'bg-slate-700 text-white font-bold border border-slate-600'
                       : 'bg-slate-950/60 text-slate-400 hover:text-white border border-slate-800/80'
@@ -360,6 +466,29 @@ export function AccumulationDistributionRadar({
                   {btn.label}
                 </button>
               ))}
+            </div>
+
+            {/* Step 4 Smart Money Filter Buttons */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/80 border border-slate-800">
+              <span className="text-[11px] font-bold text-slate-400 px-1">Step 4:</span>
+              <button
+                onClick={() => setStep4Filter('ALL')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition ${step4Filter === 'ALL' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStep4Filter('ACCUMULATION')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${step4Filter === 'ACCUMULATION' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-400 hover:bg-slate-800'}`}
+              >
+                🟢 &gt;40% ({stats.step4AccumulationCount})
+              </button>
+              <button
+                onClick={() => setStep4Filter('TRAP')}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${step4Filter === 'TRAP' ? 'bg-rose-600 text-white shadow' : 'text-rose-400 hover:bg-slate-800'}`}
+              >
+                🚨 Trap ({stats.step4TrapCount})
+              </button>
             </div>
 
             {/* Sort Dropdown */}
@@ -388,18 +517,19 @@ export function AccumulationDistributionRadar({
                     <th className="py-3 px-4">Symbol / Company</th>
                     <th className="py-3 px-3 text-right">LTP (Rs.)</th>
                     <th className="py-3 px-3 text-right">Change</th>
-                    <th className="py-3 px-3">Wyckoff Stage & Status</th>
+                    <th className="py-3 px-3">Wyckoff Stage</th>
+                    <th className="py-3 px-3">Step 4 Smart Money Flow</th>
                     <th className="py-3 px-3 text-right">CMF (20)</th>
-                    <th className="py-3 px-3 text-right">Top 5 Broker Buy %</th>
-                    <th className="py-3 px-3 text-right">Buy/Sell Size Ratio</th>
-                    <th className="py-3 px-3 text-center">Dump Risk Meter</th>
+                    <th className="py-3 px-3 text-right">Top 5 Buy %</th>
+                    <th className="py-3 px-3 text-right">Ticket Ratio</th>
+                    <th className="py-3 px-3 text-center">Dump Risk</th>
                     <th className="py-3 px-4 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
                   {filteredStocks.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                      <td colSpan={10} className="py-12 text-center text-slate-400">
                         {loading ? 'Analyzing live floor sheet and candles...' : 'No stocks matching the selected criteria.'}
                       </td>
                     </tr>
@@ -408,6 +538,17 @@ export function AccumulationDistributionRadar({
                       const badgeStyle = getStageBadgeStyle(stock.wyckoff.stage);
                       const isRiskHigh = stock.wyckoff.pumpDumpRiskScore >= 55;
                       const isRiskExtreme = stock.wyckoff.pumpDumpRiskScore >= 75;
+
+                      const bcr3Buy = stock.brokerData?.bcr3BuyPct || 0;
+                      const bcr3Sell = stock.brokerData?.bcr3SellPct || 0;
+                      const topSellers = stock.brokerData?.topSellerBrokers || [];
+                      const topBuyers = stock.brokerData?.topBuyerBrokers || [];
+                      const topSellerNetDumping = topSellers.slice(0, 3).some((sel: any) => {
+                        const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+                        return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((stock.brokerData?.totalSellVolume || 1) * 0.15);
+                      }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
+                      const isTrap = ((stock.pChange || 0) >= 0 || stock.wyckoff.stage.includes('PUMP')) && (topSellerNetDumping || stock.brokerData?.smartMoneyBias === 'Operator Offloading');
+                      const isAccumulation = bcr3Buy >= 40.0 && !isTrap;
 
                       return (
                         <tr
@@ -425,6 +566,16 @@ export function AccumulationDistributionRadar({
                             <div className="text-[10px] text-slate-400 truncate max-w-[140px]">
                               {stock.companyName || stock.name || stock.symbol}
                             </div>
+                            {/* Data Quality Badge */}
+                            {(stock.rsi !== null && stock.rsi !== undefined && stock.volumeZScore !== null && stock.volumeZScore !== undefined) ? (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 mt-0.5">
+                                ✓ Real Data
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-700/30 mt-0.5" title="Indicators estimated — open Entry/Exit Analyzer for verified signals">
+                                ⚡ Est.*
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right font-bold text-white">
                             Rs. {stock.ltp?.toLocaleString()}
@@ -443,7 +594,7 @@ export function AccumulationDistributionRadar({
                           </td>
                           <td className="py-3 px-3">
                             <div
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border"
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border"
                               style={{
                                 backgroundColor: badgeStyle.bg,
                                 color: badgeStyle.text,
@@ -455,6 +606,36 @@ export function AccumulationDistributionRadar({
                             <div className="text-[10px] text-slate-400 mt-0.5">
                               {stock.wyckoff.stageNameNepali}
                             </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            {isAccumulation ? (
+                              <div>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                  🟢 &gt;40% Accumulation ({bcr3Buy}%)
+                                </span>
+                                <div className="text-[9.5px] text-slate-300 mt-0.5 font-semibold truncate max-w-[130px]">
+                                  Top 3: {topBuyers.slice(0, 3).map((b: any) => '#' + b.broker).join(', ') || '—'}
+                                </div>
+                              </div>
+                            ) : isTrap ? (
+                              <div>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                                  🚨 Distribution Trap!
+                                </span>
+                                <div className="text-[9.5px] text-rose-300/90 mt-0.5 font-semibold truncate max-w-[130px]">
+                                  Dumping into green
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400">
+                                  ⚪ Retail ({bcr3Buy}%)
+                                </span>
+                                <div className="text-[9px] text-slate-500 mt-0.5">
+                                  Dispersed (&lt;40%)
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right">
                             <span
@@ -488,7 +669,7 @@ export function AccumulationDistributionRadar({
                           </td>
                           <td className="py-3 px-3 text-center">
                             <div className="flex items-center justify-center gap-1.5">
-                              <div className="w-16 bg-slate-800 rounded-full h-2 overflow-hidden">
+                              <div className="w-14 bg-slate-800 rounded-full h-2 overflow-hidden">
                                 <div
                                   className={`h-full rounded-full ${
                                     isRiskExtreme
@@ -726,6 +907,125 @@ export function AccumulationDistributionRadar({
               </div>
             </div>
 
+            {/* ── STEP 4: SMART MONEY BROKER FLOW AUDIT CARD ── */}
+            {(() => {
+              const bcr3Buy = activeStock.brokerData?.bcr3BuyPct || 0;
+              const bcr3Sell = activeStock.brokerData?.bcr3SellPct || 0;
+              const pChange = Number(activeStock.pChange || 0);
+              const topSellers = activeStock.brokerData?.topSellerBrokers || [];
+              const topBuyers = activeStock.brokerData?.topBuyerBrokers || [];
+              const topSellerNetDumping = topSellers.slice(0, 3).some((sel: any) => {
+                const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+                return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((activeStock.brokerData?.totalSellVolume || 1) * 0.15);
+              }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
+              const isTrap = (pChange >= 0 || activeStock.wyckoff?.stage?.includes('PUMP')) && (topSellerNetDumping || activeStock.brokerData?.smartMoneyBias === 'Operator Offloading');
+              const isAccumulation = bcr3Buy >= 40.0 && !isTrap;
+
+              return (
+                <div className={`p-5 rounded-2xl border shadow-xl space-y-4 ${
+                  isTrap
+                    ? 'bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-950 border-rose-500/40'
+                    : isAccumulation
+                    ? 'bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/40'
+                    : 'bg-slate-950 border-slate-800'
+                }`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`px-2.5 py-1 rounded-xl font-black text-xs tracking-wider border ${
+                        isTrap
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : isAccumulation
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-300 border-slate-700'
+                      }`}>
+                        STEP 4 AUDIT
+                      </div>
+                      <div>
+                        <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                          <Shield className={`w-4 h-4 ${isTrap ? 'text-rose-400' : isAccumulation ? 'text-emerald-400' : 'text-blue-400'}`} />
+                          Smart Money Broker Flow Verification for {activeStock.symbol}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Institutional block cornering (&gt;40% BCR₃) vs retail distribution dump traps.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      {isTrap ? (
+                        <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-rose-500/25 text-rose-300 border border-rose-500/50 flex items-center gap-1.5 animate-pulse">
+                          🚨 DISTRIBUTION TRAP: DO NOT BUY
+                        </span>
+                      ) : isAccumulation ? (
+                        <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 flex items-center gap-1.5">
+                          🟢 INSTITUTIONAL ACCUMULATION CONFIRMED
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
+                          ⚪ BROAD RETAIL ORDER FLOW
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 2 Key Metrics Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Card 1: Top 3 Buy Volume Concentration */}
+                    <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300">Top 3 Broker Buy Share (BCR₃)</span>
+                        <span className={`font-black text-sm ${bcr3Buy >= 40.0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                          {bcr3Buy}% {bcr3Buy >= 40.0 ? '(Target Met ≥40%)' : '(Below 40%)'}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${bcr3Buy >= 40.0 ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                          style={{ width: `${Math.min(100, bcr3Buy)}%` }}
+                        />
+                      </div>
+                      <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                        <span className="truncate max-w-[280px]">
+                          Top 3 Buyers: {topBuyers.slice(0, 3).map((b: any) => `Broker #${b.broker} (${b.pct}%)`).join(', ') || 'No buyer data'}
+                        </span>
+                        <span className={bcr3Buy >= 40 ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                          Target: &gt;40%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Distribution Trap & Ticket Size Asymmetry */}
+                    <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-bold text-slate-300">Ticket Size Asymmetry &amp; Net Offloading</span>
+                        <span className={`font-black ${isTrap ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {activeStock.wyckoff?.tradeSizeRatio?.toFixed(2) || 1.0}x Ticket Ratio
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-300 leading-relaxed">
+                        {isTrap ? (
+                          <span className="text-rose-300 font-bold">
+                            ⚠️ Warning: Top institutional brokers are dumping {bcr3Sell}% sell share into retail excitement. Do not enter even if price is green today (+{pChange}%).
+                          </span>
+                        ) : isAccumulation ? (
+                          <span className="text-emerald-300 font-semibold">
+                            ✓ Institutions are absorbing large trade blocks ({activeStock.wyckoff?.tradeSizeRatio?.toFixed(2)}x ticket ratio) while selling is dispersed across retail brokers.
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">
+                            Flow is retail dispersed without dominant cornering by the top 3 firms.
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Top 3 Sellers: {topSellers.slice(0, 3).map((s: any) => `Broker #${s.broker} (${s.pct}%)`).join(', ') || 'None'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ── 3. BROKER ACCUMULATION & DISTRIBUTION FOOTPRINT LEDGER ── */}
             <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
@@ -952,7 +1252,7 @@ export function AccumulationDistributionRadar({
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
                   <div className="text-slate-400">T+2 Settlement Trap Risk</div>
                   <div className="font-bold text-white mt-0.5">
-                    {activeStock.pChange >= 8 ? '🔴 Severe (Circuit Overhang)' : '🟢 Normal Settlement'}
+                    {activeStock.pChange >= 13.5 ? '🔴 Severe (±15% Circuit Overhang)' : '🟢 Normal Settlement'}
                   </div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
@@ -1003,7 +1303,7 @@ export function AccumulationDistributionRadar({
               <div className="p-3.5 rounded-xl bg-slate-950 border border-blue-500/20">
                 <div className="text-xs font-bold text-blue-400 mb-1">२. पम्पिङ / मार्कअप (Markup / The Pump)</div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  फ्लोट लक गरिसकेपछि अपरेटरहरूले बजारमा सकारात्मक हल्ला (Social Media, Clubhouse) फिँजाएर १०% को सर्किट लगाउँछन्। साधारण लगानीकर्तामा FOMO सुरु हुन्छ।
+                  फ्लोट लक गरिसकेपछि अपरेटरहरूले बजारमा सकारात्मक हल्ला (Social Media, Clubhouse) फिँजाएर १५% को सर्किट लगाउँछन्। साधारण लगानीकर्तामा FOMO सुरु हुन्छ।
                 </p>
               </div>
 
@@ -1073,7 +1373,7 @@ export function AccumulationDistributionRadar({
                 <strong>१. सर्ट सेलिङ छैन (No Short Selling):</strong> अन्तर्राष्ट्रिय बजारमा वितरण गर्दा सर्ट गरेर कमाइन्छ, तर नेपालमा बेचेर मात्र नाफा बुक गर्न सकिन्छ। त्यसैले अपरेटरहरूले अनिवार्य रूपमा मूल्य पम्प गरेर खुद्रा लगानीकर्तालाई आकर्षित गर्नैपर्छ।
               </p>
               <p>
-                <strong>२. १०% सर्किट र T+2 ट्र्याप (Circuit Trap):</strong> जब सेयर अत्यधिक पम्प भइसकेर टुप्पोमा पुग्छ, त्यहाँ १०% सर्किटमा किन्ने खुद्रा लगानीकर्ता फस्छन्। सेयर डिम्याटमा आउँदा (T+2) सम्ममा लगातार लोअर सर्किट लागेर बेच्नै पाइँदैन।
+                <strong>२. १५% सर्किट र T+2 ट्र्याप (Circuit Trap under ±15% Band):</strong> जब सेयर अत्यधिक पम्प भइसकेर टुप्पोमा पुग्छ, त्यहाँ +१५% सर्किटमा किन्ने खुद्रा लगानीकर्ता फस्छन्। सेयर डिम्याटमा आउँदा (T+2) सम्ममा लगातार -१५% लोअर सर्किट लागेर बेच्नै पाइँदैन।
               </p>
               <p>
                 <strong>३. पारदर्शी फ्लोरशिट (Public Floor Sheet Advantage):</strong> नेपालमा ब्रोकर नम्बर (Broker 58, 45, 34, 49, etc.) सार्वजनिक हुने भएकोले कसले किन्दैछ र कसले माल फाल्दैछ भन्ने कुरा हाम्रो यो राडारले सजिलै पत्ता लगाउँछ।

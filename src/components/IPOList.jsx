@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Loader2, Landmark, CheckCircle2, XCircle, 
   HelpCircle, ChevronRight, Play, Award, AlertCircle, RefreshCw, 
-  Search, Users, Coins, Calendar, Sparkles, ShieldAlert
+  Search, Users, Coins, Calendar, Sparkles, ShieldAlert, History
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
-import { checkSingleBoidAllotment } from '../services/meroShareService';
+import { checkSingleBoidAllotment, fetchUserApplicationReports } from '../services/meroShareService';
 import { calculateIpoAllotmentProbability } from '../utils/calculations';
 
 // Same key as AccountManager
@@ -154,6 +154,9 @@ export default function IPOList({ initialTab = 'apply' }) {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [isLoadingIpos, setIsLoadingIpos] = useState(false);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [applicationHistory, setApplicationHistory] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [selectedHistoryAccount, setSelectedHistoryAccount] = useState('');
 
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [selectedIpo, setSelectedIpo] = useState('');
@@ -179,8 +182,10 @@ export default function IPOList({ initialTab = 'apply' }) {
   useEffect(() => {
     if (activeTab === 'apply') {
       fetchActiveIpos();
-    } else {
+    } else if (activeTab === 'result') {
       fetchResultCompanies();
+    } else if (activeTab === 'my-applications') {
+      fetchApplicationHistory();
     }
   }, [activeTab]);
 
@@ -401,6 +406,90 @@ export default function IPOList({ initialTab = 'apply' }) {
     }
   };
 
+  const recordApplicationHistory = (acc, kitta, ipoId) => {
+    try {
+      const activeIpo = ipos.find(i => String(i.id) === String(ipoId));
+      const entry = {
+        id: `local_${Date.now()}_${acc.id}`,
+        companyName: activeIpo?.name || 'IPO Issue',
+        scrip: activeIpo?.scrip || '',
+        appliedKitta: Number(kitta),
+        allottedKitta: 0,
+        amount: Number(kitta) * Number(activeIpo?.amountPerShare || 100),
+        appliedDate: new Date().toISOString().split('T')[0],
+        status: 'VERIFIED',
+        accountName: acc.name,
+        boid: acc.boid,
+      };
+      const existing = JSON.parse(localStorage.getItem('nepse_hub_bulk_ipo_history') || '[]');
+      localStorage.setItem('nepse_hub_bulk_ipo_history', JSON.stringify([entry, ...existing].slice(0, 100)));
+    } catch (_) {}
+  };
+
+  const fetchApplicationHistory = async (targetAccountId) => {
+    setIsLoadingHistory(true);
+    setError('');
+    const local = loadLocalAccounts();
+    const accId = targetAccountId || selectedHistoryAccount || (local.length > 0 ? local[0].id : null);
+    if (accId) setSelectedHistoryAccount(String(accId));
+    const targetAcc = local.find(a => String(a.id) === String(accId)) || local[0];
+
+    let localHistory = [];
+    try {
+      const stored = localStorage.getItem('nepse_hub_bulk_ipo_history');
+      if (stored) localHistory = JSON.parse(stored);
+    } catch (_) {}
+
+    if (!targetAcc) {
+      setApplicationHistory(localHistory);
+      setIsLoadingHistory(false);
+      return;
+    }
+
+    try {
+      let reports = [];
+      if (targetAcc.username && targetAcc.password) {
+        reports = await fetchUserApplicationReports(targetAcc);
+      }
+
+      if (Array.isArray(reports) && reports.length > 0) {
+        const normalized = reports.map(r => {
+          const st = String(r.statusName || '').toUpperCase();
+          const allottedQty = r.allottedKitta != null ? Number(r.allottedKitta) : (st.includes('ALLOTTED') && !st.includes('NOT') ? Number(r.appliedKitta || 10) : 0);
+          return {
+            id: r.applicantFormId || r.id || `${r.companyShareId}_${r.appliedDate}`,
+            companyName: r.companyName || r.companyShare?.companyName || 'Unknown Company',
+            scrip: r.scrip || r.companyShare?.scrip || '',
+            appliedKitta: Number(r.appliedKitta || r.kitta || 0),
+            allottedKitta: allottedQty,
+            amount: Number(r.amount || (Number(r.appliedKitta || 10) * 100)),
+            appliedDate: r.appliedDate || r.transactionDate || '—',
+            status: r.statusName || (allottedQty > 0 ? 'ALLOTTED' : 'VERIFIED'),
+            accountName: targetAcc.name,
+            boid: targetAcc.boid,
+          };
+        });
+
+        // Merge local records if not duplicate
+        const seen = new Set(normalized.map(n => `${n.companyName}_${n.appliedKitta}`.toLowerCase()));
+        localHistory.forEach(lh => {
+          if (!seen.has(`${lh.companyName}_${lh.appliedKitta}`.toLowerCase())) {
+            normalized.push(lh);
+          }
+        });
+
+        setApplicationHistory(normalized);
+      } else {
+        setApplicationHistory(localHistory);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch MeroShare application reports:', err);
+      setApplicationHistory(localHistory);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
   // --- BULK APPLY ---
   const handleBulkApply = async () => {
     if (selectedAccounts.length === 0) { alert('Please select at least one account.'); return; }
@@ -481,6 +570,7 @@ export default function IPOList({ initialTab = 'apply' }) {
           });
           const submitData = await submitRes.json();
           if (!submitRes.ok) throw new Error(submitData?.message || `Submission failed (${submitRes.status})`);
+          recordApplicationHistory(acc, appliedKitta, selectedIpo);
           results.push({ id: acc.id, name: acc.name, username: acc.username, status: 'success', resultText: submitData?.message || 'Application submitted!' });
 
         } catch (err) {
@@ -542,6 +632,7 @@ export default function IPOList({ initialTab = 'apply' }) {
             }),
           });
 
+          recordApplicationHistory(acc, appliedKitta, selectedIpo);
           const successMsg = (typeof data.data === 'string' ? data.data : data.data?.message) || 'Application submitted!';
           results.push({ id: acc.id, name: acc.name, username: acc.username, status: 'success', resultText: successMsg });
         } catch (err) {
@@ -667,6 +758,11 @@ export default function IPOList({ initialTab = 'apply' }) {
           style={{ flex: 1, padding: '10px 0', fontSize: 13 }}>
           Lottery Check
         </button>
+        <button onClick={() => { setActiveTab('my-applications'); }}
+          className={`tab-btn ${activeTab === 'my-applications' ? 'active' : ''}`}
+          style={{ flex: 1, padding: '10px 0', fontSize: 13 }}>
+          Apply History
+        </button>
       </div>
 
       {/* Notifications */}
@@ -683,12 +779,14 @@ export default function IPOList({ initialTab = 'apply' }) {
         </div>
       )}
 
-      {/* 1. Select Issue / Company */}
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Landmark style={{ width: 15, height: 15, color: 'var(--primary-light)' }} /> 1. Select Issue or Company
-          </h4>
+      {/* 1. Select Issue / Company & 2. Choose Accounts (Apply & Result tabs only) */}
+      {activeTab !== 'my-applications' && (
+        <>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Landmark style={{ width: 15, height: 15, color: 'var(--primary-light)' }} /> 1. Select Issue or Company
+              </h4>
           <button
             onClick={() => {
               setError('');
@@ -910,6 +1008,8 @@ export default function IPOList({ initialTab = 'apply' }) {
           </div>
         )}
       </div>
+    </>
+  )}
 
       {/* 3. Apply Results */}
       {activeTab === 'apply' && applyResults.length > 0 && (
@@ -1007,6 +1107,140 @@ export default function IPOList({ initialTab = 'apply' }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* 5. Application History Tab */}
+      {activeTab === 'my-applications' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <History style={{ width: 16, height: 16, color: 'var(--primary-light)' }} />
+                <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-primary)', margin: 0 }}>
+                  C-ASBA Application History & Status
+                </h4>
+              </div>
+              <button
+                onClick={() => fetchApplicationHistory(selectedHistoryAccount)}
+                disabled={isLoadingHistory}
+                style={{ background: 'none', border: 'none', color: 'var(--primary-light)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600 }}
+              >
+                <RefreshCw style={{ width: 13, height: 13 }} className={isLoadingHistory ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            </div>
+
+            {/* Account Switcher */}
+            {accounts.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Account:</span>
+                <select
+                  value={selectedHistoryAccount}
+                  onChange={(e) => {
+                    setSelectedHistoryAccount(e.target.value);
+                    fetchApplicationHistory(e.target.value);
+                  }}
+                  className="select-input"
+                  style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} (BOID: ...{acc.boid ? acc.boid.slice(-4) : '????'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats */}
+          {applicationHistory.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
+                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Applied</span>
+                <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>{applicationHistory.length} Issues</span>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
+                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Allotted Wins</span>
+                <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--bull)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>
+                  {applicationHistory.filter(h => Number(h.allottedKitta) > 0 || String(h.status || '').toUpperCase().includes('ALLOTTED')).length}
+                </span>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
+                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Shares</span>
+                <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--primary-light)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>
+                  {applicationHistory.reduce((s, h) => s + (Number(h.allottedKitta) || 0), 0)} Units
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* History List / Table */}
+          {isLoadingHistory ? (
+            <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 0', gap: 10 }}>
+              <Loader2 style={{ width: 22, height: 22 }} className="animate-spin" />
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading C-ASBA application records from CDSC MeroShare...</span>
+            </div>
+          ) : applicationHistory.length === 0 ? (
+            <div className="card" style={{ padding: 24, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <History style={{ width: 28, height: 28, color: 'var(--text-muted)' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>No Application Records Found</span>
+              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, maxWidth: 320 }}>
+                You have not applied for any IPOs through this account yet, or your MeroShare credentials need to be configured in Account Manager.
+              </p>
+            </div>
+          ) : (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflowX: 'auto', background: 'var(--surface)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11.5, minWidth: 480 }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '9px 12px', fontWeight: 'bold' }}>Company</th>
+                    <th style={{ padding: '9px 12px', fontWeight: 'bold' }}>Date</th>
+                    <th style={{ padding: '9px 12px', fontWeight: 'bold', textAlign: 'right' }}>Applied</th>
+                    <th style={{ padding: '9px 12px', fontWeight: 'bold', textAlign: 'right' }}>Allotted</th>
+                    <th style={{ padding: '9px 12px', fontWeight: 'bold', textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40">
+                  {applicationHistory.map((h, i) => {
+                    const st = String(h.status || '').toUpperCase();
+                    const isAllotted = st.includes('ALLOTTED') && !st.includes('NOT');
+                    const isRejected = st.includes('REJECT') || st.includes('UNAPPROVED') || st.includes('FAIL');
+                    const isVerified = st.includes('VERIFIED') || st.includes('APPROV');
+                    return (
+                      <tr key={h.id || i} style={{ background: isAllotted ? 'var(--bull-subtle)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{h.companyName}</div>
+                          {h.scrip && <div style={{ fontSize: 9.5, color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{h.scrip}</div>}
+                        </td>
+                        <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                          {h.appliedDate}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {h.appliedKitta} kitta
+                          <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Rs. {h.amount?.toLocaleString()}</div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: isAllotted ? 800 : 500, color: isAllotted ? 'var(--bull)' : 'var(--text-muted)' }}>
+                          {Number(h.allottedKitta) > 0 ? `+${h.allottedKitta} kitta` : '0'}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <span style={{
+                            display: 'inline-flex', padding: '2.5px 8px', borderRadius: 4, fontSize: 9.5, fontWeight: 'bold', textTransform: 'uppercase',
+                            background: isAllotted ? 'rgba(16,217,138,0.12)' : isRejected ? 'rgba(245,69,92,0.12)' : isVerified ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.12)',
+                            color: isAllotted ? 'var(--bull)' : isRejected ? 'var(--bear)' : isVerified ? '#60a5fa' : 'var(--accent-amber)',
+                            border: `1px solid ${isAllotted ? 'rgba(16,217,138,0.3)' : isRejected ? 'rgba(245,69,92,0.3)' : isVerified ? 'rgba(59,130,246,0.3)' : 'rgba(245,158,11,0.3)'}`
+                          }}>
+                            {h.status || 'VERIFIED'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

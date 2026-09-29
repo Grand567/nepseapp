@@ -17,7 +17,19 @@ import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
 import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar.js';
 import { idbGet, idbSet } from './indexedDb.js';
-import { getCachedRealPriceHistory as getCachedHist, getCachedStockFundamentals as getCachedFund } from './historyCache.js';
+import {
+  getCachedRealPriceHistory,
+  getCachedRealPriceHistoryAsync,
+  setCachedRealPriceHistory,
+  getCachedRealBrokerAnalysis,
+  setCachedRealBrokerAnalysis,
+  getCachedRealFloorsheet,
+  setCachedRealFloorsheet,
+  getCachedStockFundamentals,
+  setCachedStockFundamentals,
+  invalidateSymbolCache,
+  clearHistoryCache
+} from './historyCache.js';
 
 
 function todayKey() {
@@ -49,9 +61,7 @@ let _serverWarmPending = false;
 
 export async function warmUpServer() {
   if (_serverWarmPending) return; // already in flight
-  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PROXY_URL)
-    ? import.meta.env.VITE_PROXY_URL.replace(/\/$/, '')
-    : 'https://nepseapp.onrender.com';
+  const base = getProxyBase();
 
   _serverWarmPending = true;
   const started = Date.now();
@@ -205,7 +215,10 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
       const res = await CapacitorHttp.request({
         url,
         method: 'GET',
-        headers: { 'Accept': 'application/json, text/plain, */*' },
+        headers: {
+          'Accept': 'application/json, text/plain, */*',
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
+        },
         connectTimeout: timeoutMs,
         readTimeout: timeoutMs
       });
@@ -313,6 +326,8 @@ export function parseShareSansarMarketHtml(html) {
 
   if (indices.nepse && indices.nepse.value > 0) {
     indices.subIndices = subIndices;
+    const asOfMatch = html.match(/As of\s*(?:<[^>]+>)?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})/i);
+    indices.asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : null;
     return indices;
   }
   return null;
@@ -436,148 +451,20 @@ export function parseShareSansarHistoryHtml(html) {
   return candles;
 }
 
-// ── Price History Cache — Dual-tier: localStorage LRU (fast, synchronous) + IndexedDB (unlimited)
-// Problem: localStorage is limited to 5MB. After viewing ~80–100 stocks, the quota fills and new
-// historical data is silently dropped (QuotaExceededError swallowed). Solution: IDB is primary
-// (fire-and-forget write, async read fallback). localStorage holds the last 15 viewed symbols
-// as a fast read-through cache — evicting the oldest when the LRU ring is full.
-
-const HIST_LS_PREFIX  = 'nepse_hist_prices_';
-const HIST_LRU_KEY    = 'nepse_hist_lru_ring';
-const HIST_LRU_MAX    = 15;
-
-function _getHistLRU() {
-  try { return JSON.parse(localStorage.getItem(HIST_LRU_KEY) || '[]'); } catch (_) { return []; }
-}
-
-function _setHistLRU(ring) {
-  try { localStorage.setItem(HIST_LRU_KEY, JSON.stringify(ring)); } catch (_) {}
-}
-
-function _lruTouch(sym) {
-  const ring = _getHistLRU().filter(s => s !== sym);
-  ring.push(sym);
-  if (ring.length > HIST_LRU_MAX) {
-    // Evict oldest entry from localStorage to free space
-    const evicted = ring.shift();
-    try { localStorage.removeItem(HIST_LS_PREFIX + evicted); } catch (_) {}
-  }
-  _setHistLRU(ring);
-}
-
-export function getCachedRealPriceHistory(sym) {
-  if (!sym || typeof window === 'undefined') return null;
-  const key = sym.toUpperCase();
-  // Fast path: check localStorage LRU ring first (synchronous)
-  try {
-    const raw = localStorage.getItem(HIST_LS_PREFIX + key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (_) {}
-  // IDB read is async — callers that need IDB fallback should use getCachedRealPriceHistoryAsync
-  return null;
-}
-
-// Async variant: checks localStorage first, then falls back to IndexedDB
-export async function getCachedRealPriceHistoryAsync(sym) {
-  if (!sym || typeof window === 'undefined') return null;
-  const key = sym.toUpperCase();
-  // 1. Try localStorage LRU ring (fast)
-  const sync = getCachedRealPriceHistory(key);
-  if (sync) return sync;
-  // 2. Try IndexedDB (unlimited quota, no eviction)
-  try {
-    const idbData = await idbGet(HIST_LS_PREFIX + key);
-    if (Array.isArray(idbData) && idbData.length > 0) {
-      // Warm the localStorage cache so next sync read hits
-      try { localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(idbData)); } catch (_) {}
-      _lruTouch(key);
-      return idbData;
-    }
-  } catch (_) {}
-  return null;
-}
-
-export function setCachedRealPriceHistory(sym, data) {
-  if (!sym || !data || !data.length || typeof window === 'undefined') return;
-  const key = sym.toUpperCase();
-  // Write to localStorage with LRU eviction (sync, immediate availability)
-  _lruTouch(key);
-  try {
-    localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(data));
-  } catch (e) {
-    // QuotaExceededError — evict all LRU entries and retry once
-    try {
-      const ring = _getHistLRU();
-      ring.forEach(s => { try { localStorage.removeItem(HIST_LS_PREFIX + s); } catch (_) {} });
-      _setHistLRU([key]);
-      localStorage.setItem(HIST_LS_PREFIX + key, JSON.stringify(data));
-    } catch (_) {}
-  }
-  // Fire-and-forget write to IndexedDB (unlimited quota, no eviction)
-  idbSet(HIST_LS_PREFIX + key, data).catch(() => {});
-}
-
-export function getCachedRealBrokerAnalysis(sym) {
-  if (!sym || typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(`nepse_hist_broker_${sym.toUpperCase()}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0)) return parsed;
-    }
-  } catch (_) {}
-  return null;
-}
-
-export function setCachedRealBrokerAnalysis(sym, data) {
-  if (!sym || !data || typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`nepse_hist_broker_${sym.toUpperCase()}`, JSON.stringify(data));
-  } catch (_) {}
-}
-
-export function getCachedRealFloorsheet(sym) {
-  if (!sym || typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(`nepse_hist_floorsheet_${sym.toUpperCase()}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.rows && parsed.rows.length > 0) return parsed;
-    }
-  } catch (_) {}
-  return null;
-}
-
-export function setCachedRealFloorsheet(sym, data) {
-  if (!sym || !data || !data.rows || typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`nepse_hist_floorsheet_${sym.toUpperCase()}`, JSON.stringify(data));
-  } catch (_) {}
-}
-
-export function getCachedStockFundamentals(sym) {
-  if (!sym || typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(`nepse_fundamentals_${sym.toUpperCase()}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && (parsed.bookValue !== undefined || parsed.eps !== undefined || parsed.pe !== undefined || parsed.pbv !== undefined)) {
-        return parsed;
-      }
-    }
-  } catch (_) {}
-  return null;
-}
-
-export function setCachedStockFundamentals(sym, data) {
-  if (!sym || !data || typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`nepse_fundamentals_${sym.toUpperCase()}`, JSON.stringify(data));
-  } catch (_) {}
-}
+// ── Price History & Metrics Cache (Delegated to high-performance historyCache.js) ──
+export {
+  getCachedRealPriceHistory,
+  getCachedRealPriceHistoryAsync,
+  setCachedRealPriceHistory,
+  getCachedRealBrokerAnalysis,
+  setCachedRealBrokerAnalysis,
+  getCachedRealFloorsheet,
+  setCachedRealFloorsheet,
+  getCachedStockFundamentals,
+  setCachedStockFundamentals,
+  invalidateSymbolCache,
+  clearHistoryCache
+};
 
 export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   const sym = String(symbol || '').toUpperCase().trim();
@@ -711,13 +598,15 @@ const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)
 
 async function attemptLiveMarket() {
   const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  const calStatus = getDetailedMarketStatus();
+  const isTradingSession = calStatus.isOpen || calStatus.isPreOpen;
 
-  // 1. Fast Path for Native Mobile (Capacitor Android/iOS):
-  // Zero-CORS, sub-second (700ms) direct MeroLagani handler fetch — bypasses proxy latency completely!
+  // 1. FAST PATH FOR NATIVE MOBILE (Capacitor Android/iOS):
+  // Zero-CORS, direct MeroLagani handler fetch (~100ms) — bypasses proxy latency completely!
   if (isNative) {
     try {
       const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
-      const j = await tryFetchJSON(directUrl, 8000);
+      const j = await tryFetchJSON(directUrl, 4000);
       if (j && (j.stock?.detail || j.turnover?.detail)) {
         const parsed = parseMeroLaganiJson(j);
         if (parsed && parsed.length > 20) {
@@ -729,6 +618,8 @@ async function attemptLiveMarket() {
                 MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
                 MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
                 MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
+                MEM_SUMMARY.isOpen = calStatus.isOpen;
+                MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
               }
             }
             return normalized;
@@ -738,38 +629,42 @@ async function attemptLiveMarket() {
     } catch (_) {}
   }
 
-  // 2. Primary Web/Proxy: /api/mero/market-summary — best source with company names, sectors, and live prices
+  // 2. PRIMARY LIVE ENGINE (Web & Mobile fallback):
+  // /api/mero/market-summary returns company names, sectors, and live prices
   try {
-    const j = await fetchFromBackend('/api/mero/market-summary', 8000);
+    const j = await fetchFromBackend('/api/mero/market-summary', 6000);
     const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
     if (Array.isArray(arr) && arr.length > 20) {
       const normalized = normalizeLiveArray(arr);
       if (normalized && normalized.length > 20) {
-        if (j.turnover) {
-          if (!MEM_SUMMARY) ensureSnapshot();
-          if (MEM_SUMMARY) MEM_SUMMARY.totalTurnover = Number(j.turnover);
+        if (!MEM_SUMMARY) ensureSnapshot();
+        if (MEM_SUMMARY) {
+          if (j.turnover) MEM_SUMMARY.totalTurnover = Number(j.turnover);
+          MEM_SUMMARY.isOpen = calStatus.isOpen;
+          MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
         }
         return normalized;
       }
     }
   } catch (_) {}
 
-  // 3. Direct or CORS fetch to MeroLagani handler
+  // 3. Official NEPSE NOTS API via backend proxy (/api/market/live)
+  // Only accept if genuinely fresh and NOT a stale fallback snapshot when market is open
   try {
-    const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
-    const j = await tryFetchJSON(directUrl, 8000);
-    if (j && (j.stock?.detail || j.turnover?.detail)) {
-      const parsed = parseMeroLaganiJson(j);
-      if (parsed && parsed.length > 20) {
-        const normalized = normalizeLiveArray(parsed);
+    const liveRes = await fetchFromBackend('/api/market/live', 6000);
+    const isStale = liveRes?.isStale === true ||
+      liveRes?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
+      liveRes?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+
+    if (!isTradingSession || !isStale) {
+      const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
+      if (Array.isArray(arr) && arr.length > 20) {
+        const normalized = normalizeLiveArray(arr);
         if (normalized && normalized.length > 20) {
-          if (j.overall?.t) {
-            if (!MEM_SUMMARY) ensureSnapshot();
-            if (MEM_SUMMARY) {
-              MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
-              MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
-              MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
-            }
+          if (!MEM_SUMMARY) ensureSnapshot();
+          if (MEM_SUMMARY) {
+            MEM_SUMMARY.isOpen = isTradingSession ? true : Boolean(liveRes.marketOpen);
+            MEM_SUMMARY.marketStatus = isTradingSession ? 'OPEN' : (liveRes.marketStatus || 'CLOSED');
           }
           return normalized;
         }
@@ -777,79 +672,97 @@ async function attemptLiveMarket() {
     }
   } catch (_) {}
 
-  // 4. Tertiary: Today's prices / closing prices (/api/today-prices)
-  try {
-    const j = await fetchFromBackend('/api/today-prices', 8000);
-    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-    if (Array.isArray(arr) && arr.length > 20) {
-      const normalized = normalizeLiveArray(arr);
-      if (normalized && normalized.length > 20) return normalized;
-    }
-  } catch (_) {}
-
-  // 5. Quaternary: /api/market-summary fallback
-  try {
-    const j = await fetchFromBackend('/api/market-summary', 8000);
-    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-    if (Array.isArray(arr) && arr.length > 20) {
-      const normalized = normalizeLiveArray(arr);
-      if (normalized && normalized.length > 20) return normalized;
-    }
-  } catch (_) {}
-
-  // 6. Quaternary: Web CORS proxy candidates for MeroLagani
-  const corsProxies = [
+  // 4. Direct MeroLagani handler fetch (direct or via web CORS proxy)
+  const candidateUrls = [
+    'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary',
     `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`,
   ];
-  for (const u of corsProxies) {
+  for (const u of candidateUrls) {
     try {
-      const j = await tryFetchJSON(u, 6000);
+      const j = await tryFetchJSON(u, 5000);
       if (j && (j.stock?.detail || j.turnover?.detail)) {
         const parsed = parseMeroLaganiJson(j);
         if (parsed && parsed.length > 20) {
           const normalized = normalizeLiveArray(parsed);
-          if (normalized && normalized.length > 20) return normalized;
+          if (normalized && normalized.length > 20) {
+            if (j.overall?.t) {
+              if (!MEM_SUMMARY) ensureSnapshot();
+              if (MEM_SUMMARY) {
+                MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
+                MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
+                MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
+                MEM_SUMMARY.isOpen = calStatus.isOpen;
+                MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
+              }
+            }
+            return normalized;
+          }
         }
       }
     } catch { /* continue */ }
   }
+
+  // 5. Additional fallbacks: /api/today-prices and /api/market-summary
+  for (const endpoint of ['/api/today-prices', '/api/market-summary']) {
+    try {
+      const j = await fetchFromBackend(endpoint, 5000);
+      const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+      if (Array.isArray(arr) && arr.length > 20) {
+        const normalized = normalizeLiveArray(arr);
+        if (normalized && normalized.length > 20) return normalized;
+      }
+    } catch (_) {}
+  }
+
+  // 6. Last resort when market is closed: accept closing snapshot
+  try {
+    const liveRes = await fetchFromBackend('/api/market/live', 4000);
+    const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
+    if (Array.isArray(arr) && arr.length > 20) {
+      const normalized = normalizeLiveArray(arr);
+      if (normalized && normalized.length > 20) return normalized;
+    }
+  } catch (_) {}
 
   return null;
 }
 
 function normalizeLiveArray(arr) {
   ensureSnapshot();
-  const base = MEM_STOCKS || buildEnrichedSnapshot().stocks;
+  const base = (MEM_STOCKS && MEM_STOCKS.length > 100) ? MEM_STOCKS : buildEnrichedSnapshot().stocks;
   const bySym = new Map(base.map(s => [s.symbol, s]));
   const day = todayKey();
   const out = [];
+  const updatedSymbols = new Set();
 
-  for (const r of arr.slice(0, 500)) {
+  for (const r of arr.slice(0, 600)) {
     const symRaw = r.symbol ?? r.scrip ?? r.ticker ?? r.companySymbol ?? r.businessSymbol;
     if (!symRaw) continue;
     const sym = String(symRaw).trim().toUpperCase();
+    if (updatedSymbols.has(sym)) continue;
+    updatedSymbols.add(sym);
     const prev = bySym.get(sym);
 
-    const ltp = Number(r.lastTradedPrice ?? r.ltp ?? r.closePrice ?? r.latestPrice ?? prev?.ltp ?? 0);
+    const ltp = Number(r.lastTradedPrice ?? r.lastUpdatedPrice ?? r.ltp ?? r.closePrice ?? r.latestPrice ?? prev?.ltp ?? 0);
     if (!ltp) continue;
 
-    const prevClose = Number(r.previousClose ?? r.prevClose ?? prev?.prevClose ?? ltp);
+    const prevClose = Number(r.previousClose ?? r.previousDayClosePrice ?? r.prevClose ?? prev?.prevClose ?? ltp);
     const pCh = Number(r.percentageChange ?? r.pChange ?? r.schange ?? (prevClose ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0));
-    const chg = Number(r.change ?? r.pointChange ?? +(ltp - prevClose).toFixed(2));
-    const open = Number(r.open ?? r.openPrice ?? prev?.open ?? ltp);
-    const high = Number(r.high ?? r.highPrice ?? Math.max(ltp, open));
-    const low = Number(r.low ?? r.lowPrice ?? Math.min(ltp, open));
+    const chg = Number(r.pointChange ?? r.change ?? +(ltp - prevClose).toFixed(2));
+    const open = Number(r.openPrice ?? r.open ?? prev?.open ?? ltp);
+    const high = Number(r.highPrice ?? r.high ?? Math.max(ltp, open));
+    const low = Number(r.lowPrice ?? r.low ?? Math.min(ltp, open));
     const vol = Number(r.totalTradedQuantity ?? r.volume ?? prev?.volume ?? 0);
     const turnover = Number(r.totalTradedValue ?? r.turnover ?? prev?.turnover ?? Math.round(vol * ltp));
     const tx = Number(r.totalTrades ?? r.transactions ?? prev?.transactions ?? 0);
-    const hi52 = Number(r.high52w ?? r.fiftyTwoWeekHigh ?? prev?.high52w ?? +(ltp * 1.15).toFixed(1));
-    const lo52 = Number(r.low52w ?? r.fiftyTwoWeekLow ?? prev?.low52w ?? +(ltp * 0.85).toFixed(1));
+    const hi52 = Number(r.fiftyTwoWeekHigh ?? r.high52w ?? prev?.high52w ?? +(ltp * 1.15).toFixed(1));
+    const lo52 = Number(r.fiftyTwoWeekLow ?? r.low52w ?? prev?.low52w ?? +(ltp * 0.85).toFixed(1));
 
     // Preserve authentic company name and sector from universe map if incoming is only symbol
     const uni = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.find(u => u && u.symbol === sym) : null;
-    const fullIncomingName = (r.name && r.name !== sym) ? r.name : (r.companyName && r.companyName !== sym ? r.companyName : null);
+    const fullIncomingName = (r.securityName && r.securityName !== sym) ? r.securityName : (r.name && r.name !== sym ? r.name : (r.companyName && r.companyName !== sym ? r.companyName : null));
     const companyName = fullIncomingName || uni?.name || prev?.companyName || prev?.name || sym;
-    const sector = (r.sector && r.sector !== 'Unknown') ? r.sector : (uni?.sector || prev?.sector || 'Others');
+    const sector = (r.sectorName && r.sectorName !== 'Unknown') ? r.sectorName : ((r.sector && r.sector !== 'Unknown') ? r.sector : (uni?.sector || prev?.sector || 'Others'));
 
     let realEma50 = r.ema50 ? Number(r.ema50) : (prev?.isRealEma ? prev.ema50 : null);
     let realEma20 = r.ema20 ? Number(r.ema20) : (prev?.isRealEma ? prev.ema20 : null);
@@ -965,6 +878,28 @@ function normalizeLiveArray(arr) {
       isUpperCircuit,
       isLowerCircuit
     });
+  }
+
+  // Preserve remaining equities from base universe so untraded scrips remain searchable with previous close
+  for (const s of base) {
+    if (!updatedSymbols.has(s.symbol)) {
+      out.push({
+        ...s,
+        volume: 0,
+        totalTradedQuantity: 0,
+        turnover: 0,
+        totalTurnover: 0,
+        transactions: 0,
+        totalTransactions: 0,
+        change: 0,
+        pChange: 0,
+        percentageChange: 0,
+        open: s.ltp || s.closePrice || s.prevClose || 0,
+        high: s.ltp || s.closePrice || s.prevClose || 0,
+        low: s.ltp || s.closePrice || s.prevClose || 0,
+        closePrice: s.ltp || s.closePrice || s.prevClose || 0
+      });
+    }
   }
 
   return out.length > 20 ? out : [];
@@ -1084,7 +1019,7 @@ export async function fetchMarketSummary() {
           totalTurnover: Number(d.totalTurnover || MEM_SUMMARY?.totalTurnover || 0),
           totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY?.totalTradedShares || 0),
           totalTransactions: Number(d.totalTransactions || MEM_SUMMARY?.totalTransactions || 0),
-          marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen && !isZeroTurnover ? 'OPEN' : 'CLOSED'),
+          marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen ? 'OPEN' : 'CLOSED'),
           advances: MEM_SUMMARY?.advances, declines: MEM_SUMMARY?.declines, unchanged: MEM_SUMMARY?.unchanged,
         },
         source: defaultSource,
@@ -1150,15 +1085,15 @@ export async function fetchTopVolumeStocks() { return fetchTopVolume(); }
 export async function fetchAllSecurities() {
   ensureSnapshot();
   try {
-    const res = await fetchFromBackend(`/api/today-prices`, 5000);
+    const res = await fetchFromBackend(`/api/securities/all`, 5000) || await fetchFromBackend(`/api/today-prices`, 5000);
     const arr = res?.data ?? (Array.isArray(res) ? res : null);
     if (Array.isArray(arr) && arr.length > 50) {
       return {
         data: arr.map(s => ({
           symbol: s.symbol,
-          name: s.name || s.companyName || s.symbol,
-          companyName: s.name || s.companyName || s.symbol,
-          sector: s.sector || 'Others'
+          name: s.securityName || s.name || s.companyName || s.symbol,
+          companyName: s.securityName || s.name || s.companyName || s.symbol,
+          sector: s.sectorName || s.sector || 'Others'
         }))
       };
     }
@@ -1725,20 +1660,10 @@ export async function fetchMarketIndices() {
   try {
     let indicesData = null;
 
-    // 1. Fast Parallel Race: Direct ShareSansar (sub-second on native mobile & web) alongside fast backend
-    const tryShareSansar = async () => {
-      try {
-        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 4000);
-        if (ssHtml) {
-          const parsedSS = parseShareSansarMarketHtml(ssHtml);
-          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            return parsedSS;
-          }
-        }
-      } catch (_) {}
-      return null;
-    };
+    const calStatus = getDetailedMarketStatus();
+    const isTradingSession = calStatus.isOpen || calStatus.isPreOpen;
 
+    // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data
     const tryFastBackend = async () => {
       try {
         const fastRes = await fetchFromBackend('/api/market-indices', isServerWarm() ? 6000 : 3500);
@@ -1763,8 +1688,28 @@ export async function fetchMarketIndices() {
       return null;
     };
 
-    // Execute concurrently so we never wait 60s for a sleeping backend
-    const directResults = await Promise.allSettled([tryShareSansar(), tryFastBackend()]);
+    const tryShareSansar = async () => {
+      try {
+        const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 4000);
+        if (ssHtml) {
+          const parsedSS = parseShareSansarMarketHtml(ssHtml);
+          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
+            // During trading session, reject ShareSansar if its "As of" date is yesterday or stale
+            if (isTradingSession && parsedSS.asOfDate) {
+              const todayIso = formatNptDateIso(new Date());
+              if (parsedSS.asOfDate !== todayIso) {
+                return null;
+              }
+            }
+            return parsedSS;
+          }
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    // Execute concurrently, prioritizing live NOTS backend
+    const directResults = await Promise.allSettled([tryFastBackend(), tryShareSansar()]);
     for (const r of directResults) {
       if (r.status === 'fulfilled' && r.value?.nepse?.value > 0) {
         indicesData = r.value;
@@ -2152,13 +2097,19 @@ export function getProxyBase() {
     if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
   }
 
-  // 2. Environment variable (VITE_PROXY_URL from .env or Vite config)
+  // 2. If running locally in desktop browser (localhost / 127.0.0.1) and NOT native mobile, default to local proxy
+  const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  if (!isNative && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://localhost:5000';
+  }
+
+  // 3. Environment variable (VITE_PROXY_URL from .env or Vite config)
   try {
     const env = import.meta?.env?.VITE_PROXY_URL;
     if (env && env.trim()) return env.trim().replace(/\/$/, '');
   } catch (_) {}
 
-  // 3. Default production proxy on Render (reliable public backend)
+  // 4. Default production proxy on Render (reliable public backend)
   return 'https://nepseapp.onrender.com';
 }
 

@@ -482,8 +482,12 @@ export function calculateATR(history = [], period = 14) {
     return 0;
   }
 
-  const trs = [];
-  for (let i = 1; i < history.length; i++) {
+  const p = Math.max(1, period);
+  const startIdx = Math.max(1, history.length - p);
+  let trSum = 0;
+  let count = 0;
+
+  for (let i = startIdx; i < history.length; i++) {
     const cur = history[i];
     const prev = history[i - 1];
     const h = Number(cur.high) || Number(cur.close);
@@ -491,11 +495,11 @@ export function calculateATR(history = [], period = 14) {
     const prevC = Number(prev.close);
 
     const tr = Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC));
-    trs.push(tr);
+    trSum += tr;
+    count++;
   }
 
-  const slice = trs.slice(-period);
-  const atr = slice.reduce((a, b) => a + b, 0) / (slice.length || 1);
+  const atr = count > 0 ? trSum / count : 0;
   return Number(atr.toFixed(2));
 }
 
@@ -3057,8 +3061,8 @@ export function calculateT2CircuitTrapGuard(stock = {}, recentCandles = []) {
     }
   }
 
-  if (pChg >= 9.0) consecutiveCircuits++;
-  if (twoDayGain >= 18.0) consecutiveCircuits = Math.max(2, consecutiveCircuits);
+  if (pChg >= 14.0) consecutiveCircuits++;
+  if (twoDayGain >= 27.0) consecutiveCircuits = Math.max(2, consecutiveCircuits);
 
   const ema20DistPct = ema20 > 0 ? Number((((ltp - ema20) / ema20) * 100).toFixed(1)) : 0;
 
@@ -3067,21 +3071,21 @@ export function calculateT2CircuitTrapGuard(stock = {}, recentCandles = []) {
   let badgeColor = '#10B981';
   let advice = 'Favorable entry window. Stock is not overextended on settlement cycle.';
 
-  if (consecutiveCircuits >= 2 || twoDayGain >= 18.0) {
+  if (consecutiveCircuits >= 2 || twoDayGain >= 27.0) {
     trapDangerScore = 85;
     status = 'HIGH_T2_CIRCUIT_TRAP';
     badgeColor = '#EF4444';
-    advice = '⚠️ DANGER: Stock has hit 2+ consecutive circuits (+18%+). Buying now risks getting trapped in an illiquid seller dump on T+2 settlement day.';
-  } else if (pChg >= 7.5 || ema20DistPct >= 14.0) {
+    advice = '⚠️ DANGER: Stock has hit 2+ consecutive 15% circuits (+28%+). Buying now risks getting trapped in an illiquid seller dump on T+2 settlement day.';
+  } else if (pChg >= 11.5 || ema20DistPct >= 20.0) {
     trapDangerScore = 60;
     status = 'MODERATE_EXTENDED';
     badgeColor = '#F59E0B';
-    advice = 'Caution: Stock is stretched from 20 EMA. Prefer buying intraday dips towards support rather than chasing highs.';
-  } else if (pChg >= 1.0 && pChg <= 4.5 && (ema20DistPct <= 6.0 || ema20 === 0)) {
+    advice = 'Caution: Stock is stretched from 20 EMA near circuit ceiling. Prefer buying intraday dips towards support rather than chasing highs.';
+  } else if (pChg >= 1.0 && pChg <= 6.0 && (ema20DistPct <= 8.0 || ema20 === 0)) {
     trapDangerScore = 10;
     status = 'PRIME_SWING_WINDOW';
     badgeColor = '#10B981';
-    advice = '✓ IDEAL SETUP: Controlled Day 1 breakout or orderly pullback. Ample buffer for T+2 settlement.';
+    advice = '✓ IDEAL SETUP: Controlled Day 1 breakout or orderly pullback. Ample buffer for T+2 settlement under ±15% circuit regime.';
   }
 
   return {
@@ -3533,7 +3537,7 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuit_pos': {
       const topCircuits = stocks.filter(s => (s.pChange || 0) >= 13.5).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
       if (topCircuits.length > 0) return topCircuits.slice(0, 25);
-      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 7.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
+      const nearCircuits = stocks.filter(s => (s.pChange || 0) >= 9.0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0));
       if (nearCircuits.length > 0) return nearCircuits.slice(0, 25);
       return stocks.filter(s => (s.pChange || 0) > 0).sort((a, b) => (b.pChange || 0) - (a.pChange || 0)).slice(0, 25);
     }
@@ -3542,7 +3546,7 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuit_neg': {
       const lowCircuits = stocks.filter(s => (s.pChange || 0) <= -13.5).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
       if (lowCircuits.length > 0) return lowCircuits.slice(0, 25);
-      const nearDown = stocks.filter(s => (s.pChange || 0) <= -7.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
+      const nearDown = stocks.filter(s => (s.pChange || 0) <= -9.0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0));
       if (nearDown.length > 0) return nearDown.slice(0, 25);
       return stocks.filter(s => (s.pChange || 0) < 0).sort((a, b) => (a.pChange || 0) - (b.pChange || 0)).slice(0, 25);
     }
@@ -3550,9 +3554,9 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'circuits':
     case 'circuit_setup':
     case 'circuit_radar': {
-      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 10.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const hits = stocks.filter(s => Math.abs(s.pChange || 0) >= 13.5).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (hits.length > 0) return hits.slice(0, 25);
-      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 5.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
+      const nearHits = stocks.filter(s => Math.abs(s.pChange || 0) >= 8.0).sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0));
       if (nearHits.length > 0) return nearHits.slice(0, 25);
       return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 25);
     }

@@ -246,7 +246,7 @@ export function PromoterSharesService() {
 
       {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 shadow-inner">
-        <div className="max-h-[540px] overflow-y-auto">
+        <div className="max-h-[540px] overflow-y-auto overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 text-[11px] font-bold uppercase tracking-wider text-slate-400 backdrop-blur">
               <tr>

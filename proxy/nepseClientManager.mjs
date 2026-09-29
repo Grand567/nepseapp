@@ -14,7 +14,7 @@
  * 3. Strict TLS/SSL Handling:
  *    - Disables strict TLS validation for NEPSE servers with known cert chain issues
  * 4. Market-Hours Handling:
- *    - Accurately reports "Market Closed" (outside 11am-3pm NPT Sun-Thu, weekends, holidays)
+ *    - Accurately reports "Market Closed" (outside 11am-3pm NPT Mon-Fri, weekends Saturday & Sunday, holidays)
  *    - Serves last official trading session closing data instead of failing or reporting "not fetching"
  * 5. Historical Data Range & Multi-Year Pagination:
  *    - Handles NEPSE NOTS 1-year window limit (~228 days) by automatically fetching
@@ -35,6 +35,7 @@ import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import { Nepse as RumessNepse } from '@rumess/nepse-api';
 import { NepseClient as NepsemanClient } from 'nepseman-api';
+import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,15 +96,20 @@ function loadSnapshot() {
 
 export class UnifiedNepseClient {
   constructor() {
-    this.primaryClient = new RumessNepse();
-    this.secondaryClient = new NepsemanClient();
+    this.nepseman = new NepsemanClient();
+    this.rumess = new RumessNepse();
     
-    // Explicitly enforce TLS settings on primary client
+    // Explicitly enforce TLS settings on rumess client
     try {
-      this.primaryClient.setTLSVerification(false);
+      this.rumess.setTLSVerification(false);
     } catch (_) {}
 
-    this.activeEngine = '@rumess/nepse-api';
+    // Primary engine: nepseman-api (working WASM-powered client)
+    this.primaryClient = this.nepseman;
+    // Secondary engine: @rumess/nepse-api (legacy fallback)
+    this.secondaryClient = this.rumess;
+    this.activeEngine = 'nepseman-api';
+
     this.authStatus = {
       primaryOk: true,
       secondaryOk: true,
@@ -222,18 +228,29 @@ export class UnifiedNepseClient {
    * Performs an authenticated GET request with dual-engine failover
    */
   async requestGETAPI(endpoint, includeAuth = true) {
+    // 1. Try Nepseman session first (WASM Prover)
+    if (this.nepseman?.session) {
+      try {
+        return await this.executeWithBackoff(
+          () => this.nepseman.session.get(endpoint),
+          `GET ${endpoint} (Nepseman WASM)`
+        );
+      } catch (err1) {
+        console.warn(`[nepse-manager] Nepseman GET failed on ${endpoint}: ${err1.message}. Trying Rumess fallback...`);
+      }
+    }
+
+    // 2. Try Rumess client
     try {
       return await this.executeWithBackoff(
-        () => this.primaryClient.requestGETAPI(endpoint, includeAuth),
-        `GET ${endpoint} (Primary)`
+        () => this.rumess.requestGETAPI(endpoint, includeAuth),
+        `GET ${endpoint} (Rumess)`
       );
     } catch (primaryErr) {
       if (this.isAuthenticationError(primaryErr)) {
         this.authStatus.primaryOk = false;
-        this.authStatus.lastAuthError = `Primary failed: ${primaryErr.message}`;
-        console.warn(`[nepse-manager] Primary client auth failure on ${endpoint}. Trying secondary engine (nepseman)...`);
+        this.authStatus.lastAuthError = `Rumess failed: ${primaryErr.message}`;
       }
-      // Re-throw so caller can execute secondary or scraper fallback
       throw primaryErr;
     }
   }
@@ -242,16 +259,28 @@ export class UnifiedNepseClient {
    * Performs an authenticated POST request with dual-engine failover
    */
   async requestPOSTAPI(endpoint, payload, includeAuth = true) {
+    // 1. Try Nepseman session first
+    if (this.nepseman?.session) {
+      try {
+        return await this.executeWithBackoff(
+          () => this.nepseman.session.post(endpoint, 'general'),
+          `POST ${endpoint} (Nepseman WASM)`
+        );
+      } catch (err1) {
+        console.warn(`[nepse-manager] Nepseman POST failed on ${endpoint}: ${err1.message}. Trying Rumess fallback...`);
+      }
+    }
+
+    // 2. Try Rumess client
     try {
       return await this.executeWithBackoff(
-        () => this.primaryClient.requestPOSTAPI(endpoint, payload, includeAuth),
-        `POST ${endpoint} (Primary)`
+        () => this.rumess.requestPOSTAPI(endpoint, payload, includeAuth),
+        `POST ${endpoint} (Rumess)`
       );
     } catch (primaryErr) {
       if (this.isAuthenticationError(primaryErr)) {
         this.authStatus.primaryOk = false;
-        this.authStatus.lastAuthError = `Primary failed: ${primaryErr.message}`;
-        console.warn(`[nepse-manager] Primary client auth failure on ${endpoint}.`);
+        this.authStatus.lastAuthError = `Rumess failed: ${primaryErr.message}`;
       }
       throw primaryErr;
     }
@@ -261,46 +290,65 @@ export class UnifiedNepseClient {
    * Retrieves official market status with dual-engine fallback
    */
   async getMarketStatus() {
+    // 1. Try Nepseman WASM first
     try {
-      const res = await this.executeWithBackoff(() => this.primaryClient.getMarketStatus(), 'getMarketStatus (Primary)');
+      const res = await this.executeWithBackoff(() => this.nepseman.marketStatus(), 'getMarketStatus (Nepseman)');
       this.authStatus.primaryOk = true;
-      return res;
+      if (res && res.isOpen) return res;
     } catch (err1) {
-      console.warn('[nepse-manager] Primary getMarketStatus failed. Trying nepseman secondary...');
-      try {
-        const res2 = await this.secondaryClient.marketStatus();
-        this.authStatus.secondaryOk = true;
-        return res2;
-      } catch (err2) {
-        console.error('[nepse-manager] Both NEPSE market status engines failed:', err2.message);
-        return { isOpen: 'CLOSE', asOf: new Date().toISOString(), id: 80, fallback: true };
-      }
+      console.warn('[nepse-manager] Nepseman getMarketStatus failed. Trying Rumess fallback...');
     }
+
+    // 2. Try Rumess fallback
+    try {
+      const res2 = await this.executeWithBackoff(() => this.rumess.getMarketStatus(), 'getMarketStatus (Rumess)');
+      this.authStatus.secondaryOk = true;
+      if (res2 && res2.isOpen) return res2;
+    } catch (err2) {
+      console.error('[nepse-manager] Both NEPSE market status engines failed:', err2.message);
+    }
+
+    // 3. Fallback to authentic calendar status (prevents false 'CLOSE' during genuine market trading hours)
+    try {
+      const cal = getDetailedMarketStatus();
+      return {
+        isOpen: cal.isOpen ? 'OPEN' : 'CLOSE',
+        asOf: new Date().toISOString(),
+        id: 80,
+        fallback: true,
+        calendarStatus: cal
+      };
+    } catch (_) {}
+
+    return { isOpen: 'CLOSE', asOf: new Date().toISOString(), id: 80, fallback: true };
   }
 
   /**
    * Retrieves live NEPSE and sub-indices
    */
   async getNepseIndex() {
+    // 1. Try Nepseman WASM
     try {
-      const idx = await this.executeWithBackoff(() => this.primaryClient.getNepseIndex(), 'getNepseIndex (Primary)');
+      const idx = await this.executeWithBackoff(() => this.nepseman.nepseIndex(), 'getNepseIndex (Nepseman)');
       if (Array.isArray(idx) && idx.length > 0) {
         this.lastKnownSnapshot.indices = idx;
         saveSnapshot({ indices: idx });
         return idx;
       }
     } catch (err1) {
-      console.warn('[nepse-manager] Primary getNepseIndex failed. Trying secondary...');
-      try {
-        const idx2 = await this.secondaryClient.nepseIndex();
-        if (Array.isArray(idx2) && idx2.length > 0) {
-          this.lastKnownSnapshot.indices = idx2;
-          saveSnapshot({ indices: idx2 });
-          return idx2;
-        }
-      } catch (err2) {
-        console.warn('[nepse-manager] Both primary & secondary indices failed:', err2.message);
+      console.warn('[nepse-manager] Nepseman getNepseIndex failed. Trying Rumess fallback...');
+    }
+
+    // 2. Try Rumess fallback
+    try {
+      const idx2 = await this.executeWithBackoff(() => this.rumess.getNepseIndex(), 'getNepseIndex (Rumess)');
+      if (Array.isArray(idx2) && idx2.length > 0) {
+        this.lastKnownSnapshot.indices = idx2;
+        saveSnapshot({ indices: idx2 });
+        return idx2;
       }
+    } catch (err2) {
+      console.warn('[nepse-manager] Both primary & secondary indices failed:', err2.message);
     }
 
     if (this.lastKnownSnapshot.indices?.length > 0) {
@@ -314,15 +362,19 @@ export class UnifiedNepseClient {
    * Retrieves sub-indices
    */
   async getNepseSubIndices() {
+    // 1. Try Nepseman
     try {
-      const sub = await this.executeWithBackoff(() => this.primaryClient.getNepseSubIndices(), 'getNepseSubIndices (Primary)');
+      const sub = await this.executeWithBackoff(() => this.nepseman.nepseSubindices(), 'getNepseSubIndices (Nepseman)');
       if (Array.isArray(sub) && sub.length > 0) return sub;
     } catch (err1) {
-      try {
-        const sub2 = await this.secondaryClient.nepseSubindices();
-        if (Array.isArray(sub2) && sub2.length > 0) return sub2;
-      } catch (_) {}
+      console.warn('[nepse-manager] Nepseman getNepseSubIndices failed. Trying Rumess fallback...');
     }
+
+    // 2. Try Rumess fallback
+    try {
+      const sub2 = await this.executeWithBackoff(() => this.rumess.getNepseSubIndices(), 'getNepseSubIndices (Rumess)');
+      if (Array.isArray(sub2) && sub2.length > 0) return sub2;
+    } catch (_) {}
     return [];
   }
 
@@ -330,23 +382,45 @@ export class UnifiedNepseClient {
    * Retrieves overall market summary
    */
   async getMarketSummary() {
+    // 1. Try Nepseman
     try {
-      const summary = await this.executeWithBackoff(() => this.primaryClient.getMarketSummary(), 'getMarketSummary (Primary)');
-      if (summary && Object.keys(summary).length > 0) {
+      const summary = await this.executeWithBackoff(() => this.nepseman.marketSummary(), 'getMarketSummary (Nepseman)');
+      if (summary) {
+        if (Array.isArray(summary)) {
+          for (const item of summary) {
+            if (item && item.detail) {
+              summary[item.detail] = item.value;
+              if (item.detail.includes('Turnover')) summary.totalTurnover = item.value;
+              else if (item.detail.includes('Traded Shares')) summary.totalTradedShares = item.value;
+              else if (item.detail.includes('Transactions')) summary.totalTransactions = item.value;
+              else if (item.detail.includes('Scrips Traded')) {
+                summary.totalScrips = item.value;
+                summary.totalTradedScrips = item.value;
+              } else if (item.detail.includes('Float Market Capitalization')) summary.floatMarketCap = item.value;
+              else if (item.detail.includes('Market Capitalization')) {
+                summary.totalMarketCap = item.value;
+                summary.marketCapitalization = item.value;
+              }
+            }
+          }
+        }
         this.lastKnownSnapshot.summary = summary;
         saveSnapshot({ summary });
         return summary;
       }
     } catch (err1) {
-      try {
-        const summary2 = await this.secondaryClient.marketSummary();
-        if (summary2) {
-          this.lastKnownSnapshot.summary = summary2;
-          saveSnapshot({ summary: summary2 });
-          return summary2;
-        }
-      } catch (_) {}
+      console.warn('[nepse-manager] Nepseman getMarketSummary failed. Trying Rumess fallback...');
     }
+
+    // 2. Try Rumess
+    try {
+      const summary2 = await this.executeWithBackoff(() => this.rumess.getMarketSummary(), 'getMarketSummary (Rumess)');
+      if (summary2 && Object.keys(summary2).length > 0) {
+        this.lastKnownSnapshot.summary = summary2;
+        saveSnapshot({ summary: summary2 });
+        return summary2;
+      }
+    } catch (_) {}
 
     if (this.lastKnownSnapshot.summary) {
       console.warn('[nepse-manager] Returning last-known verified market summary snapshot.');
@@ -364,23 +438,28 @@ export class UnifiedNepseClient {
       return this.cachedKeymap;
     }
 
+    // 1. Try Nepseman
     try {
-      const map = await this.executeWithBackoff(() => this.primaryClient.getSecuritySymbolIdKeymap(force), 'getSecuritySymbolIdKeymap (Primary)');
+      await this.nepseman.loadSymbolMap();
+      if (this.nepseman.symbolMap && this.nepseman.symbolMap.size > 0) {
+        this.cachedKeymap = this.nepseman.symbolMap;
+        this.cachedKeymapTime = now;
+        return this.cachedKeymap;
+      }
+    } catch (e) {
+      console.warn('[nepse-manager] Nepseman loadSymbolMap failed:', e.message);
+    }
+
+    // 2. Try Rumess
+    try {
+      const map = await this.executeWithBackoff(() => this.rumess.getSecuritySymbolIdKeymap(force), 'getSecuritySymbolIdKeymap (Rumess)');
       if (map && map.size > 0) {
         this.cachedKeymap = map;
         this.cachedKeymapTime = now;
         return map;
       }
     } catch (err1) {
-      console.warn('[nepse-manager] Primary symbol map failed. Trying secondary...');
-      try {
-        const map2 = await this.secondaryClient.loadSymbolMap();
-        if (map2 && map2.size > 0) {
-          this.cachedKeymap = map2;
-          this.cachedKeymapTime = now;
-          return map2;
-        }
-      } catch (_) {}
+      console.warn('[nepse-manager] Rumess symbol map failed:', err1.message);
     }
 
     if (this.cachedKeymap) return this.cachedKeymap;
@@ -391,15 +470,17 @@ export class UnifiedNepseClient {
    * Retrieves all listed securities
    */
   async getSecurityList(force = false) {
+    // 1. Try Nepseman
     try {
-      const list = await this.executeWithBackoff(() => this.primaryClient.getSecurityList(force), 'getSecurityList (Primary)');
+      const list = await this.executeWithBackoff(() => this.nepseman.securityList(), 'getSecurityList (Nepseman)');
       if (Array.isArray(list) && list.length > 0) return list;
-    } catch (err1) {
-      try {
-        const list2 = await this.secondaryClient.securityList();
-        if (Array.isArray(list2) && list2.length > 0) return list2;
-      } catch (_) {}
-    }
+    } catch (_) {}
+
+    // 2. Try Rumess
+    try {
+      const list2 = await this.executeWithBackoff(() => this.rumess.getSecurityList(force), 'getSecurityList (Rumess)');
+      if (Array.isArray(list2) && list2.length > 0) return list2;
+    } catch (_) {}
     return [];
   }
 
@@ -407,74 +488,156 @@ export class UnifiedNepseClient {
    * Retrieves company list
    */
   async getCompanyList(force = false) {
+    // 1. Try Nepseman
     try {
-      const list = await this.executeWithBackoff(() => this.primaryClient.getCompanyList(force), 'getCompanyList (Primary)');
+      const list = await this.executeWithBackoff(() => this.nepseman.companyList(), 'getCompanyList (Nepseman)');
       if (Array.isArray(list) && list.length > 0) return list;
-    } catch (err1) {
-      try {
-        const list2 = await this.secondaryClient.companyList();
-        if (Array.isArray(list2) && list2.length > 0) return list2;
-      } catch (_) {}
-    }
+    } catch (_) {}
+
+    // 2. Try Rumess
+    try {
+      const list2 = await this.executeWithBackoff(() => this.rumess.getCompanyList(force), 'getCompanyList (Rumess)');
+      if (Array.isArray(list2) && list2.length > 0) return list2;
+    } catch (_) {}
     return [];
   }
 
   /**
-   * Retrieves live market or last closing session data based on market hours
+   * Retrieves live market or last closing session data based on market hours.
+   * Uses Nepseman WASM todayPrice (has live ticks during open session, closing data when closed).
    */
   async getLiveOrClosingMarket() {
     const status = await this.getMarketStatus();
-    const isClosed = status?.isOpen === 'CLOSE' || status?.isOpen === 'CLOSED';
+    const isOpen = status?.isOpen === 'OPEN';
 
-    // If market is open, try getLiveMarket first
-    if (!isClosed) {
-      try {
-        const live = await this.executeWithBackoff(() => this.primaryClient.getLiveMarket(), 'getLiveMarket (Primary)');
-        if (Array.isArray(live) && live.length > 0) {
-          this.lastKnownSnapshot.todayPrices = live;
-          saveSnapshot({ todayPrices: live });
-          return {
-            isOpen: true,
-            marketStatus: 'OPEN',
-            data: live,
-            source: 'LIVE_EXCHANGE_NOTS',
-            asOf: status?.asOf || new Date().toISOString()
-          };
-        }
-      } catch (e) {
-        console.warn('[nepse-manager] Live market query during open hours failed:', e.message);
-      }
-    }
-
-    // Market is closed or live market returned 0 rows:
-    // Fetch official closing prices for the session from today-price
+    // 1. Primary: Nepseman todayPrice (Has continuous real-time ticks during open hours, and official closing records when closed)
     try {
-      const todayPrices = await this.executeWithBackoff(
-        () => this.primaryClient.getTodaysPriceVolumeHistory({ page: 0, size: 500 }),
-        'getTodaysPriceVolumeHistory (Closing Session)'
+      const prices = await this.executeWithBackoff(
+        () => this.nepseman.todayPrice(),
+        'todayPrice (Nepseman WASM)'
       );
-      const content = todayPrices?.content || todayPrices;
-      if (Array.isArray(content) && content.length > 0) {
-        this.lastKnownSnapshot.todayPrices = content;
-        saveSnapshot({ todayPrices: content });
+      if (Array.isArray(prices) && prices.length > 50) {
+        const enrichedPrices = prices.map(item => {
+          const ltp = Number(item.lastUpdatedPrice ?? item.lastTradedPrice ?? item.closePrice ?? 0);
+          const prevClose = Number(item.previousDayClosePrice ?? item.previousClose ?? ltp);
+          const change = Number((ltp - prevClose).toFixed(2));
+          const pChange = Number((prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0).toFixed(2));
+          return {
+            ...item,
+            symbol: item.symbol,
+            securityName: item.securityName || item.symbol,
+            openPrice: Number(item.openPrice ?? ltp),
+            highPrice: Number(item.highPrice ?? ltp),
+            lowPrice: Number(item.lowPrice ?? ltp),
+            closePrice: Number(item.closePrice ?? ltp),
+            lastTradedPrice: ltp,
+            lastUpdatedPrice: ltp,
+            ltp,
+            previousClose: prevClose,
+            previousDayClosePrice: prevClose,
+            pointChange: change,
+            change,
+            percentageChange: pChange,
+            pChange,
+            totalTradedQuantity: Number(item.totalTradedQuantity ?? 0),
+            totalTradedValue: Number(item.totalTradedValue ?? 0),
+            totalTrades: Number(item.totalTrades ?? 0)
+          };
+        });
+        this.lastKnownSnapshot.todayPrices = enrichedPrices;
+        saveSnapshot({ todayPrices: enrichedPrices });
         return {
-          isOpen: false,
-          marketStatus: 'CLOSED',
-          data: content,
-          source: 'NEPSE_OFFICIAL_CLOSING_SESSION',
+          isOpen,
+          marketStatus: isOpen ? 'OPEN' : 'CLOSED',
+          data: enrichedPrices,
+          source: isOpen ? 'LIVE_EXCHANGE_NOTS' : 'NEPSE_OFFICIAL_CLOSING_SESSION',
           asOf: status?.asOf || new Date().toISOString(),
-          message: 'Market closed. Serving official closing prices from previous session.'
+          isStale: false
         };
       }
     } catch (e) {
-      console.warn('[nepse-manager] Failed to fetch closing session today-prices:', e.message);
+      console.warn('[nepse-manager] Nepseman todayPrice query failed:', e.message);
     }
 
-    // Fallback: Persistent disk/memory snapshot
+    // 2. Secondary: Rumess liveMarket (Active live ticks during trading hours)
+    if (isOpen) {
+      try {
+        const livePrices = await this.executeWithBackoff(
+          () => this.rumess.getLiveMarket(),
+          'getLiveMarket (Rumess Live)'
+        );
+        if (Array.isArray(livePrices) && livePrices.length > 20) {
+          const enrichedLive = livePrices.map(item => {
+            const ltp = Number(item.lastTradedPrice ?? item.lastUpdatedPrice ?? item.closePrice ?? 0);
+            const prevClose = Number(item.previousClose ?? item.previousDayClosePrice ?? ltp);
+            const change = Number((ltp - prevClose).toFixed(2));
+            const pChange = Number((prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0).toFixed(2));
+            return {
+              ...item,
+              symbol: item.symbol,
+              securityName: item.securityName || item.symbol,
+              openPrice: Number(item.openPrice ?? ltp),
+              highPrice: Number(item.highPrice ?? ltp),
+              lowPrice: Number(item.lowPrice ?? ltp),
+              closePrice: Number(item.closePrice ?? ltp),
+              lastTradedPrice: ltp,
+              lastUpdatedPrice: ltp,
+              ltp,
+              previousClose: prevClose,
+              previousDayClosePrice: prevClose,
+              pointChange: change,
+              change,
+              percentageChange: pChange,
+              pChange,
+              totalTradedQuantity: Number(item.totalTradedQuantity ?? item.volume ?? 0),
+              totalTradedValue: Number(item.totalTradedValue ?? item.turnover ?? 0),
+              totalTrades: Number(item.totalTrades ?? item.transactions ?? 0)
+            };
+          });
+          this.lastKnownSnapshot.todayPrices = enrichedLive;
+          saveSnapshot({ todayPrices: enrichedLive });
+          return {
+            isOpen: true,
+            marketStatus: 'OPEN',
+            data: enrichedLive,
+            source: 'LIVE_EXCHANGE_NOTS',
+            asOf: status?.asOf || new Date().toISOString(),
+            isStale: false
+          };
+        }
+      } catch (e) {
+        console.warn('[nepse-manager] Rumess liveMarket failed:', e.message);
+      }
+    }
+
+    // 3. Tertiary: Rumess today-prices (Official closing records)
+    try {
+      const todayPrices = await this.executeWithBackoff(
+        () => this.rumess.getTodaysPriceVolumeHistory({ page: 0, size: 500 }),
+        'getTodaysPriceVolumeHistory (Rumess Closing)'
+      );
+      const content = todayPrices?.content || todayPrices;
+      if (Array.isArray(content) && content.length > 50) {
+        this.lastKnownSnapshot.todayPrices = content;
+        saveSnapshot({ todayPrices: content });
+        return {
+          isOpen,
+          marketStatus: isOpen ? 'OPEN' : 'CLOSED',
+          data: content,
+          source: isOpen ? 'LIVE_EXCHANGE_NOTS' : 'NEPSE_OFFICIAL_CLOSING_SESSION',
+          asOf: status?.asOf || new Date().toISOString(),
+          isStale: false
+        };
+      }
+    } catch (e) {
+      console.warn('[nepse-manager] Rumess today-prices failed:', e.message);
+    }
+
+    // 4. Fallback: Persistent disk/memory snapshot
     if (this.lastKnownSnapshot.todayPrices?.length > 0) {
       return {
-        isOpen: false,
-        marketStatus: 'CLOSED',
+        isOpen,
+        marketStatus: isOpen ? 'OPEN' : 'CLOSED',
         data: this.lastKnownSnapshot.todayPrices,
         source: 'LAST_KNOWN_OFFICIAL_SNAPSHOT',
         asOf: status?.asOf || new Date().toISOString(),
@@ -484,8 +647,8 @@ export class UnifiedNepseClient {
     }
 
     return {
-      isOpen: false,
-      marketStatus: 'CLOSED',
+      isOpen,
+      marketStatus: isOpen ? 'OPEN' : 'CLOSED',
       data: [],
       source: 'EMPTY',
       asOf: status?.asOf || new Date().toISOString()
@@ -506,11 +669,34 @@ export class UnifiedNepseClient {
 
     let rows = [];
 
-    // Attempt 1: Direct NEPSE NOTS API (official exchange source)
-    if (securityId) {
+    // Attempt 1: Direct NEPSE NOTS API via Nepseman WASM Session
+    try {
+      const nepsemanHist = await this.executeWithBackoff(
+        () => this.nepseman.priceHistory(rawSymbol, startDate, endDate, Math.min(length, 500)),
+        `NepsemanPriceHistory ${rawSymbol}`
+      );
+      if (Array.isArray(nepsemanHist) && nepsemanHist.length > 0) {
+        rows = nepsemanHist.map(h => ({
+          date: h.businessDate,
+          open: parseFloat(h.openPrice || h.closePrice || h.closingPrice || 0),
+          high: parseFloat(h.highPrice || h.closePrice || h.closingPrice || 0),
+          low: parseFloat(h.lowPrice || h.closePrice || h.closingPrice || 0),
+          close: parseFloat(h.closePrice || h.closingPrice || h.lastTradedPrice || 0),
+          volume: parseFloat(h.totalTradedQuantity || h.tradedQuantity || 0),
+          turnover: parseFloat(h.totalTradedValue || h.amount || 0),
+          trades: parseInt(h.totalTrades || 0, 10),
+          source: 'NEPSE_NOTS'
+        })).filter(r => r.close > 0);
+      }
+    } catch (nepErr) {
+      console.warn(`[nepse-manager] Nepseman price history failed for ${rawSymbol}:`, nepErr.message);
+    }
+
+    // Attempt 1B: Rumess NOTS keymap endpoint fallback
+    if (rows.length === 0 && securityId) {
       try {
         const endpoint = `/api/nots/market/security/price/${securityId}?page=0&size=${Math.min(length, 500)}&sort=businessDate,desc`;
-        const res = await this.executeWithBackoff(() => this.primaryClient.requestGETAPI(endpoint), `SecurityPriceHistory ${rawSymbol}`);
+        const res = await this.executeWithBackoff(() => this.rumess.requestGETAPI(endpoint), `RumessSecurityPriceHistory ${rawSymbol}`);
         const content = res?.content || (Array.isArray(res) ? res : []);
         if (Array.isArray(content) && content.length > 0) {
           rows = content.map(h => ({
@@ -523,7 +709,7 @@ export class UnifiedNepseClient {
             turnover: parseFloat(h.totalTradedValue || 0),
             trades: parseInt(h.totalTrades || 0, 10),
             source: 'NEPSE_NOTS'
-          }));
+          })).filter(r => r.close > 0);
         }
       } catch (err) {
         console.warn(`[nepse-manager] NOTS price history failed for ${rawSymbol}:`, err.message);
@@ -701,42 +887,46 @@ export class UnifiedNepseClient {
 
   // Forwarding methods with dual-engine failover and diagnostic logging
   async getNepseIndexDailyGraph() {
-    return this.executeWithBackoff(() => this.primaryClient.getNepseIndexDailyGraph(), 'getNepseIndexDailyGraph');
+    try {
+      const g = await this.executeWithBackoff(() => this.nepseman.indexGraph('nepse'), 'getNepseIndexDailyGraph (Nepseman)');
+      if (Array.isArray(g) && g.length > 0) return g;
+    } catch (_) {}
+    try {
+      return await this.executeWithBackoff(() => this.rumess.getNepseIndexDailyGraph(), 'getNepseIndexDailyGraph (Rumess)');
+    } catch (e) {
+      throw e;
+    }
   }
 
   async getFloorSheet(options) {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getFloorSheet(options), 'getFloorSheet (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.floorSheet(options), 'getFloorSheet (Nepseman)');
     } catch (e1) {
-      if (this.isAuthenticationError(e1)) {
-        try {
-          console.warn('[nepse-manager] Primary floorSheet failed. Trying secondary engine...');
-          return await this.secondaryClient.floorSheet(options);
-        } catch (_) {}
-      }
+      try {
+        console.warn('[nepse-manager] Nepseman floorSheet failed. Trying Rumess engine...');
+        return await this.rumess.getFloorSheet(options);
+      } catch (_) {}
       throw e1;
     }
   }
 
   async getSecurityDetails(symbol, force) {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getSecurityDetails(symbol, force), `getSecurityDetails ${symbol}`);
+      return await this.executeWithBackoff(() => this.nepseman.companyDetails(symbol), `getSecurityDetails ${symbol} (Nepseman)`);
     } catch (e1) {
-      if (this.isAuthenticationError(e1)) {
-        try {
-          return await this.secondaryClient.companyDetails(symbol);
-        } catch (_) {}
-      }
+      try {
+        return await this.rumess.getSecurityDetails(symbol, force);
+      } catch (_) {}
       throw e1;
     }
   }
 
   async getSecurityDailyGraph(symbol, force) {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getSecurityDailyGraph(symbol, force), `getSecurityDailyGraph ${symbol}`);
+      return await this.executeWithBackoff(() => this.nepseman.dailyGraph(symbol), `getSecurityDailyGraph ${symbol} (Nepseman)`);
     } catch (e1) {
       try {
-        return await this.secondaryClient.dailyGraph(symbol);
+        return await this.rumess.getSecurityDailyGraph(symbol, force);
       } catch (_) {}
       throw e1;
     }
@@ -744,10 +934,10 @@ export class UnifiedNepseClient {
 
   async getMarketDepth(symbol, force) {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getMarketDepth(symbol, force), `getMarketDepth ${symbol}`);
+      return await this.executeWithBackoff(() => this.nepseman.marketDepth(symbol), `getMarketDepth ${symbol} (Nepseman)`);
     } catch (e1) {
       try {
-        return await this.secondaryClient.marketDepth(symbol);
+        return await this.rumess.getMarketDepth(symbol, force);
       } catch (_) {}
       throw e1;
     }
@@ -755,10 +945,10 @@ export class UnifiedNepseClient {
 
   async getTopTenGainers() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTopTenGainers(), 'getTopTenGainers (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.topGainers(), 'getTopTenGainers (Nepseman)');
     } catch (e1) {
       try {
-        return await this.secondaryClient.topGainers();
+        return await this.rumess.getTopTenGainers();
       } catch (_) {}
       throw e1;
     }
@@ -766,10 +956,10 @@ export class UnifiedNepseClient {
 
   async getTopTenLosers() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTopTenLosers(), 'getTopTenLosers (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.topLosers(), 'getTopTenLosers (Nepseman)');
     } catch (e1) {
       try {
-        return await this.secondaryClient.topLosers();
+        return await this.rumess.getTopTenLosers();
       } catch (_) {}
       throw e1;
     }
@@ -777,10 +967,10 @@ export class UnifiedNepseClient {
 
   async getTopTenTradeScrips() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTopTenTradeScrips(), 'getTopTenTradeScrips (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.topTrade(), 'getTopTenTradeScrips (Nepseman)');
     } catch (e1) {
       try {
-        return await this.secondaryClient.topTrade();
+        return await this.rumess.getTopTenTradeScrips();
       } catch (_) {}
       throw e1;
     }
@@ -788,10 +978,10 @@ export class UnifiedNepseClient {
 
   async getTopTenTurnoverScrips() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTopTenTurnoverScrips(), 'getTopTenTurnoverScrips (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.topTurnover(), 'getTopTenTurnoverScrips (Nepseman)');
     } catch (e1) {
       try {
-        return await this.secondaryClient.topTurnover();
+        return await this.rumess.getTopTenTurnoverScrips();
       } catch (_) {}
       throw e1;
     }
@@ -799,10 +989,10 @@ export class UnifiedNepseClient {
 
   async getTopTenTransactionScrips() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTopTenTransactionScrips(), 'getTopTenTransactionScrips (Primary)');
+      return await this.executeWithBackoff(() => this.nepseman.topTransaction(), 'getTopTenTransactionScrips (Nepseman)');
     } catch (e1) {
       try {
-        return await this.secondaryClient.topTransaction();
+        return await this.rumess.getTopTenTransactionScrips();
       } catch (_) {}
       throw e1;
     }
@@ -810,10 +1000,11 @@ export class UnifiedNepseClient {
 
   async getLiveMarket() {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getLiveMarket(), 'getLiveMarket (Primary)');
+      const prices = await this.executeWithBackoff(() => this.nepseman.todayPrice(), 'getLiveMarket via todayPrice (Nepseman)');
+      if (Array.isArray(prices) && prices.length > 0) return prices;
     } catch (e1) {
       try {
-        return await this.secondaryClient.liveMarket();
+        return await this.rumess.getLiveMarket();
       } catch (_) {}
       throw e1;
     }
@@ -821,10 +1012,11 @@ export class UnifiedNepseClient {
 
   async getTodaysPriceVolumeHistory(options) {
     try {
-      return await this.executeWithBackoff(() => this.primaryClient.getTodaysPriceVolumeHistory(options), 'getTodaysPriceVolumeHistory (Primary)');
+      const prices = await this.executeWithBackoff(() => this.nepseman.todayPrice(options?.businessDate), 'getTodaysPriceVolumeHistory (Nepseman)');
+      if (Array.isArray(prices) && prices.length > 0) return prices;
     } catch (e1) {
       try {
-        return await this.secondaryClient.todayPrice();
+        return await this.rumess.getTodaysPriceVolumeHistory(options);
       } catch (_) {}
       throw e1;
     }

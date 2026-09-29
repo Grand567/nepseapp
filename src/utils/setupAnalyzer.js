@@ -1843,11 +1843,11 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   const isT2CircuitExhaustion = Boolean(
     t2CircuitGuard?.status === 'HIGH_T2_CIRCUIT_TRAP' ||
-    (Number(stock?.pChange || 0) >= 8.5 && Number(t2CircuitGuard?.twoDayGain || 0) >= 18.0)
+    (Number(stock?.pChange || 0) >= 13.5 && Number(t2CircuitGuard?.twoDayGain || 0) >= 27.0)
   );
 
   if (isT2CircuitExhaustion) {
-    warnings.unshift('⚠️ T+2 Circuit Exhaustion Trap: Stock has surged +18%+ over 2 sessions. High risk of Demat delivery dump on settlement.');
+    warnings.unshift('⚠️ T+2 Circuit Exhaustion Trap: Stock has surged +28%+ over 2 sessions (consecutive ±15% circuits). High risk of Demat delivery dump on settlement.');
   }
 
   const riskGate = {
@@ -1865,7 +1865,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     isCriticalT2Lockup: t2Risk.tier === 'CRITICAL',
     t2Risk,
     warning: isCircuitTrap ? `Stock is within 2% of +15% upper circuit ceiling (Rs. ${upperCeiling}). Capped upside vs severe downside risk.`
-           : isT2CircuitExhaustion ? '⚠️ T+2 Circuit Exhaustion Trap: Stock surged +18%+ over 2 sessions. Fresh buyers face heavy Demat delivery dump risk on T+2.'
+           : isT2CircuitExhaustion ? '⚠️ T+2 Circuit Exhaustion Trap: Stock surged +28%+ over 2 sessions (consecutive ±15% circuits). Fresh buyers face heavy Demat delivery dump risk on T+2.'
            : t2Risk.tier === 'CRITICAL' ? t2Risk.warning
            : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
            : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`

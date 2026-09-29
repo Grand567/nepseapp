@@ -6,7 +6,7 @@ import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
   fetchTopVolume, fetchTopTurnover, fetchTopTransactions,
   fetchAllSecurities, fetchPriceHistory,
-  loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks,
+  loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
   type EnrichedStock,
 } from '../utils/liveData';
@@ -17,8 +17,7 @@ import {
   fetchSectorHeatmap as fetchServicesSectorHeatmap,
   fetchNewsArticle, fetchBrokerHeatmap, fetchMarketDepth,
 } from '../utils/servicesApi';
-import { getWatchlist, addToWatchlist, removeFromWatchlist } from '../utils/watchlist';
-import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore } from '../utils/quantEngine';
+import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore, calculateDecisionProbabilityIndex } from '../utils/quantEngine';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
@@ -96,7 +95,14 @@ function calcWilderRsi(closes: number[], period = 14): number {
 }
 
 // ── Authentic Multi-Timeframe Performance Engine for all NEPSE Securities ──
+const tfMetricsCache = new WeakMap<object, any>();
+
 function computeStockTimeframeMetrics(stock: any) {
+  if (!stock || typeof stock !== 'object') return null;
+  if (tfMetricsCache.has(stock)) {
+    return tfMetricsCache.get(stock);
+  }
+
   const ltp = Number(stock.ltp || stock.closePrice || stock.latestPrice || 100);
   const dailyP = Number(stock.pChange || stock.percentageChange || 0);
   const dailyVol = Number(stock.volume || stock.totalTradedQuantity || 10000);
@@ -116,10 +122,20 @@ function computeStockTimeframeMetrics(stock: any) {
 
   // If real daily candles exist, calculate 100% genuine multi-timeframe returns and metrics
   if (Array.isArray(cachedHist) && cachedHist.length >= 2) {
-    const candles = cachedHist.slice().sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const isSorted = cachedHist.length <= 1 || (cachedHist[0].date <= cachedHist[cachedHist.length - 1].date);
+    const candles = isSorted ? cachedHist : cachedHist.slice().sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
     const n = candles.length;
     const latestCandle = candles[n - 1];
     const latestClose = Number(latestCandle.close || latestCandle.ltp || ltp);
+
+    // 20-day historical volume statistics for Z-score and surge calculations
+    const vList20 = candles.slice(-20).map((c: any) => Number(c.volume || 0));
+    const avgVol20 = vList20.reduce((sum, v) => sum + v, 0) / Math.max(1, vList20.length);
+    const variance20 = vList20.reduce((sum, v) => sum + Math.pow(v - avgVol20, 2), 0) / Math.max(1, vList20.length);
+    const stdDevVol20 = Math.sqrt(variance20);
+    const dailyZScore = stdDevVol20 > 0 ? Number(((dailyVol - avgVol20) / stdDevVol20).toFixed(2)) : 0;
+    const dailySurgeRatio = avgVol20 > 0 ? Number((dailyVol / avgVol20).toFixed(2)) : (Number(stock.volumeSurgeRatio) || 1.0);
+    const dailyShocker = dailyZScore >= 1.5 || dailySurgeRatio >= 1.8;
 
     const computeSlice = (barsCount: number) => {
       const k = Math.min(barsCount, n - 1);
@@ -133,19 +149,22 @@ function computeStockTimeframeMetrics(stock: any) {
       const low = Math.min(latestClose, ...slice.map((c: any) => Number(c.low || c.close || latestClose)).filter((v: number) => v > 0));
 
       const avgVolInSlice = volume / Math.max(1, k);
-      const volumeSurgeRatio = dailyVol > 0 ? +(avgVolInSlice / dailyVol).toFixed(2) : 1.0;
+      const volumeSurgeRatio = avgVolInSlice > 0 ? +(dailyVol / avgVolInSlice).toFixed(2) : 1.0;
       const isBreakout = pChange > 5 && latestClose >= high * 0.98;
 
       const closes = candles.slice(Math.max(0, n - k - 14)).map((c: any) => Number(c.close || 0)).filter((v: number) => v > 0);
       const rsi = closes.length >= 15 ? calcWilderRsi(closes) : baseRsi;
       const stealth = Math.max(10, Math.min(95, Math.round(baseStealth + pChange * 0.4)));
       const tech = Math.max(10, Math.min(95, Math.round(baseTech + (rsi - 50) * 0.5 + pChange * 0.3)));
+      const sliceZScore = avgVolInSlice > 0 ? Number(((dailyVol - avgVolInSlice) / Math.max(1, avgVolInSlice * 0.5)).toFixed(2)) : dailyZScore;
 
       return {
         pChange,
         volume: volume > 0 ? volume : Math.round(dailyVol * k),
         turnover: turnover > 0 ? turnover : Math.round(dailyTurnover * k),
         volumeSurgeRatio,
+        volumeZScore: sliceZScore,
+        isVolumeShocker: sliceZScore >= 1.5 || volumeSurgeRatio >= 1.8,
         high,
         low,
         isBreakout,
@@ -155,12 +174,14 @@ function computeStockTimeframeMetrics(stock: any) {
       };
     };
 
-    return {
+    const result = {
       '1D': {
         pChange: dailyP,
         volume: dailyVol,
         turnover: dailyTurnover,
-        volumeSurgeRatio: Number(stock.volumeSurgeRatio) || 1.0,
+        volumeSurgeRatio: dailySurgeRatio,
+        volumeZScore: dailyZScore,
+        isVolumeShocker: dailyShocker,
         high: Number(stock.high) || ltp,
         low: Number(stock.low) || ltp,
         isBreakout: Boolean(stock.isBreakout),
@@ -174,6 +195,8 @@ function computeStockTimeframeMetrics(stock: any) {
       '6M': computeSlice(132),
       '1Y': computeSlice(250),
     };
+    tfMetricsCache.set(stock, result);
+    return result;
   }
 
   // Pure deterministic exchange-calibrated calculation when candles are pending fetch (ZERO random noise)
@@ -233,14 +256,20 @@ function computeStockTimeframeMetrics(stock: any) {
   const yRsi = +(Math.max(15, Math.min(88, 35 + pos52 * 40)).toFixed(1));
   const yTech = Math.max(15, Math.min(95, Math.round(40 + pos52 * 40)));
 
-  return {
-    '1D': { pChange: dailyP, volume: dailyVol, turnover: dailyTurnover, volumeSurgeRatio: Number(stock.volumeSurgeRatio) || 1.0, high: Number(stock.high) || ltp, low: Number(stock.low) || ltp, isBreakout: Boolean(stock.isBreakout), stealthAccumulation: baseStealth, rsi: baseRsi, technicalScore: baseTech },
-    '1W': { pChange: wRet, volume: wVol, turnover: wTurnover, volumeSurgeRatio: Number(stock.volumeSurgeRatio) || 1.1, high: Number(wHigh), low: Number(wLow), isBreakout: wBreakout, stealthAccumulation: wStealth, rsi: wRsi, technicalScore: wTech },
-    '1M': { pChange: mRet, volume: mVol, turnover: mTurnover, volumeSurgeRatio: Number(stock.volumeSurgeRatio) || 1.1, high: Number(mHigh), low: Number(mLow), isBreakout: mBreakout, stealthAccumulation: mStealth, rsi: mRsi, technicalScore: mTech },
-    '3M': { pChange: qRet, volume: qVol, turnover: qTurnover, volumeSurgeRatio: 1.0, high: Number(qHigh), low: Number(qLow), isBreakout: qBreakout, stealthAccumulation: qStealth, rsi: qRsi, technicalScore: qTech },
-    '6M': { pChange: sRet, volume: sVol, turnover: sTurnover, volumeSurgeRatio: 1.0, high: Number(sHigh), low: Number(sLow), isBreakout: sBreakout, stealthAccumulation: sStealth, rsi: sRsi, technicalScore: sTech },
-    '1Y': { pChange: yRet, volume: yVol, turnover: yTurnover, volumeSurgeRatio: 1.0, high: Number(yHigh), low: Number(yLow), isBreakout: yBreakout, stealthAccumulation: yStealth, rsi: yRsi, technicalScore: yTech },
+  const fallbackSurge = Number(stock.volumeSurgeRatio) || 1.0;
+  const fallbackZScore = Number(stock.volumeZScore) || (fallbackSurge >= 1.4 ? Number(((fallbackSurge - 1.0) * 2.0).toFixed(2)) : 0);
+  const fallbackShocker = fallbackZScore >= 1.5 || fallbackSurge >= 1.8;
+
+  const result = {
+    '1D': { pChange: dailyP, volume: dailyVol, turnover: dailyTurnover, volumeSurgeRatio: fallbackSurge, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(stock.high) || ltp, low: Number(stock.low) || ltp, isBreakout: Boolean(stock.isBreakout), stealthAccumulation: baseStealth, rsi: baseRsi, technicalScore: baseTech },
+    '1W': { pChange: wRet, volume: wVol, turnover: wTurnover, volumeSurgeRatio: fallbackSurge >= 1.2 ? fallbackSurge : 1.1, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(wHigh), low: Number(wLow), isBreakout: wBreakout, stealthAccumulation: wStealth, rsi: wRsi, technicalScore: wTech },
+    '1M': { pChange: mRet, volume: mVol, turnover: mTurnover, volumeSurgeRatio: fallbackSurge >= 1.2 ? fallbackSurge : 1.1, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(mHigh), low: Number(mLow), isBreakout: mBreakout, stealthAccumulation: mStealth, rsi: mRsi, technicalScore: mTech },
+    '3M': { pChange: qRet, volume: qVol, turnover: qTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(qHigh), low: Number(qLow), isBreakout: qBreakout, stealthAccumulation: qStealth, rsi: qRsi, technicalScore: qTech },
+    '6M': { pChange: sRet, volume: sVol, turnover: sTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(sHigh), low: Number(sLow), isBreakout: sBreakout, stealthAccumulation: sStealth, rsi: sRsi, technicalScore: sTech },
+    '1Y': { pChange: yRet, volume: yVol, turnover: yTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(yHigh), low: Number(yLow), isBreakout: yBreakout, stealthAccumulation: yStealth, rsi: yRsi, technicalScore: yTech },
   };
+  tfMetricsCache.set(stock, result);
+  return result;
 }
 
 // ── Universal screener: Powers sub-tabs with interactive TimeframeFilterBar where applicable ──
@@ -312,23 +341,58 @@ export function UniversalScreener({
         const hi52 = Number(stock.high52w || stock.fiftyTwoWeekHigh || (c > 0 ? c * 1.35 : 500));
         const lo52 = Number(stock.low52w || stock.fiftyTwoWeekLow || (c > 0 ? c * 0.65 : 200));
 
+        let dynamicDpi = Number(stock.dpi) || 50;
+        let dpiDecision = 'Neutral / Hold';
+        try {
+          const dpiRes = calculateDecisionProbabilityIndex({
+            ...stock,
+            pChange: tfMetrics.pChange,
+            volume: tfMetrics.volume,
+            turnover: tfMetrics.turnover,
+            rsi: tfMetrics.rsi,
+            technicalScore: tfMetrics.technicalScore,
+            stealthAccumulation: tfMetrics.stealthAccumulation,
+            isBreakout: tfMetrics.isBreakout,
+          });
+          if (dpiRes) {
+            dynamicDpi = typeof dpiRes === 'number' ? dpiRes : (dpiRes.dpi ?? dynamicDpi);
+            dpiDecision = dpiRes.decision || dpiDecision;
+          }
+        } catch (_) {}
+
+        const currentPChange = hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange;
+        const currentScore = tfMetrics.technicalScore ?? stock.technicalScore ?? 50;
+        const currentRating = currentScore >= 75 ? 'Strong Buy' : currentScore >= 60 ? 'Buy' : currentScore <= 35 ? 'Strong Sell' : currentScore <= 45 ? 'Sell' : 'Neutral';
+        const cachedNepsePChange = Number(getCachedIndices()?.nepse?.pChange || 0);
+        const rsSpread = Number((currentPChange - cachedNepsePChange).toFixed(2));
+        const week52HighDist = hi52 > 0 ? Number((((c - hi52) / hi52) * 100).toFixed(2)) : null;
+        const week52LowDist = lo52 > 0 ? Number((((c - lo52) / lo52) * 100).toFixed(2)) : null;
+
         return {
           ...stock,
           // Overwrite active metrics so sub-tab filterFn and sortFn naturally adapt to the selected horizon
-          pChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
-          percentageChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
-          displayPChange: hideTimeframe ? (stock.pChange || 0) : tfMetrics.pChange,
+          pChange: currentPChange,
+          percentageChange: currentPChange,
+          displayPChange: currentPChange,
           volume: hideTimeframe ? (stock.volume || 0) : tfMetrics.volume,
           totalTradedQuantity: hideTimeframe ? (stock.volume || 0) : tfMetrics.volume,
           turnover: hideTimeframe ? (stock.turnover || 0) : tfMetrics.turnover,
           totalTurnover: hideTimeframe ? (stock.turnover || 0) : tfMetrics.turnover,
           volumeSurgeRatio: tfMetrics.volumeSurgeRatio,
+          volumeZScore: tfMetrics.volumeZScore ?? stock.volumeZScore ?? 0,
+          isVolumeShocker: tfMetrics.isVolumeShocker ?? stock.isVolumeShocker ?? ((tfMetrics.volumeZScore ?? stock.volumeZScore ?? 0) >= 1.5),
           high: tfMetrics.high,
           low: tfMetrics.low,
           isBreakout: tfMetrics.isBreakout,
           stealthAccumulation: tfMetrics.stealthAccumulation,
           rsi: tfMetrics.rsi,
-          technicalScore: tfMetrics.technicalScore,
+          technicalScore: currentScore,
+          technicalRating: currentRating,
+          rsSpread,
+          week52HighDist,
+          week52LowDist,
+          dpi: dynamicDpi,
+          dpiDecision,
           displayHorizon: hideTimeframe ? '1D' : activeTf,
           dailyPChange: stock.pChange,
           dailyVolume: stock.volume,
@@ -1937,7 +2001,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const pCh = Number(s.pChange || 0);
       const vol = Number(s.volume || s.totalTradedQuantity || 0);
       const ltp = Number(s.ltp || s.price || 0);
-      return ltp > 50 && pCh >= -1.5 && pCh <= 11.0 && (vol > 80 || Number(s.turnover) > 80000);
+      return ltp > 50 && pCh >= -1.5 && pCh <= 14.0 && (vol > 80 || Number(s.turnover) > 80000);
     });
 
     const candidates = pool.length > 0 ? pool : list;
@@ -1977,12 +2041,12 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const ltp = Number(s.ltp || s.price || 100);
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
 
-      // Smooth continuous momentum score calibrated to NEPSE
+      // Smooth continuous momentum score calibrated to NEPSE ±15% circuit limit
       let momScore = 20;
-      if (pCh >= 1.0 && pCh <= 7.0) {
-        momScore = 20 + (pCh * 2.5); // optimal healthy thrust
-      } else if (pCh > 7.0) {
-        momScore = Math.max(15, 37.5 - (pCh - 7.0) * 3.0); // parabolic extension penalty
+      if (pCh >= 1.0 && pCh <= 10.0) {
+        momScore = 20 + (pCh * 2.0); // optimal healthy thrust
+      } else if (pCh > 10.0) {
+        momScore = Math.max(15, 40 - (pCh - 10.0) * 4.0); // parabolic extension penalty near 15% circuit ceiling
       } else if (pCh > 0) {
         momScore = 15 + (pCh * 5.0);
       } else {
@@ -2297,7 +2361,8 @@ export function SectorHeatmapService() {
       const map: Record<string, any> = {};
       stocks.forEach((s) => {
         const sec = s.sector || 'Others';
-        const tfMetrics = computeStockTimeframeMetrics(s)[activeTf as keyof ReturnType<typeof computeStockTimeframeMetrics>] || computeStockTimeframeMetrics(s)['1D'];
+        const allTf = computeStockTimeframeMetrics(s);
+        const tfMetrics = allTf?.[activeTf as keyof ReturnType<typeof computeStockTimeframeMetrics>] || allTf?.['1D'] || {};
         const p = tfMetrics.pChange;
         const v = tfMetrics.volume;
         const t = tfMetrics.turnover;
@@ -2448,36 +2513,127 @@ export const SectorHeatmap = SectorHeatmapService;
 // ── Live Floorsheet & Zero-Sum Broker Balance Service (Wired to /api/floorsheet) ──
 export function LiveFloorsheetService() {
   const [data, setData] = useState<any[]>([]);
+  const [multiDayLedger, setMultiDayLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [timeframe, setTimeframe] = useState('1D');
   const [viewMode, setViewMode] = useState<'ledger' | 'trades'>('ledger');
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetchServicesFloorsheet(null, 1, 80);
-      let rows: any[] = [];
-      if (res && res.rows) rows = res.rows;
-      else if (res && res.data && res.data.rows) rows = res.data.rows;
-      else if (Array.isArray(res)) rows = res;
-      else if (Array.isArray(res?.data)) rows = res.data;
+  const daysMap: Record<string, number> = {
+    '1D': 1,
+    '1W': 7,
+    '1M': 30,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 365,
+  };
 
-      if (!rows.length) {
-        const fallback = await fetchFloorSheet(80);
-        rows = fallback?.data || [];
+  const loadData = async (activeTf = timeframe) => {
+    setLoading(true);
+    const days = daysMap[activeTf] || 1;
+    try {
+      // Parallel fetch: Real floorsheet raw contracts + multi-horizon broker aggregation heatmap
+      const [fsRes, hmRes] = await Promise.allSettled([
+        fetchServicesFloorsheet(null, 1, 100),
+        fetchBrokerHeatmap({ days })
+      ]);
+
+      let rawRows: any[] = [];
+      if (fsRes.status === 'fulfilled' && fsRes.value) {
+        const val = fsRes.value;
+        if (Array.isArray(val.rows)) rawRows = val.rows;
+        else if (Array.isArray(val.data?.rows)) rawRows = val.data.rows;
+        else if (Array.isArray(val)) rawRows = val;
+        else if (Array.isArray(val.data)) rawRows = val.data;
       }
-      setData(rows);
+
+      if (!rawRows.length) {
+        try {
+          const fallback = await fetchFloorSheet(100);
+          rawRows = fallback?.data || [];
+        } catch (_) {}
+      }
+
+      const normalized = rawRows.map((r: any, idx: number) => {
+        const q = Number(r.quantity ?? r.qty ?? r.contractQuantity ?? 0);
+        const rate = Number(r.rate ?? r.contractRate ?? 0);
+        const amt = Number(r.amount ?? r.contractAmount ?? (q * rate));
+        const b = String(r.buyerBroker || r.buyer || r.buyerMemberId || '');
+        const s = String(r.sellerBroker || r.seller || r.sellerMemberId || '');
+        return {
+          contractId: r.contractId || `${idx + 1}`,
+          symbol: r.symbol || r.stockSymbol || '',
+          stockSymbol: r.stockSymbol || r.symbol || '',
+          buyerBroker: b,
+          buyerBrokerName: r.buyerBrokerName || (b ? `Broker #${b}` : '—'),
+          sellerBroker: s,
+          sellerBrokerName: r.sellerBrokerName || (s ? `Broker #${s}` : '—'),
+          quantity: q,
+          qty: q,
+          rate,
+          amount: amt,
+          businessDate: r.businessDate || '',
+          tradeTime: r.tradeTime || ''
+        };
+      });
+      setData(normalized);
+
+      // Process multi-day institutional broker matrix
+      let hmMatrix: any[] = [];
+      if (hmRes.status === 'fulfilled' && hmRes.value) {
+        const val = hmRes.value?.data || hmRes.value;
+        if (Array.isArray(val?.matrix)) hmMatrix = val.matrix;
+      }
+
+      if (hmMatrix.length > 0) {
+        const parsed = hmMatrix.map((m: any) => {
+          const bId = String(m.broker);
+          const buyAmt = Number(m.totalBuy || 0);
+          const sellAmt = Number(m.totalSell || 0);
+          const netAmt = Number(m.netFlow ?? (buyAmt - sellAmt));
+          const totalTurnover = buyAmt + sellAmt;
+          const dominancePct = totalTurnover > 0 ? +((buyAmt / totalTurnover) * 100).toFixed(1) : 50;
+
+          const sortedScrips = [...(m.scrips || [])].sort((a: any, b: any) =>
+            Math.abs(Number(b.net || (b.buy + b.sell))) - Math.abs(Number(a.net || (a.buy + a.sell)))
+          );
+          const topScrip = sortedScrips[0]?.symbol || '';
+
+          // Average share price estimate (~Rs 450) to project share count
+          const buyQty = Math.round(buyAmt / 450);
+          const sellQty = Math.round(sellAmt / 450);
+          const netQty = Math.round(netAmt / 450);
+
+          return {
+            broker: bId,
+            name: m.brokerName || `Broker #${bId}`,
+            buyAmt: Math.round(buyAmt),
+            sellAmt: Math.round(sellAmt),
+            netAmt: Math.round(netAmt),
+            buyQty,
+            sellQty,
+            netQty,
+            dominancePct,
+            topScrip,
+            tradesCount: m.scrips?.length || 0,
+            status: netAmt > 0 ? 'Accumulating' : netAmt < 0 ? 'Distributing' : 'Balanced'
+          };
+        }).sort((a: any, b: any) => b.netAmt - a.netAmt);
+
+        setMultiDayLedger(parsed);
+      } else {
+        setMultiDayLedger([]);
+      }
     } catch (_) {}
     setLoading(false);
   };
 
-  useEffect(() => { loadData(); }, [timeframe]);
+  useEffect(() => { loadData(timeframe); }, [timeframe]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(timeframe);
     setRefreshing(false);
   };
 
@@ -2492,23 +2648,24 @@ export function LiveFloorsheetService() {
     });
   }, [data, query]);
 
-  // Compute Zero-Sum Broker Balance Ledger
-  const brokerLedger = useMemo(() => {
-    const map: Record<string, { broker: string; name: string; buyQty: number; sellQty: number; buyAmt: number; sellAmt: number; tradesCount: number }> = {};
+  // Compute 1D Zero-Sum Broker Balance from real contract log
+  const live1dLedger = useMemo(() => {
+    const map: Record<string, { broker: string; name: string; buyQty: number; sellQty: number; buyAmt: number; sellAmt: number; tradesCount: number; topScrip?: string }> = {};
     filtered.forEach((r) => {
       const b = String(r.buyerBroker || r.buyer || '');
       const s = String(r.sellerBroker || r.seller || '');
-      const q = Number(r.quantity) || 0;
-      const a = Number(r.amount) || 0;
+      const q = Number(r.quantity ?? r.qty ?? 0);
+      const a = Number(r.amount ?? 0);
+      const sym = r.symbol || r.stockSymbol || '';
 
       if (b) {
-        if (!map[b]) map[b] = { broker: b, name: r.buyerBrokerName || `Broker #${b}`, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, tradesCount: 0 };
+        if (!map[b]) map[b] = { broker: b, name: r.buyerBrokerName || `Broker #${b}`, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, tradesCount: 0, topScrip: sym };
         map[b].buyQty += q;
         map[b].buyAmt += a;
         map[b].tradesCount++;
       }
       if (s) {
-        if (!map[s]) map[s] = { broker: s, name: r.sellerBrokerName || `Broker #${s}`, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, tradesCount: 0 };
+        if (!map[s]) map[s] = { broker: s, name: r.sellerBrokerName || `Broker #${s}`, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, tradesCount: 0, topScrip: sym };
         map[s].sellQty += q;
         map[s].sellAmt += a;
         map[s].tradesCount++;
@@ -2534,12 +2691,50 @@ export function LiveFloorsheetService() {
     }).sort((a, b) => b.netAmt - a.netAmt);
   }, [filtered]);
 
-  const totalQty = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.quantity) || 0), 0)), [filtered]);
-  const totalAmt = useMemo(() => Math.round(filtered.reduce((s, r) => s + (Number(r.amount) || 0), 0)), [filtered]);
-  const topAccumulator = useMemo(() => brokerLedger[0] || null, [brokerLedger]);
-  const topDistributor = useMemo(() => [...brokerLedger].reverse()[0] || null, [brokerLedger]);
+  // Determine active ledger based on timeframe and data availability
+  const activeLedger = useMemo(() => {
+    let source: any[] = [];
+    if (timeframe === '1D') {
+      source = live1dLedger.length > 0 ? live1dLedger : multiDayLedger;
+    } else {
+      source = multiDayLedger.length > 0 ? multiDayLedger : live1dLedger;
+    }
 
-  if (loading) return <Spinner text="Connecting to NEPSE Live Floorsheet Engine…" />;
+    if (!query.trim()) return source;
+    const q = query.toLowerCase();
+    return source.filter((b: any) =>
+      String(b.broker).includes(q) ||
+      String(b.name || '').toLowerCase().includes(q) ||
+      String(b.topScrip || '').toLowerCase().includes(q)
+    );
+  }, [timeframe, live1dLedger, multiDayLedger, query]);
+
+  const rawQty = useMemo(() => Math.round(filtered.reduce((s, r) => s + Number(r.quantity ?? r.qty ?? 0), 0)), [filtered]);
+  const rawAmt = useMemo(() => Math.round(filtered.reduce((s, r) => s + Number(r.amount ?? 0), 0)), [filtered]);
+
+  const totalVol = useMemo(() => {
+    if (timeframe === '1D' && filtered.length > 0) return rawQty;
+    const ledgerVol = activeLedger.reduce((s: number, b: any) => s + (Number(b.buyQty || 0) + Number(b.sellQty || 0)), 0);
+    return Math.round(ledgerVol / 2);
+  }, [timeframe, filtered.length, rawQty, activeLedger]);
+
+  const totalTurnover = useMemo(() => {
+    if (timeframe === '1D' && filtered.length > 0) return rawAmt;
+    const ledgerTurnover = activeLedger.reduce((s: number, b: any) => s + (Number(b.buyAmt || 0) + Number(b.sellAmt || 0)), 0);
+    return Math.round(ledgerTurnover / 2);
+  }, [timeframe, filtered.length, rawAmt, activeLedger]);
+
+  const topAccumulator = useMemo(() => {
+    const list = [...activeLedger].sort((a: any, b: any) => b.netAmt - a.netAmt);
+    return list[0]?.netAmt > 0 ? list[0] : null;
+  }, [activeLedger]);
+
+  const topDistributor = useMemo(() => {
+    const list = [...activeLedger].sort((a: any, b: any) => a.netAmt - b.netAmt);
+    return list[0]?.netAmt < 0 ? list[0] : null;
+  }, [activeLedger]);
+
+  if (loading) return <Spinner text="Connecting to NEPSE Live Floorsheet & Institutional Flow Engine…" />;
 
   return (
     <div className="space-y-4">
@@ -2563,7 +2758,7 @@ export function LiveFloorsheetService() {
           }`}
         >
           <span>⚖️ Zero-Sum Broker Ledger</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-900/60 text-blue-200">{brokerLedger.length}</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-900/60 text-blue-200">{activeLedger.length}</span>
         </button>
         <button
           type="button"
@@ -2582,8 +2777,8 @@ export function LiveFloorsheetService() {
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard label="Top Accumulator" value={topAccumulator ? `Broker #${topAccumulator.broker}` : '—'} subtitle={topAccumulator ? `+Rs. ${(topAccumulator.netAmt / 1e5).toFixed(1)}L` : undefined} color="#10b981" />
         <StatCard label="Top Distributor" value={topDistributor ? `Broker #${topDistributor.broker}` : '—'} subtitle={topDistributor ? `-Rs. ${(Math.abs(topDistributor.netAmt) / 1e5).toFixed(1)}L` : undefined} color="#f43f5e" />
-        <StatCard label={`${timeframe} Volume`} value={totalQty >= 1e6 ? `${(totalQty / 1e6).toFixed(2)}M` : totalQty.toLocaleString()} big color="#3b82f6" />
-        <StatCard label={`${timeframe} Turnover`} value={totalAmt >= 1e7 ? `Rs. ${(totalAmt / 1e7).toFixed(2)} Cr` : `Rs. ${(totalAmt / 1e5).toFixed(2)} L`} big color="#a855f7" />
+        <StatCard label={`${timeframe} Volume`} value={totalVol >= 1e7 ? `${(totalVol / 1e7).toFixed(2)} Cr` : totalVol >= 1e5 ? `${(totalVol / 1e5).toFixed(2)} L` : totalVol.toLocaleString()} big color="#3b82f6" />
+        <StatCard label={`${timeframe} Turnover`} value={totalTurnover >= 1e7 ? `Rs. ${(totalTurnover / 1e7).toFixed(2)} Cr` : `Rs. ${(totalTurnover / 1e5).toFixed(2)} L`} big color="#a855f7" />
       </div>
 
       <div className="relative">
@@ -2606,96 +2801,125 @@ export function LiveFloorsheetService() {
       </div>
 
       {viewMode === 'ledger' ? (
-        <div className="max-h-[580px] overflow-y-auto overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner">
-          <table className="w-full border-collapse text-left text-xs text-slate-200">
-            <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
-              <tr>
-                <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Broker</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-emerald-400">Bought (NPR)</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-rose-400">Sold (NPR)</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-300">Net Flow</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Net Qty</th>
-                <th className="px-3.5 py-2.5 text-center text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {brokerLedger.map((b) => {
-                const isNetBuy = b.netAmt >= 0;
-                return (
-                  <tr key={b.broker} className="transition-colors hover:bg-slate-800/50 font-mono">
-                    <td className="whitespace-nowrap px-3.5 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-blue-400 font-bold">#{b.broker}</span>
-                        <span className="text-slate-200 font-semibold font-sans truncate max-w-[120px]">{b.name}</span>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-emerald-400 font-bold">Rs. {(b.buyAmt / 1e5).toFixed(1)}L</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-rose-400 font-bold">Rs. {(b.sellAmt / 1e5).toFixed(1)}L</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-black" style={{ color: isNetBuy ? '#10b981' : '#f43f5e' }}>
-                      {isNetBuy ? '+' : ''}Rs. {(b.netAmt / 1e5).toFixed(1)}L
-                    </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-slate-300">
-                      {b.netQty > 0 ? `+${b.netQty.toLocaleString()}` : b.netQty.toLocaleString()}
-                    </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-center">
-                      <span className={`px-2 py-0.5 rounded text-[10.5px] font-bold border ${
-                        b.status === 'Accumulating'
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
-                          : b.status === 'Distributing'
-                          ? 'bg-rose-950/80 text-rose-300 border-rose-700'
-                          : 'bg-slate-800 text-slate-400 border-slate-700'
-                      }`}>
-                        {b.status}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        activeLedger.length === 0 ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">
+            No broker flows found matching your criteria. Try switching timeframes or clearing search filters.
+          </div>
+        ) : (
+          <div className="max-h-[580px] overflow-y-auto overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner">
+            <table className="w-full border-collapse text-left text-xs text-slate-200">
+              <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
+                <tr>
+                  <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Broker</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-emerald-400">Bought (NPR)</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-rose-400">Sold (NPR)</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-300">Net Flow</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Est. Net Qty</th>
+                  <th className="px-3.5 py-2.5 text-center text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {activeLedger.map((b) => {
+                  const isNetBuy = b.netAmt >= 0;
+                  return (
+                    <tr key={b.broker} className="transition-colors hover:bg-slate-800/50 font-mono">
+                      <td className="whitespace-nowrap px-3.5 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-blue-400 font-bold">#{b.broker}</span>
+                          <span className="text-slate-200 font-semibold font-sans truncate max-w-[140px]">{b.name}</span>
+                          {b.topScrip && (
+                            <span className="rounded bg-slate-800/90 border border-slate-700/80 px-1 py-0.2 text-[10px] text-amber-300 font-mono" title={`Top Active Scrip: ${b.topScrip}`}>
+                              {b.topScrip}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-emerald-400 font-bold">
+                        {b.buyAmt >= 1e7 ? `Rs. ${(b.buyAmt / 1e7).toFixed(2)}Cr` : `Rs. ${(b.buyAmt / 1e5).toFixed(1)}L`}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-rose-400 font-bold">
+                        {b.sellAmt >= 1e7 ? `Rs. ${(b.sellAmt / 1e7).toFixed(2)}Cr` : `Rs. ${(b.sellAmt / 1e5).toFixed(1)}L`}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-black" style={{ color: isNetBuy ? '#10b981' : '#f43f5e' }}>
+                        {isNetBuy ? '+' : ''}{b.netAmt >= 1e7 || b.netAmt <= -1e7 ? `Rs. ${(b.netAmt / 1e7).toFixed(2)}Cr` : `Rs. ${(b.netAmt / 1e5).toFixed(1)}L`}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-slate-300">
+                        {b.netQty > 0 ? `+${b.netQty.toLocaleString()}` : b.netQty.toLocaleString()}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10.5px] font-bold border ${
+                          b.status === 'Accumulating'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
+                            : b.status === 'Distributing'
+                            ? 'bg-rose-950/80 text-rose-300 border-rose-700'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {b.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
       ) : (
-        <div className="max-h-[580px] overflow-y-auto overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner">
-          <table className="w-full border-collapse text-left text-xs text-slate-200">
-            <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
-              <tr>
-                <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Contract #</th>
-                <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Symbol</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Buyer</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Seller</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Quantity</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Rate (NPR)</th>
-                <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {filtered.map((r, i) => {
-                const b = String(r.buyerBroker || r.buyer || '');
-                const s = String(r.sellerBroker || r.seller || '');
-                const isCross = b && s && b === s;
-                return (
-                  <tr key={r.contractId || i} className={`transition-colors ${isCross ? 'bg-amber-950/20' : i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50`}>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 font-mono text-[11px] text-slate-400">{r.contractId}</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 font-bold text-white font-mono">{r.symbol || r.stockSymbol}</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
-                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-blue-400">#{b}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
-                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-rose-400">#{s}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">{Math.round(Number(r.quantity || 0)).toLocaleString()}</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-slate-200">Rs. {Number(r.rate || 0).toLocaleString()}</td>
-                    <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">Rs. {Math.round(Number(r.amount || 0)).toLocaleString()}</td>
+        <div className="space-y-2">
+          {timeframe !== '1D' && (
+            <InfoBanner type="info">
+              Raw contract log shows the latest market trading session. Multi-day institutional inventory absorption for <strong>{timeframe}</strong> is summarized in the <strong>Zero-Sum Broker Ledger</strong> view.
+            </InfoBanner>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">
+              No real-time contract transactions currently available (market closed). Switch to <strong>⚖️ Zero-Sum Broker Ledger</strong> to view verified institutional flows.
+            </div>
+          ) : (
+            <div className="max-h-[580px] overflow-y-auto overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner">
+              <table className="w-full border-collapse text-left text-xs text-slate-200">
+                <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
+                  <tr>
+                    <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Contract #</th>
+                    <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Symbol</th>
+                    <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Buyer</th>
+                    <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Seller</th>
+                    <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Quantity</th>
+                    <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Rate (NPR)</th>
+                    <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Amount</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {filtered.map((r, i) => {
+                    const b = String(r.buyerBroker || r.buyer || '');
+                    const s = String(r.sellerBroker || r.seller || '');
+                    const isCross = b && s && b === s;
+                    return (
+                      <tr key={r.contractId || i} className={`transition-colors ${isCross ? 'bg-amber-950/20' : i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50`}>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 font-mono text-[11px] text-slate-400">{r.contractId}</td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 font-bold text-white font-mono">{r.symbol || r.stockSymbol}</td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-blue-400">#{b}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-rose-400">#{s}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">{Math.round(Number(r.quantity || r.qty || 0)).toLocaleString()}</td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono text-slate-200">Rs. {Number(r.rate || 0).toLocaleString()}</td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">Rs. {Math.round(Number(r.amount || 0)).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       <Insight>
-        Zero-Sum Floorsheet exposes where cash flowed: brokers accumulating positive net inventory are taking long exposure, while brokers distributing are offloading into retail liquidity.
+        Zero-Sum Floorsheet exposes where capital flows across brokers: accumulating brokers taking positive net inventory are absorbing shares into institutional accounts, while distributing brokers are net sellers.
       </Insight>
     </div>
   );
@@ -2892,7 +3116,13 @@ export function BrokerHeatmapService() {
 }
 
 // ── Dedicated Broker Favourites Service (Tracks Broker Accumulation by Horizon) ──
-export function BrokerFavouritesService() {
+export function BrokerFavouritesService({
+  stocks: propStocks = [],
+  onSelectStock
+}: {
+  stocks?: any[];
+  onSelectStock?: (stk: any) => void;
+} = {}) {
   const [timeframe, setTimeframe] = useState('1D');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -2902,16 +3132,34 @@ export function BrokerFavouritesService() {
   const loadData = async (tf = timeframe) => {
     setLoading(true);
     try {
+      let stockList = propStocks;
+      if (!stockList || stockList.length === 0) {
+        const nepseRes = await loadNepseData().catch(() => null);
+        stockList = nepseRes?.stocks || [];
+      }
+
       const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
       const tfDays = daysMap[tf] || 1;
       const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
       const heatmapData = heatmapRes?.data || heatmapRes;
       const matrix = heatmapData?.matrix || [];
 
+      if (!stockList || stockList.length === 0) {
+        const scripMap = new Map<string, { symbol: string; ltp: number }>();
+        matrix.forEach((b: any) => {
+          (b.scrips || []).forEach((s: any) => {
+            if (s.symbol && !scripMap.has(s.symbol)) {
+              scripMap.set(s.symbol, { symbol: s.symbol, ltp: 500 });
+            }
+          });
+        });
+        stockList = Array.from(scripMap.values());
+      }
+
       // Calculate broker-specific accumulation score for each stock across timeframes
-      const brokerFavored = stocks.map((stock) => {
+      const brokerFavored = stockList.map((stock) => {
         const metricsMap = computeStockTimeframeMetrics(stock);
-        const tfMetrics = metricsMap[tf as keyof typeof metricsMap] || metricsMap['1D'];
+        const tfMetrics = metricsMap?.[tf as keyof typeof metricsMap] || metricsMap?.['1D'] || {};
         const sym = stock.symbol;
 
         let totalBuy = 0;
@@ -2936,10 +3184,10 @@ export function BrokerFavouritesService() {
 
         // Horizon-differentiated institutional scores driven purely by verified volume, stealth and returns
         let horizonFavScore = 0;
-        const pChg = Number(tfMetrics.pChange || 0);
-        const vSurge = Number(tfMetrics.volumeSurgeRatio || 1.1);
-        const stealth = Number(tfMetrics.stealthAccumulation || 50);
-        const tech = Number(tfMetrics.technicalScore || 50);
+        const pChg = Number(tfMetrics?.pChange || stock.pChange || 0);
+        const vSurge = Number(tfMetrics?.volumeSurgeRatio || stock.volumeSurgeRatio || 1.1);
+        const stealth = Number(tfMetrics?.stealthAccumulation || stock.stealthAccumulation || 50);
+        const tech = Number(tfMetrics?.technicalScore || stock.technicalScore || 50);
 
         if (tf === '1D') {
           horizonFavScore = (vSurge * 45) + (pChg * 5.5) + (totalBuy > 0 ? 35 : 0) + (stealth * 0.4);
@@ -2972,16 +3220,18 @@ export function BrokerFavouritesService() {
           favScore: horizonFavScore,
           favBroker,
           netDominancePct,
-          institutionalVol: tfMetrics.volume,
-          institutionalTurnover: tfMetrics.turnover,
-          periodChange: tfMetrics.pChange,
+          institutionalVol: tfMetrics?.volume || stock.volume || 0,
+          institutionalTurnover: tfMetrics?.turnover || stock.turnover || 0,
+          periodChange: pChg,
           status: netDominancePct >= 72 ? 'Heavy Accumulation' : netDominancePct >= 58 ? 'Moderate Inflow' : 'Neutral Hold'
         };
       });
 
       const sorted = brokerFavored.sort((a, b) => b.favScore - a.favScore).slice(0, 30);
       setData(sorted);
-    } catch (_) {}
+    } catch (err) {
+      console.error('[BrokerFavouritesService] Error loading data:', err);
+    }
     setLoading(false);
   };
 
@@ -3041,8 +3291,8 @@ export function BrokerFavouritesService() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner">
-        <table className="w-full border-collapse text-left text-xs text-slate-200">
+      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner w-full max-w-full">
+        <table className="w-full border-collapse text-left text-xs text-slate-200 min-w-[650px]">
           <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
             <tr>
               <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">#</th>
@@ -3059,7 +3309,11 @@ export function BrokerFavouritesService() {
               const p = Number(s.periodChange || s.pChange || 0);
               const isUp = p >= 0;
               return (
-                <tr key={s.symbol} className="hover:bg-slate-800/50 transition-colors">
+                <tr
+                  key={s.symbol}
+                  onClick={() => onSelectStock && onSelectStock(s)}
+                  className={`hover:bg-slate-800/50 transition-colors ${onSelectStock ? 'cursor-pointer' : ''}`}
+                >
                   <td className="px-3.5 py-2.5 font-mono text-slate-500 text-xs">{idx + 1}</td>
                   <td className="px-3.5 py-2.5">
                     <div className="flex flex-col">
@@ -3107,8 +3361,16 @@ export function BrokerFavouritesService() {
 }
 
 // ── Dedicated Institutional Broker Analysis Service (Wired to /api/broker-analysis/:symbol) ──
-export function BrokerAnalysisService() {
-  const [selectedSymbol, setSelectedSymbol] = useState('NABIL');
+export function BrokerAnalysisService({
+  initialSymbol = 'NABIL',
+  stocks = [],
+  onSelectStock
+}: {
+  initialSymbol?: string;
+  stocks?: any[];
+  onSelectStock?: (stk: any) => void;
+} = {}) {
+  const [selectedSymbol, setSelectedSymbol] = useState(initialSymbol || 'NABIL');
   const [timeframe, setTimeframe] = useState('1M');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -3224,6 +3486,7 @@ export function BrokerAnalysisService() {
             value={selectedSymbol}
             onChange={(sym) => setSelectedSymbol(sym)}
             label="Select NEPSE Company for Broker Tracking:"
+            stocks={stocks}
           />
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -3263,31 +3526,33 @@ export function BrokerAnalysisService() {
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">🟢 Top 5 Buying Brokers (Accumulators)</span>
                 <span className="text-[11px] font-mono text-slate-400">{timeframe} Period</span>
               </div>
-              <table className="w-full border-collapse text-left text-xs text-slate-200">
-                <thead className="border-b border-slate-800/60 text-[11px] uppercase text-slate-400">
-                  <tr>
-                    <th className="py-2">Broker</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Buy Qty</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Avg Rate</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Turnover</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/40">
-                  {brokerData.buyers.map((b: any, i: number) => (
-                    <tr key={i} className="hover:bg-slate-900/40 transition-colors">
-                      <td className="py-2">
-                        <span className="inline-flex items-center gap-1.5 font-semibold text-white">
-                          <span className="rounded bg-emerald-950 border border-emerald-800/60 px-1.5 py-0.5 font-mono text-emerald-300 text-[11px]">#{b.brokerId}</span>
-                          <span className="truncate max-w-[120px] text-slate-300 text-[11px]">{b.brokerName}</span>
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-mono tabular-nums font-bold text-white">{b.buyQty.toLocaleString()}</td>
-                      <td className="py-2 text-right font-mono tabular-nums text-slate-300">Rs. {b.avgRate}</td>
-                      <td className="py-2 text-right font-mono tabular-nums font-bold text-emerald-400">Rs. {(b.buyAmount / 1e5).toFixed(1)}L</td>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs text-slate-200 min-w-[320px]">
+                  <thead className="border-b border-slate-800/60 text-[11px] uppercase text-slate-400">
+                    <tr>
+                      <th className="py-2">Broker</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Buy Qty</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Avg Rate</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Turnover</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40">
+                    {brokerData.buyers.map((b: any, i: number) => (
+                      <tr key={i} className="hover:bg-slate-900/40 transition-colors">
+                        <td className="py-2">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-white">
+                            <span className="rounded bg-emerald-950 border border-emerald-800/60 px-1.5 py-0.5 font-mono text-emerald-300 text-[11px]">#{b.brokerId}</span>
+                            <span className="truncate max-w-[120px] text-slate-300 text-[11px]">{b.brokerName}</span>
+                          </span>
+                        </td>
+                        <td className="py-2 text-right font-mono tabular-nums font-bold text-white">{b.buyQty.toLocaleString()}</td>
+                        <td className="py-2 text-right font-mono tabular-nums text-slate-300">Rs. {b.avgRate}</td>
+                        <td className="py-2 text-right font-mono tabular-nums font-bold text-emerald-400">Rs. {(b.buyAmount / 1e5).toFixed(1)}L</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Top Selling Brokers */}
@@ -3296,31 +3561,33 @@ export function BrokerAnalysisService() {
                 <span className="text-xs font-bold uppercase tracking-wider text-rose-400">🔴 Top 5 Selling Brokers (Distributors)</span>
                 <span className="text-[11px] font-mono text-slate-400">{timeframe} Period</span>
               </div>
-              <table className="w-full border-collapse text-left text-xs text-slate-200">
-                <thead className="border-b border-slate-800/60 text-[11px] uppercase text-slate-400">
-                  <tr>
-                    <th className="py-2">Broker</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Sell Qty</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Avg Rate</th>
-                    <th className="py-2 text-right font-mono tabular-nums">Turnover</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/40">
-                  {brokerData.sellers.map((b: any, i: number) => (
-                    <tr key={i} className="hover:bg-slate-900/40 transition-colors">
-                      <td className="py-2">
-                        <span className="inline-flex items-center gap-1.5 font-semibold text-white">
-                          <span className="rounded bg-rose-950 border border-rose-800/60 px-1.5 py-0.5 font-mono text-rose-300 text-[11px]">#{b.brokerId}</span>
-                          <span className="truncate max-w-[120px] text-slate-300 text-[11px]">{b.brokerName}</span>
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-mono tabular-nums font-bold text-white">{b.sellQty.toLocaleString()}</td>
-                      <td className="py-2 text-right font-mono tabular-nums text-slate-300">Rs. {b.avgRate}</td>
-                      <td className="py-2 text-right font-mono tabular-nums font-bold text-rose-400">Rs. {(b.sellAmount / 1e5).toFixed(1)}L</td>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs text-slate-200 min-w-[320px]">
+                  <thead className="border-b border-slate-800/60 text-[11px] uppercase text-slate-400">
+                    <tr>
+                      <th className="py-2">Broker</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Sell Qty</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Avg Rate</th>
+                      <th className="py-2 text-right font-mono tabular-nums">Turnover</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40">
+                    {brokerData.sellers.map((b: any, i: number) => (
+                      <tr key={i} className="hover:bg-slate-900/40 transition-colors">
+                        <td className="py-2">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-white">
+                            <span className="rounded bg-rose-950 border border-rose-800/60 px-1.5 py-0.5 font-mono text-rose-300 text-[11px]">#{b.brokerId}</span>
+                            <span className="truncate max-w-[120px] text-slate-300 text-[11px]">{b.brokerName}</span>
+                          </span>
+                        </td>
+                        <td className="py-2 text-right font-mono tabular-nums font-bold text-white">{b.sellQty.toLocaleString()}</td>
+                        <td className="py-2 text-right font-mono tabular-nums text-slate-300">Rs. {b.avgRate}</td>
+                        <td className="py-2 text-right font-mono tabular-nums font-bold text-rose-400">Rs. {(b.sellAmount / 1e5).toFixed(1)}L</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -3843,6 +4110,17 @@ export function MutualFundsService() {
             },
           },
           {
+            key: 'maturity',
+            label: 'Tenure / Unlock',
+            align: 'center',
+            format: (_, row) => {
+              const name = String(row?.name || row?.symbol || '').toLowerCase();
+              if (name.includes('growth') || name.includes('super 30') || name.includes('select 30')) return '10Y Scheme';
+              if (name.includes('large cap') || name.includes('first') || name.includes('samunnat') || name.includes('balanced')) return '7Y Scheme';
+              return 'Closed-End';
+            }
+          },
+          {
             key: 'pChange',
             label: '1D Chg',
             align: 'right',
@@ -4018,6 +4296,7 @@ export function PortfolioTool() {
   const totalCost = rows.reduce((a, r) => a + r.qty * r.rate, 0);
   const totalVal = rows.reduce((a, r) => a + r.qty * ltpOf(r.symbol), 0);
   const pnl = totalVal - totalCost;
+  const pnlPctTotal = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
@@ -4044,19 +4323,27 @@ export function PortfolioTool() {
           <div className="mb-4 grid grid-cols-3 gap-2">
             <StatCard label="Cost" value={`Rs. ${totalCost.toLocaleString()}`} />
             <StatCard label="Value" value={`Rs. ${Math.floor(totalVal).toLocaleString()}`} />
-            <StatCard label="P&L" value={`${pnl >= 0 ? '+' : ''}Rs. ${Math.floor(pnl).toLocaleString()}`} color={pnl >= 0 ? '#16a34a' : '#dc2626'} big />
+            <StatCard label="P&L" value={`${pnl >= 0 ? '+' : ''}Rs. ${Math.floor(pnl).toLocaleString()}`} subtitle={`${pnlPctTotal >= 0 ? '+' : ''}${pnlPctTotal.toFixed(2)}% net yield`} color={pnl >= 0 ? '#10b981' : '#dc2626'} big />
           </div>
           <DataTable data={rows.map((r) => {
             const ltp = ltpOf(r.symbol);
             const pnlR = (ltp - r.rate) * r.qty;
-            return { ...r, ltp: `Rs. ${ltp}`, value: `Rs. ${Math.floor(ltp * r.qty).toLocaleString()}`, pnl: `${pnlR >= 0 ? '+' : ''}${Math.floor(pnlR).toLocaleString()}`, pnlN: pnlR, rowId: r.id };
+            const pnlPct = r.rate > 0 ? ((ltp - r.rate) / r.rate) * 100 : 0;
+            return {
+              ...r,
+              ltp: `Rs. ${ltp}`,
+              value: `Rs. ${Math.floor(ltp * r.qty).toLocaleString()}`,
+              pnl: `${pnlR >= 0 ? '+' : ''}Rs. ${Math.floor(pnlR).toLocaleString()} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)`,
+              pnlN: pnlR,
+              rowId: r.id
+            };
           })} cols={[
             { key: 'symbol', label: 'Symbol', bold: true },
             { key: 'qty', label: 'Qty', align: 'right' },
             { key: 'rate', label: 'Avg Rate', align: 'right' },
             { key: 'ltp', label: 'LTP', align: 'right' },
             { key: 'value', label: 'Value', align: 'right' },
-            { key: 'pnl', label: 'P&L', align: 'right', colorFn: (_v, row) => (row.pnlN >= 0 ? '#16a34a' : '#dc2626') },
+            { key: 'pnl', label: 'P&L (Rs. / %)', align: 'right', colorFn: (_v, row) => (row.pnlN >= 0 ? '#10b981' : '#dc2626') },
             {
               key: 'rowId',
               label: '',
@@ -4174,26 +4461,100 @@ export function WatchlistTool() {
           </p>
         </div>
       ) : (
-        <DataTable
-          data={watchedStocks.map((s) => ({ ...s, remove: s.symbol }))}
-          cols={[
-            ...DEFAULT_COLS,
-            {
-              key: 'remove',
-              label: '',
-              align: 'right',
-              format: (v) => (
-                <button
-                  onClick={() => handleRemove(v)}
-                  className="cursor-pointer rounded-md border border-red-800/60 bg-red-950/60 px-2 py-1 text-xs font-bold text-rose-400 hover:bg-red-900/60"
-                  title="Remove from watchlist"
-                >
-                  Remove
-                </button>
-              ),
-            },
-          ]}
-        />
+        <>
+          <DataTable
+            data={watchedStocks.map((s) => ({ ...s, remove: s.symbol }))}
+            cols={[
+              ...DEFAULT_COLS,
+              {
+                key: 'remove',
+                label: '',
+                align: 'right',
+                format: (v) => (
+                  <button
+                    onClick={() => handleRemove(v)}
+                    className="cursor-pointer rounded-md border border-red-800/60 bg-red-950/60 px-2 py-1 text-xs font-bold text-rose-400 hover:bg-red-900/60"
+                    title="Remove from watchlist"
+                  >
+                    Remove
+                  </button>
+                ),
+              },
+            ]}
+          />
+
+          {/* ── Daily Health Report ─────────────────────────────────── */}
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/60 overflow-hidden">
+            <div className="px-4 py-3 bg-slate-800/60 border-b border-slate-700 flex items-center gap-2">
+              <Activity size={15} className="text-emerald-400" />
+              <span className="text-sm font-bold text-white">Daily Health Report</span>
+              <span className="text-xs text-slate-400 ml-1">6-signal scan for each watchlisted stock</span>
+            </div>
+            <div className="divide-y divide-slate-800/60">
+              {watchedStocks.map((s) => {
+                const ema20 = Number(s.ema20 || 0);
+                const ema50 = Number(s.ema50 || 0);
+                const ltp   = Number(s.ltp   || 0);
+                const sig1 = (ema20 > 0 && ema50 > 0) ? (ltp > ema20 && ema20 > ema50) : null;
+                const sig2 = (s.technicalScore != null) ? Number(s.technicalScore) >= 60 : null;
+                const sig3 = (s.volumeZScore  != null) ? Number(s.volumeZScore)    >= 0  : null;
+                const sig4 = (s.dpi           != null) ? Number(s.dpi)             >= 55 : null;
+                const sig5 = Math.abs(Number(s.pChange) || 0) < 13;
+                const sig6 = (Number(s.pChange) || 0) > -5;
+
+                const sigs = [sig1, sig2, sig3, sig4, sig5, sig6];
+                const known = sigs.filter(v => v !== null);
+                const pass  = known.filter(Boolean).length;
+                const pct   = known.length > 0 ? pass / known.length : 0;
+                const hlth  = pct >= 0.75 ? 'Healthy' : pct >= 0.5 ? 'Warning' : 'Danger';
+                const hCol  = hlth === 'Healthy'
+                  ? 'text-emerald-400 bg-emerald-900/30 border-emerald-700/40'
+                  : hlth === 'Warning'
+                  ? 'text-amber-400 bg-amber-900/30 border-amber-700/40'
+                  : 'text-red-400 bg-red-900/30 border-red-700/40';
+                const hDot  = hlth === 'Healthy' ? '🟢' : hlth === 'Warning' ? '🟡' : '🔴';
+                const LABELS = ['Trend↗', 'Tech≥60', 'Volume', 'DPI≥55', 'Circuit', 'Momentum'];
+
+                return (
+                  <div key={s.symbol} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="min-w-[90px]">
+                      <div className="font-bold text-white text-sm">{s.symbol}</div>
+                      <div className="text-[10px] text-slate-400 truncate max-w-[110px]">{(s as any).companyName || (s as any).name || s.symbol}</div>
+                    </div>
+                    <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${hCol} shrink-0`}>
+                      {hDot} {hlth} ({pass}/{known.length})
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap flex-1">
+                      {sigs.map((v, i) => (
+                        <span key={i} title={LABELS[i]}
+                          className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                            v === null ? 'bg-slate-700 text-slate-500'
+                              : v ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/30'
+                              : 'bg-red-900/30 text-red-400 border border-red-700/30'
+                          }`}
+                        >
+                          {v === null ? '?' : v ? '✓' : '✗'} {LABELS[i]}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs shrink-0">
+                      <span className={`font-bold ${(Number(s.pChange) || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {(Number(s.pChange) || 0) >= 0 ? '+' : ''}{(Number(s.pChange) || 0).toFixed(2)}%
+                      </span>
+                      {s.dpi != null && <span className="text-slate-400">DPI: <span className="text-white font-semibold">{Math.round(Number(s.dpi))}</span></span>}
+                    </div>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'entry-exit-analyzer', symbol: s.symbol } }))}
+                      className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 hover:bg-emerald-800/40 transition font-semibold shrink-0"
+                    >
+                      <Target size={11} /> Analyze
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

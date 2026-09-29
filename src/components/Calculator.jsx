@@ -197,7 +197,7 @@ export default function Calculator() {
   }, [marginUnits, marginLtp, marginAvg180, marginLtv, marginRate, marginMaintenance, borrowerType]);
 
   return (
-    <div style={{ padding: '16px 14px 40px' }}>
+    <div style={{ padding: '16px 14px 20px', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
       {/* 6-Tab Selector (Dashboard Pill Chips) */}
       <div style={{
         display: 'flex',
