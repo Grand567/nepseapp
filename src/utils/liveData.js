@@ -52,41 +52,48 @@ if (typeof window !== 'undefined') {
   }).catch(() => {});
 }
 
-// ── Render Server Warm-Up ──────────────────────────────────────────────────
+// ── Render Server Warm-Up & Proxy Health ────────────────────────────────────
 // The Render free tier sleeps after inactivity and takes 45-60s to wake up.
 // We fire a ping IMMEDIATELY when this module loads (before auth, before fetch)
 // so the server is warm by the time fetchMarket() runs.
 let _serverWarmTs = 0;      // timestamp of the last warm-up ping response
 let _serverWarmPending = false;
+let _localProxyState = 'unknown'; // 'unknown' | 'alive' | 'dead'
 
 export async function warmUpServer() {
   if (_serverWarmPending) return; // already in flight
-  const base = getProxyBase();
-
   _serverWarmPending = true;
   const started = Date.now();
 
-  const ping = async (timeout) => {
+  const ping = async (url, timeout) => {
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), timeout);
-      const r = await fetch(`${base}/api/ping`, { signal: ctrl.signal, cache: 'no-store' });
+      const r = await fetch(`${url}/api/ping`, { signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(tid);
       if (r.ok) {
         _serverWarmTs = Date.now();
-        console.log(`[warmUp] Render server ready in ${Date.now() - started}ms`);
+        console.log(`[warmUp] Proxy ready (${url}) in ${Date.now() - started}ms`);
         return true;
       }
     } catch (_) {}
     return false;
   };
 
-  // First attempt: 90s timeout (survives full cold-start)
-  const ok = await ping(90000);
-  if (!ok) {
-    // Second attempt if first failed (network blip)
-    await ping(30000);
+  // In desktop browser on localhost, quick 350ms probe to check if local proxy is active
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    const isLocalOk = await ping('http://localhost:5000', 350);
+    _localProxyState = isLocalOk ? 'alive' : 'dead';
   }
+
+  // Always ping production Render backend to guarantee wake up and warm status
+  const renderPing = ping('https://nepseapp.onrender.com', 20000);
+  const base = getProxyBase();
+  if (base !== 'https://nepseapp.onrender.com' && !base.includes('localhost')) {
+    ping(base, 15000).catch(() => {});
+  }
+
+  await renderPing;
   _serverWarmPending = false;
 }
 
@@ -564,30 +571,56 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
 
-  // Reasonable timeout to survive Render wake without freezing the mobile UI
-  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 8000), 15000);
+  // If configured base is a dead local proxy, bypass directly to production Render backend
+  if (base.includes('localhost') && _localProxyState === 'dead') {
+    return tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
+  }
 
-  // Primary: try configured proxy with one retry
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 6000), 12000);
+
+  // 1. Primary: try configured proxy
+  try {
+    const res = await tryFetchJSON(`${base}${path}`, firstAttemptTimeout);
+    if (res && res.success !== false) {
+      if (!isServerWarm()) { _serverWarmTs = Date.now(); }
+      if (base.includes('localhost')) _localProxyState = 'alive';
+      return res;
+    }
+  } catch (_) {
+    if (base.includes('localhost')) _localProxyState = 'dead';
+  }
+
+  // 2. If primary was localhost and failed, never retry localhost; immediately fall back to Render!
+  if (base.includes('localhost')) {
+    _localProxyState = 'dead';
     try {
-      const t = attempt === 0 ? firstAttemptTimeout : timeoutMs;
-      const res = await tryFetchJSON(`${base}${path}`, t);
+      const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
       if (res && res.success !== false) {
-        // Mark server as warm on first successful response
-        if (!isServerWarm()) { _serverWarmTs = Date.now(); }
+        _serverWarmTs = Date.now();
         return res;
       }
     } catch (_) {}
-    if (attempt === 0) {
-      await new Promise(r => setTimeout(r, 1000));
-    }
+    return null;
   }
 
-  // Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
+  // 3. Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
   if (base !== 'https://nepseapp.onrender.com') {
     try {
       const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
-      if (res && res.success !== false) return res;
+      if (res && res.success !== false) {
+        _serverWarmTs = Date.now();
+        return res;
+      }
+    } catch (_) {}
+  } else {
+    // If primary was already Render and had a transient blip, retry once with short 500ms delay
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const retryRes = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
+      if (retryRes && retryRes.success !== false) {
+        _serverWarmTs = Date.now();
+        return retryRes;
+      }
     } catch (_) {}
   }
   return null;
@@ -595,6 +628,28 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
 
 const NEPSE_BASE = 'https://newweb.nepalstock.com.np/api/nots';
 const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
+
+// Helper: Return first promise that fulfills with non-empty valid stock array (> 20 items)
+function raceFirstValidStockFeed(promiseList) {
+  return new Promise((resolve) => {
+    let remaining = promiseList.length;
+    let settled = false;
+    for (const p of promiseList) {
+      Promise.resolve(p).then((res) => {
+        if (!settled && Array.isArray(res) && res.length > 20) {
+          settled = true;
+          resolve(res);
+        } else {
+          remaining--;
+          if (remaining === 0 && !settled) resolve(null);
+        }
+      }).catch(() => {
+        remaining--;
+        if (remaining === 0 && !settled) resolve(null);
+      });
+    }
+  });
+}
 
 async function attemptLiveMarket() {
   const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
@@ -626,25 +681,13 @@ async function attemptLiveMarket() {
   };
 
   // 1. PRIMARY FAST PARALLEL RACE:
-  // Execute top live feeds concurrently — resolves in ~200-800ms instead of 40s waterfall
+  // Execute top live feeds concurrently — resolves instantly on first valid return (~1.5s - 2.5s)
   const tasks = [];
 
-  // Source A: Backend Mero Summary (/api/mero/market-summary)
+  // Source A: Official NOTS Live (/api/market/live) - Complete 336 stocks with circuit limits & high52
   tasks.push((async () => {
     try {
-      const j = await fetchFromBackend('/api/mero/market-summary', 5000);
-      const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-      if (arr && arr.length > 20) {
-        return processLive(arr, j?.turnover ? { t: j.turnover } : null);
-      }
-    } catch (_) {}
-    return null;
-  })());
-
-  // Source B: Backend Official NOTS Live (/api/market/live)
-  tasks.push((async () => {
-    try {
-      const liveRes = await fetchFromBackend('/api/market/live', 5000);
+      const liveRes = await fetchFromBackend('/api/market/live', 7000);
       const isStale = liveRes?.isStale === true ||
         liveRes?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
         liveRes?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
@@ -658,32 +701,56 @@ async function attemptLiveMarket() {
     return null;
   })());
 
-  // Source C: Direct MeroLagani JSON handler (Fastest on Mobile via native CapacitorHttp)
+  // Source B: Official NOTS Today Prices (/api/today-prices) - 336 stocks from exchange
   tasks.push((async () => {
     try {
-      const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
-      const j = await tryFetchJSON(directUrl, isNative ? 4000 : 3000);
-      if (j && (j.stock?.detail || j.turnover?.detail)) {
-        const parsed = parseMeroLaganiJson(j);
-        if (parsed && parsed.length > 20) {
-          return processLive(parsed, j.overall);
-        }
+      const tpRes = await fetchFromBackend('/api/today-prices', 7000);
+      const arr = tpRes?.data ?? (Array.isArray(tpRes) ? tpRes : null);
+      if (arr && arr.length > 20) {
+        return processLive(arr, null);
       }
     } catch (_) {}
     return null;
   })());
 
-  const raceResults = await Promise.allSettled(tasks);
-  for (const r of raceResults) {
-    if (r.status === 'fulfilled' && r.value && r.value.length > 20) {
-      return r.value;
-    }
+  // Source C: Backend Mero Summary (/api/mero/market-summary) - Fast Scraped Live Feed
+  tasks.push((async () => {
+    try {
+      const j = await fetchFromBackend('/api/mero/market-summary', 7000);
+      const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+      if (arr && arr.length > 20) {
+        return processLive(arr, j?.turnover ? { t: j.turnover } : null);
+      }
+    } catch (_) {}
+    return null;
+  })());
+
+  // Source D: Direct MeroLagani JSON handler (Fastest on Mobile APK via native CapacitorHttp)
+  if (isNative) {
+    tasks.push((async () => {
+      try {
+        const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
+        const j = await tryFetchJSON(directUrl, 4500);
+        if (j && (j.stock?.detail || j.turnover?.detail)) {
+          const parsed = parseMeroLaganiJson(j);
+          if (parsed && parsed.length > 20) {
+            return processLive(parsed, j.overall);
+          }
+        }
+      } catch (_) {}
+      return null;
+    })());
   }
 
-  // 2. FALLBACK STAGE: If all 3 fast concurrent sources timed out
-  for (const endpoint of ['/api/today-prices', '/api/market-summary', '/api/market/live']) {
+  const raceWinner = await raceFirstValidStockFeed(tasks);
+  if (raceWinner && raceWinner.length > 20) {
+    return raceWinner;
+  }
+
+  // 2. FALLBACK STAGE: If concurrent primary sources missed, directly call production Render
+  for (const endpoint of ['/api/market/live', '/api/today-prices', '/api/mero/market-summary']) {
     try {
-      const j = await fetchFromBackend(endpoint, 4000);
+      const j = await tryFetchJSON(`https://nepseapp.onrender.com${endpoint}`, 6000);
       const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
       if (Array.isArray(arr) && arr.length > 20) {
         const normalized = processLive(arr, null);
@@ -695,7 +762,7 @@ async function attemptLiveMarket() {
   // 3. Web Public CORS Proxy fallback for MeroLagani
   try {
     const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
-    const j = await tryFetchJSON(corsUrl, 4000);
+    const j = await tryFetchJSON(corsUrl, 5000);
     if (j && (j.stock?.detail || j.turnover?.detail)) {
       const parsed = parseMeroLaganiJson(j);
       if (parsed && parsed.length > 20) {
@@ -2072,7 +2139,7 @@ if (typeof window !== 'undefined') {
 
 // getProxyBase — returns the configured backend proxy URL.
 // Used by MeroShare, Portfolio, IPOList and other services for API calls.
-// Falls back to a public CORS proxy if no local backend is configured.
+// Falls back to production Render proxy if no local backend is configured or alive.
 export function getProxyBase() {
   // 1. If explicitly configured in localStorage, respect it
   if (typeof window !== 'undefined') {
@@ -2080,19 +2147,29 @@ export function getProxyBase() {
     if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
   }
 
-  // 2. If running locally in desktop browser (localhost / 127.0.0.1) and NOT native mobile, default to local proxy
-  const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
-  if (!isNative && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return 'http://localhost:5000';
-  }
-
-  // 3. Environment variable (VITE_PROXY_URL from .env or Vite config)
+  // 2. Environment variable (VITE_PROXY_URL from .env or Vite config)
   try {
     const env = import.meta?.env?.VITE_PROXY_URL;
-    if (env && env.trim()) return env.trim().replace(/\/$/, '');
+    if (env && env.trim()) {
+      const cleanEnv = env.trim().replace(/\/$/, '');
+      if (cleanEnv.includes('localhost') || cleanEnv.includes('127.0.0.1')) {
+        if (_localProxyState !== 'dead') return cleanEnv;
+      } else {
+        return cleanEnv;
+      }
+    }
   } catch (_) {}
 
-  // 4. Default production proxy on Render (reliable public backend)
+  // 3. If running locally in desktop browser (localhost / 127.0.0.1) and NOT native mobile:
+  // Only use local proxy if it is verified alive (never when dead or offline)
+  const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  if (!isNative && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    if (_localProxyState === 'alive') {
+      return 'http://localhost:5000';
+    }
+  }
+
+  // 4. Default production proxy on Render (reliable public backend with live NOTS data)
   return 'https://nepseapp.onrender.com';
 }
 

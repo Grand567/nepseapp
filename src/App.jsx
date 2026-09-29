@@ -425,8 +425,8 @@ function AppInner() {
       let hadError = false;
 
       try {
-        const rawStatus = await fetchMarketStatus();
-        const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
+        // Immediate synchronous calendar status so data polling starts at millisecond 0
+        const status = getDetailedMarketStatus();
         if (isMounted && status) {
           setMarketStatus(status);
           isMarketOpen = Boolean(status.isOpen);
@@ -436,9 +436,11 @@ function AppInner() {
         let currentStocks = stocks;
         let hasFreshData = false;
 
+        const pStatus = fetchMarketStatus().catch(() => null);
+
         const pLiveMarket = fetchLiveMarketData().then(res => {
           if (!isMounted || !res) return res;
-          const isFresh = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
+          const isFreshFeed = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
           const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live';
           const hasExistingReal = liveStocksRef.current && liveStocksRef.current.length > 0;
           if (isReal || (!hasExistingReal && res.data?.length > 0)) {
@@ -446,8 +448,8 @@ function AppInner() {
             liveStocksRef.current = currentStocks;
             setStocks([...currentStocks]);
             const isLive = Boolean(status?.isOpen);
-            setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
-            if (isFresh) {
+            setApiStatus(isLive ? (isFreshFeed ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
+            if (isFreshFeed) {
               saveCachedStocks(currentStocks);
               hasFreshData = true;
             }
@@ -472,12 +474,17 @@ function AppInner() {
           return null;
         });
 
-        const [response, liveIndices] = await Promise.all([
+        const [rawStatus, response, liveIndices] = await Promise.all([
+          pStatus,
           pLiveMarket,
           pIndices
         ]);
 
         if (!isMounted) return;
+
+        if (rawStatus && rawStatus.isOpen !== undefined) {
+          setMarketStatus(rawStatus);
+        }
 
         // Fallback index calculation if liveIndices failed
         const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
@@ -491,6 +498,7 @@ function AppInner() {
           clearDynamicMarketHalt();
           const freshStatus = getDetailedMarketStatus();
           setMarketStatus(freshStatus);
+          const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
           setApiStatus(freshStatus.isOpen ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
           setLastSyncTime(new Date());
           consecutiveErrors = 0;
@@ -605,6 +613,7 @@ function AppInner() {
         clearDynamicMarketHalt();
         const freshStatus = getDetailedMarketStatus();
         setMarketStatus(freshStatus);
+        const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
         setApiStatus(freshStatus.isOpen ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
         setLastSyncTime(new Date());
       }
