@@ -697,8 +697,8 @@ app.get('/api/today-prices', async (req, res) => {
           high: Number(item.highPrice || item.high || ltp),
           low: Number(item.lowPrice || item.low || ltp),
           prevClose,
-          volume: Number(item.totalTradedQuantity || item.volume || 0),
-          turnover: Number(item.totalTradedValue || item.turnover || (ltp * (item.totalTradedQuantity || 0))),
+          volume: Number(item.totalTradeQuantity || item.totalTradedQuantity || item.volume || 0),
+          turnover: Number(item.totalTradeValue || item.totalTradedValue || item.turnover || (ltp * (item.totalTradeQuantity || item.totalTradedQuantity || 0))),
           high52w: Number(item.fiftyTwoWeekHigh || item.high52w || NaN),
           low52w: Number(item.fiftyTwoWeekLow || item.low52w || NaN),
           rsi: calcRSI(pChange),
@@ -4590,16 +4590,49 @@ app.get('/api/market/live', async (req, res) => {
       !marketPayload.isStale && marketPayload.source !== 'LAST_KNOWN_OFFICIAL_SNAPSHOT' && marketPayload.source !== 'LAST_KNOWN_SNAPSHOT_FALLBACK';
 
     if (isPayloadFresh && (!isMarketOpen || marketPayload.isOpen)) {
+      const enrichedData = marketPayload.data.map(item => {
+        const ltp = Number(item.lastTradedPrice || item.closePrice || item.ltp || item.lastUpdatedPrice || 0);
+        const prevClose = Number(item.previousClose || item.previousDayClosePrice || item.prevClose || ltp) || ltp;
+        const change = Number(item.pointChange != null ? item.pointChange : (item.change != null ? item.change : +(ltp - prevClose).toFixed(2)));
+        const pChange = Number(item.percentageChange != null ? item.percentageChange : (item.pChange != null ? item.pChange : (prevClose > 0 ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0)));
+        const vol = Number(item.totalTradeQuantity || item.totalTradedQuantity || item.volume || item.totalVolume || 0);
+        const turnover = Number(item.totalTradeValue || item.totalTradedValue || item.turnover || (ltp * vol));
+        const trades = Number(item.totalTrades || item.totalTransactions || item.transactions || 0);
+
+        return {
+          ...item,
+          ltp,
+          lastTradedPrice: ltp,
+          closePrice: ltp,
+          previousClose: prevClose,
+          previousDayClosePrice: prevClose,
+          prevClose,
+          pointChange: change,
+          change,
+          percentageChange: pChange,
+          pChange,
+          totalTradeQuantity: vol,
+          totalTradedQuantity: vol,
+          volume: vol,
+          totalTradeValue: turnover,
+          totalTradedValue: turnover,
+          turnover,
+          totalTrades: trades,
+          totalTransactions: trades,
+          transactions: trades
+        };
+      });
+
       return res.json({
         success: true,
         isMockData: false,
         source: marketPayload.source || 'LIVE - NEPSE NOTS API',
         marketOpen: marketPayload.isOpen,
         marketStatus: marketPayload.marketStatus,
-        count: marketPayload.data.length,
+        count: enrichedData.length,
         asOf: marketPayload.asOf || new Date().toISOString(),
         message: marketPayload.message,
-        data: marketPayload.data
+        data: enrichedData
       });
     }
 

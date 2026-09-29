@@ -433,43 +433,57 @@ function AppInner() {
           isPreOpen = Boolean(status.isPreOpen);
         }
 
+        let currentStocks = stocks;
+        let hasFreshData = false;
+
+        const pLiveMarket = fetchLiveMarketData().then(res => {
+          if (!isMounted || !res) return res;
+          const isFresh = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
+          const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live';
+          const hasExistingReal = liveStocksRef.current && liveStocksRef.current.length > 0;
+          if (isReal || (!hasExistingReal && res.data?.length > 0)) {
+            currentStocks = res.data;
+            liveStocksRef.current = currentStocks;
+            setStocks([...currentStocks]);
+            const isLive = Boolean(status?.isOpen);
+            setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
+            if (isFresh) {
+              saveCachedStocks(currentStocks);
+              hasFreshData = true;
+            }
+          }
+          return res;
+        }).catch(err => {
+          console.warn('[App] fetchLiveMarketData error:', err);
+          return null;
+        });
+
+        const pIndices = fetchMarketIndices().then(liveIdx => {
+          if (!isMounted || !liveIdx) return liveIdx;
+          const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
+          if (hasFresh) {
+            setIndices({ ...liveIdx });
+            saveCachedIndices(liveIdx);
+            hasFreshData = true;
+          }
+          return liveIdx;
+        }).catch(err => {
+          console.warn('[App] fetchMarketIndices error:', err);
+          return null;
+        });
+
         const [response, liveIndices] = await Promise.all([
-          fetchLiveMarketData(),
-          fetchMarketIndices()
+          pLiveMarket,
+          pIndices
         ]);
 
         if (!isMounted) return;
 
-        let currentStocks = stocks;
-        let hasFreshData = false;
-
-        // 1. Process Stock Data if available
-        const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
-        const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
-        const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
-
-        if (isRealFeed || (!hasExistingRealStocks && response?.data?.length > 0)) {
-          // ✅ Real data only, no mock fallback
-          currentStocks = response.data;
-          liveStocksRef.current = currentStocks;
-          setStocks(currentStocks);
-          const isLive = Boolean(status?.isOpen);
-          setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
-          if (isFresh) {
-            saveCachedStocks(currentStocks);
-            hasFreshData = true;
-          }
-        }
-
-        // 2. Process Indices — always prioritize real live exchange index from proxy/market
+        // Fallback index calculation if liveIndices failed
         const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
-        if (hasFreshIndices) {
-          setIndices(liveIndices);
-          saveCachedIndices(liveIndices);
-          hasFreshData = true;
-        } else if (currentStocks && currentStocks.length > 0) {
+        if (!hasFreshIndices && currentStocks && currentStocks.length > 0) {
           const computed = calculateIndices(currentStocks);
-          setIndices(computed);
+          setIndices({ ...computed });
           if (!computed.isPlaceholder) saveCachedIndices(computed);
         }
 
@@ -527,44 +541,63 @@ function AppInner() {
   const triggerTick = async () => {
     setIsRefreshing(true);
     try {
-      const [rawStatus, response, liveIndices] = await Promise.all([
-        fetchMarketStatus(),
-        fetchLiveMarketData(),
-        fetchMarketIndices(),
-        fetchNepseIntradayGraph('NEPSE', true).catch(() => null)
-      ]);
-      const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
-      if (status) setMarketStatus(status);
-
       let currentStocks = stocks;
       let hasFreshData = false;
 
-      const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
-      const isRealFeed = response && response.data && response.data.length > 0 && response.source !== 'simulated-live';
-      const hasExistingRealStocks = liveStocksRef.current && liveStocksRef.current.length > 0;
+      const pStatus = fetchMarketStatus().catch(() => null);
+      const pIntraday = fetchNepseIntradayGraph('NEPSE', true).catch(() => null);
 
-      if (isRealFeed || (!hasExistingRealStocks && response?.data?.length > 0)) {
-        // ✅ Real data only, no mock fallback
-        currentStocks = response.data;
-        liveStocksRef.current = currentStocks;
-        setStocks(currentStocks);
-        const isLive = Boolean(status?.isOpen);
-        setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
-        if (isFresh) {
-          saveCachedStocks(currentStocks);
+      const pLiveMarket = fetchLiveMarketData().then(res => {
+        if (!res) return res;
+        const isFresh = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
+        const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live';
+        const hasExistingReal = liveStocksRef.current && liveStocksRef.current.length > 0;
+        if (isReal || (!hasExistingReal && res.data?.length > 0)) {
+          currentStocks = res.data;
+          liveStocksRef.current = currentStocks;
+          setStocks([...currentStocks]);
+          const isLive = Boolean(marketStatus?.isOpen);
+          setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
+          if (isFresh) {
+            saveCachedStocks(currentStocks);
+            hasFreshData = true;
+          }
+        }
+        return res;
+      }).catch(err => {
+        console.warn('[triggerTick] fetchLiveMarketData error:', err);
+        return null;
+      });
+
+      const pIndices = fetchMarketIndices().then(liveIdx => {
+        if (!liveIdx) return liveIdx;
+        const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
+        if (hasFresh) {
+          setIndices({ ...liveIdx });
+          saveCachedIndices(liveIdx);
           hasFreshData = true;
         }
-      }
+        return liveIdx;
+      }).catch(err => {
+        console.warn('[triggerTick] fetchMarketIndices error:', err);
+        return null;
+      });
 
-      // Process Indices in manual refresh
+      const [rawStatus, response, liveIndices] = await Promise.all([
+        pStatus,
+        pLiveMarket,
+        pIndices,
+        pIntraday
+      ]);
+
+      const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
+      if (status) setMarketStatus(status);
+
+      // Fallback index calculation if liveIndices failed
       const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
-      if (hasFreshIndices) {
-        setIndices(liveIndices);
-        saveCachedIndices(liveIndices);
-        hasFreshData = true;
-      } else if (currentStocks && currentStocks.length > 0) {
+      if (!hasFreshIndices && currentStocks && currentStocks.length > 0) {
         const computed = calculateIndices(currentStocks);
-        setIndices(computed);
+        setIndices({ ...computed });
         if (!computed.isPlaceholder) saveCachedIndices(computed);
       }
 

@@ -601,126 +601,106 @@ async function attemptLiveMarket() {
   const calStatus = getDetailedMarketStatus();
   const isTradingSession = calStatus.isOpen || calStatus.isPreOpen;
 
-  // 1. FAST PATH FOR NATIVE MOBILE (Capacitor Android/iOS):
-  // Zero-CORS, direct MeroLagani handler fetch (~100ms) — bypasses proxy latency completely!
-  if (isNative) {
+  // Process and validate array payload
+  const processLive = (rawArr, overallStats) => {
+    if (!Array.isArray(rawArr) || rawArr.length < 20) return null;
+    const normalized = normalizeLiveArray(rawArr);
+    if (!Array.isArray(normalized) || normalized.length < 20) return null;
+
+    if (!MEM_SUMMARY) ensureSnapshot();
+    if (MEM_SUMMARY) {
+      const sumTurnover = overallStats?.t ? Number(overallStats.t) : normalized.reduce((acc, s) => acc + (s.turnover || 0), 0);
+      const sumVolume = overallStats?.q ? Number(overallStats.q) : normalized.reduce((acc, s) => acc + (s.volume || 0), 0);
+      const sumTx = overallStats?.tn ? Number(overallStats.tn) : normalized.reduce((acc, s) => acc + (s.transactions || 0), 0);
+
+      if (sumTurnover > 0) MEM_SUMMARY.totalTurnover = sumTurnover;
+      if (sumVolume > 0) MEM_SUMMARY.totalTradedShares = sumVolume;
+      if (sumTx > 0) MEM_SUMMARY.totalTransactions = sumTx;
+      MEM_SUMMARY.isOpen = calStatus.isOpen;
+      MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
+      MEM_SUMMARY.advances = normalized.filter(s => (s.pChange || 0) > 0).length;
+      MEM_SUMMARY.declines = normalized.filter(s => (s.pChange || 0) < 0).length;
+      MEM_SUMMARY.unchanged = normalized.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+    }
+    return normalized;
+  };
+
+  // 1. PRIMARY FAST PARALLEL RACE:
+  // Execute top live feeds concurrently — resolves in ~200-800ms instead of 40s waterfall
+  const tasks = [];
+
+  // Source A: Backend Mero Summary (/api/mero/market-summary)
+  tasks.push((async () => {
+    try {
+      const j = await fetchFromBackend('/api/mero/market-summary', 5000);
+      const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
+      if (arr && arr.length > 20) {
+        return processLive(arr, j?.turnover ? { t: j.turnover } : null);
+      }
+    } catch (_) {}
+    return null;
+  })());
+
+  // Source B: Backend Official NOTS Live (/api/market/live)
+  tasks.push((async () => {
+    try {
+      const liveRes = await fetchFromBackend('/api/market/live', 5000);
+      const isStale = liveRes?.isStale === true ||
+        liveRes?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
+        liveRes?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+      if (!isTradingSession || !isStale) {
+        const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
+        if (arr && arr.length > 20) {
+          return processLive(arr, null);
+        }
+      }
+    } catch (_) {}
+    return null;
+  })());
+
+  // Source C: Direct MeroLagani JSON handler (Fastest on Mobile via native CapacitorHttp)
+  tasks.push((async () => {
     try {
       const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
-      const j = await tryFetchJSON(directUrl, 4000);
+      const j = await tryFetchJSON(directUrl, isNative ? 4000 : 3000);
       if (j && (j.stock?.detail || j.turnover?.detail)) {
         const parsed = parseMeroLaganiJson(j);
         if (parsed && parsed.length > 20) {
-          const normalized = normalizeLiveArray(parsed);
-          if (normalized && normalized.length > 20) {
-            if (j.overall?.t) {
-              if (!MEM_SUMMARY) ensureSnapshot();
-              if (MEM_SUMMARY) {
-                MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
-                MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
-                MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
-                MEM_SUMMARY.isOpen = calStatus.isOpen;
-                MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
-              }
-            }
-            return normalized;
-          }
+          return processLive(parsed, j.overall);
         }
       }
     } catch (_) {}
+    return null;
+  })());
+
+  const raceResults = await Promise.allSettled(tasks);
+  for (const r of raceResults) {
+    if (r.status === 'fulfilled' && r.value && r.value.length > 20) {
+      return r.value;
+    }
   }
 
-  // 2. PRIMARY LIVE ENGINE (Web & Mobile fallback):
-  // /api/mero/market-summary returns company names, sectors, and live prices
-  try {
-    const j = await fetchFromBackend('/api/mero/market-summary', 6000);
-    const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
-    if (Array.isArray(arr) && arr.length > 20) {
-      const normalized = normalizeLiveArray(arr);
-      if (normalized && normalized.length > 20) {
-        if (!MEM_SUMMARY) ensureSnapshot();
-        if (MEM_SUMMARY) {
-          if (j.turnover) MEM_SUMMARY.totalTurnover = Number(j.turnover);
-          MEM_SUMMARY.isOpen = calStatus.isOpen;
-          MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
-        }
-        return normalized;
-      }
-    }
-  } catch (_) {}
-
-  // 3. Official NEPSE NOTS API via backend proxy (/api/market/live)
-  // Only accept if genuinely fresh and NOT a stale fallback snapshot when market is open
-  try {
-    const liveRes = await fetchFromBackend('/api/market/live', 6000);
-    const isStale = liveRes?.isStale === true ||
-      liveRes?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
-      liveRes?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
-
-    if (!isTradingSession || !isStale) {
-      const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
-      if (Array.isArray(arr) && arr.length > 20) {
-        const normalized = normalizeLiveArray(arr);
-        if (normalized && normalized.length > 20) {
-          if (!MEM_SUMMARY) ensureSnapshot();
-          if (MEM_SUMMARY) {
-            MEM_SUMMARY.isOpen = isTradingSession ? true : Boolean(liveRes.marketOpen);
-            MEM_SUMMARY.marketStatus = isTradingSession ? 'OPEN' : (liveRes.marketStatus || 'CLOSED');
-          }
-          return normalized;
-        }
-      }
-    }
-  } catch (_) {}
-
-  // 4. Direct MeroLagani handler fetch (direct or via web CORS proxy)
-  const candidateUrls = [
-    'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary',
-    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`,
-  ];
-  for (const u of candidateUrls) {
+  // 2. FALLBACK STAGE: If all 3 fast concurrent sources timed out
+  for (const endpoint of ['/api/today-prices', '/api/market-summary', '/api/market/live']) {
     try {
-      const j = await tryFetchJSON(u, 5000);
-      if (j && (j.stock?.detail || j.turnover?.detail)) {
-        const parsed = parseMeroLaganiJson(j);
-        if (parsed && parsed.length > 20) {
-          const normalized = normalizeLiveArray(parsed);
-          if (normalized && normalized.length > 20) {
-            if (j.overall?.t) {
-              if (!MEM_SUMMARY) ensureSnapshot();
-              if (MEM_SUMMARY) {
-                MEM_SUMMARY.totalTurnover = Number(j.overall.t) || MEM_SUMMARY.totalTurnover;
-                MEM_SUMMARY.totalTradedShares = Number(j.overall.q) || MEM_SUMMARY.totalTradedShares;
-                MEM_SUMMARY.totalTransactions = Number(j.overall.tn) || MEM_SUMMARY.totalTransactions;
-                MEM_SUMMARY.isOpen = calStatus.isOpen;
-                MEM_SUMMARY.marketStatus = calStatus.isOpen ? 'OPEN' : 'CLOSED';
-              }
-            }
-            return normalized;
-          }
-        }
-      }
-    } catch { /* continue */ }
-  }
-
-  // 5. Additional fallbacks: /api/today-prices and /api/market-summary
-  for (const endpoint of ['/api/today-prices', '/api/market-summary']) {
-    try {
-      const j = await fetchFromBackend(endpoint, 5000);
+      const j = await fetchFromBackend(endpoint, 4000);
       const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
       if (Array.isArray(arr) && arr.length > 20) {
-        const normalized = normalizeLiveArray(arr);
-        if (normalized && normalized.length > 20) return normalized;
+        const normalized = processLive(arr, null);
+        if (normalized) return normalized;
       }
     } catch (_) {}
   }
 
-  // 6. Last resort when market is closed: accept closing snapshot
+  // 3. Web Public CORS Proxy fallback for MeroLagani
   try {
-    const liveRes = await fetchFromBackend('/api/market/live', 4000);
-    const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
-    if (Array.isArray(arr) && arr.length > 20) {
-      const normalized = normalizeLiveArray(arr);
-      if (normalized && normalized.length > 20) return normalized;
+    const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
+    const j = await tryFetchJSON(corsUrl, 4000);
+    if (j && (j.stock?.detail || j.turnover?.detail)) {
+      const parsed = parseMeroLaganiJson(j);
+      if (parsed && parsed.length > 20) {
+        return processLive(parsed, j.overall);
+      }
     }
   } catch (_) {}
 
@@ -746,15 +726,15 @@ function normalizeLiveArray(arr) {
     const ltp = Number(r.lastTradedPrice ?? r.lastUpdatedPrice ?? r.ltp ?? r.closePrice ?? r.latestPrice ?? prev?.ltp ?? 0);
     if (!ltp) continue;
 
-    const prevClose = Number(r.previousClose ?? r.previousDayClosePrice ?? r.prevClose ?? prev?.prevClose ?? ltp);
+    const prevClose = Number(r.previousClose ?? r.previousDayClosePrice ?? r.prevClose ?? prev?.prevClose ?? ltp) || ltp;
     const pCh = Number(r.percentageChange ?? r.pChange ?? r.schange ?? (prevClose ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0));
     const chg = Number(r.pointChange ?? r.change ?? +(ltp - prevClose).toFixed(2));
-    const open = Number(r.openPrice ?? r.open ?? prev?.open ?? ltp);
-    const high = Number(r.highPrice ?? r.high ?? Math.max(ltp, open));
-    const low = Number(r.lowPrice ?? r.low ?? Math.min(ltp, open));
-    const vol = Number(r.totalTradedQuantity ?? r.volume ?? prev?.volume ?? 0);
-    const turnover = Number(r.totalTradedValue ?? r.turnover ?? prev?.turnover ?? Math.round(vol * ltp));
-    const tx = Number(r.totalTrades ?? r.transactions ?? prev?.transactions ?? 0);
+    const open = Number(r.openPrice ?? r.open ?? prev?.open ?? ltp) || ltp;
+    const high = Number(r.highPrice ?? r.high ?? Math.max(ltp, open)) || Math.max(ltp, open);
+    const low = Number(r.lowPrice ?? r.low ?? Math.min(ltp, open)) || Math.min(ltp, open);
+    const vol = Number(r.totalTradeQuantity ?? r.totalTradedQuantity ?? r.totalVolume ?? r.volume ?? r.vol ?? prev?.volume ?? 0) || 0;
+    const turnover = Number(r.totalTradeValue ?? r.totalTradedValue ?? r.turnover ?? prev?.turnover ?? Math.round(vol * ltp)) || Math.round(vol * ltp);
+    const tx = Number(r.totalTrades ?? r.totalTransactions ?? r.transactions ?? r.trans ?? prev?.transactions ?? 0) || 0;
     const hi52 = Number(r.fiftyTwoWeekHigh ?? r.high52w ?? prev?.high52w ?? +(ltp * 1.15).toFixed(1));
     const lo52 = Number(r.fiftyTwoWeekLow ?? r.low52w ?? prev?.low52w ?? +(ltp * 0.85).toFixed(1));
 
@@ -853,9 +833,9 @@ function normalizeLiveArray(arr) {
       open, high, low, prevClose, previousClose: prevClose,
       change: chg,
       pChange: pCh, percentageChange: pCh,
-      volume: vol, totalTradedQuantity: vol,
-      turnover, totalTurnover: turnover,
-      transactions: tx, totalTransactions: tx,
+      volume: vol, totalTradedQuantity: vol, totalTradeQuantity: vol,
+      turnover, totalTurnover: turnover, totalTradeValue: turnover,
+      transactions: tx, totalTransactions: tx, totalTrades: tx,
       high52w: hi52, low52w: lo52,
       week52HighDist: hi52 ? +(((ltp - hi52) / hi52) * 100).toFixed(2) : null,
       week52LowDist: lo52 ? +(((ltp - lo52) / lo52) * 100).toFixed(2) : null,
@@ -887,10 +867,13 @@ function normalizeLiveArray(arr) {
         ...s,
         volume: 0,
         totalTradedQuantity: 0,
+        totalTradeQuantity: 0,
         turnover: 0,
         totalTurnover: 0,
+        totalTradeValue: 0,
         transactions: 0,
         totalTransactions: 0,
+        totalTrades: 0,
         change: 0,
         pChange: 0,
         percentageChange: 0,
