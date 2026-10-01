@@ -460,7 +460,7 @@ app.get('/api/market-summary', async (req, res) => {
     });
 
     if (stocks.length > 0) {
-      setCache(cacheKey, stocks, 15000);
+      setCache(cacheKey, stocks, 45000);
       return res.json({ success: true, data: stocks, source: 'live' });
     } else {
       throw new Error('No live trading data found from ShareSansar');
@@ -470,7 +470,7 @@ app.get('/api/market-summary', async (req, res) => {
     try {
       const mero = await fetchInternalMeroMarketSummary();
       if (mero && mero.stocks && mero.stocks.length > 0) {
-        setCache(cacheKey, mero.stocks, 15000);
+        setCache(cacheKey, mero.stocks, 45000);
         return res.json({ success: true, data: mero.stocks, source: 'merolagani-live' });
       }
     } catch (meroErr) {
@@ -2195,7 +2195,7 @@ export async function fetchInternalMeroMarketSummary() {
           totalScrips,
           date: json.overall?.d
         };
-        setCache(cacheKey, result, 20000);
+        setCache(cacheKey, result, 45000);
         return result;
       }
     }
@@ -2248,7 +2248,7 @@ export async function fetchInternalMeroMarketSummary() {
     });
 
     const result = { stocks, turnover: 0, date: new Date().toISOString() };
-    if (stocks.length > 0) setCache(cacheKey, result, 20000);
+    if (stocks.length > 0) setCache(cacheKey, result, 45000);
     return result;
   } catch (err) {
     return { stocks: [], turnover: 0, date: null };
@@ -2646,7 +2646,16 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       console.warn(`[floorsheet] nepseClient floorsheet unavailable: ${e1.message}`);
     }
 
-    const raw = result?.floorsheets?.content || result?.content || (Array.isArray(result) ? result : []);
+    const cleanSym = (symbol || '').toUpperCase().trim();
+    const rawList = result?.floorsheets?.content || result?.content || (Array.isArray(result) ? result : []);
+    // Strict symbol isolation: filter transactions strictly for the requested scrip
+    const raw = cleanSym
+      ? rawList.filter(item => {
+          const s = String(item.stockSymbol || item.symbol || '').toUpperCase().trim();
+          return s === cleanSym;
+        })
+      : rawList;
+
     const totalPages = result?.floorsheets?.totalPages || result?.totalPages || (raw.length > 0 ? 1 : 0);
     const totalElements = result?.floorsheets?.totalElements || result?.totalElements || raw.length;
 
@@ -2654,7 +2663,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       const q = item.contractQuantity || item.qty || item.quantity || 0;
       const rate = parseFloat(item.contractRate || item.rate || 0);
       const amt = parseFloat(item.contractAmount || item.amount || (q * rate));
-      const sym = item.stockSymbol || item.symbol || symbol;
+      const sym = (item.stockSymbol || item.symbol || cleanSym || '').toUpperCase();
       const bBroker = String(item.buyerMemberId || item.buyerBroker || item.buyerBrokerCode || item.buyer || '');
       const sBroker = String(item.sellerMemberId || item.sellerBroker || item.sellerBrokerCode || item.seller || '');
 
@@ -8627,13 +8636,39 @@ app.listen(PORT, async () => {
     console.log(`   🔸 UDF History:     /api/udf/history`);
 
     // Auto self-ping on Render production to prevent sleeping
+    // Render free tier sleeps after 15 minutes — ping every 12 minutes to stay within the window
     if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
-      const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/health` : 'https://nepseapp.onrender.com/health';
-      console.log(`📡 Auto keep-alive enabled: Pinging ${pingUrl} every 14 minutes`);
+      const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/ping` : 'https://nepseapp.onrender.com/api/ping';
+      console.log(`📡 Auto keep-alive enabled: Pinging ${pingUrl} every 12 minutes`);
       setInterval(() => {
         import('https').then(https => {
           https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
         }).catch(() => {});
-      }, 14 * 60 * 1000);
+      }, 12 * 60 * 1000);
     }
+
+    // ── Proactive Background Market Data Warm-Up ──────────────────────────────
+    // Pre-fetch live market data into cache immediately on startup and every 25s
+    // during trading hours. This ensures the first user request always hits
+    // a hot in-memory cache instead of triggering a fresh scrape (~5-8s penalty).
+    const warmMarketCache = async () => {
+      try {
+        const status = getDetailedMarketStatus();
+        // Only pre-fetch during trading day (08:00–17:00 NPT) to avoid wasted calls at night
+        const nptHour = status.nptTotalMinutes ? Math.floor(status.nptTotalMinutes / 60) : -1;
+        if (nptHour < 8 || nptHour >= 17) return;
+
+        // If cache is still hot, skip
+        if (getCache('internal-mero-market-summary')) return;
+
+        await fetchInternalMeroMarketSummary();
+        console.log('[warm-cache] Market data pre-fetched into cache');
+      } catch (_) {}
+    };
+
+    // Warm immediately after startup (give 3s for server to bind)
+    setTimeout(warmMarketCache, 3000);
+
+    // Then keep cache warm every 25 seconds (shorter than any cache TTL)
+    setInterval(warmMarketCache, 25 * 1000);
 });

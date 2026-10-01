@@ -81,19 +81,21 @@ export async function warmUpServer() {
   };
 
   // In desktop browser on localhost, quick 350ms probe to check if local proxy is active
+  // Run it in background — don't await, this should never block the data fetch
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    const isLocalOk = await ping('http://localhost:5000', 350);
-    _localProxyState = isLocalOk ? 'alive' : 'dead';
+    ping('http://localhost:5000', 350).then(ok => {
+      _localProxyState = ok ? 'alive' : 'dead';
+    }).catch(() => { _localProxyState = 'dead'; });
   }
 
   // Always ping production Render backend to guarantee wake up and warm status
-  const renderPing = ping('https://nepseapp.onrender.com', 20000);
+  // Both run fully in background — warmUpServer() returns immediately
+  ping('https://nepseapp.onrender.com', 20000).catch(() => {});
   const base = getProxyBase();
   if (base !== 'https://nepseapp.onrender.com' && !base.includes('localhost')) {
     ping(base, 15000).catch(() => {});
   }
 
-  await renderPing;
   _serverWarmPending = false;
 }
 
@@ -684,6 +686,25 @@ async function attemptLiveMarket() {
   // Execute top live feeds concurrently — resolves instantly on first valid return (~1.5s - 2.5s)
   const tasks = [];
 
+  // Source FAST: Direct MeroLagani via allorigins CORS proxy — works for ALL web browsers without Render
+  // This fires first and resolves the race in ~1-2s, completely bypassing Render cold-start.
+  // Native apps use CapacitorHttp which already handles CORS natively (Source D below).
+  if (!isNative) {
+    tasks.push((async () => {
+      try {
+        const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
+        const j = await tryFetchJSON(corsUrl, 5000);
+        if (j && (j.stock?.detail || j.turnover?.detail)) {
+          const parsed = parseMeroLaganiJson(j);
+          if (parsed && parsed.length > 20) {
+            return processLive(parsed, j.overall);
+          }
+        }
+      } catch (_) {}
+      return null;
+    })());
+  }
+
   // Source A: Official NOTS Live (/api/market/live) - Complete 336 stocks with circuit limits & high52
   tasks.push((async () => {
     try {
@@ -759,10 +780,10 @@ async function attemptLiveMarket() {
     } catch (_) {}
   }
 
-  // 3. Web Public CORS Proxy fallback for MeroLagani
+  // 3. Web Public CORS Proxy fallback for MeroLagani (second attempt with longer timeout)
   try {
     const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
-    const j = await tryFetchJSON(corsUrl, 5000);
+    const j = await tryFetchJSON(corsUrl, 8000);
     if (j && (j.stock?.detail || j.turnover?.detail)) {
       const parsed = parseMeroLaganiJson(j);
       if (parsed && parsed.length > 20) {
