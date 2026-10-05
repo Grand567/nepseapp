@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
   LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
   BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw,
-  Calendar, X, Info, Crown, Zap, Smartphone, Copy
+  Calendar, X, Info, Crown, Zap, Smartphone, Copy, Bell
 } from 'lucide-react';
 import Dashboard      from './components/Dashboard';
 import Portfolio      from './components/Portfolio';
@@ -20,6 +20,10 @@ import TestSuite      from './components/TestSuite';
 import StockDetailModal from './components/StockDetailModal';
 import PullToRefresh from './components/PullToRefresh';
 import SubscriptionModal from './components/SubscriptionModal';
+import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
+import { InstitutionalAlertCardModal } from './components/InstitutionalAlertCardModal';
+import { SmartAlertBanner } from './components/SmartAlertBanner';
+import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert } from './utils/pushNotificationService';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
@@ -39,11 +43,14 @@ export default function App() {
   return (
     <SubscriptionProvider>
       <NavigationProvider>
+        {/* A1: Global one-time risk disclaimer (shown on first visit, dismissable) */}
+        <RiskDisclaimer />
         <AppInner />
       </NavigationProvider>
     </SubscriptionProvider>
   );
 }
+
 
 function AppInner() {
   const { activeTab, setActiveTab, selectedStock, closeStockDetail, openStockDetail, exitToast } = useNavigation();
@@ -52,6 +59,26 @@ function AppInner() {
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(new Date());
+
+  // ── Tab Keep-Alive for Instant 0ms Switching ──
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set(['dashboard']));
+
+  useEffect(() => {
+    let base = 'dashboard';
+    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo') base = 'portfolio';
+    else if (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') base = 'predictor';
+    else if (activeTab === 'services') base = 'services';
+    else if (activeTab === 'calculator') base = 'calculator';
+    else if (activeTab === 'ai') base = 'ai';
+    else if (activeTab === 'resources') base = 'resources';
+
+    setVisitedTabs(prev => {
+      if (prev.has(base)) return prev;
+      const next = new Set(prev);
+      next.add(base);
+      return next;
+    });
+  }, [activeTab]);
 
   // ── Auth state ──
   const [user,         setUser]         = useState(() => getLocalSession() || undefined); // undefined = checking, null = logged out, object = logged in
@@ -89,6 +116,43 @@ function AppInner() {
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [upcomingHolidaysList, setUpcomingHolidaysList] = useState([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
+
+  // ── Dravyashree Smart Institutional Alert Modal State ──
+  const [smartAlertModal, setSmartAlertModal] = useState({ isOpen: false, alert: null });
+
+  // Initialize Push Notifications (Capacitor FCM on Android + Web SSE)
+  useEffect(() => {
+    initPushNotifications().catch(() => {});
+  }, []);
+
+  // Listen for Lockscreen / Deep Link tap or In-App Banner clicks
+  useEffect(() => {
+    const handleOpenSmartAlert = (e) => {
+      const alertData = e.detail;
+      if (alertData) {
+        setSmartAlertModal({ isOpen: true, alert: alertData });
+      }
+    };
+    window.addEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
+    return () => {
+      window.removeEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
+    };
+  }, []);
+
+  useBackHandler(() => {
+    setSmartAlertModal({ isOpen: false, alert: null });
+    return true;
+  }, smartAlertModal.isOpen, 60);
+
+  const handleOpenRadarFromAlert = (symbol) => {
+    setSmartAlertModal({ isOpen: false, alert: null });
+    try {
+      localStorage.setItem('open_service_id', 'stealth-accumulation');
+      localStorage.setItem('selected_entry_exit_symbol', symbol);
+      setActiveTab('services');
+      window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'stealth-accumulation', symbol } }));
+    } catch (_) {}
+  };
 
   // Register Back handlers for modals
   useBackHandler(() => {
@@ -781,6 +845,40 @@ function AppInner() {
               </span>
             </button>
 
+            {/* Smart Institutional Alerts Bell Button */}
+            <button
+              id="btn-smart-alerts"
+              className="icon-btn"
+              onClick={async () => {
+                const alerts = await fetchActiveSmartAlerts();
+                if (alerts && alerts.length > 0) {
+                  setSmartAlertModal({ isOpen: true, alert: alerts[0] });
+                } else {
+                  const testRes = await triggerTestAlert('GHL', 269.50);
+                  if (testRes?.result?.alert) {
+                    setSmartAlertModal({ isOpen: true, alert: testRes.result.alert });
+                  }
+                }
+              }}
+              title="Dravyashree Smart Alerts: High-Probability Institutional Setup"
+              style={{
+                height: 30,
+                padding: '0 8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                background: 'rgba(16, 185, 129, 0.15)',
+                borderColor: 'rgba(16, 185, 129, 0.45)',
+                color: '#10b981',
+                cursor: 'pointer',
+                fontWeight: 800,
+                fontSize: 10.5
+              }}
+            >
+              <Bell style={{ width: 13, height: 13, color: '#10b981' }} />
+              <span>Alerts</span>
+            </button>
+
             {/* Pro Subscription Badge / Upgrade Button */}
             <button
               id="btn-pro-subscription"
@@ -1295,65 +1393,105 @@ function AppInner() {
         <div className="app-content-body">
           <ErrorBoundary>
             <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {activeTab === 'dashboard'  && (
-                <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
-                  <Dashboard
-                    stocks={stocks}
-                    indices={indices}
-                    onRefresh={triggerTick}
-                    isRefreshing={isRefreshing}
-                    triggerTick={triggerTick}
-                    apiStatus={apiStatus}
-                    marketStatus={marketStatus}
-                    lastSyncTime={lastSyncTime}
-                    onSelectStock={openStockDetail}
-                    onOpenCalendar={() => setShowCalendarModal(true)}
-                  />
-                </PullToRefresh>
-              )}
-              {(activeTab === 'portfolio' || activeTab === 'bulk_ipo') && (
-                <PortfolioHub
-                  marketStocks={stocks}
-                  userId={user?.uid}
-                  userEmail={user?.email}
-                  apiStatus={apiStatus}
-                  initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
-                  onSelectStock={openStockDetail}
-                />
-              )}
-              {(activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') && (
-                <PredictorHub
-                  stocks={stocks}
-                  indices={indices}
-                  onSelectStock={openStockDetail}
-                  initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
-                />
+              {/* Tab 1: Dashboard / Market */}
+              {visitedTabs.has('dashboard') && (
+                <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <PullToRefresh onRefresh={triggerTick} isRefreshing={isRefreshing}>
+                    <Dashboard
+                      stocks={stocks}
+                      indices={indices}
+                      onRefresh={triggerTick}
+                      isRefreshing={isRefreshing}
+                      triggerTick={triggerTick}
+                      apiStatus={apiStatus}
+                      marketStatus={marketStatus}
+                      lastSyncTime={lastSyncTime}
+                      onSelectStock={openStockDetail}
+                      onOpenCalendar={() => setShowCalendarModal(true)}
+                    />
+                  </PullToRefresh>
+                </div>
               )}
 
-              {activeTab === 'services'   && (
-                <ServicesHub
-                  stocks={stocks}
-                  indices={indices}
-                  apiStatus={apiStatus}
-                  userId={user?.uid}
-                  onNavigateTab={setActiveTab}
-                  onSelectStock={openStockDetail}
-                  onAskGuruAi={(stockOrSymbol) => {
-                    const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-                    setAiTargetStock(sym);
-                    setActiveTab('ai');
-                  }}
-                />
+              {/* Tab 2: Portfolio & Bulk IPO */}
+              {visitedTabs.has('portfolio') && (
+                <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <PortfolioHub
+                    marketStocks={stocks}
+                    userId={user?.uid}
+                    userEmail={user?.email}
+                    apiStatus={apiStatus}
+                    initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
+                    onSelectStock={openStockDetail}
+                  />
+                </div>
               )}
-              {activeTab === 'calculator' && <Calculator />}
-              {activeTab === 'ai'         && (
-                <AiAnalyst
-                  marketStocks={stocks}
-                  initialStock={aiTargetStock}
-                  onClearInitialStock={() => setAiTargetStock(null)}
-                />
+
+              {/* Tab 3: Predictor Hub */}
+              {visitedTabs.has('predictor') && (
+                <div style={{ display: (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <PredictorHub
+                    stocks={stocks}
+                    indices={indices}
+                    onSelectStock={openStockDetail}
+                    initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
+                  />
+                </div>
               )}
-              {activeTab === 'resources'  && <Resources onNavigateTab={setActiveTab} />}
+
+              {/* Tab 4: Services */}
+              {visitedTabs.has('services') && (
+                <div style={{ display: activeTab === 'services' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <ServicesHub
+                    stocks={stocks}
+                    indices={indices}
+                    apiStatus={apiStatus}
+                    userId={user?.uid}
+                    onNavigateTab={setActiveTab}
+                    onSelectStock={openStockDetail}
+                    onAskGuruAi={(stockOrSymbol) => {
+                      const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                      setAiTargetStock(sym);
+                      setActiveTab('ai');
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Tab 5: Calculator */}
+              {visitedTabs.has('calculator') && (
+                <div style={{ display: activeTab === 'calculator' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <Calculator />
+                </div>
+              )}
+
+              {/* Tab 6: Guru AI */}
+              {visitedTabs.has('ai') && (
+                <div style={{ display: activeTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <AiAnalyst
+                    marketStocks={stocks}
+                    initialStock={aiTargetStock}
+                    onClearInitialStock={() => setAiTargetStock(null)}
+                  />
+                </div>
+              )}
+
+              {/* Tab 7: Resources */}
+              {visitedTabs.has('resources') && (
+                <div style={{ display: activeTab === 'resources' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <Resources onNavigateTab={setActiveTab} />
+                </div>
+              )}
+
+              {/* ── Dravyashree Smart Institutional Alert Banner & Modal ── */}
+              <SmartAlertBanner onOpenCard={(alert) => setSmartAlertModal({ isOpen: true, alert })} />
+
+              <InstitutionalAlertCardModal
+                isOpen={smartAlertModal.isOpen}
+                alert={smartAlertModal.alert}
+                onClose={() => setSmartAlertModal({ isOpen: false, alert: null })}
+                onOpenRadar={handleOpenRadarFromAlert}
+              />
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}
               {selectedStock && (

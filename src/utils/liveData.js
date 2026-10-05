@@ -16,6 +16,7 @@ import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
 import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar.js';
+import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import {
   getCachedRealPriceHistory,
@@ -32,10 +33,19 @@ import {
 } from './historyCache.js';
 
 
+// A4: Use NPT (Asia/Kathmandu, UTC+5:45) for all date-keyed cache entries.
+// Previously used device local time which caused incorrect cache invalidation
+// for users outside Nepal and near midnight NPT.
 function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+  } catch (_) {
+    // Fallback: manually add 5h 45m offset
+    const npt = new Date(Date.now() + (5 * 60 + 45) * 60000);
+    return npt.toISOString().slice(0, 10);
+  }
 }
+
 
 // In-memory + localStorage cache
 let MEM_STOCKS = null;
@@ -122,19 +132,60 @@ export function getCachedStocks() {
   return [];
 }
 
+/**
+ * A2: Returns the current in-memory market summary (including isSimulated flag).
+ * Components can use this to show data-quality warnings.
+ */
+export function getCachedMarketSummary() {
+  return MEM_SUMMARY;
+}
+
+
+
+// C4: Formats the current time in NPT (Asia/Kathmandu) for display in data panels.
+function nowNptFormatted() {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kathmandu',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+      month: 'short', day: 'numeric'
+    }).format(new Date());
+  } catch (_) { return new Date().toISOString(); }
+}
+
 function persistStocks(s) {
   MEM_STOCKS = s;
+  const nowIso = new Date().toISOString();
+  const nowNpt = nowNptFormatted();
   try {
     localStorage.setItem(LS_STOCKS, JSON.stringify(s));
-    localStorage.setItem('nepse_stocks_saved_at', new Date().toISOString());
+    localStorage.setItem('nepse_stocks_saved_at', nowIso);
+    // C4: Human-readable NPT timestamp — shown in "Last updated" UI labels
+    localStorage.setItem('nepse_stocks_saved_at_npt', nowNpt);
     localStorage.setItem('nepse_stocks_session_date', getLatestTradingDateStr());
   } catch { /* quota */ }
   idbSet(LS_STOCKS, s).catch(() => {});
 }
 
-// Core simulation: enrich every symbol with all required fields
+/**
+ * C4: Returns the last time live market data was successfully saved, in NPT.
+ * Returns null if data has never been fetched.
+ */
+export function getLastDataUpdateTime() {
+  try {
+    return {
+      iso: localStorage.getItem('nepse_stocks_saved_at') || null,
+      npt: localStorage.getItem('nepse_stocks_saved_at_npt') || null,
+    };
+  } catch { return { iso: null, npt: null }; }
+}
+
+
+// A2: Core simulation fallback — used only when the live proxy has not yet responded.
+// CRITICAL: Every field produced here is a placeholder, NOT real market data.
+// All stocks are tagged with isSimulated:true so the UI can show a data-quality warning.
+// Technical indicators (RSI, MACD, EMA) are set to null — do NOT display zero as a signal.
 function buildEnrichedSnapshot() {
-  const day = todayKey();
   const universe = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE.stocks || []);
   const stocks = universe.map((c) => {
     const basePrice = c.basePrice || c.ltp || 200;
@@ -142,7 +193,7 @@ function buildEnrichedSnapshot() {
     const prevClose = basePrice;
     const sharesM = c.sharesOut || 10;
     const marketCap = Math.floor(ltp * sharesM * 1e6);
-    
+
     return {
       symbol: c.symbol,
       companyName: c.name || c.companyName || c.symbol,
@@ -154,21 +205,26 @@ function buildEnrichedSnapshot() {
       volume: 0, totalTradedQuantity: 0,
       turnover: 0, totalTurnover: 0,
       transactions: 0, totalTransactions: 0,
-      high52w: ltp, low52w: ltp,
-      week52HighDist: 0,
-      week52LowDist: 0,
-      pe: 0, eps: 0, bvps: 0, bookValue: 0, marketCap, sharesOut: sharesM,
-      rsi: 50,
-      macd: { macdLine: 0, signal: 0, histogram: 0 },
-      ema20: ltp, ema50: ltp, sma20: ltp, sma50: ltp, 
-      bollinger: { upper: ltp, middle: ltp, lower: ltp, squeeze: false },
-      volumeZScore: 0, volumeSurgeRatio: 0,
-      technicalScore: 50, technicalRating: 'Neutral', dpi: 50,
-      stealthAccumulation: 50, floatTurnoverPct: 0,
+      high52w: null, low52w: null,  // A2: null = unknown, not equal to current price
+      week52HighDist: null,
+      week52LowDist: null,
+      pe: null, eps: null, bvps: null, bookValue: null, marketCap, sharesOut: sharesM,
+      // A2: Technical indicators are null when not computed from real data.
+      // Never show RSI=50 or MACD=0 as though they were real signals.
+      rsi: null,
+      macd: null,
+      ema20: null, ema50: null, sma20: null, sma50: null,
+      bollinger: null,
+      volumeZScore: null, volumeSurgeRatio: null,
+      technicalScore: null, technicalRating: null, dpi: null,
+      stealthAccumulation: null, floatTurnoverPct: 0,
       isBreakout: false, isVolumeShocker: false, candlestickPattern: null,
-      promoterHolding: 51, beta: 1, dividendYield: 0,
+      promoterHolding: null, beta: null, dividendYield: null,
       listedShares: sharesM * 1e6,
       previousClose: prevClose,
+      // A2: Data quality flag — UI must show a warning when this is true
+      isSimulated: true,
+      dataQuality: 'SIMULATED_FALLBACK',
     };
   });
 
@@ -180,7 +236,6 @@ function buildEnrichedSnapshot() {
   const totalTurnover = Number(cachedIdx?.nepse?.turnover || sumStocksTurnover);
   const totalVol = stocks.reduce((a, s) => a + s.volume, 0);
   const totalTx = stocks.reduce((a, s) => a + s.transactions, 0);
-  const avgChg = stocks.length > 0 ? stocks.reduce((a, s) => a + (s.pChange || 0), 0) / stocks.length : 0;
   const nepseIndex = cachedIdx?.nepse?.value || null;
   const change = cachedIdx?.nepse?.change || 0;
   const changePercent = cachedIdx?.nepse?.pChange || 0;
@@ -198,10 +253,14 @@ function buildEnrichedSnapshot() {
     statusLabel: marketStatusObj.statusLabel,
     floatMktCap: Math.floor(totalTurnover * 310),
     totalMktCap: Math.floor(stocks.reduce((a, s) => a + (s.marketCap || 0), 0)),
-    status: nepseIndex ? 'complete' : 'insufficient_history'
+    status: nepseIndex ? 'complete' : 'insufficient_history',
+    // A2: Mark the entire summary as simulated so the dashboard can display a banner
+    isSimulated: true,
+    dataQuality: 'SIMULATED_FALLBACK',
   };
   return { stocks, summary };
 }
+
 
 function ensureSnapshot() {
   if (MEM_STOCKS && MEM_STOCKS.length > 100 && MEM_SUMMARY) return;
@@ -568,6 +627,8 @@ export async function fetchStockFundamentals(symbol, forceRefresh = false) {
   return null;
 }
 
+export const fetchLiveStockDetail = fetchStockFundamentals;
+
 // Multi-source backend proxy caller — automatically retries once on transient failure (Render cold-start)
 // then falls back to Render production backend so real exchange data is always reached.
 export async function fetchFromBackend(path, timeoutMs = 12000) {
@@ -678,9 +739,13 @@ async function attemptLiveMarket() {
       MEM_SUMMARY.advances = normalized.filter(s => (s.pChange || 0) > 0).length;
       MEM_SUMMARY.declines = normalized.filter(s => (s.pChange || 0) < 0).length;
       MEM_SUMMARY.unchanged = normalized.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+      MEM_SUMMARY.isSimulated = false;
+      MEM_SUMMARY.dataQuality = 'REAL_EXCHANGE';
+      MEM_SUMMARY.asOf = new Date().toISOString();
     }
     return normalized;
   };
+
 
   // 1. PRIMARY FAST PARALLEL RACE:
   // Execute top live feeds concurrently — resolves instantly on first valid return (~1.5s - 2.5s)
@@ -844,11 +909,14 @@ function normalizeLiveArray(arr) {
       if (cList.length >= 15) {
         if (!realEma50) {
           const s50 = calculateEMA(cList, Math.min(50, cList.length));
-          if (s50.length > 0) {
-            realEma50 = Number(s50[s50.length - 1].toFixed(1));
+          // B1: EMA array has null prefix for warm-up positions; get last non-null
+          const last50 = s50.filter(v => v !== null);
+          if (last50.length > 0) {
+            realEma50 = Number(last50[last50.length - 1].toFixed(1));
             isRealEma = true;
           }
         }
+
         if (!realRsi) {
           const rVal = calculateRSI(cList, 14);
           if (rVal != null && !isNaN(rVal)) {
@@ -857,19 +925,23 @@ function normalizeLiveArray(arr) {
         }
         if (!realMacd && cList.length >= 26) {
           const mRes = calculateMACD(cList);
-          if (mRes) {
+          // B2: MACD now returns null values when insufficient; skip if isInsufficient
+          if (mRes && !mRes.isInsufficient && mRes.line !== null) {
             realMacd = {
-              macdLine: Number(mRes.line || 0),
-              signal: Number(mRes.signal || 0),
-              histogram: Number(mRes.histogram || 0)
+              macdLine: Number(mRes.line),
+              signal:   Number(mRes.signal),
+              histogram: Number(mRes.histogram)
             };
           }
         }
       }
       if (!realEma20 && cList.length >= 10) {
+        // B1: EMA returns array with null prefix — find last non-null value
         const s20 = calculateEMA(cList, Math.min(20, cList.length));
-        if (s20.length > 0) realEma20 = Number(s20[s20.length - 1].toFixed(1));
+        const last20 = s20.filter(v => v !== null);
+        if (last20.length > 0) realEma20 = Number(last20[last20.length - 1].toFixed(1));
       }
+
     }
 
     // Authentic Indicators: calculated from genuine candle series when cached
@@ -911,6 +983,9 @@ function normalizeLiveArray(arr) {
     // dpi must be declared here — it is referenced in out.push() but was previously undefined
     const dpi = Number(r.dpi ?? prev?.dpi ?? null) || null;
 
+    // C3: Classify liquidity based on today's turnover
+    const liquidity = classifyLiquidity({ turnover });
+
     out.push({
       ...(prev || {}),
       symbol: sym,
@@ -944,8 +1019,20 @@ function normalizeLiveArray(arr) {
       circuitFloor,
       isCircuitHit,
       isUpperCircuit,
-      isLowerCircuit
+      isLowerCircuit,
+      // C3: Liquidity classification
+      liquidityClass: liquidity.class,
+      liquidityLabel: liquidity.label,
+      isIlliquid: liquidity.isIlliquid,
+      liquidityWarning: liquidity.warning,
+      // Real exchange quote flag
+      isSimulated: false,
+      isRealQuote: true,
+      // C4: Data freshness — ISO timestamp of when this quote was received
+      dataFetchedAt: new Date().toISOString(),
     });
+
+
   }
 
   // Preserve remaining equities from base universe so untraded scrips remain searchable with previous close
@@ -1339,11 +1426,33 @@ export async function fetchPriceHistory(symbol, days = 365) {
       }));
 
       const fullWithToday = appendTodayIfMissing(mapped);
+
+      // C1: Back-adjust for corporate actions (bonus shares, rights, cash dividends).
+      // Fetch actions from the backend; if unavailable, return unadjusted data.
+      // NOTE: Adjusted prices are for technical analysis only — not real traded prices.
+      if (!isNepseOrIndex) {
+        try {
+          const divRes = await fetchFromBackend(`/api/dividend-history/${encodeURIComponent(symKey)}`, 5000);
+          if (divRes && divRes.success && Array.isArray(divRes.data) && divRes.data.length > 0) {
+            const adjusted = adjustPricesForCorporateActions(fullWithToday, divRes.data);
+            adjusted.isRealData = true;
+            adjusted.dataSource = 'nepse_live';
+            adjusted.isAdjustedForActions = true;
+            adjusted.corporateActionsApplied = divRes.data.length;
+            // Cache both: raw (for P&L calculations) and adjusted (for TA indicators)
+            setCachedRealPriceHistory(symKey, fullWithToday); // raw
+            setCachedRealPriceHistory(`${symKey}_adj`, adjusted); // adjusted
+            return adjusted;
+          }
+        } catch (_) { /* fall through to unadjusted */ }
+      }
+
       setCachedRealPriceHistory(symKey, fullWithToday);
       fullWithToday.isRealData = true;
       fullWithToday.dataSource = 'nepse_live';
       return fullWithToday;
     }
+
   } catch (_) {}
 
   // 2B. Direct MeroLagani company graph fallback for individual equities
@@ -2342,3 +2451,6 @@ export async function fetchMarketStatus() {
   return status;
 }
 
+
+// ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
+export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };

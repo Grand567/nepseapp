@@ -79,16 +79,37 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'esbuild',
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'lucide-react', 'lightweight-charts'],
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/database', 'firebase/analytics']
+        manualChunks(id) {
+          // Firebase — its own chunk (448 kB)
+          if (id.includes('firebase')) return 'firebase';
+          // React + UI libs — vendor chunk (364 kB)
+          if (id.includes('node_modules/react') ||
+              id.includes('node_modules/react-dom') ||
+              id.includes('lucide-react') ||
+              id.includes('lightweight-charts')) return 'vendor';
+          // Core quantitative & technical analysis engines
+          if (id.includes('quantEngine') ||
+              id.includes('/utils/indicators') ||
+              id.includes('/utils/backtest') ||
+              id.includes('/utils/fundamentals') ||
+              id.includes('/utils/riskManagement') ||
+              id.includes('/utils/calculations') ||
+              id.includes('/utils/priceAdjustment') ||
+              id.includes('accumulationDistributionEngine') ||
+              id.includes('masterProfitEngine') ||
+              id.includes('setupAnalyzer')) return 'analysis-engine';
+          // Calendar + nepseUniverse data
+          if (id.includes('nepseCalendar') ||
+              id.includes('nepseUniverse') ||
+              id.includes('nepseDividends')) return 'nepse-data';
         }
       }
     }
   },
+
   esbuild: {
     drop: ['debugger']
   }

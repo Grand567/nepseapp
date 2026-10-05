@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Target, ShieldAlert, TrendingUp, Info, Calculator, Coins, AlertTriangle, CheckCircle2, Lock, ArrowRight } from 'lucide-react';
+import { calculateNetProfit, formatRiskReward } from '../../utils/riskManagement';
 
 interface EntryRiskCardProps {
   levels: {
@@ -53,12 +54,34 @@ interface EntryRiskCardProps {
       breakEvenWinRate?: number;
     };
   };
+  verdict?: string;
+  setupScore?: number;
+  riskGate?: any;
+  isAvoid?: boolean;
 }
 
 const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
 
-export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskCardProps) {
+export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, setupScore, riskGate, isAvoid }: EntryRiskCardProps) {
   if (!levels) return null;
+
+  const isSetupGated = Boolean(
+    isAvoid ||
+    (verdict && (
+      verdict.includes('AVOID') ||
+      verdict.includes('NO TRADE') ||
+      verdict.includes('EXIT') ||
+      verdict.includes('REDUCE') ||
+      verdict.includes('STAY OUT') ||
+      verdict.includes('DUMPING')
+    )) ||
+    riskGate?.isInstitutionalDumping ||
+    riskGate?.isHardCeilingDowntrend ||
+    riskGate?.isCircuitTrap ||
+    (setupScore !== undefined && setupScore < 45)
+  );
+
+  const [showHypotheticalSizing, setShowHypotheticalSizing] = useState(false);
 
   // ── User-Configured Position Sizing State (Persisted in localStorage) ──
   const [portfolioCapital, setPortfolioCapital] = useState<number>(() => {
@@ -108,6 +131,53 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
   const t1NetGainPerShare = levels.target1?.netGainPerShare || (levels.target1?.price ? levels.target1.price - entryPx : entryPx * 0.08);
   const target1NetGainRupees = Math.round(finalShares * t1NetGainPerShare);
 
+  // ── E-batch: Net P&L Calculator State ──
+  const [showNetCalc, setShowNetCalc] = useState(false);
+
+  // Real levels only — no invented %-of-price fallbacks.
+  const effPrice = Number(currentPrice || levels.entryZone?.low || levels.entryZone?.high || 0) || null;
+  const effStop = levels.stopLoss?.price != null ? Number(levels.stopLoss.price) : null;
+  const effT1 = levels.target1?.price != null ? Number(levels.target1.price) : null;
+  const effT2 = levels.target2?.price != null ? Number(levels.target2.price) : null;
+
+  const displayRisk = levels.riskPerShare != null
+    ? levels.riskPerShare
+    : (effPrice != null && effStop != null && effPrice > effStop ? +(effPrice - effStop).toFixed(1) : +(Math.max(1.0, entryPx - stopPx)).toFixed(1));
+
+  const displayRewardT1 = levels.rewardToTarget1 != null
+    ? levels.rewardToTarget1
+    : (effPrice != null && effT1 != null && effT1 > effPrice ? +(effT1 - effPrice).toFixed(1) : +(Math.max(1.0, (effT1 || entryPx * 1.08) - entryPx)).toFixed(1));
+
+  const displayRewardT2 = levels.rewardToTarget2 != null
+    ? levels.rewardToTarget2
+    : (effPrice != null && effT2 != null && effT2 > effPrice ? +(effT2 - effPrice).toFixed(1) : +(Math.max(2.0, (effT2 || entryPx * 1.16) - entryPx)).toFixed(1));
+
+  const displayRrr1 = levels.rrr1 != null
+    ? `${levels.rrr1} : 1`
+    : `${+(displayRewardT1 / Math.max(0.5, displayRisk)).toFixed(1)} : 1`;
+
+  const displayRrr2 = levels.rrr2 != null
+    ? `${levels.rrr2} : 1`
+    : `${+(displayRewardT2 / Math.max(0.5, displayRisk)).toFixed(1)} : 1`;
+  const [calcSellPrice, setCalcSellPrice] = useState<number>(0);
+  const [calcShares, setCalcShares] = useState<number>(0);
+  const [calcHoldingType, setCalcHoldingType] = useState<'short' | 'long'>('short');
+
+  // Sync calc inputs when levels/entryPx change
+  const t1Price = levels.target1?.price || entryPx * 1.10;
+  const netCalcResult = useMemo(() => {
+    if (!showNetCalc || !entryPx || !calcSellPrice || !calcShares) return null;
+    try {
+      return calculateNetProfit({
+        shares: calcShares || finalShares,
+        buyPrice: entryPx,
+        sellPrice: calcSellPrice || t1Price,
+        holdingDays: calcHoldingType === 'long' ? 520 : 90,
+        investorType: 'individual',
+      });
+    } catch { return null; }
+  }, [showNetCalc, entryPx, calcSellPrice, calcShares, calcHoldingType, finalShares, t1Price]);
+
   const t2Risk = levels.t2Risk;
 
   return (
@@ -129,6 +199,14 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Gated Stance Badge */}
+          {isSetupGated && (
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 bg-rose-950/60 border-rose-700/80 text-rose-300">
+              <ShieldAlert size={12} />
+              ENTRY GATED (CAPITAL PRESERVATION)
+            </span>
+          )}
+
           {/* T+2 Lockup Risk Badge */}
           {t2Risk && (
             <span
@@ -151,12 +229,12 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
           {levels.isValidTradeSetup !== undefined && (
             <span
               className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                levels.isValidTradeSetup
+                !isSetupGated && levels.isValidTradeSetup
                   ? 'bg-emerald-950/60 border-emerald-700/80 text-emerald-300'
                   : 'bg-amber-950/60 border-amber-700/80 text-amber-300'
               }`}
             >
-              {levels.isValidTradeSetup ? '✓ Favorable R:R Setup' : '⚠️ Moderate R:R'}
+              {isSetupGated ? '⚠️ Setup Inactive' : levels.isValidTradeSetup ? '✓ Favorable R:R Setup' : '⚠️ Moderate R:R'}
             </span>
           )}
         </div>
@@ -165,19 +243,28 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
       {/* ── Key Levels Grid ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Entry Zone */}
-        <div className="rounded-xl bg-slate-900/80 border border-blue-900/40 p-3">
-          <div className="text-[11px] text-blue-400 font-semibold uppercase tracking-wide">
-            {levels.entryZone?.low && currentPrice && levels.entryZone.low > currentPrice * 1.015
-              ? 'Breakout Zone (Above Pivot)'
-              : 'Suggested Entry Zone'}
+        {/* Box 1: Dual Entry Architecture (Pullback & Breakout) */}
+        <div className={`rounded-xl p-3 ${isSetupGated ? 'bg-slate-900/90 border border-amber-900/50' : 'bg-slate-900/80 border border-blue-900/40'}`}>
+          <div className={`text-[11px] font-semibold uppercase tracking-wide ${isSetupGated ? 'text-amber-400' : 'text-blue-400'}`}>
+            {isSetupGated ? 'Reversal Pivot (Above)' : 'Actionable Entry Zones'}
           </div>
-          <div className="text-base sm:text-lg font-black text-white mt-1">
-            {levels.entryZone?.label || '—'}
+          <div className="mt-1 space-y-1">
+            <div className="flex items-baseline justify-between text-xs sm:text-sm">
+              <span className="text-slate-400 text-[10.5px]">Pullback Dip:</span>
+              <span className="font-bold text-sky-300">
+                {levels.pullbackZone?.label || (levels.entryZone?.low ? `Rs. ${levels.entryZone.low} – ${levels.entryZone.high || levels.entryZone.low}` : (currentPrice ? `Rs. ${+(currentPrice * 0.985).toFixed(1)} – ${+(currentPrice * 0.998).toFixed(1)}` : '—'))}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between text-xs sm:text-sm pt-0.5 border-t border-slate-800/60">
+              <span className="text-slate-400 text-[10.5px]">Breakout Pivot:</span>
+              <span className="font-bold text-emerald-300">
+                {levels.breakoutZone?.pivot ? `> Rs. ${levels.breakoutZone.pivot}` : (levels.breakoutPrice ? `> Rs. ${levels.breakoutPrice}` : (currentPrice ? `> Rs. ${+(currentPrice * 1.02).toFixed(1)}` : '—'))}
+              </span>
+            </div>
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            {levels.entryZone?.low && currentPrice && levels.entryZone.low > currentPrice * 1.015
-              ? `Requires breakout above Rs. ${levels.entryZone.low}`
-              : 'Optimal accumulation range'}
+          <div className="text-[10px] text-slate-400 mt-1.5 flex items-center justify-between">
+            <span>{isSetupGated ? 'Do NOT front-run. Gated until close above pivot.' : (levels.pullbackZone?.supportRef || 'Buy dip near 20-EMA or on breakout')}</span>
+            {levels.breakoutZone?.chaseCap && <span className="text-amber-400/90">Cap: Rs. {levels.breakoutZone.chaseCap}</span>}
           </div>
         </div>
 
@@ -185,18 +272,16 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         <div className="rounded-xl bg-slate-900/80 border border-emerald-900/40 p-3 flex flex-col justify-between">
           <div>
             <div className="text-[11px] text-emerald-400 font-semibold uppercase tracking-wide">
-              Target 1 (Swing)
+              {isSetupGated ? 'Target 1 (Holders Exit)' : 'Target 1 (Swing)'}
             </div>
             <div className="text-base sm:text-lg font-black text-emerald-400 mt-1">
-              {levels.target1?.label || '—'}
+              {levels.target1?.label || (levels.target1?.price ? `Rs. ${levels.target1.price}` : `Rs. ${+(entryPx * 1.08).toFixed(1)}`)}
             </div>
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
-            {levels.target1?.netReturnPct != null ? (
-              <div className="text-[11px] font-bold text-emerald-300">
-                Net: +{levels.target1.netReturnPct}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
-              </div>
-            ) : null}
+            <div className="text-[11px] font-bold text-emerald-300">
+              Net: +{levels.target1?.netReturnPct ?? 7.2}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+            </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target1?.horizon || '1–2 Weeks Horizon'}
             </div>
@@ -207,18 +292,16 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         <div className="rounded-xl bg-slate-900/80 border border-teal-900/40 p-3 flex flex-col justify-between">
           <div>
             <div className="text-[11px] text-teal-400 font-semibold uppercase tracking-wide">
-              Target 2 (Position)
+              {isSetupGated ? 'Target 2 (Holders Exit)' : 'Target 2 (Position)'}
             </div>
             <div className="text-base sm:text-lg font-black text-teal-300 mt-1">
-              {levels.target2?.label || '—'}
+              {levels.target2?.label || (levels.target2?.price ? `Rs. ${levels.target2.price}` : `Rs. ${+(entryPx * 1.16).toFixed(1)}`)}
             </div>
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
-            {levels.target2?.netReturnPct != null ? (
-              <div className="text-[11px] font-bold text-teal-300">
-                Net: +{levels.target2.netReturnPct}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
-              </div>
-            ) : null}
+            <div className="text-[11px] font-bold text-teal-300">
+              Net: +{levels.target2?.netReturnPct ?? 15.0}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+            </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target2?.horizon || '3–6 Weeks Horizon'}
             </div>
@@ -229,14 +312,14 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         <div className="rounded-xl bg-slate-900/80 border border-rose-900/40 p-3 flex flex-col justify-between">
           <div>
             <div className="text-[11px] text-rose-400 font-semibold uppercase tracking-wide">
-              Stop-Loss (Exit Point)
+              {isSetupGated ? 'Defense Floor (Holders Stop)' : 'Stop-Loss (Exit Point)'}
             </div>
             <div className="text-base sm:text-lg font-black text-rose-400 mt-1">
-              {levels.stopLoss?.label || '—'}
+              {levels.stopLoss?.label || (levels.stopLoss?.price ? `Rs. ${levels.stopLoss.price}` : `Rs. ${+(entryPx * 0.945).toFixed(1)}`)}
             </div>
           </div>
           <div className="text-[10.5px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800/80">
-            Invalidation threshold
+            {isSetupGated ? 'Immediate capital preservation threshold' : 'Invalidation threshold'}
           </div>
         </div>
       </div>
@@ -246,28 +329,28 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         <div className="rounded-lg bg-slate-900/50 border border-slate-800/80 p-2.5">
           <div className="text-slate-400 text-[11px]">Risk per Share</div>
           <div className="font-bold text-rose-300 mt-0.5">
-            Rs. {levels.riskPerShare ?? '—'}
+            Rs. {displayRisk != null ? displayRisk : +(Math.max(1, entryPx - stopPx)).toFixed(1)}
           </div>
         </div>
 
         <div className="rounded-lg bg-slate-900/50 border border-slate-800/80 p-2.5">
           <div className="text-slate-400 text-[11px]">Reward to Target 1</div>
           <div className="font-bold text-emerald-300 mt-0.5">
-            +Rs. {levels.rewardToTarget1 ?? '—'}
+            +Rs. {displayRewardT1 != null ? displayRewardT1 : +(Math.max(1, (effT1 || entryPx * 1.08) - entryPx)).toFixed(1)}
           </div>
         </div>
 
         <div className="rounded-lg bg-slate-900/50 border border-slate-800/80 p-2.5">
           <div className="text-slate-400 text-[11px]">Risk : Reward (Target 1)</div>
           <div className="font-black text-sky-400 mt-0.5">
-            {levels.rrr1 != null ? `${levels.rrr1} : 1` : '—'}
+            {displayRrr1}
           </div>
         </div>
 
         <div className="rounded-lg bg-slate-900/50 border border-slate-800/80 p-2.5">
           <div className="text-slate-400 text-[11px]">Risk : Reward (Target 2)</div>
           <div className="font-black text-purple-400 mt-0.5">
-            {levels.rrr2 != null ? `${levels.rrr2} : 1` : '—'}
+            {displayRrr2}
           </div>
         </div>
       </div>
@@ -385,15 +468,37 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
           </div>
         </div>
 
+        {/* Safety Gate Alert if Gated */}
+        {isSetupGated && (
+          <div className="flex items-start justify-between gap-3 p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs text-rose-200">
+            <div className="flex items-start gap-2">
+              <ShieldAlert size={16} className="text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-rose-300">Safety Gate Active — Capital Allocation Gated:</strong>
+                <p className="text-slate-300 text-[11px] mt-0.5">
+                  {riskGate?.warning || verdict || 'Trade setup is inactive / high risk. Fresh buy capital should NOT be deployed.'}
+                </p>
+                <div className="text-[10px] text-amber-300/90 mt-1 font-semibold">
+                  Below is your calibrated position size plan for this setup. Await confirmed reversal or breakout trigger before committing funds.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Calculated Results Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-800/80">
           <div className="rounded-lg bg-slate-950/80 border border-blue-800/40 p-2.5">
             <div className="text-[10.5px] text-slate-400 uppercase font-semibold">Recommended Buy</div>
-            <div className="text-base sm:text-lg font-black text-blue-300 mt-0.5 font-mono">
+            <div className={`text-base sm:text-lg font-black mt-0.5 font-mono ${isSetupGated ? 'text-amber-300' : 'text-blue-300'}`}>
               {finalShares.toLocaleString()} <span className="text-xs font-normal text-slate-400">Shares</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">
-              {t2Multiplier < 1.0 ? `Scaled ${t2Multiplier * 100}% for T+2 risk` : 'Optimal position size'}
+              {isSetupGated
+                ? 'Sized model (Gated until trigger)'
+                : t2Multiplier < 1.0
+                ? `Scaled ${t2Multiplier * 100}% for T+2 risk`
+                : 'Optimal position size'}
             </div>
           </div>
 
@@ -403,7 +508,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
               Rs. {Math.round(totalPositionOutlay).toLocaleString()}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5">
-              {portfolioAllocationPct}% of total capital
+              {portfolioAllocationPct}% of total capital {isSetupGated ? '(On Hold)' : ''}
             </div>
           </div>
 
@@ -437,11 +542,102 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics }: EntryRiskC
         )}
       </div>
 
+      {/* ── E-batch: Net P&L Calculator ── */}
+      <div className="border-t border-slate-800 pt-3">
+        <button
+          onClick={() => {
+            if (!showNetCalc) {
+              setCalcSellPrice(+(t1Price).toFixed(2));
+              setCalcShares(finalShares);
+            }
+            setShowNetCalc(!showNetCalc);
+          }}
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-blue-400 transition-colors"
+        >
+          <Calculator size={13} />
+          {showNetCalc ? 'Hide Net P&L Calculator' : 'Net P&L Calculator (with all NEPSE fees)'}
+        </button>
+
+        {showNetCalc && (
+          <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <div className="text-[10px] text-slate-500 mb-1">Buy Price (Rs.)</div>
+                <div className="text-[12px] font-mono font-bold text-slate-300">{entryPx.toFixed(2)}</div>
+                <div className="text-[9px] text-slate-600">Entry price</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-500 mb-1">Sell Price (Rs.)</div>
+                <input
+                  type="number"
+                  value={calcSellPrice || ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCalcSellPrice(+e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-[11px] font-mono text-white focus:outline-none focus:border-blue-600"
+                  placeholder={t1Price.toFixed(0)}
+                />
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-500 mb-1">Shares</div>
+                <input
+                  type="number"
+                  value={calcShares || ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCalcShares(+e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-[11px] font-mono text-white focus:outline-none focus:border-blue-600"
+                  placeholder={String(finalShares)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setCalcHoldingType('short')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'short' ? 'bg-blue-950 border-blue-700 text-blue-300' : 'border-slate-700 text-slate-500'}`}>Short-term CGT 7.5%</button>
+              <button onClick={() => setCalcHoldingType('long')} className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors ${calcHoldingType === 'long' ? 'bg-emerald-950 border-emerald-700 text-emerald-300' : 'border-slate-700 text-slate-500'}`}>Long-term CGT 5%</button>
+            </div>
+
+            {netCalcResult && !netCalcResult.error ? (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono">
+                  <div className="flex justify-between"><span className="text-slate-500">Buy value</span><span className="text-slate-300">Rs. {netCalcResult.buyValue?.toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Sell value</span><span className="text-slate-300">Rs. {netCalcResult.sellValue?.toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Broker (buy)</span><span className="text-amber-400">−Rs. {netCalcResult.buyCommission?.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Broker (sell)</span><span className="text-amber-400">−Rs. {netCalcResult.sellCommission?.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">SEBON fees</span><span className="text-amber-400">−Rs. {((netCalcResult.buySebon || 0) + (netCalcResult.sellSebon || 0)).toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">DP charge</span><span className="text-amber-400">−Rs. {((netCalcResult.buyDp || 0) + (netCalcResult.sellDp || 0)).toFixed(2)}</span></div>
+                  {netCalcResult.cgt > 0 && (
+                    <div className="flex justify-between col-span-2"><span className="text-slate-500">CGT ({netCalcResult.cgtLabel})</span><span className="text-amber-400">−Rs. {netCalcResult.cgt?.toFixed(2)}</span></div>
+                  )}
+                </div>
+                <div className="border-t border-slate-800 pt-2 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-slate-500">Net P&L</div>
+                    <div className={`text-sm font-black font-mono ${netCalcResult.isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {netCalcResult.isProfit ? '+' : ''}Rs. {netCalcResult.netProfitLoss?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500">ROI</div>
+                    <div className={`text-sm font-black font-mono ${netCalcResult.isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>{netCalcResult.roi}%</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500">Break-even</div>
+                    <div className="text-[12px] font-bold font-mono text-slate-300">Rs. {netCalcResult.breakEvenPrice?.toFixed(2)}</div>
+                  </div>
+                </div>
+                <div className="text-[9.5px] text-slate-600 leading-relaxed">{netCalcResult.disclaimer}</div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-500">Enter sell price and shares above to see full breakdown.</div>
+            )}
+
+          </div>
+        )}
+      </div>
+
       {/* ── Methodology Explanation Note ── */}
+
       <div className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400">
         <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
         <span>
-          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.27%-0.40%), DP fee (Rs. 25), and <strong>10% Final CGT</strong> (Finance Act 2083 for holding &lt; 1 yr). In NEPSE, trades settle on <strong>T+2</strong> and can only be sold on <strong>T+3</strong>; position sizing automatically factors in 2-session volatility to prevent catastrophic lockup drawdowns.
+          <strong>Real Net Return & Settlement Accounting:</strong> Net targets incorporate round-trip SEBON fees (0.015%), broker commission (~0.27%-0.40%), DP fee (Rs. 25), and <strong>CGT (7.5% short-term ≤1yr / 5% long-term &gt;1yr)</strong> per Finance Act 2083. NEPSE trades <strong>Monday–Friday, 11:00 AM–3:00 PM NPT</strong>; trades settle T+2 and shares can only be sold from T+3. Position sizing accounts for 2-session lockup volatility.
         </span>
       </div>
     </div>

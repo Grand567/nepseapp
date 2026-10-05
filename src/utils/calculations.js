@@ -155,10 +155,12 @@ export function calculateBrokerCommission(amount) {
 
 /**
  * Calculates SEBON Regulatory Fee (0.015% of transaction amount)
+ * A5 Fix: Result rounded to 2 decimal places (paisa precision).
  */
 export function calculateSebonFee(amount) {
-  return amount * 0.00015;
+  return +((amount * 0.00015).toFixed(2));
 }
+
 
 /**
  * DP Charge (Depository Participant fee) is Rs. 25 per transaction per company

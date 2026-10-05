@@ -1,0 +1,9 @@
+{
+  "GHL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791200545575,
+    "lastEvaluatedAt": 1791200545575,
+    "historyCount": 1
+  }
+}

@@ -338,12 +338,31 @@ export function isNepseTradingDay(date = new Date()) {
  * Finds the most recent past valid NEPSE Trading Day.
  * If today is Saturday, Sunday, or a Holiday (or trading hasn't started yet),
  * it scans backwards until finding the last active trading session date.
+ *
+ * @param {Date} fromDate - Reference date (default: now)
+ * @param {boolean} requireCompleted - A6 Fix: When true, if it is currently before 15:00 NPT
+ *   on a trading day (market still open / partial session), returns the previous completed
+ *   trading day instead of today. Use this when you need fully settled OHLCV data.
  */
 export function getLastValidTradingDay(fromDate = new Date(), requireCompleted = false) {
   const cursor = new Date(fromDate);
-  
-  // If requireCompleted is true or we are before market open (11:00 AM NPT) on a trading day,
-  // we might want the previous day's session
+
+  // A6: If caller needs a *completed* session, step back past the current partial day
+  if (requireCompleted) {
+    let nptHours = 15; // default safe value: assume market has closed
+    try {
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kathmandu', hour12: false, hour: 'numeric'
+      });
+      nptHours = parseInt(fmt.formatToParts(cursor).find(p => p.type === 'hour').value, 10) % 24;
+    } catch (_) {}
+
+    // If market may still be open today (before 15:00 NPT on a trading day), go back one day
+    if (nptHours < 15 && isNepseTradingDay(cursor)) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+  }
+
   let iterations = 0;
   while (iterations < 30) {
     if (isNepseTradingDay(cursor)) {
@@ -355,6 +374,7 @@ export function getLastValidTradingDay(fromDate = new Date(), requireCompleted =
   }
   return new Date(fromDate);
 }
+
 
 /**
  * Formats a Date object into YYYY-MM-DD in Asia/Kathmandu time zone.

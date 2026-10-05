@@ -2,7 +2,7 @@
 // Comprehensive NEPSE Predictor & Quant Workstation
 // Integrates Index Direction Forecast, Stock Composite Screener, Entry/Exit Analyzer, and Sentiment & Macro Intelligence.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -45,6 +45,7 @@ import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import ShortTermProfitPlan from './ShortTermProfitPlan';
 import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
+import NepseAgentDashboard from './NepseAgentDashboard';
 import ProGate from './ProGate';
 import { getHydroSeasonality, computeFiscalCycle, evaluatePreOpenExecutionGate, resolveDynamicStockRSI, resolveDynamicStockEMAs } from '../utils/quantEngine';
 import { selectMasterPrimePick, evaluateGuruMasterSetup, isActionableBuySignal } from '../utils/guruEngine';
@@ -55,6 +56,8 @@ import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { clampToDailyCircuitBand, getCircuitLimits, clampReturnIntervalToCircuit, calculateDynamicRSI } from '../utils/dynamicCalculationEngine';
 
 const UNIVERSE_MAP = new Map(NEPSE_UNIVERSE.map(u => [String(u.symbol).toUpperCase(), u]));
+
+const fmt = (n) => Number(n || 0).toLocaleString();
 
 // Verified active corporate catalysts in NEPSE (Dividends, Right shares in pipeline, Bonus & AGMs)
 const CATALYST_MAP = new Map([
@@ -150,6 +153,26 @@ export default function PredictorHub({
   const [loading, setLoading] = useState(false);
   const [stockFilter, setStockFilter] = useState('all'); // 'all', 'momentum', 'volume', 'low_float', 'catalyst'
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((val) => {
+    setSearchInput(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      React.startTransition(() => {
+        setSearchQuery(val);
+      });
+    }, 35);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearchInput('');
+    React.startTransition(() => {
+      setSearchQuery('');
+    });
+  }, []);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [guideTab, setGuideTab] = useState('index');
   const [selectedNewsArticle, setSelectedNewsArticle] = useState(null);
@@ -1136,6 +1159,7 @@ export default function PredictorHub({
         {/* ── Subtabs Controller ── */}
         <div className="predictor-subtabs-wrap">
           {[
+            { id: 'nepse_agent', label: '🤖 NEPSE Agent (3.1 Pro)', icon: Sparkles },
             { id: 'master_100_profit', label: '👑 100% Master Guide', icon: Crown },
             { id: 'nepse', label: 'Index Predictor', icon: Target },
             { id: 'short_term_plan', label: '⚡ 1–2W Profit Plan', icon: Zap, isPro: true },
@@ -1215,6 +1239,18 @@ export default function PredictorHub({
 
       {/* ── Tab Content Container ── */}
       <div style={{ flex: 1, padding: activeTab === 'short_term_plan' ? '8px 4px' : '16px 12px' }} className="predictor-tab-content">
+
+        {/* ══════════════════════════════════════════════════════════
+            VIEW: NEPSE AGENT (GEMINI 3.1 PRO CASCADE)
+           ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'nepse_agent' && (
+          <NepseAgentDashboard
+            stocks={stocks}
+            initialSymbol={selectedForAnalysis || (primeDailyPick?.symbol ? String(primeDailyPick.symbol).toUpperCase().trim() : '') || scoredStocks[0]?.symbol || 'KBL'}
+            onSelectStock={onSelectStock}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+          />
+        )}
 
         {/* ══════════════════════════════════════════════════════════
             VIEW 0: UNIFIED MASTER 100% PROFIT WORKSTATION
@@ -2422,7 +2458,7 @@ export default function PredictorHub({
                       </div>
                       {t1NetPct != null && (
                         <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 2 }}>
-                          Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                          Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                         </div>
                       )}
                     </div>
@@ -2433,7 +2469,7 @@ export default function PredictorHub({
                       </div>
                       {t2NetPct != null && (
                         <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
-                          Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                          Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                         </div>
                       )}
                     </div>
@@ -2586,19 +2622,34 @@ export default function PredictorHub({
                 <input
                   type="text"
                   placeholder="Search 240+ stocks by symbol or company name…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '10px 14px 10px 36px',
+                    padding: '10px 36px 10px 36px',
                     borderRadius: 12,
                     background: 'rgba(255,255,255,0.04)',
                     border: '1px solid var(--border)',
                     color: 'var(--text-primary)',
-                    fontSize: 13,
+                    fontSize: 14,
                     outline: 'none'
                   }}
                 />
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    onMouseDown={(e) => { e.preventDefault(); clearSearch(); }}
+                    style={{
+                      position: 'absolute', right: 10,
+                      background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                      width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', color: '#cbd5e1'
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>

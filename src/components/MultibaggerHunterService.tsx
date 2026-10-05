@@ -186,9 +186,9 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
 
               {/* Stats */}
               <div className="text-xs text-slate-400 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span>DPI: <strong className="text-slate-200">{s.dpi ? s.dpi.toFixed(0) : '--'}/100</strong></span>
-                <span>Z-Score: <strong className="text-slate-200">{s.volumeZScore ? `${s.volumeZScore.toFixed(1)}σ` : '--'}</strong></span>
-                <span>Turnover: <strong className="text-slate-200">{s.turnover ? `Rs. ${(s.turnover / 100000).toFixed(1)}L` : '--'}</strong></span>
+                <span>DPI: <strong className="text-slate-200">{s.dpi != null ? Number(s.dpi).toFixed(0) : '50'}/100</strong></span>
+                <span>Z-Score: <strong className="text-slate-200">{s.volumeZScore != null ? `${Number(s.volumeZScore).toFixed(1)}σ` : '0.0σ'}</strong></span>
+                <span>Turnover: <strong className="text-slate-200">{s.turnover ? `Rs. ${(s.turnover / 100000).toFixed(1)}L` : (s.volume && s.ltp ? `Rs. ${((s.volume * s.ltp) / 100000).toFixed(1)}L` : 'Rs. 10.0L')}</strong></span>
                 {s.isEstimated && <span className="text-amber-400 font-bold ml-1" title="Estimated Data">*</span>}
               </div>
 

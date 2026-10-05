@@ -1024,6 +1024,33 @@ export default function ShortTermProfitPlan({
         </div>
       </div>
 
+      {/* ── Screener Guide Note ── */}
+      <div style={{
+        background: 'rgba(56, 117, 246, 0.07)',
+        border: '1px solid rgba(56, 117, 246, 0.25)',
+        borderRadius: 12,
+        padding: '10px 14px',
+        marginBottom: 4,
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start'
+      }}>
+        <span style={{ fontSize: 16, flexShrink: 0 }}>📋</span>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 900, color: '#60a5fa', marginBottom: 4 }}>
+            HOW TO READ THIS SCREENER (Short Term Plan)
+          </div>
+          <div style={{ fontSize: 10.5, color: '#94a3b8', lineHeight: 1.6 }}>
+            <strong style={{ color: '#cbd5e1' }}>Plan Score (15–96):</strong> This screener's own 8-criteria score — measures liquidity, trend, volume surge, ATR risk/reward, sector strength, anti-trap guard, T+2 safety, and solvency. It is NOT the same as the Guru Score or Setup Quality score shown in stock details.{' '}
+            <strong style={{ color: '#cbd5e1' }}>STRONG BUY:</strong> passes all 8 criteria with score ≥ 75.{' '}
+            <strong style={{ color: '#cbd5e1' }}>ACCUMULATE:</strong> passes all 8 but score 55–74.{' '}
+            <strong style={{ color: '#fbbf24' }}>WATCHLIST:</strong> fails 1-2 criteria — watch but don't enter yet.{' '}
+            <strong style={{ color: '#f87171' }}>AVOID:</strong> score &lt; 50 or fails critical criteria.
+            {' '}<strong style={{ color: '#34d399' }}>Best workflow:</strong> Use this screener to find candidates → then open the stock detail to verify the Master Consensus banner and Entry/Exit plan before buying.
+          </div>
+        </div>
+      </div>
+
       {/* ── Main 2-Column Workstation Layout ── */}
       <div className="stpp-workstation-grid">
         {/* ════════════════════════════════════════════════════════════
@@ -1422,7 +1449,7 @@ export default function ShortTermProfitPlan({
                           alignItems: 'center',
                           gap: 4
                         }}>
-                          <Sparkles size={11} /> Score: {item.score}/100
+                          <Sparkles size={11} /> Plan Score: {item.score}/100
                         </span>
                         <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
                           RRR: <strong style={{ color: item.rrr >= 1.5 ? '#34D399' : '#FB7185' }}>{item.rrr}:1</strong> · RVOL: <strong>{item.vsr}×</strong>

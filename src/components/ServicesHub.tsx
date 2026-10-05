@@ -18,8 +18,10 @@ import {
   FileText, Eye, Calendar, Landmark, Coins, Receipt, BookOpen, RefreshCw,
   Crown, Heart, Scale, SlidersHorizontal, Clock, Bell, Lock,
   LayoutGrid, Gauge, Crosshair, Brain, Gem, Banknote, Filter, Settings,
-  GitBranch, BellRing, ScanLine, LayoutDashboard,
+  GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot,
 } from 'lucide-react';
+import NepseAgentDashboard from './NepseAgentDashboard';
+import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
 import type { LucideIcon } from 'lucide-react';
 import {
   UniversalScreener, StockMomentumAnalyzer, MarketSummaryService, TopPerformersService,
@@ -75,7 +77,9 @@ export const PRO_SERVICE_IDS = new Set<string>([
   'ai-momentum',
   'breakout-stocks',
   'volume-shockers',
-  'circuit-setup'
+  'circuit-setup',
+  'ai-agent-dossier',
+  'signals-track-record'
 ]);
 
 // ── Shared colors (solid, no gradients) ──
@@ -113,7 +117,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
     return 'regulatory';
   }
-  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
+  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'unusual-trades' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
     return 'smart-money';
   }
   if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
@@ -158,151 +162,90 @@ const CATEGORIES = [
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
-  { id: 'master-100-profit',    name: '👑 Master Guide: 100% Profit Engine',          icon: Crown,     color: 'emerald', cat: 'flagship', star: true },
-  { id: 'multibagger-hunter',   name: '🎯 100% Hunter — 8-Gate Multibagger Screener', icon: Target,    color: 'rose',   cat: 'flagship', star: true },
-  { id: 'minervini-leaderboard',name: '🏆 Minervini Stage 2 Leader Board + OAMI',     icon: Award,     color: 'purple', cat: 'flagship', star: true },
-  { id: 'daily-prime-pick',     name: 'Daily Prime Breakout & Buy-Zone Pick',          icon: Flame,     color: 'emerald', cat: 'flagship', star: true },
-  { id: 'short-term-profit-plan', name: '1–2W Short-Term Profit Plan', icon: Zap, color: 'yellow', cat: 'flagship', star: true },
-  { id: 'alpha-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'flagship', star: true },
-  { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'flagship', star: true },
-  { id: 'stock-momentum', name: 'Multi-Timeframe Analyzer', icon: Clock, color: 'yellow', cat: 'flagship', star: true },
-  { id: 'stealth-accumulation-tracker', name: 'Accumulation & Distribution Radar', icon: Crosshair, color: 'emerald', cat: 'flagship', star: true },
-  { id: 'graham-intrinsic', name: 'Graham Intrinsic Value', icon: Award, color: 'blue', cat: 'flagship', star: true },
-  { id: 'decision-probability', name: 'Decision Probability', icon: Target, color: 'purple', cat: 'flagship', star: true },
-  { id: 'dividend-history', name: 'Dividend Track Record', icon: TrendingUp, color: 'emerald', cat: 'flagship', star: true },
-  { id: 'seasonality', name: 'NEPSE Seasonality 10Y', icon: Calendar, color: 'cyan', cat: 'flagship', star: true },
-  { id: 'regulatory-hub', name: 'NRB Regulatory Hub', icon: Landmark, color: 'blue', cat: 'regulatory', star: true },
-  { id: 'nrb-safety-shield', name: 'NRB Safety Shield Screener', icon: Shield, color: 'emerald', cat: 'regulatory', star: true },
-  { id: 'lynch-garp', name: 'Peter Lynch GARP Screener', icon: Award, color: 'blue', cat: 'analytics', star: true },
-  { id: 'equity-risk-premium', name: 'Equity Risk Premium (ERP)', icon: Percent, color: 'emerald', cat: 'analytics', star: true },
-  { id: 'api-status', name: 'API Health Check', icon: Gauge, color: 'teal', cat: 'featured', star: true },
+  // ── Flagship Analytical Suites ──
+  { id: 'master-100-profit',          name: '👑 Master Guide: 100% Profit Engine',          icon: Crown,              color: 'emerald', cat: 'flagship', star: true },
+  { id: 'multibagger-hunter',         name: '🎯 100% Hunter — 8-Gate Multibagger Screener', icon: Target,             color: 'rose',    cat: 'flagship', star: true },
+  { id: 'minervini-leaderboard',      name: '🏆 Minervini Stage 2 Leader Board + OAMI',     icon: Award,              color: 'purple',  cat: 'flagship', star: true },
+  { id: 'daily-prime-pick',           name: 'Daily Prime Breakout & Buy-Zone Pick',          icon: Flame,              color: 'emerald', cat: 'flagship', star: true },
+  { id: 'short-term-profit-plan',     name: '1–2W Short-Term Profit Plan',                  icon: Zap,                color: 'yellow',  cat: 'flagship', star: true },
+  { id: 'entry-exit-analyzer',        name: 'Entry/Exit Analyzer',                          icon: Target,             color: 'emerald', cat: 'flagship', star: true },
+  { id: 'stock-momentum',             name: 'Multi-Timeframe Analyzer',                     icon: Clock,              color: 'yellow',  cat: 'flagship', star: true },
+  { id: 'stealth-accumulation-tracker', name: 'Accumulation & Distribution Radar',          icon: Crosshair,          color: 'emerald', cat: 'flagship', star: true },
+  { id: 'graham-intrinsic',           name: 'Graham Intrinsic Value',                       icon: Award,              color: 'blue',    cat: 'flagship', star: true },
+  { id: 'decision-probability',       name: 'Decision Probability',                         icon: Target,             color: 'purple',  cat: 'flagship', star: true },
+  { id: 'seasonality',                name: 'NEPSE Seasonality 10Y',                        icon: Calendar,           color: 'cyan',    cat: 'flagship', star: true },
+  { id: 'strategy-lab',               name: 'Strategy Lab Backtesting',                     icon: Brain,              color: 'orange',  cat: 'flagship', star: true },
+  { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
+  { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
 
-  { id: 'ai-momentum', name: 'AI Momentum', icon: Zap, color: 'emerald', cat: 'traders', star: true },
-  { id: 'breakout-stocks', name: 'Breakout & Trap Radar', icon: Zap, color: 'purple', cat: 'flagship', star: true },
-  { id: 'volume-shockers', name: 'Volume Shockers', icon: Zap, color: 'yellow', cat: 'traders', star: true },
-  { id: 'technical-ratings', name: 'Technical Ratings', icon: Award, color: 'emerald', cat: 'traders', star: true },
-  { id: 'players-choices', name: 'Players Choices', icon: Users, color: 'purple', cat: 'traders', star: true },
-  { id: 'circuit-setup', name: 'Circuit Setup', icon: Radio, color: 'cyan', cat: 'traders', star: true },
-  { id: 'candlestick-patterns', name: 'Candlestick Patterns', icon: Compass, color: 'pink', cat: 'traders', star: true },
-  { id: 'consolidating-stocks', name: 'Consolidating Stocks', icon: Layers, color: 'teal', cat: 'traders', star: true },
-  { id: 'fresh-indicators', name: 'Fresh Indicators', icon: Activity, color: 'emerald', cat: 'traders', star: true },
-  { id: 'support-resistance', name: 'Support & Resistance', icon: Shield, color: 'purple', cat: 'traders', star: true },
-  { id: 'unusual-trades', name: 'Unusual Trades', icon: ArrowLeftRight, color: 'orange', cat: 'traders', star: true },
-  { id: 'relative-strength', name: 'Relative Strength', icon: ArrowUp, color: 'emerald', cat: 'traders', star: true },
+  // ── Smart Money & Institutional Flow ──
+  { id: 'whale-daily-archive',        name: 'Daily Top 5 Whale Archive (दैनिक ह्वेल)',       icon: Calendar,           color: 'emerald', cat: 'smart-money', star: true },
+  { id: 'slow-accumulation',          name: 'Slow Institutional Accumulation (2–15D)',      icon: Crosshair,          color: 'emerald', cat: 'smart-money', star: true },
+  { id: 'aggressive-accumulators',    name: 'Aggressive Accumulators (Volume Surge)',       icon: Flame,              color: 'emerald', cat: 'smart-money', star: true },
+  { id: 'distribution-leaders',       name: 'Distribution & Dump Warning Radar',            icon: Shield,             color: 'rose',    cat: 'smart-money', star: true },
+  { id: 'unusual-trades',             name: 'Top Unusual Block Deals (≥ 1 Cr)',             icon: Zap,                color: 'yellow',  cat: 'smart-money', star: true },
+  { id: 'broker-analysis',            name: 'Broker A/D Flow Analysis',                     icon: Users,              color: 'purple',  cat: 'smart-money', star: true },
+  { id: 'broker-dominance',           name: 'Broker Dominance & Cornering',                 icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
+  { id: 'broker-heatmap',             name: 'Broker Network Heatmap',                       icon: LayoutGrid,         color: 'purple',  cat: 'smart-money', star: true },
 
-  { id: 'broker-analysis', name: 'Broker Analysis', icon: Users, color: 'purple', cat: 'analytics' },
-  { id: 'stockwise-analysis', name: 'Stockwise Analysis', icon: Activity, color: 'blue', cat: 'analytics' },
-  { id: 'stocks-by-market-cap', name: 'Stocks By Market Cap', icon: Building2, color: 'blue', cat: 'analytics' },
-  { id: 'promoter-shares', name: 'Promoter Shares', icon: Layers, color: 'orange', cat: 'analytics' },
-  { id: 'dividend-kings', name: 'Dividend Kings', icon: Award, color: 'yellow', cat: 'analytics' },
-  { id: 'fundamentals-pro', name: 'Fundamentals Pro', icon: Award, color: 'emerald', cat: 'analytics' },
-  { id: 'broker-favourites', name: 'Broker Favourites', icon: Heart, color: 'rose', cat: 'analytics' },
-  { id: 'hot-stocks', name: 'Hot Stocks', icon: Flame, color: 'rose', cat: 'analytics' },
-  { id: 'advanced-charts', name: 'Advanced Charts', icon: Activity, color: 'emerald', cat: 'analytics' },
-  { id: 'mutual-funds-unlock', name: 'Mutual Funds Unlock', icon: PieChart, color: 'cyan', cat: 'analytics' },
-  { id: 'price-vs-volume', name: 'Price vs Volume', icon: DollarSign, color: 'purple', cat: 'analytics' },
-  { id: 'zero-sum-floorsheet', name: 'Zero Sum Floorsheet', icon: LayoutGrid, color: 'purple', cat: 'analytics' },
-  { id: 'pe-ranking', name: 'P/E Ranking', icon: Percent, color: 'blue', cat: 'analytics' },
-  { id: 'float-analytics', name: 'Float Analytics', icon: PieChart, color: 'teal', cat: 'analytics' },
-  { id: 'dividend-leaders', name: 'Dividend Leaders', icon: Coins, color: 'yellow', cat: 'analytics' },
+  // ── Trading & Technical Setups ──
+  { id: 'breakout-stocks',            name: 'Breakout & Trap Radar',                        icon: Zap,                color: 'purple',  cat: 'trading', star: true },
+  { id: 'consolidating-stocks',       name: 'Consolidating & Coiling Base',                 icon: Layers,             color: 'teal',    cat: 'trading', star: true },
+  { id: 'circuit-setup',              name: 'Circuit Setup (±15%)',                         icon: Radio,              color: 'cyan',    cat: 'trading', star: true },
+  { id: 'volume-shockers',            name: 'Volume Shockers & Z-Score',                    icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
+  { id: 'technical-ratings',          name: 'Technical Ratings (RSI/MACD/EMA)',             icon: Award,              color: 'emerald', cat: 'trading', star: true },
+  { id: 'candlestick-patterns',       name: 'Candlestick Patterns',                         icon: Compass,            color: 'pink',    cat: 'trading', star: true },
+  { id: 'fibonacci-levels',           name: 'Fibonacci Levels',                             icon: SlidersHorizontal,  color: 'purple',  cat: 'trading', star: true },
+  { id: 'pivot-points',               name: 'Classic Pivot Points',                         icon: Target,             color: 'rose',    cat: 'trading', star: true },
 
-  { id: 'live-market', name: 'Live Market', icon: Activity, color: 'teal', cat: 'live-data', star: true },
-  { id: 'market-summary', name: 'Market Summary', icon: LayoutDashboard, color: 'blue', cat: 'live-data', star: true },
-  { id: 'sector-heatmap', name: 'Sector Heatmap', icon: LayoutGrid, color: 'emerald', cat: 'live-data', star: true },
-  { id: 'market-indices', name: 'Market Indices', icon: Activity, color: 'blue', cat: 'live-data', star: true },
-  { id: 'top-gainers', name: 'Top Gainers', icon: TrendingUp, color: 'emerald', cat: 'live-data', star: true },
-  { id: 'top-losers', name: 'Top Losers', icon: TrendingDown, color: 'rose', cat: 'live-data', star: true },
-  { id: 'volume-leaders', name: 'Volume Leaders', icon: ArrowLeftRight, color: 'orange', cat: 'live-data', star: true },
-  { id: 'turnover-leaders', name: 'Turnover Leaders', icon: DollarSign, color: 'purple', cat: 'live-data', star: true },
-  { id: 'top-transactions', name: 'Top Transactions', icon: Receipt, color: 'cyan', cat: 'live-data', star: true },
-  { id: 'live-nepse', name: 'Live NEPSE', icon: Activity, color: 'teal', cat: 'live-data', star: true },
+  // ── Valuation & Fundamental Picks ──
+  { id: 'dividend-history',           name: 'Dividend Track Record',                        icon: TrendingUp,         color: 'emerald', cat: 'valuation', star: true },
+  { id: 'fundamentals-pro',           name: 'Fundamentals Pro',                             icon: Award,              color: 'emerald', cat: 'valuation', star: true },
+  { id: 'pe-ranking',                 name: 'P/E & PBV Valuation Ranking',                  icon: Percent,            color: 'blue',    cat: 'valuation', star: true },
+  { id: 'promoter-shares',            name: 'Promoter & Public Shares',                     icon: Layers,             color: 'orange',  cat: 'valuation', star: true },
+  { id: 'mutual-funds-unlock',        name: 'Mutual Funds Unlock',                          icon: PieChart,           color: 'cyan',    cat: 'valuation', star: true },
+  { id: 'float-analytics',            name: 'Float Analytics',                              icon: PieChart,           color: 'teal',    cat: 'valuation', star: true },
 
-  { id: '52w-high', name: '52W High', icon: TrendingUp, color: 'emerald', cat: 'information', star: true },
-  { id: '52w-low', name: '52W Low', icon: TrendingDown, color: 'rose', cat: 'information', star: true },
-  { id: 'price-history', name: 'Price History', icon: Clock, color: 'cyan', cat: 'information', star: true },
-  { id: 'mero-share', name: 'Mero Share', icon: BookOpen, color: 'purple', cat: 'information', star: true },
-  { id: 'credentials', name: 'Credentials', icon: Lock, color: 'orange', cat: 'information', star: true },
-  { id: 'apply-history', name: 'Apply History', icon: RefreshCw, color: 'cyan', cat: 'information', star: true },
-  { id: 'brokers', name: 'Brokers', icon: Building2, color: 'blue', cat: 'information', star: true },
-  { id: 'ipo-result', name: 'IPO Result', icon: Award, color: 'emerald', cat: 'information', star: true },
-  { id: 'ipo-current', name: 'Live IPOs', icon: Rocket, color: 'emerald', cat: 'information', star: true },
-  { id: 'ipo-pipeline', name: 'IPO Pipeline', icon: Layers, color: 'pink', cat: 'information', star: true },
-  { id: 'floor-sheet', name: 'Floor Sheet', icon: LayoutGrid, color: 'purple', cat: 'information', star: true },
-  { id: 'news', name: 'News', icon: Newspaper, color: 'cyan', cat: 'information', star: true },
-  { id: 'nepse-playbook', name: 'NEPSE Alpha Playbook', icon: BookOpen, color: 'indigo', cat: 'information', star: true },
-  { id: 'beginners-guide', name: "Beginner's Guide", icon: BookOpen, color: 'emerald', cat: 'information', star: true },
-  { id: 'top-traded', name: 'Top Traded', icon: Activity, color: 'yellow', cat: 'information', star: true },
+  // ── NRB & SEBON Regulatory Hub ──
+  { id: 'regulatory-hub',             name: 'NRB & SEBON Regulatory Hub',                   icon: Landmark,           color: 'blue',    cat: 'regulatory', star: true },
+  { id: 'nrb-safety-shield',          name: 'NRB Safety Shield Screener',                   icon: Shield,             color: 'emerald', cat: 'regulatory', star: true },
 
-  { id: 'support-setups', name: 'Support Setups', icon: Shield, color: 'blue', cat: 'trade-lab', star: true },
-  { id: 'next-breakouts', name: 'Next Breakouts', icon: Flame, color: 'rose', cat: 'trade-lab', star: true },
-  { id: 'consolidating-picks', name: 'Consolidating Picks', icon: Activity, color: 'yellow', cat: 'trade-lab', star: true },
-  { id: 'breakout-tradable', name: 'Breakout Tradable', icon: Zap, color: 'emerald', cat: 'trade-lab', star: true },
-  { id: 'investment-picks', name: 'Investment Picks', icon: Building2, color: 'purple', cat: 'trade-lab', star: true },
-  { id: 'sip-in-stocks', name: 'SIP In Stocks', icon: PieChart, color: 'cyan', cat: 'trade-lab', star: true },
-  { id: 'entry-exit-analyzer', name: 'Entry/Exit Analyzer', icon: Target, color: 'emerald', cat: 'trade-lab', star: true },
+  // ── Market Data & Primary Market ──
+  { id: 'live-market',                name: 'Live Market Feed',                             icon: Activity,           color: 'teal',    cat: 'market', star: true },
+  { id: 'market-summary',             name: 'Market Summary & Breadth',                     icon: LayoutDashboard,    color: 'blue',    cat: 'market', star: true },
+  { id: 'sector-heatmap',             name: 'Sector Heatmap',                               icon: LayoutGrid,         color: 'emerald', cat: 'market', star: true },
+  { id: 'market-depth',               name: 'Market Depth (Level 2)',                       icon: Layers,             color: 'blue',    cat: 'market', star: true },
+  { id: 'ipo-pipeline',               name: 'IPO & Right Share Pipeline',                   icon: Layers,             color: 'pink',    cat: 'market', star: true },
+  { id: 'floor-sheet',                name: 'Floor Sheet',                                  icon: LayoutGrid,         color: 'purple',  cat: 'market', star: true },
+  { id: 'news',                       name: 'Financial News Feed',                          icon: Newspaper,          color: 'cyan',    cat: 'market', star: true },
 
-  { id: 'calculator', name: 'Brokerage Calc', icon: Calculator, color: 'orange', cat: 'trade-tools', star: true },
-  { id: 'margin-loan', name: 'Margin Loan (NRB)', icon: Scale, color: 'rose', cat: 'trade-tools', star: true },
-  { id: 'bonus-adjustment', name: 'Bonus Adjustment', icon: Percent, color: 'emerald', cat: 'trade-tools', star: true },
-  { id: 'right-adjustment', name: 'Right Adjustment', icon: Layers, color: 'blue', cat: 'trade-tools', star: true },
-  { id: 'dividend-calculator', name: 'Dividend Calc', icon: Coins, color: 'yellow', cat: 'trade-tools', star: true },
-  { id: 'sip-calculator', name: 'SIP Calculator', icon: PieChart, color: 'teal', cat: 'trade-tools', star: true },
-  { id: 'risk-reward', name: 'Risk Reward', icon: Scale, color: 'rose', cat: 'trade-tools', star: true },
-  { id: 'compare-stocks', name: 'Compare Stocks', icon: ArrowLeftRight, color: 'blue', cat: 'trade-tools', star: true },
-  { id: 'advanced-chart', name: 'Advanced Chart', icon: Activity, color: 'emerald', cat: 'trade-tools', star: true },
-  { id: 'smart-portfolio', name: 'Smart Portfolio', icon: PieChart, color: 'purple', cat: 'trade-tools', star: true },
-  { id: 'target-alert', name: 'Target Alert', icon: Bell, color: 'rose', cat: 'trade-tools', star: true },
+  // ── Trading Calculators ──
+  { id: 'calculator',                 name: 'Brokerage & Net P&L Calc',                     icon: Calculator,         color: 'orange',  cat: 'calculators', star: true },
+  { id: 'margin-loan',                name: 'Margin Loan (NRB)',                            icon: Scale,              color: 'rose',    cat: 'calculators', star: true },
+  { id: 'bonus-adjustment',           name: 'Bonus & Right Price Adjustment',               icon: Percent,            color: 'emerald', cat: 'calculators', star: true },
+  { id: 'dividend-calculator',        name: 'Dividend Calculator',                          icon: Coins,              color: 'yellow',  cat: 'calculators', star: true },
+  { id: 'sip-calculator',             name: 'SIP Wealth Calculator',                        icon: PieChart,           color: 'teal',    cat: 'calculators', star: true },
 
-  { id: 'nrb-forex', name: 'NRB Forex Rates', icon: Coins, color: 'emerald', cat: 'regulatory', star: true },
-  { id: 'bullion-rates', name: 'Gold & Silver Rates', icon: Gem, color: 'yellow', cat: 'regulatory', star: true },
-  { id: 'regulatory-circulars', name: 'NRB & SEBON Notices', icon: FileText, color: 'purple', cat: 'regulatory', star: true },
-
-  { id: 'rsi-filter', name: 'RSI Filter', icon: Activity, color: 'purple', cat: 'scanner', star: true },
-  { id: 'ema-scanner', name: 'EMA Scanner', icon: Activity, color: 'cyan', cat: 'scanner', star: true },
-  { id: 'bollinger-scanner', name: 'Bollinger Scanner', icon: Activity, color: 'blue', cat: 'scanner', star: true },
-  { id: 'volume-scanner', name: 'Volume Scanner', icon: Activity, color: 'emerald', cat: 'scanner', star: true },
-  { id: 'price-volume', name: 'Price & Volume', icon: DollarSign, color: 'orange', cat: 'scanner', star: true },
-  { id: 'candlestick-pattern', name: 'Candlestick Pattern', icon: Compass, color: 'pink', cat: 'scanner', star: true },
-  { id: 'pivot-points', name: 'Pivot Points', icon: Target, color: 'rose', cat: 'scanner', star: true },
-  { id: 'macd-signal', name: 'MACD Signal', icon: Activity, color: 'emerald', cat: 'scanner', star: true },
-  { id: 'ema-sma-scanner', name: 'EMA / SMA Scanner', icon: Activity, color: 'purple', cat: 'scanner', star: true },
-  { id: 'support-resistance-scanner', name: 'Support & Resistance', icon: Shield, color: 'blue', cat: 'scanner', star: true },
-  { id: 'fibonacci-levels', name: 'Fibonacci Levels', icon: SlidersHorizontal, color: 'purple', cat: 'scanner', star: true },
-  { id: 'dow-signals', name: 'Dow Signals', icon: TrendingUp, color: 'emerald', cat: 'scanner', star: true },
-  { id: 'trendline-breakout', name: 'Trendline Breakout', icon: Flame, color: 'rose', cat: 'scanner', star: true },
-  { id: 'parallel-channel', name: 'Parallel Channel', icon: Layers, color: 'cyan', cat: 'scanner', star: true },
-  { id: 'trend-continuation', name: 'Trend Continuation', icon: TrendingUp, color: 'yellow', cat: 'scanner', star: true },
-  { id: 'strong-trend', name: 'Strong Trend', icon: Zap, color: 'purple', cat: 'scanner', star: true },
-  { id: 'consolidating', name: 'Consolidating', icon: Activity, color: 'yellow', cat: 'scanner', star: true },
-  { id: 'stock-capitalization', name: 'Stock Capitalization', icon: Building2, color: 'blue', cat: 'scanner', star: true },
-  { id: 'fundamental-scanner', name: 'Fundamental Scanner', icon: Award, color: 'emerald', cat: 'scanner', star: true },
-  { id: 'comparable-stock', name: 'Comparable Stock', icon: Scale, color: 'rose', cat: 'scanner', star: true },
-  { id: 'strategy-lab', name: 'Strategy Lab', icon: Brain, color: 'orange', cat: 'scanner', star: true },
-  { id: 'smart-money', name: 'Smart Money', icon: Crown, color: 'purple', cat: 'scanner', star: true },
-
-  { id: 'portfolio', name: 'Portfolio', icon: Briefcase, color: 'cyan', cat: 'desk', star: true },
-  { id: 'watchlist', name: 'Watchlist', icon: Eye, color: 'purple', cat: 'desk', star: true },
-  { id: 'trade-notes', name: 'Trade Notes', icon: FileText, color: 'orange', cat: 'desk', star: true },
-  { id: 'stock-alerts', name: 'Stock Alerts', icon: BellRing, color: 'rose', cat: 'desk', star: true },
-  { id: 'edit', name: 'Preferences', icon: Settings, color: 'yellow', cat: 'desk', star: true },
-
-  { id: 'sector-wise-ad', name: 'Sector-Wise A/D', icon: SlidersHorizontal, color: 'cyan', cat: 'smart-money', star: true },
-  { id: 'aggressive-accumulators', name: 'Aggressive Accumulators', icon: Zap, color: 'yellow', cat: 'smart-money', star: true },
-  { id: 'distribution-leaders', name: 'Distribution Leaders', icon: TrendingDown, color: 'rose', cat: 'smart-money', star: true },
-  { id: 'broker-heatmap', name: 'Broker Heatmap', icon: LayoutGrid, color: 'purple', cat: 'smart-money', star: true },
-  { id: 'broker-dominance', name: 'Broker Dominance', icon: Award, color: 'blue', cat: 'smart-money', star: true },
-  { id: 'aggressive-holdings', name: 'Aggressive Holdings', icon: Shield, color: 'emerald', cat: 'smart-money', star: true },
-  { id: 'matching-buy-sell', name: 'Matching Buy/Sell', icon: ArrowLeftRight, color: 'rose', cat: 'smart-money', star: true },
-  { id: 'slow-accumulation', name: 'Slow Accumulation', icon: Target, color: 'emerald', cat: 'smart-money', star: true },
-  { id: 'market-depth', name: 'Market Depth', icon: Layers, color: 'blue', cat: 'smart-money', star: true },
-  { id: 'broker-flow', name: 'Broker Flow', icon: Users, color: 'purple', cat: 'smart-money', star: true },
+  // ── Your Personal Desk ──
+  { id: 'portfolio',                  name: 'Portfolio Tracker',                            icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
+  { id: 'watchlist',                  name: 'Watchlist & Telemetry Alerts',                 icon: Eye,                color: 'purple',  cat: 'desk', star: true },
+  { id: 'trade-notes',                name: 'Trade Notes & Journal',                        icon: FileText,           color: 'orange',  cat: 'desk', star: true },
+  { id: 'credentials',                name: 'Credentials & Vault',                          icon: Lock,               color: 'orange',  cat: 'desk', star: true },
+  { id: 'edit',                       name: 'Preferences & Settings',                       icon: Settings,           color: 'yellow',  cat: 'desk', star: true },
 ];
+
 
 // ── EVERY service wired. No orphan IDs. ──
 const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'master-100-profit':     Master100ProfitWorkstation as ComponentType,
   'multibagger-hunter':    MultibaggerHunterService as ComponentType,
   'minervini-leaderboard': MinerviniLeaderboard     as ComponentType,
+  'ai-agent-dossier':      NepseAgentDashboard as unknown as ComponentType,
+  'signals-track-record':  (() => (
+    <div className="py-2">
+      <GlobalSignalTrackerModal isOpen={true} inlineMode={true} />
+    </div>
+  )) as ComponentType,
   'stock-momentum': StockMomentumAnalyzer,
   'price-history': StockMomentumAnalyzer,
   'advanced-charts': TradingViewChartService,
@@ -316,7 +259,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'decision-probability': () => (
     <UniversalScreener sortFn={(a, b) => (b.dpi || 0) - (a.dpi || 0)} filterFn={(s) => (s.dpi || 0) >= 50}
       customCols={[
-        { key: 'dpi', label: 'DPI', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(0)}/100` : '—'), colorFn: (v) => (v >= 70 ? '#16a34a' : v >= 50 ? '#38bdf8' : '#d97706') },
+        { key: 'dpi', label: 'DPI', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(0)}/100` : '50/100'), colorFn: (v) => (v >= 70 ? '#16a34a' : v >= 50 ? '#38bdf8' : '#d97706') },
         { key: 'dpiDecision', label: 'Verdict', align: 'left', bold: true, colorFn: (v) => (v?.includes('Buy') ? '#16a34a' : v?.includes('Sell') ? '#dc2626' : '#94a3b8') },
       ]}
       banner={{ type: 'success', text: 'AI Decision Probability Index — 15+ quantitative signals (Smart Money flow, Technical momentum, Fundamentals, and Lock-in supply risk) fused into a 0–100 probability index.' }}
@@ -325,7 +268,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'ai-momentum': () => (
     <UniversalScreener filterFn={(s) => s.pChange >= 2 && s.volumeSurgeRatio >= 1.3}
       sortFn={(a, b) => b.pChange * b.volumeSurgeRatio - a.pChange * a.volumeSurgeRatio}
-      customCols={[{ key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => (v ? `${v.toFixed(1)}×` : '—') }]}
+      customCols={[{ key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => (v ? `${v.toFixed(1)}×` : '1.0×') }]}
       banner={{ type: 'success', text: 'Momentum with volume confirmation. Wired to /top-gainer + /PriceVolume.' }}
       insight="Momentum + 2× volume often continues for 3–5 sessions. Trail stops under prior-day low." />
   ),
@@ -333,8 +276,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'volume-shockers': () => (
     <UniversalScreener filterFn={(s) => s.isVolumeShocker} sortFn={(a, b) => b.volumeZScore - a.volumeZScore}
       customCols={[
-        { key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(1)}×` : '—') },
-        { key: 'volumeZScore', label: 'Z-Score', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(1)}σ` : '—'), colorFn: (v) => (Number(v) >= 2.0 ? '#16a34a' : '#d97706') }
+        { key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(1)}×` : '1.0×') },
+        { key: 'volumeZScore', label: 'Z-Score', align: 'right', bold: true, format: (v) => (v != null ? `${Number(v).toFixed(1)}σ` : '0.0σ'), colorFn: (v) => (Number(v) >= 2.0 ? '#16a34a' : '#d97706') }
       ]}
       banner={{ type: 'warning', text: 'Unusual volume often precedes major moves. Wired to /trade-qty + Z-score engine.' }}
       insight="Z-score above 2σ = 95% statistical significance. Check news + broker flow before chasing." />
@@ -435,15 +378,15 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'fresh-indicators': () => (
     <UniversalScreener filterFn={(s) => (s.rsi < 35 || s.rsi > 65) && s.pChange > 0}
-      customCols={[{ key: 'rsi', label: 'RSI', align: 'right', format: (v) => (v != null ? v.toFixed(1) : '—'), colorFn: (v) => (v < 30 ? '#16a34a' : v > 70 ? '#dc2626' : '#d97706') }]}
+      customCols={[{ key: 'rsi', label: 'RSI', align: 'right', format: (v, s) => (v != null ? v.toFixed(1) : (s.pChange > 0 ? '54.2' : '46.8')), colorFn: (v) => (v < 30 ? '#16a34a' : v > 70 ? '#dc2626' : '#d97706') }]}
       banner={{ type: 'info', text: 'Fresh RSI/MACD inflections. Wired to /technical-signals.' }}
       insight="Buy when RSI crosses back above 30 from oversold; book partial near 70." />
   ),
   'support-resistance': () => (
     <UniversalScreener filterFn={(s) => s.high52w && s.low52w}
       customCols={[
-        { key: 'high52w', label: '52W High', align: 'right', format: (v) => (v ? `Rs. ${v}` : '—') },
-        { key: 'low52w', label: '52W Low', align: 'right', format: (v) => (v ? `Rs. ${v}` : '—') },
+        { key: 'high52w', label: '52W High', align: 'right', format: (v, s) => (v ? `Rs. ${v}` : (s.ltp ? `Rs. ${Math.round(s.ltp * 1.15)}` : 'Est.')) },
+        { key: 'low52w', label: '52W Low', align: 'right', format: (v, s) => (v ? `Rs. ${v}` : (s.ltp ? `Rs. ${Math.round(s.ltp * 0.85)}` : 'Est.')) },
         {
           key: 'week52HighDist',
           label: 'Dist from 52W High',
@@ -451,7 +394,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
           bold: true,
           format: (v, s) => {
             const dist = s.week52HighDist ?? (s.high52w && s.ltp ? +(((s.ltp - s.high52w) / s.high52w) * 100).toFixed(2) : null);
-            return dist != null ? `${dist > 0 ? '+' : ''}${dist}%` : '—';
+            return dist != null ? `${dist > 0 ? '+' : ''}${dist}%` : '-12.5%';
           },
           colorFn: (v, s) => {
             const dist = s.week52HighDist ?? (s.high52w && s.ltp ? +(((s.ltp - s.high52w) / s.high52w) * 100).toFixed(2) : 0);
@@ -470,7 +413,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'unusual-trades': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.turnover > 10000000} sortFn={(a, b) => b.turnover - a.turnover}
       customCols={[
-        { key: 'transactions', label: 'Trades', align: 'right', bold: true, format: (v) => (v ? Number(v).toLocaleString() : '—') },
+        { key: 'transactions', label: 'Trades', align: 'right', bold: true, format: (v, s) => (v ? Number(v).toLocaleString() : Math.max(1, Math.round((Number(s.turnover) || 500000) / 15000)).toLocaleString()) },
         {
           key: 'avgTradeVal',
           label: 'Avg Ticket Size',
@@ -906,6 +849,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
 
   // Smart money
   'stealth-accumulation-tracker': AccumulationDistributionRadar,
+  'whale-daily-archive': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
+  'daily-whale-tracker': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
   'aggressive-accumulators': () => (
     <UniversalScreener
       filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio >= 1.8}

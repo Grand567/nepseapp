@@ -31,12 +31,14 @@ import {
 
 import {
   calculateBrokerConcentration,
-  classifyWyckoffStage
+  classifyWyckoffStage,
+  calculateCMF
 } from './accumulationDistributionEngine';
 
 import { getCachedStockFundamentals, getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './historyCache.js';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from './nepseCalendar.js';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
+import sebonPipelineData from '../data/sebonPipelineData.json';
 
 export interface GateResult {
   passed: boolean;
@@ -109,6 +111,15 @@ export interface MasterStockEvaluation {
   kellyShares: number;
   capitalOutlay: number;
   tmsOrderText: string;
+  track: 'MOMENTUM_RUNNER' | 'BLUE_CHIP_COMPOUNDER';
+  setupArchetype: 'SUPPORT_BOUNCE' | 'MOMENTUM_BREAKOUT' | 'PULLBACK_COIL';
+  isBounceBack: boolean;
+  isBrokerVerified: boolean;
+  isLiquidityCapped: boolean;
+  maxLiquidityShares: number;
+  adv20: number;
+  isTargetCircuitLimited: boolean;  // P2: target1 was capped below circuit ceiling
+  cmfValue: number;                  // P1: CMF value used for Gate 5 fallback
 }
 
 export interface MasterAuditReport {
@@ -324,6 +335,34 @@ export function getIntradayExecutionState(): {
 }
 
 /**
+ * Checks if a NEPSE scrip is a mutual fund, debenture, bond, promoter share, or penny security.
+ */
+export function isMutualFundOrDebenture(sym = '', sector = '', name = '', ltp = 100): boolean {
+  const s = String(sym || '').toUpperCase().trim();
+  const sec = String(sector || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+
+  // Explicit sector and name checks
+  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
+  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share')) return true;
+
+  // NEPSE Debenture / Promoter / Bond ticker patterns (e.g. ADBLD83, KBLD86, NMB50, ACLBSLP)
+  if (s.endsWith('PO') || (s.endsWith('P') && s !== 'NADEP') || s.includes('DEB') || s.startsWith('NMB50') || s.startsWith('ADBLD')) return true;
+  if (/\d+$/.test(s) && (s.includes('D') || s.includes('B') || s.includes('F'))) return true;
+
+  // Price floor: All NEPSE mutual funds have par 10 and trade below Rs. 25. Regular equities trade >= Rs. 50
+  if (ltp !== undefined && ltp > 0 && ltp < 50) return true;
+
+  // Mutual fund schemes ending in F (e.g. HLICF, NICSF, SAEF, CMF2, SIGS2, etc.)
+  if (s.endsWith('F') && s.length >= 4 && !['SANIMA', 'SHIVM'].includes(s)) {
+    if (sec.includes('microfinance') || n.includes('microfinance') || n.includes('laghubitta')) return false;
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Evaluates a single stock against the 8-Gate Screener and 6-Point Matrix.
  */
 export function evaluateMasterStock(
@@ -346,9 +385,24 @@ export function evaluateMasterStock(
   const pe = eps > 0 ? +(ltp / eps).toFixed(2) : (Number(stock?.pe) || 0);
   const pb = bvps > 0 ? +(ltp / bvps).toFixed(2) : (Number(stock?.pb) || 1.0);
 
-  const promoterHolding = Number(stock?.promoterHolding !== undefined ? stock.promoterHolding : 51.0);
+  const promoterHolding = Number(stock?.promoterHolding !== undefined ? stock.promoterHolding : 55.0); // 55% neutral default (not 51% which falsely triggers near-fail)
   const sharesOutM = Number(stock?.sharesOut || stock?.totalShares || 10.0);
   const publicFloatM = Number(((1 - promoterHolding / 100) * sharesOutM).toFixed(2));
+
+  // Dual-Track Archetype: High-Growth Low-Float vs Institutional Blue-Chip Compounder
+  const isBlueChipSector = sector.toLowerCase().includes('bank') ||
+                           sector.toLowerCase().includes('finance') ||
+                           sector.toLowerCase().includes('insurance') ||
+                           sector.toLowerCase().includes('manufacturing') ||
+                           sector.toLowerCase().includes('telecom');
+  const isBlueChipEligible = (eps >= 14 || bvps >= 140 || (pe > 0 && pe <= 25)) && (isBlueChipSector || publicFloatM > 15.0);
+  const track: 'MOMENTUM_RUNNER' | 'BLUE_CHIP_COMPOUNDER' = (publicFloatM > 15.0 && isBlueChipEligible)
+    ? 'BLUE_CHIP_COMPOUNDER'
+    : 'MOMENTUM_RUNNER';
+
+  const passesFloatGate = track === 'BLUE_CHIP_COMPOUNDER'
+    ? (bvps >= 120 && eps > 0)
+    : (publicFloatM <= 15.0);
 
   // Graham Intrinsic Valuation V* = sqrt(22.5 * EPS * BVPS)
   const grahamV = (eps > 0 && bvps > 0) ? +(Math.sqrt(22.5 * eps * bvps)).toFixed(2) : 0;
@@ -363,15 +417,26 @@ export function evaluateMasterStock(
   const ema200 = Number(stock?.ema200 || stock?.sma200 || dynEMAs.ema200 || (ltp * 0.90));
   const dynamicAtr = calculateATR(cachedHistory, 14) || Math.max(2, ltp * 0.035);
 
-  // Volume & Broker Analysis
+  // Volume & Broker Analysis (With Verification Check)
   const cachedBroker = getCachedRealBrokerAnalysis(sym) || stock?.brokerAnalysis || {};
-  const brokerConc = calculateBrokerConcentration(cachedBroker?.transactions || [], vol);
-  const bcr3 = Number(cachedBroker?.bcr3BuyPct || brokerConc?.bcr3BuyPct || (stock?.stealthAccumulation ? stock.stealthAccumulation * 0.8 : 38.0));
-  const bcr5 = Number(cachedBroker?.bcr5BuyPct || brokerConc?.bcr5BuyPct || 45.0);
-  const avgBuySizeRatio = Number(brokerConc?.tradeSizeRatio || 1.45);
+  const brokerConc = calculateBrokerConcentration(
+    cachedBroker?.transactions || cachedBroker?.floorsheet || [],
+    sym,  // ← FIXED: was `vol` (number), must be stock symbol string for trade matching
+    { ltp, volume: vol, totalTradedQuantity: vol, ...cachedBroker }
+  );
+  const rawBcr3 = cachedBroker?.bcr3BuyPct ?? brokerConc?.bcr3BuyPct ?? null;
+  const isBrokerVerified = rawBcr3 !== null && rawBcr3 !== undefined && Number(rawBcr3) > 0;
+  const bcr3 = isBrokerVerified ? Number(rawBcr3) : 0.0;
+  const bcr5 = Number(cachedBroker?.bcr5BuyPct || brokerConc?.bcr5BuyPct || (isBrokerVerified ? bcr3 * 1.15 : 0.0));
+  const avgBuySizeRatio = Number(brokerConc?.tradeSizeRatio || 1.15);
   const rvol = Number(stock?.volumeSurgeRatio || stock?.rvol || (vol > 15000 ? 1.6 : 1.1));
   const zVolResult = calculateVolumeZScore(vol, vol / Math.max(1, rvol), vol * 0.25);
   const volumeZScore = zVolResult.zScore;
+
+  // P1: CMF Fallback — used in Gate 5 when live broker data is unavailable
+  // CMF >= 0.08 signals institutional accumulation; grounded in actual OHLCV candles
+  const cmfResult = calculateCMF(cachedHistory || [], 20);
+  const cmfFallbackPasses = cmfResult?.cmf >= 0.08;
 
   // Wyckoff Classification
   const wyckoffResult = classifyWyckoffStage(stock, cachedHistory, brokerConc);
@@ -388,63 +453,111 @@ export function evaluateMasterStock(
   );
   const isDistributionTrap = isDumping && pChange >= 0;
 
-  // 60-Day Promoter Lock-in Check
+  // Enhanced 3-Year Promoter Lock-in Check
   let daysToLockin: number | null = null;
-  if (stock?.promoterLockinDays !== undefined) {
+  if (stock?.promoterLockinDays !== undefined && stock?.promoterLockinDays !== null) {
+    // Priority 1: Explicit live data field
     daysToLockin = Number(stock.promoterLockinDays);
   } else if (stock?.lockinExpiry) {
+    // Priority 2a: Explicit expiry date from data feed
     daysToLockin = Math.ceil((new Date(stock.lockinExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  } else {
+    // Priority 2b: SEBON Pipeline cross-reference (P3 improvement)
+    // Stocks in SEBON pipeline are recent IPOs — assume 3-year promoter lockup from filing date
+    const sebonMatch = (sebonPipelineData as any[]).find((entry: any) => {
+      const entryName = String(entry.name || '').toLowerCase();
+      const stockName = String(stock?.name || name).toLowerCase();
+      const stockSym = sym.toLowerCase();
+      return entryName.includes(stockSym) || stockName.includes(entryName.slice(0, 8)) || entryName.includes(stockName.slice(0, 8));
+    });
+    if (sebonMatch?.source) {
+      // Parse Nepali fiscal year from source string e.g. "SEBON Official Gazette 2083/05/02"
+      const bsMatch = String(sebonMatch.source).match(/(\d{4})\/(\d{2})\/(\d{2})/);
+      if (bsMatch) {
+        // Approximate BS→AD conversion: BS year - 56.7 years ≈ AD year
+        const bsYear = parseInt(bsMatch[1]);
+        const adYear = bsYear - 57;
+        const filingDate = new Date(`${adYear}-${bsMatch[2]}-${bsMatch[3]}`).getTime();
+        if (!isNaN(filingDate)) {
+          const unlockDate = filingDate + (3 * 365.25 * 24 * 60 * 60 * 1000);
+          daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));
+        }
+      }
+    } else if (stock?.ipoAllotmentDate) {
+      // Priority 3: ipoAllotmentDate + 3 years heuristic
+      const allotment = new Date(stock.ipoAllotmentDate).getTime();
+      const unlockDate = allotment + (3 * 365.25 * 24 * 60 * 60 * 1000);
+      daysToLockin = Math.ceil((unlockDate - Date.now()) / (1000 * 60 * 60 * 24));
+    }
   }
   const isPromoterLockinNear = daysToLockin !== null && daysToLockin >= 0 && daysToLockin <= 60;
+
+  // Support Base & Bounce-Back Reversal Analytics
+  const rsiVal = Number(stock?.rsi || stock?.rsi14 || 50);
+  const isAtSupportBase = (ema200 > 0 && Math.abs(ltp - ema200) / ema200 <= 0.045) ||
+                          (Number(stock?.low52 || 0) > 0 && Math.abs(ltp - Number(stock?.low52)) / Number(stock?.low52) <= 0.05) ||
+                          (ema50 > 0 && Math.abs(ltp - ema50) / ema50 <= 0.03);
+  const isOversoldBounce = rsiVal <= 38 && pChange >= 0;
+  const isBounceBack = (isAtSupportBase || isOversoldBounce) && pChange >= -0.5;
+  const setupArchetype: 'SUPPORT_BOUNCE' | 'MOMENTUM_BREAKOUT' | 'PULLBACK_COIL' = isBounceBack
+    ? 'SUPPORT_BOUNCE'
+    : (rvol >= 1.4 && pChange >= 1.5 ? 'MOMENTUM_BREAKOUT' : 'PULLBACK_COIL');
 
   // ───────────────────────────────────────────────────────────────────────────
   // THE 8-GATE MULTIBAGGER SCREENER
   // ───────────────────────────────────────────────────────────────────────────
   const gates: Record<string, GateResult> = {
     gate1_float: {
-      passed: publicFloatM <= 15.0,
-      label: 'Public Float <= 15M',
-      actualValue: `${publicFloatM}M shares`,
-      threshold: '<= 15.0M shares',
+      passed: passesFloatGate,
+      label: track === 'BLUE_CHIP_COMPOUNDER' ? 'Institutional Float (Blue-Chip)' : 'Public Float <= 15M (Growth)',
+      actualValue: track === 'BLUE_CHIP_COMPOUNDER' ? `${publicFloatM}M (Institutional Blue-Chip)` : `${publicFloatM}M shares`,
+      threshold: track === 'BLUE_CHIP_COMPOUNDER' ? 'Solvent Balance Sheet' : '<= 15.0M shares',
       category: 'Liquidity / Structure'
     },
     gate2_promoter: {
-      passed: promoterHolding >= 52.0 || (stock?.stealthAccumulation || 0) >= 55,
+      passed: promoterHolding >= 52.0 || (stock?.stealthAccumulation || 0) >= 55 || track === 'BLUE_CHIP_COMPOUNDER',
       label: 'Promoter / Insider Lock',
       actualValue: `${promoterHolding}%`,
       threshold: '>= 52.0%',
       category: 'Supply Control'
     },
     gate3_squeeze: {
-      passed: Math.abs(ltp - ema20) / ema20 <= 0.06 || stock?.bollinger?.squeeze === true,
-      label: 'VCP / Bollinger Squeeze',
-      actualValue: `${(Math.abs(ltp - ema20) / ema20 * 100).toFixed(1)}% from 20-EMA`,
-      threshold: '<= 6.0% coil',
+      passed: Math.abs(ltp - ema20) / ema20 <= 0.06 || stock?.bollinger?.squeeze === true || isBounceBack,
+      label: isBounceBack ? 'Support Base / Bounce' : 'VCP / Bollinger Squeeze',
+      actualValue: isBounceBack ? 'Reversal at Support' : `${(Math.abs(ltp - ema20) / ema20 * 100).toFixed(1)}% from 20-EMA`,
+      threshold: '<= 6.0% coil / Support',
       category: 'Volatility Contraction'
     },
     gate4_volume: {
-      passed: rvol >= 1.4 || volumeZScore >= 1.4,
+      passed: rvol >= 1.4 || volumeZScore >= 1.4 || (isBounceBack && rvol >= 1.15),
       label: 'Volume Surge (RVOL >= 1.4x)',
       actualValue: `${rvol}x RVOL`,
-      threshold: '>= 1.4x baseline',
+      threshold: isBounceBack ? '>= 1.15x absorption' : '>= 1.4x baseline',
       category: 'Institutional Footprint'
     },
     gate5_broker: {
-      passed: bcr3 >= 40.0 || (stock?.stealthAccumulation || 0) >= 60,
+      // P1: CMF >= 0.08 fallback when live broker data unavailable (replaces stealthAccumulation proxy)
+      passed: isBrokerVerified
+        ? bcr3 >= 40.0
+        : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 75),  // tightened stealth threshold when CMF also fails
       label: 'Smart Money Broker Inflow',
-      actualValue: `BCR3 ${bcr3}%`,
-      threshold: '>= 40.0% buy share',
+      actualValue: isBrokerVerified
+        ? `BCR3 ${bcr3}% (Verified)`
+        : cmfFallbackPasses
+          ? `CMF ${cmfResult?.cmf?.toFixed(3)} ≥ 0.08 (OHLCV-based)`
+          : (stock?.stealthAccumulation ? `Stealth ${stock.stealthAccumulation} (Est.)` : 'No Flow Signal'),
+      threshold: isBrokerVerified ? '>= 40.0% BCR3' : 'CMF >= 0.08 or Stealth >= 75',
       category: 'Order Flow'
     },
     gate6_dpi: {
-      passed: (stock?.dpi || 65) >= 65 || (rvol >= 1.2 && pChange >= 0),
+      passed: (stock?.dpi ?? 50) >= 65 || (rvol >= 1.2 && pChange >= 0) || isBounceBack,  // FIXED: was `|| 65` causing undefined DPI to auto-pass at exactly the threshold
       label: 'Directional Price Index (DPI)',
-      actualValue: `${stock?.dpi || 68} / 100`,
+      actualValue: `${stock?.dpi ?? '—'} / 100${!stock?.dpi ? ' (est.)' : ''}`,
       threshold: '>= 65 / 100',
       category: 'Price Momentum'
     },
     gate7_graham: {
-      passed: (pe > 0 && pe <= 30.0) || grahamMosPct >= 5.0,
+      passed: (pe > 0 && pe <= 30.0) || grahamMosPct >= 5.0 || track === 'BLUE_CHIP_COMPOUNDER',
       label: 'Graham Margin of Safety',
       actualValue: pe > 0 ? `P/E ${pe}x (MoS ${grahamMosPct}%)` : 'Fair / Speculative',
       threshold: 'P/E <= 30x or MoS >= 5%',
@@ -469,11 +582,24 @@ export function evaluateMasterStock(
   const pivotPrice = ema20 > 0 ? +(Math.max(ema20, ltp * 0.99)).toFixed(1) : ltp;
   const chaseCap = +(pivotPrice * 1.025).toFixed(1); // +2.5% max over pivot
 
-  // Stop Loss & Targets
-  const stopLoss = +(ltp - Math.min(ltp * 0.055, Math.max(ltp * 0.038, dynamicAtr * 1.25))).toFixed(1);
+  // Stop Loss & Targets (Calibrated for Momentum vs Blue-Chip)
+  const stopLoss = track === 'BLUE_CHIP_COMPOUNDER'
+    ? +(ltp - Math.min(ltp * 0.040, Math.max(ltp * 0.028, dynamicAtr * 1.0))).toFixed(1)
+    : +(ltp - Math.min(ltp * 0.055, Math.max(ltp * 0.038, dynamicAtr * 1.25))).toFixed(1);
   const stopLossPct = +(((ltp - stopLoss) / ltp) * 100).toFixed(1);
 
-  const target1Gross = +(ltp + Math.max(ltp * 0.09, dynamicAtr * 1.5)).toFixed(1);
+  // P2: Circuit-aware target capping (±15% NEPSE circuit band)
+  // Target1 must not require hitting the upper circuit (zero liquidity at circuit)
+  const CIRCUIT_PCT = 0.15;
+  const maxCircuitPrice = +(ltp * (1 + CIRCUIT_PCT)).toFixed(1);
+  const circuitSafeTarget = +(maxCircuitPrice * 0.97).toFixed(1); // 3% below ceiling for liquidity headroom
+
+  const rawTarget1Gross = track === 'BLUE_CHIP_COMPOUNDER'
+    ? +(ltp + Math.max(ltp * 0.075, dynamicAtr * 1.3)).toFixed(1)
+    : +(ltp + Math.max(ltp * 0.095, dynamicAtr * 1.5)).toFixed(1);
+  const target1Gross = Math.min(rawTarget1Gross, circuitSafeTarget);
+  const isTargetCircuitLimited = rawTarget1Gross > circuitSafeTarget;  // surface in UI
+
   const target2Gross = +(ltp + Math.max(ltp * 0.20, dynamicAtr * 3.2)).toFixed(1);
   const target3Gross = +(ltp + Math.max(ltp * 0.40, dynamicAtr * 6.0)).toFixed(1);
 
@@ -486,13 +612,14 @@ export function evaluateMasterStock(
   const netRRR = +(netRewardPerShare / riskPerShare).toFixed(2);
 
   // Analog win rate
-  const analogWinRate = Math.max(35, Math.min(85, Math.round(52 + (bcr3 > 45 ? 12 : 0) + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0))));
+  const analogWinRate = Math.max(35, Math.min(85, Math.round(52 + (bcr3 > 45 ? 12 : 0) + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0) + (isBounceBack ? 6 : 0))));
 
   // Composite Setup Score (0 - 100)
   let rawScore = 35 + (gatesPassedCount * 5.5) + (bcr3 * 0.35) + (analogWinRate * 0.15);
   if (isDistributionTrap) rawScore -= 25;
   if (isPromoterLockinNear) rawScore -= 30;
-  if (publicFloatM > 15.0) rawScore -= 20;
+  if (publicFloatM > 15.0 && track !== 'BLUE_CHIP_COMPOUNDER') rawScore -= 20;
+  if (isBounceBack && pChange >= 0.2) rawScore += 6;
   const setupScore = Math.max(15, Math.min(98, Math.round(rawScore)));
 
   const matrixChecks: MatrixCheck[] = [
@@ -502,7 +629,7 @@ export function evaluateMasterStock(
       targetMetric: 'Stance Banner',
       rule: 'Must be STRONG BUY or ACCUMULATE ON PULLBACK',
       passed: setupScore >= 70 && !isDistributionTrap && !isPromoterLockinNear,
-      actual: setupScore >= 78 ? 'STRONG BUY' : setupScore >= 68 ? 'ACCUMULATE ON PULLBACK' : 'HOLD / DO NOT CHASE',
+      actual: setupScore >= 78 ? 'STRONG BUY' : setupScore >= 68 ? (isBounceBack ? 'ACCUMULATE ON BOUNCE' : 'ACCUMULATE ON PULLBACK') : 'HOLD / DO NOT CHASE',
       isHardReject: setupScore < 65 || isDistributionTrap
     },
     {
@@ -529,9 +656,11 @@ export function evaluateMasterStock(
       name: '4. Smart Money Inflow',
       targetMetric: 'Step 4 Broker Card',
       rule: 'Top 3 Brokers account for >= 40% of Buy Volume (BCR3)',
-      passed: bcr3 >= 40.0,
-      actual: `BCR3 = ${bcr3}% (${avgBuySizeRatio >= 1.4 ? 'Large Blocks' : 'Moderate Tickets'})`,
-      isHardReject: bcr3 < 30.0
+      passed: isBrokerVerified ? bcr3 >= 40.0 : ((stock?.stealthAccumulation || 0) >= 65),
+      actual: isBrokerVerified
+        ? `BCR3 = ${bcr3}% (${avgBuySizeRatio >= 1.4 ? 'Large Blocks' : 'Moderate Tickets'})`
+        : `Est. Stealth = ${stock?.stealthAccumulation || 50} (Pending Live Floorsheet)`,
+      isHardReject: isBrokerVerified && bcr3 < 25.0
     },
     {
       id: 'matrix_trap',
@@ -547,10 +676,10 @@ export function evaluateMasterStock(
       id: 'matrix_rr',
       name: '6. Net Risk : Reward',
       targetMetric: 'Multi-Horizon Targets',
-      rule: 'Minimum 2.5 : 1 Net R:R (Stop <= 5.0%, Net Target 1 >= +8%)',
-      passed: netRRR >= 2.0 && stopLossPct <= 5.5 && t1NetCalc.netReturnPct >= 7.5,
+      rule: 'Minimum 2.0 : 1 Net R:R after statutory friction',
+      passed: netRRR >= 1.85 && stopLossPct <= 6.0 && t1NetCalc.netReturnPct >= 6.0,
       actual: `${netRRR} : 1 Net R:R (Stop: -${stopLossPct}%, Net T1: +${t1NetCalc.netReturnPct}%)`,
-      isHardReject: netRRR < 1.8 || stopLossPct > 6.0
+      isHardReject: netRRR < 1.7 || stopLossPct > 6.5
     }
   ];
 
@@ -559,7 +688,7 @@ export function evaluateMasterStock(
 
   // Overall Action Stance
   let stance: 'STRONG BUY' | 'ACCUMULATE ON PULLBACK' | 'HOLD / DO NOT CHASE' | 'AVOID / EXIT' | 'NO TRADE' = 'HOLD / DO NOT CHASE';
-  if (isDistributionTrap || isPromoterLockinNear || publicFloatM > 40) {
+  if (isDistributionTrap || isPromoterLockinNear) {
     stance = 'AVOID / EXIT';
   } else if (!hasHardReject && setupScore >= 78 && matrixPassedCount >= 5) {
     stance = 'STRONG BUY';
@@ -573,22 +702,32 @@ export function evaluateMasterStock(
   let disqualificationReason: string | undefined;
   if (isPromoterLockinNear) {
     disqualificationReason = `3-Year Promoter Lock-in Cliff in ${daysToLockin} days (Blacklist)`;
-  } else if (publicFloatM > 15.0) {
-    disqualificationReason = `Public Float (${publicFloatM}M shares) exceeds 15M ceiling`;
+  } else if (publicFloatM > 15.0 && track !== 'BLUE_CHIP_COMPOUNDER') {
+    disqualificationReason = `Public Float (${publicFloatM}M shares) exceeds 15M ceiling (non-blue-chip)`;
   } else if (isDistributionTrap) {
     disqualificationReason = `Distribution Trap: Top brokers dumping shares into retail buying`;
   } else if (setupScore < 65) {
     disqualificationReason = `Setup Score (${setupScore}/100) below institutional hurdle of 70`;
   }
 
-  // Sizing with 2% portfolio risk on Rs. 500,000 reference capital
+  // Sizing with 2% portfolio risk on Rs. 500,000 reference capital + 5% ADV Liquidity Cap
   const refCapital = 500000;
   const maxRiskCapital = refCapital * 0.02; // Rs. 10,000
-  const kellyShares = Math.max(10, Math.floor(maxRiskCapital / Math.max(1, ltp - stopLoss)));
+  const unconstrainedKellyShares = Math.max(10, Math.floor(maxRiskCapital / Math.max(1, ltp - stopLoss)));
+  
+  // Liquidity absorption cap: Maximum 5% of 20-day Average Daily Volume (or session volume)
+  // Prefer genuine 20-day rolling average from history over single-session volume
+  const histVols = (cachedHistory || []).slice(-20).map((c: any) => Number(c?.volume || c?.vol || 0)).filter((v: number) => v > 0);
+  const adv20 = histVols.length >= 5
+    ? Math.round(histVols.reduce((a: number, b: number) => a + b, 0) / histVols.length)
+    : Number(stock?.adv20 || stock?.averageVolume || vol || 15000);
+  const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
+  const isLiquidityCapped = unconstrainedKellyShares > maxLiquidityShares;
+  const kellyShares = isLiquidityCapped ? maxLiquidityShares : unconstrainedKellyShares;
   const capitalOutlay = kellyShares * ltp;
 
-  // TMS Order Clipboard Text
-  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Outlay: Rs. ${capitalOutlay.toLocaleString()})\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
+  const capNote = isLiquidityCapped ? ` [Capped at 5% Daily Vol: ${maxLiquidityShares} units]` : '';
+  const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'}\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
 
   return {
     symbol: sym,
@@ -637,11 +776,20 @@ export function evaluateMasterStock(
     target3Net: target3Gross,
     target3NetPct: t3NetCalc.netReturnPct,
     netRRR,
-    statutoryFrictionPct: 0.75,
+    statutoryFrictionPct: +(t1NetCalc.totalFrictionPct ?? 0.75).toFixed(2), // computed round-trip SEBON + broker friction
     analogWinRate,
     kellyShares,
     capitalOutlay,
-    tmsOrderText
+    tmsOrderText,
+    track,
+    setupArchetype,
+    isBounceBack,
+    isBrokerVerified,
+    isLiquidityCapped,
+    maxLiquidityShares,
+    adv20,
+    isTargetCircuitLimited,
+    cmfValue: cmfResult?.cmf ?? 0
   };
 }
 
@@ -663,11 +811,10 @@ export function runMasterGuideAudit(
   const isTradableCommonEquity = (s: any) => {
     const sym = String(s?.symbol || s?.scrip || '').toUpperCase().trim();
     const sec = String(s?.sector || s?.sectorName || '').toLowerCase();
+    const name = String(s?.name || sym);
     const ltp = Number(s?.ltp || s?.price || 0);
 
-    if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond')) return false;
-    if (sym.endsWith('PO') || (sym.endsWith('P') && sym !== 'NADEP') || sym.includes('DEB')) return false;
-    if (ltp < 50) return false;
+    if (isMutualFundOrDebenture(sym, sec, name, ltp)) return false;
     return true;
   };
 
@@ -706,8 +853,15 @@ export function runMasterGuideAudit(
   const runnerUps = evaluated.filter(s => s.symbol !== crownedWinner?.symbol).slice(0, 15);
 
   // 20-Trade Compound Simulation: Rs. 500,000 starting capital
+  // Derive win/loss amounts from the crowned winner's actual levels, not hardcoded values
   const winRate = crownedWinner?.analogWinRate || 65;
-  const sim = simulateCompoundExpectancy(500000, 20, winRate, 45000, 24000);
+  const simWinAmount = crownedWinner
+    ? Math.max(5000, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares))
+    : 45000;
+  const simLossAmount = crownedWinner
+    ? Math.max(2000, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares))
+    : 24000;
+  const sim = simulateCompoundExpectancy(500000, 20, winRate, simWinAmount, simLossAmount);
 
   return {
     timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),

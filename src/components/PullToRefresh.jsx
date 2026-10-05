@@ -55,8 +55,8 @@ export default function PullToRefresh({
       if (diff < -5) {
         isDraggingRef.current = false;
       }
-      setPullDistance(0);
-      setIsPulling(false);
+      if (pullDistance !== 0) setPullDistance(0);
+      if (isPulling) setIsPulling(false);
     }
   };
 

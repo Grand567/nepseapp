@@ -2523,6 +2523,7 @@ export function LiveFloorsheetService() {
   const daysMap: Record<string, number> = {
     '1D': 1,
     '1W': 7,
+    '15D': 15,
     '1M': 30,
     '3M': 90,
     '6M': 180,
@@ -2934,7 +2935,7 @@ export function BrokerHeatmapService() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
 
-  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '1Y': 365 };
+  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '1Y': 365 };
 
   const loadData = async (activeTf = timeframe) => {
     setLoading(true);
@@ -3138,7 +3139,7 @@ export function BrokerFavouritesService({
         stockList = nepseRes?.stocks || [];
       }
 
-      const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+      const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
       const tfDays = daysMap[tf] || 1;
       const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
       const heatmapData = heatmapRes?.data || heatmapRes;
@@ -3376,7 +3377,7 @@ export function BrokerAnalysisService({
   const [refreshing, setRefreshing] = useState(false);
   const [brokerData, setBrokerData] = useState<any>(null);
 
-  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
 
   const loadData = async () => {
     if (!selectedSymbol) {

@@ -847,7 +847,7 @@ export default function IPOList({ initialTab = 'apply' }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-muted)' }}>Closing Date:</span>
                         <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                          {ipo.closeDate ? ipo.closeDate.split('T')[0] : 'N/A'}
+                          {ipo.closeDate ? ipo.closeDate.split('T')[0] : 'Open / Ongoing'}
                         </span>
                       </div>
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 4 }}>

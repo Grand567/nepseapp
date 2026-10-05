@@ -277,10 +277,49 @@ export async function runPostMarketCloseAnalysis(force = false) {
   }
 }
 
+import { runMarketAlertScanCycle } from './smartAlertEngine.mjs';
+
 // Start workers
 export function startWorkers() {
   // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
+
+  // 1. Dravyashree Smart Alert Pipeline:
+  // Runs every 60 seconds during live NEPSE market hours (11:00 AM - 3:00 PM NPT, Sun-Thu).
+  // Automatically evaluates 3 simultaneous institutional criteria:
+  //   - Price in [VWAP Support, VWAP + 2%]
+  //   - Buyer Concentration (Top 3 Brokers) > 50%
+  //   - Seller Volume at Support < 20-Day Average
+  // Dispatches instant mobile lockscreen push notifications via FCM.
+  setInterval(() => {
+    try {
+      const status = getDetailedMarketStatus();
+      const nptMins = status.nptTotalMinutes;
+      const isTradingDay = status.isTradingDay;
+
+      if (isTradingDay && nptMins >= 660 && nptMins <= 900) {
+        runMarketAlertScanCycle({
+          getMarketStocks: async () => {
+            if (_fetchTodayPricesInternal) return await _fetchTodayPricesInternal();
+            return [];
+          },
+          getFloorsheet: async (sym) => {
+            if (_getOrFetchBrokerAnalysis) {
+              const data = await _getOrFetchBrokerAnalysis(sym, 1);
+              return data?.trades || [];
+            }
+            return [];
+          },
+          getPriceHistory: async (sym) => {
+            if (_getPriceHistoryInternal) return await _getPriceHistoryInternal(sym);
+            return [];
+          }
+        });
+      }
+    } catch (scanErr) {
+      console.warn('[SmartAlertWorker] Periodic scan cycle notice:', scanErr.message);
+    }
+  }, 60 * 1000);
 
   // Check every 5 minutes: after 3:15 PM NPT (915 mins), run post-market close analysis ONCE
   setInterval(() => {
@@ -300,6 +339,7 @@ export function startWorkers() {
     } catch (_) {}
   }, 5 * 60 * 1000);
 
-  console.log('Background analytical workers started (Floorsheet + Post-Market Full-Universe Prime Pick Scanner).');
+  console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Post-Market Prime Pick Scanner).');
 }
+
 

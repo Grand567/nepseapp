@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit'; // A7: Rate limiting
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import Parser from 'rss-parser';
@@ -17,6 +18,15 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import { getOrFetchBrokerAnalysis } from './brokerVault.mjs';
+import { 
+  getActiveSmartAlerts, 
+  getSmartAlertHistory, 
+  getSmartAlertSystemStatus, 
+  registerPushToken, 
+  testTriggerAlert, 
+  subscribeAlertEvents 
+} from './smartAlertEngine.mjs';
+import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { 
@@ -77,10 +87,76 @@ try {
 
 const app = express();
 
-// Allow all origins — required for cloud deployment (Render/Railway)
-app.use(cors({ origin: '*' }));
+// ── A7 Security Fix: Restrict CORS to known front-end origins only.
+// The wildcard '*' was removed because this server proxies credentialled
+// MeroShare/CDSC sessions — open CORS allows any web page to abuse it.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+const CORS_DEFAULTS = [
+  'https://nepseapp.onrender.com',
+  'https://nepse-app.vercel.app',
+  'http://localhost:5173',  // Vite dev server
+  'http://localhost:5000',  // local proxy dev
+  'http://localhost:4173',  // Vite preview
+  'capacitor://localhost',  // Capacitor Android WebView
+  'http://localhost',
+];
+
+const ALL_ALLOWED = [...new Set([...CORS_DEFAULTS, ...ALLOWED_ORIGINS])];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow server-to-server (no origin) and all allowed origins
+    if (!origin || ALL_ALLOWED.some(o => origin === o || origin.startsWith(o))) {
+      return cb(null, true);
+    }
+    console.warn(`[CORS] Blocked origin: ${origin}`);
+    cb(new Error(`CORS policy: origin '${origin}' not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
+
+// ── A7: Rate limiting — prevents API abuse and protects upstream data sources ──
+// General API: 200 req/min per IP (generous for legitimate use)
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Rate limit exceeded. Please wait a minute.' },
+  skip: (req) => {
+    // Never rate-limit the warm-up ping or health check
+    return req.path === '/api/ping' || req.path === '/health';
+  }
+});
+// Stricter limiter for expensive scraping endpoints
+const scrapeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests to data endpoints. Please wait.' },
+});
+app.use('/api', apiLimiter);
+app.use('/api/price-history', scrapeLimiter);
+app.use('/api/floorsheet', scrapeLimiter);
+app.use('/api/broker-analysis', scrapeLimiter);
+
+// ── A8: Reusable symbol sanitizer ─────────────────────────────────────────────
+// Validates that a stock symbol contains only safe characters (letters + digits,
+// 1–12 chars). Prevents path traversal, URL injection, and upstream SSRF via crafted symbols.
+function sanitizeSymbol(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const clean = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (clean.length < 1 || clean.length > 12) return null;
+  return clean;
+}
+
 
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
@@ -1858,6 +1934,8 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
     promoterPercentage: 0,
     listingDate: '',
     isin: '',
+    fiscalYear: '',
+    quarter: '',
     source: 'nepse-official'
   };
 
@@ -1944,7 +2022,21 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
         detail.high52w = parseMoney(parts[0]);
         if (parts.length > 1) detail.low52w = parseMoney(parts[1]);
       }
-      if (label.includes('eps') || label.includes('earning per share')) detail.eps = parseMoney(value) || detail.eps;
+      if (label.includes('eps') || label.includes('earning per share')) {
+        detail.eps = parseMoney(value) || detail.eps;
+        const fyM = (value + ' ' + label).match(/(?:FY\s*:?\s*)?(\d{2,4}[-–/]\d{2,4})/i);
+        if (fyM && !detail.fiscalYear) detail.fiscalYear = fyM[1];
+        const qM = (value + ' ' + label).match(/Q\s*([1-4])/i) || (value + ' ' + label).match(/([1-4])(?:st|nd|rd|th)?\s*quarter/i);
+        if (qM && !detail.quarter) detail.quarter = `Q${qM[1]}`;
+      }
+      if (label.includes('fiscal year') || label === 'fy') {
+        const fyM = value.match(/(\d{2,4}[-–/]\d{2,4})/);
+        if (fyM && !detail.fiscalYear) detail.fiscalYear = fyM[1];
+      }
+      if (label.includes('quarter') && !detail.quarter) {
+        const qM = value.match(/([1-4])/);
+        if (qM) detail.quarter = `Q${qM[1]}`;
+      }
       if (label.includes('p/e') || label.includes('pe ratio') || label.includes('price.*earning') || label === 'pe') detail.pe = parseMoney(value) || detail.pe;
       if (label.includes('book value')) detail.bookValue = parseMoney(value) || detail.bookValue;
       if (label === 'pbv' || label.includes('p/b') || label.includes('price.*book') || label.includes('price to book')) detail.pbv = parseMoney(value) || detail.pbv;
@@ -1966,7 +2058,17 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
           if (tds.length >= 2) {
             const label = $ss(tds[0]).text().replace(/\s+/g, ' ').trim().toLowerCase();
             const val   = $ss(tds[1]).text().replace(/\s+/g, ' ').trim();
-            if (detail.eps === 0 && (label.includes('eps') || label.includes('earning per share'))) detail.eps = parseMoney(val);
+            if (label.includes('eps') || label.includes('earning per share')) {
+              if (detail.eps === 0) detail.eps = parseMoney(val);
+              const fyM = (val + ' ' + label).match(/(?:FY\s*:?\s*)?(\d{2,4}[-–/]\d{2,4})/i);
+              if (fyM && !detail.fiscalYear) detail.fiscalYear = fyM[1];
+              const qM = (val + ' ' + label).match(/Q\s*([1-4])/i) || (val + ' ' + label).match(/([1-4])(?:st|nd|rd|th)?\s*quarter/i);
+              if (qM && !detail.quarter) detail.quarter = `Q${qM[1]}`;
+            }
+            if ((label.includes('fiscal year') || label === 'fy') && !detail.fiscalYear) {
+              const fyM = val.match(/(\d{2,4}[-–/]\d{2,4})/);
+              if (fyM) detail.fiscalYear = fyM[1];
+            }
             if (detail.bookValue === 0 && label.includes('book value')) detail.bookValue = parseMoney(val);
             if (detail.pe === 0 && label.includes('p/e')) detail.pe = parseMoney(val);
             if (detail.pbv === 0 && (label === 'pbv' || label.includes('p/b'))) detail.pbv = parseMoney(val);
@@ -1994,7 +2096,9 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
 }
 
 app.get('/api/stock-detail/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  // A8: Validate symbol before forwarding to upstream sources
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol parameter.' });
   const forceRefresh = req.query.refresh === 'true';
   try {
     const detail = await getStockDetailInternal(symbol, forceRefresh);
@@ -2005,13 +2109,15 @@ app.get('/api/stock-detail/:symbol', async (req, res) => {
   }
 });
 
+
 /* ═══════════════════════════════════════════════════
    ENDPOINT 13 — Stock Historical Prices (ShareSansar CSRF/AJAX Scraper)
    Available caching: 1 hour
    ═══════════════════════════════════════════════════ */
 
 app.get('/api/company/:symbol', async (req, res) => {
-  const rawSymbol = req.params.symbol.toUpperCase().trim();
+  const rawSymbol = sanitizeSymbol(req.params.symbol);
+  if (!rawSymbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const symbol = rawSymbol.toLowerCase();
   const cacheKey = `company-${rawSymbol}`;
   const cached = getCache(cacheKey);
@@ -2604,8 +2710,11 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
   return [];
 }
 
+
 app.get('/api/price-history/:symbol', async (req, res) => {
-  const rawSymbol = (req.params.symbol || '').toUpperCase().trim();
+  // A8: Validate symbol and clamp the length parameter
+  const rawSymbol = sanitizeSymbol(req.params.symbol);
+  if (!rawSymbol) return res.status(400).json({ success: false, error: 'Invalid symbol parameter.' });
   const length = Math.min(Math.max(parseInt(req.query.length || '365', 10), 1), 500);
   try {
     const formatted = await getPriceHistoryInternal(rawSymbol, length);
@@ -2618,14 +2727,15 @@ app.get('/api/price-history/:symbol', async (req, res) => {
   }
 });
 
+
 /* ═══════════════════════════════════════════════════
    REAL DATA ENDPOINT B — Real Floorsheet (via @rumess/nepse-api)
    GET /api/floorsheet/:symbol? (optional symbol for market-wide or stock-specific)
    ═══════════════════════════════════════════════════ */
 app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
-  const symbol = (req.params.symbol || '').toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol || '');
   const page = Math.max(0, parseInt(req.query.page || '1', 10) - 1);
-  const size = Math.min(parseInt(req.query.size || '25', 10), 100);
+  const size = Math.min(Math.max(parseInt(req.query.size || '25', 10), 1), 5000);
   const businessDate = req.query.date || '';
   const cacheKey = `floorsheet-${symbol || 'market'}-${businessDate}-p${page}-s${size}`;
   const cached = getCache(cacheKey);
@@ -2729,7 +2839,8 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
    GET /api/nepse/company-id/:symbol
    ═══════════════════════════════════════════════════ */
 app.get('/api/nepse/company-id/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const cacheKey = `nepse-company-id-${symbol}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -2763,7 +2874,8 @@ app.get('/api/nepse/company-id/:symbol', async (req, res) => {
    GET /api/broker-analysis/:symbol?days=30
    ═══════════════════════════════════════════════════ */
 app.get('/api/broker-analysis/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
   const cacheKey = `broker-analysis-${symbol}-${days}`;
   const cached = getCache(cacheKey);
@@ -3029,7 +3141,8 @@ app.get('/api/nepse/live-index', async (req, res) => {
  * Returns Level-2 bid/ask order book for a given stock symbol.
  */
 app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const cacheKey = `market-depth-${symbol}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -3109,7 +3222,8 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
  * by querying ShareSansar corporate actions with Merolagani fallback.
  */
 app.get('/api/dividend-history/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const cacheKey = `dividend-history-${symbol}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -3367,8 +3481,9 @@ app.get('/api/dividend-history/:symbol', async (req, res) => {
  * Returns side-by-side fundamental & price metrics for two stocks.
  */
 app.get('/api/compare/:symbol1/:symbol2', async (req, res) => {
-  const s1 = req.params.symbol1.toUpperCase();
-  const s2 = req.params.symbol2.toUpperCase();
+  const s1 = sanitizeSymbol(req.params.symbol1);
+  const s2 = sanitizeSymbol(req.params.symbol2);
+  if (!s1 || !s2) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const cacheKey = `compare-${s1}-${s2}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -4205,7 +4320,8 @@ app.get('/api/mutual-funds', async (req, res) => {
    GET /api/smart-money/stealth/:symbol?days=15
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get('/api/smart-money/stealth/:symbol', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const days = Math.min(parseInt(req.query.days || '15', 10), 60);
   const cacheKey = `stealth-${symbol}-${days}`;
   const cached = getCache(cacheKey);
@@ -4723,7 +4839,8 @@ app.get('/api/market/live', async (req, res) => {
 // ============================================================
 app.get('/api/securities/:symbol/price', async (req, res) => {
   try {
-    const rawSymbol = req.params.symbol.toUpperCase();
+    const rawSymbol = sanitizeSymbol(req.params.symbol);
+    if (!rawSymbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
     const summary = await fetchInternalMeroMarketSummary();
     const stock = summary?.stocks?.find(s => s.symbol === rawSymbol);
 
@@ -4995,7 +5112,7 @@ app.get('/api/indices/nepse/history', async (req, res) => {
 app.get('/api/market/floorsheet', async (req, res) => {
   try {
     const page = Math.max(0, parseInt(req.query.page || '0', 10));
-    const size = Math.min(parseInt(req.query.size || '20', 10), 100);
+    const size = Math.min(Math.max(parseInt(req.query.size || '20', 10), 1), 5000);
     const symbol = (req.query.symbol || '').toUpperCase();
 
     const options = { page, size };
@@ -5030,7 +5147,8 @@ app.get('/api/market/floorsheet', async (req, res) => {
 // 11: COMPANY DATA
 // ============================================================
 app.get('/api/company/:symbol/profile', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const meta = stockMap[symbol] || {};
   res.json({
     success: true,
@@ -5042,7 +5160,8 @@ app.get('/api/company/:symbol/profile', async (req, res) => {
 });
 
 app.get('/api/company/:symbol/financial', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const meta = stockMap[symbol] || {};
   res.json({
     success: true,
@@ -5054,17 +5173,20 @@ app.get('/api/company/:symbol/financial', async (req, res) => {
 });
 
 app.get('/api/company/:symbol/dividend', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   res.json({ success: true, isMockData: false, source: 'HISTORICAL - NEPSE', symbol, data: [] });
 });
 
 app.get('/api/company/:symbol/bonus', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   res.json({ success: true, isMockData: false, source: 'HISTORICAL - NEPSE', symbol, data: [] });
 });
 
 app.get('/api/company/:symbol/rights', async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   res.json({ success: true, isMockData: false, source: 'HISTORICAL - NEPSE', symbol, data: [] });
 });
 
@@ -6283,14 +6405,107 @@ app.get(['/api/macro/nrb-indicators', '/api/macro/indicators'], async (req, res)
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
 
+  // ── Live IBOR scraping from ShareSansar ─────────────────────────────
+  let liveIbor = null;
+  let liveRepoRate = null;
+  let iborSource = 'baseline';
+  try {
+    const ssRes = await axios.get('https://www.sharesansar.com/banking', {
+      headers: HEADERS, timeout: 8000
+    });
+    const $ss = cheerio.load(ssRes.data);
+    const text = $ss('body').text().replace(/\s+/g, ' ');
+    const iborMatch = text.match(/inter.?bank[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+      || text.match(/IBOR[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+      || text.match(/weighted\s+avg[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+    if (iborMatch) {
+      const v = parseFloat(iborMatch[1]);
+      if (v >= 0.1 && v < 30) { liveIbor = v; iborSource = 'sharesansar'; }
+    }
+    const repoMatch = text.match(/policy\s+repo[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+      || text.match(/repo\s+rate[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+    if (repoMatch) {
+      const v = parseFloat(repoMatch[1]);
+      if (v >= 0.1 && v < 20) liveRepoRate = v;
+    }
+  } catch (_) {}
+
+  // Try merolagani as second source
+  if (liveIbor === null) {
+    try {
+      const mlRes = await axios.get('https://merolagani.com/BankingIndicator.aspx', {
+        headers: HEADERS, timeout: 8000
+      });
+      const $ml = cheerio.load(mlRes.data);
+      const text = $ml('body').text().replace(/\s+/g, ' ');
+      const iborMatch = text.match(/inter.?bank[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i)
+        || text.match(/IBOR[^0-9]*([0-9]+(?:\.[0-9]+)?)\s*%/i);
+      if (iborMatch) {
+        const v = parseFloat(iborMatch[1]);
+        if (v >= 0.1 && v < 30) { liveIbor = v; iborSource = 'merolagani'; }
+      }
+    } catch (_) {}
+  }
+
+  // ── Baseline values (from last NRB Monetary Policy — update periodically) ──
+  const baselineIbor = 2.75;      // Weighted avg interbank rate as of Oct 2026
+  const baselineRepoRate = 5.00;  // NRB policy repo rate
+  const baselineCpi = 5.14;
+
+  const finalIbor = liveIbor ?? baselineIbor;
+  const finalRepoRate = liveRepoRate ?? baselineRepoRate;
+
+  // ── Macro Regime Computation ────────────────────────────────────────
+  // NEPSE regime is primarily driven by IBOR (interbank rate):
+  //   IBOR < 3%  → Banking system flush with liquidity → EASING  → Favour bullish setups
+  //   IBOR 3-6%  → Balanced → NEUTRAL → Stock-specific analysis valid
+  //   IBOR > 6%  → Tight money / CD ratio stress → TIGHTENING → Heavily discount bullish signals
+  //   IBOR > 9%  → Crisis zone → CRISIS → Ignore technicals, raise cash
+  let regime, regimeColor, regimeEmoji, regimeGuidance, regimeScore;
+  if (finalIbor < 3.0) {
+    regime = 'EASING'; regimeColor = '#34d399'; regimeEmoji = '🟢';
+    regimeScore = 1.15;
+    regimeGuidance = 'Banking system liquidity is abundant. Technical buy signals are more reliable. NRB rate cuts or low IBOR historically precede NEPSE rallies. Suitable for accumulation.';
+  } else if (finalIbor < 5.0) {
+    regime = 'NEUTRAL'; regimeColor = '#60a5fa'; regimeEmoji = '🔵';
+    regimeScore = 1.0;
+    regimeGuidance = 'Balanced monetary conditions. Use stock-specific technical and fundamental signals as normal. No strong macro tailwind or headwind.';
+  } else if (finalIbor < 7.5) {
+    regime = 'TIGHTENING'; regimeColor = '#fbbf24'; regimeEmoji = '🟡';
+    regimeScore = 0.80;
+    regimeGuidance = 'Interbank rates elevated. Credit for share purchases is expensive. Discount bullish technical signals by ~20%. Prefer defensive fundamentally strong stocks. Avoid highly leveraged positions.';
+  } else if (finalIbor < 10.0) {
+    regime = 'TIGHT'; regimeColor = '#f87171'; regimeEmoji = '🔴';
+    regimeScore = 0.60;
+    regimeGuidance = 'Severe liquidity tightening. This level preceded the 2079 NEPSE crash (-44%). Margin calls increase. Avoid new entries. Reduce exposure. Hold only quality dividend stocks.';
+  } else {
+    regime = 'CRISIS'; regimeColor = '#dc2626'; regimeEmoji = '🚨';
+    regimeScore = 0.40;
+    regimeGuidance = 'Banking system liquidity crisis. Historical precedent: NEPSE falls 30–50% from peak. Raise maximum cash. Only hold NRB-regulated bank stocks with strong fundamentals.';
+  }
+
   const indicators = {
     asOf: new Date().toISOString().split('T')[0],
-    source: 'Nepal Rastra Bank (NRB) Monetary & Prudential Framework',
+    source: iborSource === 'baseline'
+      ? 'Nepal Rastra Bank (NRB) Baseline — verify at nrb.org.np'
+      : `Nepal Rastra Bank via ${iborSource}`,
+    liveDataAvailable: iborSource !== 'baseline',
+    // ── Regime Signal ──
+    macroRegime: {
+      regime,
+      regimeColor,
+      regimeEmoji,
+      regimeScore,   // Multiplier for setup score (< 1.0 = discount signals)
+      regimeGuidance,
+      interbankRate: finalIbor,
+      policyRepoRate: finalRepoRate,
+      iborSource
+    },
     monetaryPolicy: {
-      cpiInflation: { value: 5.14, unit: '%', label: 'Consumer Price Inflation (YoY)' },
-      interbankRate: { value: 2.75, unit: '%', label: 'Weighted Avg Interbank Rate' },
+      cpiInflation: { value: baselineCpi, unit: '%', label: 'Consumer Price Inflation (YoY)' },
+      interbankRate: { value: finalIbor, unit: '%', label: 'Weighted Avg Interbank Rate (IBOR)', isLive: liveIbor !== null },
       slfRate: { value: 5.75, unit: '%', label: 'Standing Liquidity Facility (SLF) Rate' },
-      policyRepoRate: { value: 5.00, unit: '%', label: 'Policy Repo Rate' },
+      policyRepoRate: { value: finalRepoRate, unit: '%', label: 'Policy Repo Rate', isLive: liveRepoRate !== null },
       reverseRepoRate: { value: 3.00, unit: '%', label: 'Reverse Repo Rate' },
       cashReserveRatio: { value: 4.00, unit: '%', label: 'Cash Reserve Ratio (CRR)' },
       statutoryLiquidityRatio: { value: 12.00, unit: '%', label: 'SLR (Class A Commercial Banks)' }
@@ -6653,29 +6868,58 @@ console.log(`   GLM-4:  ${AI_KEYS.glm ? '✅ Key set' : '❌ No key'}`);
 console.log(`   OpenRouter/Claude: ${AI_KEYS.openrouter ? '✅ Key set' : '❌ No key'}`);
 console.log(`   Pollinations: ✅ Always available (no key needed)`);
 
-// ── PROVIDER 1: GEMINI ────────────────────────────────────────
-async function callGemini(prompt, analysisType = 'stock', customKey = null) {
+// ── PROVIDER 1: GEMINI (Gemini 3.1 Pro Priority Cascade) ──────
+async function callGemini(prompt, analysisType = 'stock', customKey = null, preferredModel = 'gemini-3.1-pro') {
   const key = (customKey || AI_KEYS.gemini || '').trim();
   if (!key) throw new Error('Gemini key not configured');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+  // Cascade list with prioritized gemini-3.1-pro descending to resilient fallbacks
+  const modelCascade = Array.from(new Set([
+    preferredModel,
+    'gemini-3.1-pro',
+    'gemini-3-pro',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash'
+  ])).filter(Boolean);
 
-  const response = await axios.post(url, {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 2048,
-      // Only request JSON for non-chat
-      ...(analysisType !== 'chat' && {
-        responseMimeType: 'application/json'
-      })
+  let lastError = null;
+  for (const model of modelCascade) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const response = await axios.post(url, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 2500,
+          // Only request JSON for non-chat
+          ...(analysisType !== 'chat' && {
+            responseMimeType: 'application/json'
+          })
+        }
+      }, { timeout: 35000 });
+
+      const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        return { text, provider: model };
+      }
+    } catch (err) {
+      lastError = err;
+      const status = err.response?.status;
+      // 404 (model not found/available on account) or 400 (bad model request): cascade forward
+      if (status === 404 || status === 400 || status === 429 || status === 503 || err.code === 'ECONNABORTED') {
+        console.warn(`[callGemini] Model ${model} returned ${status || err.code}. Cascading to next candidate in cascade...`);
+        continue;
+      }
+      // If unauthorized (401), key itself is invalid so fail immediately
+      if (status === 401) {
+        throw err;
+      }
     }
-  }, { timeout: 35000 });
+  }
 
-  const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Empty response from Gemini');
-
-  return { text, provider: 'gemini-1.5-flash' };
+  throw lastError || new Error('All Gemini model candidates failed in cascade');
 }
 
 // ── PROVIDER 2: GLM-4 ─────────────────────────────────────────
@@ -6702,7 +6946,7 @@ You have deep knowledge of:
 - Technical analysis: RSI, MACD, Bollinger Bands, Moving Averages
 - Fundamental analysis: EPS, P/E ratio, Book Value, ROE, DPS
 - Nepal economy, NRB monetary policy impacts on stocks
-- NEPSE circuit breakers (±10% daily limit)
+- NEPSE circuit breakers (±15% daily limit under SEBON Fourth Amendment)
 - Dividend seasons (Jan-May), bonus/rights share impacts
 - Promoter lock-in periods and their effects
 Always provide structured, actionable advice for Nepali retail investors.
@@ -6891,7 +7135,7 @@ No traded securities currently match your criteria (${priceCriteriaStr} in ${sec
       response += `\n---\n#### 💡 Smart Money & Risk Insights:\n`;
       response += `- **Liquidity Shield**: High turnover stocks ensure you can easily buy and exit without large price slippage.\n`;
       response += `- **Execution Tip**: Before entering, review the stock's 30-day Wyckoff accumulation phase by asking *"is [SYMBOL] accumulated or distributed?"*.\n`;
-      response += `- **Regulatory Safety**: Respect NEPSE's ±10% circuit limits and always define a protective stop-loss 3% to 5% below key support.`;
+      response += `- **Regulatory Safety**: Respect NEPSE's ±15% circuit limits and always define a protective stop-loss 3% to 5% below key support.`;
 
       return response;
     }
@@ -7031,7 +7275,7 @@ No traded securities currently match your criteria (${priceCriteriaStr} in ${sec
           ],
           risks: [
             `Regulatory directives from NRB / SEBON impacting ${stockInfo.sector}`,
-            `NEPSE ±10% daily circuit restrictions and liquidity swings`
+            `NEPSE ±15% daily circuit restrictions and liquidity swings`
           ],
           investmentTips: `Accumulate in staggered tranches near Rs. ${(low * 1.02).toFixed(0)}–${ltp.toFixed(0)} with a defensive stop-loss below Rs. ${stopLoss}.`,
           nepseSpecific: `Track upcoming dividend announcements and quarterly financial disclosures for ${stockInfo.sector}.`,
@@ -7063,7 +7307,7 @@ ${explanation}
 - **Key Resistance Ceiling**: **Rs. ${high.toFixed(2)}** (Breakout trigger zone)
 - **Sector Context**: Listed in **${stockInfo.sector}** on the Nepal Stock Exchange.
 - **Actionable Execution**: ${isAccumulation ? `Accumulate in measured tranches between Rs. ${(low * 1.01).toFixed(0)} and Rs. ${ltp.toFixed(0)}. Maintain a protective stop-loss below Rs. ${(low * 0.96).toFixed(0)}.` : `Monitor order books for absorption before initiating fresh positions.`}
-- **Regulatory Caution**: Always account for NEPSE's ±10% daily circuit limits and NRB sector guidelines for microfinance and banking institutions.`;
+- **Regulatory Caution**: Always account for NEPSE's ±15% daily circuit limits and NRB sector guidelines for microfinance and banking institutions.`;
     }
 
     // ── CASE B: General NEPSE Market Inquiry ───────────────────
@@ -7659,6 +7903,13 @@ app.post('/api/guru/stock-analysis', async (req, res) => {
       };
     }
 
+    const missingItems = [];
+    if (!technicals.dataPoints || technicals.dataPoints < 20) missingItems.push('Price history < 20 sessions');
+    if (!financial.eps && !financial.earningsPerShare) missingItems.push('EPS earnings report');
+    if (!technicals.rsi) missingItems.push('RSI indicator');
+    if (!technicals.macd) missingItems.push('MACD');
+    const isDataIncomplete = missingItems.length > 0;
+
     const prompt = `You are GURU AI, expert NEPSE investment advisor.
 
 STOCK: ${rawSymbol}
@@ -7694,11 +7945,22 @@ ROE: ${financial.roe || financial.returnOnEquity || 'N/A'}%
 Paid-up Capital: NPR ${financial.paidUpCapital || profile.paidUpCapital || 'N/A'}
 Listed Shares: ${profile.listedShares?.toLocaleString() || 'N/A'}
 
+${isDataIncomplete ? `=== DATA INTEGRITY CONSTRAINTS (MANDATORY) ===
+Key data points are missing or insufficient for ${rawSymbol}: ${missingItems.join(', ')}.
+You MUST obey these investor safety constraints:
+1. Do NOT issue "STRONG_BUY". Max allowable bullish recommendation is "ACCUMULATE" or "HOLD".
+2. Cap "confidence" score at 50 max (never exceed 50 when data is missing).
+3. In "analysis" and "risks", explicitly disclose that this scrip has data gaps (${missingItems.join(', ')}).
+4. Set "dataQualityWarning" to: "Analysis limited by missing inputs: ${missingItems.join(', ')}".
+` : `=== DATA INTEGRITY ===
+Data points are verified. Set "dataQualityWarning" to null.`}
+
 Respond ONLY in this exact JSON format:
 {
   "recommendation": "STRONG_BUY|BUY|ACCUMULATE|HOLD|REDUCE|SELL|STRONG_SELL",
   "confidence": <0-100>,
   "riskLevel": "VERY_LOW|LOW|MEDIUM|HIGH|VERY_HIGH",
+  "dataQualityWarning": <string or null>,
   "currentPrice": ${price.closePrice || 0},
   "targetPrice": {
     "oneMonth": <number>,
@@ -7981,6 +8243,70 @@ app.get('/api/playbook/pdf', (req, res) => {
   } else {
     res.status(404).json({ success: false, error: 'Playbook PDF not found' });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DRAVYASHREE SMART INSTITUTIONAL ALERT ROUTES
+// ═══════════════════════════════════════════════════════════════════════════
+
+app.get('/api/smart-alerts/active', (req, res) => {
+  try {
+    const alerts = getActiveSmartAlerts();
+    res.json({ success: true, count: alerts.length, data: alerts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/smart-alerts/history', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || '50', 10);
+    const history = getSmartAlertHistory(limit);
+    res.json({ success: true, count: history.length, data: history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/smart-alerts/status', (req, res) => {
+  try {
+    const status = getSmartAlertSystemStatus();
+    res.json({ success: true, data: status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/smart-alerts/register-token', async (req, res) => {
+  try {
+    const { token, platform } = req.body || {};
+    if (!token) return res.status(400).json({ success: false, error: 'Push token required' });
+    const ok = await registerPushToken(token, platform || 'android');
+    res.json({ success: ok, message: 'Push token registered successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/smart-alerts/test-trigger', async (req, res) => {
+  try {
+    const { symbol, ltp, vwap } = req.body || {};
+    const result = await testTriggerAlert(symbol || 'GHL', { ltp, vwap });
+    res.json({ success: true, message: 'Test alert triggered and dispatched', result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// SSE endpoint for live browser/app updates
+app.get('/api/smart-alerts/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const unsubscribe = subscribeAlertEvents(res);
+  req.on('close', unsubscribe);
 });
 
 // 6. Verified Post-Market / Pre-Open Day Prime Pick
@@ -8594,6 +8920,180 @@ app.get('/api/market/promoter-shares', (req, res) => {
     data: lockinData,
     timestamp: now.toISOString()
   });
+});
+
+// ── NEPSE AGENT ENDPOINTS (Phase 3: Tool-Connected AI Reasoning) ────────────
+
+/**
+ * GET /api/agent/stock/:symbol
+ * Returns the fully aggregated, quantitatively calculated analytical dossier
+ * for any scrip (RSI, MACD, 20/50 EMA, Bollinger Bands, ATR, RVOL, BCR3/5,
+ * fundamentals, and deterministic trade execution levels).
+ */
+app.get('/api/agent/stock/:symbol', async (req, res) => {
+  try {
+    const rawSymbol = sanitizeSymbol(req.params.symbol);
+    if (!rawSymbol) {
+      return res.status(400).json({ success: false, error: 'Invalid stock symbol' });
+    }
+
+    const cacheKey = `agent-dossier-${rawSymbol}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        cached: true,
+        symbol: rawSymbol,
+        data: cached,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const dossier = await assembleScripDossier(rawSymbol, {
+      getStockDetailInternal,
+      getPriceHistoryInternal
+    });
+
+    setCache(cacheKey, dossier, 45000); // 45s cache
+
+    res.json({
+      success: true,
+      cached: false,
+      symbol: rawSymbol,
+      data: dossier,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error(`[GET /api/agent/stock/${req.params.symbol}] Error:`, err.message);
+    res.status(500).json({
+      success: false,
+      symbol: req.params.symbol,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /api/agent/analyze
+ * Synthesizes quantitative dossier with Gemini 3.1 Pro / cascade AI models.
+ * Body: { symbol: string, query?: string, model?: string, apiKey?: string }
+ */
+app.post('/api/agent/analyze', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const rawSymbol = sanitizeSymbol(req.body.symbol);
+    if (!rawSymbol) {
+      return res.status(400).json({
+        success: false,
+        error: 'Stock symbol is required (e.g. { "symbol": "KBL" })'
+      });
+    }
+
+    const customQuery = req.body.query || '';
+    const preferredModel = req.body.model || 'gemini-3.1-pro';
+    const clientApiKey = (req.body.apiKey || req.body.geminiKey || '').trim();
+
+    // 1. Assemble quantitative dossier (deterministic truth)
+    const dossier = await assembleScripDossier(rawSymbol, {
+      getStockDetailInternal,
+      getPriceHistoryInternal
+    });
+
+    // 2. Build anti-hallucination prompt embedded with computed indicators
+    const prompt = buildAgentAnalysisPrompt(dossier, customQuery);
+
+    // 3. Invoke prioritized model cascade (Gemini 3.1 Pro → 3 Pro → 2.5 Pro → 2.0 Flash → 1.5 Pro)
+    let aiResult = null;
+    let geminiErr = null;
+
+    try {
+      aiResult = await callGemini(prompt, 'stock', clientApiKey || AI_KEYS.gemini, preferredModel);
+    } catch (err) {
+      geminiErr = err;
+      console.warn(`[POST /api/agent/analyze] Gemini cascade error: ${err.message}. Trying backup AI providers...`);
+    }
+
+    // Backup 1: OpenRouter (Claude / Sonnet if key available)
+    if (!aiResult && AI_KEYS.openrouter) {
+      try {
+        aiResult = await callOpenRouter(prompt, 'stock', AI_KEYS.openrouter);
+      } catch (_) {}
+    }
+
+    // Backup 2: GLM-4
+    if (!aiResult && AI_KEYS.glm) {
+      try {
+        aiResult = await callGLM(prompt, 'glm-4-flash', AI_KEYS.glm);
+      } catch (_) {}
+    }
+
+    // Backup 3: Pollinations
+    if (!aiResult) {
+      try {
+        aiResult = await callPollinations(prompt, 'stock');
+      } catch (_) {}
+    }
+
+    // Fallback: If all AI providers fail, deliver the authentic deterministic quant execution plan!
+    if (!aiResult) {
+      return res.json({
+        success: true,
+        symbol: rawSymbol,
+        provider: 'deterministic-quant-engine',
+        modelUsed: 'QuantEngine-Fallback',
+        isAiOffline: true,
+        dossier,
+        analysis: {
+          symbol: rawSymbol,
+          verdict: dossier.executionPlan.stance,
+          confidenceScore: dossier.executionPlan.setupScore,
+          executiveSummary: `${rawSymbol} is in ${dossier.technicals.trendStructure} with 20-EMA at Rs. ${dossier.technicals.ema20}. Setup score is ${dossier.executionPlan.setupScore}/100.`,
+          technicalPosture: `RSI(14) is ${dossier.technicals.rsi14}, MACD histogram is ${dossier.technicals.macd?.histogram}. Bollinger band squeeze: ${dossier.technicals.bollinger?.isSqueeze ? 'Active' : 'Inactive'}.`,
+          smartMoneyFlow: `BCR3 buyer concentration is ${dossier.brokerFlow.bcr3BuyPct}% with ${dossier.brokerFlow.smartMoneyBias}.`,
+          executionPlan: {
+            recommendedStrategy: dossier.executionPlan.stance === 'BREAKOUT' ? 'Breakout Momentum' : 'Pullback Dip Entry',
+            pullbackDipZone: dossier.executionPlan.pullbackZone.label,
+            breakoutTrigger: dossier.executionPlan.breakoutZone.label,
+            stopLoss: dossier.executionPlan.stopLoss.label,
+            target1: `${dossier.executionPlan.targets[0]?.label}: Rs. ${dossier.executionPlan.targets[0]?.price}`,
+            target2: `${dossier.executionPlan.targets[1]?.label}: Rs. ${dossier.executionPlan.targets[1]?.price}`,
+            riskRewardRatio: '1 : 2.0+'
+          },
+          scenarios: {
+            bullishCase: `Sustained clearance above Rs. ${dossier.executionPlan.breakoutZone.pivot} with RVOL > 1.4x triggers target expansion to Rs. ${dossier.executionPlan.targets[0]?.price}.`,
+            baseCase: `Consolidation within support Rs. ${dossier.executionPlan.pullbackZone.low} – Rs. ${dossier.executionPlan.pullbackZone.high} offering optimal risk-reward accumulation.`,
+            bearishInvalidation: `Decisive daily close below stop-loss Rs. ${dossier.executionPlan.stopLoss.price} invalidates the swing setup.`
+          },
+          t2SettlementRisk: `Session range is Rs. ${dossier.quote.circuitFloor} to Rs. ${dossier.quote.circuitCeiling}. Exercise caution against buying at ceiling due to T+2 delivery lockup.`,
+          nepaliSummary: `${rawSymbol} को लागि 20-EMA समर्थन Rs. ${dossier.technicals.ema20} मा छ। स्टप लस Rs. ${dossier.executionPlan.stopLoss.price} सुरक्षित राख्नुहोस्।`
+        },
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const { parsed, isJSON } = parseAIResponse(aiResult.text, 'stock');
+
+    return res.json({
+      success: true,
+      symbol: rawSymbol,
+      provider: aiResult.provider,
+      modelUsed: aiResult.provider,
+      isAiOffline: false,
+      dossier,
+      analysis: parsed,
+      durationMs: Date.now() - startTime,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error(`[POST /api/agent/analyze] Error:`, err.message);
+    res.status(500).json({
+      success: false,
+      symbol: req.body?.symbol,
+      error: err.message,
+      durationMs: Date.now() - startTime
+    });
+  }
 });
 
 app.listen(PORT, async () => {

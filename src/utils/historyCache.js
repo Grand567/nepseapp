@@ -192,7 +192,7 @@ export function setCachedRealPriceHistory(sym, data) {
  * @returns {Object|null} Fundamental metrics object or null if unavailable
  */
 export function getCachedStockFundamentals(sym) {
-  if (!sym || typeof window === 'undefined') return null;
+  if (!sym) return null;
   const key = String(sym).toUpperCase().trim();
   if (!key) return null;
 
@@ -223,7 +223,7 @@ export function getCachedStockFundamentals(sym) {
  * @param {Object} data - Fundamentals data object
  */
 export function setCachedStockFundamentals(sym, data) {
-  if (!sym || !data || typeof window === 'undefined') return;
+  if (!sym || !data) return;
   const key = String(sym).toUpperCase().trim();
   if (!key) return;
 

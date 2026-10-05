@@ -58,7 +58,7 @@
   --shadow-bull:      0 0 20px var(--bull-glow);
   --shadow-bear:      0 0 20px var(--bear-glow);
 
-  --transition:       all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition:       background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease;
 }
 
 .tabular-nums, .font-mono {
@@ -73,28 +73,24 @@ body.font-scale-normal {
   --font-scale: 1.0;
   --app-base-font: 16px;
   font-size: 16px;
-  zoom: 1;
 }
 
 body.font-scale-large {
   --font-scale: 1.15;
   --app-base-font: 18.5px;
   font-size: 18.5px;
-  zoom: 1.14;
 }
 
 body.font-scale-xlarge {
   --font-scale: 1.28;
   --app-base-font: 21px;
   font-size: 21px;
-  zoom: 1.26;
 }
 
 body.font-scale-huge {
   --font-scale: 1.42;
   --app-base-font: 24px;
   font-size: 24px;
-  zoom: 1.38;
 }
 
 /* Ensure zoomed view stays bounded on mobile */
@@ -103,11 +99,38 @@ body[class*="font-scale-"] {
   overflow-x: hidden;
 }
 
-/* ── Reset ── */
+/* ── Reset & Instant Touch Responsiveness ── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Swift Touch Optimization: eliminate 300ms tap delay across all interactive elements */
+html, body, button, a, input, select, textarea, [role="button"],
+.nav-btn, .btn, .segmented-pill, .sector-pill, .tab-btn, .icon-btn,
+.card, .watchlist-stock-row {
+  touch-action: manipulation;
+}
+
+button, [role="button"], .nav-btn, .btn, .segmented-pill, .sector-pill, .tab-btn, .icon-btn {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+
+/* Hardware-accelerated instant touch response feedback */
+button:active:not(:disabled),
+.btn:active:not(:disabled),
+.nav-btn:active,
+.segmented-pill:active,
+.sector-pill:active,
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.96) translateZ(0);
+  opacity: 0.92;
+  will-change: transform;
 }
 
 button {
@@ -117,8 +140,6 @@ button {
   background-color: transparent;
   border: none;
   outline: none;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 html, body {
@@ -431,9 +452,11 @@ h1, h2, h3, h4, h5 {
   padding: 13px 16px;
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 16px;
   transition: var(--transition);
   outline: none;
+  touch-action: manipulation;
+  -webkit-appearance: none;
 }
 .input::placeholder { color: var(--text-muted); }
 .input:focus {

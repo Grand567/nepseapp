@@ -41,7 +41,7 @@ import {
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';
-import { resolveDynamicStockCandles } from '../utils/quantEngine';
+// resolveDynamicStockCandles removed — we no longer synthesize candles
 import { InfoBanner, NoData, StockSearchSelect, Skeleton } from './ui';
 import { evaluateShortTermCriteria } from './ShortTermProfitPlan';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
@@ -162,24 +162,29 @@ export function EntryExitAnalyzer({
 
           if (isFullSetupPlan && isActionableBuySignal(cached.plan)) {
             const stock = (stocksRef.current || []).find((s: any) => s.symbol === sym) || { symbol: sym, ltp: cached.plan.ltp };
-              setStockInfo(stock);
-              const normalizedPlan = {
-                ...cached.plan,
-                setupScore: cached.plan.setupScore ?? cached.plan.score ?? cached.plan.guruScore ?? 65
-              };
-              setPlan(normalizedPlan);
-              setRawCandles(cached.plan.candles || []);
-              setAnalyzedTime(
-                new Date(cached.ts).toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  hour12: true,
-                })
-              );
-              setLoading(false);
-              return;
+            setStockInfo(stock);
+            if (!cachedFund) {
+              fetchStockFundamentals(sym).then((f) => {
+                if (f) setFundamentals(f);
+              }).catch(() => {});
             }
+            const normalizedPlan = {
+              ...cached.plan,
+              setupScore: cached.plan.setupScore ?? cached.plan.score ?? cached.plan.guruScore ?? 65
+            };
+            setPlan(normalizedPlan);
+            setRawCandles(cached.plan.candles || []);
+            setAnalyzedTime(
+              new Date(cached.ts).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true,
+              })
+            );
+            setLoading(false);
+            return;
+          }
           }
         } catch (_) {}
 
@@ -203,10 +208,15 @@ export function EntryExitAnalyzer({
         }
 
         if (!stock || !stock.ltp) {
-          if (liveRes?.data?.ltp) {
-            stock = { ...(stock || {}), ...liveRes.data };
+          const liveObj = (liveRes?.data?.ltp ? liveRes.data : (liveRes?.ltp ? liveRes : null));
+          if (liveObj) {
+            stock = { ...(stock || {}), ...liveObj };
           } else {
-            stock = stock || { symbol: sym };
+            const uStock = (Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE as any)?.stocks || []).find((u: any) => u.symbol === sym);
+            const hist = Array.isArray(history) ? history : (history?.data || []);
+            const lastClose = Number(hist[hist.length - 1]?.close || 0);
+            if (!lastClose) throw new Error(`Live price for ${sym} is unavailable and no price history was returned.`);
+            stock = { ...(stock || {}), ...(uStock || {}), symbol: sym, ltp: lastClose, priceIsLastClose: true };
           }
         }
         setStockInfo(stock);
@@ -234,20 +244,9 @@ export function EntryExitAnalyzer({
           }
         }
 
-        // Resilient fallback: Ensure at least 60 authentic dynamic candles if live/cached history is sparse
+        // Never synthesize candles — require real history.
         if (!candleList || candleList.length < 20) {
-          const uStock = (Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE as any)?.stocks || []).find((u: any) => u.symbol === sym);
-          const effectiveStock = {
-            ...(uStock || {}),
-            ...(stock || {}),
-            symbol: sym,
-            ltp: Number(stock?.ltp || stock?.closePrice || liveRes?.data?.ltp || uStock?.basePrice || 100),
-            high52w: Number(stock?.high52w || stock?.high52 || 0),
-            low52w: Number(stock?.low52w || stock?.low52 || 0),
-            pChange: Number(stock?.pChange || 0),
-            volume: Number(stock?.volume || liveRes?.data?.totalTradedQuantity || 10000)
-          };
-          candleList = resolveDynamicStockCandles(effectiveStock, 60);
+          throw new Error(`Only ${candleList?.length || 0} real trading sessions available for ${sym} — at least 20 are required. Analysis unavailable.`);
         }
         setRawCandles(candleList);
 
@@ -263,20 +262,7 @@ export function EntryExitAnalyzer({
         });
 
         if (!result.supported) {
-          // Retry with dynamic synthesizer if corporate action or data filtering reduced candle count
-          const fallbackCandles = resolveDynamicStockCandles(stock, 60);
-          const fallbackResult = generateEntryExitPlan(stock, fallbackCandles, [], {
-            indices: indicesRef.current,
-            maxHoldDays: 20,
-            brokerAnalysis: brokerRes
-          });
-          if (fallbackResult.supported) {
-            setRawCandles(fallbackCandles);
-            result.supported = true;
-            Object.assign(result, fallbackResult);
-          } else {
-            throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');
-          }
+          throw new Error(result.reason || 'Insufficient historical data to analyze this stock.');
         }
 
         if (brokerRes) {
@@ -802,7 +788,7 @@ export function EntryExitAnalyzer({
               <GrahamSafetyCard
                 symbol={plan.symbol || symbol}
                 ltp={livePrice}
-                fundamentals={fundamentals || stockInfo}
+                fundamentals={fundamentals || stockInfo || (plan as any)?.fundamentals || (plan as any)?.fundamental}
                 setupScore={plan.setupScore ?? plan.score ?? plan.guruScore ?? 50}
                 verdict={plan.verdict}
                 loading={loading}
@@ -812,6 +798,9 @@ export function EntryExitAnalyzer({
                 levels={plan.levels}
                 currentPrice={livePrice}
                 quantMetrics={plan.quantMetrics}
+                verdict={plan.verdict}
+                setupScore={plan.setupScore ?? plan.score ?? plan.guruScore ?? 50}
+                riskGate={plan.riskGate}
               />
 
               <WhatNextPanel

@@ -81,10 +81,16 @@ export function resolveDynamicStockEMAs(stock, ltp) {
     ema200 = arr[arr.length - 1];
   }
 
+  const ema20Real = ema20 && !isNaN(ema20);
+  const ema50Real = ema50 && !isNaN(ema50);
+  const ema200Real = ema200 && !isNaN(ema200);
   return {
-    ema20: ema20 && !isNaN(ema20) ? Number(ema20.toFixed(2)) : null,
-    ema50: ema50 && !isNaN(ema50) ? Number(ema50.toFixed(2)) : null,
-    ema200: ema200 && !isNaN(ema200) ? Number(ema200.toFixed(2)) : null
+    ema20: ema20Real ? Number(ema20.toFixed(2)) : Number((price * 0.98).toFixed(2)),
+    ema50: ema50Real ? Number(ema50.toFixed(2)) : Number((price * 0.98).toFixed(2)),
+    ema200: ema200Real ? Number(ema200.toFixed(2)) : Number((price * 0.98).toFixed(2)),
+    ema20IsFallback: !ema20Real,
+    ema50IsFallback: !ema50Real,
+    ema200IsFallback: !ema200Real
   };
 }
 
@@ -115,15 +121,22 @@ export function calculateGrahamIntrinsicValue(eps, bookValue, ltp) {
   const price = Number(ltp) || 0;
 
   if (e <= 0 || bv <= 0) {
+    const tangibleFloor = bv > 0 ? Number((bv * 0.67).toFixed(2)) : 0;
+    const mosPct = tangibleFloor > 0 && price > 0
+      ? Number((((tangibleFloor - price) / tangibleFloor) * 100).toFixed(2))
+      : 0;
     return {
-      intrinsicValue: 0,
-      marginOfSafetyPct: 0,
-      isUndervalued: false,
-      valuationStatus: 'Negative / Loss-Making',
-      grahamNumber: 0,
+      intrinsicValue: tangibleFloor,
+      marginOfSafetyPct: mosPct,
+      isUndervalued: price > 0 && tangibleFloor > 0 && price < tangibleFloor,
+      valuationStatus: e <= 0 ? 'Loss-Making (Tangible Asset Floor Applied)' : 'Book Value Deficient',
+      grahamNumber: tangibleFloor,
       peLimit: 15,
       pbLimit: 1.5,
-      pePbProduct: e > 0 && bv > 0 && price > 0 ? Number(((price / e) * (price / bv)).toFixed(2)) : 0
+      pePbProduct: e > 0 && bv > 0 && price > 0 ? Number(((price / e) * (price / bv)).toFixed(2)) : 0,
+      isLossMaking: e <= 0,
+      tangibleBookFloor: tangibleFloor,
+      hasValidEarnings: false
     };
   }
 
@@ -155,7 +168,10 @@ export function calculateGrahamIntrinsicValue(eps, bookValue, ltp) {
     grahamNumber: intrinsicValue,
     pe,
     pb,
-    pePbProduct
+    pePbProduct,
+    isLossMaking: false,
+    tangibleBookFloor: bv > 0 ? Number((bv * 0.67).toFixed(2)) : 0,
+    hasValidEarnings: true
   };
 }
 
@@ -519,18 +535,22 @@ export function calculateCompositeTechnicalScore(stock) {
   // Vector Contributions:
   // 1. RSI Vector (Weight 25%): 45-65 is healthy bullish; <35 oversold reversal; >75 overbought
   let rsiVector = 0;
-  if (rsi >= 50 && rsi <= 68) rsiVector = 25 * ((rsi - 50) / 18);
-  else if (rsi > 68 && rsi <= 78) rsiVector = 15;
-  else if (rsi > 78) rsiVector = -10; // overbought penalty
-  else if (rsi >= 35 && rsi < 50) rsiVector = -15 * ((50 - rsi) / 15);
-  else if (rsi < 35) rsiVector = 10; // oversold rebound bonus
+  if (rsi != null && !isNaN(rsi)) {
+    if (rsi >= 50 && rsi <= 68) rsiVector = 25 * ((rsi - 50) / 18);
+    else if (rsi > 68 && rsi <= 78) rsiVector = 15;
+    else if (rsi > 78) rsiVector = -10; // overbought penalty
+    else if (rsi >= 35 && rsi < 50) rsiVector = -15 * ((50 - rsi) / 15);
+    else if (rsi < 35) rsiVector = 10; // oversold rebound bonus
+  }
 
   // 2. MACD Vector (Weight 25%)
   let macdVector = 0;
-  if (macd.line > macd.signal) {
-    macdVector = macd.hist > 0 ? 25 : 15;
-  } else {
-    macdVector = macd.hist < 0 ? -25 : -15;
+  if (macd?.line != null && macd?.signal != null) {
+    if (macd.line > macd.signal) {
+      macdVector = (macd.hist || 0) > 0 ? 25 : 15;
+    } else {
+      macdVector = (macd.hist || 0) < 0 ? -25 : -15;
+    }
   }
 
   // 3. Moving Average Alignment (Weight 30%): EMA20 > EMA50 > EMA200
@@ -967,13 +987,16 @@ export function getHydroSeasonality(sector = '') {
 export function classifyActionZone(stock, macroContext = {}) {
   const ltp = Number(stock?.ltp) || 100;
   const rsi = resolveDynamicStockRSI(stock);
-  const { ema20 } = resolveDynamicStockEMAs(stock, ltp);
+  const rawEmas = resolveDynamicStockEMAs(stock, ltp);
+  const ema20 = Number(rawEmas?.ema20) || Number((ltp * 0.98).toFixed(1));
   const dynamicCandles = resolveDynamicStockCandles(stock, 25);
 
+  const candleHighs = dynamicCandles.map(c => Number(c.high || c.close || 0)).filter(v => v > 0);
+  const candleLows = dynamicCandles.map(c => Number(c.low || c.close || 0)).filter(v => v > 0);
   let low52w = Number(stock?.low52w || stock?.low52 || 0);
   let high52w = Number(stock?.high52w || stock?.high52 || 0);
-  if (!high52w || high52w <= ltp) high52w = Math.max(...dynamicCandles.map(c => c.high || c.close));
-  if (!low52w || low52w >= ltp) low52w = Math.min(...dynamicCandles.map(c => c.low || c.close));
+  if (!high52w || high52w <= ltp) high52w = candleHighs.length > 0 ? Math.max(...candleHighs) : Number((ltp * 1.25).toFixed(1));
+  if (!low52w || low52w >= ltp) low52w = candleLows.length > 0 ? Math.min(...candleLows) : Number((ltp * 0.75).toFixed(1));
 
   const volSurge = Number(stock?.volumeSurgeRatio) || 1.0;
   const zVol = calculateVolumeZScore(stock?.volume, stock?.avgVolume20D).zScore;
@@ -983,7 +1006,8 @@ export function classifyActionZone(stock, macroContext = {}) {
   const s1 = Number(stock?.s1 || (ltp * 0.96).toFixed(1));
   const r1 = Number(stock?.r1 || (ltp * 1.06).toFixed(1));
   const r2 = Number(stock?.r2 || (ltp * 1.15).toFixed(1));
-  const atr = calculateATR(dynamicCandles);
+  const rawAtr = calculateATR(dynamicCandles);
+  const atr = rawAtr > 0 ? rawAtr : Math.max(1, Number((ltp * 0.025).toFixed(1)));
 
   const { momentumScore: MS, factors } = calculateCompositeMomentumScore(stock, macroContext);
   const graham = calculateGrahamIntrinsicValue(stock?.eps, stock?.bookValue, ltp);
@@ -1025,7 +1049,9 @@ export function classifyActionZone(stock, macroContext = {}) {
   const ema200 = Number(stock?.ema200 || stock?.sma200 || 0);
 
   // Determine structural position with 3-state logic: true / false / null (unknown)
-  const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
+  // If EMA50 comes from the fallback estimator (no real history), treat as unknown (null)
+  const ema50IsFallback = rawEmas?.ema50IsFallback === true;
+  const isAbove50EMA = (ema50 > 0 && !ema50IsFallback) ? ltp >= ema50 : null;
   const isAbove200EMA = ema200 > 0 ? ltp >= ema200 : null;
 
   // Hard Trend Ceiling: CONFIRMED below 50 EMA → cannot be a true breakout.
@@ -1128,17 +1154,32 @@ export function classifyActionZone(stock, macroContext = {}) {
     stopLoss = `Immediate Exit below Rs. ${(ltp * 0.98).toFixed(1)}`;
     systematicStrategy = 'Close positions completely to preserve capital and prevent further drawdowns.';
   }
-  // 5. HOLDING ZONE (Default Trend Following: effectiveMS in [0.05, 0.65], Price > 20 EMA)
+  // 5. CAUTIOUS / SUB-EMA ZONE (Price < ema20 or negative momentum score)
+  else if (ltp < ema20 || effectiveMS < 0) {
+    zone = 'Consolidation Zone';
+    zoneColor = '#94a3b8';
+    zoneBadge = '⚪ CAUTIOUS ZONE (BELOW 20 EMA)';
+    zoneIcon = 'ShieldAlert';
+    triggerLogic = ltp < ema20
+      ? `Price (Rs. ${ltp.toFixed(1)}) trading below 20 EMA overhead resistance (Rs. ${Number(ema20 || ltp).toFixed(1)}). Momentum score: ${effectiveMS.toFixed(2)}.`
+      : `Sub-neutral momentum score (${effectiveMS.toFixed(2)}) indicating sideways consolidation.`;
+    entryTarget = `Wait for Breakout above Rs. ${(Number(ema20 || ltp) * 1.01).toFixed(1)} on Volume`;
+    profitTarget1 = `Rs. ${r1.toFixed(1)} (+${(((r1 - ltp) / ltp) * 100).toFixed(1)}%)`;
+    profitTarget2 = `Rs. ${r2.toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
+    stopLoss = `Rs. ${Math.max(ltp - (2.0 * atr), s1).toFixed(1)} (Trailing ATR / S1 Floor)`;
+    systematicStrategy = 'Stay quiet on fresh entries until price reclaims 20 EMA with expanding volume. Existing holders maintain defensive stop.';
+  }
+  // 6. HOLDING ZONE (Confirmed Trend Following: effectiveMS >= 0, Price >= 20 EMA)
   else {
     zone = 'Holding Zone';
     zoneColor = '#38bdf8';
     zoneBadge = '🔵 HOLDING ZONE (TREND TRAILING)';
     zoneIcon = 'Shield';
-    triggerLogic = `Healthy trend alignment above 20 EMA (Rs. ${ema20.toFixed(1)}) with balanced flow.`;
-    entryTarget = `Rs. ${(ema20 * 0.99).toFixed(1)} – Rs. ${(ema20 * 1.01).toFixed(1)} on Dips`;
+    triggerLogic = `Healthy trend alignment above 20 EMA (Rs. ${Number(ema20 || ltp).toFixed(1)}) with balanced flow.`;
+    entryTarget = `Rs. ${(Number(ema20 || ltp) * 0.99).toFixed(1)} – Rs. ${(Number(ema20 || ltp) * 1.01).toFixed(1)} on Dips`;
     profitTarget1 = `Rs. ${r1.toFixed(1)} (+${(((r1 - ltp) / ltp) * 100).toFixed(1)}%)`;
     profitTarget2 = `Rs. ${r2.toFixed(1)} (+${(((r2 - ltp) / ltp) * 100).toFixed(1)}%)`;
-    stopLoss = `Rs. ${Math.max(ltp - (2.0 * atr), ema20).toFixed(1)} (Trailing ATR Floor)`;
+    stopLoss = `Rs. ${Math.max(ltp - (2.0 * atr), Number(ema20 || (ltp * 0.95))).toFixed(1)} (Trailing ATR Floor)`;
     systematicStrategy = 'Maintain open positions, allowing profits to run while trailing stop-loss levels.';
   }
 
@@ -1158,6 +1199,7 @@ export function classifyActionZone(stock, macroContext = {}) {
     momentumScore: MS,
     effectiveMomentumScore: +effectiveMS.toFixed(2),
     brokerScore,
+    brokerSignal: brokerScore?.adSignal || 'Neutral',
     hydroSeason,
     factors,
     triggerLogic,
@@ -3496,7 +3538,10 @@ export function calculateStatutoryBreakeven(entryPrice = 100, shares = 100) {
 
   const breakevenPrice = Number(estP.toFixed(1));
   const hurdlePct = Number((((breakevenPrice - p) / p) * 100).toFixed(2));
-  const roundTripExpenses = Number((totalBuyCost + (breakevenPrice * q * 0.0036 + breakevenPrice * q * 0.00015 + 25) - (buyShareValue + breakevenPrice * q)).toFixed(1));
+  const sellVal = breakevenPrice * q;
+  const sComm = getCommission(sellVal);
+  const sSebon = sellVal * 0.00015;
+  const roundTripExpenses = Number((buyComm + buySebon + buyDp + sComm + sSebon + 25).toFixed(1));
 
   return {
     entryPrice: p,

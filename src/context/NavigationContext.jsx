@@ -79,7 +79,9 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     try {
       sessionStorage.setItem('nepse_active_tab', tabId);
     } catch (_) {}
-    setActiveTabState(tabId);
+    React.startTransition(() => {
+      setActiveTabState(tabId);
+    });
   }, []);
 
   // Core back navigation handler (used by both hardware back & gestures)

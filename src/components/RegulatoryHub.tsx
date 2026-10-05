@@ -9,6 +9,7 @@ import {
   fetchForexRates, fetchMacroIndicators, fetchBullionRates,
   fetchNrbCirculars, fetchSebonCirculars,
 } from '../utils/servicesApi';
+import { NRBMacroWidget } from './NRBMacroWidget';
 
 export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' | 'macro' | 'bullion' | 'circulars' } = {}) {
   const [activeSubTab, setActiveSubTab] = useState<'forex' | 'macro' | 'bullion' | 'circulars'>(initialTab);
@@ -370,6 +371,8 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
           <InfoBanner>
             <strong>Statutory Central Bank Policy:</strong> Nepal Rastra Bank monetary rates and prudential lending ceilings governing the banking sector and NEPSE equity finance.
           </InfoBanner>
+
+          <NRBMacroWidget compact={false} />
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard

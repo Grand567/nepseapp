@@ -3,15 +3,17 @@ import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries,
 import { fetchRealPriceHistory } from '../utils/liveData';
 import { fetchNepseIntradayGraph } from '../utils/servicesApi';
 import { Activity, Maximize2, Minimize2, TrendingUp, BarChart2 } from 'lucide-react';
+import { aggregateToWeeklyCandles } from '../utils/priceAdjustment';
 
 const TIMEFRAMES = [
-  { id: '1D', label: '1D', days: 1 },
-  { id: '1W', label: '1W', days: 7 },
-  { id: '1M', label: '1M', days: 30 },
-  { id: '3M', label: '3M', days: 90 },
-  { id: '6M', label: '6M', days: 180 },
-  { id: '1Y', label: '1Y', days: 365 },
-  { id: 'ALL', label: 'All', days: 1000 },
+  { id: '1D',     label: '1D',     days: 1    },
+  { id: '1W',     label: '1W',     days: 7    },
+  { id: '1M',     label: '1M',     days: 30   },
+  { id: '3M',     label: '3M',     days: 90   },
+  { id: '6M',     label: '6M',     days: 180  },
+  { id: '1Y',     label: '1Y',     days: 365  },
+  { id: 'WEEKLY', label: 'Wkly',   days: 1000 },
+  { id: 'ALL',    label: 'All',    days: 1000 },
 ];
 
 /**
@@ -455,10 +457,34 @@ export default function ShareHubChart({
       const oneYearAgo = new Date(latestDate.getTime() - 365 * 24 * 3600 * 1000);
       const yearBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneYearAgo);
       sliced = yearBars.length >= 180 ? yearBars : allSorted.slice(-Math.min(260, allSorted.length));
+    } else if (tf === 'WEEKLY') {
+      // WEEKLY: Aggregate all daily candles into weekly OHLCV bars (C2-batch)
+      const weekly = aggregateToWeeklyCandles(allSorted);
+      const weeklyFormatted = weekly.map(w => ({
+        time:   w.time,
+        open:   w.open,
+        high:   w.high,
+        low:    w.low,
+        close:  w.close,
+        value:  w.close,
+        volume: w.volume,
+        dateStr: w.time,
+      }));
+      // Patch last bar with live LTP if available
+      if (stock?.ltp && Number(stock.ltp) > 0 && weeklyFormatted.length > 0) {
+        const last = { ...weeklyFormatted[weeklyFormatted.length - 1] };
+        const target = Number(stock.ltp);
+        last.close = target; last.value = target;
+        last.high = Math.max(Number(last.high || target), target);
+        last.low  = Math.min(Number(last.low  || target), target);
+        return [...weeklyFormatted.slice(0, -1), last];
+      }
+      return weeklyFormatted;
     } else {
       // ALL
       sliced = allSorted;
     }
+
 
     if (stock?.ltp && Number(stock.ltp) > 0 && sliced.length > 0) {
       const last = { ...sliced[sliced.length - 1] };
@@ -822,7 +848,28 @@ export default function ShareHubChart({
             {hudTimeLabel && (
               <span style={{ fontSize: '10px', color: '#64748b' }}>({hudTimeLabel})</span>
             )}
+            {/* C1: Adjusted prices indicator */}
+            {Array.isArray(rawHistory) && rawHistory.some(c => c.isAdjusted) && (
+              <span style={{
+                fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
+                color: '#818cf8'
+              }} title="Prices back-adjusted for bonus shares, rights issues, and cash dividends">
+                Adj. prices
+              </span>
+            )}
+            {/* Weekly view indicator */}
+            {activeTf === 'WEEKLY' && (
+              <span style={{
+                fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+                background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)',
+                color: '#38bdf8'
+              }}>
+                Weekly candles
+              </span>
+            )}
           </div>
+
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#94a3b8' }}>
             {activeHud.open != null && (

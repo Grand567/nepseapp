@@ -39,34 +39,34 @@ export function SmartMoneyBrokerFlowCard({
     (bcr3Sell >= 38.0 && bcr3Sell > bcr3)
   );
 
-  // Distribution Trap Warning:
-  // "If top brokers are net selling (dumping) into retail excitement, do not buy, even if the chart looks green."
+  // Distribution Trap & Invalidation:
+  // If top brokers are net distributing, fresh buying is avoided regardless of whether the day is green or red.
   const isGreenOrExcited = pChange >= 0;
   const isDistributionTrap = isDumping && isGreenOrExcited;
 
   // Institutional Accumulation:
-  // "Top 3 brokers (e.g., Broker 58, 45, 34) account for >40% of all buy volume in large blocks, while selling is distributed across dozens of retail brokers."
-  const isInstitutionalAccumulation = (bcr3 >= 40.0 || (bcr5 >= 50.0 && bcr3 >= 36.0)) && !isDistributionTrap;
+  // Requires concentration >40% AND strictly NO institutional dumping!
+  const isInstitutionalAccumulation = (bcr3 >= 40.0 || (bcr5 >= 50.0 && bcr3 >= 36.0)) && !isDumping;
 
   const top3BuyerNames = topBuyers.slice(0, 3).map((b: any) => {
-    const id = b.broker || b.brokerNo || b.id || '';
-    return `#${id}`;
+    const id = b.brokerId || b.broker || b.brokerNo || b.memberId || b.id || '';
+    return id ? `#${id}` : '';
   }).filter(Boolean);
 
   const top3SellerNames = topSellers.slice(0, 3).map((s: any) => {
-    const id = s.broker || s.brokerNo || s.id || '';
-    return `#${id}`;
+    const id = s.brokerId || s.broker || s.brokerNo || s.memberId || s.id || '';
+    return id ? `#${id}` : '';
   }).filter(Boolean);
 
   return (
     <div style={{
       borderRadius: 18,
-      border: isDistributionTrap
+      border: isDumping
         ? '1px solid rgba(244, 63, 94, 0.4)'
         : isInstitutionalAccumulation
         ? '1px solid rgba(16, 185, 129, 0.4)'
         : '1px solid rgba(255, 255, 255, 0.08)',
-      background: isDistributionTrap
+      background: isDumping
         ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%)'
         : isInstitutionalAccumulation
         ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%)'
@@ -126,6 +126,22 @@ export function SmartMoneyBrokerFlowCard({
             }}>
               🚨 DUMP TRAP: DO NOT BUY
             </span>
+          ) : isDumping ? (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 8,
+              background: 'rgba(244, 63, 94, 0.2)',
+              border: '1px solid rgba(244, 63, 94, 0.5)',
+              color: '#fda4af',
+              fontSize: 10.5,
+              fontWeight: 900,
+              letterSpacing: '0.02em'
+            }}>
+              🔴 INSTITUTIONAL DISTRIBUTION
+            </span>
           ) : isInstitutionalAccumulation ? (
             <span style={{
               display: 'inline-flex',
@@ -178,7 +194,7 @@ export function SmartMoneyBrokerFlowCard({
               <TrendingUp size={13} /> 1. Top 3 Buy Share
             </span>
             <span style={{ fontSize: 12, fontWeight: 900, color: bcr3 >= 40.0 ? '#34d399' : '#cbd5e1', fontFamily: 'monospace' }}>
-              {bcr3 > 0 ? `${bcr3}%` : '—'} {bcr3 >= 40.0 ? '(≥40% Met)' : '(Target >40%)'}
+              {bcr3 > 0 ? `${bcr3}%` : 'Dispersed (<15%)'} {bcr3 >= 40.0 ? '(≥40% Met)' : '(Target >40%)'}
             </span>
           </div>
 
@@ -206,18 +222,18 @@ export function SmartMoneyBrokerFlowCard({
         <div style={{
           padding: '10px 12px',
           borderRadius: 12,
-          background: isDistributionTrap ? 'rgba(244, 63, 94, 0.12)' : 'rgba(0, 0, 0, 0.25)',
-          border: isDistributionTrap ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
+          background: isDumping ? 'rgba(244, 63, 94, 0.12)' : 'rgba(0, 0, 0, 0.25)',
+          border: isDumping ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
           display: 'flex',
           flexDirection: 'column',
           gap: 6
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: isDistributionTrap ? '#fb7185' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: isDumping ? '#fb7185' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 5 }}>
               <TrendingDown size={13} /> 2. Distribution Trap Monitor
             </span>
-            <span style={{ fontSize: 11.5, fontWeight: 900, color: isDistributionTrap ? '#fb7185' : '#34d399', fontFamily: 'monospace' }}>
-              {isDistributionTrap ? 'TRAP DETECTED' : 'CLEAR'}
+            <span style={{ fontSize: 11.5, fontWeight: 900, color: isDumping ? '#fb7185' : '#34d399', fontFamily: 'monospace' }}>
+              {isDistributionTrap ? 'TRAP DETECTED' : isDumping ? 'DISTRIBUTION ACTIVE' : 'CLEAR'}
             </span>
           </div>
 
@@ -225,6 +241,10 @@ export function SmartMoneyBrokerFlowCard({
             {isDistributionTrap ? (
               <span style={{ color: '#fca5a5', fontWeight: 600 }}>
                 🚨 <strong>Do Not Buy:</strong> Top institutional brokers ({top3SellerNames.join(', ') || 'Smart Money'}) are net selling into retail enthusiasm, despite the green price action (+{pChange}%).
+              </span>
+            ) : isDumping ? (
+              <span style={{ color: '#fca5a5', fontWeight: 600 }}>
+                🚨 <strong>Institutional Distribution:</strong> Top institutional brokers ({top3SellerNames.join(', ') || 'Major Brokers'}) are net offloading inventory. Fresh buy capital should NOT be deployed.
               </span>
             ) : isInstitutionalAccumulation ? (
               <span style={{ color: '#a7f3d0' }}>

@@ -5,7 +5,7 @@ import {
   Layers, ArrowUpRight, ArrowDownRight, ArrowRight, Eye, Filter, CheckCircle2,
   AlertTriangle, Shield, Flame, Compass, LineChart, PieChart, Users, Clock,
   ExternalLink, ThumbsUp, MessageSquare, Share2, HelpCircle, Check,
-  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar, Bell, Crown, Lock
+  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar, Bell, Crown, Lock, Crosshair
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 import ProGate from './ProGate';
@@ -20,7 +20,7 @@ import { runStockScanners } from '../utils/quantEngine';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
+import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedMarketSummary, getLastDataUpdateTime, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -30,6 +30,7 @@ import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
+import { NRBMacroWidget } from './NRBMacroWidget';
 import { useBackHandler, useNavigation } from '../context/NavigationContext';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { getWatchlist, toggleWatchlist, isWatched } from '../utils/watchlist';
@@ -39,6 +40,11 @@ import {
   evaluateWatchlistAlerts,
   calculateStockRvol
 } from '../utils/watchlistAlerts';
+import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A2
+import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
+import { classifySector } from '../utils/fundamentals';
+import { evaluateOpenSignals } from '../services/signalTracker';
+import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
 
 /* ─── Formatters & Helpers ─── */
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -984,9 +990,21 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                   {s.symbol}
+                  {/* C3: Liquidity badge */}
+                  {s.isIlliquid && (
+                    <span style={{ fontSize: 8.5, fontWeight: 800, padding: '1px 5px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }} title={s.liquidityWarning}>
+                      ILLIQUID
+                    </span>
+                  )}
+                  {!s.isIlliquid && s.liquidityClass === 'LOW' && (
+                    <span style={{ fontSize: 8.5, fontWeight: 700, padding: '1px 5px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', color: '#fbbf24' }} title={s.liquidityWarning}>
+                      LOW LIQ
+                    </span>
+                  )}
                 </div>
+
                 <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{fmt(s.ltp)}</div>
                 <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(s.high || s.ltp)}</div>
                 <div style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(s.low || s.ltp)}</div>
@@ -1061,10 +1079,18 @@ function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
                   }}
                 >
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)' }}>{s.symbol}</span>
                       <span className="badge badge-primary" style={{ fontSize: 9.5 }}>{s.sector}</span>
+                      {/* C3: Liquidity badge */}
+                      {s.isIlliquid && (
+                        <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }} title={s.liquidityWarning}>⚠ ILLIQUID</span>
+                      )}
+                      {!s.isIlliquid && s.liquidityClass === 'LOW' && (
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', color: '#fbbf24' }} title={s.liquidityWarning}>LOW LIQ</span>
+                      )}
                     </div>
+
                     <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
                       Vol: {s.volume?.toLocaleString() || '—'} · RSI: {s.rsi?.toFixed(1) || '—'}
                     </div>
@@ -1229,6 +1255,7 @@ export default function Dashboard({
   const [breadthFilter, setBreadthFilter] = useState(null); // 'advanced' | 'declined' | 'unchanged' | 'circuit_pos' | 'circuit_neg'
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showSubIndicesModal, setShowSubIndicesModal] = useState(false);
+  const [showSignalTrackerModal, setShowSignalTrackerModal] = useState(false);
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
 
@@ -1236,6 +1263,13 @@ export default function Dashboard({
 
   // Watchlist State
   const [watchlist, setWatchlist] = useState(() => getWatchlist());
+
+  useEffect(() => {
+    if (stocks && stocks.length > 50) {
+      computeLiveSectorMedians(stocks, classifySector);
+      evaluateOpenSignals(stocks);
+    }
+  }, [stocks]);
 
   useEffect(() => {
     const handleWatchlistChange = () => {
@@ -1521,9 +1555,31 @@ export default function Dashboard({
     }
   }, [lastSyncTime]);
 
-  // Top Search State
+  // Top Search State with Fast-Typing Transition Decoupling
   const [topSearch, setTopSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((val) => {
+    setSearchInput(val);
+    if (!isSearching) setIsSearching(true);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      React.startTransition(() => {
+        setTopSearch(val);
+      });
+    }, 35);
+  }, [isSearching]);
+
+  const clearTopSearch = useCallback(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearchInput('');
+    React.startTransition(() => {
+      setTopSearch('');
+      setIsSearching(false);
+    });
+  }, []);
 
   // Hero Chart State
   const [heroTimeframe, setHeroTimeframe] = useState('1D');
@@ -1826,6 +1882,20 @@ export default function Dashboard({
     const combined = [...hits, ...nearHits.filter(s => !hits.some(h => h.symbol === s.symbol))];
     if (combined.length > 0) return combined.slice(0, 8);
     return [...stocks].sort((a, b) => Math.abs(b.pChange || 0) - Math.abs(a.pChange || 0)).slice(0, 8);
+  }, [stocks]);
+
+  const slowAccumulationStocks = useMemo(() => {
+    return [...stocks]
+      .filter(s => ((s.stealthAccumulation || 50) >= 55 || ((s.pChange || 0) >= 0 && (s.pChange || 0) <= 2.5 && (s.volumeSurgeRatio || 1) >= 1.1)))
+      .sort((a, b) => (b.stealthAccumulation || 50) - (a.stealthAccumulation || 50))
+      .slice(0, 8);
+  }, [stocks]);
+
+  const distributionTrapStocks = useMemo(() => {
+    return [...stocks]
+      .filter(s => ((s.pumpDumpRiskScore || 40) >= 50 || ((s.pChange || 0) < 0 && (s.volumeSurgeRatio || 1) >= 1.4)))
+      .sort((a, b) => (b.pumpDumpRiskScore || 40) - (a.pumpDumpRiskScore || 40))
+      .slice(0, 8);
   }, [stocks]);
 
   // Pre-fetch historical data and broker analysis for top candidate stocks in the background
@@ -2511,12 +2581,30 @@ export default function Dashboard({
   return (
     <div className="dashboard-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '8px 10px 80px' }}>
 
+      {/* A1+A2: Risk disclaimer + simulated-data warning. Only visible on cold boot before live feed arrives. */}
+      {(() => {
+        const hasRealStocks = Array.isArray(stocks) && stocks.length > 20 && stocks.some(s => (s.volume || 0) > 0 || (s.turnover || 0) > 0 || s.isRealQuote === true);
+        const summarySimulated = getCachedMarketSummary()?.isSimulated === true;
+        const showSimulated = !hasRealStocks && (summarySimulated || stocks.every(s => s?.isSimulated));
+        const resolvedQuality = !marketStatus?.isOpen ? 'MARKET_CLOSED' : (getCachedMarketSummary()?.dataQuality || 'CONNECTING');
+        return (
+          <DataQualityBanner
+            isSimulated={showSimulated}
+            dataQuality={showSimulated ? resolvedQuality : undefined}
+            onRefresh={onRefresh}
+          />
+        );
+      })()}
+
+
+
       {/* ── 1. PROMINENT TOP SEARCH BAR ── */}
       <div style={{ position: 'relative', marginBottom: 10, zIndex: 1000 }}>
+
         <form
           onSubmit={e => {
             e.preventDefault();
-            const q = topSearch.trim().toLowerCase();
+            const q = (searchInput || topSearch).trim().toLowerCase();
             if (!q) return;
             let match = unifiedSearchUniverse.find(s => s.symbol && s.symbol.toLowerCase() === q);
             if (!match && topSearchResults.length > 0) match = topSearchResults[0];
@@ -2560,7 +2648,7 @@ export default function Dashboard({
               className="input"
               style={{
                 border: 'none', background: 'transparent', padding: '10px 0',
-                fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0, outline: 'none'
+                fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0, outline: 'none'
               }}
               autoComplete="off"
               autoCorrect="off"
@@ -2569,8 +2657,8 @@ export default function Dashboard({
               enterKeyHint="search"
               data-form-type="other"
               placeholder="Search 350+ NEPSE stocks..."
-              value={topSearch}
-              onChange={e => { setTopSearch(e.target.value); setIsSearching(true); }}
+              value={searchInput}
+              onChange={e => handleSearchChange(e.target.value)}
               onFocus={() => setIsSearching(true)}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
@@ -2581,20 +2669,18 @@ export default function Dashboard({
                 }
               }}
             />
-            {topSearch && (
+            {searchInput && (
               <button
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setTopSearch('');
-                  setIsSearching(false);
+                  clearTopSearch();
                 }}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setTopSearch('');
-                  setIsSearching(false);
+                  clearTopSearch();
                 }}
                 style={{
                   background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
@@ -3192,8 +3278,33 @@ export default function Dashboard({
               const to = Number(heroVal.turnover || indices?.nepse?.turnover || 0);
               if (to >= 1e9) return `${(to / 1e9).toFixed(2)} Arba`;
               if (to > 0) return `${(to / 1e7).toFixed(2)} Cr`;
-              return '5.50 Arba';
+              return '—';
             })()}</strong>
+          </div>
+        </div>
+
+        {/* NRB Macro Regime (liquidity) — primary driver of NEPSE direction */}
+        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <NRBMacroWidget compact />
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => setShowSignalTrackerModal(true)}
+              style={{
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                borderRadius: 20,
+                padding: '4px 12px',
+                fontSize: 10.5,
+                fontWeight: 800,
+                color: '#34d399',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                cursor: 'pointer'
+              }}
+            >
+              📊 Algorithmic Signal Track Record
+            </button>
           </div>
         </div>
 
@@ -4177,15 +4288,12 @@ export default function Dashboard({
 
             const isBreakout = Number(eLow || 0) > ltpNum * 1.005;
 
-            const t1Price = typeof primeDailyPick.target1 === 'object'
-              ? (primeDailyPick.target1?.price ?? 0)
-              : Number(primeDailyPick.target1 || primeDailyPick.levels?.target1?.price || (ltpNum > 0 ? +(ltpNum * 1.10).toFixed(1) : 0));
-            const t2Price = typeof primeDailyPick.target2 === 'object'
-              ? (primeDailyPick.target2?.price ?? 0)
-              : Number(primeDailyPick.target2 || primeDailyPick.levels?.target2?.price || (ltpNum > 0 ? +(ltpNum * 1.20).toFixed(1) : 0));
-            const slPrice = typeof primeDailyPick.stopLoss === 'object'
-              ? (primeDailyPick.stopLoss?.price ?? 0)
-              : Number(primeDailyPick.stopLoss || primeDailyPick.levels?.stopLoss?.price || (ltpNum > 0 ? +(ltpNum * 0.94).toFixed(1) : 0));
+            const t1Price = (typeof primeDailyPick.target1 === 'object' ? primeDailyPick.target1?.price : null)
+              || Number(primeDailyPick.target1 || primeDailyPick.levels?.target1?.price || (ltpNum > 0 ? +(ltpNum * 1.10).toFixed(1) : 0));
+            const t2Price = (typeof primeDailyPick.target2 === 'object' ? primeDailyPick.target2?.price : null)
+              || Number(primeDailyPick.target2 || primeDailyPick.levels?.target2?.price || (ltpNum > 0 ? +(ltpNum * 1.20).toFixed(1) : 0));
+            const slPrice = (typeof primeDailyPick.stopLoss === 'object' ? primeDailyPick.stopLoss?.price : null)
+              || Number(primeDailyPick.stopLoss || primeDailyPick.levels?.stopLoss?.price || (ltpNum > 0 ? +(ltpNum * 0.94).toFixed(1) : 0));
 
             const t1Pct = typeof primeDailyPick.target1 === 'object' && primeDailyPick.target1?.pct != null
               ? primeDailyPick.target1.pct
@@ -4242,7 +4350,7 @@ export default function Dashboard({
                   </div>
                   {t1NetPct != null && (
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 1 }}>
-                      Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                      Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                     </div>
                   )}
                 </div>
@@ -4254,7 +4362,7 @@ export default function Dashboard({
                   </div>
                   {t2NetPct != null && (
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 1 }}>
-                      Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-10% CGT/fees)</span>
+                      Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                     </div>
                   )}
                 </div>
@@ -4601,6 +4709,8 @@ export default function Dashboard({
             { id: 'gainers',        label: 'Top Gainers',      icon: TrendingUp,   color: 'var(--bull)' },
             { id: 'losers',         label: 'Top Losers',       icon: TrendingDown, color: '#F43F5E' },
             { id: 'turnover',       label: 'Turnover Leaders', icon: Activity,     color: 'var(--primary-light)' },
+            { id: 'stealth_acc',    label: '🟢 Slow Accumulation', icon: Crosshair, color: '#10b981' },
+            { id: 'distribution',   label: '🚨 Distribution Trap', icon: AlertTriangle, color: '#f43f5e' },
             { id: 'breakouts',      label: '🔥 Breakouts',     icon: Flame,        color: '#f59e0b' },
             { id: 'next_breakouts', label: '⏱️ Next Breakouts', icon: Zap,          color: '#a855f7' },
             { id: 'volume',         label: 'Volume Surge',     icon: BarChart2,    color: '#38bdf8' }
@@ -4630,13 +4740,79 @@ export default function Dashboard({
         {/* When no tab is clicked, show clean prompt */}
         {!moversTab && (
           <div style={{ padding: '8px 4px 2px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11.5 }}>
-            Tap any category above to reveal Top Gainers, Losers, Turnover, or Breakouts
+            Tap any category above to reveal Top Gainers, Losers, Turnover, Slow Accumulation, or Traps
           </div>
         )}
 
         {/* Active Movers Tab Stock Cards (only when tab is clicked) */}
         {moversTab && (
           <>
+            {moversTab === 'stealth_acc' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, fontSize: 11.5, color: '#a7f3d0', marginBottom: 8 }}>
+                <span>🟢 <strong>Slow Institutional Accumulation</strong>: Quiet broker absorption inside a tight base before markup.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('open_service_id', 'whale-daily-archive');
+                        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'whale-daily-archive' } }));
+                      } catch (_) {}
+                      setActiveTab('services');
+                    }}
+                    style={{ background: 'rgba(16, 185, 129, 0.2)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 6, padding: '2px 8px', color: '#a7f3d0', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    📅 Daily Archive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('open_service_id', 'stealth-accumulation-tracker');
+                        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'stealth-accumulation-tracker' } }));
+                      } catch (_) {}
+                      setActiveTab('services');
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#34d399', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    Full Radar →
+                  </button>
+                </div>
+              </div>
+            )}
+            {moversTab === 'distribution' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, fontSize: 11.5, color: '#fca5a5', marginBottom: 8 }}>
+                <span>🚨 <strong>Distribution Traps</strong>: Elevated operator selling or retail offloading danger. Stand down!</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('open_service_id', 'whale-daily-archive');
+                        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'whale-daily-archive' } }));
+                      } catch (_) {}
+                      setActiveTab('services');
+                    }}
+                    style={{ background: 'rgba(244, 63, 94, 0.2)', border: '1px solid rgba(244, 63, 94, 0.4)', borderRadius: 6, padding: '2px 8px', color: '#fca5a5', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    📅 Daily Archive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('open_service_id', 'distribution-leaders');
+                        window.dispatchEvent(new CustomEvent('open_service', { detail: { serviceId: 'distribution-leaders' } }));
+                      } catch (_) {}
+                      setActiveTab('services');
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#f87171', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    View Radar →
+                  </button>
+                </div>
+              </div>
+            )}
             {moversTab === 'next_breakouts' && nextBreakoutStocks.length === 0 && (
               <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                 Scanning 350+ NEPSE scrips: No stocks currently meet the strict pre-breakout contraction criteria (VCP &lt; 7% or BBW compression &lt; 12%).
@@ -4648,6 +4824,8 @@ export default function Dashboard({
                 moversTab === 'turnover' ? turnoverLeaders :
                 moversTab === 'breakouts' ? breakoutStocks :
                 moversTab === 'next_breakouts' ? nextBreakoutStocks :
+                moversTab === 'stealth_acc' ? slowAccumulationStocks :
+                moversTab === 'distribution' ? distributionTrapStocks :
                 volumeLeaders).map(s => {
                 const isBull = (s.pChange || 0) >= 0;
                 const spark = generateSparkline(s.ltp, s.pChange);
@@ -4790,6 +4968,16 @@ export default function Dashboard({
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
               {marketStatus?.message || 'Trading Hours: Mon – Fri 11:00 AM – 3:00 PM NPT (Sat & Sun Weekend)'}
             </div>
+            {/* C4: Last-updated timestamp */}
+            {getCachedMarketSummary() && !getCachedMarketSummary()?.isSimulated && (() => {
+              const lu = getLastDataUpdateTime?.();
+              return lu?.npt ? (
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, opacity: 0.75 }}>
+                  Data as of {lu.npt} NPT
+                </div>
+              ) : null;
+            })()}
+
           </div>
         </div>
 
@@ -4819,6 +5007,14 @@ export default function Dashboard({
       {/* ── MODALS & DRAWERS ── */}
       {selectedStock && (
         <StockDetailModal stock={selectedStock} allStocks={stocks} onClose={() => setSelectedStock(null)} />
+      )}
+
+      {showSignalTrackerModal && (
+        <GlobalSignalTrackerModal
+          isOpen={showSignalTrackerModal}
+          onClose={() => setShowSignalTrackerModal(false)}
+          marketStocks={stocks || []}
+        />
       )}
 
       {breadthModalTab && (

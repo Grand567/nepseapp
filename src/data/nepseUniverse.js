@@ -1,4 +1,4 @@
-import stockmapData from '../utils/stockmap.json';
+import stockmapData from '../utils/stockmap.json' with { type: 'json' };
 
 
 
@@ -233,7 +233,7 @@ const RAW_NEPSE_UNIVERSE = [
   { symbol: 'NMFBS', name: 'National Laghubitta Bittiya Sanstha Limited', sector: 'Microfinance', basePrice: 1112, sharesOut: 3.8 },
   { symbol: 'NMIC', name: 'Nepal Micro Insurance Company Limited', sector: 'Non Life Insurance', basePrice: 777, sharesOut: 2 },
   { symbol: 'NMLBBL', name: 'Nerude Mirmire Laghubitta Bittiya Sanstha Limited', sector: 'Microfinance', basePrice: 484, sharesOut: 9.8 },
-  { symbol: 'NRIC', name: 'Nepal Reinsurance Company Limited', sector: 'Others', basePrice: 800, sharesOut: 2 },
+  { symbol: 'NRIC', name: 'Nepal Reinsurance Company Limited', sector: 'Others', basePrice: 800, sharesOut: 134.22 },
   { symbol: 'NRM', name: 'Nepal Republic Media Limited', sector: 'Others', basePrice: 285.2, sharesOut: 2 },
   { symbol: 'NRN', name: 'NRN Infrastructure and Development Limited', sector: 'Investment', basePrice: 1391, sharesOut: 122.8 },
   { symbol: 'NSIF2', name: 'NMB Sulav Investment Fund - 2', sector: 'Mutual Fund', basePrice: 9.9, sharesOut: 2.1 },

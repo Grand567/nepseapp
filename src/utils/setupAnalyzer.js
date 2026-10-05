@@ -49,7 +49,7 @@
  *   - runBacktest, quantMultiFactorStrategy  from utils/backtest
  */
 
-import { calculateRSI } from './indicators.js';
+import { calculateRSI, calculateEMA } from './indicators.js';
 import { runBacktest, quantMultiFactorStrategy } from './backtest.js';
 import {
   calculateATR,
@@ -1231,19 +1231,29 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const rawLevels = calculateMultiHorizonTargets(ltp, high52w, low52w, atr, pChange);
   const holdDays  = options.maxHoldDays ?? 20;
 
-  const high20 = closes.length >= 20 ? Math.max(...adjustedCandles.slice(-21, -1).map((c) => Number(c.high || c.close || 0))) : ltp * 1.02;
-  const lowBase = closes.length >= 20 ? Math.min(...adjustedCandles.slice(-21, -1).map((c) => Number(c.low || c.close || 0))) : ltp * 0.94;
-  const distToPivotPct = high20 > 0 ? +(((high20 - ltp) / high20) * 100).toFixed(2) : 99;
+  const high20 = closes.length >= 20 ? Math.max(...adjustedCandles.slice(-21, -1).map((c) => {
+    const val = Number(c.high ?? c.close ?? 0);
+    return isFinite(val) && val > 0 ? val : ltp;
+  })) : ltp * 1.02;
+  const lowBase = closes.length >= 20 ? Math.min(...adjustedCandles.slice(-21, -1).map((c) => {
+    const val = Number(c.low ?? c.close ?? 0);
+    return isFinite(val) && val > 0 ? val : ltp;
+  })) : ltp * 0.94;
+  const safeHigh20 = isFinite(high20) && high20 > 0 ? high20 : ltp * 1.02;
+  const distToPivotPct = safeHigh20 > 0 ? +(((safeHigh20 - ltp) / safeHigh20) * 100).toFixed(2) : 99;
   const isCoilingNearPivot = distToPivotPct >= 0.1 && distToPivotPct <= 4.8;
 
   // Harmonized dynamic execution geometry
-  const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
+  const clearanceBuffer = Math.max(safeHigh20 * 0.0035, atr * 0.22);
   // Disciplined swing stop loss: strictly bounded between 3.5% (noise clearance) and 7.5% (max swing risk limit)
   const maxSwingRiskPct = 0.075;
   const minNoiseRiskPct = 0.035;
   const swingFloor = +(ltp * (1 - maxSwingRiskPct)).toFixed(1);
   const swingCeiling = +(ltp * (1 - minNoiseRiskPct)).toFixed(1);
-  const recent5Low = closes.length >= 5 ? Math.min(...adjustedCandles.slice(-6, -1).map((c) => Number(c.low || c.close || 0))) : ltp * 0.95;
+  const recent5Low = closes.length >= 5 ? Math.min(...adjustedCandles.slice(-6, -1).map((c) => {
+    const val = Number(c.low ?? c.close ?? 0);
+    return isFinite(val) && val > 0 ? val : ltp;
+  })) : ltp * 0.95;
   const baseCandidate = recent5Low > 0 && recent5Low < ltp ? recent5Low - atr * 0.25 : ltp - atr * 1.35;
   const structuralStopLoss = +(Math.max(swingFloor, Math.min(swingCeiling, baseCandidate))).toFixed(1);
   const riskPerShare = Math.max(1, ltp - structuralStopLoss);
@@ -1256,37 +1266,71 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
 
   const prevCloseVal = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
   const maxAllowedEntry = prevCloseVal > 0 ? +(prevCloseVal * 1.125).toFixed(1) : +(ltp * 1.125).toFixed(1); // At least 2.5% below +15% upper circuit
-  const rawEntryZoneMax = isCoilingNearPivot ? +(high20 * 1.025).toFixed(1) : (rawLevels.entryZone?.max ?? rawLevels.entryZone?.high);
-  const entryZoneMin = isCoilingNearPivot ? +(high20 * 0.99).toFixed(1) : (rawLevels.entryZone?.min ?? rawLevels.entryZone?.low);
-  const entryZoneMax = Math.min(rawEntryZoneMax, maxAllowedEntry);
+  const rawEntryZoneMax = isCoilingNearPivot ? +(safeHigh20 * 1.025).toFixed(1) : (rawLevels.entryZone?.max ?? rawLevels.entryZone?.high ?? +(ltp * 1.01).toFixed(1));
+  const rawEntryZoneMin = isCoilingNearPivot ? +(safeHigh20 * 0.99).toFixed(1) : (rawLevels.entryZone?.min ?? rawLevels.entryZone?.low ?? +(ltp * 0.985).toFixed(1));
+  const entryZoneMin = isFinite(rawEntryZoneMin) && rawEntryZoneMin > 0 ? rawEntryZoneMin : +(ltp * 0.985).toFixed(1);
+  const entryZoneMax = Math.min(isFinite(rawEntryZoneMax) && rawEntryZoneMax > 0 ? rawEntryZoneMax : +(ltp * 1.01).toFixed(1), maxAllowedEntry);
 
   const stopLossPrice = isCoilingNearPivot ? structuralStopLoss : rawLevels.stopLoss.price;
   const finalRiskPerShare = Math.max(0.5, ltp - stopLossPrice);
   const rrr1 = +((t1Cap.price - ltp) / finalRiskPerShare).toFixed(2);
   const rrr2 = +((t2Cap.price - ltp) / finalRiskPerShare).toFixed(2);
 
-  // Statutory Fee Friction & 10% Final CGT (Finance Act 2083)
+  // Statutory Fee Friction & 7.5% Individual CGT (Finance Act 2083)
   const roundTripFeePct = 0.73; // 0.70% broker commission + 0.03% SEBON fee
   const computeNetRealReturn = (targetPrice) => {
     const grossUpsidePct = ltp > 0 ? ((targetPrice - ltp) / ltp) * 100 : 0;
     const preTaxNetPct = grossUpsidePct - roundTripFeePct;
-    const netReturnPct = preTaxNetPct > 0 ? +(preTaxNetPct * 0.90).toFixed(2) : +(preTaxNetPct).toFixed(2);
+    const netReturnPct = preTaxNetPct > 0 ? +(preTaxNetPct * 0.925).toFixed(2) : +(preTaxNetPct).toFixed(2);
     const netGainPerShare = +(ltp * (netReturnPct / 100)).toFixed(1);
-    return { grossUpsidePct: +grossUpsidePct.toFixed(2), netReturnPct, netGainPerShare, cgtTaxPct: 10 };
+    return { grossUpsidePct: +grossUpsidePct.toFixed(2), netReturnPct, netGainPerShare, cgtTaxPct: 7.5 };
   };
   const t1Net = computeNetRealReturn(t1Cap.price);
   const t2Net = computeNetRealReturn(t2Cap.price);
 
+  // Dynamic Pullback / Dip Entry Calculation:
+  // Calculated around 20-session EMA and recent base low, bounded safely above structural stop loss
+  const ema20Series = closes.length >= 20 ? calculateEMA(closes, 20).filter(v => v != null && isFinite(v)) : [];
+  const ema20Approx = ema20Series.length > 0 ? ema20Series[ema20Series.length - 1] : NaN;
+  const pullbackAnchor = (isFinite(ema20Approx) && ema20Approx > 0 && ema20Approx < ltp) ? ema20Approx : Math.max(structuralStopLoss * 1.015, ltp * 0.98);
+  const pullbackLow = +(Math.max(structuralStopLoss * 1.01, pullbackAnchor * 0.992)).toFixed(1);
+  const pullbackHighRaw = +(Math.min(ltp * 0.998, pullbackAnchor * 1.015)).toFixed(1);
+  const pullbackHigh = pullbackHighRaw > pullbackLow ? pullbackHighRaw : +(pullbackLow * 1.015).toFixed(1);
+
+  // Invariant: chase cap must sit ABOVE the breakout pivot (never an inverted range)
+  const breakoutChaseCap = entryZoneMax > safeHigh20 ? +entryZoneMax.toFixed(1) : +(safeHigh20 * 1.025).toFixed(1);
+
   const levels = {
     ...rawLevels,
-    rrr1,
-    rrr2,
+    rrr1: isFinite(rrr1) ? rrr1 : 1.5,
+    rrr2: isFinite(rrr2) ? rrr2 : 2.5,
+    riskPerShare: isFinite(finalRiskPerShare) ? +finalRiskPerShare.toFixed(1) : Math.max(1, +(ltp - stopLossPrice).toFixed(1)),
+    rewardToTarget1: isFinite(t1Cap.price) ? +Math.max(0.5, t1Cap.price - ltp).toFixed(1) : +(ltp * 0.08).toFixed(1),
+    rewardToTarget2: isFinite(t2Cap.price) ? +Math.max(0.5, t2Cap.price - ltp).toFixed(1) : +(ltp * 0.16).toFixed(1),
     feeFrictionPct: roundTripFeePct,
-    cgtTaxRatePct: 10,
-    breakoutPivot: +high20.toFixed(1),
-    breakoutPrice: +(high20 + clearanceBuffer).toFixed(1),
+    cgtTaxRatePct: 7.5,
+    breakoutPivot: +safeHigh20.toFixed(1),
+    breakoutPrice: +(safeHigh20 + clearanceBuffer).toFixed(1),
     clearanceBuffer: +clearanceBuffer.toFixed(1),
-    chaseCap: +entryZoneMax.toFixed(1),
+    chaseCap: breakoutChaseCap,
+    pullbackZone: {
+      min: pullbackLow,
+      max: pullbackHigh,
+      low: pullbackLow,
+      high: pullbackHigh,
+      label: `Rs. ${pullbackLow} – Rs. ${pullbackHigh}`,
+      supportRef: isFinite(ema20Approx) ? `20-EMA (Rs. ${(+ema20Approx).toFixed(1)}) / Support Base` : 'Recent support base (20-EMA unavailable: <20 sessions)'
+    },
+    breakoutZone: {
+      min: +safeHigh20.toFixed(1),
+      max: breakoutChaseCap,
+      low: +safeHigh20.toFixed(1),
+      high: breakoutChaseCap,
+      trigger: +(safeHigh20 + clearanceBuffer).toFixed(1),
+      label: `Rs. ${(+safeHigh20.toFixed(1))} – Rs. ${breakoutChaseCap}`,
+      pivot: +safeHigh20.toFixed(1),
+      chaseCap: breakoutChaseCap
+    },
     entryZone: {
       min: entryZoneMin,
       max: entryZoneMax,
@@ -1299,6 +1343,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
       pct: +(((ltp - stopLossPrice) / ltp) * 100).toFixed(1),
       label: `Rs. ${stopLossPrice} (-${+(((ltp - stopLossPrice) / ltp) * 100).toFixed(1)}%)`
     },
+
     target1: {
       ...rawLevels.target1,
       price: t1Cap.price,

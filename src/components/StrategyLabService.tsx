@@ -224,7 +224,7 @@ export function StrategyLabService() {
 
         const ohlcvRes = Array.isArray(hist) && hist.length >= 40
           ? runOHLCVBacktest(hist, stratFn, {
-              initialCapital: 100000, stopLossPct: 5, takeProfitPct: 15,
+              initialCapital: 100000, stopLossPct: stopLossPct, takeProfitPct: targetProfitPct,
               slippagePct: 0.15, brokeragePct: 0.36, riskPerTradePct: 2
             })
           : null;
@@ -240,11 +240,11 @@ export function StrategyLabService() {
       setOhlcvResult(null);
     }
     setBacktestLoading(false);
-  }, [stocks]);
+  }, [stocks, stopLossPct, targetProfitPct]);
 
   useEffect(() => {
     executeRealBacktest(targetSymbol, horizonDays, selectedStrategyId);
-  }, [targetSymbol, horizonDays, selectedStrategyId, executeRealBacktest]);
+  }, [targetSymbol, horizonDays, selectedStrategyId, stopLossPct, targetProfitPct, executeRealBacktest]);
 
   // Compute effective telemetry metrics: real empirical backtest if trades exist, else calibrated benchmark
   const effectiveWinRate = useMemo(() => {
@@ -397,15 +397,54 @@ export function StrategyLabService() {
         </div>
       )}
 
-      {displayResult?.dataQuality === 'ohlcv' && (
+      {displayResult && (displayResult.dataQuality === 'ohlcv' || displayResult.dataQuality === 'ohlcv_v3') && (
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] font-mono text-slate-400 mt-2 bg-slate-900/50 p-2.5 rounded-xl border border-slate-800">
           <span>Avg Win: <strong className="text-emerald-400">+{displayResult.avgWinPct}%</strong></span>
           <span>Avg Loss: <strong className="text-rose-400">{displayResult.avgLossPct}%</strong></span>
           <span>Profit Factor: <strong className="text-white">{displayResult.profitFactor}×</strong></span>
-          <span>Total Brokerage: <strong className="text-white">Rs. {displayResult.totalBrokerage.toLocaleString()}</strong></span>
-          <span>Expectancy: <strong className="text-white">Rs. {displayResult.expectancy.toLocaleString()} per trade</strong></span>
+          <span>Broker Fees: <strong className="text-white">Rs. {displayResult.totalBrokerage?.toLocaleString()}</strong></span>
+          {/* F1: Full cost breakdown */}
+          {(displayResult.totalSebonFee ?? 0) > 0 && (
+            <span>SEBON Fees: <strong className="text-amber-400">Rs. {displayResult.totalSebonFee?.toLocaleString()}</strong></span>
+          )}
+          {(displayResult.totalCgt ?? 0) > 0 && (
+            <span>CGT Paid: <strong className="text-amber-400">Rs. {displayResult.totalCgt?.toLocaleString()}</strong></span>
+          )}
+          {(displayResult.totalFees ?? 0) > 0 && (
+            <span>All-In Costs: <strong className="text-rose-400">Rs. {displayResult.totalFees?.toLocaleString()}</strong></span>
+          )}
+          {/* F2: Sharpe Ratio */}
+          {displayResult.sharpeRatio != null && (
+            <span>Sharpe: <strong className={displayResult.sharpeRatio > 1 ? 'text-emerald-400' : displayResult.sharpeRatio > 0 ? 'text-amber-400' : 'text-rose-400'}>
+              {displayResult.sharpeRatio?.toFixed(2)}
+            </strong></span>
+          )}
+          <span>Expectancy: <strong className="text-white">Rs. {displayResult.expectancy?.toLocaleString()} / trade</strong></span>
         </div>
       )}
+
+      {/* F3: Benchmark Comparison */}
+      {displayResult?.benchmark && (
+        <div className="mt-2 p-3 rounded-xl border border-blue-900/50 bg-blue-950/20 text-[11px] font-mono">
+          <div className="text-blue-400 font-bold mb-2">vs {displayResult.benchmark.label}</div>
+          <div className="flex gap-6 flex-wrap">
+            <span className="text-slate-400">B&H Return: <strong className={displayResult.benchmark.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+              {displayResult.benchmark.returnPct >= 0 ? '+' : ''}{displayResult.benchmark.returnPct?.toFixed(1)}%
+            </strong></span>
+            <span className="text-slate-400">Strategy Alpha: <strong className={displayResult.benchmark.alphaVsStrategy >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+              {displayResult.benchmark.alphaVsStrategy >= 0 ? '+' : ''}{displayResult.benchmark.alphaVsStrategy?.toFixed(1)}%
+            </strong></span>
+          </div>
+          <div className="text-slate-600 mt-1">{displayResult.benchmark.note}</div>
+        </div>
+      )}
+
+      {/* F-batch disclaimer */}
+      {displayResult?.disclaimer && (
+        <div className="text-[10px] text-slate-600 mt-2 leading-relaxed">{displayResult.disclaimer}</div>
+      )}
+
+
 
       {/* Simulated Trade Execution Log on Target Stock */}
       {displayResult && displayResult.trades && displayResult.trades.length > 0 && (

@@ -337,16 +337,6 @@ export function StockSearchSelect({
     }
   };
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Map of live stock prices from props if available
   const livePriceMap = useMemo(() => {
     const map: Record<string, { ltp: number; pChange?: number }> = {};
@@ -444,6 +434,24 @@ export function StockSearchSelect({
     return [...exactSym, ...startsWithSym, ...containsSym, ...startsWithName, ...containsName, ...containsSector].slice(0, 35);
   }, [search, allAvailableStocks, stocks]);
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        const q = search.trim().toUpperCase();
+        if (q) {
+          const exact = allAvailableStocks.find(c => c.symbol.toUpperCase() === q);
+          if (exact && exact.symbol !== value) {
+            onChange(exact.symbol);
+          }
+        }
+        setSearch('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [search, allAvailableStocks, value, onChange]);
+
   const displayValue = isOpen
     ? search
     : (selectedCompany ? `${selectedCompany.symbol} — ${selectedCompany.name}` : (value || ''));
@@ -478,24 +486,23 @@ export function StockSearchSelect({
             const val = e.target.value;
             setSearch(val);
             setIsOpen(true);
-            const q = val.trim().toLowerCase();
-            if (q) {
-              const exact = allAvailableStocks.find(c => c.symbol.toLowerCase() === q);
-              if (exact) {
-                onChange(exact.symbol);
-              }
-            }
           }}
           onFocus={(e) => {
+            setSearch(value || '');
             setIsOpen(true);
             e.target.select();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setIsOpen(false);
+              setSearch('');
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              if (filtered.length > 0) {
+              const q = search.trim().toLowerCase();
+              const exact = allAvailableStocks.find(c => c.symbol.toLowerCase() === q);
+              if (exact) {
+                handleSelect(exact.symbol);
+              } else if (filtered.length > 0) {
                 handleSelect(filtered[0].symbol);
               }
             }
@@ -616,6 +623,10 @@ export function StockSearchSelect({
                 return (
                   <div
                     key={stock.symbol}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelect(stock.symbol);
+                    }}
                     onClick={() => handleSelect(stock.symbol)}
                     style={{
                       backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.25)' : '#121826',
@@ -694,7 +705,7 @@ export function TimeframeFilterBar({
   isLive = true,
   onRefresh,
   isRefreshing = false,
-  timeframes = ['1D', '1W', '1M', '3M', '6M', '1Y'],
+  timeframes = ['1D', '1W', '15D', '1M', '3M', '6M', '1Y'],
   title,
 }: {
   timeframe: string;

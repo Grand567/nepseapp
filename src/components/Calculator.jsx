@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { calculateBuyDetails, calculateSellDetails, adjustForBonusShare, adjustForRightShare, adjustSimultaneousBonusAndRight, auditBonusDilution } from '../utils/calculations';
-import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw, AlertTriangle, ShieldCheck, Shield } from 'lucide-react';
+import { calculatePositionSize, calculateStopLossTargets, calculateNetProfit, formatRiskReward } from '../utils/riskManagement';
 
 export default function Calculator() {
   const [activeTab, setActiveTab] = useState('buy');
@@ -39,18 +40,31 @@ export default function Calculator() {
   const [marginMaintenance, setMarginMaintenance] = useState(130);
   const [borrowerType, setBorrowerType] = useState('individual');
 
+  // ── 6. Position Sizing & Risk Management State ──
+  const [riskCapital, setRiskCapital] = useState(300000);
+  const [riskPercent, setRiskPercent] = useState(2);
+  const [riskEntryPrice, setRiskEntryPrice] = useState(480);
+  const [riskStopLoss, setRiskStopLoss] = useState(455);
+  const [riskTargetPrice, setRiskTargetPrice] = useState(530);
+  const [riskInvestorType, setRiskInvestorType] = useState('individual');
+
   // Update Buy/Sell calculations
   useEffect(() => {
-    if (buyQty > 0 && buyPrice > 0) {
-      setBuyResult(calculateBuyDetails(buyQty, buyPrice));
+    const q = Number(buyQty) || 0;
+    const p = Number(buyPrice) || 0;
+    if (q > 0 && p > 0) {
+      setBuyResult(calculateBuyDetails(q, p));
     } else {
       setBuyResult(null);
     }
   }, [buyQty, buyPrice]);
 
   useEffect(() => {
-    if (sellQty > 0 && sellPrice > 0 && buyWacc > 0) {
-      setSellResult(calculateSellDetails(sellQty, sellPrice, buyWacc, holdingType));
+    const q = Number(sellQty) || 0;
+    const p = Number(sellPrice) || 0;
+    const w = Number(buyWacc) || 0;
+    if (q > 0 && p > 0 && w > 0) {
+      setSellResult(calculateSellDetails(q, p, w, holdingType));
     } else {
       setSellResult(null);
     }
@@ -196,9 +210,42 @@ export default function Calculator() {
     };
   }, [marginUnits, marginLtp, marginAvg180, marginLtv, marginRate, marginMaintenance, borrowerType]);
 
+  // ── Position Sizing & Risk Management Calculations ──
+  const positionSizeResult = useMemo(() => {
+    return calculatePositionSize({
+      capital: Number(riskCapital) || 0,
+      riskPct: Number(riskPercent) || 2,
+      entryPrice: Number(riskEntryPrice) || 0,
+      stopLossPrice: Number(riskStopLoss) || 0
+    });
+  }, [riskCapital, riskPercent, riskEntryPrice, riskStopLoss]);
+
+  const riskNetProfitResult = useMemo(() => {
+    const shares = positionSizeResult?.shares || 0;
+    const entry = Number(riskEntryPrice) || 0;
+    const target = Number(riskTargetPrice) || 0;
+    if (shares <= 0 || entry <= 0 || target <= entry) return null;
+    return calculateNetProfit({
+      shares,
+      buyPrice: entry,
+      sellPrice: target,
+      investorType: riskInvestorType
+    });
+  }, [positionSizeResult, riskEntryPrice, riskTargetPrice, riskInvestorType]);
+
+  const riskRewardResult = useMemo(() => {
+    const entry = Number(riskEntryPrice) || 0;
+    const stop = Number(riskStopLoss) || 0;
+    const target = Number(riskTargetPrice) || 0;
+    if (entry <= 0 || stop <= 0 || target <= entry || stop >= entry) return null;
+    const r = entry - stop;
+    const w = target - entry;
+    return formatRiskReward(w / r);
+  }, [riskEntryPrice, riskStopLoss, riskTargetPrice]);
+
   return (
     <div style={{ padding: '16px 14px 20px', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
-      {/* 6-Tab Selector (Dashboard Pill Chips) */}
+      {/* 7-Tab Selector (Dashboard Pill Chips) */}
       <div style={{
         display: 'flex',
         gap: 6,
@@ -214,7 +261,8 @@ export default function Calculator() {
           { id: 'breakeven', label: 'Break-Even', icon: '🎯', color: '#f59e0b' },
           { id: 'adjustment', label: 'Bonus / Right', icon: '🎁', color: '#ec4899' },
           { id: 'sip', label: 'SIP Growth', icon: '📈', color: '#06b6d4' },
-          { id: 'margin_loan', label: 'Margin Loan (NRB)', icon: '🏛️', color: '#8b5cf6' }
+          { id: 'margin_loan', label: 'Margin Loan (NRB)', icon: '🏛️', color: '#8b5cf6' },
+          { id: 'risk_pos', label: 'Position Sizing & Risk', icon: '🛡️', color: '#10b981' }
         ].map(t => {
           const isActive = activeTab === t.id;
           return (
@@ -258,7 +306,7 @@ export default function Calculator() {
               <input
                 type="number"
                 value={buyQty}
-                onChange={(e) => setBuyQty(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(e) => setBuyQty(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
                 className="input"
                 placeholder="Enter quantity"
               />
@@ -269,7 +317,7 @@ export default function Calculator() {
               <input
                 type="number"
                 value={buyPrice}
-                onChange={(e) => setBuyPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                onChange={(e) => setBuyPrice(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
                 className="input"
                 placeholder="Enter price per share"
               />
@@ -342,7 +390,7 @@ export default function Calculator() {
                 <input
                   type="number"
                   value={sellQty}
-                  onChange={(e) => setSellQty(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => setSellQty(e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0))}
                   className="input"
                 />
               </div>
@@ -351,7 +399,7 @@ export default function Calculator() {
                 <input
                   type="number"
                   value={sellPrice}
-                  onChange={(e) => setSellPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                  onChange={(e) => setSellPrice(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
                   className="input"
                 />
               </div>
@@ -362,7 +410,7 @@ export default function Calculator() {
               <input
                 type="number"
                 value={buyWacc}
-                onChange={(e) => setBuyWacc(Math.max(0, parseFloat(e.target.value) || 0))}
+                onChange={(e) => setBuyWacc(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
                 className="input"
               />
             </div>
@@ -919,6 +967,347 @@ export default function Calculator() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── 7. Position Sizing & Risk Management Tab ── */}
+      {activeTab === 'risk_pos' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.05) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: 14,
+            padding: '12px 14px',
+            fontSize: 12.5,
+            color: '#a7f3d0',
+            lineHeight: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10
+          }}>
+            <Shield className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <strong style={{ color: '#ffffff' }}>SEBON & NRB Quantitative Risk Model:</strong> Calculates mathematically optimal trade size rounded to 10-share lots, circuit threshold guards, and net return factoring all statutory transaction fees and CGT.
+            </div>
+          </div>
+
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 16,
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  Total Capital (Rs.)
+                </label>
+                <input
+                  type="number"
+                  value={riskCapital}
+                  onChange={(e) => setRiskCapital(Math.max(1000, Number(e.target.value)))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'var(--background)',
+                    color: 'var(--text)',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  Risk Per Trade ({riskPercent}%)
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="10"
+                  value={riskPercent}
+                  onChange={(e) => setRiskPercent(Math.max(0.1, Math.min(10, Number(e.target.value))))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'var(--background)',
+                    color: 'var(--text)',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  Planned Entry (Rs.)
+                </label>
+                <input
+                  type="number"
+                  value={riskEntryPrice}
+                  onChange={(e) => setRiskEntryPrice(Math.max(1, Number(e.target.value)))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'var(--background)',
+                    color: 'var(--text)',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#f87171', display: 'block', marginBottom: 4 }}>
+                  Stop-Loss Price (Rs.)
+                </label>
+                <input
+                  type="number"
+                  value={riskStopLoss}
+                  onChange={(e) => setRiskStopLoss(Math.max(1, Number(e.target.value)))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(248, 113, 113, 0.4)',
+                    background: 'var(--background)',
+                    color: '#f87171',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#34d399', display: 'block', marginBottom: 4 }}>
+                  Target Price (Rs.)
+                </label>
+                <input
+                  type="number"
+                  value={riskTargetPrice}
+                  onChange={(e) => setRiskTargetPrice(Math.max(1, Number(e.target.value)))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(52, 211, 153, 0.4)',
+                    background: 'var(--background)',
+                    color: '#34d399',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  Investor / Tax Type
+                </label>
+                <select
+                  value={riskInvestorType}
+                  onChange={(e) => setRiskInvestorType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'var(--background)',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    fontWeight: 600
+                  }}
+                >
+                  <option value="individual">Individual (7.5% Short-Term)</option>
+                  <option value="institutional">Institutional (10% CGT)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Quick Sizing & Warnings Result */}
+            {positionSizeResult?.error ? (
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#fca5a5',
+                fontSize: 12.5
+              }}>
+                ⚠️ {positionSizeResult.error}
+              </div>
+            ) : positionSizeResult && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 10,
+                  marginTop: 4
+                }}>
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: 12,
+                    padding: 12,
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: 10.5, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Recommended Lots
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                      {positionSizeResult.shares} <span style={{ fontSize: 12, fontWeight: 600 }}>units</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      Rounded to 10-share lots
+                    </div>
+                  </div>
+
+                  <div style={{
+                    background: 'rgba(56, 189, 248, 0.08)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    borderRadius: 12,
+                    padding: 12,
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: 10.5, color: '#bae6fd', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Trade Capital
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                      {formatRs(positionSizeResult.capitalRequired)}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      {((positionSizeResult.capitalRequired / riskCapital) * 100).toFixed(1)}% of Capital
+                    </div>
+                  </div>
+
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: 12,
+                    padding: 12,
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Max Loss (Risk)
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                      {formatRs(positionSizeResult.actualRiskRs)}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      {positionSizeResult.actualRiskPct.toFixed(2)}% of Portfolio
+                    </div>
+                  </div>
+
+                  {riskRewardResult && (
+                    <div style={{
+                      background: 'rgba(245, 158, 11, 0.08)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      borderRadius: 12,
+                      padding: 12,
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ fontSize: 10.5, color: '#fde68a', fontWeight: 800, textTransform: 'uppercase' }}>
+                        Risk / Reward
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: riskRewardResult.color, fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
+                        {riskRewardResult.label}
+                      </div>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: riskRewardResult.color, textTransform: 'capitalize' }}>
+                        {riskRewardResult.quality}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Safety Alerts */}
+                {positionSizeResult.stopWarning && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    fontSize: 12,
+                    color: '#fca5a5'
+                  }}>
+                    {positionSizeResult.stopWarning}
+                  </div>
+                )}
+
+                {positionSizeResult.concentrationWarning && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    fontSize: 12,
+                    color: '#fde68a'
+                  }}>
+                    {positionSizeResult.concentrationWarning}
+                  </div>
+                )}
+
+                {riskRewardResult?.note && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    fontSize: 12,
+                    color: '#fde68a'
+                  }}>
+                    ⚠️ {riskRewardResult.note}
+                  </div>
+                )}
+
+                {/* Net Target P&L Breakdown */}
+                {riskNetProfitResult && (
+                  <div style={{
+                    background: 'rgba(0,0,0,0.2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 12,
+                    padding: 14,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    fontSize: 12.5
+                  }}>
+                    <div style={{ fontWeight: 800, color: '#38bdf8', marginBottom: 2 }}>
+                      Net Proceeds Breakdown at Target (Rs. {riskTargetPrice})
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Net Profit after All Fees & CGT:</span>
+                      <span style={{ fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
+                        +{formatRs(riskNetProfitResult.netProfitLoss)} (+{riskNetProfitResult.roi}%)
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Statutory Breakeven Price:</span>
+                      <span style={{ fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
+                        Rs. {riskNetProfitResult.breakEvenPrice.toFixed(2)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Total Transaction Fees (Broker + SEBON + DP):</span>
+                      <span style={{ fontWeight: 600 }}>{formatRs(riskNetProfitResult.totalCosts - riskNetProfitResult.cgt)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Estimated CGT ({riskNetProfitResult.cgtRate}):</span>
+                      <span style={{ fontWeight: 600, color: '#f87171' }}>{formatRs(riskNetProfitResult.cgt)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

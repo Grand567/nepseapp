@@ -44,6 +44,7 @@ export function Master100ProfitWorkstation({
   const [copySuccess, setCopySuccess] = useState(false);
   const [watchlistSuccess, setWatchlistSuccess] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState<'blueprint' | 'matrix' | 'leaderboard' | 'exits' | 'simulator'>('blueprint');
+  const [leaderboardTrackFilter, setLeaderboardTrackFilter] = useState<'all' | 'growth' | 'bluechip' | 'bounce'>('all');
 
   // Run full master quantitative audit across universe
   const auditReport: MasterAuditReport = useMemo(() => {
@@ -61,19 +62,31 @@ export function Master100ProfitWorkstation({
     return auditReport.crownedWinner;
   }, [selectedStockSymbol, auditReport, stocks]);
 
-  // Derived Position Sizing for inspected stock
+  // Derived Position Sizing for inspected stock with 5% ADV Liquidity Absorption Cap
   const sizing = useMemo(() => {
     if (!inspectedStock) return null;
-    const maxRiskCapital = portfolioCapital * (riskTolerancePct / 100);
-    const riskPerShare = Math.max(0.5, inspectedStock.ltp - inspectedStock.stopLoss);
-    const allowedShares = Math.max(10, Math.floor(maxRiskCapital / riskPerShare));
-    const capitalOutlay = allowedShares * inspectedStock.ltp;
-    const allocationPct = +((capitalOutlay / portfolioCapital) * 100).toFixed(1);
-    const netDetails = calculateNetTradeGain(inspectedStock.ltp, inspectedStock.target1Gross, allowedShares);
+    const ltp = Number(inspectedStock.ltp) || 100;
+    const stopLoss = Number(inspectedStock.stopLoss) || Number((ltp * 0.95).toFixed(1));
+    const target1Gross = Number(inspectedStock.target1Gross) || Number((ltp * 1.08).toFixed(1));
+    const safeCapital = Math.max(10000, Number(portfolioCapital) || 1000000);
+    const safeRiskPct = Math.max(0.5, Number(riskTolerancePct) || 2.0);
+    const maxRiskCapital = safeCapital * (safeRiskPct / 100);
+    const riskPerShare = Math.max(1.0, +(ltp - stopLoss).toFixed(2));
+    const unconstrainedShares = Math.max(10, Math.floor(maxRiskCapital / riskPerShare));
+    const adv20 = Number(inspectedStock.adv20 || inspectedStock.volume || 15000);
+    const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
+    const isLiquidityCapped = unconstrainedShares > maxLiquidityShares;
+    const allowedShares = isLiquidityCapped ? maxLiquidityShares : unconstrainedShares;
+    const capitalOutlay = allowedShares * ltp;
+    const allocationPct = +((capitalOutlay / safeCapital) * 100).toFixed(1);
+    const netDetails = calculateNetTradeGain(ltp, target1Gross, allowedShares);
 
     return {
       maxRiskCapital,
       riskPerShare,
+      unconstrainedShares,
+      maxLiquidityShares,
+      isLiquidityCapped,
       allowedShares,
       capitalOutlay,
       allocationPct,
@@ -83,7 +96,10 @@ export function Master100ProfitWorkstation({
 
   const handleCopyTms = () => {
     if (!inspectedStock || !sizing) return;
-    const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 10% CGT)`;
+    const capNote = sizing.isLiquidityCapped ? ` [Capped to 5% Daily Vol: ${sizing.maxLiquidityShares} units]` : '';
+    const trackNote = inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum';
+    const setupNote = inspectedStock.setupArchetype === 'SUPPORT_BOUNCE' ? '🔄 Support Bounce' : inspectedStock.setupArchetype;
+    const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nTrack: ${trackNote} | Setup: ${setupNote}\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 7.5% CGT)`;
 
     navigator.clipboard.writeText(text).then(() => {
       setCopySuccess(true);
@@ -399,10 +415,63 @@ export function Master100ProfitWorkstation({
                       }}>
                         {inspectedStock.sector}
                       </span>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '4px 10px',
+                        borderRadius: 8,
+                        background: inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                        color: inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '#38bdf8' : '#c084fc',
+                        border: inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(168, 85, 247, 0.4)'
+                      }}>
+                        {inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ BLUE-CHIP' : '🚀 GROWTH'}
+                      </span>
+                      {inspectedStock.isBounceBack && (
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          background: 'rgba(234, 179, 8, 0.2)',
+                          color: '#facc15',
+                          border: '1px solid rgba(234, 179, 8, 0.45)'
+                        }}>
+                          🔄 SUPPORT BOUNCE
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '4px 10px',
+                        borderRadius: 8,
+                        background: inspectedStock.isBrokerVerified ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                        color: inspectedStock.isBrokerVerified ? '#34d399' : '#fbbf24',
+                        border: inspectedStock.isBrokerVerified ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)'
+                      }}>
+                        {inspectedStock.isBrokerVerified ? '🟢 Verified Flow' : '🟡 Est. Flow'}
+                      </span>
                     </div>
                     <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
                       {inspectedStock.name} &bull; Public Float: <b style={{ color: '#fff' }}>{inspectedStock.publicFloatM}M</b> sh &bull; Promoter: <b style={{ color: '#fff' }}>{inspectedStock.promoterHolding}%</b>
                     </div>
+                    {inspectedStock.isPromoterLockinNear && (
+                      <div style={{
+                        marginTop: 8,
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        color: '#fca5a5',
+                        fontSize: 12,
+                        fontWeight: 700
+                      }}>
+                        <AlertTriangle style={{ width: 15, height: 15, color: '#f87171', flexShrink: 0 }} />
+                        <span>⚠️ 3-Year Promoter Share Lockup Expiry in <b>{inspectedStock.daysToLockin} days</b>! High supply dump hazard.</span>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -564,7 +633,7 @@ export function Master100ProfitWorkstation({
                       Rs. {inspectedStock.target1Gross}
                     </div>
                     <div style={{ fontSize: 10, color: '#34d399', marginTop: 2 }}>
-                      +{inspectedStock.target1NetPct}% Net (after 10% CGT)
+                      +{inspectedStock.target1NetPct}% Net (after 7.5% CGT)
                     </div>
                   </div>
 
@@ -631,7 +700,7 @@ export function Master100ProfitWorkstation({
                       </h3>
                     </div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                      Tiered Broker Fees + SEBON 0.015% + 10% CGT Included
+                      Tiered Broker Fees + SEBON 0.015% + 7.5% CGT Included
                     </div>
                   </div>
 
@@ -815,108 +884,194 @@ export function Master100ProfitWorkstation({
       {/* ── VIEW 3: 8-GATE SCREENER LEADERBOARD ── */}
       {activeViewTab === 'leaderboard' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>
-            Showing top-ranked scrips evaluated across the 8 institutional gates:
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
+              Showing top-ranked scrips evaluated across the 8 institutional gates:
+            </div>
+            {/* Screener Track Filters */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { id: 'all', label: '⭐ All Setups' },
+                { id: 'growth', label: '🚀 Growth (<15M)' },
+                { id: 'bluechip', label: '🏛️ Blue-Chip' },
+                { id: 'bounce', label: '🔄 Bounce-Back' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setLeaderboardTrackFilter(f.id as any)}
+                  style={{
+                    background: leaderboardTrackFilter === f.id ? '#10b981' : 'rgba(255,255,255,0.06)',
+                    color: leaderboardTrackFilter === f.id ? '#0f172a' : '#cbd5e1',
+                    border: '1px solid ' + (leaderboardTrackFilter === f.id ? '#10b981' : 'rgba(255,255,255,0.1)'),
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div style={{
-            overflowX: 'auto',
-            borderRadius: 14,
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: 'rgba(15, 23, 42, 0.6)'
-          }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'left' }}>
-              <thead>
-                <tr style={{ background: 'rgba(0,0,0,0.4)', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                  <th style={{ padding: '10px 14px' }}>Symbol</th>
-                  <th style={{ padding: '10px' }}>LTP</th>
-                  <th style={{ padding: '10px' }}>Float</th>
-                  <th style={{ padding: '10px' }}>P/E</th>
-                  <th style={{ padding: '10px' }}>RVOL</th>
-                  <th style={{ padding: '10px' }}>BCR3</th>
-                  <th style={{ padding: '10px' }}>Gates</th>
-                  <th style={{ padding: '10px' }}>Setup Score</th>
-                  <th style={{ padding: '10px 14px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[inspectedStock, ...auditReport.runnerUps].filter(Boolean).map((s: any, idx) => (
-                  <tr
-                    key={s.symbol + idx}
-                    style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      background: selectedStockSymbol === s.symbol ? 'rgba(16, 185, 129, 0.1)' : 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '10px 14px', fontWeight: 800, color: '#fff' }}>
-                      {s.symbol}
-                      <span style={{ display: 'block', fontSize: 9, color: '#94a3b8' }}>{s.sector}</span>
-                    </td>
-                    <td style={{ padding: '10px', color: '#fff' }}>Rs. {s.ltp}</td>
-                    <td style={{ padding: '10px', color: s.publicFloatM <= 15 ? '#34d399' : '#f87171' }}>{s.publicFloatM}M</td>
-                    <td style={{ padding: '10px', color: '#cbd5e1' }}>{s.pe > 0 ? `${s.pe}x` : '—'}</td>
-                    <td style={{ padding: '10px', color: s.rvol >= 1.4 ? '#34d399' : '#cbd5e1' }}>{s.rvol}x</td>
-                    <td style={{ padding: '10px', color: s.bcr3 >= 40 ? '#38bdf8' : '#cbd5e1', fontWeight: 700 }}>{s.bcr3}%</td>
-                    <td style={{ padding: '10px' }}>
-                      <span style={{
-                        padding: '2px 6px',
-                        borderRadius: 6,
-                        background: s.gatesPassedCount >= 6 ? '#10b98125' : 'rgba(255,255,255,0.06)',
-                        color: s.gatesPassedCount >= 6 ? '#34d399' : '#cbd5e1',
-                        fontWeight: 800
-                      }}>
-                        {s.gatesPassedCount} / 8
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px', fontWeight: 800, color: s.setupScore >= 70 ? '#34d399' : '#f59e0b' }}>
-                      {s.setupScore}
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button
-                          onClick={() => {
-                            setSelectedStockSymbol(s.symbol);
-                            setActiveViewTab('blueprint');
-                          }}
+          {(() => {
+            const rawCandidates = [inspectedStock, ...auditReport.runnerUps]
+              .filter(Boolean)
+              .filter((s: any, idx, arr) => arr.findIndex((x: any) => x?.symbol === s?.symbol) === idx);
+
+            const filteredCandidates = rawCandidates.filter((s: any) => {
+              if (leaderboardTrackFilter === 'growth') return s.track === 'MOMENTUM_RUNNER' || s.publicFloatM <= 15;
+              if (leaderboardTrackFilter === 'bluechip') return s.track === 'BLUE_CHIP_COMPOUNDER' || s.publicFloatM > 15;
+              if (leaderboardTrackFilter === 'bounce') return s.isBounceBack || s.setupArchetype === 'SUPPORT_BOUNCE';
+              return true;
+            });
+
+            return (
+              <div style={{
+                overflowX: 'auto',
+                borderRadius: 14,
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(15, 23, 42, 0.6)'
+              }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(0,0,0,0.4)', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                      <th style={{ padding: '10px 14px' }}>Symbol</th>
+                      <th style={{ padding: '10px' }}>Setup / Track</th>
+                      <th style={{ padding: '10px' }}>LTP</th>
+                      <th style={{ padding: '10px' }}>Float</th>
+                      <th style={{ padding: '10px' }}>P/E</th>
+                      <th style={{ padding: '10px' }}>RVOL</th>
+                      <th style={{ padding: '10px' }}>BCR3</th>
+                      <th style={{ padding: '10px' }}>Gates</th>
+                      <th style={{ padding: '10px' }}>Setup Score</th>
+                      <th style={{ padding: '10px 14px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCandidates.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
+                          No setups found matching the "{leaderboardTrackFilter}" filter.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCandidates.map((s: any, idx) => (
+                        <tr
+                          key={s.symbol + idx}
                           style={{
-                            background: 'rgba(56, 189, 248, 0.15)',
-                            border: '1px solid rgba(56, 189, 248, 0.40)',
-                            borderRadius: 6,
-                            padding: '4px 8px',
-                            color: '#38bdf8',
-                            fontSize: 10,
-                            fontWeight: 700,
-                            cursor: 'pointer'
+                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                            background: selectedStockSymbol === s.symbol ? 'rgba(16, 185, 129, 0.1)' : 'transparent'
                           }}
                         >
-                          Inspect
-                        </button>
-                        {onSelectStock && (
-                          <button
-                            onClick={() => {
-                              const rawStock = stocks.find(st => String(st?.symbol || st?.scrip).toUpperCase() === s.symbol);
-                              onSelectStock(rawStock || { symbol: s.symbol, scrip: s.symbol, ltp: s.ltp, name: s.name });
-                            }}
-                            title="View Technical Chart"
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.06)',
-                              border: '1px solid rgba(255, 255, 255, 0.10)',
+                          <td style={{ padding: '10px 14px', fontWeight: 800, color: '#fff' }}>
+                            {s.symbol}
+                            <span style={{ display: 'block', fontSize: 9, color: '#94a3b8' }}>{s.sector}</span>
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span style={{
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                fontSize: 9,
+                                fontWeight: 800,
+                                width: 'fit-content',
+                                background: s.track === 'BLUE_CHIP_COMPOUNDER' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                                color: s.track === 'BLUE_CHIP_COMPOUNDER' ? '#38bdf8' : '#c084fc'
+                              }}>
+                                {s.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Blue-Chip' : '🚀 Growth'}
+                              </span>
+                              {s.isBounceBack && (
+                                <span style={{
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  fontSize: 9,
+                                  fontWeight: 800,
+                                  width: 'fit-content',
+                                  background: 'rgba(234, 179, 8, 0.15)',
+                                  color: '#facc15'
+                                }}>
+                                  🔄 Bounce
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px', color: '#fff' }}>Rs. {s.ltp}</td>
+                          <td style={{ padding: '10px', color: s.publicFloatM <= 15 ? '#34d399' : (s.track === 'BLUE_CHIP_COMPOUNDER' ? '#38bdf8' : '#f87171') }}>
+                            {s.publicFloatM}M
+                          </td>
+                          <td style={{ padding: '10px', color: '#cbd5e1' }}>{s.pe > 0 ? `${s.pe}x` : '—'}</td>
+                          <td style={{ padding: '10px', color: s.rvol >= 1.4 ? '#34d399' : '#cbd5e1' }}>{s.rvol}x</td>
+                          <td style={{ padding: '10px', color: s.bcr3 >= 40 ? '#38bdf8' : '#cbd5e1', fontWeight: 700 }}>
+                            {s.bcr3}%
+                            {s.isBrokerVerified && <span style={{ fontSize: 8, color: '#34d399', display: 'block' }}>Verified</span>}
+                          </td>
+                          <td style={{ padding: '10px' }}>
+                            <span style={{
+                              padding: '2px 6px',
                               borderRadius: 6,
-                              padding: '4px 6px',
-                              color: '#cbd5e1',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <BarChart3 style={{ width: 12, height: 12 }} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                              background: s.gatesPassedCount >= 6 ? '#10b98125' : 'rgba(255,255,255,0.06)',
+                              color: s.gatesPassedCount >= 6 ? '#34d399' : '#cbd5e1',
+                              fontWeight: 800
+                            }}>
+                              {s.gatesPassedCount} / 8
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px', fontWeight: 800, color: s.setupScore >= 70 ? '#34d399' : '#f59e0b' }}>
+                            {s.setupScore}
+                          </td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                onClick={() => {
+                                  setSelectedStockSymbol(s.symbol);
+                                  setActiveViewTab('blueprint');
+                                }}
+                                style={{
+                                  background: 'rgba(56, 189, 248, 0.15)',
+                                  border: '1px solid rgba(56, 189, 248, 0.40)',
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  color: '#38bdf8',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Inspect
+                              </button>
+                              {onSelectStock && (
+                                <button
+                                  onClick={() => {
+                                    const rawStock = stocks.find(st => String(st?.symbol || st?.scrip).toUpperCase() === s.symbol);
+                                    onSelectStock(rawStock || { symbol: s.symbol, scrip: s.symbol, ltp: s.ltp, name: s.name });
+                                  }}
+                                  title="View Technical Chart"
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    border: '1px solid rgba(255, 255, 255, 0.10)',
+                                    borderRadius: 6,
+                                    padding: '4px 6px',
+                                    color: '#cbd5e1',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <BarChart3 style={{ width: 12, height: 12 }} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1121,8 +1276,23 @@ export function Master100ProfitWorkstation({
             borderRadius: 10,
             lineHeight: 1.6
           }}>
-            <b>Mathematical Expectancy:</b> E = (0.65 &times; Rs. 45,000) &minus; (0.35 &times; Rs. 24,000) = <b>+Rs. 20,850 per trade</b>.<br />
-            Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately <b>Rs. 6,69,450 net profit on Rs. 5,00,000 capital (+133.9%)</b> in 6 to 10 months.
+            <b>Mathematical Expectancy:</b>{' '}
+            {auditReport.crownedWinner ? (
+              <>
+                E = ({(auditReport.compoundSimulation.winRate / 100).toFixed(2)} &times; Rs.&nbsp;
+                {Math.round((auditReport.crownedWinner.target1Gross - auditReport.crownedWinner.ltp) * auditReport.crownedWinner.kellyShares).toLocaleString()}) &minus;{' '}
+                ({((100 - auditReport.compoundSimulation.winRate) / 100).toFixed(2)} &times; Rs.&nbsp;
+                {Math.round((auditReport.crownedWinner.ltp - auditReport.crownedWinner.stopLoss) * auditReport.crownedWinner.kellyShares).toLocaleString()}) = <b>derived from {auditReport.crownedWinner.symbol} trade levels</b>.
+              </>
+            ) : (
+              <>E = (0.65 &times; Rs. 45,000) &minus; (0.35 &times; Rs. 24,000) = <b>+Rs. 20,850 per trade</b>.</>
+            )}
+            <br />
+            Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately{' '}
+            <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. 5,00,000 capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
+            <span style={{ color: '#f59e0b', fontSize: 10 }}>
+              ⚠️ Win rate is a composite scoring estimate, not a verified historical backtest. Use EntryExitAnalyzer for symbol-specific backtested rates before committing capital.
+            </span>
           </div>
         </div>
       )}

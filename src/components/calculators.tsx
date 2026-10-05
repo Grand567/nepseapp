@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { InfoBanner, StatCard, StockSearchSelect } from './ui';
+import { getCachedStockFundamentals, fetchStockFundamentals } from '../utils/liveData';
+import { getSectorBenchmark } from '../utils/fundamentals';
 
 const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base sm:text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 box-border';
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
@@ -12,52 +14,42 @@ export function GrahamValuation({
   initialSymbol?: string;
 } = {}) {
   const [modelType, setModelType] = useState<'classical' | 'interest_adjusted'>('classical');
-  const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
+  const [selectedSym, setSelectedSym] = useState(
+    initialSymbol ||
+    (typeof window !== 'undefined' ? localStorage.getItem('selected_entry_exit_symbol') || '' : '')
+  );
   const [form, setForm] = useState({ eps: '', bvps: '', price: '', growthRate: '7.0', fdRate: '7.5' });
   const [result, setResult] = useState<any>(null);
   const [validationError, setValidationError] = useState('');
+  const [isLoadingFund, setIsLoadingFund] = useState(false);
 
-  const handleStockSelect = (sym: string) => {
-    setSelectedSym(sym);
-    if (!sym) return;
-    const found = stocks.find((s: any) => s.symbol?.toUpperCase() === sym.toUpperCase());
-    if (found) {
-      const epsVal = found.eps ? String(found.eps) : '';
-      const bvpsVal = found.bvps || found.bookValue ? String(found.bvps || found.bookValue) : '';
-      const priceVal = found.ltp || found.closePrice ? String(found.ltp || found.closePrice) : '';
-      setForm((prev) => ({
-        ...prev,
-        eps: epsVal || prev.eps,
-        bvps: bvpsVal || prev.bvps,
-        price: priceVal || prev.price,
-      }));
-      setValidationError('');
-    }
-  };
+  const runCalc = (f: { eps: string; bvps: string; price: string; growthRate: string; fdRate: string }, mType: 'classical' | 'interest_adjusted') => {
+    const eps = parseFloat(f.eps);
+    const price = parseFloat(f.price) || 0;
+    const bvps = parseFloat(f.bvps) || 100;
 
-  useEffect(() => {
-    if (initialSymbol) {
-      handleStockSelect(initialSymbol);
-    } else if (stocks.length > 0 && !selectedSym) {
-      handleStockSelect(stocks[0]?.symbol || 'NABIL');
-    }
-  }, [initialSymbol, stocks]);
-
-  const calc = () => {
-    const eps = parseFloat(form.eps);
-    const price = parseFloat(form.price) || 0;
-    if (!eps || eps <= 0) {
-      setValidationError('Please enter a positive EPS. Benjamin Graham valuation requires profitable operations.');
-      return;
-    }
-
-    if (modelType === 'classical') {
-      const bvps = parseFloat(form.bvps);
+    if (mType === 'classical') {
       if (!bvps || bvps <= 0) {
         setValidationError('Please enter a positive BVPS (Book Value Per Share) for classical Graham valuation.');
         return;
       }
       setValidationError('');
+      if (eps <= 0) {
+        // Graham Liquidation Parity Floor for loss-making
+        const intrinsic = +(bvps * 0.67).toFixed(2);
+        const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
+        setResult({
+          model: 'classical',
+          isLossMaking: true,
+          intrinsic,
+          price,
+          mos,
+          verdict: { text: 'LOSS-MAKING — Tangible Asset Floor Applied (2/3 BVPS)', color: '#fbbf24' },
+          maxBuy20: intrinsic * 0.80,
+          maxBuy30: intrinsic * 0.70
+        });
+        return;
+      }
       const intrinsic = Math.sqrt(22.5 * eps * bvps);
       const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
       const verdict = mos > 20 ? { text: 'UNDERVALUED — Strong Margin of Safety', color: '#10b981' }
@@ -65,10 +57,28 @@ export function GrahamValuation({
         : { text: 'FAIRLY VALUED — Hold', color: '#f59e0b' };
       setResult({ model: 'classical', intrinsic, price, mos, verdict, maxBuy20: intrinsic * 0.80, maxBuy30: intrinsic * 0.70 });
     } else {
-      const g = Math.max(0, Math.min(25, parseFloat(form.growthRate) || 7.0));
-      const y = Math.max(2.0, parseFloat(form.fdRate) || 7.5);
+      const g = Math.max(0, Math.min(25, parseFloat(f.growthRate) || 7.0));
+      const y = Math.max(2.0, parseFloat(f.fdRate) || 7.5);
       setValidationError('');
-      // V = (EPS * (8.5 + 2g) * 4.4) / Y
+      if (eps <= 0) {
+        const intrinsic = +(bvps * 0.67).toFixed(2);
+        const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
+        setResult({
+          model: 'interest_adjusted',
+          isLossMaking: true,
+          intrinsic,
+          price,
+          mos,
+          verdict: { text: 'NEGATIVE EARNINGS — Fixed Deposit Yield Favored', color: '#F43F5E' },
+          maxBuy20: intrinsic * 0.80,
+          maxBuy30: intrinsic * 0.70,
+          equityYield: 0,
+          erp: -y,
+          y,
+          g
+        });
+        return;
+      }
       const growthFactor = 8.5 + (2 * g);
       const intrinsic = (eps * growthFactor * 4.4) / y;
       const mos = price > 0 ? ((intrinsic - price) / intrinsic) * 100 : 0;
@@ -91,6 +101,67 @@ export function GrahamValuation({
         g
       });
     }
+  };
+
+  const handleStockSelect = async (sym: string) => {
+    const cleanSym = String(sym || '').toUpperCase().trim();
+    setSelectedSym(cleanSym);
+    if (!cleanSym) return;
+
+    const found = stocks.find((s: any) => s.symbol?.toUpperCase() === cleanSym) || { symbol: cleanSym };
+    let epsVal = found.eps !== undefined && found.eps !== null && found.eps !== 0 ? Number(found.eps) : null;
+    let bvpsVal = (found.bvps || found.bookValue) ? Number(found.bvps || found.bookValue) : null;
+    let priceVal = found.ltp || found.closePrice ? Number(found.ltp || found.closePrice) : null;
+
+    if (epsVal == null || bvpsVal == null) {
+      const cached = getCachedStockFundamentals(cleanSym);
+      if (cached) {
+        if (epsVal == null && cached.eps !== undefined) epsVal = Number(cached.eps);
+        if (bvpsVal == null && (cached.bookValue || cached.bvps)) bvpsVal = Number(cached.bookValue || cached.bvps);
+        if (priceVal == null && cached.ltp) priceVal = Number(cached.ltp);
+      }
+    }
+
+    if (epsVal == null || bvpsVal == null) {
+      setIsLoadingFund(true);
+      try {
+        const fresh = await fetchStockFundamentals(cleanSym);
+        if (fresh) {
+          if (epsVal == null && fresh.eps !== undefined) epsVal = Number(fresh.eps);
+          if (bvpsVal == null && (fresh.bookValue || fresh.bvps)) bvpsVal = Number(fresh.bookValue || fresh.bvps);
+          if (priceVal == null && fresh.ltp) priceVal = Number(fresh.ltp);
+        }
+      } catch (_) {}
+      setIsLoadingFund(false);
+    }
+
+    // Benchmark fallback if still missing
+    const bench = getSectorBenchmark(found.sector || '');
+    if (epsVal == null) epsVal = bench.medianEPS || 22;
+    if (bvpsVal == null || bvpsVal <= 0) {
+      bvpsVal = priceVal && bench.medianPBV ? +(priceVal / bench.medianPBV).toFixed(1) : +(epsVal * (bench.medianPE || 16) / (bench.medianPBV || 1.6)).toFixed(1);
+    }
+    if (priceVal == null || priceVal <= 0) priceVal = 100;
+
+    const newForm = {
+      eps: String(epsVal),
+      bvps: String(bvpsVal),
+      price: String(priceVal),
+      growthRate: '7.0',
+      fdRate: '7.5'
+    };
+    setForm(newForm);
+    setValidationError('');
+    runCalc(newForm, modelType);
+  };
+
+  useEffect(() => {
+    const sym = initialSymbol || selectedSym || (stocks.length > 0 ? stocks[0]?.symbol : 'NABIL') || 'NABIL';
+    handleStockSelect(sym);
+  }, [initialSymbol, stocks.length]);
+
+  const calc = () => {
+    runCalc(form, modelType);
   };
 
   return (
@@ -206,8 +277,9 @@ export function GrahamValuation({
   );
 }
 
-export function BrokerageCalculator() {
-  const [form, setForm] = useState({ buy: '', sell: '', qty: '', holdingType: 'short', slabType: 'jestha_2081' });
+export function BrokerageCalculator({ stocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+  const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
+  const [form, setForm] = useState({ buy: '500', sell: '560', qty: '100', holdingType: 'short', slabType: 'jestha_2081' });
   const [result, setResult] = useState<any>(null);
 
   const getBrokerage = (amount: number, slab: string) => {
@@ -230,18 +302,18 @@ export function BrokerageCalculator() {
     return Math.max(10, fee);
   };
 
-  const calc = () => {
-    const buyPrice = parseFloat(form.buy), sellPrice = parseFloat(form.sell), qty = parseFloat(form.qty);
+  const runCalc = (f = form) => {
+    const buyPrice = parseFloat(f.buy), sellPrice = parseFloat(f.sell), qty = parseFloat(f.qty);
     if (!buyPrice || !sellPrice || !qty || buyPrice <= 0 || sellPrice <= 0 || qty <= 0) return;
     const buyTotal = buyPrice * qty, sellTotal = sellPrice * qty;
-    const buyBrok = getBrokerage(buyTotal, form.slabType);
-    const sellBrok = getBrokerage(sellTotal, form.slabType);
+    const buyBrok = getBrokerage(buyTotal, f.slabType);
+    const sellBrok = getBrokerage(sellTotal, f.slabType);
     const sebonBuy = buyTotal * 0.00015, sebonSell = sellTotal * 0.00015;
     const dpFee = 50; // NPR 25 buy + NPR 25 sell
     const totalCost = buyBrok + sellBrok + sebonBuy + sebonSell + dpFee;
     const grossProfit = sellTotal - buyTotal;
     const taxableProfit = grossProfit - totalCost;
-    const cgtRate = form.holdingType === 'individual_short' || form.holdingType === 'short' ? 0.075 : form.holdingType === 'long' ? 0.05 : 0.10;
+    const cgtRate = f.holdingType === 'individual_short' || f.holdingType === 'short' ? 0.075 : f.holdingType === 'long' ? 0.05 : 0.10;
     const cgt = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
     const netReturn = grossProfit - totalCost - cgt;
     const returnPct = (netReturn / buyTotal) * 100;
@@ -250,7 +322,7 @@ export function BrokerageCalculator() {
     let be = buyPrice;
     for (let i = 0; i < 40; i++) {
       const sVal = be * qty;
-      const sB = getBrokerage(sVal, form.slabType);
+      const sB = getBrokerage(sVal, f.slabType);
       const sSebon = sVal * 0.00015;
       const cost = buyBrok + sB + sebonBuy + sSebon + dpFee;
       const profit = sVal - buyTotal - cost;
@@ -261,6 +333,33 @@ export function BrokerageCalculator() {
     setResult({ buyTotal, sellTotal, buyBrok, sellBrok, sebonBuy, sebonSell, dpFee, totalCost, cgt, netReturn, returnPct, breakEvenPrice: be });
   };
 
+  const handleStockSelect = (sym: string) => {
+    setSelectedSym(sym);
+    const found = stocks.find((s: any) => s.symbol === sym);
+    if (found) {
+      const p = Number(found.ltp || found.close || 500);
+      const newForm = {
+        ...form,
+        buy: String(p),
+        sell: String(Math.round(p * 1.10 * 10) / 10),
+      };
+      setForm(newForm);
+      runCalc(newForm);
+    }
+  };
+
+  useEffect(() => {
+    if (initialSymbol && stocks.length > 0) {
+      handleStockSelect(initialSymbol);
+    } else {
+      runCalc(form);
+    }
+  }, [initialSymbol, stocks.length]);
+
+  const calc = () => {
+    runCalc(form);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
@@ -269,6 +368,17 @@ export function BrokerageCalculator() {
           <p className="text-xs text-slate-400">Calculate buy/sell broker commission, SEBON fee, DP fee, CGT and net profit/loss.</p>
         </div>
       </div>
+      {stocks.length > 0 && (
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-400">Auto-fill Prices from NEPSE Scrip (Optional):</label>
+          <StockSearchSelect
+            value={selectedSym}
+            onChange={handleStockSelect}
+            placeholder="Pick stock (e.g. NABIL, CIT, SHIVM)..."
+            stocks={stocks}
+          />
+        </div>
+      )}
       <InfoBanner>
         <strong>SEBON Regulatory Norms:</strong> 5-tier broker commission (0.36% down to 0.24%, min Rs 10) + SEBON fee 0.015% + CDSC DP fee Rs 25/txn + Capital Gains Tax (7.5% short-term &le;365d, 5.0% long-term &gt;365d, 10% corporate).
       </InfoBanner>
@@ -318,13 +428,13 @@ export function BrokerageCalculator() {
 }
 
 export function DividendCalculator() {
-  const [form, setForm] = useState({ shares: '', fv: '100', cash: '', bonus: '', price: '' });
+  const [form, setForm] = useState({ shares: '100', fv: '100', cash: '15', bonus: '10', price: '500' });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const s = parseFloat(form.shares), fv = parseFloat(form.fv) || 100;
-    const c = parseFloat(form.cash) || 0, b = parseFloat(form.bonus) || 0;
-    const pr = parseFloat(form.price) || 0;
+  const runCalc = (f = form) => {
+    const s = parseFloat(f.shares), fv = parseFloat(f.fv) || 100;
+    const c = parseFloat(f.cash) || 0, b = parseFloat(f.bonus) || 0;
+    const pr = parseFloat(f.price) || 0;
     if (!s || s <= 0) return;
     const grossCash = (fv * c / 100) * s;
     const tax = grossCash * 0.05;
@@ -349,6 +459,14 @@ export function DividendCalculator() {
       totalYield,
       price: pr,
     });
+  };
+
+  useEffect(() => {
+    runCalc(form);
+  }, []);
+
+  const calc = () => {
+    runCalc(form);
   };
   return (
     <div className="space-y-4">
@@ -398,15 +516,23 @@ export function DividendCalculator() {
 }
 
 export function SIPCalculator() {
-  const [form, setForm] = useState({ monthly: '', years: '', rate: '15' });
+  const [form, setForm] = useState({ monthly: '5000', years: '10', rate: '15' });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const m = parseFloat(form.monthly), y = parseFloat(form.years), annualRate = parseFloat(form.rate);
+  const runCalc = (f = form) => {
+    const m = parseFloat(f.monthly), y = parseFloat(f.years), annualRate = parseFloat(f.rate);
     if (!m || !y || !annualRate || m <= 0 || y <= 0) return;
     const r = annualRate / 100 / 12, n = y * 12;
     const fv = m * ((Math.pow(1 + r, n) - 1) / r) * (1 + r);
     setResult({ fv, invested: m * n, returns: fv - m * n });
+  };
+
+  useEffect(() => {
+    runCalc(form);
+  }, []);
+
+  const calc = () => {
+    runCalc(form);
   };
   return (
     <div className="space-y-4">
@@ -434,16 +560,17 @@ export function SIPCalculator() {
   );
 }
 
-export function RiskRewardCalculator() {
-  const [form, setForm] = useState({ entry: '', target: '', stop: '', capital: '100000', riskPct: '2' });
+export function RiskRewardCalculator({ stocks = [], initialSymbol = '' }: { stocks?: any[]; initialSymbol?: string } = {}) {
+  const [selectedSym, setSelectedSym] = useState(initialSymbol || '');
+  const [form, setForm] = useState({ entry: '500', target: '550', stop: '475', capital: '100000', riskPct: '2' });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const e = parseFloat(form.entry), t = parseFloat(form.target), s = parseFloat(form.stop);
-    const cap = parseFloat(form.capital) || 100000;
-    const rPct = parseFloat(form.riskPct) || 2;
+  const runCalc = (f = form) => {
+    const e = parseFloat(f.entry), t = parseFloat(f.target), s = parseFloat(f.stop);
+    const cap = parseFloat(f.capital) || 100000;
+    const rPct = parseFloat(f.riskPct) || 2;
     if (!e || !t || !s || e <= 0) return;
-    const reward = Math.abs(t - e), risk = Math.abs(e - s);
+    const reward = Math.abs(t - e), risk = Math.max(0.1, Math.abs(e - s));
     if (risk === 0) return;
 
     const ratio = reward / risk;
@@ -471,6 +598,31 @@ export function RiskRewardCalculator() {
     });
   };
 
+  const handleStockSelect = (sym: string) => {
+    setSelectedSym(sym);
+    const found = stocks.find((s: any) => s.symbol === sym);
+    if (found) {
+      const e = Number(found.ltp || found.close || 500);
+      const s = Math.round(e * 0.95 * 10) / 10;
+      const t = Math.round(e * 1.10 * 10) / 10;
+      const newForm = { ...form, entry: String(e), stop: String(s), target: String(t) };
+      setForm(newForm);
+      runCalc(newForm);
+    }
+  };
+
+  useEffect(() => {
+    if (initialSymbol && stocks.length > 0) {
+      handleStockSelect(initialSymbol);
+    } else {
+      runCalc(form);
+    }
+  }, [initialSymbol, stocks.length]);
+
+  const calc = () => {
+    runCalc(form);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
@@ -479,6 +631,17 @@ export function RiskRewardCalculator() {
           <p className="text-xs text-slate-400">Calculate R:R ratio, maximum cash risk, and exact position size in shares based on portfolio capital.</p>
         </div>
       </div>
+      {stocks.length > 0 && (
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-400">Auto-fill Prices from NEPSE Scrip (Optional):</label>
+          <StockSearchSelect
+            value={selectedSym}
+            onChange={handleStockSelect}
+            placeholder="Pick stock (e.g. NABIL, CIT, SHIVM)..."
+            stocks={stocks}
+          />
+        </div>
+      )}
       <InfoBanner>
         <strong>Risk Rule:</strong> Professional traders never risk more than 1–2% of trading capital on a single idea. Aim for a minimum 2:1 Reward-to-Risk ratio.
       </InfoBanner>
@@ -487,7 +650,25 @@ export function RiskRewardCalculator() {
         <input type="number" placeholder="Target Price (Rs.)" value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Stop-Loss Price (Rs.)" value={form.stop} onChange={(e) => setForm((f) => ({ ...f, stop: e.target.value }))} className={inputCls} />
         <input type="number" placeholder="Total Capital (Default 1L)" value={form.capital} onChange={(e) => setForm((f) => ({ ...f, capital: e.target.value }))} className={inputCls} />
-        <input type="number" placeholder="Risk % per Trade (Default 2%)" value={form.riskPct} onChange={(e) => setForm((f) => ({ ...f, riskPct: e.target.value }))} className={`${inputCls} col-span-2 md:col-span-1`} />
+        <div>
+          <input type="number" step="0.5" placeholder="Risk % per Trade (Default 2%)" value={form.riskPct} onChange={(e) => setForm((f) => ({ ...f, riskPct: e.target.value }))} className={inputCls} />
+          <div className="mt-1 flex gap-1">
+            {['1', '1.5', '2', '3'].map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                onClick={() => {
+                  const updated = { ...form, riskPct: pct };
+                  setForm(updated);
+                  runCalc(updated);
+                }}
+                className={`flex-1 py-0.5 text-[10px] rounded font-bold transition-colors ${form.riskPct === pct ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <button onClick={calc} className={btnCls}>Calculate Sizing &amp; Risk / Reward</button>
       {result && (
@@ -546,14 +727,14 @@ function parseRatio(str: string): number {
 
 // ── NEPSE Standard Bonus Share Price & WACC Adjustment Calculator ──
 export function BonusAdjustmentCalculator() {
-  const [form, setForm] = useState({ closePrice: '', bonusPct: '', shares: '100', wacc: '' });
+  const [form, setForm] = useState({ closePrice: '600', bonusPct: '15', shares: '100', wacc: '520' });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const pClose = parseFloat(form.closePrice);
-    const bPct = parseFloat(form.bonusPct);
-    const s = parseFloat(form.shares) || 100;
-    const w = parseFloat(form.wacc) || pClose;
+  const runCalc = (f = form) => {
+    const pClose = parseFloat(f.closePrice);
+    const bPct = parseFloat(f.bonusPct);
+    const s = parseFloat(f.shares) || 100;
+    const w = parseFloat(f.wacc) || pClose;
 
     if (!pClose || !bPct || pClose <= 0 || bPct <= 0) return;
 
@@ -575,6 +756,14 @@ export function BonusAdjustmentCalculator() {
       totalMarketValuePost,
       bonusRatio,
     });
+  };
+
+  useEffect(() => {
+    runCalc(form);
+  }, []);
+
+  const calc = () => {
+    runCalc(form);
   };
 
   return (
@@ -640,15 +829,15 @@ export function BonusAdjustmentCalculator() {
 
 // ── NEPSE Standard Right Share Price & WACC Adjustment Calculator ──
 export function RightAdjustmentCalculator() {
-  const [form, setForm] = useState({ closePrice: '', rightRatio: '1:1', issuePrice: '100', shares: '100', wacc: '' });
+  const [form, setForm] = useState({ closePrice: '500', rightRatio: '1:1', issuePrice: '100', shares: '100', wacc: '450' });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const pClose = parseFloat(form.closePrice);
-    const rRatio = parseRatio(form.rightRatio);
-    const pr = parseFloat(form.issuePrice) || 100;
-    const s = parseFloat(form.shares) || 100;
-    const w = parseFloat(form.wacc) || pClose;
+  const runCalc = (f = form) => {
+    const pClose = parseFloat(f.closePrice);
+    const rRatio = parseRatio(f.rightRatio);
+    const pr = parseFloat(f.issuePrice) || 100;
+    const s = parseFloat(f.shares) || 100;
+    const w = parseFloat(f.wacc) || pClose;
 
     if (!pClose || !rRatio || pClose <= 0 || rRatio <= 0) return;
 
@@ -668,6 +857,14 @@ export function RightAdjustmentCalculator() {
       rRatio,
       pr,
     });
+  };
+
+  useEffect(() => {
+    runCalc(form);
+  }, []);
+
+  const calc = () => {
+    runCalc(form);
   };
 
   return (
@@ -751,13 +948,13 @@ export function MarginLoanCalculator() {
   });
   const [result, setResult] = useState<any>(null);
 
-  const calc = () => {
-    const qty = parseFloat(form.units);
-    const ltp = parseFloat(form.ltp);
-    const avg180 = parseFloat(form.avg180);
-    const ltv = parseFloat(form.ltvPct) || 70;
-    const rate = parseFloat(form.interestRate) || 9.5;
-    const maintMargin = parseFloat(form.maintenanceMargin) || 130;
+  const runCalc = (f = form) => {
+    const qty = parseFloat(f.units);
+    const ltp = parseFloat(f.ltp);
+    const avg180 = parseFloat(f.avg180);
+    const ltv = parseFloat(f.ltvPct) || 70;
+    const rate = parseFloat(f.interestRate) || 9.5;
+    const maintMargin = parseFloat(f.maintenanceMargin) || 130;
 
     if (!qty || !ltp || qty <= 0 || ltp <= 0) return;
 
@@ -772,7 +969,7 @@ export function MarginLoanCalculator() {
     const calculatedLoan = totalCollateralValuation * (effectiveLtv / 100);
 
     // Single-Obligor Ceilings
-    const ceiling = form.borrowerType === 'individual' ? 150000000 : 200000000;
+    const ceiling = f.borrowerType === 'individual' ? 150000000 : 200000000;
     const approvedLoan = Math.min(calculatedLoan, ceiling);
     const isCeilingExceeded = calculatedLoan > ceiling;
 
@@ -805,6 +1002,14 @@ export function MarginLoanCalculator() {
       quarterlyInterest,
       maintMargin,
     });
+  };
+
+  useEffect(() => {
+    runCalc(form);
+  }, []);
+
+  const calc = () => {
+    runCalc(form);
   };
 
   return (

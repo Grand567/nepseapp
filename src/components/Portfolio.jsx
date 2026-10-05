@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Plus, Trash2, ArrowUpRight, ArrowDownRight, Briefcase, PlusCircle, MinusCircle, 
   ShieldCheck, Layers, BookOpen, Sparkles, X, Loader2, RefreshCw, Key, Lock, 
@@ -134,6 +134,26 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const [valuationMode, setValuationMode] = useState('prevClose'); // 'prevClose' (MeroShare Official default), 'ltp', 'live'
   const [allocationView, setAllocationView] = useState('stock'); // 'stock', 'sector'
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const searchDebounceRef = useRef(null);
+
+  const handleSearchChange = useCallback((val) => {
+    setSearchInput(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      React.startTransition(() => {
+        setSearchQuery(val);
+      });
+    }, 35);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearchInput('');
+    React.startTransition(() => {
+      setSearchQuery('');
+    });
+  }, []);
   const [filterPnl, setFilterPnl] = useState('all'); // 'all', 'profit', 'loss'
   const [accountSignalFilters, setAccountSignalFilters] = useState({}); // { [accountId]: 'all' | 'profit' | 'defense' | 'breakout' | 'hold' }
   
@@ -1800,6 +1820,47 @@ Based on this data, provide a robust analysis using this exact markdown structur
           </div>
         )}
 
+        {/* ── Trailing Stop & Capital Preservation Guardian ── */}
+        {(() => {
+          const ltp = Number(h.currentPrice || 0);
+          const wacc = Number(h.wacc || 0);
+          if (ltp <= 0 || wacc <= 0) return null;
+          
+          const isDeepProfit = ltp >= wacc * 1.08;
+          const trailingStopPrice = isDeepProfit ? +(ltp * 0.94).toFixed(1) : +(wacc * 0.93).toFixed(1);
+          const distToStopPct = +(((ltp - trailingStopPrice) / ltp) * 100).toFixed(1);
+          const isStopBreached = ltp <= trailingStopPrice;
+
+          return (
+            <div style={{
+              marginBottom: 8,
+              padding: '6px 10px',
+              borderRadius: 8,
+              background: isStopBreached ? 'rgba(239, 68, 68, 0.12)' : isDeepProfit ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              border: `1px solid ${isStopBreached ? 'rgba(239, 68, 68, 0.35)' : isDeepProfit ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)'}`,
+              fontSize: 10.5,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 4
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>{isStopBreached ? '🚨' : isDeepProfit ? '🛡️' : '🔒'}</span>
+                <span style={{ color: isStopBreached ? '#f87171' : isDeepProfit ? '#34d399' : '#94a3b8', fontWeight: 800 }}>
+                  {isStopBreached ? 'STOP TRIGGERED' : isDeepProfit ? 'PROFIT TRAILING STOP' : 'PROTECTIVE STOP'}
+                </span>
+                <span style={{ color: '#ffffff', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                  Rs. {trailingStopPrice}
+                </span>
+              </div>
+              <div style={{ color: isStopBreached ? '#f87171' : '#64748b', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+                {isStopBreached ? 'Breached — Review Exit' : `Buffer: ${distToStopPct}% • T+2 Settlement Safe`}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── ROW 5: Action Buttons (Entry/Exit Plan & AI Guru) ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 8 }}>
           <button
@@ -1864,7 +1925,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
           <input
             type="text"
             style={{
-              background: 'none', border: 'none', color: '#fff', fontSize: 13,
+              background: 'none', border: 'none', color: '#fff', fontSize: 14,
               flex: 1, minWidth: 0, outline: 'none'
             }}
             autoComplete="off"
@@ -1873,21 +1934,21 @@ Based on this data, provide a robust analysis using this exact markdown structur
             spellCheck={false}
             data-form-type="other"
             placeholder="Search holdings by scrip or company..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={e => handleSearchChange(e.target.value)}
           />
-          {searchQuery && (
+          {searchInput && (
             <button
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setSearchQuery('');
+                clearSearch();
               }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setSearchQuery('');
+                clearSearch();
               }}
               style={{
                 background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
@@ -2170,6 +2231,43 @@ Based on this data, provide a robust analysis using this exact markdown structur
               );
             })()}
           </div>
+
+          {/* Sector Concentration Alert Guard */}
+          {(() => {
+            const overConcentrated = sectorChartHoldings.filter(s => (s.value / (totalValue || 1)) > 0.35);
+            if (overConcentrated.length === 0 || totalValue <= 0) return null;
+            return (
+              <div style={{
+                margin: '10px 8px 4px 8px',
+                padding: '9px 12px',
+                borderRadius: 10,
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                fontSize: 10.5,
+                lineHeight: 1.45,
+                color: '#f87171'
+              }}>
+                <span style={{ fontSize: 13, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <strong style={{ color: '#ffffff' }}>High Sector Concentration Warning:</strong>
+                  {overConcentrated.map(sc => {
+                    const pct = ((sc.value / totalValue) * 100).toFixed(1);
+                    return (
+                      <div key={sc.symbol} style={{ marginTop: 2 }}>
+                        • <strong>{sc.symbol}</strong> accounts for <strong>{pct}%</strong> of total portfolio value.
+                      </div>
+                    );
+                  })}
+                  <div style={{ color: '#cbd5e1', marginTop: 4, fontSize: 9.5 }}>
+                    In NEPSE, regulatory interventions by NRB or sector-wide policy changes trigger correlated downturns. Recommended maximum allocation per sector is 30%.
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

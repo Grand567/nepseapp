@@ -4,7 +4,7 @@
  * Never calls AI providers directly from frontend to prevent key leakage
  */
 
-import { fetchMerolaganiNews, analyzePoliticalAndMarketPulse } from './merolaganiNewsService';
+import { fetchMerolaganiNews, analyzePoliticalAndMarketPulse } from './merolaganiNewsService.js';
 import {
   calculateGrahamIntrinsicValue,
   calculateVolumeZScore,
@@ -15,12 +15,17 @@ import {
   calculateMultiHorizonTargets,
   calculateProbabilisticMatrix,
   detectWyckoffPhase
-} from '../utils/quantEngine';
+} from '../utils/quantEngine.js';
 
-const PROXY_BASE = import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
+const PROXY_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PROXY_URL) || 'https://nepseapp.onrender.com';
 
-export const DEFAULT_AI_KEY = (import.meta.env.VITE_GLM_API_KEY || '').trim();
-export const DEFAULT_OPENROUTER_KEY = (import.meta.env.VITE_OPENROUTER_API_KEY || '').trim();
+// ── Security: AI keys must ONLY live in the backend environment (proxy/.env or Render dashboard).
+// Never expose OPENROUTER_API_KEY or GLM_API_KEY via VITE_ prefix — they'd be bundled into
+// client-side JS and visible to any user who opens DevTools.
+// These exports are kept as empty strings for backward compatibility; the real keys are
+// loaded server-side via process.env.OPENROUTER_API_KEY / process.env.GLM_API_KEY.
+export const DEFAULT_AI_KEY = '';         // intentionally empty — key is server-only
+export const DEFAULT_OPENROUTER_KEY = ''; // intentionally empty — key is server-only
 
 export const GURU_AI_SYSTEM_PROMPT = `You are NEPSE GURU, the institutional quantitative analyst, political-macro economist, and Smart Money momentum engine for the Nepal Stock Exchange (NEPSE).
 Empower Nepali retail and institutional investors with quantitative precision using the 5 Operational Action Zones & Graham Valuation Model.`;
@@ -139,19 +144,25 @@ export async function analyzeStockWithAi(stock, options = {}) {
   return { report: generateOfflineStockReport(stock), source: 'Offline Quant Engine', success: true };
 }
 
-// ── Quantitative Offline Report Generator (Grounded in History) ──
+// ── Quantitative Offline Report Generator (Grounded in Authentic History) ──
 export function generateOfflineStockReport(stock, customNewsPulse = null, realPriceHistory = null, realBrokerAnalysis = null) {
   if (!stock) return '';
   const sym = (stock.symbol || 'STOCK').toUpperCase();
   const name = stock.name || sym;
-  const ltp = Number(stock.ltp) || 100;
-  const rsi = Number(stock.rsi) || 50;
-  const pe = Number(stock.pe) || 0;
-  const eps = Number(stock.eps) || 0;
-  const bookValue = Number(stock.bookValue || stock.bvps) || 0;
+  const ltp = Number(stock.ltp);
+  if (!ltp || isNaN(ltp) || ltp <= 0) {
+    return `### ⚠️ Data Insufficient for **${sym}**
+• Real market price is unavailable from the exchange feed.
+• Quantitative analysis cannot be performed without verified price telemetry.`;
+  }
+
+  const rsi = stock.rsi != null && !isNaN(Number(stock.rsi)) ? Number(stock.rsi) : null;
+  const pe = stock.pe != null && !isNaN(Number(stock.pe)) && Number(stock.pe) > 0 ? Number(stock.pe) : null;
+  const eps = stock.eps != null && !isNaN(Number(stock.eps)) ? Number(stock.eps) : null;
+  const bookValue = stock.bookValue != null && Number(stock.bookValue) > 0 ? Number(stock.bookValue) : (stock.bvps != null && Number(stock.bvps) > 0 ? Number(stock.bvps) : null);
   const pChg = Number(stock.pChange) || 0;
-  const volume = Number(stock.volume) || 5000;
-  const turnover = Number(stock.turnover) || (ltp * volume);
+  const volume = stock.volume != null && !isNaN(Number(stock.volume)) ? Number(stock.volume) : null;
+  const turnover = stock.turnover != null && !isNaN(Number(stock.turnover)) ? Number(stock.turnover) : (volume != null ? (ltp * volume) : null);
 
   const hasRealHistory = Array.isArray(realPriceHistory) && realPriceHistory.length > 0;
   const historyList = hasRealHistory
@@ -160,55 +171,66 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
 
   const high12M = (stock.high52w && Number(stock.high52w) > 0)
     ? Number(stock.high52w)
-    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : ltp * 1.25);
+    : (hasRealHistory ? Math.max(...historyList.map(h => Number(h.high || h.close))) : null);
 
   const low12M = (stock.low52w && Number(stock.low52w) > 0)
     ? Number(stock.low52w)
-    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : ltp * 0.75);
+    : (hasRealHistory ? Math.min(...historyList.map(h => Number(h.low || h.close))) : null);
 
   const yearAgoClose = hasRealHistory && historyList[0]?.close
     ? Number(historyList[0].close)
-    : (Number(stock.prevYearClose) || ltp);
-  const return12M = yearAgoClose > 0 ? (((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2) : '0.00';
+    : (Number(stock.prevYearClose) || null);
+  const return12M = (yearAgoClose && yearAgoClose > 0) ? (((ltp - yearAgoClose) / yearAgoClose) * 100).toFixed(2) : null;
 
   const closes = historyList.map(h => Number(h.close || h.ltp)).filter(c => !isNaN(c) && c > 0);
-  const sma50 = closes.length >= 10
-    ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(closes.length, 50)).toFixed(1))
-    : ltp;
-  const sma200 = closes.length >= 20
-    ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / Math.min(closes.length, 200)).toFixed(1))
-    : ltp;
-  const smaTrend = ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)';
+  const sma50 = closes.length >= 50
+    ? Number((closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(1))
+    : null;
+  const sma200 = closes.length >= 200
+    ? Number((closes.slice(-200).reduce((a, b) => a + b, 0) / 200).toFixed(1))
+    : null;
+  const smaTrend = sma200 != null
+    ? (ltp >= sma200 ? 'Bullish (Above 200 SMA)' : 'Bearish (Below 200 SMA)')
+    : 'Insufficient history for 200 SMA';
 
-  const wyckoff = detectWyckoffPhase(historyList, volume);
+  const wyckoff = detectWyckoffPhase(historyList, volume || 0);
   const atrVal = calculateATR(historyList);
-  const targets = calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg);
+  const targets = (high12M != null && low12M != null && atrVal != null)
+    ? calculateMultiHorizonTargets(ltp, high12M, low12M, atrVal, pChg)
+    : { target1: null, target2: null, stopLoss: null };
 
-  const newsHighlight = customNewsPulse || {
-    sentiment: '🟢 Supportive Macro Policy',
-    score: 65,
-    highlights: [
-      'नेपाल राष्ट्र बैंकद्वारा मौद्रिक तरलता व्यवस्थापन: बैंक ब्याजदर एकल अंकमा स्थिर',
-      'वाणिज्य बैंक तथा वित्तीय संस्थाहरूको लाभांश घोषणा चक्र सुरु',
-      'अर्थ मन्त्रालय र सेबोनद्वारा पूँजीबजार सुधारसम्बन्धी कार्यदल प्रतिवेदन कार्यान्वयन प्रक्रिया'
-    ]
-  };
+  const newsHighlight = customNewsPulse || null;
   const probMatrix = calculateProbabilisticMatrix(stock, historyList, newsHighlight);
 
-  const graham = calculateGrahamIntrinsicValue(eps, bookValue, ltp);
+  const graham = (eps != null && bookValue != null)
+    ? calculateGrahamIntrinsicValue(eps, bookValue, ltp)
+    : { intrinsicValue: null, marginOfSafetyPct: null };
   const actionZone = classifyActionZone({ ...stock, eps, bookValue, ltp, candles: historyList, history: historyList });
-  const zVol = calculateVolumeZScore(volume, stock.avgVolume20D || volume * 0.6);
+  const zVol = volume != null
+    ? calculateVolumeZScore(volume, stock.avgVolume20D || volume)
+    : { zScore: '—' };
 
-  const chg = Number(stock.change || (ltp * (pChg / 100))) || 0;
-  const pClose = Number(stock.prevClose || (ltp - chg)) || ltp;
-  const dayHigh = Number(stock.high || (ltp * 1.015));
-  const dayLow = Number(stock.low || (ltp * 0.985));
+  const chg = stock.change != null ? Number(stock.change) : (pChg ? Number((ltp * (pChg / 100)).toFixed(2)) : 0);
+  const pClose = stock.prevClose != null ? Number(stock.prevClose) : (chg ? Number((ltp - chg).toFixed(2)) : null);
+  const dayHigh = stock.high != null ? Number(stock.high) : null;
+  const dayLow = stock.low != null ? Number(stock.low) : null;
 
-  return `### 📌 Live Market Price: **${sym}** (${name})
+  const dataGaps = [];
+  if (volume == null) dataGaps.push('Trading volume');
+  if (eps == null) dataGaps.push('EPS / earnings statement');
+  if (bookValue == null) dataGaps.push('Book value (BVPS)');
+  if (sma200 == null) dataGaps.push('200-session price history');
+  if (high12M == null) dataGaps.push('52-week range');
+
+  const warningSection = dataGaps.length > 0
+    ? `> ⚠️ **Data Completeness Notice**: The following inputs are unavailable from the exchange: **${dataGaps.join(', ')}**. Analysis has reduced confidence.\n\n`
+    : '';
+
+  return `${warningSection}### 📌 Live Market Price: **${sym}** (${name})
 • **Official Final Price (LTP)**: **Rs. ${ltp.toFixed(2)}** (${pChg >= 0 ? '+' : ''}${chg.toFixed(2)} / ${pChg >= 0 ? '+' : ''}${pChg.toFixed(2)}%)
-• **Previous Closing Price**: **Rs. ${pClose.toFixed(2)}** | **Today's Range**: Low **Rs. ${dayLow.toFixed(2)}** — High **Rs. ${dayHigh.toFixed(2)}**
-• **Today's Volume**: ${(volume).toLocaleString()} shares · Turnover: **Rs. ${(turnover >= 10000000 ? (turnover/10000000).toFixed(2) + ' Cr' : (turnover/100000).toFixed(2) + ' Lakh')}**
-• **Volume Expansion (RVOL)**: **${probMatrix.rvol}x** (Z-Score: **${zVol.zScore}**)
+• **Previous Closing Price**: ${pClose != null ? `**Rs. ${pClose.toFixed(2)}**` : '—'} | **Today's Range**: Low **Rs. ${dayLow != null ? dayLow.toFixed(2) : '—'}** — High **Rs. ${dayHigh != null ? dayHigh.toFixed(2) : '—'}**
+• **Today's Volume**: ${volume != null ? `${volume.toLocaleString()} shares` : '—'} · Turnover: ${turnover != null ? (turnover >= 10000000 ? `Rs. ${(turnover/10000000).toFixed(2)} Cr` : `Rs. ${(turnover/100000).toFixed(2)} Lakh`) : '—'}
+• **Volume Expansion (RVOL)**: **${probMatrix.rvol || '—'}x** (Z-Score: **${zVol.zScore || '—'}**)
 
 ---
 

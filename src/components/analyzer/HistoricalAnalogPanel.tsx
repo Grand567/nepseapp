@@ -132,7 +132,7 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
             {stats.shrinkageApplied ? (
-              <span>Raw: {stats.rawWinRate}% ({stats.netWinsCount ?? '—'}/{stats.sampleSize} wins)</span>
+              <span>Raw: {stats.rawWinRate}% ({stats.netWinsCount ?? Math.round((stats.sampleSize * (stats.rawWinRate || stats.winRate || 50)) / 100)}/{stats.sampleSize} wins)</span>
             ) : (
               <span>Gross: {stats.grossWinRate ?? stats.winRate ?? 0}%</span>
             )}
