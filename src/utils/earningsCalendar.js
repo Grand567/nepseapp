@@ -31,7 +31,7 @@ export function getCurrentEarningsCycle(date = new Date()) {
       isActive: true,
       phase: 'active',
       riskLevel: 'HIGH_VOLATILITY',
-      warning: 'Q1 quarterly financial reports are actively being released. Companies reporting earnings surprises or margin compressions experience sharp ±10% circuit moves.',
+      warning: 'Q1 quarterly financial reports are actively being released. Companies reporting earnings surprises or margin compressions experience sharp ±15% circuit moves.',
       guidance: 'Do not chase breakouts immediately before unreleased earnings. Cross-reference previous fiscal year profit trajectory.'
     };
   } else if (month === 0 && day >= 15 || month === 1) {

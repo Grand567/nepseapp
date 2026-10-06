@@ -4,7 +4,7 @@
  * DRAVYASHREE SMART INSTITUTIONAL ALERT ENGINE
  * ───────────────────────────────────────────────────────────────────────────
  * Purpose:
- * Solves the critical retail constraint: monitoring TMS from 11:00 AM – 3:00 PM.
+ * Solves the critical retail constraint: monitoring TMS from 11:00 AM – 3:00 PM NPT (Monday to Friday).
  * Automatically evaluates 3 simultaneous institutional criteria:
  *   Condition 1: Price in [VWAP Support, VWAP + 2.0%] (Inside Buy Zone)
  *   Condition 2: Buyer Concentration (Top 3 Brokers) > 50%
@@ -281,7 +281,8 @@ export function evaluateStockAlertConditions({
   volume,
   floorsheetTrades = [],
   avgVolume20D = 0,
-  priceHistory = []
+  priceHistory = [],
+  elapsedMinutes = null
 }) {
   const sym = String(symbol || '').toUpperCase().trim();
   const currentLtp = Number(ltp || 0);
@@ -381,7 +382,8 @@ export function evaluateStockAlertConditions({
   const concentrationPct = Math.round(bcr3 * 100);
 
   // ── Condition 3: Seller Volume at Support < 20-Day Average Daily Volume ──
-  // Paced Seller Volume: During market hours (11:00 to 15:00 = 240 mins), scale current intraday volume
+  // Paced Seller Volume: During live market hours (11:00 to 15:00 = 240 mins), scale current intraday volume.
+  // Outside market hours (or in backtest/test suite), timeScaleFactor defaults to 1.0.
   let baselineAvgVolume = Number(avgVolume20D || 0);
   if (baselineAvgVolume <= 0 && Array.isArray(priceHistory) && priceHistory.length >= 5) {
     const candles = priceHistory.slice(-21, -1);
@@ -390,11 +392,17 @@ export function evaluateStockAlertConditions({
   }
   if (baselineAvgVolume <= 0) baselineAvgVolume = 50000; // Reasonable NEPSE baseline fallback
 
-  // Intraday elapsed minutes (11:00 AM NPT = 660 mins from midnight)
   const status = getDetailedMarketStatus();
   const nptMins = status.nptTotalMinutes;
-  const elapsedTradingMins = Math.max(15, Math.min(240, nptMins - 660));
-  const timeScaleFactor = 240 / elapsedTradingMins;
+  let timeScaleFactor = 1.0;
+
+  if (typeof elapsedMinutes === 'number' && elapsedMinutes > 0) {
+    const elapsed = Math.max(15, Math.min(240, elapsedMinutes));
+    timeScaleFactor = 240 / elapsed;
+  } else if (status.isOpen) {
+    const elapsedTradingMins = Math.max(15, Math.min(240, nptMins - 660));
+    timeScaleFactor = 240 / elapsedTradingMins;
+  }
 
   // Actual or estimated selling volume
   const intradaySellerVol = totalSellVolume > 0 ? totalSellVolume : (volume > 0 ? volume * 0.45 : 10000);

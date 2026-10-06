@@ -4,7 +4,7 @@
  * Provides:
  *   E1. calculatePositionSize() — Kelly fraction and fixed-risk position sizing.
  *   E2. calculateStopLossTargets() — ATR-based and support/resistance stop-loss
- *       and target prices, clamped to ±10% NEPSE circuit limits.
+ *       and target prices, clamped to ±15% NEPSE circuit limits.
  *   E3. calculateNetProfit() — Accurate net P&L including ALL NEPSE costs:
  *       broker commission (5-tier), SEBON fee (0.015%), DP charge (Rs.25),
  *       and CGT (7.5% short / 5% long / 10% institutional).
@@ -83,7 +83,7 @@ export function calculatePositionSize({
   const actualRiskRs = fixedShares * riskPerShare;
   const actualRiskPct = (actualRiskRs / cap) * 100;
 
-  // Circuit-limit check: stop-loss must be within ±10% of entry
+  // Circuit-limit check: stop-loss must be within ±15% of entry
   const circuitFloor = +(entry * (1 - NEPSE_CIRCUIT_PCT / 100)).toFixed(2);
   const stopWarning = stop < circuitFloor
     ? `⚠️ Stop-loss Rs.${stop} is below the circuit floor Rs.${circuitFloor} (-${NEPSE_CIRCUIT_PCT}%). ` +
@@ -162,7 +162,7 @@ export function calculatePositionSize({
  * (a) ATR-based method: stop = entry - N×ATR, target = entry + M×ATR
  * (b) Support/resistance method: stop = support * 0.99, target = resistance
  *
- * All output prices clamped to ±10% NEPSE circuit limit.
+ * All output prices clamped to ±15% NEPSE circuit limit.
  *
  * @param {Object} params
  * @param {number} params.entryPrice     - Entry price

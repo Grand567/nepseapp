@@ -109,9 +109,9 @@ export async function fetchAgentScripDossier(symbol) {
   );
   const volume = isFinite(volRaw) ? volRaw : null;
 
-  // 10% statutory NEPSE daily equity circuit band limits
-  const circuitFloor = +(prevClose * 0.90).toFixed(1);
-  const circuitCeiling = +(prevClose * 1.10).toFixed(1);
+  // 15% statutory NEPSE daily equity circuit band limits
+  const circuitFloor = +(prevClose * 0.85).toFixed(1);
+  const circuitCeiling = +(prevClose * 1.15).toFixed(1);
 
   // Prepare candles
   const candles = rawCandles.map(c => ({
@@ -370,7 +370,7 @@ RSI(14): ${fmt(tech.rsi14)}, MACD Histogram: ${fmt(tech.macd?.histogram)}, 20-EM
 BCR3 Concentration: ${fmt(bf.bcr3BuyPct, '%')}, Bias: ${bf.smartMoneyBias || NA}.
 Execution plan available: ${ep.available ? 'yes' : `no (${ep.reason})`}. Pullback: ${pullLbl}, Breakout: ${boLbl}, Stop-Loss: ${slLbl}.
 Target 1: ${t1}, Target 2: ${t2}. Risk:Reward: ${rr}.
-Circuit limits (±10% of previous close): Floor Rs. ${fmt(q.circuitFloor)} | Ceiling Rs. ${fmt(q.circuitCeiling)}.
+Circuit limits (±15% of previous close): Floor Rs. ${fmt(q.circuitFloor)} | Ceiling Rs. ${fmt(q.circuitCeiling)}.
 User Query: "${query || 'Provide trade plan and scenarios.'}"
 
 Return valid JSON with keys:
@@ -431,7 +431,7 @@ Return valid JSON with keys:
       baseCase: ep.pullbackZone ? `Consolidation within support corridor ${pullLbl}.` : 'Base case unavailable — no support corridor computed.',
       bearishInvalidation: slPx != null ? `Daily close below stop-loss Rs. ${slPx} invalidates the setup.` : 'Invalidation level unavailable.'
     },
-    t2SettlementRisk: `Session circuit range Rs. ${fmt(q.circuitFloor)} to Rs. ${fmt(q.circuitCeiling)} (±10%). Avoid buying near the ceiling due to T+2 settlement lockup.`,
+    t2SettlementRisk: `Session circuit range Rs. ${fmt(q.circuitFloor)} to Rs. ${fmt(q.circuitCeiling)} (±15%). Avoid buying near the ceiling due to T+2 settlement lockup.`,
     nepaliSummary: ep.available
       ? `${dossier.symbol}: स्टप लस Rs. ${fmt(slPx)}, पुलब्याक जोन ${pullLbl}। २०-दिने EMA ${fmt(tech.ema20)}।`
       : `${dossier.symbol}: पर्याप्त डाटा नभएकाले ट्रेड योजना उपलब्ध छैन।`,

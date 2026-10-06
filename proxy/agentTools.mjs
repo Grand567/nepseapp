@@ -216,8 +216,8 @@ export async function assembleScripDossier(symbol, helpers) {
       turnover: num(stock?.turnover || stock?.totalTurnover) ?? (currentVol ? Math.round(currentVol * ltp) : null),
       high52w: num(stock?.high52w),
       low52w: num(stock?.low52w),
-      circuitCeiling: prevClose > 0 ? +(prevClose * 1.10).toFixed(1) : null,
-      circuitFloor: prevClose > 0 ? +(prevClose * 0.90).toFixed(1) : null
+      circuitCeiling: prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : null,
+      circuitFloor: prevClose > 0 ? +(prevClose * 0.85).toFixed(1) : null
     },
     technicals: {
       rsi14: rsi,
@@ -277,7 +277,7 @@ Every number provided is authentic and computed from real exchange data.
 VERIFIED NEPSE DOSSIER:
 - Symbol: ${dossier.symbol} | Sector: ${dossier.sector}
 - Current LTP: Rs. ${dossier.quote.ltp} (Change: ${dossier.quote.pChange}%)
-- Session Range: Open Rs. ${dossier.quote.prevClose} | Circuit Limits: Floor Rs. ${dossier.quote.circuitFloor} – Ceiling Rs. ${dossier.quote.circuitCeiling} (±10% limit)
+- Session Range: Open Rs. ${dossier.quote.prevClose} | Circuit Limits: Floor Rs. ${dossier.quote.circuitFloor} – Ceiling Rs. ${dossier.quote.circuitCeiling} (±15% limit)
 - Volume: ${dossier.quote.volume?.toLocaleString() ?? 'N/A'} shares | 20-Day Avg Volume: ${dossier.quote.avgVolume20D?.toLocaleString() ?? 'N/A'} shares | RVOL: ${dossier.technicals.rvol20 ?? 'N/A'}x
 - Technical Momentum: RSI(14): ${dossier.technicals.rsi14 ?? 'N/A'} | MACD Histogram: ${dossier.technicals.macd?.histogram ?? 'N/A'} (Bullish: ${dossier.technicals.macd?.isBullishCross ?? false})
 - Moving Averages: 20-EMA Rs. ${dossier.technicals.ema20 ?? 'N/A'} | 50-EMA Rs. ${dossier.technicals.ema50 ?? 'N/A'} | Posture: ${dossier.technicals.trendStructure}
@@ -296,7 +296,7 @@ USER INQUIRY: "${customUserQuery || 'Provide institutional analysis, trade execu
 
 RULES:
 1. Do NOT invent prices, dates, or financial metrics. Reference the exact numbers from the dossier.
-2. In NEPSE, T+2 delivery settlement applies. Evaluate Day 1 chase risk near the +10% upper circuit ceiling.
+2. In NEPSE, T+2 delivery settlement applies. Evaluate Day 1 chase risk near the +15% upper circuit ceiling.
 3. Clearly explain BOTH entry strategies:
    - Strategy A: Pullback Dip Entry (buying the support retest near 20-EMA)
    - Strategy B: Breakout Trigger (entering on decisive pivot clearance with RVOL >= 1.4x)

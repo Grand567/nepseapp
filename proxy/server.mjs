@@ -3814,12 +3814,12 @@ app.get('/api/scanner/bulk', async (req, res) => {
         break;
       }
       case 'gainers': case 'circuit_up': {
-        const minChange = type === 'circuit_up' ? 8.5 : 0;
+        const minChange = type === 'circuit_up' ? 13.5 : 0;
         results = [...allStocks].filter(s => Number(s.pChange||0) > minChange).sort((a, b) => b.pChange - a.pChange).slice(0, 30);
         break;
       }
       case 'losers': case 'circuit_down': {
-        const maxChange = type === 'circuit_down' ? -8.5 : 0;
+        const maxChange = type === 'circuit_down' ? -13.5 : 0;
         results = [...allStocks].filter(s => Number(s.pChange||0) < maxChange).sort((a, b) => a.pChange - b.pChange).slice(0, 30);
         break;
       }

@@ -76,8 +76,8 @@ const GLOSSARY_TERMS: TermItem[] = [
     term: 'T+2 Rolling Settlement',
     category: 'Trading & Operations',
     definition: 'Trades are settled two business days after transaction date (Trade Date + 2 Days).',
-    nepseContext: 'Shares sold on Sunday must have EDIS completed by Monday evening for broker clearing on Tuesday.',
-    example: 'Buying on Sunday means shares enter your Demat account by Tuesday afternoon.',
+    nepseContext: 'Shares sold on Monday must have EDIS completed by Tuesday evening for broker clearing on Wednesday.',
+    example: 'Buying on Monday means shares enter your Demat account by Wednesday afternoon.',
   },
   {
     term: 'C-ASBA & MeroShare',

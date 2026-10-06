@@ -285,7 +285,7 @@ export function startWorkers() {
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
 
   // 1. Dravyashree Smart Alert Pipeline:
-  // Runs every 60 seconds during live NEPSE market hours (11:00 AM - 3:00 PM NPT, Sun-Thu).
+  // Runs every 60 seconds during live NEPSE market hours (11:00 AM - 3:00 PM NPT, Monday to Friday).
   // Automatically evaluates 3 simultaneous institutional criteria:
   //   - Price in [VWAP Support, VWAP + 2%]
   //   - Buyer Concentration (Top 3 Brokers) > 50%

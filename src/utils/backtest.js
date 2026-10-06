@@ -441,10 +441,10 @@ export function runWalkForwardScoreBacktest(rawCandles, options = {}) {
     const entryPrice = nextCandle.open;
     const entryDate = nextCandle.date;
 
-    // Check circuit filter: NEPSE ±10% circuit limit prevents unrealistic gap fills
+    // Check circuit filter: NEPSE ±15% circuit limit prevents unrealistic gap fills
     if (evalCandle.close > 0) {
       const openGap = Math.abs((entryPrice - evalCandle.close) / evalCandle.close);
-      if (openGap > 0.099) {
+      if (openGap > 0.15) {
         continue;
       }
     }
