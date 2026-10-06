@@ -510,7 +510,12 @@ function AppInner() {
           if (isReal || (!hasExistingReal && res.data?.length > 0)) {
             currentStocks = res.data;
             liveStocksRef.current = currentStocks;
-            setStocks([...currentStocks]);
+            setStocks(prev => {
+              if (prev && prev.length === currentStocks.length && prev[0]?.ltp === currentStocks[0]?.ltp && prev[0]?.volume === currentStocks[0]?.volume && prev[0]?.turnover === currentStocks[0]?.turnover) {
+                return prev;
+              }
+              return currentStocks;
+            });
             const isLive = Boolean(status?.isOpen);
             setApiStatus(isLive ? (isFreshFeed ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
             if (isFreshFeed) {
@@ -528,7 +533,16 @@ function AppInner() {
           if (!isMounted || !liveIdx) return liveIdx;
           const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
           if (hasFresh) {
-            setIndices({ ...liveIdx });
+            setIndices(prev => {
+              if (
+                prev?.nepse?.value === liveIdx.nepse.value &&
+                prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+                prev?.nepse?.change === liveIdx.nepse.change
+              ) {
+                return prev;
+              }
+              return { ...prev, ...liveIdx };
+            });
             saveCachedIndices(liveIdx);
             hasFreshData = true;
           }
@@ -594,20 +608,54 @@ function AppInner() {
     };
   }, [user]); // Re-run when user logs in/out
 
+  // ── High-Frequency (2-Second) NEPSE Live Index Micro-Ticker ──
+  // Decoupled from the heavy 350+ stock universe fetch to deliver sub-second index responsiveness
   useEffect(() => {
-    const doScroll = () => {
-      try {
-        const mainEl = document.querySelector('main');
-        if (mainEl) mainEl.scrollTop = 0;
-        const scrollables = document.querySelectorAll('.overflow-y-auto');
-        scrollables.forEach(el => { el.scrollTop = 0; });
-        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-      } catch (_) {}
+    let isMounted = true;
+    let tickerTimer = null;
+
+    const tickFastIndex = async () => {
+      const status = getDetailedMarketStatus();
+      // Fast index polling during live market or pre-open (Mon-Fri 10:30am-3:00pm NPT)
+      if (status.isOpen || status.isPreOpen) {
+        try {
+          const liveIdx = await fetchMarketIndices();
+          if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
+            setIndices(prev => {
+              if (
+                prev?.nepse?.value === liveIdx.nepse.value &&
+                prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+                prev?.nepse?.change === liveIdx.nepse.change
+              ) {
+                return prev;
+              }
+              return { ...prev, ...liveIdx };
+            });
+            saveCachedIndices(liveIdx);
+          }
+        } catch (_) {}
+      }
+
+      if (!isMounted) return;
+      const interval = status.isOpen ? 1000 : (status.isPreOpen ? 2500 : 30000);
+      tickerTimer = setTimeout(tickFastIndex, interval);
     };
-    doScroll();
-    requestAnimationFrame(doScroll);
+
+    tickerTimer = setTimeout(tickFastIndex, 1000);
+
+    return () => {
+      isMounted = false;
+      if (tickerTimer) clearTimeout(tickerTimer);
+    };
+  }, []);
+
+  // Instant zero-cost tab scroll without layout thrashing
+  useEffect(() => {
+    try {
+      window.scrollTo(0, 0);
+      const mainEl = document.querySelector('main');
+      if (mainEl) mainEl.scrollTop = 0;
+    } catch (_) {}
   }, [activeTab]);
 
   const triggerTick = async () => {
@@ -627,7 +675,12 @@ function AppInner() {
         if (isReal || (!hasExistingReal && res.data?.length > 0)) {
           currentStocks = res.data;
           liveStocksRef.current = currentStocks;
-          setStocks([...currentStocks]);
+          setStocks(prev => {
+            if (prev && prev.length === currentStocks.length && prev[0]?.ltp === currentStocks[0]?.ltp && prev[0]?.volume === currentStocks[0]?.volume && prev[0]?.turnover === currentStocks[0]?.turnover) {
+              return prev;
+            }
+            return currentStocks;
+          });
           const isLive = Boolean(marketStatus?.isOpen);
           setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
           if (isFresh) {
@@ -645,7 +698,16 @@ function AppInner() {
         if (!liveIdx) return liveIdx;
         const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
         if (hasFresh) {
-          setIndices({ ...liveIdx });
+          setIndices(prev => {
+            if (
+              prev?.nepse?.value === liveIdx.nepse.value &&
+              prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+              prev?.nepse?.change === liveIdx.nepse.change
+            ) {
+              return prev;
+            }
+            return { ...prev, ...liveIdx };
+          });
           saveCachedIndices(liveIdx);
           hasFreshData = true;
         }

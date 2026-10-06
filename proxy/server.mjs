@@ -570,6 +570,9 @@ export async function getMarketIndicesInternal() {
   const cached = getCache(cacheKey);
   if (cached && cached.nepse && cached.nepse.value > 0) return cached;
 
+  const currentStatus = getProxyMarketStatus();
+  const indexTtl = currentStatus?.isOpen ? 1000 : (currentStatus?.isPreOpen ? 2500 : 30000);
+
   // Helper to ensure NOTS calls don't hang serverless/cloud requests
   const quickNots = (p, ms = 7000) => Promise.race([
     p,
@@ -627,7 +630,7 @@ export async function getMarketIndicesInternal() {
       })) : [];
 
       if (indices.nepse && indices.nepse.value > 0) {
-        setCache(cacheKey, indices, 10000);
+        setCache(cacheKey, indices, indexTtl);
         LAST_GOOD_INDICES = indices;
         return indices;
       }
@@ -673,7 +676,7 @@ export async function getMarketIndicesInternal() {
     
     indices.subIndices = subIndices;
     if (indices.nepse && indices.nepse.value > 0) {
-      setCache(cacheKey, indices, 15000);
+      setCache(cacheKey, indices, indexTtl);
       LAST_GOOD_INDICES = indices;
       return indices;
     }
@@ -692,7 +695,7 @@ export async function getMarketIndicesInternal() {
           turnover: Number(mero.turnover) || LAST_GOOD_INDICES.nepse.turnover
         }
       };
-      setCache(cacheKey, merged, 10000);
+      setCache(cacheKey, merged, indexTtl);
       return merged;
     }
   } catch (_) {}
@@ -3128,7 +3131,9 @@ app.get('/api/nepse/live-index', async (req, res) => {
       unchanged: summary?.unchangedStocks ?? null,
       fetchedAt: new Date().toISOString()
     };
-    setCache(cacheKey, data, 30 * 1000); // 30s TTL
+    const currentStatus = getProxyMarketStatus();
+    const ttl = currentStatus?.isOpen ? 1000 : (currentStatus?.isPreOpen ? 2500 : 30000);
+    setCache(cacheKey, data, ttl);
     res.json({ success: true, data, source: 'nepse-api' });
   } catch (err) {
     console.error('[live-index] Error:', err.message);
@@ -3208,7 +3213,9 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
     const obir = (totalBidQty + totalAskQty) > 0
       ? Number(((totalBidQty - totalAskQty) / (totalBidQty + totalAskQty)).toFixed(4)) : 0;
     const data = { symbol, bids, asks, totalBidQty, totalAskQty, obir, source: bids.length > 0 ? 'scraped' : 'empty', fetchedAt: new Date().toISOString() };
-    setCache(cacheKey, data, 30 * 1000);
+    const currentStatus = getProxyMarketStatus();
+    const depthTtl = currentStatus?.isOpen ? 3000 : 30000;
+    setCache(cacheKey, data, depthTtl);
     res.json({ success: true, data });
   } catch (err) {
     console.error(`[market-depth] ${symbol}:`, err.message);
@@ -6698,7 +6705,9 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
       asks: d.Sells || [],
       bids: d.Buys || [],
     };
-    setCache(cacheKey, depth, 30000);
+    const currentStatus = getProxyMarketStatus();
+    const depthTtl = currentStatus?.isOpen ? 3000 : 30000;
+    setCache(cacheKey, depth, depthTtl);
     return res.json({ success: true, data: depth });
   } catch (e) {
     return res.json({ success: true, data: { symbol, ltp: 0, asks: [], bids: [], error: 'Market depth unavailable' } });

@@ -1246,9 +1246,245 @@ function TradingViewModal({ symbol, onClose }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   DECOUPLED ULTRA-LOW-LATENCY SEARCH BAR (0ms typing lag)
+═══════════════════════════════════════════════════════════════════════════ */
+const TopSearchBar = React.memo(function TopSearchBar({
+  onSearchChange,
+  onClear,
+  unifiedSearchUniverse,
+  topSearchResults,
+  isSearching,
+  setIsSearching,
+  topSearch,
+  handleStockClick,
+  setActiveHeroIndex
+}) {
+  const [inputValue, setInputValue] = useState('');
+  const debounceTimer = useRef(null);
+
+  const onChange = (e) => {
+    const val = e.target.value;
+    setInputValue(val);
+    if (!isSearching) setIsSearching(true);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      React.startTransition(() => {
+        onSearchChange(val);
+      });
+    }, 120);
+  };
+
+  const handleClear = () => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    setInputValue('');
+    onClear();
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const q = (inputValue || topSearch).trim().toLowerCase();
+    if (!q) return;
+    let match = unifiedSearchUniverse.find(s => s.symbol && s.symbol.toLowerCase() === q);
+    if (!match && topSearchResults.length > 0) match = topSearchResults[0];
+    if (!match) {
+      match = unifiedSearchUniverse.find(s =>
+        (s.symbol && s.symbol.toLowerCase().startsWith(q)) ||
+        (s.symbol && s.symbol.toLowerCase().includes(q)) ||
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.companyName && s.companyName.toLowerCase().includes(q))
+      );
+    }
+    if (match) {
+      handleStockClick(match);
+      setIsSearching(false);
+      setActiveHeroIndex({
+        name: match.name || match.companyName || match.symbol,
+        symbol: match.symbol,
+        key: match.symbol,
+        val: {
+          value: match.ltp,
+          change: match.change,
+          pChange: match.pChange,
+          prevClose: match.prevClose,
+          turnover: match.turnover,
+          volume: match.volume
+        },
+        isStock: true
+      });
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative', marginBottom: 10, zIndex: 1000 }}>
+      <form onSubmit={handleSubmit} style={{ width: '100%', margin: 0, padding: 0 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)',
+          border: '1px solid var(--border)', borderRadius: 14, padding: '2px 12px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)'
+        }}>
+          <Search style={{ width: 16, height: 16, color: 'var(--text-muted)', marginRight: 8 }} />
+          <input
+            className="input"
+            style={{
+              border: 'none', background: 'transparent', padding: '10px 0',
+              fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0, outline: 'none'
+            }}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            enterKeyHint="search"
+            data-form-type="other"
+            placeholder="Search 350+ NEPSE stocks..."
+            value={inputValue}
+            onChange={onChange}
+            onFocus={() => setIsSearching(true)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') {
+                setIsSearching(false);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          {inputValue && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleClear();
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleClear();
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+                width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: '#cbd5e1', flexShrink: 0, marginLeft: 6, zIndex: 10
+              }}
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              <X style={{ width: 14, height: 14 }} />
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* Instant Search Results Dropdown Overlay */}
+      {isSearching && topSearch.trim() && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: 14, zIndex: 10000, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.95)',
+          maxHeight: 360, overflowY: 'auto'
+        }}>
+          <div style={{ padding: '8px 12px', fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>MATCHING SECURITIES ({topSearchResults.length})</span>
+            <span onClick={() => setIsSearching(false)} style={{ cursor: 'pointer', color: 'var(--primary-light)', fontWeight: 800 }}>Close ✕</span>
+          </div>
+
+          {topSearchResults.map(s => {
+            const isBull = (s.pChange || 0) >= 0;
+            return (
+              <div
+                key={s.symbol}
+                onClick={() => { handleStockClick(s); setIsSearching(false); }}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
+                  cursor: 'pointer', transition: 'background 0.15s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {s.symbol}
+                    {String(s.symbol || '').trim().toLowerCase() === topSearch.trim().toLowerCase() && (
+                      <span style={{ fontSize: 12, fontWeight: 900, padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
+                        EXACT MATCH
+                      </span>
+                    )}
+                    <span className="badge badge-primary" style={{ fontSize: 12 }}>{s.sector}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.name || s.companyName}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      Rs. {fmt(s.ltp)}
+                    </div>
+                    {s.isUntraded ? (
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
+                        Un-traded
+                      </span>
+                    ) : (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
+                        {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveHeroIndex({
+                        name: s.name || s.companyName || s.symbol,
+                        symbol: s.symbol,
+                        key: s.symbol,
+                        val: {
+                          value: s.ltp,
+                          change: s.change,
+                          pChange: s.pChange,
+                          prevClose: s.prevClose,
+                          turnover: s.turnover,
+                          volume: s.volume
+                        },
+                        isStock: true
+                      });
+                      setIsSearching(false);
+                    }}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: '#38bdf8',
+                      cursor: 'pointer'
+                    }}
+                    title={`Set ${s.symbol} on Hero Chart`}
+                  >
+                    Hero ⚡
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {topSearchResults.length === 0 && (
+            <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+              No stock found matching "{topSearch}".
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN DASHBOARD COMPONENT
 ═══════════════════════════════════════════════════════════════════════════ */
-export default function Dashboard({
+function Dashboard({
   stocks = [],
   indices = {},
   onRefresh,
@@ -1570,30 +1806,17 @@ export default function Dashboard({
     }
   }, [lastSyncTime]);
 
-  // Top Search State with Fast-Typing Transition Decoupling
+  // Top Search State decoupled from fast typing in TopSearchBar
   const [topSearch, setTopSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const searchDebounceRef = useRef(null);
 
   const handleSearchChange = useCallback((val) => {
-    setSearchInput(val);
-    if (!isSearching) setIsSearching(true);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      React.startTransition(() => {
-        setTopSearch(val);
-      });
-    }, 35);
-  }, [isSearching]);
+    setTopSearch(val);
+  }, []);
 
   const clearTopSearch = useCallback(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    setSearchInput('');
-    React.startTransition(() => {
-      setTopSearch('');
-      setIsSearching(false);
-    });
+    setTopSearch('');
+    setIsSearching(false);
   }, []);
 
   // Hero Chart State
@@ -2613,209 +2836,18 @@ export default function Dashboard({
 
 
 
-      {/* ── 1. PROMINENT TOP SEARCH BAR ── */}
-      <div style={{ position: 'relative', marginBottom: 10, zIndex: 1000 }}>
-
-        <form
-          onSubmit={e => {
-            e.preventDefault();
-            const q = (searchInput || topSearch).trim().toLowerCase();
-            if (!q) return;
-            let match = unifiedSearchUniverse.find(s => s.symbol && s.symbol.toLowerCase() === q);
-            if (!match && topSearchResults.length > 0) match = topSearchResults[0];
-            if (!match) {
-              match = unifiedSearchUniverse.find(s =>
-                (s.symbol && s.symbol.toLowerCase().startsWith(q)) ||
-                (s.symbol && s.symbol.toLowerCase().includes(q)) ||
-                (s.name && s.name.toLowerCase().includes(q)) ||
-                (s.companyName && s.companyName.toLowerCase().includes(q))
-              );
-            }
-            if (match) {
-              handleStockClick(match);
-              setIsSearching(false);
-              // Switch hero chart to this stock
-              setActiveHeroIndex({
-                name: match.name || match.companyName || match.symbol,
-                symbol: match.symbol,
-                key: match.symbol,
-                val: {
-                  value: match.ltp,
-                  change: match.change,
-                  pChange: match.pChange,
-                  prevClose: match.prevClose,
-                  turnover: match.turnover,
-                  volume: match.volume
-                },
-                isStock: true
-              });
-            }
-          }}
-          style={{ width: '100%', margin: 0, padding: 0 }}
-        >
-          <div style={{
-            display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.05)',
-            border: '1px solid var(--border)', borderRadius: 14, padding: '2px 12px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.25)'
-          }}>
-            <Search style={{ width: 16, height: 16, color: 'var(--text-muted)', marginRight: 8 }} />
-            <input
-              className="input"
-              style={{
-                border: 'none', background: 'transparent', padding: '10px 0',
-                fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0, outline: 'none'
-              }}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              enterKeyHint="search"
-              data-form-type="other"
-              placeholder="Search 350+ NEPSE stocks..."
-              value={searchInput}
-              onChange={e => handleSearchChange(e.target.value)}
-              onFocus={() => setIsSearching(true)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  // Handled by form onSubmit
-                } else if (e.key === 'Escape') {
-                  setIsSearching(false);
-                  e.currentTarget.blur();
-                }
-              }}
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  clearTopSearch();
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  clearTopSearch();
-                }}
-                style={{
-                  background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
-                  width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', color: '#cbd5e1', flexShrink: 0, marginLeft: 6, zIndex: 10
-                }}
-                title="Clear search"
-                aria-label="Clear search"
-              >
-                <X style={{ width: 14, height: 14 }} />
-              </button>
-            )}
-          </div>
-        </form>
-
-        {/* Instant Search Results Dropdown Overlay */}
-        {isSearching && topSearch.trim() && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-            borderRadius: 14, zIndex: 10000, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.95)',
-            maxHeight: 360, overflowY: 'auto'
-          }}>
-            <div style={{ padding: '8px 12px', fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>MATCHING SECURITIES ({topSearchResults.length})</span>
-              <span onClick={() => setIsSearching(false)} style={{ cursor: 'pointer', color: 'var(--primary-light)', fontWeight: 800 }}>Close ✕</span>
-            </div>
-
-            {topSearchResults.map(s => {
-              const isBull = (s.pChange || 0) >= 0;
-              return (
-                <div
-                  key={s.symbol}
-                  onClick={() => { handleStockClick(s); setIsSearching(false); }}
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
-                    cursor: 'pointer', transition: 'background 0.15s'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {s.symbol}
-                      {String(s.symbol || '').trim().toLowerCase() === topSearch.trim().toLowerCase() && (
-                        <span style={{ fontSize: 12, fontWeight: 900, padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
-                          EXACT MATCH
-                        </span>
-                      )}
-                      <span className="badge badge-primary" style={{ fontSize: 12 }}>{s.sector}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.name || s.companyName}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 14, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                        Rs. {fmt(s.ltp)}
-                      </div>
-                      {s.isUntraded ? (
-                        <span style={{ fontSize: 12, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
-                          Un-traded
-                        </span>
-                      ) : (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: isBull ? 'var(--bull)' : '#F43F5E' }}>
-                          {isBull ? '+' : ''}{(s.pChange || 0).toFixed(2)}%
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveHeroIndex({
-                          name: s.name || s.companyName || s.symbol,
-                          symbol: s.symbol,
-                          key: s.symbol,
-                          val: {
-                            value: s.ltp,
-                            change: s.change,
-                            pChange: s.pChange,
-                            prevClose: s.prevClose,
-                            turnover: s.turnover,
-                            volume: s.volume
-                          },
-                          isStock: true
-                        });
-                        setIsSearching(false);
-                      }}
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.15)',
-                        border: '1px solid rgba(56, 189, 248, 0.35)',
-                        borderRadius: 6,
-                        padding: '4px 8px',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: '#38bdf8',
-                        cursor: 'pointer'
-                      }}
-                      title={`Set ${s.symbol} on Hero Chart`}
-                    >
-                      Hero ⚡
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {topSearchResults.length === 0 && (
-              <div style={{ padding: '24px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                No stock found matching "{topSearch}".
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* ── 1. PROMINENT TOP SEARCH BAR (Decoupled 0ms Latency Component) ── */}
+      <TopSearchBar
+        onSearchChange={handleSearchChange}
+        onClear={clearTopSearch}
+        unifiedSearchUniverse={unifiedSearchUniverse}
+        topSearchResults={topSearchResults}
+        isSearching={isSearching}
+        setIsSearching={setIsSearching}
+        topSearch={topSearch}
+        handleStockClick={handleStockClick}
+        setActiveHeroIndex={setActiveHeroIndex}
+      />
 
       {/* ── 1B. LIVE STOCK SEARCH SPOTLIGHT CARD (Always prominently displayed when searching) ── */}
       {topSearch.trim() && topSearchResults.length > 0 && (() => {
@@ -5249,3 +5281,5 @@ export default function Dashboard({
     </div>
   );
 }
+
+export default React.memo(Dashboard);

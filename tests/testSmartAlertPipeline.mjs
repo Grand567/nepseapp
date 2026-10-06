@@ -39,6 +39,7 @@ const res1 = evaluateStockAlertConditions({
   turnover: 11886000,
   floorsheetTrades: mockFloorsheet,
   avgVolume20D: 90000, // sellers dry compared to 90k daily avg
+  elapsedMinutes: 240,
   priceHistory: Array(25).fill({ close: 270, volume: 90000, high: 275, low: 265 })
 });
 
