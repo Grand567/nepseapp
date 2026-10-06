@@ -69,11 +69,11 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
     }
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr', gap: 6, padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
         <span style={{ fontSize: 12, fontWeight: 800, color, fontFamily: 'var(--font-mono)' }}>
           {formattedVal}
         </span>
-        <span style={{ fontSize: 10.5, color: '#475569' }}>
+        <span style={{ fontSize: 12, color: '#475569' }}>
           {median ? `Sector: ${unit}${median}` : '—'}
         </span>
       </div>
@@ -96,22 +96,22 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             Fundamental Valuation
           </div>
-          <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>{sectorName}</div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 1 }}>{sectorName}</div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Valuation verdict pill */}
           <span style={{
-            fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+            fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
             background: `${verdictColor}18`, border: `1px solid ${verdictColor}40`, color: verdictColor,
           }}>
             {valuation.verdict.replace('_', ' ')}
           </span>
           {/* Rating chip */}
           <span style={{
-            fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+            fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
             background: `${ratingColor}18`, border: `1px solid ${ratingColor}40`, color: ratingColor,
           }}>
             {fundamentalRating}
@@ -124,7 +124,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '7px 11px', borderRadius: 8,
         background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.22)',
-        marginBottom: 12, fontSize: 10, lineHeight: 1.45
+        marginBottom: 12, fontSize: 12, lineHeight: 1.45
       }}>
         <span style={{ fontSize: 14, flexShrink: 0 }}>⏱️</span>
         <div>
@@ -138,8 +138,8 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
       {/* Score bar */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontSize: 10, color: '#64748b' }}>Fundamental Score</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: ratingColor, fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Fundamental Score</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: ratingColor, fontFamily: 'var(--font-mono)' }}>
             {fundamentalScore}/100
           </span>
         </div>
@@ -176,7 +176,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
       ) : (
         <div style={{ marginBottom: 10 }}>
           <div style={{
-            fontSize: 10,
+            fontSize: 12,
             fontWeight: 700,
             color: '#38bdf8',
             background: 'rgba(56, 189, 248, 0.1)',
@@ -208,10 +208,10 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
             const isWarn = b.includes('⚠️') || b.includes('below') || b.includes('Loss') || b.includes('expensive') || b.includes('Overval');
             return (
               <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 11, color: isWarn ? '#f59e0b' : '#10b981', flexShrink: 0, marginTop: 1 }}>
+                <span style={{ fontSize: 12, color: isWarn ? '#f59e0b' : '#10b981', flexShrink: 0, marginTop: 1 }}>
                   {isWarn ? '⚠' : '✓'}
                 </span>
-                <span style={{ fontSize: 10.5, color: '#94a3b8', lineHeight: 1.45 }}>{b}</span>
+                <span style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>{b}</span>
               </div>
             );
           })}
@@ -222,7 +222,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
       {peerComp && peerComp.peerCount >= 3 && peerComp.pe?.rank && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
           {peerComp.pe?.rank && (
-            <div style={{ fontSize: 10.5, color: '#64748b' }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
               P/E Rank: <span style={{ fontWeight: 700, color: peerComp.pe.percentile >= 60 ? '#10b981' : '#fbbf24' }}>
                 #{peerComp.pe.rank}/{peerComp.pe.totalPeers}
               </span>
@@ -230,7 +230,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
             </div>
           )}
           {peerComp.eps?.rank && (
-            <div style={{ fontSize: 10.5, color: '#64748b' }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
               EPS Rank: <span style={{ fontWeight: 700, color: peerComp.eps.percentile >= 60 ? '#10b981' : '#fbbf24' }}>
                 #{peerComp.eps.rank}/{peerComp.eps.totalPeers}
               </span>
@@ -241,7 +241,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
 
       {/* Confidence */}
       {valuation.confidence && (
-        <div style={{ fontSize: 10, color: '#475569', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: '#475569', marginBottom: 6 }}>
           Confidence: <span style={{ color: valuation.confidence === 'HIGH' ? '#10b981' : valuation.confidence === 'MEDIUM' ? '#fbbf24' : '#64748b', fontWeight: 600 }}>
             {valuation.confidence}
           </span>
@@ -250,11 +250,11 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
 
       {/* Notes */}
       {valuation.notes && (
-        <div style={{ fontSize: 10, color: '#475569', marginBottom: 6, fontStyle: 'italic' }}>{valuation.notes}</div>
+        <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, fontStyle: 'italic' }}>{valuation.notes}</div>
       )}
 
       {/* Disclaimer */}
-      <div style={{ fontSize: 9.5, color: '#374151', lineHeight: 1.5, marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5, marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         {disclaimer}
       </div>
     </div>

@@ -208,7 +208,7 @@ export function StockCandlestickChart({
       layout: {
         background: { type: ColorType.Solid, color: '#090d16' },
         textColor: '#94a3b8',
-        fontSize: 11,
+        fontSize: 12,
       },
       grid: {
         vertLines: { color: 'rgba(30, 41, 59, 0.45)' },

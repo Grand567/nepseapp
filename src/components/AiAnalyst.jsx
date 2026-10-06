@@ -753,14 +753,14 @@ const GuruResponse = ({ data, type, onDeployPaperTrade }) => {
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>{item.title}</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: '#60a5fa', background: 'rgba(56, 117, 246, 0.12)', border: '1px solid rgba(56, 117, 246, 0.2)', padding: '1px 6px', borderRadius: 4 }}>{item.tag}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa', background: 'rgba(56, 117, 246, 0.12)', border: '1px solid rgba(56, 117, 246, 0.2)', padding: '1px 6px', borderRadius: 4 }}>{item.tag}</span>
               </div>
-              <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>{item.desc}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>{item.desc}</div>
             </div>
           ))}
         </div>
 
-        <div style={{ fontSize: 11.5, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, paddingTop: 2 }}>
+        <div style={{ fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, paddingTop: 2 }}>
           <span>Tip: Type any company name or ticker in the search bar above, then tap <strong>Run Guru AI</strong>.</span>
         </div>
       </div>
@@ -1207,14 +1207,14 @@ const ChatMessage = ({ msg, onDeployPaperTrade }) => {
                   background: 'rgba(16, 185, 129, 0.12)',
                   border: '1px solid rgba(16, 185, 129, 0.25)',
                   padding: '2px 8px',
-                  fontSize: '10px',
+                  fontSize: 12,
                   fontWeight: 700,
                   color: '#10B981',
                 }}>
                   Real NEPSE Feed
                 </span>
               </div>
-              <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'var(--font-mono)' }}>{msg.timestamp}</span>
+              <span style={{ fontSize: 12, color: '#64748b', fontFamily: 'var(--font-mono)' }}>{msg.timestamp}</span>
             </div>
             <GuruResponse data={msg.guruData} type={msg.analysisType} onDeployPaperTrade={onDeployPaperTrade} />
           </div>
@@ -1955,14 +1955,14 @@ Format as plain text (not JSON) for this conversational response.`;
                   background: 'rgba(255, 255, 255, 0.05)',
                   border: '1px solid rgba(255, 255, 255, 0.09)',
                   padding: '1px 8px',
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 700,
                   color: '#94a3b8'
                 }}>
                   QUANTITATIVE
                 </span>
               </div>
-              <p style={{ margin: '1px 0 0', fontSize: 11.5, color: '#94a3b8', lineHeight: 1.3 }}>
+              <p style={{ margin: '1px 0 0', fontSize: 12, color: '#94a3b8', lineHeight: 1.3 }}>
                 Smart Money Flow · Wyckoff Accumulation · Graham Valuation
               </p>
             </div>
@@ -1975,7 +1975,7 @@ Format as plain text (not JSON) for this conversational response.`;
               background: 'rgba(16, 185, 129, 0.12)',
               border: '1px solid rgba(16, 185, 129, 0.25)',
               padding: '3px 10px',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 700,
               color: '#10B981'
             }}>
@@ -1987,7 +1987,7 @@ Format as plain text (not JSON) for this conversational response.`;
               background: 'rgba(255, 255, 255, 0.04)',
               border: '1px solid rgba(255, 255, 255, 0.07)',
               padding: '3px 10px',
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: 'var(--font-mono)',
               fontWeight: 700,
               color: '#cbd5e1'
@@ -2003,7 +2003,7 @@ Format as plain text (not JSON) for this conversational response.`;
                 background: 'rgba(16, 185, 129, 0.15)',
                 border: '1px solid rgba(16, 185, 129, 0.35)',
                 padding: '3px 10px',
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 700,
                 color: '#34d399',
                 cursor: 'pointer'
@@ -2022,7 +2022,7 @@ Format as plain text (not JSON) for this conversational response.`;
                 background: (glmKey || geminiKey) ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 border: (glmKey || geminiKey) ? '1px solid rgba(56, 117, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
                 padding: '3px 10px',
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 700,
                 color: (glmKey || geminiKey) ? '#60a5fa' : '#94a3b8',
                 cursor: 'pointer'
@@ -2073,7 +2073,7 @@ Format as plain text (not JSON) for this conversational response.`;
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 3,
-                    fontSize: 9,
+                    fontSize: 12,
                     fontWeight: 900,
                     padding: '1px 5px',
                     borderRadius: 6,
@@ -2136,7 +2136,7 @@ Format as plain text (not JSON) for this conversational response.`;
               <BarChart2 size={14} style={{ color: '#60a5fa' }} />
               Select Security for Quant Analysis
             </span>
-            <span style={{ fontSize: 10.5, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#64748b' }}>
+            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#64748b' }}>
               540 Listed Securities
             </span>
           </div>
@@ -2434,7 +2434,7 @@ Format as plain text (not JSON) for this conversational response.`;
                   gap: 6,
                   padding: '4px 10px',
                   borderRadius: 14,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 600,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
@@ -2459,7 +2459,7 @@ Format as plain text (not JSON) for this conversational response.`;
                   gap: 5,
                   padding: '4px 10px',
                   borderRadius: 14,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 600,
                   background: 'rgba(239, 68, 68, 0.12)',
                   border: '1px solid rgba(239, 68, 68, 0.3)',
@@ -2484,7 +2484,7 @@ Format as plain text (not JSON) for this conversational response.`;
           {/* Quick Prompts Bar */}
           {messages.length <= 2 && (
             <div style={{ maxWidth: 520, margin: '0 auto', width: '100%', padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b' }}>Suggested Inquiries</div>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b' }}>Suggested Inquiries</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {QUICK_ACTIONS.map((qa, i) => (
                   <button
@@ -2497,7 +2497,7 @@ Format as plain text (not JSON) for this conversational response.`;
                       color: '#93c5fd',
                       borderRadius: 20,
                       padding: '5px 12px',
-                      fontSize: 11.5,
+                      fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
@@ -2518,7 +2518,7 @@ Format as plain text (not JSON) for this conversational response.`;
                       color: '#cbd5e1',
                       borderRadius: 20,
                       padding: '4px 10px',
-                      fontSize: 11,
+                      fontSize: 12,
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
@@ -2707,7 +2707,7 @@ Format as plain text (not JSON) for this conversational response.`;
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>AI Engine Keys</h3>
-                  <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>Configure GLM-4 (Zhipu AI) or Gemini</p>
+                  <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>Configure GLM-4 (Zhipu AI) or Gemini</p>
                 </div>
               </div>
               <button
@@ -2725,8 +2725,8 @@ Format as plain text (not JSON) for this conversational response.`;
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#c084fc' }}>🟣 GLM-4 / Zhipu AI Key</label>
-                  {glmKey && <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 700 }}>● Ready</span>}
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#c084fc' }}>🟣 GLM-4 / Zhipu AI Key</label>
+                  {glmKey && <span style={{ fontSize: 12, color: '#10B981', fontWeight: 700 }}>● Ready</span>}
                 </div>
                 <input
                   type="password"
@@ -2752,15 +2752,15 @@ Format as plain text (not JSON) for this conversational response.`;
                     boxSizing: 'border-box'
                   }}
                 />
-                <p style={{ margin: '3px 0 0', fontSize: '10px', color: '#64748b' }}>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
                   Powers deep quantitative neural predictions via bigmodel.cn / z.ai
                 </p>
               </div>
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#60a5fa' }}>🟡 Gemini API Key</label>
-                  {geminiKey && <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 700 }}>● Ready</span>}
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>🟡 Gemini API Key</label>
+                  {geminiKey && <span style={{ fontSize: 12, color: '#10B981', fontWeight: 700 }}>● Ready</span>}
                 </div>
                 <input
                   type="password"
@@ -2793,7 +2793,7 @@ Format as plain text (not JSON) for this conversational response.`;
                 borderRadius: '10px',
                 backgroundColor: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid rgba(255, 255, 255, 0.06)',
-                fontSize: '11px',
+                fontSize: 12,
                 color: '#94a3b8',
                 lineHeight: 1.4
               }}>

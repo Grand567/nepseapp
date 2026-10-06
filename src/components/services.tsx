@@ -1587,7 +1587,7 @@ export function NewsService() {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 3.5,
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: 800,
                             letterSpacing: '0.02em',
                             padding: '1.5px 6.5px',
@@ -1597,7 +1597,7 @@ export function NewsService() {
                             border: `1px solid ${(n.impactScore || 0) >= 65 ? 'rgba(234, 179, 8, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
                           }}>
                             <span>⚡ {n.impactType}</span>
-                            {(n.impactScore || 0) >= 65 && <span style={{ opacity: 0.85, fontSize: 9 }}>• High Impact</span>}
+                            {(n.impactScore || 0) >= 65 && <span style={{ opacity: 0.85, fontSize: 12 }}>• High Impact</span>}
                           </span>
                         </div>
                       )}
@@ -1611,7 +1611,7 @@ export function NewsService() {
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 4,
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 700,
                           color: '#60a5fa',
                           backgroundColor: 'rgba(59, 130, 246, 0.12)',
@@ -1641,13 +1641,13 @@ export function NewsService() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 11, color: '#94a3b8' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 12, color: '#94a3b8' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
                         fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: 4,
-                        fontSize: 10.5,
+                        fontSize: 12,
                         backgroundColor: meta.badgeBg,
                         color: meta.badgeColor,
                         border: `1px solid ${meta.badgeBorder}`
@@ -1666,7 +1666,7 @@ export function NewsService() {
                         }}
                         style={{
                           color: '#94a3b8',
-                          fontSize: 10.5,
+                          fontSize: 12,
                           cursor: 'pointer',
                           textDecoration: 'underline'
                         }}
@@ -1686,11 +1686,11 @@ export function NewsService() {
                         paddingTop: 6,
                         marginTop: 2,
                         borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                        fontSize: 10.5
+                        fontSize: 12
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700 }}>
+                      <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 700 }}>
                         Also covered by:
                       </span>
                       {n.otherSources.map((os: any, oIdx: number) => {
@@ -1708,7 +1708,7 @@ export function NewsService() {
                             style={{
                               padding: '1.5px 6.5px',
                               borderRadius: 4,
-                              fontSize: 9.5,
+                              fontSize: 12,
                               fontWeight: 800,
                               cursor: 'pointer',
                               backgroundColor: oMeta.badgeBg,
@@ -1842,7 +1842,7 @@ export function NewsService() {
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     padding: '3px 10px',
                     borderRadius: 99,
@@ -1852,7 +1852,7 @@ export function NewsService() {
                   }}>
                     {modalMeta.label}
                   </span>
-                  <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
                     {articleDetail?.date || selectedArticle.date || selectedArticle.pubDate || 'Latest Announcement'}
                   </span>
                 </div>
@@ -1915,7 +1915,7 @@ export function NewsService() {
                   </p>
                 )}
                 {articleLoading && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#60a5fa', paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#60a5fa', paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
                     <RefreshCw size={12} className="animate-spin" />
                     <span>Loading remaining paragraphs…</span>
                   </div>
@@ -2122,12 +2122,12 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
               Daily Prime Breakout & Buy-Zone Pick Engine
             </h3>
           </div>
-          <p style={{ margin: '4px 0 0 30px', fontSize: 11.5, color: '#cbd5e1' }}>
+          <p style={{ margin: '4px 0 0 30px', fontSize: 12, color: '#cbd5e1' }}>
             Algorithmic daily pick scanning 350+ NEPSE scrips for active volume surges, clean support rebounds & asymmetric risk/reward.
           </p>
         </div>
         <span style={{
-          fontSize: 10.5,
+          fontSize: 12,
           fontWeight: 800,
           padding: '3px 10px',
           borderRadius: 99,
@@ -2154,7 +2154,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <div>
-              <div style={{ fontSize: 10.5, fontWeight: 900, color: '#34d399', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#34d399', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                 ⭐ #1 Prime Pick of the Day
               </div>
               <div
@@ -2164,11 +2164,11 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
                 <span style={{ fontSize: 24, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                   {topPick.symbol}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: 6 }}>
                   {topPick.sector}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>{topPick.name || topPick.companyName}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{topPick.name || topPick.companyName}</div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
@@ -2184,25 +2184,25 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
           {/* Action Zone Metrics Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Buy Entry Zone</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Buy Entry Zone</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 Rs. {typeof topPick.entryLow === 'object' ? (topPick.entryLow?.price ?? topPick.entryLow?.min ?? '—') : (topPick.entryLow || '—')} – {typeof topPick.entryHigh === 'object' ? (topPick.entryHigh?.price ?? topPick.entryHigh?.max ?? '—') : (topPick.entryHigh || '—')}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Target 1 (First Resistance)</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Target 1 (First Resistance)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 Rs. {typeof topPick.target1 === 'object' ? (topPick.target1?.price ?? '—') : (topPick.target1 || '—')} (+7.5%)
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Target 2 (Runner)</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Target 2 (Runner)</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#10B981', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 Rs. {typeof topPick.target2 === 'object' ? (topPick.target2?.price ?? '—') : (topPick.target2 || '—')} (+15.5%)
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>Trailing Stop Loss</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Trailing Stop Loss</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 Rs. {typeof topPick.stopLoss === 'object' ? (topPick.stopLoss?.price ?? '—') : (topPick.stopLoss || '—')} (-4.5%)
               </div>
@@ -2218,7 +2218,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
             paddingTop: 8,
             borderTop: '1px solid rgba(255,255,255,0.06)'
           }}>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
               Setup: <strong style={{ color: '#ffffff' }}>{topPick.catalyst}</strong> (Edge Score: {topPick.compositeScore}/100, RVOL: {topPick.rvol}x)
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2309,14 +2309,14 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
                     <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                       {cand.symbol}
                     </span>
-                    <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}>
+                    <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}>
                       {cand.sector}
                     </span>
-                    <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 800 }}>
+                    <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 800 }}>
                       Score {cand.compositeScore}
                     </span>
                   </div>
-                  <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
                     Buy Zone: Rs. {typeof cand.entryLow === 'object' ? (cand.entryLow?.price ?? cand.entryLow?.min ?? '—') : (cand.entryLow || '—')}–{typeof cand.entryHigh === 'object' ? (cand.entryHigh?.price ?? cand.entryHigh?.max ?? '—') : (cand.entryHigh || '—')} • Target: Rs. {typeof cand.target1 === 'object' ? (cand.target1?.price ?? '—') : (cand.target1 || '—')} • Stop: Rs. {typeof cand.stopLoss === 'object' ? (cand.stopLoss?.price ?? '—') : (cand.stopLoss || '—')}
                   </div>
                 </div>
@@ -2325,7 +2325,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
                   <div style={{ fontSize: 13.5, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                     Rs. {Number(cand.ltp || 0).toLocaleString()}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: (cand.pChange || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: (cand.pChange || 0) >= 0 ? '#34d399' : '#f87171' }}>
                     {(cand.pChange || 0) >= 0 ? '+' : ''}{(cand.pChange || 0).toFixed(2)}%
                   </div>
                 </div>

@@ -57,7 +57,7 @@ export default function ProGate({
             <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
               {featureName}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               Pro Only · Available in 1m, 2m, 3m passes
             </div>
           </div>
@@ -71,7 +71,7 @@ export default function ProGate({
             border: 'none',
             borderRadius: 6,
             padding: '4px 10px',
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: 800,
             cursor: 'pointer',
             display: 'flex',
@@ -148,7 +148,7 @@ export default function ProGate({
           borderRadius: 20,
           padding: '3px 10px',
           color: '#f59e0b',
-          fontSize: 10.5,
+          fontSize: 12,
           fontWeight: 800,
           letterSpacing: '0.04em',
           marginBottom: 8
@@ -190,7 +190,7 @@ export default function ProGate({
             <span
               key={i}
               style={{
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: 700,
                 color: i === 0 ? '#f59e0b' : 'var(--text-muted)',
                 background: i === 0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.04)',

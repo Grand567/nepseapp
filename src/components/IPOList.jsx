@@ -811,7 +811,7 @@ export default function IPOList({ initialTab = 'apply' }) {
             {isLoadingIpos ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', justifyContent: 'center' }}>
                 <Loader2 style={{ width: 20, height: 20 }} className="animate-spin" />
-                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Loading active IPO issues...</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading active IPO issues...</span>
               </div>
             ) : ipos.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>
@@ -856,7 +856,7 @@ export default function IPOList({ initialTab = 'apply' }) {
                             <Award style={{ width: 13, height: 13 }} /> SEBON 10-Kitta Probability:
                           </span>
                           <span style={{
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: 800,
                             padding: '2px 8px',
                             borderRadius: 4,
@@ -866,7 +866,7 @@ export default function IPOList({ initialTab = 'apply' }) {
                             {allotment.probabilityPct != null ? `${allotment.probabilityPct}% (${allotment.allotmentType === 'guaranteed' ? 'Guaranteed' : 'Lottery'})` : 'Subscription Pending'}
                           </span>
                         </div>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.4 }}>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.4 }}>
                           {allotment.explanation}
                         </div>
                       </div>
@@ -888,7 +888,7 @@ export default function IPOList({ initialTab = 'apply' }) {
             {isLoadingResults ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', justifyContent: 'center' }}>
                 <Loader2 style={{ width: 20, height: 20 }} className="animate-spin" />
-                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Loading result databases...</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Loading result databases...</span>
               </div>
             ) : resultCompanies.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>No result databases found. Tap refresh to reload.</p>
@@ -913,7 +913,7 @@ export default function IPOList({ initialTab = 'apply' }) {
             <Users style={{ width: 15, height: 15, color: 'var(--primary-light)' }} /> 2. Choose Accounts
           </h4>
           <button onClick={handleSelectAllAccounts}
-            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: 11.5, fontWeight: 'bold', cursor: 'pointer' }}>
+            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
             {selectedAccounts.length === accounts.length ? 'Deselect All' : 'Select All'}
           </button>
         </div>
@@ -955,10 +955,10 @@ export default function IPOList({ initialTab = 'apply' }) {
                     </div>
                     <div>
                       <div style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--text-primary)' }}>{acc.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>BOID: ...{acc.boid ? acc.boid.slice(-4) : '????'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>BOID: ...{acc.boid ? acc.boid.slice(-4) : '????'}</div>
                     </div>
                   </div>
-                  <span style={{ fontSize: 9.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 50 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 50 }}>
                     {acc.username}
                   </span>
                 </div>
@@ -982,7 +982,7 @@ export default function IPOList({ initialTab = 'apply' }) {
 
         {activeTab === 'result' && (
           <div style={{ marginTop: 10, padding: 12, borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
               Check Any CDSC BOID Directly:
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -1020,7 +1020,7 @@ export default function IPOList({ initialTab = 'apply' }) {
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
                 <div>
                   <div style={{ fontWeight: 'bold', fontSize: 12.5, color: 'var(--text-primary)' }}>{r.name}</div>
-                  <div style={{ fontSize: 9.5, color: r.status === 'success' ? 'var(--bull)' : r.status === 'failed' ? 'var(--bear)' : 'var(--text-muted)', marginTop: 2 }}>{r.resultText}</div>
+                  <div style={{ fontSize: 12, color: r.status === 'success' ? 'var(--bull)' : r.status === 'failed' ? 'var(--bear)' : 'var(--text-muted)', marginTop: 2 }}>{r.resultText}</div>
                 </div>
                 <div>
                   {r.status === 'loading' && <Loader2 style={{ width: 14, height: 14, color: 'var(--primary-light)' }} className="animate-spin" />}
@@ -1039,16 +1039,16 @@ export default function IPOList({ initialTab = 'apply' }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="section-title" style={{ marginBottom: 0, color: 'var(--text-primary)' }}>Lottery Results</h3>
             <button onClick={() => setCheckResults([])}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}>Clear</button>
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Clear</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-              <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Allotted</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Allotted</span>
               <span style={{ fontSize: 15, fontWeight: 950, color: 'var(--bull)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 4 }}>{totalAllottedShares} Units</span>
             </div>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 12 }}>
-              <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Wins</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Wins</span>
               <span style={{ fontSize: 15, fontWeight: 950, color: 'var(--primary-light)', display: 'block', marginTop: 4 }}>{allottedCount} / {checkResults.length}</span>
             </div>
           </div>
@@ -1057,8 +1057,8 @@ export default function IPOList({ initialTab = 'apply' }) {
             <div style={{ background: 'var(--bull-subtle)', border: '1px solid rgba(16,217,138,0.25)', padding: 12, borderRadius: 'var(--radius-md)', display: 'flex', gap: 8 }}>
               <Sparkles style={{ width: 15, height: 15, color: 'var(--bull)', flexShrink: 0, marginTop: 1 }} />
               <div>
-                <span style={{ fontSize: 11.5, fontWeight: 'bold', color: 'var(--bull)', display: 'block' }}>ALLOTMENT SUCCESSFUL 🎉</span>
-                <span style={{ fontSize: 9.5, color: 'var(--text-primary)', opacity: 0.9 }}>Congratulations! You have been selected in the lottery.</span>
+                <span style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--bull)', display: 'block' }}>ALLOTMENT SUCCESSFUL 🎉</span>
+                <span style={{ fontSize: 12, color: 'var(--text-primary)', opacity: 0.9 }}>Congratulations! You have been selected in the lottery.</span>
               </div>
             </div>
           )}
@@ -1067,14 +1067,14 @@ export default function IPOList({ initialTab = 'apply' }) {
             <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', padding: 12, borderRadius: 'var(--radius-md)', display: 'flex', gap: 8 }}>
               <ShieldAlert style={{ width: 15, height: 15, color: 'var(--accent-amber)', flexShrink: 0, marginTop: 1 }} />
               <div>
-                <span style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--accent-amber)', display: 'block' }}>⚠️ MANDATORY EDIS STEP</span>
-                <span style={{ fontSize: 9.5, color: 'var(--text-primary)', opacity: 0.85, lineHeight: 1.45 }}>Submit EDIS (Share Transfer) on MeroShare within 24 hours of selling allotted shares to avoid a 20% fine.</span>
+                <span style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--accent-amber)', display: 'block' }}>⚠️ MANDATORY EDIS STEP</span>
+                <span style={{ fontSize: 12, color: 'var(--text-primary)', opacity: 0.85, lineHeight: 1.45 }}>Submit EDIS (Share Transfer) on MeroShare within 24 hours of selling allotted shares to avoid a 20% fine.</span>
               </div>
             </div>
           )}
 
           <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '8px 10px', fontWeight: 'bold' }}>Name</th>
@@ -1087,11 +1087,11 @@ export default function IPOList({ initialTab = 'apply' }) {
                   <tr key={i} style={{ borderBottom: i === checkResults.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.03)', background: r.status === 'allotted' ? 'var(--bull-subtle)' : 'transparent' }}>
                     <td style={{ padding: '10px', fontWeight: 600, color: 'var(--text-primary)' }}>
                       <div>{r.name}</div>
-                      <div style={{ fontSize: 8.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>BOID: ...{r.boid ? r.boid.slice(-4) : ''}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>BOID: ...{r.boid ? r.boid.slice(-4) : ''}</div>
                     </td>
                     <td style={{ padding: '10px' }}>
                       <span style={{
-                        display: 'inline-flex', padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase',
+                        display: 'inline-flex', padding: '2px 6px', borderRadius: 4, fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase',
                         ...(r.status === 'allotted' ? { background: 'rgba(16,217,138,0.1)', color: 'var(--bull)' } :
                           r.status === 'not_allotted' ? { background: 'rgba(245,69,92,0.1)', color: 'var(--bear)' } :
                             { background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' })
@@ -1134,7 +1134,7 @@ export default function IPOList({ initialTab = 'apply' }) {
             {/* Account Switcher */}
             {accounts.length > 1 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Account:</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Account:</span>
                 <select
                   value={selectedHistoryAccount}
                   onChange={(e) => {
@@ -1158,17 +1158,17 @@ export default function IPOList({ initialTab = 'apply' }) {
           {applicationHistory.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
-                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Applied</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Applied</span>
                 <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>{applicationHistory.length} Issues</span>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
-                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Allotted Wins</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Allotted Wins</span>
                 <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--bull)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>
                   {applicationHistory.filter(h => Number(h.allottedKitta) > 0 || String(h.status || '').toUpperCase().includes('ALLOTTED')).length}
                 </span>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px' }}>
-                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Shares</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'block' }}>Total Shares</span>
                 <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--primary-light)', fontFamily: 'var(--font-mono)', display: 'block', marginTop: 2 }}>
                   {applicationHistory.reduce((s, h) => s + (Number(h.allottedKitta) || 0), 0)} Units
                 </span>
@@ -1186,13 +1186,13 @@ export default function IPOList({ initialTab = 'apply' }) {
             <div className="card" style={{ padding: 24, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
               <History style={{ width: 28, height: 28, color: 'var(--text-muted)' }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>No Application Records Found</span>
-              <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: 0, maxWidth: 320 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, maxWidth: 320 }}>
                 You have not applied for any IPOs through this account yet, or your MeroShare credentials need to be configured in Account Manager.
               </p>
             </div>
           ) : (
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflowX: 'auto', background: 'var(--surface)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11.5, minWidth: 480 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: 480 }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '9px 12px', fontWeight: 'bold' }}>Company</th>
@@ -1212,21 +1212,21 @@ export default function IPOList({ initialTab = 'apply' }) {
                       <tr key={h.id || i} style={{ background: isAllotted ? 'var(--bull-subtle)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <td style={{ padding: '10px 12px' }}>
                           <div style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{h.companyName}</div>
-                          {h.scrip && <div style={{ fontSize: 9.5, color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{h.scrip}</div>}
+                          {h.scrip && <div style={{ fontSize: 12, color: 'var(--primary-light)', fontFamily: 'var(--font-mono)' }}>{h.scrip}</div>}
                         </td>
                         <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                           {h.appliedDate}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--text-primary)' }}>
                           {h.appliedKitta} kitta
-                          <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Rs. {h.amount?.toLocaleString()}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Rs. {h.amount?.toLocaleString()}</div>
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: isAllotted ? 800 : 500, color: isAllotted ? 'var(--bull)' : 'var(--text-muted)' }}>
                           {Number(h.allottedKitta) > 0 ? `+${h.allottedKitta} kitta` : '0'}
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           <span style={{
-                            display: 'inline-flex', padding: '2.5px 8px', borderRadius: 4, fontSize: 9.5, fontWeight: 'bold', textTransform: 'uppercase',
+                            display: 'inline-flex', padding: '2.5px 8px', borderRadius: 4, fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase',
                             background: isAllotted ? 'rgba(16,217,138,0.12)' : isRejected ? 'rgba(245,69,92,0.12)' : isVerified ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.12)',
                             color: isAllotted ? 'var(--bull)' : isRejected ? 'var(--bear)' : isVerified ? '#60a5fa' : 'var(--accent-amber)',
                             border: `1px solid ${isAllotted ? 'rgba(16,217,138,0.3)' : isRejected ? 'rgba(245,69,92,0.3)' : isVerified ? 'rgba(59,130,246,0.3)' : 'rgba(245,158,11,0.3)'}`

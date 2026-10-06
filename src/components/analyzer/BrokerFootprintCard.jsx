@@ -68,16 +68,16 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StanceIcon style={{ width: 16, height: 16, color: stanceColor }} />
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: stanceColor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: stanceColor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Smart Money Flow: {stanceLabel}
             </div>
-            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 1 }}>
               {stanceExplanation}
             </div>
           </div>
         </div>
         {topBrokerDominancePct > 0 && (
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
             Dominance: <span style={{ color: stanceColor }}>{topBrokerDominancePct}%</span>
           </div>
         )}
@@ -108,7 +108,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
             <Layers style={{ width: 16, height: 16, color: '#60a5fa' }} />
             Multi-Session Smart Money Footprint ({totalSessions} Sessions)
           </div>
-          <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             Aggregated institutional broker accumulation vs distribution volume
           </div>
         </div>
@@ -118,7 +118,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           border: `1px solid ${stanceBorder}`,
           borderRadius: 20,
           padding: '3px 10px',
-          fontSize: 10.5,
+          fontSize: 12,
           fontWeight: 800,
           color: stanceColor,
           display: 'flex',
@@ -136,7 +136,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
         border: '1px solid rgba(255,255,255,0.04)',
         borderRadius: 8,
         padding: '8px 12px',
-        fontSize: 11,
+        fontSize: 12,
         color: '#cbd5e1',
         marginBottom: 12,
         lineHeight: 1.4
@@ -151,7 +151,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           border: '1px solid rgba(245, 158, 11, 0.35)',
           borderRadius: 8,
           padding: '8px 12px',
-          fontSize: 10.5,
+          fontSize: 12,
           color: '#fbbf24',
           marginBottom: 12,
           display: 'flex',
@@ -174,7 +174,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           borderRadius: 10,
           padding: 10
         }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', marginBottom: 8 }}>
             🟢 Top Net Accumulators (खरिदकर्ता)
           </div>
           {netAccumulators.length > 0 ? (
@@ -187,21 +187,21 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
                   background: 'rgba(255,255,255,0.02)',
                   padding: '6px 8px',
                   borderRadius: 6,
-                  fontSize: 11
+                  fontSize: 12
                 }}>
                   <div>
                     <span style={{ fontWeight: 800, color: '#ffffff' }}>#{b.broker}</span>
-                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 10 }}>{b.brokerName}</span>
+                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
                   </div>
                   <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
                     <div style={{ color: 'var(--bull)', fontWeight: 800 }}>+{b.netQty.toLocaleString()} shares</div>
-                    <div style={{ color: '#64748b', fontSize: 9.5 }}>Rs. {formatLakhs(b.netAmount)}</div>
+                    <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(b.netAmount)}</div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: 10.5, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
               No net buyers with significant float absorption
             </div>
           )}
@@ -214,7 +214,7 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
           borderRadius: 10,
           padding: 10
         }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: 8 }}>
             🔴 Top Net Distributors (बिक्रीकर्ता)
           </div>
           {netDistributors.length > 0 ? (
@@ -227,21 +227,21 @@ export function BrokerFootprintCard({ footprint, compact = false }) {
                   background: 'rgba(255,255,255,0.02)',
                   padding: '6px 8px',
                   borderRadius: 6,
-                  fontSize: 11
+                  fontSize: 12
                 }}>
                   <div>
                     <span style={{ fontWeight: 800, color: '#ffffff' }}>#{b.broker}</span>
-                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 10 }}>{b.brokerName}</span>
+                    <span style={{ color: '#94a3b8', marginLeft: 5, fontSize: 12 }}>{b.brokerName}</span>
                   </div>
                   <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
                     <div style={{ color: '#f87171', fontWeight: 800 }}>{b.netQty.toLocaleString()} shares</div>
-                    <div style={{ color: '#64748b', fontSize: 9.5 }}>Rs. {formatLakhs(b.netAmount)}</div>
+                    <div style={{ color: '#64748b', fontSize: 12 }}>Rs. {formatLakhs(b.netAmount)}</div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: 10.5, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#64748b', padding: '10px 0', textAlign: 'center' }}>
               No net sellers with significant distribution pressure
             </div>
           )}

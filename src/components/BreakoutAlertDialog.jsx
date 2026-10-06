@@ -174,7 +174,7 @@ export default function BreakoutAlertDialog({
               <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
                 Breakout Alert: {sym}
               </div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
                 Simultaneous Dual-Gate (Price + RVOL)
               </div>
             </div>
@@ -212,16 +212,16 @@ export default function BreakoutAlertDialog({
             gap: 8
           }}>
             <div>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Current Market State</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Current Market State</div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 1 }}>
-                Rs. {ltp.toFixed(1)} <span style={{ fontSize: 11, color: (stock?.pChange ?? 0) >= 0 ? '#34d399' : '#f87171' }}>
+                Rs. {ltp.toFixed(1)} <span style={{ fontSize: 12, color: (stock?.pChange ?? 0) >= 0 ? '#34d399' : '#f87171' }}>
                   ({(stock?.pChange ?? 0) >= 0 ? '+' : ''}{(stock?.pChange ?? 0).toFixed(2)}%)
                 </span>
               </div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Live Volume Surge</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Live Volume Surge</div>
               <div style={{
                 fontSize: 14,
                 fontWeight: 800,
@@ -259,14 +259,14 @@ export default function BreakoutAlertDialog({
                 <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff' }}>
                   Take Directly from Stock Plan
                 </div>
-                <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>
                   Auto-fills pivot (Rs. {defaultConfig.breakoutPrice}) &amp; RVOL ({defaultConfig.rvolThreshold}x)
                 </div>
               </div>
             </div>
             <span style={{
               background: 'rgba(56, 189, 248, 0.2)',
-              fontSize: 10,
+              fontSize: 12,
               padding: '3px 8px',
               borderRadius: 6,
               fontWeight: 700
@@ -281,11 +281,11 @@ export default function BreakoutAlertDialog({
               <label style={{ fontSize: 12, fontWeight: 800, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>1. Breakout Target Price (Rs.)</span>
                 {isPriceMetNow ? (
-                  <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
                     <CheckCircle2 size={11} /> Met (LTP {ltp})
                   </span>
                 ) : (
-                  <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>
+                  <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
                     {(((Number(breakoutPrice) - ltp) / ltp) * 100).toFixed(1)}% to trigger
                   </span>
                 )}
@@ -316,7 +316,7 @@ export default function BreakoutAlertDialog({
                 }}
               />
             </div>
-            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
               Triggers when price climbs and trades at or above this resistance pivot.
             </div>
           </div>
@@ -327,11 +327,11 @@ export default function BreakoutAlertDialog({
               <label style={{ fontSize: 12, fontWeight: 800, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>2. Minimum RVOL Hurdle (x)</span>
                 {isRvolMetNow ? (
-                  <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 12, color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
                     <CheckCircle2 size={11} /> Met ({currentRvol}x)
                   </span>
                 ) : (
-                  <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
                     Current: {currentRvol}x
                   </span>
                 )}
@@ -380,7 +380,7 @@ export default function BreakoutAlertDialog({
                     border: `1px solid ${Number(rvolThreshold) === chip.val ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.08)'}`,
                     borderRadius: 6,
                     padding: '3px 8px',
-                    fontSize: 10,
+                    fontSize: 12,
                     color: Number(rvolThreshold) === chip.val ? '#38bdf8' : '#94a3b8',
                     cursor: 'pointer'
                   }}
@@ -389,7 +389,7 @@ export default function BreakoutAlertDialog({
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
               Filters out low-volume festival traps. Breakouts with RVOL &lt; 1.5x during pre-Dashain have a 36% win rate.
             </div>
           </div>
@@ -416,7 +416,7 @@ export default function BreakoutAlertDialog({
                     border: '1px solid rgba(255, 255, 255, 0.12)',
                     borderRadius: 6,
                     padding: '2px 8px',
-                    fontSize: 10,
+                    fontSize: 12,
                     color: '#94a3b8',
                     cursor: 'pointer'
                   }}
@@ -447,7 +447,7 @@ export default function BreakoutAlertDialog({
                       border: '1px solid rgba(56, 189, 248, 0.3)',
                       borderRadius: 6,
                       padding: '2px 8px',
-                      fontSize: 10,
+                      fontSize: 12,
                       color: '#38bdf8',
                       cursor: 'pointer'
                     }}
@@ -477,7 +477,7 @@ export default function BreakoutAlertDialog({
               justifyContent: 'space-between',
               alignItems: 'center'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#34d399' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#34d399' }}>
                 <CheckCircle2 size={16} />
                 <span>Alert Triggered in Today's Session!</span>
               </div>
@@ -489,7 +489,7 @@ export default function BreakoutAlertDialog({
                   border: '1px solid rgba(16, 185, 129, 0.4)',
                   borderRadius: 6,
                   padding: '3px 8px',
-                  fontSize: 10.5,
+                  fontSize: 12,
                   fontWeight: 700,
                   color: '#34d399',
                   cursor: 'pointer'

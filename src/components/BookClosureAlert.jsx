@@ -24,7 +24,7 @@ export function BookClosureAlert({ alert, compact = false, onDismiss }) {
       <div style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         background: urgencyBg, border: `1px solid ${urgencyBorder}`,
-        borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700
+        borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 700
       }}>
         <span style={{ color: alert.color }}>📅 {alert.label}</span>
         <span style={{ color: '#cbd5e1' }}>{alert.type}</span>
@@ -42,13 +42,13 @@ export function BookClosureAlert({ alert, compact = false, onDismiss }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: alert.color, marginBottom: 3, letterSpacing: '0.06em' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: alert.color, marginBottom: 3, letterSpacing: '0.06em' }}>
             📅 BOOK CLOSURE {alert.label} — {alert.daysLeft} DAYS LEFT
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: alert.typeColor, marginBottom: 4 }}>
             {alert.type}
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>
             Book closure: <span style={{ color: '#ffffff', fontWeight: 600 }}>{alert.closureDate}</span>
           </div>
         </div>
@@ -56,17 +56,17 @@ export function BookClosureAlert({ alert, compact = false, onDismiss }) {
           <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
         )}
       </div>
-      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 8, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8, lineHeight: 1.5 }}>
         📈 {alert.historicalNote}.
       </div>
-      <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 6, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, lineHeight: 1.5 }}>
         ⏱ {alert.settlementNote} Prices usually drop on the ex-date, so buying late can mean paying for a dividend you then lose in price.
       </div>
       {alert.rightPct > 0 && (
         <div style={{
           marginTop: 8, padding: '8px 10px', borderRadius: 8,
           background: 'rgba(251,146,60,0.10)', border: '1px solid rgba(251,146,60,0.35)',
-          fontSize: 10, color: '#fb923c', lineHeight: 1.5
+          fontSize: 12, color: '#fb923c', lineHeight: 1.5
         }}>
           ⚠️ <strong>Right Share Dilution Warning ({alert.rightPct}% Issue):</strong>
           <br />

@@ -1089,7 +1089,7 @@ export default function PredictorHub({
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="predictor-header-title">
                 <span>NEPSE Predictor</span>
-                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 99, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary-light)', border: '1px solid rgba(59, 130, 246, 0.3)', flexShrink: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 7px', borderRadius: 99, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary-light)', border: '1px solid rgba(59, 130, 246, 0.3)', flexShrink: 0 }}>
                   AI QUANT
                 </span>
               </div>
@@ -1208,7 +1208,7 @@ export default function PredictorHub({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 3,
-                    fontSize: 9,
+                    fontSize: 12,
                     fontWeight: 900,
                     padding: '1px 5px',
                     borderRadius: 6,
@@ -1222,7 +1222,7 @@ export default function PredictorHub({
                 )}
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span style={{
-                    fontSize: 9.5,
+                    fontSize: 12,
                     padding: '1px 5px',
                     borderRadius: 8,
                     background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
@@ -1304,13 +1304,13 @@ export default function PredictorHub({
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)' }}>
                     🎯 इन्डेक्स हेरेर कसरी लगानी निर्णय लिने? (Index Decision Playbook)
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     Market Regime, ५० EMA Ceiling, Target १/२ र दशैं/पुस/असार तरलता चक्र बुझ्न ट्याप गर्नुहोस् →
                   </div>
                 </div>
               </div>
               <span style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 800,
                 color: '#818cf8',
                 padding: '4px 10px',
@@ -1336,11 +1336,11 @@ export default function PredictorHub({
                 boxShadow: '0 12px 36px rgba(0,0,0,0.35)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
                     Session Direction Forecast • {indexPrediction.prediction_date}
                   </span>
                   <span style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     padding: '3px 9px',
                     borderRadius: 99,
@@ -1401,7 +1401,7 @@ export default function PredictorHub({
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Algorithm Confidence</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Algorithm Confidence</div>
                     <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)' }}>
                       {indexPrediction.confidence}%
                     </div>
@@ -1456,7 +1456,7 @@ export default function PredictorHub({
                   </div>
                   {indexPrediction.market_regime && (
                     <span style={{
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '3px 10px',
                       borderRadius: 99,
@@ -1498,13 +1498,13 @@ export default function PredictorHub({
                       <span style={{ fontSize: 13.5, fontWeight: 900, color: indexPrediction.expected_return_range.mean >= 0 ? '#10b981' : '#ef4444' }}>
                         {indexPrediction.expected_return_range.mean >= 0 ? '+' : ''}{indexPrediction.expected_return_range.mean}%
                       </span>
-                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         [{indexPrediction.expected_return_range.lower90}%, {indexPrediction.expected_return_range.upper90}%]
                       </span>
                     </div>
                     {indexPrediction.expected_return_range.isEventWidened && (
                       <span style={{
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: 99,
@@ -1555,7 +1555,7 @@ export default function PredictorHub({
                         Float Index Verification:
                       </span>
                       <span style={{
-                        fontSize: 11.5,
+                        fontSize: 12,
                         fontWeight: 800,
                         color: indexPrediction.float_divergence.divergenceDetected
                           ? '#ef4444'
@@ -1571,7 +1571,7 @@ export default function PredictorHub({
                       </span>
                     </div>
                     {indexPrediction.float_divergence.floatPChange !== null && (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         Float: {indexPrediction.float_divergence.floatPChange >= 0 ? '+' : ''}{indexPrediction.float_divergence.floatPChange}%
                         {indexPrediction.float_divergence.sensitiveFloatPChange !== null
                           ? ` • SenFloat: ${indexPrediction.float_divergence.sensitiveFloatPChange >= 0 ? '+' : ''}${indexPrediction.float_divergence.sensitiveFloatPChange}%`
@@ -1589,11 +1589,11 @@ export default function PredictorHub({
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid var(--border)'
                   }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 1 (Primary)</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 1 (Primary)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: indexPrediction.direction === 'down' ? 'var(--bear)' : 'var(--bull)' }}>
                       Rs. {indexPrediction.targets.target1}
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>Immediate swing objective</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Immediate swing objective</div>
                   </div>
 
                   <div style={{
@@ -1602,11 +1602,11 @@ export default function PredictorHub({
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid var(--border)'
                   }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 2 (Extension)</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Target 2 (Extension)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: indexPrediction.direction === 'down' ? 'var(--bear)' : 'var(--bull)' }}>
                       Rs. {indexPrediction.targets.target2}
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>Trend expansion target</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Trend expansion target</div>
                   </div>
 
                   <div style={{
@@ -1615,13 +1615,13 @@ export default function PredictorHub({
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid var(--border)'
                   }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
                       {indexPrediction.direction === 'down' ? 'Invalidation Ceiling' : 'Stop Floor'}
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--bear)' }}>
                       Rs. {indexPrediction.targets.stopFloor}
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>Structural risk boundary</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Structural risk boundary</div>
                   </div>
 
                   <div style={{
@@ -1630,11 +1630,11 @@ export default function PredictorHub({
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid var(--border)'
                   }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Risk/Reward (RRR)</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Risk/Reward (RRR)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: Number(indexPrediction.targets.rrr) >= 2.0 ? '#10b981' : '#f59e0b' }}>
                       {indexPrediction.targets.rrr}:1
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                       {Number(indexPrediction.targets.rrr) >= 2.0 ? 'Favorable payoff' : 'Symmetric risk'}
                     </div>
                   </div>
@@ -1645,11 +1645,11 @@ export default function PredictorHub({
                     background: 'rgba(255, 255, 255, 0.03)',
                     border: '1px solid var(--border)'
                   }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Index ATR (14d)</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Index ATR (14d)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)' }}>
                       ±{indexPrediction.targets.atr} pts
                     </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>Daily true range volatility</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Daily true range volatility</div>
                   </div>
                 </div>
               </div>
@@ -1673,7 +1673,7 @@ export default function PredictorHub({
                   </div>
                   {indexPrediction.trend_structure.golden_cross !== null && (
                     <span style={{
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '3px 9px',
                       borderRadius: 99,
@@ -1717,13 +1717,13 @@ export default function PredictorHub({
                     alignItems: 'center'
                   }}>
                     <div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>20 EMA (Short-term)</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>20 EMA (Short-term)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
                         Rs. {Number(indexPrediction.trend_structure.ema_20 || 0).toFixed(1)}
                       </div>
                     </div>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '2px 6px',
                       borderRadius: 6,
@@ -1744,13 +1744,13 @@ export default function PredictorHub({
                     alignItems: 'center'
                   }}>
                     <div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>50 EMA (Structural)</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>50 EMA (Structural)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
                         Rs. {Number(indexPrediction.trend_structure.ema_50 || 0).toFixed(1)}
                       </div>
                     </div>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '2px 6px',
                       borderRadius: 6,
@@ -1771,13 +1771,13 @@ export default function PredictorHub({
                     alignItems: 'center'
                   }}>
                     <div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>200 EMA (Macro)</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>200 EMA (Macro)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
                         Rs. {Number(indexPrediction.trend_structure.ema_200 || 0).toFixed(1)}
                       </div>
                     </div>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '2px 6px',
                       borderRadius: 6,
@@ -1822,7 +1822,7 @@ export default function PredictorHub({
                       Nepal Fiscal Cycle: {indexPrediction.fiscal_cycle.phase}
                     </div>
                     <span style={{
-                      fontSize: 10.5,
+                      fontSize: 12,
                       fontWeight: 700,
                       padding: '2px 7px',
                       borderRadius: 6,
@@ -1869,8 +1869,8 @@ export default function PredictorHub({
                       border: '1px solid var(--border)'
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>{f.label}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{f.weight}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{f.label}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{f.weight}</span>
                       </div>
                       <div style={{
                         fontSize: 16,
@@ -1880,7 +1880,7 @@ export default function PredictorHub({
                       }}>
                         {f.val > 0 ? `+${f.val}` : f.val}
                       </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{f.desc}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{f.desc}</div>
                     </div>
                   ))}
                 </div>
@@ -1936,7 +1936,7 @@ export default function PredictorHub({
                             <td style={{ padding: '9px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>{h.prediction_date}</td>
                             <td style={{ padding: '9px 10px' }}>
                               <span style={{
-                                fontSize: 11, fontWeight: 800, textTransform: 'uppercase',
+                                fontSize: 12, fontWeight: 800, textTransform: 'uppercase',
                                 color: h.direction === 'up' ? 'var(--bull)' : h.direction === 'down' ? 'var(--bear)' : '#f59e0b'
                               }}>
                                 {h.direction}
@@ -1954,7 +1954,7 @@ export default function PredictorHub({
                                   <XCircle style={{ width: 14, height: 14 }} /> Missed
                                 </span>
                               ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Active</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Active</span>
                               )}
                             </td>
                           </tr>
@@ -2037,7 +2037,7 @@ export default function PredictorHub({
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
                     📖 नयाँ लगानीकर्ताका लागि सरल नियम (Buy, Sell & Hold Guide)
                   </div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
                     Tap to view the 4-step physical evidence checklist before buying
                   </div>
                 </div>
@@ -2071,7 +2071,7 @@ export default function PredictorHub({
                       <Shield style={{ width: 20, height: 20, color: '#f43f5e' }} />
                     </div>
                     <div>
-                      <div style={{ fontSize: 10.5, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
+                      <div style={{ fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f43f5e' }}>
                         {cashDefenseActive ? 'Systemic Risk Filter • Cash Defense Mode Active' : 'Quantitative Risk Filter • Capital Defense Active'}
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>
@@ -2080,7 +2080,7 @@ export default function PredictorHub({
                     </div>
                   </div>
                   <span style={{
-                    fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 99,
+                    fontSize: 12, fontWeight: 800, padding: '4px 10px', borderRadius: 99,
                     background: 'rgba(244, 63, 94, 0.15)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.3)'
                   }}>
                     {cashDefenseActive
@@ -2184,7 +2184,7 @@ export default function PredictorHub({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 20 }}>🏆</span>
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#34d399' }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#34d399' }}>
                           {hasPlan ? `Institutional Setup • ${planVerdict}` : `Daily Prime Setup • ${primeDailyPick.setupClass || 'Highest Statistical Edge'}`}
                         </div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff' }}>
@@ -2197,7 +2197,7 @@ export default function PredictorHub({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <span style={{
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '3px 8px',
                         borderRadius: 99,
@@ -2213,7 +2213,7 @@ export default function PredictorHub({
 
                       {primeDailyPick.isLockedForSession && (
                         <span style={{
-                          fontSize: 10.5,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 99,
@@ -2230,7 +2230,7 @@ export default function PredictorHub({
 
                       {primePlanLoading ? (
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 900,
                           padding: '3px 10px',
                           borderRadius: 99,
@@ -2245,7 +2245,7 @@ export default function PredictorHub({
                         </span>
                       ) : (
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 900,
                           padding: '3px 9px',
                           borderRadius: 99,
@@ -2259,7 +2259,7 @@ export default function PredictorHub({
 
                       {winRate != null && (
                         <span style={{
-                          fontSize: 10.5,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 99,
@@ -2272,7 +2272,7 @@ export default function PredictorHub({
                       )}
 
                       <span style={{
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '3px 8px',
                         borderRadius: 99,
@@ -2284,7 +2284,7 @@ export default function PredictorHub({
                       </span>
 
                       <span style={{
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '3px 8px',
                         borderRadius: 99,
@@ -2304,7 +2304,7 @@ export default function PredictorHub({
                       border: '1px solid rgba(37, 99, 235, 0.3)',
                       borderRadius: 10,
                       padding: '8px 12px',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 700,
                       color: '#93c5fd',
                       display: 'flex',
@@ -2323,7 +2323,7 @@ export default function PredictorHub({
                       border: '1px solid rgba(239, 68, 68, 0.4)',
                       borderRadius: 10,
                       padding: '7px 12px',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 800,
                       color: '#fca5a5',
                       display: 'flex',
@@ -2341,7 +2341,7 @@ export default function PredictorHub({
                         <span style={{ fontSize: 22, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
                           {sym}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 6 }}>
                           {(() => {
                             const masterStock = Array.isArray(stocks) ? stocks.find(s => s?.symbol === sym) : null;
                             return (primeDailyPick.sector && primeDailyPick.sector !== 'Unknown' && primeDailyPick.sector !== 'NEPSE')
@@ -2350,7 +2350,7 @@ export default function PredictorHub({
                           })()}
                         </span>
                         {hasPlan && (
-                          <span style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 7px', borderRadius: 6, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                             Verified Backtested Model
                           </span>
                         )}
@@ -2390,28 +2390,28 @@ export default function PredictorHub({
                       gap: 8,
                     }}>
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>Evidence Confidence</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Evidence Confidence</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: confColor, marginTop: 2 }}>
                           {confidenceLevel} ({analogCount} ANALOGS)
                         </div>
                       </div>
 
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>Setup Structure</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Setup Structure</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: '#ffffff', marginTop: 2, textTransform: 'capitalize' }}>
                           {String(primePlan.setupType || 'coiled pre breakout').replace(/_/g, ' ')}
                         </div>
                       </div>
 
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>Signal Agreement</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Signal Agreement</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: '#34d399', marginTop: 2 }}>
                           {signalAgreement ? `${signalAgreement.agreementPct}% (${signalAgreement.bullishCount} Bull / ${signalAgreement.bearishCount} Bear)` : 'Consensus Positive'}
                         </div>
                       </div>
 
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>Data Quality</div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Data Quality</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginTop: 2 }}>
                           {primePlan.dataQuality?.overall || 'HIGH'} ({primePlan.dataQuality?.historyDays || 227} bars)
                         </div>
@@ -2436,14 +2436,14 @@ export default function PredictorHub({
                         const isBreakoutEntry = eLow > ltp * 1.005;
                         return (
                           <>
-                            <div style={{ fontSize: 10, color: isBreakoutEntry ? '#f59e0b' : '#38bdf8', fontWeight: 800, textTransform: 'uppercase' }}>
+                            <div style={{ fontSize: 12, color: isBreakoutEntry ? '#f59e0b' : '#38bdf8', fontWeight: 800, textTransform: 'uppercase' }}>
                               {isBreakoutEntry ? '⚡ Breakout Entry (Buy Above Pivot)' : '🟢 Recommended Buy Zone'}
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 800, color: isBreakoutEntry ? '#fbbf24' : '#38bdf8', fontFamily: 'var(--font-mono, monospace)' }}>
                               Rs. {entryLow} – {entryHigh}
                             </div>
                             {isBreakoutEntry && (
-                              <div style={{ fontSize: 9, color: '#f59e0b', marginTop: 2 }}>
+                              <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>
                                 LTP Rs. {ltp.toFixed(1)} is below zone — wait for breakout trigger
                               </div>
                             )}
@@ -2452,29 +2452,29 @@ export default function PredictorHub({
                       })()}
                     </div>
                     <div>
-                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 1 (1.5R Swing)</div>
+                      <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 1 (1.5R Swing)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono, monospace)' }}>
                         Rs. {target1} ({t1Sign}{t1Pct}%)
                       </div>
                       {t1NetPct != null && (
-                        <div style={{ fontSize: 9.5, fontWeight: 700, color: '#34d399', marginTop: 2 }}>
-                          Net: +{t1NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginTop: 2 }}>
+                          Net: +{t1NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                         </div>
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
+                      <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Target 2 (3.0R Runner)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', fontFamily: 'var(--font-mono, monospace)' }}>
                         Rs. {target2} ({t2Sign}{t2Pct}%)
                       </div>
                       {t2NetPct != null && (
-                        <div style={{ fontSize: 9.5, fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
-                          Net: +{t2NetPct}% <span style={{ fontSize: 8.5, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#c084fc', marginTop: 2 }}>
+                          Net: +{t2NetPct}% <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>(-7.5% CGT+fees)</span>
                         </div>
                       )}
                     </div>
                     <div>
-                      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
+                      <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Stop Loss (Structural)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono, monospace)' }}>
                         Rs. {stopLoss} (-{slPct}%)
                       </div>
@@ -2491,7 +2491,7 @@ export default function PredictorHub({
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 8,
-                      fontSize: 11
+                      fontSize: 12
                     }}>
                       {bullFactors.length > 0 && (
                         <div>
@@ -2539,12 +2539,12 @@ export default function PredictorHub({
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 12 }}>{hubPreOpenGate.badge.slice(0, 2)}</span>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: hubPreOpenGate.color }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: hubPreOpenGate.color }}>
                             {hubPreOpenGate.badge.slice(2)}
                           </span>
                         </div>
                         {hubPreOpenGate.hasLiveOrders && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#94a3b8' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
                             <span>Bids: <strong style={{ color: '#38bdf8' }}>{fmt(hubPreOpenGate.totalBidQty)}</strong></span>
                             <span>Asks: <strong style={{ color: '#f87171' }}>{fmt(hubPreOpenGate.totalAskQty)}</strong></span>
                             <span style={{
@@ -2557,7 +2557,7 @@ export default function PredictorHub({
                           </div>
                         )}
                       </div>
-                      <div style={{ fontSize: 10.5, color: '#cbd5e1', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.4 }}>
                         {hubPreOpenGate.recommendation}
                       </div>
                     </div>
@@ -2569,7 +2569,7 @@ export default function PredictorHub({
                     border: '1px solid rgba(99, 102, 241, 0.25)',
                     borderRadius: 10,
                     padding: '7px 11px',
-                    fontSize: 10,
+                    fontSize: 12,
                     color: '#94a3b8',
                     lineHeight: 1.5
                   }}>
@@ -2711,7 +2711,7 @@ export default function PredictorHub({
                   {stockFilter === 'catalyst' && <><span>📢</span> Ranked by upcoming dividends, bonus shares, rights & AGM disclosures</>}
                 </span>
                 <span style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '2px 8px',
                   borderRadius: 99,
@@ -2746,7 +2746,7 @@ export default function PredictorHub({
                   <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', marginBottom: 4 }}>
                     CASH DEFENSE MODE ACTIVE — DO NOT ENTER NEW POSITIONS
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.55 }}>
+                  <div style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.55 }}>
                     Market breadth has collapsed below 40% (fewer than 40% of NEPSE stocks are above their 50-day EMA).
                     Entering new positions in a weak-breadth environment dramatically increases loss probability.
                     <strong style={{ color: '#fbbf24' }}> The screener below is for research only.</strong>{' '}
@@ -2788,7 +2788,7 @@ export default function PredictorHub({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 800,
                           color: 'var(--text-muted)'
                         }}>
@@ -2802,9 +2802,9 @@ export default function PredictorHub({
                             >
                               {s.symbol}
                             </span>
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.sector}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.sector}</span>
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {s.companyName}
                           </div>
                         </div>
@@ -2866,7 +2866,7 @@ export default function PredictorHub({
                             gap: 4,
                             padding: '3px 9px',
                             borderRadius: 99,
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: 900,
                             background: 'rgba(168, 85, 247, 0.15)',
                             color: '#c084fc',
@@ -2903,7 +2903,7 @@ export default function PredictorHub({
                         <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
                           Rs. {s.ltp}
                           <span style={{
-                            fontSize: 11,
+                            fontSize: 12,
                             marginLeft: 6,
                             color: s.pChange >= 0 ? 'var(--bull)' : 'var(--bear)'
                           }}>
@@ -2921,7 +2921,7 @@ export default function PredictorHub({
                         background: 'rgba(168, 85, 247, 0.08)',
                         border: '1px solid rgba(168, 85, 247, 0.25)',
                         color: '#c084fc',
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 700,
                         display: 'flex',
                         alignItems: 'center',
@@ -2940,28 +2940,28 @@ export default function PredictorHub({
                       background: 'rgba(255,255,255,0.02)',
                       padding: '8px 10px',
                       borderRadius: 10,
-                      fontSize: 11
+                      fontSize: 12
                     }}>
                       <div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>5D Mom.</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>5D Mom.</div>
                         <div style={{ fontWeight: 800, color: s.momentum_5d >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
                           {s.momentum_5d > 0 ? `+${s.momentum_5d}%` : `${s.momentum_5d}%`}
                         </div>
                       </div>
                       <div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Vol. Surge</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Vol. Surge</div>
                         <div style={{ fontWeight: 800, color: s.volume_surge_ratio >= 1.3 ? '#f59e0b' : 'var(--text-primary)' }}>
                           {s.volume_surge_ratio}x
                         </div>
                       </div>
                       <div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>RSI (14)</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>RSI (14)</div>
                         <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
                           {s.rsi_14}
                         </div>
                       </div>
                       <div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>OBV Trend</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>OBV Trend</div>
                         <div style={{ fontWeight: 800, textTransform: 'capitalize', color: s.obv_trend === 'rising' ? 'var(--bull)' : 'var(--text-muted)' }}>
                           {s.obv_trend}
                         </div>
@@ -2970,7 +2970,7 @@ export default function PredictorHub({
 
                     {/* AI Reasoning blurb */}
                     {s.reasoning && (
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.4 }}>
                         {s.reasoning}
                       </div>
                     )}
@@ -2988,7 +2988,7 @@ export default function PredictorHub({
                           background: 'rgba(59, 130, 246, 0.12)',
                           border: '1px solid rgba(59, 130, 246, 0.3)',
                           color: 'var(--primary-light)',
-                          fontSize: 11.5,
+                          fontSize: 12,
                           fontWeight: 800,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease'
@@ -3060,7 +3060,7 @@ export default function PredictorHub({
                     <Landmark style={{ width: 16, height: 16, color: 'var(--primary-light)' }} />
                     Nepal Rastra Bank (NRB) Macro Pulse
                   </div>
-                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Official Gazette Releases</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Official Gazette Releases</span>
                 </div>
 
                 <div style={{
@@ -3089,9 +3089,9 @@ export default function PredictorHub({
                       background: 'rgba(255,255,255,0.03)',
                       border: '1px solid var(--border)'
                     }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{m.label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>{m.label}</div>
                       <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4 }}>{m.value}</div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: m.color }}>{m.status}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: m.color }}>{m.status}</div>
                     </div>
                   ))}
                 </div>
@@ -3140,7 +3140,7 @@ export default function PredictorHub({
                           {news.headline}
                         </div>
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 8,
@@ -3153,7 +3153,7 @@ export default function PredictorHub({
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ textTransform: 'uppercase', color: 'var(--primary-light)', fontWeight: 800 }}>
                             {news.source}
@@ -3165,7 +3165,7 @@ export default function PredictorHub({
                             background: 'rgba(255,255,255,0.05)',
                             color: 'var(--text-muted)',
                             textTransform: 'uppercase',
-                            fontSize: 9.5
+                            fontSize: 12
                           }}>
                             {news.category}
                           </span>
@@ -3188,7 +3188,7 @@ export default function PredictorHub({
                                   borderRadius: 4,
                                   background: 'rgba(59, 130, 246, 0.12)',
                                   color: 'var(--primary-light)',
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   fontWeight: 800,
                                   cursor: 'pointer'
                                 }}
@@ -3246,7 +3246,7 @@ export default function PredictorHub({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '2px 8px',
                   borderRadius: 6,
@@ -3257,7 +3257,7 @@ export default function PredictorHub({
                 }}>
                   {selectedNewsArticle.source || 'Financial News'}
                 </span>
-                <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
                   {selectedNewsArticle.published_at || selectedNewsArticle.date || 'Latest'}
                 </span>
               </div>
@@ -3290,7 +3290,7 @@ export default function PredictorHub({
             {/* Related Symbols */}
             {selectedNewsArticle.related_symbols && selectedNewsArticle.related_symbols.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>Mentioned Securities:</span>
+                <span style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>Mentioned Securities:</span>
                 {selectedNewsArticle.related_symbols.map((sym, si) => (
                   <button
                     key={si}
@@ -3305,7 +3305,7 @@ export default function PredictorHub({
                       background: 'rgba(37, 99, 235, 0.2)',
                       border: '1px solid rgba(59, 130, 246, 0.4)',
                       color: '#60a5fa',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 800,
                       cursor: 'pointer'
                     }}

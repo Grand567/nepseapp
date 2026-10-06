@@ -18,7 +18,7 @@ export class ErrorBoundary extends React.Component {
           <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--bear)' }}>Something went wrong</h2>
           <p style={{ fontSize: '13px', opacity: 0.8, marginTop: '8px' }}>Failed to load this module. The application caught a crash.</p>
           
-          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255,0,0,0.1)', border: '1px solid var(--bear)', borderRadius: '8px', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255,0,0,0.1)', border: '1px solid var(--bear)', borderRadius: '8px', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
             <strong style={{color:'var(--bear)', fontSize:'13px'}}>{this.state.error?.toString()}</strong>
             <br/><br/>
             {this.state.error?.stack}

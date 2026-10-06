@@ -268,7 +268,7 @@ export default function SubscriptionModal() {
               borderRadius: 20,
               padding: '4px 12px',
               color: '#f59e0b',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 800,
               letterSpacing: '0.05em',
               marginBottom: 10
@@ -330,11 +330,11 @@ export default function SubscriptionModal() {
                 </span>
               </div>
               {isPro ? (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                   Expires: <strong style={{ color: '#fff' }}>{formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{daysRemaining} days remaining</strong>
                 </div>
               ) : (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                   Select a monthly pass below to activate immediate access.
                 </div>
               )}
@@ -344,7 +344,7 @@ export default function SubscriptionModal() {
               <span style={{
                 background: 'rgba(16, 185, 129, 0.15)',
                 color: '#10B981',
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 800,
                 padding: '4px 10px',
                 borderRadius: 8,
@@ -366,11 +366,11 @@ export default function SubscriptionModal() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Smartphone style={{ width: 14, height: 14, color: '#f59e0b' }} />
-                <span style={{ fontSize: 11.5, fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Your Device License ID
                 </span>
               </div>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Hardware Tied
               </span>
             </div>
@@ -396,7 +396,7 @@ export default function SubscriptionModal() {
                     color: copiedId ? '#ffffff' : '#fbbf24',
                     borderRadius: 7,
                     padding: '5px 10px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     cursor: 'pointer',
                     display: 'flex',
@@ -419,7 +419,7 @@ export default function SubscriptionModal() {
                     color: '#25D366',
                     borderRadius: 7,
                     padding: '5px 9px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
@@ -433,7 +433,7 @@ export default function SubscriptionModal() {
               </div>
             </div>
 
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.4 }}>
               💡 Pro activation keys are cryptographically locked to this ID. Send this Device ID to the developer/admin to receive your personal activation key.
             </div>
           </div>
@@ -442,7 +442,7 @@ export default function SubscriptionModal() {
           <div style={{ marginBottom: 20 }}>
             <label style={{
               display: 'block',
-              fontSize: 11.5,
+              fontSize: 12,
               fontWeight: 800,
               color: 'var(--text-muted)',
               textTransform: 'uppercase',
@@ -483,7 +483,7 @@ export default function SubscriptionModal() {
                         right: 8,
                         background: 'linear-gradient(90deg, #f59e0b, #d97706)',
                         color: '#000',
-                        fontSize: 8.5,
+                        fontSize: 12,
                         fontWeight: 900,
                         padding: '2px 6px',
                         borderRadius: 6,
@@ -497,7 +497,7 @@ export default function SubscriptionModal() {
                       <div style={{ fontSize: 13, fontWeight: 800, color: isSelected ? '#f59e0b' : '#ffffff' }}>
                         {plan.label}
                       </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                         {plan.days} Days Full Access
                       </div>
                     </div>
@@ -511,7 +511,7 @@ export default function SubscriptionModal() {
                       }}>
                         Rs. {plan.priceRs}
                       </div>
-                      <div style={{ fontSize: 9.5, color: isSelected ? '#fbbf24' : '#10b981', fontWeight: 700, marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: isSelected ? '#fbbf24' : '#10b981', fontWeight: 700, marginTop: 2 }}>
                         {plan.savingsText}
                       </div>
                     </div>
@@ -564,7 +564,7 @@ export default function SubscriptionModal() {
               </span>
             </div>
 
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.4 }}>
               Enter your developer-issued device key (e.g. <span style={{ color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>DS1M-{deviceId ? deviceId.replace('DS-', '') : '8A7F-94B2'}-XXXX-YYYY</span>) or promo code. Keys are single-use and device-locked.
             </div>
 
@@ -608,7 +608,7 @@ export default function SubscriptionModal() {
             {promoMessage && (
               <div style={{
                 marginTop: 8,
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 600,
                 color: promoMessage.success ? '#10B981' : '#F43F5E',
                 display: 'flex',
@@ -628,11 +628,11 @@ export default function SubscriptionModal() {
             padding: '12px 14px',
             marginBottom: 14
           }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
               Everything included with Drabyashree Pro:
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 11.5 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 12 }}>
               {[
                 'Real-Time Circuit Radar & Breakout Scanner (100% automated)',
                 'Daily Master Prime Picks & Stealth Institutional Accumulation',
@@ -651,7 +651,7 @@ export default function SubscriptionModal() {
 
           {/* Support / Payment Info */}
           <div style={{
-            fontSize: 10.5,
+            fontSize: 12,
             color: 'var(--text-muted)',
             textAlign: 'center',
             lineHeight: 1.5,
@@ -677,7 +677,7 @@ export default function SubscriptionModal() {
                   background: 'transparent',
                   border: 'none',
                   color: 'var(--text-muted)',
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'inline-flex',
@@ -705,7 +705,7 @@ export default function SubscriptionModal() {
                   <form onSubmit={handleUnlockDev} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Lock style={{ width: 13, height: 13, color: '#f59e0b' }} />
-                      <span style={{ fontSize: 11.5, fontWeight: 800, color: '#fff' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
                         Developer Verification
                       </span>
                     </div>
@@ -734,7 +734,7 @@ export default function SubscriptionModal() {
                           border: 'none',
                           borderRadius: 8,
                           padding: '0 14px',
-                          fontSize: 11.5,
+                          fontSize: 12,
                           fontWeight: 800,
                           cursor: 'pointer'
                         }}
@@ -743,7 +743,7 @@ export default function SubscriptionModal() {
                       </button>
                     </div>
                     {pinError && (
-                      <span style={{ fontSize: 10.5, color: '#f43f5e', fontWeight: 700 }}>
+                      <span style={{ fontSize: 12, color: '#f43f5e', fontWeight: 700 }}>
                         ❌ Incorrect passcode. Access denied.
                       </span>
                     )}
@@ -757,14 +757,14 @@ export default function SubscriptionModal() {
                           Developer Portal Unlocked
                         </span>
                       </div>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         Cryptographic SHA-256 Engine
                       </span>
                     </div>
 
                     <form onSubmit={handleGenerateDeveloperKey} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
                           Customer Device License ID:
                         </label>
                         <input
@@ -787,7 +787,7 @@ export default function SubscriptionModal() {
                       </div>
 
                       <div>
-                        <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
                           Select Plan Duration:
                         </label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
@@ -802,7 +802,7 @@ export default function SubscriptionModal() {
                                 border: '1px solid var(--border)',
                                 borderRadius: 6,
                                 padding: '6px 2px',
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: 800,
                                 cursor: 'pointer'
                               }}
@@ -843,7 +843,7 @@ export default function SubscriptionModal() {
                         borderRadius: 10,
                         padding: '10px 12px'
                       }}>
-                        <div style={{ fontSize: 10.5, color: '#10B981', fontWeight: 700, marginBottom: 4 }}>
+                        <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginBottom: 4 }}>
                           🔑 Generated Single-Use Key ({generatedKey.plan} · {generatedKey.days} Days):
                         </div>
                         <div style={{
@@ -871,7 +871,7 @@ export default function SubscriptionModal() {
                               color: '#fff',
                               borderRadius: 6,
                               padding: '6px 10px',
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
@@ -894,7 +894,7 @@ export default function SubscriptionModal() {
                               color: '#25D366',
                               borderRadius: 6,
                               padding: '6px 10px',
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
@@ -926,7 +926,7 @@ export default function SubscriptionModal() {
                     background: 'none',
                     border: 'none',
                     color: 'var(--text-muted)',
-                    fontSize: 10.5,
+                    fontSize: 12,
                     textDecoration: 'underline',
                     cursor: 'pointer'
                   }}
@@ -935,18 +935,18 @@ export default function SubscriptionModal() {
                 </button>
               ) : (
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10.5, color: '#f43f5e' }}>Confirm reset?</span>
+                  <span style={{ fontSize: 12, color: '#f43f5e' }}>Confirm reset?</span>
                   <button
                     type="button"
                     onClick={() => { cancelPlan(); setShowCancelConfirm(false); }}
-                    style={{ background: '#f43f5e', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer' }}
+                    style={{ background: '#f43f5e', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 12, cursor: 'pointer' }}
                   >
                     Yes, Reset
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowCancelConfirm(false)}
-                    style={{ background: 'transparent', color: 'var(--text-muted)', border: 'none', fontSize: 10, cursor: 'pointer' }}
+                    style={{ background: 'transparent', color: 'var(--text-muted)', border: 'none', fontSize: 12, cursor: 'pointer' }}
                   >
                     No
                   </button>

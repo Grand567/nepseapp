@@ -135,11 +135,11 @@ export function FestivalSeasonalityCard({
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 6 }}>
               Festival & Fiscal Seasonality Shield
-              <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
+              <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
                 Accurate BS Calendar
               </span>
             </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
               Nepali lunar calendar liquidity cycle & banking cash flow impact
             </div>
           </div>
@@ -151,7 +151,7 @@ export function FestivalSeasonalityCard({
             borderRadius: 6,
             background: badgeBg,
             border: `1px solid ${badgeBorder}`,
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: 700,
             color: badgeText,
             letterSpacing: '0.4px',
@@ -188,7 +188,7 @@ export function FestivalSeasonalityCard({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                fontSize: 11,
+                fontSize: 12,
                 color: '#cbd5e1',
                 background: 'rgba(0, 0, 0, 0.3)',
                 padding: '3px 8px',
@@ -203,7 +203,7 @@ export function FestivalSeasonalityCard({
             </div>
           )}
         </div>
-        <div style={{ fontSize: 11.5, color: '#94a3b8', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
           {season.detail}
         </div>
       </div>
@@ -225,7 +225,7 @@ export function FestivalSeasonalityCard({
             padding: '9px 11px',
           }}
         >
-          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
             <Activity size={11} color="#64748b" /> Liquidity Velocity
           </div>
           <div
@@ -238,7 +238,7 @@ export function FestivalSeasonalityCard({
           >
             {isFestiveLull ? '-35% to -50% Turnover' : isTaxDrain ? 'Deposit Drain' : isAgmRally ? '+40% High Turnover' : 'Normal Equilibrium'}
           </div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {isFestiveLull ? 'Festive cash withdrawal' : isTaxDrain ? 'Advance tax transfer' : isAgmRally ? 'Dividend bidding' : 'Regular banking flow'}
           </div>
         </div>
@@ -252,7 +252,7 @@ export function FestivalSeasonalityCard({
             padding: '9px 11px',
           }}
         >
-          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
             {isAgmRally ? <TrendingUp size={11} color="#34d399" /> : <TrendingDown size={11} color="#f87171" />} Historical Win Rate
           </div>
           <div
@@ -265,7 +265,7 @@ export function FestivalSeasonalityCard({
           >
             {season.historicalWinRate || '50% Historical'}
           </div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             Avg Return: <strong>{season.historicalAvgReturn || '0.0%'}</strong>
           </div>
         </div>
@@ -279,7 +279,7 @@ export function FestivalSeasonalityCard({
             padding: '9px 11px',
           }}
         >
-          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
             {rvolPassed ? <CheckCircle2 size={11} color="#34d399" /> : <XCircle size={11} color="#f87171" />} RVOL Hurdle
           </div>
           <div
@@ -294,11 +294,11 @@ export function FestivalSeasonalityCard({
             }}
           >
             <span>{currentRvol.toFixed(2)}x</span>
-            <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 400 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}>
               (min {rvolThreshold.toFixed(1)}x)
             </span>
           </div>
-          <div style={{ fontSize: 9.5, color: rvolPassed ? '#34d399' : '#f87171', marginTop: 2, fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: rvolPassed ? '#34d399' : '#f87171', marginTop: 2, fontWeight: 600 }}>
             {rvolPassed ? '✅ Volume Confirmed' : '⚠️ Sub-Hurdle Fakeout Risk'}
           </div>
         </div>
@@ -312,7 +312,7 @@ export function FestivalSeasonalityCard({
             padding: '9px 11px',
           }}
         >
-          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
             <Coins size={11} color="#64748b" /> Cycle Bias
           </div>
           <div
@@ -326,7 +326,7 @@ export function FestivalSeasonalityCard({
           >
             {season.bias ? season.bias.replace('_', ' ') : 'Neutral'}
           </div>
-          <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             Score bonus: <strong>{season.scoreBonus && season.scoreBonus > 0 ? `+${season.scoreBonus}` : season.scoreBonus || 0}</strong>
           </div>
         </div>
@@ -339,7 +339,7 @@ export function FestivalSeasonalityCard({
           border: '1px dashed rgba(255, 255, 255, 0.1)',
           borderRadius: 8,
           padding: '9px 12px',
-          fontSize: 11,
+          fontSize: 12,
           color: '#cbd5e1',
           display: 'flex',
           alignItems: 'flex-start',
@@ -356,7 +356,7 @@ export function FestivalSeasonalityCard({
 
       {/* ── Annual Seasonality Roadmap Pills ── */}
       <div>
-        <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>
           NEPSE Annual Liquidity Roadmap
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -368,7 +368,7 @@ export function FestivalSeasonalityCard({
                 style={{
                   padding: '4px 8px',
                   borderRadius: 6,
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: isActive ? 700 : 500,
                   background: isActive
                     ? tp.bias === 'bullish'
@@ -388,7 +388,7 @@ export function FestivalSeasonalityCard({
                 }}
               >
                 <span>{tp.label}</span>
-                <span style={{ fontSize: 8.5, color: isActive ? '#fcd34d' : '#64748b' }}>({tp.months})</span>
+                <span style={{ fontSize: 12, color: isActive ? '#fcd34d' : '#64748b' }}>({tp.months})</span>
                 {isActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fbbf24', display: 'inline-block' }} />}
               </div>
             );
@@ -405,7 +405,7 @@ export function FestivalSeasonalityCard({
             border: 'none',
             padding: 0,
             color: '#60a5fa',
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
             display: 'flex',
@@ -425,7 +425,7 @@ export function FestivalSeasonalityCard({
               borderRadius: 8,
               background: 'rgba(0, 0, 0, 0.35)',
               border: '1px solid rgba(255, 255, 255, 0.06)',
-              fontSize: 11,
+              fontSize: 12,
               color: '#94a3b8',
               lineHeight: 1.55,
               display: 'flex',

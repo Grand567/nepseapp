@@ -1576,7 +1576,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   <t.icon style={{ width: 14, height: 14, color: isActive ? '#ffffff' : t.color }} />
                   <span>{t.label}</span>
                   <span style={{
-                    fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                    fontSize: 12, padding: '1px 6px', borderRadius: 8,
                     background: isActive ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)',
                     color: isActive ? '#ffffff' : 'var(--text-muted)',
                     fontWeight: 800
@@ -1679,7 +1679,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 <h3 className="section-title" style={{ marginBottom: 0, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Edit3 style={{ width: 16, height: 16 }} /> Edit MeroShare Account
                 </h3>
-                <button type="button" onClick={handleCancelEditProfile} className="btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }}>
+                <button type="button" onClick={handleCancelEditProfile} className="btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }}>
                   Cancel
                 </button>
               </div>
@@ -1763,7 +1763,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <h3 className="section-title" style={{ marginBottom: 0 }}>Registered Accounts ({profiles.length})</h3>
-                <span style={{ fontSize: 10, color: 'var(--bull)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 12, color: 'var(--bull)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   <ShieldCheck style={{ width: 14, height: 14 }} /> Local Secure Storage
                 </span>
               </div>
@@ -1772,15 +1772,15 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   <div key={p.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', marginBottom: 0 }}>
                     <div style={{ flex: 1, minWidth: 0, paddingRight: 8 }}>
                       <div style={{ fontSize: 14, fontWeight: 'bold', color: 'var(--text-primary)' }}>{p.name || 'Account'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{p.dpName || 'Capital DP'} • BOID: ...{p.boid ? String(p.boid).slice(-4) : '****'}</div>
-                      <div style={{ fontSize: 10.5, color: '#38bdf8', marginTop: 2, fontFamily: 'var(--font-mono)' }}>@{p.username || ''}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{p.dpName || 'Capital DP'} • BOID: ...{p.boid ? String(p.boid).slice(-4) : '****'}</div>
+                      <div style={{ fontSize: 12, color: '#38bdf8', marginTop: 2, fontFamily: 'var(--font-mono)' }}>@{p.username || ''}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <button 
                         onClick={() => handleTestConnection(p)}
                         disabled={testingProfileId === p.id}
                         className="btn-secondary" 
-                        style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, borderColor: 'rgba(56,189,248,0.3)', color: '#38bdf8', background: 'rgba(56,189,248,0.08)' }}
+                        style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, borderColor: 'rgba(56,189,248,0.3)', color: '#38bdf8', background: 'rgba(56,189,248,0.08)' }}
                         title="Test CDSC login credentials"
                       >
                         {testingProfileId === p.id ? (
@@ -1843,7 +1843,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
                   <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>DP / BANK ID</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>DP / BANK ID</div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].dpCode}</div>
                     </div>
                     <button 
@@ -1856,7 +1856,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
                   <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>USERNAME</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>USERNAME</div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].username}</div>
                     </div>
                     <button 
@@ -1871,7 +1871,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
                   <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>PASSWORD</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>PASSWORD</div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>••••••••</div>
                     </div>
                     <button 
@@ -1884,7 +1884,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
                   <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>CRN NUMBER</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>CRN NUMBER</div>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{profiles[wizardStep].crn}</div>
                     </div>
                     <button 
@@ -1898,7 +1898,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
                 <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
                   <div>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>4-Digit ASBA PIN</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>4-Digit ASBA PIN</span>
                     <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{profiles[wizardStep].pin}</span>
                   </div>
                   <button 
@@ -1973,7 +1973,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               <h4 style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--primary-light)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
                 ⚙️ Proxy Server Configuration
               </h4>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, marginBottom: 12 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 12 }}>
                 The mobile app connects to a secure proxy backend to query CDSC/MeroShare. If the default Vercel server is blocked or offline, you can configure a custom proxy server IP/domain here.
               </p>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2195,7 +2195,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                                     <ShieldCheck style={{ width: 16, height: 16 }} /> SEBON 10-Kitta Allotment Probability
                                   </h4>
                                   <span style={{
-                                    fontSize: 11.5,
+                                    fontSize: 12,
                                     fontWeight: 800,
                                     padding: '3px 8px',
                                     borderRadius: 6,
@@ -2718,7 +2718,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               gap: 4
             }}>
               <span style={{ fontSize: 12, fontWeight: 'bold', color: '#f87171' }}>⚠️ Cloud Firewall (WAF) Limit</span>
-              <p style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
                 CDSC's security firewall blocks direct connections from cloud hosts (Vercel/Render). 
                 If <b>Auto</b> sync fails, please use the <b>CSV</b> method (recommended) or paste a <b>Token</b> to sync your holdings.
               </p>
@@ -2745,7 +2745,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           background: btn.active ? 'var(--primary)' : 'rgba(255,255,255,0.04)',
                           color: btn.active ? '#fff' : 'var(--text-secondary)',
                           border: `1px solid ${btn.active ? 'var(--primary-light)' : 'var(--border)'}`,
-                          borderRadius: 8, padding: '4px 10px', fontSize: 11, fontWeight: 800,
+                          borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 800,
                           cursor: 'pointer', transition: 'all 0.15s ease'
                         }}
                       >
@@ -2790,7 +2790,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   const currentError = syncErrors[selectedProfileId];
                   if (currentError) {
                     return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--bear)', marginTop: -4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--bear)', marginTop: -4 }}>
                         <AlertCircle style={{ width: 11, height: 11 }} />
                         <span>Sync Interrupted — Retry available</span>
                       </div>
@@ -2804,7 +2804,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                   const label = hrs > 0 ? `${hrs}h ${mins % 60}m ago` : mins > 0 ? `${mins}m ago` : 'just now';
                   const holdingCount = selProfile?.holdings?.length || 0;
                   return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--bull)', marginTop: -4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--bull)', marginTop: -4 }}>
                       <CheckCircle2 style={{ width: 11, height: 11 }} />
                       Synced {label} · {holdingCount} holdings loaded
                     </div>
@@ -2815,17 +2815,17 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 {showTokenInput && (
                   <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', marginTop: 4 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--primary-light)' }}>Session Token Sync (Immune to WAF blocks)</span>
+                      <span style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--primary-light)' }}>Session Token Sync (Immune to WAF blocks)</span>
                       <a 
                         href="javascript:(function(){const t=sessionStorage.getItem('active-user-token')||localStorage.getItem('active-user-token')||JSON.parse(localStorage.getItem('user'))?.token;if(t){navigator.clipboard.writeText(t);alert('MeroShare Token Copied to Clipboard!');}else{alert('Please log into MeroShare first!');}})();"
                         className="badge badge-bull"
-                        style={{ fontSize: 9, padding: '2px 6px', textDecoration: 'none', cursor: 'help' }}
+                        style={{ fontSize: 12, padding: '2px 6px', textDecoration: 'none', cursor: 'help' }}
                         title="Drag this button to your bookmarks bar. Log into MeroShare, click it to copy your token, and paste it here!"
                       >
                         🌟 Get Bookmarklet
                       </a>
                     </div>
-                    <p style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4 }}>
                       Log into the official MeroShare in another tab, open DevTools (F12) &rarr; Application &rarr; Session Storage &rarr; <code>active-user-token</code> (or use the Bookmarklet), copy the token, and paste it below:
                     </p>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -2833,7 +2833,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         type="text" 
                         className="input" 
                         placeholder="Bearer eyJhbGciOiJIUzI1NiIsInR..." 
-                        style={{ fontSize: 11, height: 32 }}
+                        style={{ fontSize: 12, height: 32 }}
                         value={sessionToken}
                         onChange={e => setSessionToken(e.target.value)}
                       />
@@ -2841,7 +2841,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         onClick={() => handleRetrieveWithToken(selectedProfileId, sessionToken)}
                         disabled={isRetrieving || !sessionToken}
                         className="btn-primary"
-                        style={{ fontSize: 11, height: 32, padding: '0 12px' }}
+                        style={{ fontSize: 12, height: 32, padding: '0 12px' }}
                       >
                         Sync
                       </button>
@@ -2852,8 +2852,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                 {/* CSV Import UI */}
                 {showCsvImport && (
                   <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', marginTop: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--primary-light)' }}>Import MeroShare holdings CSV</span>
-                    <p style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--primary-light)' }}>Import MeroShare holdings CSV</span>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4 }}>
                       Go to MeroShare &rarr; <b>My Portfolio</b>, click <b>Export</b> / <b>Download CSV</b>, and upload it here to load your holdings instantly:
                     </p>
                     <input 
@@ -2861,7 +2861,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                       accept=".csv" 
                       onChange={(e) => handleCsvImport(e, selectedProfileId)}
                       className="input"
-                      style={{ fontSize: 11, padding: '6px 8px' }}
+                      style={{ fontSize: 12, padding: '6px 8px' }}
                     />
                   </div>
                 )}
@@ -2878,14 +2878,14 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                     <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                       Connecting to CDSC MeroShare...
                     </h4>
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       {retrievalStep === 1 && "Connecting to CDSC secure gateway..."}
                       {retrievalStep === 2 && "Authenticating encrypted credentials..."}
                       {retrievalStep === 3 && "Decrypting and fetching stock asset balances..."}
                       {retrievalStep === 4 && "Synchronizing balances with live NEPSE market feed..."}
                     </p>
                   </div>
-                  <span className="badge badge-primary" style={{ fontSize: 9 }}>CDSC SECURE HANDSHAKE</span>
+                  <span className="badge badge-primary" style={{ fontSize: 12 }}>CDSC SECURE HANDSHAKE</span>
                 </div>
               )}
 
@@ -3051,7 +3051,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                             type="button"
                             onClick={() => setHubValuationMode(m.id)}
                             style={{
-                              flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
+                              flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
                               background: isActive ? (m.id === 'prevClose' ? 'rgba(16,217,138,0.2)' : m.id === 'ltp' ? 'rgba(56,189,248,0.2)' : 'rgba(91,94,244,0.25)') : 'transparent',
                               color: isActive ? '#ffffff' : 'var(--text-muted)',
                               border: isActive ? `1px solid ${m.color}` : '1px solid transparent',
@@ -3069,13 +3069,13 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <div className="card" style={{ padding: 16, marginBottom: 0, background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Demat Net Worth</div>
-                          <span style={{ fontSize: 8.5, padding: '1px 5px', borderRadius: 4, background: hubValuationMode === 'prevClose' ? 'rgba(16,217,138,0.15)' : 'rgba(56,189,248,0.15)', color: hubValuationMode === 'prevClose' ? 'var(--bull)' : '#38bdf8', fontWeight: 700 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Demat Net Worth</div>
+                          <span style={{ fontSize: 12, padding: '1px 5px', borderRadius: 4, background: hubValuationMode === 'prevClose' ? 'rgba(16,217,138,0.15)' : 'rgba(56,189,248,0.15)', color: hubValuationMode === 'prevClose' ? 'var(--bull)' : '#38bdf8', fontWeight: 700 }}>
                             {hubValuationMode === 'prevClose' ? 'CDSC Prev Close' : hubValuationMode === 'ltp' ? 'CDSC LTP' : 'Live NEPSE'}
                           </span>
                         </div>
                         <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>{formatRs(totalValue)}</div>
-                        <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span>MeroShare Prev Close:</span> <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalPrevCloseValue)}</strong>
                           </div>
@@ -3088,12 +3088,12 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                         </div>
                       </div>
                       <div className="card" style={{ padding: 16, marginBottom: 0, background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Total Profit / Loss</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Total Profit / Loss</div>
                         <div style={{ fontSize: 16, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4, color: totalPL >= 0 ? 'var(--bull)' : 'var(--bear)' }}>
                           {totalPL >= 0 ? <TrendingUp style={{ width: 16, height: 16 }} /> : <TrendingDown style={{ width: 16, height: 16 }} />}
                           {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(2)}%
                         </div>
-                        <div style={{ fontSize: 11, fontWeight: 'bold', color: totalPL >= 0 ? 'var(--bull)' : 'var(--bear)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ fontSize: 12, fontWeight: 'bold', color: totalPL >= 0 ? 'var(--bull)' : 'var(--bear)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
                           {totalPL >= 0 ? '+' : ''}{formatRs(totalPL)}
                         </div>
                       </div>
@@ -3107,12 +3107,12 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           <button 
                             onClick={handleResetHoldings}
                             className="btn-secondary"
-                            style={{ fontSize: 9, padding: '2px 6px', color: 'var(--text-muted)', borderColor: 'var(--border)', cursor: 'pointer', height: 'auto' }}
+                            style={{ fontSize: 12, padding: '2px 6px', color: 'var(--text-muted)', borderColor: 'var(--border)', cursor: 'pointer', height: 'auto' }}
                             title="Clear cached holdings and re-fetch from CDSC"
                           >
                             Reset Holdings
                           </button>
-                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>CDSC Secure Feed</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>CDSC Secure Feed</span>
                         </div>
                       </div>
 
@@ -3164,7 +3164,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                             }
                           }}
                           className="btn-secondary"
-                          style={{ fontSize: 11, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 4, height: 38, borderColor: 'rgba(91,94,244,0.3)', color: 'var(--primary-light)' }}
+                          style={{ fontSize: 12, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 4, height: 38, borderColor: 'rgba(91,94,244,0.3)', color: 'var(--primary-light)' }}
                         >
                           <Plus style={{ width: 14, height: 14 }} /> Add Stock
                         </button>
@@ -3176,7 +3176,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                           <h4 style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 8, color: 'var(--primary-light)' }}>Add Stock Asset to Demat</h4>
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
                             <div>
-                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Symbol</label>
+                              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Symbol</label>
                               <select 
                                 value={newHoldingSymbol} 
                                 onChange={e => {
@@ -3185,7 +3185,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                                   if (stk) setNewHoldingWacc(stk.ltp);
                                 }} 
                                 className="select-input"
-                                style={{ height: 32, fontSize: 11, padding: '0 4px', width: '100%' }}
+                                style={{ height: 32, fontSize: 12, padding: '0 4px', width: '100%' }}
                               >
                                 {marketStocks.map(s => (
                                   <option key={s.symbol} value={s.symbol}>{s.symbol} - {s.name}</option>
@@ -3193,24 +3193,24 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                               </select>
                             </div>
                             <div>
-                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Units</label>
+                              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Units</label>
                               <input 
                                 type="number" 
                                 className="input" 
                                 placeholder="Units" 
-                                style={{ height: 32, fontSize: 11, padding: '0 8px' }}
+                                style={{ height: 32, fontSize: 12, padding: '0 8px' }}
                                 value={newHoldingUnits} 
                                 onChange={e => setNewHoldingUnits(e.target.value)} 
                               />
                             </div>
                             <div>
-                              <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>WACC (Rs.)</label>
+                              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>WACC (Rs.)</label>
                               <input 
                                 type="number" 
                                 step="0.01"
                                 className="input" 
                                 placeholder="WACC" 
-                                style={{ height: 32, fontSize: 11, padding: '0 8px' }}
+                                style={{ height: 32, fontSize: 12, padding: '0 8px' }}
                                 value={newHoldingWacc} 
                                 onChange={e => setNewHoldingWacc(e.target.value)} 
                               />
@@ -3221,7 +3221,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                               type="button" 
                               onClick={() => setShowAddHoldingForm(false)} 
                               className="btn-secondary" 
-                              style={{ fontSize: 10, padding: '4px 8px', height: 26 }}
+                              style={{ fontSize: 12, padding: '4px 8px', height: 26 }}
                             >
                               Cancel
                             </button>
@@ -3229,7 +3229,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                               type="button" 
                               onClick={handleAddCustomHolding} 
                               className="btn-primary" 
-                              style={{ fontSize: 10, padding: '4px 12px', height: 26 }}
+                              style={{ fontSize: 12, padding: '4px 12px', height: 26 }}
                             >
                               Save Holding
                             </button>
@@ -3261,29 +3261,29 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                                   <button 
                                     onClick={() => handleDeleteCustomHolding(h.symbol)} 
                                     className="btn-bear btn-xs"
-                                    style={{ padding: '2px 8px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, border: 'none', borderRadius: 4, cursor: 'pointer', background: 'rgba(245,69,92,0.15)', color: 'var(--bear)' }}
+                                    style={{ padding: '2px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, border: 'none', borderRadius: 4, cursor: 'pointer', background: 'rgba(245,69,92,0.15)', color: 'var(--bear)' }}
                                   >
                                     <Trash2 style={{ width: 12, height: 12 }} /> Delete
                                   </button>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                   <div>
-                                    <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Units</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>Units</label>
                                     <input 
                                       type="number" 
                                       className="input" 
-                                      style={{ height: 30, fontSize: 11, padding: '0 8px' }}
+                                      style={{ height: 30, fontSize: 12, padding: '0 8px' }}
                                       value={editUnits} 
                                       onChange={e => setEditUnits(e.target.value)} 
                                     />
                                   </div>
                                   <div>
-                                    <label style={{ fontSize: 9, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>WACC (Rs.)</label>
+                                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>WACC (Rs.)</label>
                                     <input 
                                       type="number" 
                                       step="0.01"
                                       className="input" 
-                                      style={{ height: 30, fontSize: 11, padding: '0 8px' }}
+                                      style={{ height: 30, fontSize: 12, padding: '0 8px' }}
                                       value={editWacc} 
                                       onChange={e => setEditWacc(e.target.value)} 
                                     />
@@ -3294,7 +3294,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                                     type="button" 
                                     onClick={() => setEditingStockSymbol(null)} 
                                     className="btn-secondary" 
-                                    style={{ fontSize: 10, padding: '4px 8px', height: 24 }}
+                                    style={{ fontSize: 12, padding: '4px 8px', height: 24 }}
                                   >
                                     Cancel
                                   </button>
@@ -3302,7 +3302,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                                     type="button" 
                                     onClick={() => handleSaveEditHolding(h.symbol)} 
                                     className="btn-primary" 
-                                    style={{ fontSize: 10, padding: '4px 12px', height: 24 }}
+                                    style={{ fontSize: 12, padding: '4px 12px', height: 24 }}
                                   >
                                     Save Changes
                                   </button>
@@ -3393,7 +3393,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               </div>
               <div>
                 <h4 style={{ fontSize: 15, fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: 6 }}>No MeroShare Account Connected</h4>
-                <p style={{ fontSize: 11.5, color: 'var(--text-muted)', maxWidth: 280, margin: '0 auto', lineHeight: 1.55 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 280, margin: '0 auto', lineHeight: 1.55 }}>
                   Connect your MeroShare credentials to securely fetch and analyze your Demat holdings, calculate WACC tax base, and track direct returns.
                 </p>
               </div>

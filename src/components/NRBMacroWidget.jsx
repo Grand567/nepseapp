@@ -55,13 +55,13 @@ export function NRBMacroWidget({ compact = false }) {
 
   if (loading) {
     return compact
-      ? <span style={{ fontSize: 10, color: '#475569', padding: '2px 8px' }}>NRB Loading…</span>
+      ? <span style={{ fontSize: 12, color: '#475569', padding: '2px 8px' }}>NRB Loading…</span>
       : null;
   }
 
   if (error || !macroData) {
     return compact
-      ? <span style={{ fontSize: 10, color: '#475569', padding: '2px 8px' }}>NRB Offline</span>
+      ? <span style={{ fontSize: 12, color: '#475569', padding: '2px 8px' }}>NRB Offline</span>
       : null;
   }
 
@@ -88,21 +88,21 @@ export function NRBMacroWidget({ compact = false }) {
           transition: 'opacity 0.2s'
         }}>
           <span style={{ fontSize: 12 }}>{meta.icon}</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: meta.text, letterSpacing: '0.05em' }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: meta.text, letterSpacing: '0.05em' }}>
             {r.regime}
           </span>
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>
             IBOR {r.interbankRate.toFixed(2)}%
           </span>
-          <span style={{ fontSize: 10, color: '#60a5fa' }}>
+          <span style={{ fontSize: 12, color: '#60a5fa' }}>
             Repo {r.policyRepoRate.toFixed(2)}%
           </span>
           {!macroData.liveDataAvailable && (
-            <span title="Live NRB rate could not be scraped; showing last stored baseline. Verify at nrb.org.np" style={{ fontSize: 8, color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 6, padding: '0 4px' }}>
+            <span title="Live NRB rate could not be scraped; showing last stored baseline. Verify at nrb.org.np" style={{ fontSize: 12, color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 6, padding: '0 4px' }}>
               BASELINE
             </span>
           )}
-          <span style={{ fontSize: 9, color: '#475569' }}>▾</span>
+          <span style={{ fontSize: 12, color: '#475569' }}>▾</span>
         </div>
 
         {/* Dropdown guidance panel */}
@@ -113,7 +113,7 @@ export function NRBMacroWidget({ compact = false }) {
             borderRadius: 12, padding: '14px 16px', width: 300,
             boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
           }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: meta.text, marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: meta.text, marginBottom: 8 }}>
               {meta.icon} NRB MACRO REGIME: {r.regime}
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6, marginBottom: 10 }}>
@@ -121,24 +121,24 @@ export function NRBMacroWidget({ compact = false }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
               <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '8px 10px' }}>
-                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2 }}>IBOR (Interbank)</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>IBOR (Interbank)</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: meta.text }}>{r.interbankRate.toFixed(2)}%</div>
                 {mp?.interbankRate?.isLive && (
-                  <div style={{ fontSize: 8, color: '#34d399', marginTop: 2 }}>● LIVE</div>
+                  <div style={{ fontSize: 12, color: '#34d399', marginTop: 2 }}>● LIVE</div>
                 )}
               </div>
               <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '8px 10px' }}>
-                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2 }}>Policy Repo Rate</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>Policy Repo Rate</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>{r.policyRepoRate.toFixed(2)}%</div>
               </div>
             </div>
             {/* Regime history context */}
-            <div style={{ fontSize: 9, color: '#475569', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }}>
+            <div style={{ fontSize: 12, color: '#475569', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }}>
               <div style={{ marginBottom: 2 }}>📊 IBOR &lt; 3% → EASING (2078–2079 bull: NEPSE 3200)</div>
               <div style={{ marginBottom: 2 }}>📊 IBOR 3–6% → NEUTRAL (2080–2081 recovery)</div>
               <div style={{ marginBottom: 2 }}>📊 IBOR &gt; 7% → TIGHTENING (2079 crash: NEPSE −44%)</div>
             </div>
-            <div style={{ fontSize: 8, color: '#334155', marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: '#334155', marginTop: 6 }}>
               Source: {macroData.source} · {macroData.asOf}
             </div>
           </div>
@@ -156,14 +156,14 @@ export function NRBMacroWidget({ compact = false }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', marginBottom: 4 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', marginBottom: 4 }}>
             NRB MONETARY POLICY REGIME
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 22 }}>{meta.icon}</span>
             <span style={{ fontSize: 22, fontWeight: 900, color: meta.text }}>{r.regime}</span>
             <span style={{
-              fontSize: 10, background: 'rgba(255,255,255,0.06)',
+              fontSize: 12, background: 'rgba(255,255,255,0.06)',
               padding: '2px 8px', borderRadius: 20, color: '#94a3b8'
             }}>
               Signal Score Multiplier: ×{r.regimeScore}
@@ -172,7 +172,7 @@ export function NRBMacroWidget({ compact = false }) {
         </div>
         <button onClick={fetchMacro} style={{
           background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 8, padding: '4px 8px', color: '#94a3b8', cursor: 'pointer', fontSize: 10
+          borderRadius: 8, padding: '4px 8px', color: '#94a3b8', cursor: 'pointer', fontSize: 12
         }}>↻ Refresh</button>
       </div>
 
@@ -197,9 +197,9 @@ export function NRBMacroWidget({ compact = false }) {
           <div key={label} style={{
             background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '8px 10px'
           }}>
-            <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 2 }}>
               {label}
-              {live && <span style={{ color: '#34d399', marginLeft: 4, fontSize: 8 }}>● LIVE</span>}
+              {live && <span style={{ color: '#34d399', marginLeft: 4, fontSize: 12 }}>● LIVE</span>}
             </div>
             <div style={{ fontSize: 15, fontWeight: 800, color }}>{value}</div>
           </div>
@@ -208,7 +208,7 @@ export function NRBMacroWidget({ compact = false }) {
 
       {/* Regime scale */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 9, color: '#64748b', marginBottom: 4 }}>IBOR REGIME SCALE</div>
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>IBOR REGIME SCALE</div>
         <div style={{ display: 'flex', gap: 3 }}>
           {[
             { label: '< 3%', name: 'EASING', color: '#34d399', active: r.regime === 'EASING' },
@@ -223,10 +223,10 @@ export function NRBMacroWidget({ compact = false }) {
               border: seg.active ? `1px solid ${seg.color}55` : '1px solid rgba(255,255,255,0.06)',
               borderRadius: 6
             }}>
-              <div style={{ fontSize: 8, color: seg.active ? seg.color : '#475569', fontWeight: seg.active ? 800 : 400 }}>
+              <div style={{ fontSize: 12, color: seg.active ? seg.color : '#475569', fontWeight: seg.active ? 800 : 400 }}>
                 {seg.label}
               </div>
-              <div style={{ fontSize: 7, color: seg.active ? seg.color : '#334155', fontWeight: seg.active ? 700 : 400 }}>
+              <div style={{ fontSize: 12, color: seg.active ? seg.color : '#334155', fontWeight: seg.active ? 700 : 400 }}>
                 {seg.name}
               </div>
             </div>
@@ -234,7 +234,7 @@ export function NRBMacroWidget({ compact = false }) {
         </div>
       </div>
 
-      <div style={{ fontSize: 9, color: '#334155' }}>
+      <div style={{ fontSize: 12, color: '#334155' }}>
         Source: {macroData.source} · Last updated: {macroData.asOf}
       </div>
     </div>

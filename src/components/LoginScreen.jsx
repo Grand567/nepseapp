@@ -65,7 +65,7 @@ const Logo = () => (
 const ErrorBanner = ({ error }) => error ? (
   <div style={{ marginTop:14, padding:'10px 12px', borderRadius:'var(--radius-md)', background:'rgba(245,69,92,0.08)', border:'1px solid rgba(245,69,92,0.25)', display:'flex', alignItems:'flex-start', gap:8 }}>
     <AlertCircle style={{ width:14, height:14, color:'var(--bear)', flexShrink:0, marginTop:1 }} />
-    <p style={{ fontSize:11.5, color:'var(--bear)', margin:0, lineHeight:1.5 }}>{error}</p>
+    <p style={{ fontSize: 12, color:'var(--bear)', margin:0, lineHeight:1.5 }}>{error}</p>
   </div>
 ) : null;
 
@@ -169,11 +169,11 @@ export default function LoginScreen({ onLogin }) {
 
           <form onSubmit={handleSignIn} style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <div>
-              <label style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Email Address</label>
+              <label style={{ fontSize: 12, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Email Address</label>
               <input id="input-signin-email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" style={inputStyle} />
             </div>
             <div style={{ position:'relative' }}>
-              <label style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Password</label>
+              <label style={{ fontSize: 12, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Password</label>
               <input id="input-signin-password" type={showPw ? 'text' : 'password'} required autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••" style={{ ...inputStyle, paddingRight:40 }} />
               <button type="button" onClick={() => setShowPw(v => !v)} style={{ position:'absolute', right:10, bottom:10, background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0 }}>
                 {showPw ? <EyeOff style={{ width:15, height:15 }} /> : <Eye style={{ width:15, height:15 }} />}
@@ -213,15 +213,15 @@ export default function LoginScreen({ onLogin }) {
 
           <form onSubmit={handleRegister} style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <div>
-              <label style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Full Name</label>
+              <label style={{ fontSize: 12, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Full Name</label>
               <input id="input-reg-name" type="text" required autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder="Your Name" style={inputStyle} />
             </div>
             <div>
-              <label style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Email Address</label>
+              <label style={{ fontSize: 12, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Email Address</label>
               <input id="input-reg-email" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" style={inputStyle} />
             </div>
             <div style={{ position:'relative' }}>
-              <label style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Password <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(min. 6 characters)</span></label>
+              <label style={{ fontSize: 12, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:5 }}>Password <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(min. 6 characters)</span></label>
               <input id="input-reg-password" type={showPw ? 'text' : 'password'} required autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Create a password" style={{ ...inputStyle, paddingRight:40 }} />
               <button type="button" onClick={() => setShowPw(v => !v)} style={{ position:'absolute', right:10, bottom:10, background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0 }}>
                 {showPw ? <EyeOff style={{ width:15, height:15 }} /> : <Eye style={{ width:15, height:15 }} />}
@@ -236,7 +236,7 @@ export default function LoginScreen({ onLogin }) {
             </button>
           </form>
 
-          <p style={{ fontSize:11, color:'var(--text-muted)', textAlign:'center', marginTop:16, lineHeight:1.5 }}>
+          <p style={{ fontSize: 12, color:'var(--text-muted)', textAlign:'center', marginTop:16, lineHeight:1.5 }}>
             Your data is saved <strong style={{ color:'var(--bull)' }}>locally on this device only</strong>.<br />
             No data is sent to any server.
           </p>
@@ -263,7 +263,7 @@ export default function LoginScreen({ onLogin }) {
         {!configured && (
           <div style={{ background:'rgba(91,94,244,0.07)', border:'1px solid rgba(91,94,244,0.2)', borderRadius:'var(--radius-md)', padding:'9px 12px', marginBottom:18, display:'flex', alignItems:'flex-start', gap:8 }}>
             <AlertCircle style={{ width:14, height:14, color:'var(--primary-light)', flexShrink:0, marginTop:1 }} />
-            <p style={{ fontSize:11, color:'var(--primary-light)', margin:0, lineHeight:1.5 }}>
+            <p style={{ fontSize: 12, color:'var(--primary-light)', margin:0, lineHeight:1.5 }}>
               Firebase not configured. <strong>Email/Password and Guest Mode are fully available.</strong>
             </p>
           </div>
@@ -300,7 +300,7 @@ export default function LoginScreen({ onLogin }) {
             {/* Divider */}
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
               <div style={{ flex:1, height:1, background:'var(--border)' }} />
-              <span style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600 }}>OR</span>
+              <span style={{ fontSize: 12, color:'var(--text-muted)', fontWeight:600 }}>OR</span>
               <div style={{ flex:1, height:1, background:'var(--border)' }} />
             </div>
           </>
@@ -333,7 +333,7 @@ export default function LoginScreen({ onLogin }) {
         {/* Divider */}
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
           <div style={{ flex:1, height:1, background:'var(--border)' }} />
-          <span style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600 }}>QUICK ACCESS</span>
+          <span style={{ fontSize: 12, color:'var(--text-muted)', fontWeight:600 }}>QUICK ACCESS</span>
           <div style={{ flex:1, height:1, background:'var(--border)' }} />
         </div>
 
@@ -353,7 +353,7 @@ export default function LoginScreen({ onLogin }) {
         <ErrorBanner error={error} />
       </div>
 
-      <p style={{ marginTop:24, fontSize:11, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:300 }}>
+      <p style={{ marginTop:24, fontSize: 12, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:300 }}>
         Email accounts are stored <strong style={{ color:'var(--bull)' }}>only on this device</strong>.<br />
         No financial data is shared with third parties.
       </p>

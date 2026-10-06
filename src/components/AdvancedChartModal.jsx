@@ -298,14 +298,14 @@ export default function AdvancedChartModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>{symbol}</span>
               <span style={{
-                fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
+                fontSize: 12, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
                 background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
                 color: isBull ? 'var(--bull)' : '#F43F5E'
               }}>
                 {isBull ? '▲ +' : '▼ '}{fmt(stock?.change || 0)} ({fmt(stock?.pChange || 0)}%)
               </span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {stock?.name || 'Nepal Stock Exchange'} · {stock?.sector || 'Index'}
             </div>
           </div>
@@ -319,7 +319,7 @@ export default function AdvancedChartModal({
               style={{
                 background: chartSource === 'native' ? '#10B981' : 'transparent',
                 color: chartSource === 'native' ? '#000000' : 'rgba(255,255,255,0.7)',
-                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
+                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
               }}
             >
               Native
@@ -329,7 +329,7 @@ export default function AdvancedChartModal({
               style={{
                 background: chartSource === 'web' ? '#10B981' : 'transparent',
                 color: chartSource === 'web' ? '#000000' : 'rgba(255,255,255,0.7)',
-                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 800, cursor: 'pointer'
+                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
               }}
             >
               Web TV
@@ -381,7 +381,7 @@ export default function AdvancedChartModal({
                 style={{
                   background: chartMode === 'candle' ? '#10B981' : 'rgba(255,255,255,0.05)',
                   color: chartMode === 'candle' ? '#000' : '#fff',
-                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer'
+                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 🕯️ Candle
@@ -391,7 +391,7 @@ export default function AdvancedChartModal({
                 style={{
                   background: chartMode === 'line' ? '#10B981' : 'rgba(255,255,255,0.05)',
                   color: chartMode === 'line' ? '#000' : '#fff',
-                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer'
+                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 📈 Line
@@ -406,7 +406,7 @@ export default function AdvancedChartModal({
                   background: showSMA ? 'rgba(234, 179, 8, 0.18)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${showSMA ? '#eab308' : 'rgba(255,255,255,0.1)'}`,
                   color: showSMA ? '#eab308' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer'
+                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 MA 5/10/20
@@ -418,7 +418,7 @@ export default function AdvancedChartModal({
                   background: showSMA200 ? 'rgba(168, 85, 247, 0.18)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${showSMA200 ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
                   color: showSMA200 ? '#a855f7' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer'
+                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 50/200 SMA
@@ -430,7 +430,7 @@ export default function AdvancedChartModal({
                   background: showBollinger ? 'rgba(6, 182, 212, 0.18)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${showBollinger ? '#06b6d4' : 'rgba(255,255,255,0.1)'}`,
                   color: showBollinger ? '#06b6d4' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer'
+                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 Bollinger (20,2)
@@ -442,7 +442,7 @@ export default function AdvancedChartModal({
                   background: showRSI ? 'rgba(236, 72, 153, 0.18)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${showRSI ? '#ec4899' : 'rgba(255,255,255,0.1)'}`,
                   color: showRSI ? '#ec4899' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer'
+                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
                 }}
               >
                 RSI (14)
@@ -459,7 +459,7 @@ export default function AdvancedChartModal({
               display: 'flex',
               flexWrap: 'wrap',
               gap: '6px 12px',
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: 'var(--font-mono)'
             }}>
               <span style={{ color: '#fff', fontWeight: 800 }}>📅 {activePoint.time || activePoint.date}</span>

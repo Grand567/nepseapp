@@ -92,7 +92,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   Investor Decision Guide
                 </h2>
                 <span style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 700,
                   padding: '2px 8px',
                   borderRadius: 12,
@@ -210,7 +210,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   <div style={{ padding: 10, borderRadius: 8, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontWeight: 800, color: '#34d399' }}>🟢 Bullish Expansion (५० EMA माथि र हरियो बजार)</span>
-                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#10b981', color: '#000', fontWeight: 800 }}>७०-८०% लगानी</span>
+                      <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 6, background: '#10b981', color: '#000', fontWeight: 800 }}>७०-८०% लगानी</span>
                     </div>
                     <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
                       <strong>निर्णय: आक्रामक खरिद (Aggressive Buy).</strong> बजार बलियो अपट्रेन्डमा छ। २० वा २१ EMA मा आउने सानो गिरावट (Pullback) मा बजारका अगुवा सेक्टर (Banking/Hydro) का ७० भन्दा माथि स्कोर भएका सेयर ढुक्कसँग किन्नुहोस् र Target 1 र Target 2 सम्म नाफा बढ्न दिनुहोस्।
@@ -221,7 +221,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   <div style={{ padding: 10, borderRadius: 8, background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontWeight: 800, color: '#fbbf24' }}>🟡 Counter-Trend Bounce (५० EMA मुनि १ दिनको उकालो)</span>
-                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f59e0b', color: '#000', fontWeight: 800 }}>६०-७०% नगद</span>
+                      <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 6, background: '#f59e0b', color: '#000', fontWeight: 800 }}>६०-७०% नगद</span>
                     </div>
                     <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
                       <strong>निर्णय: नयाँ खरिद नगर्नुहोस्, नाफा सुरक्षित गर्नुहोस् (Cautious / Exit Weak Stocks).</strong> जब इन्डेक्स ५० EMA भन्दा तल हुन्छ, बजार आधारभूत रूपमा घट्दो (Bearish) हुन्छ। १ दिन बजार हरियो हुनु 'ब्रेकआउट' होइन, 'पासो' (Bull Trap) हुन सक्छ। यो हरियो बजारलाई फसेका कमजोर सेयर बेचेर बाहिरिन (Exit) प्रयोग गर्नुहोस्।
@@ -232,7 +232,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
                   <div style={{ padding: 10, borderRadius: 8, background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontWeight: 800, color: '#fb7185' }}>🔴 Bearish Retracement (५० र २०० EMA मुनि गिरावट)</span>
-                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, background: '#f43f5e', color: '#fff', fontWeight: 800 }}>८०-९०% नगद</span>
+                      <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 6, background: '#f43f5e', color: '#fff', fontWeight: 800 }}>८०-९०% नगद</span>
                     </div>
                     <div style={{ color: '#cbd5e1', lineHeight: 1.5 }}>
                       <strong>निर्णय: पुँजी सुरक्षा (Capital Preservation / Cash is King).</strong> "धेरै सस्तो भयो" भनेर कहिल्यै खसिरहेको चक्कु नसमात्नुहोस् (Never catch a falling knife)। बजार ५० EMA माथि नफर्किएसम्म आफ्नो पैसा सुरक्षित राख्नुहोस् वा छोटो अवधिको मुद्दती/म्युचुअल फन्डमा राख्नुहोस्।
@@ -321,7 +321,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#ffffff' }}>
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>1</span>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>1</span>
                     ट्रेंड ५० दिने औसत (50 EMA) भन्दा माथि हुनुपर्छ
                   </div>
                   <p style={{ margin: '6px 0 0 30px', color: '#94A3B8', fontSize: 12 }}>
@@ -331,7 +331,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
 
                 <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#ffffff' }}>
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>2</span>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>2</span>
                     ठूला ब्रोकरले खरिद गरिरहेको हुनुपर्छ (Smart Money Flow)
                   </div>
                   <p style={{ margin: '6px 0 0 30px', color: '#94A3B8', fontSize: 12 }}>
@@ -341,7 +341,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
 
                 <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#ffffff' }}>
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>3</span>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>3</span>
                     Screener Score ७० वा सोभन्दा माथि हुनुपर्छ
                   </div>
                   <p style={{ margin: '6px 0 0 30px', color: '#94A3B8', fontSize: 12 }}>
@@ -351,7 +351,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
 
                 <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#ffffff' }}>
-                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>4</span>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#10B981', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>4</span>
                     नाफाको सम्भावना घाटाभन्दा दोब्बर हुनुपर्छ (RRR ≥ 2.0)
                   </div>
                   <p style={{ margin: '6px 0 0 30px', color: '#94A3B8', fontSize: 12 }}>
@@ -600,7 +600,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
           alignItems: 'center',
           justifyContent: 'space-between'
         }}>
-          <div style={{ fontSize: 11, color: '#64748B' }}>
+          <div style={{ fontSize: 12, color: '#64748B' }}>
             Drabyashree-NEPSE · Institutional Evidence Engine
           </div>
           <button

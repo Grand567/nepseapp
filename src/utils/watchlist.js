@@ -4,6 +4,7 @@
  */
 
 import { syncUserDataToCloud } from './firebase';
+import { deleteWatchlistAlertConfig } from './watchlistAlerts';
 
 const WATCHLIST_KEY = 'nepse_user_watchlist';
 const LEGACY_KEY = 'nepse_watchlist';
@@ -13,11 +14,19 @@ const LEGACY_KEY = 'nepse_watchlist';
  */
 export function getWatchlist() {
   try {
-    const raw = localStorage.getItem(WATCHLIST_KEY) || localStorage.getItem(LEGACY_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw);
-    if (Array.isArray(list)) {
-      return [...new Set(list.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+    const rawUser = localStorage.getItem(WATCHLIST_KEY);
+    if (rawUser !== null) {
+      const list = JSON.parse(rawUser);
+      if (Array.isArray(list)) {
+        return [...new Set(list.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+      }
+    }
+    const rawLegacy = localStorage.getItem(LEGACY_KEY);
+    if (rawLegacy !== null) {
+      const list = JSON.parse(rawLegacy);
+      if (Array.isArray(list)) {
+        return [...new Set(list.map(s => String(s).trim().toUpperCase()).filter(Boolean))];
+      }
     }
   } catch (_) {}
   return [];
@@ -79,6 +88,12 @@ export function removeFromWatchlist(symbol, userId = null, userEmail = null) {
   const sym = String(symbol).trim().toUpperCase();
   const list = getWatchlist();
   const updated = list.filter(s => s !== sym);
+  
+  // Clean up any breakout alert config so the unticked stock cannot revive itself in dashboard
+  try {
+    deleteWatchlistAlertConfig(sym);
+  } catch (_) {}
+
   return saveWatchlist(updated, userId, userEmail);
 }
 

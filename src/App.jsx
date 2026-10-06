@@ -779,7 +779,7 @@ function AppInner() {
               onClick={() => setShowCalendarModal(true)}
               title="Click to view NEPSE Calendar & Holidays"
             >
-              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+              <span style={{ color: nepseChange >= 0 ? 'var(--bull)' : 'var(--bear)', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                 {indices?.nepse?.value > 0 ? (
                   <>
                     {Number(indices.nepse.value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&nbsp;
@@ -816,7 +816,7 @@ function AppInner() {
               }}
             >
               <RefreshCw style={{ width: 13, height: 13, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)', animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
-              <span className="header-refresh-label" style={{ fontSize: 11, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
+              <span className="header-refresh-label" style={{ fontSize: 12, fontWeight: 800, color: isRefreshing ? 'var(--primary-light)' : 'var(--text-primary)' }}>
                 {isRefreshing ? '…' : 'Refresh'}
               </span>
             </button>
@@ -840,7 +840,7 @@ function AppInner() {
               }}
             >
               <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff' }}>A</span>
-              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--primary-light)' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--primary-light)' }}>
                 {fontScale === 'huge' ? '+++' : fontScale === 'xlarge' ? '++' : fontScale === 'large' ? '+' : ''}
               </span>
             </button>
@@ -872,7 +872,7 @@ function AppInner() {
                 color: '#10b981',
                 cursor: 'pointer',
                 fontWeight: 800,
-                fontSize: 10.5
+                fontSize: 12
               }}
             >
               <Bell style={{ width: 13, height: 13, color: '#10b981' }} />
@@ -898,7 +898,7 @@ function AppInner() {
                 color: isPro ? '#f59e0b' : '#fbbf24',
                 cursor: 'pointer',
                 fontWeight: 900,
-                fontSize: 10.5
+                fontSize: 12
               }}
             >
               <Crown style={{ width: 13, height: 13, color: isPro ? '#f59e0b' : '#fbbf24' }} />
@@ -958,11 +958,11 @@ function AppInner() {
                         <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
                           {user.displayName || 'Guest User'}
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
                           {user.email || 'Local storage only'}
                         </div>
                         {user.isGuest && (
-                          <div style={{ fontSize: 9, color: 'var(--accent-amber)', fontWeight: 700, marginTop: 2 }}>
+                          <div style={{ fontSize: 12, color: 'var(--accent-amber)', fontWeight: 700, marginTop: 2 }}>
                             GUEST MODE
                           </div>
                         )}
@@ -979,12 +979,12 @@ function AppInner() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <Crown style={{ width: 12, height: 12, color: '#f59e0b' }} />
-                        <span style={{ fontSize: 11, fontWeight: 800, color: isPro ? '#f59e0b' : 'var(--text-secondary)' }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: isPro ? '#f59e0b' : 'var(--text-secondary)' }}>
                           {isPro ? `PRO (${planDuration || 'Active'})` : 'FREE PLAN'}
                         </span>
                       </div>
                       {isPro && (
-                        <span style={{ fontSize: 9.5, fontWeight: 800, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '1px 5px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '1px 5px', borderRadius: 4 }}>
                           {daysRemaining}d left
                         </span>
                       )}
@@ -999,7 +999,7 @@ function AppInner() {
                         border: 'none',
                         borderRadius: 6,
                         padding: '5px 8px',
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: 900,
                         cursor: 'pointer',
                         marginTop: 3,
@@ -1027,10 +1027,10 @@ function AppInner() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                       <Smartphone style={{ width: 12, height: 12, color: '#f59e0b', flexShrink: 0 }} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 9.5, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Device License ID
                         </div>
-                        <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
+                        <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
                           {deviceId || 'DS-SYNCING'}
                         </div>
                       </div>
@@ -1049,7 +1049,7 @@ function AppInner() {
                         color: '#fbbf24',
                         borderRadius: 5,
                         padding: '3px 8px',
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: 800,
                         cursor: 'pointer',
                         display: 'flex',
@@ -1149,7 +1149,7 @@ function AppInner() {
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--bull)', display: 'inline-block' }} />
                       ☁️ Cloud Sync (डेटा सिङ्क)
                     </span>
-                    <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(16,185,129,0.2)', color: 'var(--bull)', borderRadius: 4, fontWeight: 800 }}>
+                    <span style={{ fontSize: 12, padding: '2px 6px', background: 'rgba(16,185,129,0.2)', color: 'var(--bull)', borderRadius: 4, fontWeight: 800 }}>
                       SYNC NOW
                     </span>
                   </button>
@@ -1172,7 +1172,7 @@ function AppInner() {
                     onMouseLeave={e => e.currentTarget.style.background = 'none'}
                   >
                     <span>👓 Text Size (कमजोर आँखा)</span>
-                    <span style={{ fontSize: 11, padding: '2px 6px', background: 'rgba(79,70,229,0.2)', color: 'var(--primary-light)', borderRadius: 4, fontWeight: 800 }}>
+                    <span style={{ fontSize: 12, padding: '2px 6px', background: 'rgba(79,70,229,0.2)', color: 'var(--primary-light)', borderRadius: 4, fontWeight: 800 }}>
                       {fontScale.toUpperCase()}
                     </span>
                   </button>
@@ -1284,7 +1284,7 @@ function AppInner() {
                   borderRadius: 10,
                   border: `1px solid ${badgeBorder}`,
                   background: badgeBg,
-                  fontSize: 9.5, fontWeight: 800,
+                  fontSize: 12, fontWeight: 800,
                   color: badgeColor,
                   letterSpacing: '0.02em',
                   lineHeight: 1
@@ -1303,7 +1303,7 @@ function AppInner() {
           })()}
 
           {/* Date */}
-          <span style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600 }} title={marketStatus.bsFormattedEn || ''}>
+          <span style={{ color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }} title={marketStatus.bsFormattedEn || ''}>
             {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
           </span>
         </div>
@@ -1359,8 +1359,8 @@ function AppInner() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: 14.5, fontWeight: 800, color: isSelected ? '#ffffff' : 'var(--text-secondary)' }}>{opt.label}</span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{opt.desc}</div>
-                    <span style={{ fontSize: 10.5, fontWeight: 800, color: isSelected ? 'var(--primary-light)' : 'var(--accent-amber)', marginTop: 2 }}>{opt.badge}</span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{opt.desc}</div>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: isSelected ? 'var(--primary-light)' : 'var(--accent-amber)', marginTop: 2 }}>{opt.badge}</span>
                   </div>
                 );
               })}
@@ -1560,7 +1560,7 @@ function AppInner() {
               </div>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>System Verification Console</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Automated diagnostics and market simulation sandbox</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Automated diagnostics and market simulation sandbox</div>
               </div>
             </div>
             <button
@@ -1636,7 +1636,7 @@ function AppInner() {
                   <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                     NEPSE Market Calendar & Holidays
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     नेप्से क्यालेन्डर तथा सार्वजनिक बिदाहरू
                   </div>
                 </div>
@@ -1666,7 +1666,7 @@ function AppInner() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Today's Nepali Date (वि.सं.)
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
@@ -1706,19 +1706,19 @@ function AppInner() {
                   gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)'
                 }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
                     <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Mon – Fri (सोम – शुक्र)</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Friday market is OPEN</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Friday market is OPEN</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
                     <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>11:00 AM – 3:00 PM</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Nepal Time (NPT)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nepal Time (NPT)</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Saturday & Sunday</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>National weekend off</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>National weekend off</div>
                   </div>
                 </div>
               </div>
@@ -1729,11 +1729,11 @@ function AppInner() {
                   <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Calendar style={{ width: 15, height: 15, color: 'var(--primary)' }} />
                     Upcoming NEPSE Holidays
-                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 7px', borderRadius: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 7px', borderRadius: 10 }}>
                       {upcomingHolidaysList.length}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     Bikram Sambat (वि.सं.)
                   </div>
                 </div>
@@ -1774,7 +1774,7 @@ function AppInner() {
                               <div style={{ fontSize: 14, fontWeight: 800, color: '#c084fc', lineHeight: 1.1 }}>
                                 {h.digitsDay || toNepaliDigits(h.bsDay)}
                               </div>
-                              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600 }}>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600 }}>
                                 {h.dayOfWeekNp || ''}
                               </div>
                             </div>
@@ -1784,7 +1784,7 @@ function AppInner() {
                               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                                 {h.nameNp || h.festival || 'सार्वजनिक बिदा'}
                               </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
                                 {h.nameEn || h.adDate || ''}
                               </div>
                             </div>
@@ -1793,7 +1793,7 @@ function AppInner() {
                           {/* Day tag */}
                           <div style={{ textAlign: 'right' }}>
                             <span style={{
-                              fontSize: 10, fontWeight: 700,
+                              fontSize: 12, fontWeight: 700,
                               padding: '3px 8px', borderRadius: 6,
                               background: isWeekendOff ? 'rgba(251,191,36,0.12)' : 'rgba(244,63,94,0.12)',
                               color: isWeekendOff ? '#fbbf24' : '#f87171',
@@ -1802,7 +1802,7 @@ function AppInner() {
                               {h.dayOfWeekEn || ''}
                             </span>
                             {h.adDate && (
-                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
                                 {h.adDate}
                               </div>
                             )}
@@ -1871,7 +1871,7 @@ function AppInner() {
               {exitToast.title}
             </div>
             {exitToast.desc && (
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, fontWeight: 500 }}>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, fontWeight: 500 }}>
                 {exitToast.desc}
               </div>
             )}

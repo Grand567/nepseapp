@@ -528,7 +528,7 @@ export default function ShareHubChart({
         layout: {
           background: { type: ColorType.Solid, color: 'transparent' },
           textColor: '#94a3b8',
-          fontSize: 11,
+          fontSize: 12,
           fontFamily: 'system-ui, -apple-system, sans-serif'
         },
         grid: {
@@ -806,7 +806,7 @@ export default function ShareHubChart({
           padding: '4px 6px 8px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
           marginBottom: 8,
-          fontSize: '11px',
+          fontSize: 12,
           fontFamily: 'var(--font-mono, monospace)',
           flexWrap: 'wrap',
           gap: 6
@@ -814,7 +814,7 @@ export default function ShareHubChart({
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em' }}>{symbol}</span>
             <span style={{
-              fontSize: '10px',
+              fontSize: 12,
               padding: '1px 6px',
               borderRadius: 4,
               background: isTrulyIntraday ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
@@ -831,7 +831,7 @@ export default function ShareHubChart({
               Rs. {Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span style={{
-              fontSize: '11px',
+              fontSize: 12,
               fontWeight: 800,
               padding: '2px 7px',
               borderRadius: 6,
@@ -846,12 +846,12 @@ export default function ShareHubChart({
               <span>({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)</span>
             </span>
             {hudTimeLabel && (
-              <span style={{ fontSize: '10px', color: '#64748b' }}>({hudTimeLabel})</span>
+              <span style={{ fontSize: 12, color: '#64748b' }}>({hudTimeLabel})</span>
             )}
             {/* C1: Adjusted prices indicator */}
             {Array.isArray(rawHistory) && rawHistory.some(c => c.isAdjusted) && (
               <span style={{
-                fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+                fontSize: 12, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
                 background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
                 color: '#818cf8'
               }} title="Prices back-adjusted for bonus shares, rights issues, and cash dividends">
@@ -861,7 +861,7 @@ export default function ShareHubChart({
             {/* Weekly view indicator */}
             {activeTf === 'WEEKLY' && (
               <span style={{
-                fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: 8,
+                fontSize: 12, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
                 background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)',
                 color: '#38bdf8'
               }}>
@@ -902,7 +902,7 @@ export default function ShareHubChart({
           zIndex: 20
         }}>
           <Activity style={{ width: 28, height: 28, color: '#3875F6', animation: 'spin 1.5s linear infinite', marginBottom: 8 }} />
-          <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>Loading historical data…</span>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>Loading historical data…</span>
         </div>
       )}
 
@@ -922,7 +922,7 @@ export default function ShareHubChart({
           zIndex: 20
         }}>
           <p style={{ fontSize: '12px', fontWeight: 800, color: '#F43F5E', margin: '0 0 4px' }}>⚠️ Chart Data Error</p>
-          <p style={{ fontSize: '10.5px', color: '#64748b', maxWidth: 280 }}>{error}</p>
+          <p style={{ fontSize: 12, color: '#64748b', maxWidth: 280 }}>{error}</p>
         </div>
       )}
 
@@ -965,7 +965,7 @@ export default function ShareHubChart({
                     border: 'none',
                     borderRadius: 6,
                     padding: '4px 9px',
-                    fontSize: '11px',
+                    fontSize: 12,
                     fontWeight: isActive ? 900 : 700,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
@@ -1060,7 +1060,7 @@ export default function ShareHubChart({
               borderRadius: 20,
               padding: '6px 18px',
               color: '#60a5fa',
-              fontSize: '11.5px',
+              fontSize: 12,
               fontWeight: 800,
               cursor: 'pointer',
               display: 'inline-flex',

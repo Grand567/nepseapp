@@ -218,7 +218,7 @@ export function GrahamSafetyCard({
               </span>
               <span
                 style={{
-                  fontSize: 9.5,
+                  fontSize: 12,
                   fontWeight: 800,
                   textTransform: 'uppercase',
                   padding: '2px 6px',
@@ -230,7 +230,7 @@ export function GrahamSafetyCard({
                 Intelligent Investor
               </span>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
               Defensive equity framework: Valuation shock-absorber & permanent capital preservation
             </div>
           </div>
@@ -243,7 +243,7 @@ export function GrahamSafetyCard({
             background: 'transparent',
             border: 'none',
             color: '#60a5fa',
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 700,
             display: 'flex',
             alignItems: 'center',
@@ -266,7 +266,7 @@ export function GrahamSafetyCard({
             borderRadius: 12,
             border: '1px solid rgba(59, 130, 246, 0.25)',
             padding: '12px 14px',
-            fontSize: 11.5,
+            fontSize: 12,
             color: '#cbd5e1',
             lineHeight: 1.55,
           }}
@@ -291,7 +291,7 @@ export function GrahamSafetyCard({
           >
             V* = √(22.5 × EPS × BVPS) &nbsp;|&nbsp; Margin of Safety % = ((V* - LTP) / V*) × 100
           </div>
-          <p style={{ margin: 0, color: '#94a3b8', fontSize: 11 }}>
+          <p style={{ margin: 0, color: '#94a3b8', fontSize: 12 }}>
             Where <strong>22.5</strong> reflects Graham’s dual upper ceiling: a maximum Price-to-Earnings of <strong>15.0×</strong> multiplied by a maximum Price-to-Book of <strong>1.5×</strong> (15 × 1.5 = 22.5). When you purchase with a ≥ 20% margin of safety, you are insulated from analytical errors, unexpected recessions, or adverse fiscal shocks.
           </p>
         </div>
@@ -316,7 +316,7 @@ export function GrahamSafetyCard({
           <div style={{ fontSize: 13, fontWeight: 800, color: tierBadgeText, marginBottom: 2 }}>
             {tierTitle}
           </div>
-          <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.45 }}>
+          <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.45 }}>
             {tierDescription}
           </div>
         </div>
@@ -339,7 +339,7 @@ export function GrahamSafetyCard({
             padding: '10px 12px',
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
             {isLossMaking ? 'Graham Asset Floor' : 'Graham Fair Value (V*)'}
           </div>
           <div
@@ -353,7 +353,7 @@ export function GrahamSafetyCard({
           >
             Rs. {effectiveIntrinsic.toFixed(1)}
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {isLossMaking ? '2/3 Tangible BVPS (Liquidation)' : isSectorEstimated ? '√(22.5 × EPS × BVPS) (Sector)' : 'Formula: √(22.5 × EPS × BVPS)'}
           </div>
         </div>
@@ -367,7 +367,7 @@ export function GrahamSafetyCard({
             padding: '10px 12px',
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
             Margin of Safety %
           </div>
           <div
@@ -381,7 +381,7 @@ export function GrahamSafetyCard({
           >
             {mosPct >= 0 ? '+' : ''}{mosPct.toFixed(1)}%
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {isLossMaking
               ? 'Vs Tangible Asset Floor'
               : mosPct >= 15
@@ -401,7 +401,7 @@ export function GrahamSafetyCard({
             padding: '10px 12px',
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
             EPS (TTM) & P/E Ratio
           </div>
           <div
@@ -415,7 +415,7 @@ export function GrahamSafetyCard({
           >
             {eps < 0 ? `-Rs. ${Math.abs(eps).toFixed(2)}` : `Rs. ${eps.toFixed(2)}`}{isSectorEstimated ? ' *' : ''}
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {eps > 0 && currentPrice > 0 ? `P/E: ${(currentPrice / eps).toFixed(1)}x (Max 15x)` : 'Negative EPS (Loss)'}
           </div>
         </div>
@@ -429,7 +429,7 @@ export function GrahamSafetyCard({
             padding: '10px 12px',
           }}
         >
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
             BVPS & Graham Product
           </div>
           <div
@@ -443,7 +443,7 @@ export function GrahamSafetyCard({
           >
             Rs. ${bookValue.toFixed(1)}{isSectorEstimated ? ' *' : ''}
           </div>
-          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {pePb > 0 ? `P/E × P/B: ${pePb.toFixed(1)} (Max 22.5)` : currentPrice > 0 && bookValue > 0 ? `P/B: ${(currentPrice / bookValue).toFixed(1)}x` : 'Multiple pending'}
           </div>
         </div>
@@ -461,7 +461,7 @@ export function GrahamSafetyCard({
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: 6,
-          fontSize: 11,
+          fontSize: 12,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -469,7 +469,7 @@ export function GrahamSafetyCard({
           <span style={{ fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono, monospace)' }}>
             Rs. {interestAdjusted.intrinsicValue > 0 ? interestAdjusted.intrinsicValue.toFixed(1) : grahamFloor.toFixed(1)}
           </span>
-          <span style={{ color: '#64748b', fontSize: 10 }}>
+          <span style={{ color: '#64748b', fontSize: 12 }}>
             {interestAdjusted.maxBuyPrice20 > 0 ? `(Max Buy 20% MOS: Rs. ${interestAdjusted.maxBuyPrice20.toFixed(1)})` : '(Protected Asset Floor)'}
           </span>
         </div>
@@ -499,7 +499,7 @@ export function GrahamSafetyCard({
           gap: 6,
         }}
       >
-        <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 2 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 2 }}>
           Graham 5-Point Capital Preservation Audit
         </div>
 
@@ -511,7 +511,7 @@ export function GrahamSafetyCard({
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 8,
-              fontSize: 11,
+              fontSize: 12,
               padding: '3px 0',
               borderBottom: idx < checklist.length - 1 ? '1px solid rgba(255, 255, 255, 0.03)' : 'none',
             }}
@@ -532,7 +532,7 @@ export function GrahamSafetyCard({
                 fontWeight: 700,
                 color: item.passed ? '#34d399' : '#f87171',
                 flexShrink: 0,
-                fontSize: 10.5,
+                fontSize: 12,
               }}
             >
               {item.value}
@@ -547,7 +547,7 @@ export function GrahamSafetyCard({
           display: 'flex',
           alignItems: 'center',
           gap: 7,
-          fontSize: 10.5,
+          fontSize: 12,
           color: '#64748b',
           borderTop: '1px solid rgba(255, 255, 255, 0.05)',
           paddingTop: 8,

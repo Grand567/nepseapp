@@ -1101,7 +1101,7 @@ export default function ServicesHub({
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted, #94a3b8)', marginTop: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted, #94a3b8)', marginTop: 2 }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
               <span>NEPSE Live Feed</span>
               <span>•</span>
@@ -1274,7 +1274,7 @@ export default function ServicesHub({
             <div className="services-search-panel" style={{ margin: '0 0 20px 0' }}>
               <div className="services-search-panel-title">
                 <span>Matching NEPSE Stocks ({matchingStocks.length})</span>
-                <span style={{ fontSize: 10.5, textTransform: 'none', color: '#64748b' }}>Live NEPSE Universe</span>
+                <span style={{ fontSize: 12, textTransform: 'none', color: '#64748b' }}>Live NEPSE Universe</span>
               </div>
               <div className="services-stock-results-grid">
                 {matchingStocks.map((stk) => {
@@ -1300,15 +1300,15 @@ export default function ServicesHub({
                             {stk.symbol}
                           </span>
                           {isExact && (
-                            <span style={{ fontSize: 9, fontWeight: 900, padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
+                            <span style={{ fontSize: 12, fontWeight: 900, padding: '1px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
                               EXACT MATCH
                             </span>
                           )}
-                          <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8', fontWeight: 600 }}>
+                          <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8', fontWeight: 600 }}>
                             {stk.sector}
                           </span>
                         </div>
-                        <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
                           {stk.name}
                         </div>
                       </div>
@@ -1320,7 +1320,7 @@ export default function ServicesHub({
                               Rs. {stk.ltp.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
                             </div>
                             <div style={{
-                              fontSize: 10.5,
+                              fontSize: 12,
                               fontWeight: 700,
                               color: isUp ? '#34d399' : isDown ? '#f87171' : '#94a3b8',
                               fontFamily: 'var(--font-mono, monospace)',
@@ -1330,7 +1330,7 @@ export default function ServicesHub({
                           </div>
                         ) : (
                           <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#64748b' }}>
+                            <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#64748b' }}>
                               Un-traded
                             </span>
                           </div>
@@ -1383,7 +1383,7 @@ export default function ServicesHub({
                         }}>
                           {s.name}
                         </div>
-                        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3, textTransform: 'capitalize' }}>
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3, textTransform: 'capitalize' }}>
                           {getServiceCategory(s).replace('-', ' ')}
                         </div>
                       </div>
@@ -1414,7 +1414,7 @@ export default function ServicesHub({
                   <Sparkles size={14} color="#f59e0b" />
                   <span>Flagship Analytical Suites</span>
                 </span>
-                <span style={{ fontSize: 10.5, color: 'var(--text-muted, #94a3b8)' }}>Quick Launch</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>Quick Launch</span>
               </div>
 
               <div className="services-featured-carousel">
@@ -1436,7 +1436,7 @@ export default function ServicesHub({
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 3,
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: 900,
                             padding: '2px 6px',
                             borderRadius: 4,
@@ -1448,14 +1448,14 @@ export default function ServicesHub({
                             PRO
                           </span>
                         ) : (
-                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>
                             FLAGSHIP
                           </span>
                         )}
                       </div>
                       <div>
                         <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', marginBottom: 2 }}>{qs.name}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-muted)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
                           <span>Live Engine</span>
                           <span style={{ color: 'var(--primary-light, #60a5fa)', fontWeight: 800 }}>Open →</span>
                         </div>
@@ -1468,7 +1468,7 @@ export default function ServicesHub({
           )}
 
           {/* Real-time NEPSE Universe Status Strip */}
-          <div style={{ margin: '6px 14px 14px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'var(--bg-card, #151922)', border: '1px solid var(--border, rgba(255,255,255,0.07))', borderRadius: 12, padding: '8px 12px', fontSize: 11, color: 'var(--text-muted, #94a3b8)' }}>
+          <div style={{ margin: '6px 14px 14px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'var(--bg-card, #151922)', border: '1px solid var(--border, rgba(255,255,255,0.07))', borderRadius: 12, padding: '8px 12px', fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
               <span style={{ fontWeight: 800, color: '#ffffff' }}>NEPSE Universe:</span>
@@ -1476,7 +1476,7 @@ export default function ServicesHub({
               <span>•</span>
               <span>13 Sectors</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
               <span style={{ borderRadius: 99, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', fontWeight: 800, color: '#34d399' }}>
                 90+ Endpoints Live
               </span>
@@ -1493,12 +1493,12 @@ export default function ServicesHub({
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', marginBottom: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: '#ffffff' }}>{group.title}</span>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'rgba(255,255,255,0.08)', color: '#94a3b8' }}>
                         {svcs.length}
                       </span>
                     </div>
                   </div>
-                  <p style={{ margin: '0 0 10px 4px', fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>{group.subtitle}</p>
+                  <p style={{ margin: '0 0 10px 4px', fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>{group.subtitle}</p>
                   
                   <div className="services-graceful-grid">
                     {svcs.map((s) => {
@@ -1533,7 +1533,7 @@ export default function ServicesHub({
                               {s.name}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 3 }}>
-                              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>
+                              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'capitalize' }}>
                                 {getServiceCategory(s).replace('-', ' ')}
                               </div>
                               {PRO_SERVICE_IDS.has(s.id) && (
@@ -1541,7 +1541,7 @@ export default function ServicesHub({
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 2.5,
-                                  fontSize: 8.5,
+                                  fontSize: 12,
                                   fontWeight: 900,
                                   padding: '1px 5px',
                                   borderRadius: 4,
@@ -1569,7 +1569,7 @@ export default function ServicesHub({
                 <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>NEPSE Official Data Feed — Live</span>
               </div>
-              <p style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: '#94a3b8' }}>
+              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#94a3b8' }}>
                 Market hours: <strong style={{ color: '#ffffff' }}>Mon–Fri 11:00 AM – 3:00 PM NPT</strong>
                 {' '} · Live prices & indicators powered by <strong style={{ color: '#ffffff' }}>NEPSE NOTS API</strong>
               </p>

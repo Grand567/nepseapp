@@ -219,7 +219,7 @@ export function AlphaPlaybookService() {
                   NEPSE Alpha Playbook
                 </h1>
                 <span style={{
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 800,
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -232,7 +232,7 @@ export function AlphaPlaybookService() {
                   Confidential Manual
                 </span>
                 <span style={{
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '3px 8px',
                   borderRadius: 6,
@@ -328,7 +328,7 @@ export function AlphaPlaybookService() {
           flexDirection: 'column',
           gap: 6
         }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', letterSpacing: '0.05em' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', letterSpacing: '0.05em' }}>
             The Core Axiom of the Nepal Stock Exchange:
           </div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', lineHeight: 1.5 }}>
@@ -338,7 +338,7 @@ export function AlphaPlaybookService() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            fontSize: 11.5,
+            fontSize: 12,
             fontWeight: 800,
             color: '#fbbf24',
             marginTop: 2
@@ -402,7 +402,7 @@ export function AlphaPlaybookService() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Sub-Filter */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Filter Tiers:</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Filter Tiers:</span>
             {[
               { id: 'all', label: 'All Features' },
               { id: 'tier1', label: 'Tier 1 (Capital Protectors)' },
@@ -415,7 +415,7 @@ export function AlphaPlaybookService() {
                 style={{
                   padding: '4px 10px',
                   borderRadius: 8,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 700,
                   background: tierFilter === f.id ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)',
                   border: tierFilter === f.id ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.06)',
@@ -443,7 +443,7 @@ export function AlphaPlaybookService() {
                     Tier 1: Non-Negotiable Capital Protectors
                   </span>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                   Reliability: 90%+ Weight
                 </span>
               </div>
@@ -456,15 +456,15 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>1. Cash Defense Mode</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>Market Breadth</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>Market Breadth</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> When market breadth &lt; 40%, over 75% of technical chart breakouts fail.
                   </div>
-                  <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
                     <strong>Rule:</strong> When active, DO NOT BUY ANY BREAKOUT. Hold 70%–80% cash.
                   </div>
-                  <button onClick={() => handleLaunchService('breadth')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('breadth')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     View Market Breadth & Defense Status <ChevronRight size={12} />
                   </button>
                 </div>
@@ -473,15 +473,15 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>2. Chase Cap Guard (+2.5% Max)</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>Execution Guard</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>Execution Guard</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> Because of T+2 freeze, buying up +4% to +8% makes you exit liquidity for early swing buyers.
                   </div>
-                  <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
                     <strong>Rule:</strong> If price &gt; Entry Pivot + 2.5%, the trade is cancelled. Never chase gap-ups.
                   </div>
-                  <button onClick={() => handleLaunchService('entry-exit-analyzer')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('entry-exit-analyzer')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Audit Chase Cap in Entry/Exit Analyzer <ChevronRight size={12} />
                   </button>
                 </div>
@@ -490,15 +490,15 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>3. Promoter Lock-in Radar (60 Days)</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>Supply Shock</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>Supply Shock</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> Unlocking promoter shares doubles floating supply overnight, dropping prices 25%–50%.
                   </div>
-                  <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
                     <strong>Rule:</strong> Automatic blacklist. Never enter a stock within 60 days of lock-in expiry.
                   </div>
-                  <button onClick={() => handleLaunchService('promoter-shares')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('promoter-shares')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Check Promoter Shares Service <ChevronRight size={12} />
                   </button>
                 </div>
@@ -507,15 +507,15 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>4. Broker LBAS & Accumulation Flow</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>Smart Money</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}>Smart Money</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> Retail chart patterns fail without institutional broker backing (e.g. Brokers 58, 45, 34, 17).
                   </div>
-                  <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, color: '#fbbf24', marginTop: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 8px', borderRadius: 6 }}>
                     <strong>Rule:</strong> Only take high-conviction trades when top 3 buyers take ≥ 35% volume with positive net flow.
                   </div>
-                  <button onClick={() => handleLaunchService('broker-analysis')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('broker-analysis')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Audit Broker Holdings & Flow <ChevronRight size={12} />
                   </button>
                 </div>
@@ -538,7 +538,7 @@ export function AlphaPlaybookService() {
                     Tier 2: High-Edge Opportunity Engines
                   </span>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                   Win Rate: 80%+ Paired with Tier 1
                 </span>
               </div>
@@ -551,15 +551,15 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>1. Day Prime Pick & Zero-Loss Protocol</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>Flagship</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>Flagship</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>Protocol:</strong> Buy inside Entry Zone below Chase Cap. When Target 1 (+4% to +6%) hits:
                     <br />• <strong>SELL 50%</strong> to lock in guaranteed profit.
                     <br />• <strong>MOVE STOP LOSS</strong> to Entry price on remaining 50%.
                     <br />• Result: Mathematically risk-free trade!
                   </div>
-                  <button onClick={() => handleLaunchService('daily-prime-pick')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('daily-prime-pick')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Open Today's Day Prime Pick <ChevronRight size={12} />
                   </button>
                 </div>
@@ -568,14 +568,14 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>2. Sector Rotation & Heatmap</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc' }}>Sector Waves</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc' }}>Sector Waves</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Statistical Edge:</strong> Capital moves in sector waves (Banks → Hydro → Finance → Life Insurance).
                     <br />• Never trade lagging sectors.
                     <br />• Position strictly in "Leading" or "Improving" quadrants.
                   </div>
-                  <button onClick={() => handleLaunchService('sector-heatmap')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('sector-heatmap')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     View Live Sector Heatmap <ChevronRight size={12} />
                   </button>
                 </div>
@@ -584,12 +584,12 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>3. Pre-Open Order Book (OBIR)</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>10:30–11:00 AM</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>10:30–11:00 AM</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>Actionable Rule:</strong> OBIR &gt; 1.8 with positive matching volume signals heavy institutional demand before the 11:00 AM bell. If OBIR &lt; 0.8, supply pressure is elevated.
                   </div>
-                  <button onClick={() => handleLaunchService('entry-exit-analyzer')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('entry-exit-analyzer')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Inspect OBIR on Setup Analyzer <ChevronRight size={12} />
                   </button>
                 </div>
@@ -598,12 +598,12 @@ export function AlphaPlaybookService() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>4. Dual-Gate RVOL ≥ 1.4x & VCP</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(236, 72, 153, 0.15)', color: '#f472b6' }}>Breakout Gate</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'rgba(236, 72, 153, 0.15)', color: '#f472b6' }}>Breakout Gate</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>Actionable Rule:</strong> Volume precedes price in Nepal. A price push through resistance without RVOL ≥ 1.4x is almost always a retail fakeout trap.
                   </div>
-                  <button onClick={() => handleLaunchService('volume-shockers')} style={{ marginTop: 8, fontSize: 11, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => handleLaunchService('volume-shockers')} style={{ marginTop: 8, fontSize: 12, color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
                     Open Volume Shockers Board <ChevronRight size={12} />
                   </button>
                 </div>
@@ -626,7 +626,7 @@ export function AlphaPlaybookService() {
                     Tier 3: Informational Traps (Do NOT Trade in Isolation)
                   </span>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6, background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
                   Dangerous If Used Alone
                 </span>
               </div>
@@ -637,19 +637,19 @@ export function AlphaPlaybookService() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ fontWeight: 800, fontSize: 13, color: '#fca5a5' }}>1. Standalone RSI / MACD Oscillators</div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Trap:</strong> In NEPSE speculative runs, RSI &gt; 70 can stay overbought for months as a stock triples. Conversely, RSI &lt; 30 in a bear market can continue dropping another 40%. Never buy or sell based solely on an oscillator.
                   </div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ fontWeight: 800, fontSize: 13, color: '#fca5a5' }}>2. Theoretical Monte Carlo Projections</div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Trap:</strong> Statistical curves assume normal Gaussian distributions. They cannot predict sudden Nepal Rastra Bank (NRB) directives, margin loan ceiling changes, or liquidity shifts.
                   </div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 14 }}>
                   <div style={{ fontWeight: 800, fontSize: 13, color: '#fca5a5' }}>3. Unadjusted Historical Price Charts</div>
-                  <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6, lineHeight: 1.45 }}>
                     <strong>The Trap:</strong> Unadjusted charts fail to account for bonus share splits and rights issues, making historical moving averages and support levels completely false. Always verify corporate adjustments.
                   </div>
                 </div>
@@ -684,7 +684,7 @@ export function AlphaPlaybookService() {
                   setCheckedRoutine({});
                 }}
                 style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 700,
                   color: '#94a3b8',
                   background: 'rgba(255,255,255,0.04)',
@@ -712,7 +712,7 @@ export function AlphaPlaybookService() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '2px 8px',
                         borderRadius: 6,
@@ -731,7 +731,7 @@ export function AlphaPlaybookService() {
                       <button
                         onClick={() => handleLaunchService(step.actionLink!.serviceId)}
                         style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 700,
                           color: '#38bdf8',
                           background: 'rgba(56, 189, 248, 0.1)',
@@ -833,7 +833,7 @@ export function AlphaPlaybookService() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: s.color, textTransform: 'uppercase' }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: s.color, textTransform: 'uppercase' }}>
                         {s.period}
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
@@ -841,7 +841,7 @@ export function AlphaPlaybookService() {
                       </div>
                     </div>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '2px 7px',
                       borderRadius: 6,
@@ -945,7 +945,7 @@ export function AlphaPlaybookService() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
                 Total Portfolio Equity (Rs.)
               </label>
               <input
@@ -966,7 +966,7 @@ export function AlphaPlaybookService() {
             </div>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
                 Planned Entry Price (Rs.)
               </label>
               <input
@@ -987,7 +987,7 @@ export function AlphaPlaybookService() {
             </div>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
                 Structural Stop Loss (Rs.)
               </label>
               <input
@@ -1008,7 +1008,7 @@ export function AlphaPlaybookService() {
             </div>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
                 Target 1 Price (Rs.)
               </label>
               <input
@@ -1032,35 +1032,35 @@ export function AlphaPlaybookService() {
           {/* Sizing Output Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
             <div style={{ background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 11, color: '#a5b4fc', fontWeight: 700 }}>Max Dollar Risk (1.5%)</div>
+              <div style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 700 }}>Max Dollar Risk (1.5%)</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                 Rs. {maxRiskAmount.toLocaleString()}
               </div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>Cap on total possible loss</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Cap on total possible loss</div>
             </div>
 
             <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>Shares to Buy</div>
+              <div style={{ fontSize: 12, color: '#34d399', fontWeight: 700 }}>Shares to Buy</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
                 {sharesToBuy.toLocaleString()} Units
               </div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>Risk/share: Rs. {riskPerShare.toFixed(1)}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Risk/share: Rs. {riskPerShare.toFixed(1)}</div>
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>Capital Required</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Capital Required</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                 Rs. {totalCapitalRequired.toLocaleString()}
               </div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>{capitalAllocationPct}% of portfolio</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{capitalAllocationPct}% of portfolio</div>
             </div>
 
             <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>Risk/Reward to T1</div>
+              <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700 }}>Risk/Reward to T1</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
                 {riskRewardRatio} : 1
               </div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>Reward: Rs. {rewardPerShare.toFixed(1)}/share</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Reward: Rs. {rewardPerShare.toFixed(1)}/share</div>
             </div>
           </div>
 

@@ -44,7 +44,7 @@ export const SignalTrackRecord = ({ symbol }) => {
     }}>
       <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', color: '#c9d1d9', display: 'flex', alignItems: 'center' }}>
         Signal Track Record
-        <span style={{ marginLeft: '8px', padding: '2px 6px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: '11px', color: '#8b949e' }}>
+        <span style={{ marginLeft: '8px', padding: '2px 6px', background: 'rgba(255,255,255,0.1)', borderRadius: '10px', fontSize: 12, color: '#8b949e' }}>
           {total} Total
         </span>
       </h3>
@@ -55,7 +55,7 @@ export const SignalTrackRecord = ({ symbol }) => {
           <div style={{ fontSize: '18px', fontWeight: 'bold', color: winRate >= 50 ? '#3fb950' : '#f85149' }}>
             {closedCount > 0 ? `${winRate.toFixed(1)}%` : 'Tracking'}
           </div>
-          <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '4px' }}>{closedCount} closed</div>
+          <div style={{ fontSize: 12, color: '#8b949e', marginTop: '4px' }}>{closedCount} closed</div>
         </div>
         
         <div style={{ flex: 1, minWidth: '100px', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '6px' }}>
@@ -113,7 +113,7 @@ export const SignalTrackRecord = ({ symbol }) => {
         </div>
       )}
       
-      <div style={{ fontSize: '11px', color: '#8b949e', fontStyle: 'italic', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '12px' }}>
+      <div style={{ fontSize: 12, color: '#8b949e', fontStyle: 'italic', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '12px' }}>
         {stats.disclaimer}
       </div>
     </div>

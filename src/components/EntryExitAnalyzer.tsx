@@ -539,11 +539,11 @@ export function EntryExitAnalyzer({
         marginBottom: 16
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <label style={{ fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8', margin: 0 }}>
+          <label style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8', margin: 0 }}>
             Select or Search NEPSE Security
           </label>
           {symbol && (
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', borderRadius: 99 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', borderRadius: 99 }}>
               ● {symbol} ACTIVE
             </span>
           )}
@@ -589,7 +589,7 @@ export function EntryExitAnalyzer({
         {/* Quick Selector: Top Verified Short-Term Setups */}
         {topQualifiedPicks && topQualifiedPicks.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Sparkles size={12} color="#f59e0b" /> Best Short-Term Setups:
             </span>
             {topQualifiedPicks.map((p: any) => (
@@ -598,7 +598,7 @@ export function EntryExitAnalyzer({
                 type="button"
                 onClick={() => handleStockChange(p.symbol)}
                 style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '3px 9px',
                   borderRadius: 6,
@@ -612,7 +612,7 @@ export function EntryExitAnalyzer({
                 }}
               >
                 <span>{p.symbol}</span>
-                <span style={{ fontSize: 10, color: symbol === p.symbol ? '#bfdbfe' : '#34d399', fontWeight: 900 }}>
+                <span style={{ fontSize: 12, color: symbol === p.symbol ? '#bfdbfe' : '#34d399', fontWeight: 900 }}>
                   {p.score}/100
                 </span>
               </button>
@@ -628,7 +628,7 @@ export function EntryExitAnalyzer({
                 <span style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>{symbol}</span>
                 <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({companyName})</span>
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Clock size={12} />
                 <span>Updated: <strong style={{ color: '#94a3b8' }}>{analyzedTime || 'Just now'}</strong></span>
               </div>
@@ -636,7 +636,7 @@ export function EntryExitAnalyzer({
 
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, textAlign: 'right', flexShrink: 0 }}>
               <div>
-                <div style={{ fontSize: 10.5, color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Market Price</div>
+                <div style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Market Price</div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
                   Rs. {Number(livePrice).toFixed(2)}
                 </div>
@@ -888,19 +888,19 @@ export function EntryExitAnalyzer({
                         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Corporate Distribution History
                         </h3>
-                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#94a3b8' }}>
                           Official declared dividends and rights issues from exchange records
                         </p>
                       </div>
                     </div>
-                    <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>
+                    <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>
                       {dividendData.length} FY tracked
                     </span>
                   </div>
 
                   <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, fontFamily: 'var(--font-mono, monospace)' }}>
-                      <thead style={{ background: 'rgba(255, 255, 255, 0.04)', color: '#94a3b8', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', fontSize: 11 }}>
+                      <thead style={{ background: 'rgba(255, 255, 255, 0.04)', color: '#94a3b8', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', fontSize: 12 }}>
                         <tr>
                           <th style={{ padding: '8px 12px', fontFamily: 'var(--font-sans)' }}>Fiscal Year</th>
                           <th style={{ padding: '8px 8px', textAlign: 'right' }}>Cash Div</th>
@@ -969,7 +969,7 @@ export function EntryExitAnalyzer({
           )}
 
           {/* ── Regulatory / Educational Disclaimer ── */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11, color: '#64748b', padding: '12px 8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)', marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: '#64748b', padding: '12px 8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)', marginTop: 14 }}>
             <ShieldAlert size={14} style={{ flexShrink: 0, marginTop: 2, color: '#64748b' }} />
             <p style={{ margin: 0, lineHeight: 1.5 }}>
               <strong>Educational analysis only, not investment advice.</strong> Historical performance,

@@ -1638,7 +1638,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <span style={{ fontWeight: 900, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
               {h.symbol}
             </span>
-            <span className="badge badge-primary" style={{ fontSize: 9.5, padding: '1px 6px' }}>
+            <span className="badge badge-primary" style={{ fontSize: 12, padding: '1px 6px' }}>
               {sector}
             </span>
           </div>
@@ -1653,7 +1653,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {/* Action Signal Badge */}
             {signal && (
               <span style={{
-                fontSize: 9.5,
+                fontSize: 12,
                 fontWeight: 900,
                 padding: '2px 8px',
                 borderRadius: 6,
@@ -1671,19 +1671,19 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
             {/* CDSC / WACC Origin Badge */}
             {h.waccSource === 'CDSC_MY_HOLDING_DECLARED' ? (
-              <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ MeroShare WACC</span>
+              <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.18)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✓ MeroShare WACC</span>
             ) : h.waccSource === 'BROKER_TMS' ? (
-              <span style={{ fontSize: 9, background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🏛️ Broker TMS</span>
+              <span style={{ fontSize: 12, background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🏛️ Broker TMS</span>
             ) : h.waccSource && String(h.waccSource).startsWith('ESTIMATED_') ? (
-              <span style={{ fontSize: 9, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>📊 Estimated</span>
+              <span style={{ fontSize: 12, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>📊 Estimated</span>
             ) : h.waccSource === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED' ? (
-              <span style={{ fontSize: 9, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚡ Broker Staged</span>
+              <span style={{ fontSize: 12, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚡ Broker Staged</span>
             ) : h.waccSource === 'IPO_ALLOTMENT' ? (
-              <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.25)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🎯 IPO</span>
+              <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.25)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>🎯 IPO</span>
             ) : h.waccSource === 'CUSTOM_USER_SET' || (h.isCustomWacc && h.waccSource !== 'FALLBACK_BASE_PRICE') ? (
-              <span style={{ fontSize: 9, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', border: '1px solid rgba(234,179,8,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom WACC</span>
+              <span style={{ fontSize: 12, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', border: '1px solid rgba(234,179,8,0.35)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom WACC</span>
             ) : (
-              <span style={{ fontSize: 9, background: 'rgba(244,63,94,0.15)', color: '#f87171', border: '1px solid rgba(244,63,94,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed (Rs. 100)</span>
+              <span style={{ fontSize: 12, background: 'rgba(244,63,94,0.15)', color: '#f87171', border: '1px solid rgba(244,63,94,0.3)', padding: '1.5px 6px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed (Rs. 100)</span>
             )}
           </div>
 
@@ -1694,7 +1694,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               background: isProfit ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
               border: `1px solid ${isProfit ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}`,
               color: isProfit ? 'var(--bull)' : '#f87171',
-              padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 800,
+              padding: '2px 8px', borderRadius: 6, fontSize: 12, fontWeight: 800,
               fontFamily: 'var(--font-mono)'
             }}>
               {isProfit ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
@@ -1705,7 +1705,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
         {/* ── ROW 3: Holding Metrics Strip (Units @ LTP • WACC [Edit]) ── */}
         <div style={{
-          fontSize: 11,
+          fontSize: 12,
           color: 'var(--text-secondary)',
           background: 'rgba(255,255,255,0.02)',
           border: '1px solid rgba(255,255,255,0.05)',
@@ -1741,7 +1741,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 color: h.waccSource === 'FALLBACK_BASE_PRICE' ? '#fbbf24' : 'var(--text-primary)', 
                 borderRadius: 5, 
                 padding: '2px 7px', 
-                fontSize: 9.5, 
+                fontSize: 12, 
                 cursor: 'pointer', 
                 display: 'inline-flex', 
                 alignItems: 'center', 
@@ -1771,7 +1771,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
             }}
           >
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
             <input 
               type="number" 
               step="0.01" 
@@ -1785,7 +1785,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               type="button" 
               onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput, accountId)} 
               className="btn-primary btn-xs" 
-              style={{ padding: '4px 10px', fontSize: 11, height: 28, borderRadius: 4, fontWeight: 800 }}
+              style={{ padding: '4px 10px', fontSize: 12, height: 28, borderRadius: 4, fontWeight: 800 }}
             >
               Save
             </button>
@@ -1793,7 +1793,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               type="button" 
               onClick={() => setEditingScrip(null)} 
               className="btn-secondary btn-xs" 
-              style={{ padding: '4px 8px', fontSize: 11, height: 28, borderRadius: 4 }}
+              style={{ padding: '4px 8px', fontSize: 12, height: 28, borderRadius: 4 }}
             >
               ✕
             </button>
@@ -1804,7 +1804,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
         {signal?.advice && (
           <div style={{ 
             marginBottom: 10,
-            fontSize: 11, 
+            fontSize: 12, 
             color: signal.color || 'var(--text-secondary)', 
             background: signal.bg || 'rgba(255,255,255,0.03)',
             padding: '7px 10px',
@@ -1838,7 +1838,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               borderRadius: 8,
               background: isStopBreached ? 'rgba(239, 68, 68, 0.12)' : isDeepProfit ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
               border: `1px solid ${isStopBreached ? 'rgba(239, 68, 68, 0.35)' : isDeepProfit ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)'}`,
-              fontSize: 10.5,
+              fontSize: 12,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -1854,7 +1854,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   Rs. {trailingStopPrice}
                 </span>
               </div>
-              <div style={{ color: isStopBreached ? '#f87171' : '#64748b', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+              <div style={{ color: isStopBreached ? '#f87171' : '#64748b', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
                 {isStopBreached ? 'Breached — Review Exit' : `Buffer: ${distToStopPct}% • T+2 Settlement Safe`}
               </div>
             </div>
@@ -1869,7 +1869,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             className="btn-secondary btn-xs"
             style={{
               width: '100%',
-              fontSize: 10.5,
+              fontSize: 12,
               padding: '6px 10px',
               display: 'flex',
               alignItems: 'center',
@@ -1891,7 +1891,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             className="btn-secondary btn-xs"
             style={{
               width: '100%',
-              fontSize: 10.5,
+              fontSize: 12,
               padding: '6px 10px',
               display: 'flex',
               alignItems: 'center',
@@ -1992,7 +1992,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               <t.icon style={{ width: 14, height: 14, color: isActive ? '#fff' : t.color }} />
               {t.label}
               <span style={{
-                fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                fontSize: 12, padding: '1px 6px', borderRadius: 10,
                 background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
                 color: isActive ? '#fff' : 'var(--text-muted)',
                 fontWeight: 800
@@ -2038,7 +2038,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
               {formatRs(totalValue)}
             </div>
-            <div style={{ fontSize: 11, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)', fontWeight: 800, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 12, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)', fontWeight: 800, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)' }} />
               Active Feed: {valuationMode === 'prevClose' ? 'MeroShare Official (Previous Close)' : valuationMode === 'ltp' ? 'MeroShare Official (LTP)' : 'Live NEPSE Market'}
             </div>
@@ -2055,7 +2055,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               {totalPL >= 0 ? <ArrowUpRight style={{ width: 15, height: 15 }} /> : <ArrowDownRight style={{ width: 15, height: 15 }} />}
               {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(2)}%
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontWeight: 700 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, fontWeight: 700 }}>
               {totalPL >= 0 ? 'Profit: ' : 'Loss: '}{formatRs(Math.abs(totalPL))}
             </div>
           </div>
@@ -2075,7 +2075,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 type="button"
                 onClick={() => setValuationMode(m.id)}
                 style={{
-                  flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
+                  flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 800, borderRadius: 8, cursor: 'pointer',
                   background: isActive ? (m.id === 'prevClose' ? 'rgba(16,185,129,0.2)' : m.id === 'ltp' ? 'rgba(56,189,248,0.2)' : 'rgba(91,94,244,0.25)') : 'transparent',
                   color: isActive ? '#ffffff' : 'var(--text-muted)',
                   border: isActive ? `1px solid ${m.color}` : '1px solid transparent',
@@ -2093,27 +2093,27 @@ Based on this data, provide a robust analysis using this exact markdown structur
         {/* 4-Stat Breadth Matrix (Invested, Gain, Scrips, Balance) */}
         <div className="portfolio-stat-grid" style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Invested</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', fontWeight: 800 }}>Invested</div>
             <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 12.5, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{formatRs(totalCost)}</div>
           </div>
           <div style={{ background: totalPL >= 0 ? 'rgba(16,185,129,0.06)' : 'rgba(244,63,94,0.06)', border: `1px solid ${totalPL >= 0 ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`, borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Total P&L</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', fontWeight: 800 }}>Total P&L</div>
             <div style={{ fontWeight: 800, color: totalPL >= 0 ? 'var(--bull)' : '#F43F5E', fontSize: 12, fontFamily: 'var(--font-mono)', marginTop: 2 }}>
               {totalPL >= 0 ? '+' : ''}{Number(totalPLPercent || 0).toFixed(1)}%
             </div>
           </div>
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Holdings</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', fontWeight: 800 }}>Holdings</div>
             <div style={{ fontWeight: 800, color: 'var(--primary-light)', fontSize: 13, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{holdings.length} Scrips</div>
           </div>
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: 9.5, textTransform: 'uppercase', fontWeight: 800 }}>Net Return</div>
-            <div style={{ fontWeight: 800, color: totalPL >= 0 ? 'var(--bull)' : '#F43F5E', fontSize: 11, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{formatRs(totalPL)}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', fontWeight: 800 }}>Net Return</div>
+            <div style={{ fontWeight: 800, color: totalPL >= 0 ? 'var(--bull)' : '#F43F5E', fontSize: 12, fontFamily: 'var(--font-mono)', marginTop: 2 }}>{formatRs(totalPL)}</div>
           </div>
         </div>
 
         {/* Mini Comparison Bar */}
-        <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5 }}>
+        <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
           <span style={{ color: 'var(--text-muted)' }}>
             MeroShare Prev Close: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatRs(totalMerosharePrevClose)}</strong>
           </span>
@@ -2142,7 +2142,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               background: filterPnl === chip.id ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)',
               border: `1px solid ${filterPnl === chip.id ? chip.color : 'var(--border)'}`,
               color: filterPnl === chip.id ? '#ffffff' : 'var(--text-secondary)',
-              borderRadius: 10, padding: '6px 12px', fontSize: 11, fontWeight: 700,
+              borderRadius: 10, padding: '6px 12px', fontSize: 12, fontWeight: 700,
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.15s',
               whiteSpace: 'nowrap', flexShrink: 0
             }}
@@ -2161,12 +2161,12 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '20px', padding: 2 }}>
               <button 
                 onClick={() => setAllocationView('stock')}
-                style={{ background: allocationView === 'stock' ? 'var(--primary-light)' : 'transparent', color: allocationView === 'stock' ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: '20px', padding: '4px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: '0.2s' }}>
+                style={{ background: allocationView === 'stock' ? 'var(--primary-light)' : 'transparent', color: allocationView === 'stock' ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: '20px', padding: '4px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: '0.2s' }}>
                 Stock
               </button>
               <button 
                 onClick={() => setAllocationView('sector')}
-                style={{ background: allocationView === 'sector' ? 'var(--primary-light)' : 'transparent', color: allocationView === 'sector' ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: '20px', padding: '4px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: '0.2s' }}>
+                style={{ background: allocationView === 'sector' ? 'var(--primary-light)' : 'transparent', color: allocationView === 'sector' ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: '20px', padding: '4px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: '0.2s' }}>
                 Sector
               </button>
             </div>
@@ -2205,7 +2205,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 })()}
               </svg>
               <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>{allocationView === 'stock' ? 'Assets' : 'Sectors'}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>{allocationView === 'stock' ? 'Assets' : 'Sectors'}</span>
                 <span style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{chartHoldings.length}</span>
               </div>
             </div>
@@ -2218,7 +2218,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   {chartHoldings.map((ch, idx) => {
                     const pct = (ch.value / (totalValue || 1)) * 100;
                     return (
-                      <div key={ch.symbol} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                      <div key={ch.symbol} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: colors[idx % colors.length], display: 'inline-block' }}></span>
                           <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{ch.symbol}</span>
@@ -2246,7 +2246,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 8,
-                fontSize: 10.5,
+                fontSize: 12,
                 lineHeight: 1.45,
                 color: '#f87171'
               }}>
@@ -2261,7 +2261,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       </div>
                     );
                   })}
-                  <div style={{ color: '#cbd5e1', marginTop: 4, fontSize: 9.5 }}>
+                  <div style={{ color: '#cbd5e1', marginTop: 4, fontSize: 12 }}>
                     In NEPSE, regulatory interventions by NRB or sector-wide policy changes trigger correlated downturns. Recommended maximum allocation per sector is 30%.
                   </div>
                 </div>
@@ -2382,7 +2382,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
               type="button"
               onClick={handleOpenWaccModal}
               className="btn-secondary btn-xs"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', color: '#fbbf24', fontSize: 10.5, fontWeight: 800, padding: '5px 10px', borderRadius: 'var(--radius-sm)' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', color: '#fbbf24', fontSize: 12, fontWeight: 800, padding: '5px 10px', borderRadius: 'var(--radius-sm)' }}
             >
               <Edit3 style={{ width: 12, height: 12 }} /> Manage All WACCs
             </button>
@@ -2399,10 +2399,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     <span>Manual Ledger Portfolio</span>
                   </h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Offline Ledger</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Offline Ledger</span>
                     {(() => {
                       const processed = getProcessedHoldings(manualRaw, 'manual');
-                      return <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>• {processed.length} Scrips</span>;
+                      return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>• {processed.length} Scrips</span>;
                     })()}
                   </div>
                 </div>
@@ -2417,7 +2417,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                         {formatRs(subValue)}
                       </div>
-                      <div style={{ fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
                         {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
                       </div>
                     </div>
@@ -2444,7 +2444,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             type="button"
                             onClick={() => handleToggleAccountFilter('manual', 'all')}
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
                               padding: '3px 8px',
                               borderRadius: 6,
@@ -2465,7 +2465,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             type="button"
                             onClick={() => handleToggleAccountFilter('manual', 'profit')}
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
                               padding: '3px 8px',
                               borderRadius: 6,
@@ -2489,7 +2489,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             type="button"
                             onClick={() => handleToggleAccountFilter('manual', 'defense')}
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
                               padding: '3px 8px',
                               borderRadius: 6,
@@ -2513,7 +2513,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             type="button"
                             onClick={() => handleToggleAccountFilter('manual', 'breakout')}
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
                               padding: '3px 8px',
                               borderRadius: 6,
@@ -2537,7 +2537,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             type="button"
                             onClick={() => handleToggleAccountFilter('manual', 'hold')}
                             style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
                               padding: '3px 8px',
                               borderRadius: 6,
@@ -2578,7 +2578,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                               type="button"
                               onClick={() => handleToggleAccountFilter('manual', 'all')}
                               className="btn-secondary btn-xs"
-                              style={{ fontSize: 10.5, padding: '3px 9px' }}
+                              style={{ fontSize: 12, padding: '3px 9px' }}
                             >
                               View All ({processedAll.length}) Stocks
                             </button>
@@ -2621,8 +2621,8 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                     </h3>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>BOID: {p.boid}</span>
-                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>BOID: {p.boid}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         • {displayHoldings.length === processedAll.length ? `${processedAll.length} Scrips` : `Showing ${displayHoldings.length} of ${processedAll.length} Scrips`}
                       </span>
                     </div>
@@ -2631,7 +2631,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
                       {formatRs(subValue)}
                     </div>
-                    <div style={{ fontSize: 10.5, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: subPL >= 0 ? 'var(--bull)' : '#F43F5E' }}>
                       {subPL >= 0 ? '+' : ''}{Number(subPLPct || 0).toFixed(2)}% ({formatRs(subPL)})
                     </div>
                   </div>
@@ -2654,7 +2654,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         type="button"
                         onClick={() => handleToggleAccountFilter(accountId, 'all')}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 6,
@@ -2675,7 +2675,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         type="button"
                         onClick={() => handleToggleAccountFilter(accountId, 'profit')}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 6,
@@ -2699,7 +2699,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         type="button"
                         onClick={() => handleToggleAccountFilter(accountId, 'defense')}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 6,
@@ -2723,7 +2723,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         type="button"
                         onClick={() => handleToggleAccountFilter(accountId, 'breakout')}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 6,
@@ -2747,7 +2747,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         type="button"
                         onClick={() => handleToggleAccountFilter(accountId, 'hold')}
                         style={{
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 8px',
                           borderRadius: 6,
@@ -2767,7 +2767,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       </button>
                     )}
                     {bookProfitCount === 0 && defenseCount === 0 && breakoutCount === 0 && holdCount === 0 && (
-                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>All holdings tracked</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>All holdings tracked</span>
                     )}
                   </div>
 
@@ -2778,7 +2778,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       disabled={isRetrieving || isSyncingWacc}
                       title="Pull Live MeroShare Holdings"
                       className="btn-secondary btn-xs"
-                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, borderRadius: 7, fontWeight: 700 }}
+                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, borderRadius: 7, fontWeight: 700 }}
                     >
                       <RefreshCw style={{ width: 11, height: 11 }} className={isRetrieving ? 'animate-spin' : ''} />
                       Sync
@@ -2789,7 +2789,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       disabled={isRetrieving || isSyncingWacc}
                       title="Fetch authentic WACC rates from CDSC MeroShare"
                       className="btn-secondary btn-xs"
-                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, borderRadius: 7, fontWeight: 700, background: 'rgba(56,189,248,0.12)', borderColor: 'rgba(56,189,248,0.35)', color: '#38bdf8' }}
+                      style={{ padding: '5px 9px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, borderRadius: 7, fontWeight: 700, background: 'rgba(56,189,248,0.12)', borderColor: 'rgba(56,189,248,0.35)', color: '#38bdf8' }}
                     >
                       <RefreshCw style={{ width: 11, height: 11 }} className={isSyncingWacc ? 'animate-spin' : ''} />
                       {isSyncingWacc ? 'Syncing...' : '⚡ Sync WACC'}
@@ -2806,7 +2806,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     background: 'rgba(56,189,248,0.12)',
                     border: '1px solid rgba(56,189,248,0.35)',
                     color: '#7dd3fc',
-                    fontSize: 11.5,
+                    fontSize: 12,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8
@@ -2823,7 +2823,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     background: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? 'rgba(234,179,8,0.12)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? 'rgba(244,63,94,0.12)' : 'rgba(16,185,129,0.12)',
                     border: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '1px solid rgba(234,179,8,0.35)' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '1px solid rgba(244,63,94,0.35)' : '1px solid rgba(16,185,129,0.35)',
                     color: (typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') ? '#fbbf24' : (typeof waccSyncResult === 'object' && waccSyncResult.type === 'error') ? '#f87171' : '#34d399',
-                    fontSize: 11.5,
+                    fontSize: 12,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 8
@@ -2861,7 +2861,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           type="button"
                           onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'ltp')}
                           className="btn-primary btn-xs"
-                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800 }}
+                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800 }}
                         >
                           ⚡ Fill with Market LTP
                         </button>
@@ -2869,7 +2869,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           type="button"
                           onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'prevClose')}
                           className="btn-secondary btn-xs"
-                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(255,255,255,0.08)' }}
+                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(255,255,255,0.08)' }}
                         >
                           📊 Fill with Prev Close
                         </button>
@@ -2877,7 +2877,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           type="button"
                           onClick={handleOpenWaccModal}
                           className="btn-secondary btn-xs"
-                          style={{ fontSize: 10.5, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(234,179,8,0.18)', color: '#fbbf24', borderColor: 'rgba(234,179,8,0.4)' }}
+                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(234,179,8,0.18)', color: '#fbbf24', borderColor: 'rgba(234,179,8,0.4)' }}
                         >
                           ✏️ Enter Buy Rates
                         </button>
@@ -2905,7 +2905,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           type="button"
                           onClick={() => handleToggleAccountFilter(accountId, 'all')}
                           className="btn-secondary btn-xs"
-                          style={{ fontSize: 10.5, padding: '3px 9px' }}
+                          style={{ fontSize: 12, padding: '3px 9px' }}
                         >
                           View All ({processedAll.length}) Stocks
                         </button>
@@ -2929,7 +2929,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 type="button"
                 onClick={handleClearAllTransactions}
                 className="btn btn-bear btn-xs"
-                style={{ padding: '4px 8px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, height: 'auto', background: 'linear-gradient(135deg, #be123c, var(--bear))' }}
+                style={{ padding: '4px 8px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, height: 'auto', background: 'linear-gradient(135deg, #be123c, var(--bear))' }}
               >
                 <Trash2 style={{ width: 11, height: 11 }} /> Clear All
               </button>
@@ -2943,7 +2943,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     </span>
                     <div>
                       <span style={{ fontWeight: 'bold', color: 'var(--text-primary)', fontSize: 13 }}>{tx.symbol}</span>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{tx.quantity} units @ {formatRs(tx.price)} • {tx.date}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{tx.quantity} units @ {formatRs(tx.price)} • {tx.date}</div>
                     </div>
                   </div>
                   <button onClick={() => handleDeleteTransaction(tx.id)} className="icon-btn" style={{ width: 28, height: 28 }}>
@@ -2969,7 +2969,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
         <div style={{ textAlign: 'center', padding: '32px 16px', border: '1px dashed var(--border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <ShieldCheck style={{ width: 32, height: 32, color: 'var(--text-muted)', margin: '0 auto 4px' }} />
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>No MeroShare Accounts Linked</p>
-          <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: 0, maxWidth: 320, lineHeight: 1.5 }}>Link your Demat profile to sync your live holdings, calculate accurate WACC, and track returns automatically.</p>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0, maxWidth: 320, lineHeight: 1.5 }}>Link your Demat profile to sync your live holdings, calculate accurate WACC, and track returns automatically.</p>
           {onSwitchToAccounts && (
             <button
               type="button"
@@ -3004,7 +3004,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 
                 {/* Engine Selector */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text-muted)' }}>🤖 Preferred AI Engine</label>
+                  <label style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--text-muted)' }}>🤖 Preferred AI Engine</label>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {[
                       { id: 'auto', label: '⚡ Auto' },
@@ -3020,7 +3020,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           localStorage.setItem('nepse_hub_preferred_ai_engine', engine.id);
                         }}
                         style={{
-                          flex: 1, padding: '5px 4px', fontSize: 10, fontWeight: 'bold',
+                          flex: 1, padding: '5px 4px', fontSize: 12, fontWeight: 'bold',
                           borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
                           background: preferredEngine === engine.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
                           color: preferredEngine === engine.id ? '#fff' : 'var(--text-muted)',
@@ -3034,12 +3034,12 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary-light)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary-light)' }}>
                     Active: {getActiveLLMName()}
                   </span>
                   <button 
                     onClick={() => setShowKeyInput(!showKeyInput)} 
-                    style={{ fontSize: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }}
+                    style={{ fontSize: 12, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '3px 8px', borderRadius: 4, cursor: 'pointer' }}
                   >
                     {showKeyInput ? 'Hide Keys' : 'Configure Keys'}
                   </button>
@@ -3048,7 +3048,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 {showKeyInput && (
                   <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
-                      <label style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟣 GLM-4 / Zhipu API Key (Integrated)</label>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟣 GLM-4 / Zhipu API Key (Integrated)</label>
                       <input 
                         type="password" 
                         placeholder="0a3ba... (GLM-4 Key)" 
@@ -3058,11 +3058,11 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           setGlmKey(val);
                           localStorage.setItem('nepse_hub_glm_api_key', val.trim());
                         }}
-                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 11 }}
+                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 12 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟡 Gemini API Key (AIza... or AQ...)</label>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟡 Gemini API Key (AIza... or AQ...)</label>
                       <input 
                         type="password" 
                         placeholder="Paste your Gemini Key..." 
@@ -3072,11 +3072,11 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           setGeminiKey(val);
                           localStorage.setItem('nepse_hub_gemini_api_key', val.trim());
                         }}
-                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 11 }}
+                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 12 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟢 Groq API Key (gsk_...)</label>
+                      <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 'bold', display: 'block', marginBottom: 2 }}>🟢 Groq API Key (gsk_...)</label>
                       <input 
                         type="password" 
                         placeholder="Paste your Groq Key..." 
@@ -3086,7 +3086,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           setGroqKey(val);
                           localStorage.setItem('nepse_hub_groq_api_key', val.trim());
                         }}
-                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 11 }}
+                        style={{ width: '100%', padding: '6px 10px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', borderRadius: 6, color: '#fff', fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -3124,7 +3124,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
                   <Edit3 style={{ width: 18, height: 18, color: '#fbbf24' }} /> WACC & Purchase Price Studio
                 </h3>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'block' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'block' }}>
                   Manage authentic purchase rates (WACC) for accurate Capital Gains & P/L calculation
                 </span>
               </div>
@@ -3142,7 +3142,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   flex: 1,
                   padding: '7px 10px',
                   borderRadius: 8,
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   border: 'none',
@@ -3163,7 +3163,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   flex: 1,
                   padding: '7px 10px',
                   borderRadius: 8,
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   border: 'none',
@@ -3184,7 +3184,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   flex: 1,
                   padding: '7px 10px',
                   borderRadius: 8,
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   border: 'none',
@@ -3206,10 +3206,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 {/* 1-Tap Smart Bulk Estimator Actions */}
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       ⚡ 1-Tap Smart Auto-Fill (Entire Portfolio)
                     </span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       {Object.keys(waccEditValues).length} Scrips Tracked
                     </span>
                   </div>
@@ -3218,7 +3218,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       type="button"
                       onClick={handleAutoSetAllLtp}
                       className="btn-secondary btn-xs"
-                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: 'var(--bull)' }}
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', color: 'var(--bull)' }}
                       title="Set all buy prices to current live LTP"
                     >
                       ⚡ Fill with LTP
@@ -3227,7 +3227,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       type="button"
                       onClick={handleAutoSetAllPrevClose}
                       className="btn-secondary btn-xs"
-                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.3)', color: '#818cf8' }}
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.3)', color: '#818cf8' }}
                       title="Set all buy prices to Previous Closing price"
                     >
                       📊 Fill with Prev Close
@@ -3236,7 +3236,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       type="button"
                       onClick={() => handleAutoSetAllDiscount(10)}
                       className="btn-secondary btn-xs"
-                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', color: '#fbbf24' }}
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', color: '#fbbf24' }}
                       title="Estimate buy prices at 10% discount below current LTP (Realistic entry proxy)"
                     >
                       📉 Fill with -10% Discount
@@ -3245,7 +3245,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       type="button"
                       onClick={handleResetAllPar}
                       className="btn-secondary btn-xs"
-                      style={{ flex: 1, minWidth: 110, padding: '6px 8px', fontSize: 10.5, fontWeight: 800, background: 'rgba(255,255,255,0.06)' }}
+                      style={{ flex: 1, minWidth: 110, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(255,255,255,0.06)' }}
                       title="Reset all to nominal face value (Rs. 100)"
                     >
                       🎯 Reset to Par
@@ -3262,7 +3262,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       placeholder="Search stock symbol (e.g. NABIL, SHIVM)..."
                       value={waccSearch}
                       onChange={e => setWaccSearch(e.target.value)}
-                      style={{ width: '100%', height: 30, paddingLeft: 28, paddingRight: 8, fontSize: 11.5, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 7, color: '#fff' }}
+                      style={{ width: '100%', height: 30, paddingLeft: 28, paddingRight: 8, fontSize: 12, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 7, color: '#fff' }}
                     />
                   </div>
                   <button
@@ -3272,7 +3272,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       height: 30,
                       padding: '0 10px',
                       borderRadius: 7,
-                      fontSize: 10.5,
+                      fontSize: 12,
                       fontWeight: 800,
                       cursor: 'pointer',
                       border: waccFilterUnconfirmed ? '1px solid #fbbf24' : '1px solid var(--border)',
@@ -3330,18 +3330,18 @@ Based on this data, provide a robust analysis using this exact markdown structur
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <strong style={{ fontSize: 13, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>{sym}</strong>
                               {src === 'CDSC_MY_HOLDING_DECLARED' ? (
-                                <span style={{ fontSize: 8.5, background: 'rgba(16,185,129,0.18)', color: '#34d399', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✓ CDSC</span>
+                                <span style={{ fontSize: 12, background: 'rgba(16,185,129,0.18)', color: '#34d399', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✓ CDSC</span>
                               ) : src === 'BROKER_TMS' ? (
-                                <span style={{ fontSize: 8.5, background: 'rgba(99,102,241,0.2)', color: '#818cf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>🏛️ TMS</span>
+                                <span style={{ fontSize: 12, background: 'rgba(99,102,241,0.2)', color: '#818cf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>🏛️ TMS</span>
                               ) : src && src.startsWith('ESTIMATED_') ? (
-                                <span style={{ fontSize: 8.5, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>📊 Estimate</span>
+                                <span style={{ fontSize: 12, background: 'rgba(56,189,248,0.18)', color: '#38bdf8', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>📊 Estimate</span>
                               ) : src === 'CUSTOM_USER_SET' ? (
-                                <span style={{ fontSize: 8.5, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom</span>
+                                <span style={{ fontSize: 12, background: 'rgba(234,179,8,0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>✏️ Custom</span>
                               ) : (
-                                <span style={{ fontSize: 8.5, background: 'rgba(244,63,94,0.15)', color: '#f87171', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed</span>
+                                <span style={{ fontSize: 12, background: 'rgba(244,63,94,0.15)', color: '#f87171', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>⚠️ Unconfirmed</span>
                               )}
                             </div>
-                            <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
                               <span>LTP: Rs. {ltp > 0 ? ltp : 'N/A'}</span>
                               {numVal > 0 && ltp > 0 && (
                                 <span style={{ color: plDiff >= 0 ? 'var(--bull)' : '#f87171', fontWeight: 700 }}>
@@ -3359,13 +3359,13 @@ Based on this data, provide a robust analysis using this exact markdown structur
                                   setWaccEditValues(prev => ({ ...prev, [sym]: ltp }));
                                   setWaccSourcesMap(prev => ({ ...prev, [sym]: 'ESTIMATED_LTP' }));
                                 }}
-                                style={{ fontSize: 9, padding: '3px 6px', background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}
+                                style={{ fontSize: 12, padding: '3px 6px', background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}
                                 title="Set to LTP"
                               >
                                 Use LTP
                               </button>
                             )}
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Rs.</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Rs.</span>
                             <input
                               type="number"
                               step="0.01"
@@ -3390,9 +3390,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {/* TAB 2: BROKER TMS TRADE BOOK IMPORTER */}
             {waccModalTab === 'tms' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 9, padding: '10px 12px', marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 9, padding: '10px 12px', marginBottom: 12, lineHeight: 1.5 }}>
                   💡 <strong>How to import from NEPSE Broker TMS:</strong>
-                  <div style={{ marginTop: 4, fontSize: 10.5 }}>
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
                     1. Open your broker's TMS (e.g. <code>tms58.nepsetms.com.np</code>) & navigate to <strong>Trade Management → Trade Book</strong>.<br />
                     2. Copy the trade rows (or export CSV) and paste below.<br />
                     3. The engine automatically aggregates multiple buy orders and calculates the exact WACC including broker commissions & SEBON fees!
@@ -3400,7 +3400,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 </div>
 
                 <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                     Paste TMS Trade Book Text / CSV Content:
                   </label>
                   <textarea
@@ -3408,7 +3408,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     placeholder="Symbol  Qty  Rate  Type... (Paste copied TMS rows or CSV text here)"
                     value={tmsRawText}
                     onChange={e => setTmsRawText(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', fontSize: 11, background: '#0d1117', border: '1px solid var(--border)', borderRadius: 8, color: '#fff', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 12, background: '#0d1117', border: '1px solid var(--border)', borderRadius: 8, color: '#fff', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
                   />
                 </div>
 
@@ -3418,7 +3418,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     onClick={handleParseTms}
                     disabled={!tmsRawText.trim()}
                     className="btn-primary"
-                    style={{ flex: 1, padding: '8px 0', fontSize: 11.5, fontWeight: 800, background: 'linear-gradient(90deg, #6366f1, #4f46e5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 800, background: 'linear-gradient(90deg, #6366f1, #4f46e5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                   >
                     <Sparkles style={{ width: 14, height: 14 }} /> ⚡ Parse & Compute WACC
                   </button>
@@ -3426,7 +3426,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     type="button"
                     onClick={() => { setTmsRawText(''); setTmsParseResult(null); }}
                     className="btn-secondary"
-                    style={{ padding: '8px 14px', fontSize: 11.5 }}
+                    style={{ padding: '8px 14px', fontSize: 12 }}
                   >
                     Clear
                   </button>
@@ -3438,21 +3438,21 @@ Based on this data, provide a robust analysis using this exact markdown structur
                     {tmsParseResult.success ? (
                       <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 9, padding: '10px 12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--bull)' }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)' }}>
                             ✓ Found {tmsParseResult.count} Unique Scrips in Trade Book
                           </span>
                           <button
                             type="button"
                             onClick={handleApplyTmsWacc}
                             className="btn-primary btn-xs"
-                            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 900, background: 'var(--bull)', color: '#042f2e', border: 'none', borderRadius: 6 }}
+                            style={{ padding: '5px 12px', fontSize: 12, fontWeight: 900, background: 'var(--bull)', color: '#042f2e', border: 'none', borderRadius: 6 }}
                           >
                             ✓ Apply All to Portfolio
                           </button>
                         </div>
                         <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
                           {Object.values(tmsParseResult.holdings).map(h => (
-                            <div key={h.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6 }}>
+                            <div key={h.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6 }}>
                               <span style={{ fontWeight: 800, color: '#fff' }}>{h.symbol}</span>
                               <span style={{ color: 'var(--text-muted)' }}>{h.totalQuantity} Units ({h.transactionsCount} trades)</span>
                               <span style={{ fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>WACC: Rs. {h.wacc}</span>
@@ -3461,7 +3461,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                         </div>
                       </div>
                     ) : (
-                      <div style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 9, padding: '8px 12px', color: '#f87171', fontSize: 11 }}>
+                      <div style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 9, padding: '8px 12px', color: '#f87171', fontSize: 12 }}>
                         ⚠️ {tmsParseResult.error || 'Could not parse trade records. Make sure columns contain Symbol, Quantity, and Rate.'}
                       </div>
                     )}
@@ -3473,14 +3473,14 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {/* TAB 3: CDSC MEROSHARE LIVE SYNC */}
             {waccModalTab === 'cdsc' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 9, padding: '12px 14px', marginBottom: 14, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 9, padding: '12px 14px', marginBottom: 14, lineHeight: 1.5 }}>
                   <strong style={{ color: '#38bdf8', display: 'block', marginBottom: 4 }}>Authentic CDSC MeroShare Extraction:</strong>
                   This will connect directly to CDSC and query:
                   <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
                     <li><strong>Declared & Confirmed WACCs:</strong> Pulled from <code>/myHolding/</code></li>
                     <li><strong>Unconfirmed Purchase Transactions:</strong> Throttled search via <code>/purchaseSource/search/</code></li>
                   </ul>
-                  <div style={{ marginTop: 8, fontSize: 10, color: 'var(--text-muted)' }}>
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                     * Uses an anti-firewall 1.4s jitter delay to prevent CDSC F5 WAF IP bans.
                   </div>
                 </div>
@@ -3499,7 +3499,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
                 </button>
 
                 {isSyncingWacc && (
-                  <div style={{ padding: '10px 12px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 8, color: '#7dd3fc', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ padding: '10px 12px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 8, color: '#7dd3fc', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Loader2 className="animate-spin" style={{ width: 14, height: 14 }} />
                     <span>{waccSyncProgress || 'Connecting to CDSC...'}</span>
                   </div>
@@ -3509,7 +3509,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
 
             {/* Success Banner */}
             {waccSaveSuccess && (
-              <div style={{ fontSize: 11, color: 'var(--bull)', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 7, padding: '7px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
+              <div style={{ fontSize: 12, color: 'var(--bull)', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 7, padding: '7px 10px', marginBottom: 10, textAlign: 'center', fontWeight: 700 }}>
                 ✓ {waccSaveSuccess}
               </div>
             )}

@@ -527,13 +527,13 @@ export default function Calculator() {
                 border: '1px solid rgba(16,217,138,0.3)',
                 padding: 16, borderRadius: 12, textAlign: 'center', marginBottom: 14
               }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Target Selling Rate to Break Even
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--bull)', margin: '6px 0 2px', fontFamily: 'var(--font-mono)' }}>
                   {formatRs(breakEvenResult.price)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   Covers buy/sell broker commission, SEBON fees, DP charge & CGT
                 </div>
               </div>
@@ -622,7 +622,7 @@ export default function Calculator() {
                   onClick={() => { setBonusPct(p.b); setRightPct(p.r); }}
                   style={{
                     background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 6, padding: '4px 8px', fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer'
+                    borderRadius: 6, padding: '4px 8px', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer'
                   }}
                 >
                   {p.label}
@@ -640,13 +640,13 @@ export default function Calculator() {
                 border: '1px solid rgba(56, 189, 248, 0.3)',
                 padding: 16, borderRadius: 12, textAlign: 'center', marginBottom: 14
               }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Theoretical Ex-Date Opening Price
                 </div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: '#38bdf8', margin: '6px 0 2px', fontFamily: 'var(--font-mono)' }}>
                   Rs. {adjustmentResult.adjustedPrice.toFixed(2)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   Expected base opening rate on NEPSE after book closure
                 </div>
               </div>
@@ -692,12 +692,12 @@ export default function Calculator() {
                   border: `1px solid ${adjustmentResult.dilutionAudit.riskLevel === 'High' ? 'rgba(239, 68, 68, 0.3)' : adjustmentResult.dilutionAudit.riskLevel === 'Moderate' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 6 }}>
                       {adjustmentResult.dilutionAudit.riskLevel === 'High' ? <AlertTriangle size={14} color="#f87171" /> : <ShieldCheck size={14} color="#34d399" />}
                       Fisher Bonus Dilution Auditor
                     </div>
                     <span style={{
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: 800,
                       padding: '2px 7px',
                       borderRadius: 4,
@@ -709,15 +709,15 @@ export default function Calculator() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginBottom: 6 }}>
                     <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 6 }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>Post-Bonus EPS (Est.): </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Post-Bonus EPS (Est.): </span>
                       <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs. {adjustmentResult.dilutionAudit.postBonusEps}</span>
                     </div>
                     <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 6 }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>Equity Base Expansion: </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Equity Base Expansion: </span>
                       <span style={{ fontWeight: 800, color: '#f87171' }}>+{bonusPct}%</span>
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                     {adjustmentResult.dilutionAudit.message}
                   </div>
                 </div>
@@ -779,13 +779,13 @@ export default function Calculator() {
                 border: '1px solid rgba(16, 217, 138, 0.3)',
                 padding: 16, borderRadius: 12, textAlign: 'center', marginBottom: 14
               }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Expected Maturity Wealth ({sipYears} Years)
                 </div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--bull)', margin: '6px 0 2px', fontFamily: 'var(--font-mono)' }}>
                   {formatRs(sipResult.maturity)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   Compounded over {sipResult.months} monthly investments
                 </div>
               </div>
@@ -806,7 +806,7 @@ export default function Calculator() {
                     <div style={{ width: `${(sipResult.totalInvested / sipResult.maturity) * 100}%`, background: '#6366f1' }} title="Invested" />
                     <div style={{ width: `${(sipResult.estReturns / sipResult.maturity) * 100}%`, background: 'var(--bull)' }} title="Growth" />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                     <span style={{ color: '#818cf8' }}>● Invested: {((sipResult.totalInvested / sipResult.maturity) * 100).toFixed(0)}%</span>
                     <span style={{ color: 'var(--bull)' }}>● Gains: {((sipResult.estReturns / sipResult.maturity) * 100).toFixed(0)}%</span>
                   </div>
@@ -923,17 +923,17 @@ export default function Calculator() {
                 border: '1px solid rgba(79, 70, 229, 0.4)',
                 padding: 16, borderRadius: 12, textAlign: 'center', marginBottom: 14
               }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--primary-light)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--primary-light)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Eligible Approved Margin Loan
                 </div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: '#38bdf8', margin: '6px 0 2px', fontFamily: 'var(--font-mono)' }}>
                   {formatRs(marginLoanResult.approvedLoan)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   Valuation base: Rs. {marginLoanResult.valuationPrice.toFixed(2)} &times; {marginLoanResult.effectiveLtv}% LTV
                 </div>
                 {marginLoanResult.isCapped && (
-                  <div style={{ marginTop: 8, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '4px 8px', borderRadius: 6 }}>
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)', padding: '4px 8px', borderRadius: 6 }}>
                     ⚠️ Capped at NRB Ceiling of Rs. {(marginLoanResult.ceiling / 10000000).toFixed(0)} Crores
                   </div>
                 )}
@@ -1002,7 +1002,7 @@ export default function Calculator() {
           }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                   Total Capital (Rs.)
                 </label>
                 <input
@@ -1023,7 +1023,7 @@ export default function Calculator() {
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                   Risk Per Trade ({riskPercent}%)
                 </label>
                 <input
@@ -1047,7 +1047,7 @@ export default function Calculator() {
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                   Planned Entry (Rs.)
                 </label>
                 <input
@@ -1068,7 +1068,7 @@ export default function Calculator() {
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#f87171', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#f87171', display: 'block', marginBottom: 4 }}>
                   Stop-Loss Price (Rs.)
                 </label>
                 <input
@@ -1089,7 +1089,7 @@ export default function Calculator() {
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#34d399', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#34d399', display: 'block', marginBottom: 4 }}>
                   Target Price (Rs.)
                 </label>
                 <input
@@ -1110,7 +1110,7 @@ export default function Calculator() {
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                   Investor / Tax Type
                 </label>
                 <select
@@ -1160,13 +1160,13 @@ export default function Calculator() {
                     padding: 12,
                     textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: 10.5, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
+                    <div style={{ fontSize: 12, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
                       Recommended Lots
                     </div>
                     <div style={{ fontSize: 24, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
                       {positionSizeResult.shares} <span style={{ fontSize: 12, fontWeight: 600 }}>units</span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       Rounded to 10-share lots
                     </div>
                   </div>
@@ -1178,13 +1178,13 @@ export default function Calculator() {
                     padding: 12,
                     textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: 10.5, color: '#bae6fd', fontWeight: 800, textTransform: 'uppercase' }}>
+                    <div style={{ fontSize: 12, color: '#bae6fd', fontWeight: 800, textTransform: 'uppercase' }}>
                       Trade Capital
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
                       {formatRs(positionSizeResult.capitalRequired)}
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       {((positionSizeResult.capitalRequired / riskCapital) * 100).toFixed(1)}% of Capital
                     </div>
                   </div>
@@ -1196,13 +1196,13 @@ export default function Calculator() {
                     padding: 12,
                     textAlign: 'center'
                   }}>
-                    <div style={{ fontSize: 10.5, color: '#fca5a5', fontWeight: 800, textTransform: 'uppercase' }}>
+                    <div style={{ fontSize: 12, color: '#fca5a5', fontWeight: 800, textTransform: 'uppercase' }}>
                       Max Loss (Risk)
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
                       {formatRs(positionSizeResult.actualRiskRs)}
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       {positionSizeResult.actualRiskPct.toFixed(2)}% of Portfolio
                     </div>
                   </div>
@@ -1215,13 +1215,13 @@ export default function Calculator() {
                       padding: 12,
                       textAlign: 'center'
                     }}>
-                      <div style={{ fontSize: 10.5, color: '#fde68a', fontWeight: 800, textTransform: 'uppercase' }}>
+                      <div style={{ fontSize: 12, color: '#fde68a', fontWeight: 800, textTransform: 'uppercase' }}>
                         Risk / Reward
                       </div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: riskRewardResult.color, fontFamily: 'var(--font-mono)', margin: '4px 0' }}>
                         {riskRewardResult.label}
                       </div>
-                      <div style={{ fontSize: 10.5, fontWeight: 700, color: riskRewardResult.color, textTransform: 'capitalize' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: riskRewardResult.color, textTransform: 'capitalize' }}>
                         {riskRewardResult.quality}
                       </div>
                     </div>

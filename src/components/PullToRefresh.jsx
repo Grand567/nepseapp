@@ -222,7 +222,7 @@ export default function PullToRefresh({
 
             <span
               style={{
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 800,
                 color: isReady || isRefreshing ? '#10B981' : '#cbd5e1',
                 letterSpacing: '0.01em'

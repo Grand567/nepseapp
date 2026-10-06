@@ -61,7 +61,7 @@ export function SimulatedDataBanner({ isSimulated, dataQuality, onRefresh }) {
           <>
             <strong>Connecting to live feed.</strong> Loading official NEPSE exchange records. Cached closing data is active.
             {dataQuality && (
-              <span style={{ opacity: 0.75, marginLeft: 6, fontSize: 10.5 }}>
+              <span style={{ opacity: 0.75, marginLeft: 6, fontSize: 12 }}>
                 [{dataQuality}]
               </span>
             )}
@@ -78,7 +78,7 @@ export function SimulatedDataBanner({ isSimulated, dataQuality, onRefresh }) {
             color: isMarketClosed ? '#38bdf8' : '#fbbf24',
             cursor: 'pointer',
             padding: '3px 8px',
-            fontSize: 11,
+            fontSize: 12,
             flexShrink: 0,
             fontWeight: 600
           }}

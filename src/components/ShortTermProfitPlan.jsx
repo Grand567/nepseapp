@@ -968,7 +968,7 @@ export default function ShortTermProfitPlan({
                 1–2 Week Short-Term Profit Planner
               </h1>
               <span style={{
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: 800,
                 padding: '2px 7px',
                 borderRadius: 6,
@@ -979,7 +979,7 @@ export default function ShortTermProfitPlan({
                 QUANT EDGE
               </span>
               <span style={{
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: 800,
                 padding: '2px 7px',
                 borderRadius: 6,
@@ -1011,14 +1011,14 @@ export default function ShortTermProfitPlan({
             boxSizing: 'border-box'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
             <span>NEPSE REGIME</span>
             <span style={{ color: marketRegime.color, fontWeight: 900 }}>{marketRegime.label}</span>
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#FFF' }}>
             {Number(marketRegime.ltp) > 0 ? `NEPSE ${Number(marketRegime.ltp).toFixed(1)} (${Number(marketRegime.pChange) >= 0 ? '+' : ''}${Number(marketRegime.pChange).toFixed(2)}%)` : 'Market Open'}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.3 }}>
             {marketRegime.desc}
           </div>
         </div>
@@ -1040,7 +1040,7 @@ export default function ShortTermProfitPlan({
           <div style={{ fontSize: 12, fontWeight: 900, color: '#60a5fa', marginBottom: 4 }}>
             HOW TO READ THIS SCREENER (Short Term Plan)
           </div>
-          <div style={{ fontSize: 10.5, color: '#94a3b8', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
             <strong style={{ color: '#cbd5e1' }}>Plan Score (15–96):</strong> This screener's own 8-criteria score — measures liquidity, trend, volume surge, ATR risk/reward, sector strength, anti-trap guard, T+2 safety, and solvency. It is NOT the same as the Guru Score or Setup Quality score shown in stock details.{' '}
             <strong style={{ color: '#cbd5e1' }}>STRONG BUY:</strong> passes all 8 criteria with score ≥ 75.{' '}
             <strong style={{ color: '#cbd5e1' }}>ACCUMULATE:</strong> passes all 8 but score 55–74.{' '}
@@ -1076,7 +1076,7 @@ export default function ShortTermProfitPlan({
               <Flame size={18} color="#F59E0B" />
               <span>Top Short-Term Setups</span>
               <span style={{
-                fontSize: 10.5,
+                fontSize: 12,
                 background: qualifiedCandidates.length > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
                 border: qualifiedCandidates.length > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(245, 158, 11, 0.35)',
                 padding: '2px 8px',
@@ -1097,7 +1097,7 @@ export default function ShortTermProfitPlan({
                   color: '#60A5FA',
                   borderRadius: 8,
                   padding: '4px 10px',
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   display: 'inline-flex',
@@ -1118,7 +1118,7 @@ export default function ShortTermProfitPlan({
             border: '1px solid rgba(255, 255, 255, 0.06)',
             borderRadius: 10,
             padding: '8px 12px',
-            fontSize: 11,
+            fontSize: 12,
             color: 'var(--text-muted)',
             display: 'flex',
             alignItems: 'center',
@@ -1186,7 +1186,7 @@ export default function ShortTermProfitPlan({
                   style={{
                     padding: '6px 10px',
                     borderRadius: 8,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
@@ -1226,7 +1226,7 @@ export default function ShortTermProfitPlan({
                     ? '0 Setups Qualified All 8 Criteria Today' 
                     : 'No Candidates Match Filter'}
                 </div>
-                <div style={{ fontSize: 11, marginTop: 6, lineHeight: 1.45, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45, color: '#94a3b8' }}>
                   {candidateFilter === 'all'
                     ? 'The institutional engine enforces zero tolerance: each candidate must clear liquidity, EMA trend, volume expansion, ATR RRR, and T+2 safety. When market volume is dry or consolidating, avoiding forced trades is the smart move.'
                     : 'Try clearing your search query or switching filters.'}
@@ -1242,7 +1242,7 @@ export default function ShortTermProfitPlan({
                       background: 'rgba(99, 102, 241, 0.2)',
                       border: '1px solid #6366F1',
                       color: '#A5B4FC',
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 800,
                       cursor: 'pointer'
                     }}
@@ -1289,7 +1289,7 @@ export default function ShortTermProfitPlan({
                           </strong>
                           {isTopPick && (
                             <span style={{
-                              fontSize: 9,
+                              fontSize: 12,
                               fontWeight: 900,
                               background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                               color: '#000',
@@ -1300,7 +1300,7 @@ export default function ShortTermProfitPlan({
                             </span>
                           )}
                           <span style={{
-                            fontSize: 9.5,
+                            fontSize: 12,
                             color: 'var(--text-muted)',
                             background: 'rgba(255, 255, 255, 0.05)',
                             padding: '1px 6px',
@@ -1319,7 +1319,7 @@ export default function ShortTermProfitPlan({
                             Rs. {item.ltp}
                           </span>
                           <span style={{
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: 800,
                             marginLeft: 4,
                             color: item.pChg >= 0 ? '#34D399' : '#FB7185'
@@ -1333,7 +1333,7 @@ export default function ShortTermProfitPlan({
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {isBreakoutSetup && (
                           <span style={{
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: 900,
                             padding: '1px 6px',
                             borderRadius: 4,
@@ -1346,7 +1346,7 @@ export default function ShortTermProfitPlan({
                         )}
                         {isSmartMoneySetup && (
                           <span style={{
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: 900,
                             padding: '1px 6px',
                             borderRadius: 4,
@@ -1360,7 +1360,7 @@ export default function ShortTermProfitPlan({
 
                         {isT2Trap ? (
                           <span style={{
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: 900,
                             padding: '1px 6px',
                             borderRadius: 4,
@@ -1371,7 +1371,7 @@ export default function ShortTermProfitPlan({
                           </span>
                         ) : (
                           <span style={{
-                            fontSize: 9,
+                            fontSize: 12,
                             fontWeight: 900,
                             padding: '1px 6px',
                             borderRadius: 4,
@@ -1396,7 +1396,7 @@ export default function ShortTermProfitPlan({
                             border: '1px solid rgba(99, 102, 241, 0.35)',
                             borderRadius: 6,
                             padding: '2px 8px',
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: 800,
                             color: '#A5B4FC',
                             cursor: 'pointer',
@@ -1414,34 +1414,34 @@ export default function ShortTermProfitPlan({
                         display: 'grid',
                         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                         gap: 4,
-                        fontSize: 10.5,
+                        fontSize: 12,
                         background: 'rgba(0, 0, 0, 0.25)',
                         padding: '6px 6px',
                         borderRadius: 8,
                         textAlign: 'center'
                       }}>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 8.5, whiteSpace: 'nowrap' }}>BUY CORRIDOR</div>
-                          <div style={{ fontWeight: 800, color: '#94A3B8', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>BUY CORRIDOR</div>
+                          <div style={{ fontWeight: 800, color: '#94A3B8', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {item.entryMin} – {item.entryMax}
                           </div>
                         </div>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                          <div style={{ color: '#34D399', fontSize: 8.5, whiteSpace: 'nowrap' }}>1–2W TARGET</div>
-                          <div style={{ fontWeight: 900, color: '#34D399', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ color: '#34D399', fontSize: 12, whiteSpace: 'nowrap' }}>1–2W TARGET</div>
+                          <div style={{ fontWeight: 900, color: '#34D399', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {item.target1} (+{item.target1Pct}%)
                           </div>
                         </div>
                         <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                          <div style={{ color: '#FB7185', fontSize: 8.5, whiteSpace: 'nowrap' }}>STOP-LOSS</div>
-                          <div style={{ fontWeight: 800, color: '#FB7185', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ color: '#FB7185', fontSize: 12, whiteSpace: 'nowrap' }}>STOP-LOSS</div>
+                          <div style={{ fontWeight: 800, color: '#FB7185', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {item.stopLoss} (-{item.stopLossPct}%)
                           </div>
                         </div>
                       </div>
 
                       {/* Row 4: Setup & Score Badges */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10.5 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
                         <span style={{
                           fontWeight: 800,
                           color: item.score >= 70 ? '#34D399' : item.score >= 60 ? '#FBBF24' : '#F87171',
@@ -1451,7 +1451,7 @@ export default function ShortTermProfitPlan({
                         }}>
                           <Sparkles size={11} /> Plan Score: {item.score}/100
                         </span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                           RRR: <strong style={{ color: item.rrr >= 1.5 ? '#34D399' : '#FB7185' }}>{item.rrr}:1</strong> · RVOL: <strong>{item.vsr}×</strong>
                         </span>
                       </div>
@@ -1524,12 +1524,12 @@ export default function ShortTermProfitPlan({
                   style={{ fontSize: 22, fontWeight: 900, color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                   {activeStock.symbol}
-                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', border: '1px solid rgba(99, 102, 241, 0.4)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(99, 102, 241, 0.2)', color: '#A5B4FC', border: '1px solid rgba(99, 102, 241, 0.4)' }}>
                     1–2W PLAN
                   </span>
                 </span>
                 <span style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   padding: '2px 8px',
                   borderRadius: 6,
                   background: 'rgba(99, 102, 241, 0.2)',
@@ -1540,7 +1540,7 @@ export default function ShortTermProfitPlan({
                 </span>
                 {activeStock.symbol === bestPickCandidate?.symbol && (
                   <span style={{
-                    fontSize: 10.5,
+                    fontSize: 12,
                     padding: '2px 8px',
                     borderRadius: 6,
                     background: 'rgba(245, 158, 11, 0.2)',
@@ -1553,7 +1553,7 @@ export default function ShortTermProfitPlan({
                 )}
                 {activeStock.passesAll ? (
                   <span style={{
-                    fontSize: 10.5,
+                    fontSize: 12,
                     padding: '2px 8px',
                     borderRadius: 6,
                     background: 'rgba(16, 185, 129, 0.2)',
@@ -1565,7 +1565,7 @@ export default function ShortTermProfitPlan({
                   </span>
                 ) : (
                   <span style={{
-                    fontSize: 10.5,
+                    fontSize: 12,
                     padding: '2px 8px',
                     borderRadius: 6,
                     background: 'rgba(239, 68, 68, 0.15)',
@@ -1593,7 +1593,7 @@ export default function ShortTermProfitPlan({
                   color: '#60A5FA',
                   padding: '7px 12px',
                   borderRadius: 8,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1614,7 +1614,7 @@ export default function ShortTermProfitPlan({
                   color: '#000',
                   padding: '7px 14px',
                   borderRadius: 8,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 900,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1651,7 +1651,7 @@ export default function ShortTermProfitPlan({
                       ? `Verified Short-Term Investment Candidate (${activeStock.criteriaList?.length || 8}/${activeStock.criteriaList?.length || 8} Passed)` 
                       : `Caution: Fails ${(activeStock.criteriaList?.length || 8) - activeStock.passedCount} Short-Term Criteria`}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {activeStock.passesAll
                       ? 'Passes all institutional liquidity, moving average alignment, volume, dynamic ATR RRR, sector RS, VSA anti-trap, and T+2 circuit rules.'
                       : 'Stock violates strict swing trading criteria. High risk of capital erosion, bull trap, or T+2 lockup.'}
@@ -1670,7 +1670,7 @@ export default function ShortTermProfitPlan({
                       color: '#000',
                       padding: '5px 12px',
                       borderRadius: 8,
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 900,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1691,7 +1691,7 @@ export default function ShortTermProfitPlan({
                     color: '#94a3b8',
                     padding: '4px 10px',
                     borderRadius: 6,
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer'
                   }}
@@ -1725,9 +1725,9 @@ export default function ShortTermProfitPlan({
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: '#FFF' }}>{crit.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#FFF' }}>{crit.name}</span>
                       <span style={{
-                        fontSize: 9.5,
+                        fontSize: 12,
                         fontWeight: 900,
                         padding: '1px 6px',
                         borderRadius: 4,
@@ -1737,7 +1737,7 @@ export default function ShortTermProfitPlan({
                         {crit.passed ? 'PASS' : 'FAIL'}
                       </span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: crit.passed ? '#34D399' : '#F87171', lineHeight: 1.25 }}>
+                    <div style={{ fontSize: 12, color: crit.passed ? '#34D399' : '#F87171', lineHeight: 1.25 }}>
                       {crit.detail}
                     </div>
                   </div>
@@ -1766,7 +1766,7 @@ export default function ShortTermProfitPlan({
                 style={{
                   padding: '7px 12px',
                   borderRadius: 10,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   border: activeMode === m.id ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.06)',
@@ -1805,7 +1805,7 @@ export default function ShortTermProfitPlan({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {/* Total Capital */}
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                       Trading Capital (Rs.)
                     </label>
                     <input
@@ -1833,7 +1833,7 @@ export default function ShortTermProfitPlan({
                             background: 'rgba(255, 255, 255, 0.04)',
                             border: 'none',
                             borderRadius: 4,
-                            fontSize: 9,
+                            fontSize: 12,
                             color: 'var(--text-muted)',
                             padding: '2px 6px',
                             cursor: 'pointer'
@@ -1847,7 +1847,7 @@ export default function ShortTermProfitPlan({
 
                   {/* Max Risk % */}
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
                       Max Risk Per Trade (%)
                     </label>
                     <input
@@ -1867,7 +1867,7 @@ export default function ShortTermProfitPlan({
                         boxSizing: 'border-box'
                       }}
                     />
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                       Max loss limit: <strong>Rs. {riskAmount.toFixed(0)}</strong>
                     </div>
                   </div>
@@ -1876,7 +1876,7 @@ export default function ShortTermProfitPlan({
                 {/* Execution Levels Controls */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 4 }}>
                   <div>
-                    <label style={{ fontSize: 10, color: 'var(--text-muted)' }}>Entry Price (Rs.)</label>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Entry Price (Rs.)</label>
                     <input
                       type="number"
                       value={entryPrice}
@@ -1896,7 +1896,7 @@ export default function ShortTermProfitPlan({
                   </div>
 
                   <div>
-                    <label style={{ fontSize: 10, color: '#34D399' }}>Target 1 (Rs.)</label>
+                    <label style={{ fontSize: 12, color: '#34D399' }}>Target 1 (Rs.)</label>
                     <input
                       type="number"
                       value={target1Price}
@@ -1916,7 +1916,7 @@ export default function ShortTermProfitPlan({
                   </div>
 
                   <div>
-                    <label style={{ fontSize: 10, color: '#FB7185' }}>Stop Loss (Rs.)</label>
+                    <label style={{ fontSize: 12, color: '#FB7185' }}>Stop Loss (Rs.)</label>
                     <input
                       type="number"
                       value={stopLossPrice}
@@ -1966,21 +1966,21 @@ export default function ShortTermProfitPlan({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 12 }}>
                   <div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Total Investment Cost</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Total Investment Cost</div>
                     <div style={{ fontSize: 15, fontWeight: 900, color: '#FFF' }}>
                       Rs. {formatSouthAsian(buyCalculations.totalAmount)}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       Cost per share: Rs. {(Number(buyCalculations?.costPerShare) || 0).toFixed(2)}
                     </div>
                   </div>
 
                   <div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>Net Take-Home Profit (T1)</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Net Take-Home Profit (T1)</div>
                     <div style={{ fontSize: 16, fontWeight: 900, color: '#34D399' }}>
                       +Rs. {formatSouthAsian(netTakeHomeProfit)}
                     </div>
-                    <div style={{ fontSize: 10, color: '#34D399', fontWeight: 800 }}>
+                    <div style={{ fontSize: 12, color: '#34D399', fontWeight: 800 }}>
                       Net +{(Number(netTakeHomePct) || 0).toFixed(2)}% (After Fees & Tax)
                     </div>
                   </div>
@@ -1991,7 +1991,7 @@ export default function ShortTermProfitPlan({
                   background: 'rgba(0, 0, 0, 0.3)',
                   borderRadius: 10,
                   padding: '10px 12px',
-                  fontSize: 11,
+                  fontSize: 12,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 4,
@@ -2060,7 +2060,7 @@ export default function ShortTermProfitPlan({
                   <Scale size={16} />
                   <span>The Mathematics of Systematic Profit (EV & Kelly)</span>
                 </div>
-                <p style={{ margin: '4px 0 0', color: '#CBD5E1', fontSize: 11.5 }}>
+                <p style={{ margin: '4px 0 0', color: '#CBD5E1', fontSize: 12 }}>
                   Professional traders do not rely on 100% win rates. They rely on positive mathematical expectancy ($EV &gt; 0$) and safe capital allocation.
                 </p>
               </div>
@@ -2073,7 +2073,7 @@ export default function ShortTermProfitPlan({
                 padding: '12px 14px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Assumed Strategy Win Rate:</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>Assumed Strategy Win Rate:</span>
                   <span style={{ fontSize: 14, fontWeight: 900, color: '#10B981' }}>{assumedWinRate}%</span>
                 </div>
                 <input
@@ -2085,7 +2085,7 @@ export default function ShortTermProfitPlan({
                   onChange={e => setAssumedWinRate(Number(e.target.value))}
                   style={{ width: '100%', accentColor: '#10B981', cursor: 'pointer' }}
                 />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
                   <span>35% (Conservative)</span>
                   <span>55% (Realistic Swing)</span>
                   <span>75% (Ideal Breakout)</span>
@@ -2101,11 +2101,11 @@ export default function ShortTermProfitPlan({
                   borderRadius: 12,
                   padding: '12px'
                 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)' }}>EXPECTED VALUE (EV) / TRADE</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>EXPECTED VALUE (EV) / TRADE</div>
                   <div style={{ fontSize: 17, fontWeight: 900, color: expectancyData.hasPositiveEdge ? '#34D399' : '#FB7185', marginTop: 2 }}>
                     {(Number(expectancyData?.ev) || 0) >= 0 ? '+' : ''}Rs. {(Number(expectancyData?.ev) || 0).toFixed(2)}
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     Profit Factor: <strong style={{ color: '#FFF' }}>{expectancyData.profitFactor}x</strong>
                   </div>
                 </div>
@@ -2117,11 +2117,11 @@ export default function ShortTermProfitPlan({
                   borderRadius: 12,
                   padding: '12px'
                 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)' }}>BREAK-EVEN WIN RATE</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>BREAK-EVEN WIN RATE</div>
                   <div style={{ fontSize: 17, fontWeight: 900, color: '#38BDF8', marginTop: 2 }}>
                     {expectancyData.breakEvenWinRate}%
                   </div>
-                  <div style={{ fontSize: 10, color: '#34D399', marginTop: 2, fontWeight: 700 }}>
+                  <div style={{ fontSize: 12, color: '#34D399', marginTop: 2, fontWeight: 700 }}>
                     +{ (Number(assumedWinRate || 0) - Number(expectancyData?.breakEvenWinRate || 0)).toFixed(1) }% Statistical Buffer
                   </div>
                 </div>
@@ -2146,7 +2146,7 @@ export default function ShortTermProfitPlan({
                   </span>
                 </div>
 
-                <div style={{ fontSize: 11.5, color: '#CBD5E1', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 12, color: '#CBD5E1', lineHeight: 1.4 }}>
                   {kellyData.rationale}
                 </div>
 
@@ -2157,7 +2157,7 @@ export default function ShortTermProfitPlan({
                   background: 'rgba(0, 0, 0, 0.3)',
                   padding: '8px 10px',
                   borderRadius: 8,
-                  fontSize: 11
+                  fontSize: 12
                 }}>
                   <span style={{ color: 'var(--text-muted)' }}>Half-Kelly Capital Allocation:</span>
                   <span style={{ fontWeight: 800, color: '#FFF' }}>
@@ -2175,7 +2175,7 @@ export default function ShortTermProfitPlan({
                     color: '#FFF',
                     border: 'none',
                     fontWeight: 800,
-                    fontSize: 11,
+                    fontSize: 12,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -2208,7 +2208,7 @@ export default function ShortTermProfitPlan({
                     <span>T+2 SETTLEMENT SAFETY DIAGNOSTIC</span>
                   </span>
                   <span style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 900,
                     padding: '2px 8px',
                     borderRadius: 6,
@@ -2227,21 +2227,21 @@ export default function ShortTermProfitPlan({
               {/* Extension Metrics Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>2-Day Cumulative Gain</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>2-Day Cumulative Gain</div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.twoDayGain >= 25 ? '#F87171' : '#34D399', marginTop: 2 }}>
                     {t2GuardData.twoDayGain >= 0 ? '+' : ''}{t2GuardData.twoDayGain}%
                   </div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {t2GuardData.twoDayGain >= 27 ? 'Extreme 15% circuit surge' : 'Healthy expansion'}
                   </div>
                 </div>
 
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 10, border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Distance from 20 EMA</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Distance from 20 EMA</div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: t2GuardData.ema20DistPct >= 18 ? '#FBBF24' : '#FFF', marginTop: 2 }}>
                     +{t2GuardData.ema20DistPct}%
                   </div>
-                  <div style={{ fontSize: 9.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {t2GuardData.ema20DistPct <= 8 ? 'Close to support base' : 'Stretched from average'}
                   </div>
                 </div>
@@ -2253,7 +2253,7 @@ export default function ShortTermProfitPlan({
                 border: '1px solid rgba(255, 255, 255, 0.06)',
                 borderRadius: 12,
                 padding: '12px 14px',
-                fontSize: 11.5,
+                fontSize: 12,
                 color: '#CBD5E1',
                 lineHeight: 1.5
               }}>
@@ -2279,24 +2279,24 @@ export default function ShortTermProfitPlan({
                     <TrendingUp size={16} />
                     <span>20-TRADE COMPOUND WEALTH PROJECTION</span>
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#FFF' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#FFF' }}>
                     {assumedWinRate}% Win Rate
                   </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Starting Capital</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Starting Capital</div>
                     <div style={{ fontSize: 16, fontWeight: 900, color: '#FFF' }}>
                       Rs. {formatSouthAsian(compoundSim.startingCapital)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: '#34D399' }}>Projected Capital (20 Trades)</div>
+                    <div style={{ fontSize: 12, color: '#34D399' }}>Projected Capital (20 Trades)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#34D399' }}>
                       Rs. {formatSouthAsian(compoundSim.projectedFinalCapital)}
                     </div>
-                    <div style={{ fontSize: 10, color: '#34D399', fontWeight: 800 }}>
+                    <div style={{ fontSize: 12, color: '#34D399', fontWeight: 800 }}>
                       +{compoundSim.projectedRoiPct}% Account Growth
                     </div>
                   </div>
@@ -2310,7 +2310,7 @@ export default function ShortTermProfitPlan({
                 borderRadius: 12,
                 padding: '12px 14px'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
                   <span style={{ color: '#34D399' }}>{compoundSim.expectedWins} Wins (+Rs. {formatSouthAsian(compoundSim.totalGrossGains)})</span>
                   <span style={{ color: '#FB7185' }}>{compoundSim.expectedLosses} Losses (-Rs. {formatSouthAsian(compoundSim.totalGrossLosses)})</span>
                 </div>
@@ -2319,7 +2319,7 @@ export default function ShortTermProfitPlan({
                   <div style={{ width: `${assumedWinRate}%`, background: '#10B981', height: '100%' }} />
                 </div>
 
-                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>
                   💡 <strong>Mathematical Edge Proof:</strong> Even though you lose on {compoundSim.expectedLosses} out of 20 trades (nearly half the time!), your account grows by <strong>+Rs. {formatSouthAsian(compoundSim.projectedNetProfit)}</strong> because your average gain is strictly protected by the 2:1 asymmetric risk-reward ratio.
                 </div>
               </div>
@@ -2438,7 +2438,7 @@ export default function ShortTermProfitPlan({
               <Bookmark size={18} color="#10B981" />
               <span>My Active 1–2W Plans</span>
               <span style={{
-                fontSize: 11,
+                fontSize: 12,
                 background: 'rgba(255, 255, 255, 0.08)',
                 padding: '2px 8px',
                 borderRadius: 12,
@@ -2492,21 +2492,21 @@ export default function ShortTermProfitPlan({
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontWeight: 900, color: '#FFF' }}>{plan.symbol}</span>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                           {plan.quantity} units @ Rs. {plan.entryPrice}
                         </span>
                         {isTargetHit && (
-                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#10B981', color: '#000', fontWeight: 900 }}>
+                          <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: '#10B981', color: '#000', fontWeight: 900 }}>
                             TARGET HIT
                           </span>
                         )}
                         {isStopHit && (
-                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: '#F43F5E', color: '#FFF', fontWeight: 900 }}>
+                          <span style={{ fontSize: 12, padding: '1px 6px', borderRadius: 4, background: '#F43F5E', color: '#FFF', fontWeight: 900 }}>
                             STOP HIT
                           </span>
                         )}
                       </div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 2 }}>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>
                         Target: <strong style={{ color: '#34D399' }}>Rs. {plan.target1Price}</strong> · Stop: <strong style={{ color: '#FB7185' }}>Rs. {plan.stopLossPrice}</strong>
                       </div>
                     </div>
@@ -2516,7 +2516,7 @@ export default function ShortTermProfitPlan({
                         <div style={{ fontWeight: 800, color: '#FFF' }}>Rs. {currentPrice}</div>
                         <div style={{
                           fontWeight: 800,
-                          fontSize: 11,
+                          fontSize: 12,
                           color: currentDiffPct >= 0 ? 'var(--bull)' : 'var(--bear)'
                         }}>
                           {(Number(currentDiffPct) || 0) >= 0 ? '+' : ''}{(Number(currentDiffPct) || 0).toFixed(2)}%

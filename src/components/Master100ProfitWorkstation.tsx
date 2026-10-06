@@ -167,7 +167,7 @@ export function Master100ProfitWorkstation({
                   Unified Master Guide: 100% Profit Engine
                 </h1>
                 <span style={{
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '2px 8px',
                   borderRadius: 6,
@@ -221,12 +221,12 @@ export function Master100ProfitWorkstation({
             <div style={{ fontSize: 12, fontWeight: 800, color: auditReport.marketSession.badgeColor }}>
               {auditReport.marketSession.title}
             </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
               {auditReport.marketSession.description}
             </div>
           </div>
           <div style={{
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 800,
             padding: '4px 10px',
             borderRadius: 8,
@@ -243,7 +243,7 @@ export function Master100ProfitWorkstation({
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
           gap: 10,
-          fontSize: 11
+          fontSize: 12
         }}>
           <div style={{
             background: 'rgba(0,0,0,0.25)',
@@ -352,7 +352,7 @@ export function Master100ProfitWorkstation({
                   borderRadius: 8,
                   padding: '6px 12px',
                   color: '#0f172a',
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer'
                 }}
@@ -384,7 +384,7 @@ export function Master100ProfitWorkstation({
                         {inspectedStock.symbol}
                       </span>
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '4px 10px',
                         borderRadius: 8,
@@ -395,7 +395,7 @@ export function Master100ProfitWorkstation({
                         {inspectedStock.symbol === auditReport.crownedWinner?.symbol ? '👑 #1 CROWNED PICK' : '🔍 RUNNER-UP'}
                       </span>
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '4px 10px',
                         borderRadius: 8,
@@ -406,7 +406,7 @@ export function Master100ProfitWorkstation({
                         {inspectedStock.stance}
                       </span>
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '4px 10px',
                         borderRadius: 8,
@@ -416,7 +416,7 @@ export function Master100ProfitWorkstation({
                         {inspectedStock.sector}
                       </span>
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '4px 10px',
                         borderRadius: 8,
@@ -428,7 +428,7 @@ export function Master100ProfitWorkstation({
                       </span>
                       {inspectedStock.isBounceBack && (
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '4px 10px',
                           borderRadius: 8,
@@ -440,7 +440,7 @@ export function Master100ProfitWorkstation({
                         </span>
                       )}
                       <span style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '4px 10px',
                         borderRadius: 8,
@@ -553,31 +553,31 @@ export function Master100ProfitWorkstation({
                   padding: '12px'
                 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>SETUP SCORE</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>SETUP SCORE</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#34d399' }}>
-                      {inspectedStock.setupScore} <span style={{ fontSize: 11, color: '#94a3b8' }}>/ 100</span>
+                      {inspectedStock.setupScore} <span style={{ fontSize: 12, color: '#94a3b8' }}>/ 100</span>
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>SMART MONEY BCR3</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>SMART MONEY BCR3</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#38bdf8' }}>
-                      {inspectedStock.bcr3}% <span style={{ fontSize: 11, color: '#94a3b8' }}>buy share</span>
+                      {inspectedStock.bcr3}% <span style={{ fontSize: 12, color: '#94a3b8' }}>buy share</span>
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>NET RISK : REWARD</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>NET RISK : REWARD</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#fbbf24' }}>
-                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 11, color: '#94a3b8' }}>net 10% CGT</span>
+                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 12, color: '#94a3b8' }}>net 10% CGT</span>
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>ANALOG WIN RATE</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>ANALOG WIN RATE</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#c084fc' }}>
-                      {inspectedStock.analogWinRate}% <span style={{ fontSize: 11, color: '#94a3b8' }}>(500 sessions)</span>
+                      {inspectedStock.analogWinRate}% <span style={{ fontSize: 12, color: '#94a3b8' }}>(500 sessions)</span>
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 10, color: '#94a3b8' }}>WYCKOFF PHASE</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>WYCKOFF PHASE</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', marginTop: 4 }}>
                       {typeof inspectedStock.wyckoffStage === 'string'
                         ? inspectedStock.wyckoffStage
@@ -598,11 +598,11 @@ export function Master100ProfitWorkstation({
                     borderRadius: 14,
                     padding: '12px'
                   }}>
-                    <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>🎯 ENTRY LIMIT CORRIDOR</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>🎯 ENTRY LIMIT CORRIDOR</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', marginTop: 4 }}>
                       Rs. {inspectedStock.entryLow} &ndash; {inspectedStock.entryHigh}
                     </div>
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>
                       Chase Cap: Rs. {inspectedStock.chaseCap} (+2.5% max)
                     </div>
                   </div>
@@ -613,11 +613,11 @@ export function Master100ProfitWorkstation({
                     borderRadius: 14,
                     padding: '12px'
                   }}>
-                    <div style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>🛑 STOP-LOSS FLOOR</div>
+                    <div style={{ fontSize: 12, color: '#f87171', fontWeight: 700 }}>🛑 STOP-LOSS FLOOR</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#f87171', marginTop: 4 }}>
                       Rs. {inspectedStock.stopLoss}
                     </div>
-                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
                       Strict Risk Floor: -{inspectedStock.stopLossPct}%
                     </div>
                   </div>
@@ -628,11 +628,11 @@ export function Master100ProfitWorkstation({
                     borderRadius: 14,
                     padding: '12px'
                   }}>
-                    <div style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>🏆 NET TARGET 1 (25% EXIT)</div>
+                    <div style={{ fontSize: 12, color: '#34d399', fontWeight: 700 }}>🏆 NET TARGET 1 (25% EXIT)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#34d399', marginTop: 4 }}>
                       Rs. {inspectedStock.target1Gross}
                     </div>
-                    <div style={{ fontSize: 10, color: '#34d399', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#34d399', marginTop: 2 }}>
                       +{inspectedStock.target1NetPct}% Net (after 7.5% CGT)
                     </div>
                   </div>
@@ -643,11 +643,11 @@ export function Master100ProfitWorkstation({
                     borderRadius: 14,
                     padding: '12px'
                   }}>
-                    <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>🚀 NET TARGET 2 (SWING)</div>
+                    <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700 }}>🚀 NET TARGET 2 (SWING)</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#38bdf8', marginTop: 4 }}>
                       Rs. {inspectedStock.target2Net}
                     </div>
-                    <div style={{ fontSize: 10, color: '#38bdf8', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#38bdf8', marginTop: 2 }}>
                       +{inspectedStock.target2NetPct}% Net (trail to T1)
                     </div>
                   </div>
@@ -664,12 +664,12 @@ export function Master100ProfitWorkstation({
                   gap: 12,
                   flexWrap: 'wrap'
                 }}>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
                     <b style={{ color: '#fff' }}>10:30 &ndash; 11:00 AM Pre-Open OBIR Meter:</b> Buyer pressure ratio &gt; 1.8x confirms morning demand.
                   </div>
                   <div style={{
                     marginLeft: 'auto',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     color: '#34d399',
                     background: 'rgba(16, 185, 129, 0.15)',
@@ -699,14 +699,14 @@ export function Master100ProfitWorkstation({
                         Friction-Adjusted Position Sizer (Half-Kelly 2% Risk)
                       </h3>
                     </div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>
                       Tiered Broker Fees + SEBON 0.015% + 7.5% CGT Included
                     </div>
                   </div>
 
                   {/* Capital Presets */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>Your Capital:</span>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>Your Capital:</span>
                     {CAPITAL_PRESETS.map(cap => (
                       <button
                         key={cap}
@@ -720,7 +720,7 @@ export function Master100ProfitWorkstation({
                           border: 'none',
                           borderRadius: 8,
                           padding: '4px 10px',
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: 700,
                           cursor: 'pointer'
                         }}
@@ -741,32 +741,32 @@ export function Master100ProfitWorkstation({
                     padding: '14px'
                   }}>
                     <div>
-                      <div style={{ fontSize: 10, color: '#94a3b8' }}>MAX ALLOWABLE SHARES</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>MAX ALLOWABLE SHARES</div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
-                        {sizing.allowedShares.toLocaleString()} <span style={{ fontSize: 11, color: '#94a3b8' }}>kitta</span>
+                        {sizing.allowedShares.toLocaleString()} <span style={{ fontSize: 12, color: '#94a3b8' }}>kitta</span>
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: 10, color: '#94a3b8' }}>CAPITAL OUTLAY & ALLOCATION</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>CAPITAL OUTLAY & ALLOCATION</div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', marginTop: 2 }}>
-                        Rs. {sizing.capitalOutlay.toLocaleString()} <span style={{ fontSize: 11, color: '#94a3b8' }}>({sizing.allocationPct}%)</span>
+                        Rs. {sizing.capitalOutlay.toLocaleString()} <span style={{ fontSize: 12, color: '#94a3b8' }}>({sizing.allocationPct}%)</span>
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: 10, color: '#94a3b8' }}>MAX PORTFOLIO RISK (2%)</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>MAX PORTFOLIO RISK (2%)</div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: '#f87171', marginTop: 2 }}>
                         Rs. {sizing.maxRiskCapital.toLocaleString()}
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: 10, color: '#94a3b8' }}>TAKE-HOME NET TARGET 1 PROFIT</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>TAKE-HOME NET TARGET 1 PROFIT</div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
                         Rs. {sizing.netDetails.netRealizedGain.toLocaleString()}
                       </div>
-                      <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>
                         Breakeven price: Rs. {sizing.netDetails.statutoryBreakevenPrice}
                       </div>
                     </div>
@@ -850,7 +850,7 @@ export function Master100ProfitWorkstation({
                     {check.name}
                   </div>
                   <span style={{
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: 800,
                     padding: '2px 8px',
                     borderRadius: 6,
@@ -861,7 +861,7 @@ export function Master100ProfitWorkstation({
                   </span>
                 </div>
 
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>
                   <b>Rule:</b> {check.rule}
                 </div>
 
@@ -905,7 +905,7 @@ export function Master100ProfitWorkstation({
                     border: '1px solid ' + (leaderboardTrackFilter === f.id ? '#10b981' : 'rgba(255,255,255,0.1)'),
                     borderRadius: 8,
                     padding: '4px 10px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
@@ -936,7 +936,7 @@ export function Master100ProfitWorkstation({
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'rgba(15, 23, 42, 0.6)'
               }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'left' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
                   <thead>
                     <tr style={{ background: 'rgba(0,0,0,0.4)', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                       <th style={{ padding: '10px 14px' }}>Symbol</th>
@@ -969,14 +969,14 @@ export function Master100ProfitWorkstation({
                         >
                           <td style={{ padding: '10px 14px', fontWeight: 800, color: '#fff' }}>
                             {s.symbol}
-                            <span style={{ display: 'block', fontSize: 9, color: '#94a3b8' }}>{s.sector}</span>
+                            <span style={{ display: 'block', fontSize: 12, color: '#94a3b8' }}>{s.sector}</span>
                           </td>
                           <td style={{ padding: '10px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               <span style={{
                                 padding: '1px 6px',
                                 borderRadius: 4,
-                                fontSize: 9,
+                                fontSize: 12,
                                 fontWeight: 800,
                                 width: 'fit-content',
                                 background: s.track === 'BLUE_CHIP_COMPOUNDER' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
@@ -988,7 +988,7 @@ export function Master100ProfitWorkstation({
                                 <span style={{
                                   padding: '1px 6px',
                                   borderRadius: 4,
-                                  fontSize: 9,
+                                  fontSize: 12,
                                   fontWeight: 800,
                                   width: 'fit-content',
                                   background: 'rgba(234, 179, 8, 0.15)',
@@ -1007,7 +1007,7 @@ export function Master100ProfitWorkstation({
                           <td style={{ padding: '10px', color: s.rvol >= 1.4 ? '#34d399' : '#cbd5e1' }}>{s.rvol}x</td>
                           <td style={{ padding: '10px', color: s.bcr3 >= 40 ? '#38bdf8' : '#cbd5e1', fontWeight: 700 }}>
                             {s.bcr3}%
-                            {s.isBrokerVerified && <span style={{ fontSize: 8, color: '#34d399', display: 'block' }}>Verified</span>}
+                            {s.isBrokerVerified && <span style={{ fontSize: 12, color: '#34d399', display: 'block' }}>Verified</span>}
                           </td>
                           <td style={{ padding: '10px' }}>
                             <span style={{
@@ -1036,7 +1036,7 @@ export function Master100ProfitWorkstation({
                                   borderRadius: 6,
                                   padding: '4px 8px',
                                   color: '#38bdf8',
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   fontWeight: 700,
                                   cursor: 'pointer'
                                 }}
@@ -1104,7 +1104,7 @@ export function Master100ProfitWorkstation({
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#34d399' }}>
                   Stage 1: Target 1 Reached (+8% to +10% Net) &bull; Zero-Loss Mode
                 </div>
-                <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
                   &bull; <b>Action:</b> Sell 25% to 50% of your shares.<br />
                   &bull; <b>Stop-Loss Switch:</b> Immediately adjust Stop-Loss on remaining shares to your <b>Entry Breakeven Price</b>.<br />
                   &bull; <i>Outcome: The trade is now mathematically immune to capital loss.</i>
@@ -1120,7 +1120,7 @@ export function Master100ProfitWorkstation({
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#38bdf8' }}>
                   Stage 2: Target 2 Reached (+18% to +25% Net) &bull; Profit Lock
                 </div>
-                <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
                   &bull; <b>Action:</b> Sell an additional 25% of your original position.<br />
                   &bull; <b>Stop-Loss Switch:</b> Trail Stop-Loss on remainder up to the <b>Target 1 Price</b>.<br />
                   &bull; <i>Outcome: High double-digit profit locked into portfolio equity.</i>
@@ -1136,7 +1136,7 @@ export function Master100ProfitWorkstation({
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#c084fc' }}>
                   Stage 3: Multibagger Runner (+35% to +100%) &bull; Trend Riding
                 </div>
-                <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
                   &bull; <b>Action:</b> Hold the remaining 25% to 50% runner.<br />
                   &bull; <b>Stop-Loss Switch:</b> Trail with a <b>2-day consecutive close below the 20-day EMA</b>.<br />
                   &bull; <i>Outcome: Allows major winners to compound fully without arbitrary caps.</i>
@@ -1152,7 +1152,7 @@ export function Master100ProfitWorkstation({
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171' }}>
                   Emergency Hard Veto Exits (Cut 100% Immediately Same Day)
                 </div>
-                <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
                   Exit 100% without hesitation if:<br />
                   1. Original buyer brokers (e.g. Broker #58 or #45) appear as #1 and #2 net sellers on the live floorsheet.<br />
                   2. Accumulation Radar switches to <code>⚠️ EUPHORIA_DISTRIBUTION</code> or <code>🔴 ACTIVE_DUMP</code>.<br />
@@ -1190,31 +1190,31 @@ export function Master100ProfitWorkstation({
             gap: 12
           }}>
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>STARTING CAPITAL</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>STARTING CAPITAL</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 2 }}>
                 Rs. {auditReport.compoundSimulation.startingCapital.toLocaleString()}
               </div>
             </div>
 
             <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 12, padding: '14px' }}>
-              <div style={{ fontSize: 11, color: '#34d399' }}>PROJECTED EQUITY (20 TRADES)</div>
+              <div style={{ fontSize: 12, color: '#34d399' }}>PROJECTED EQUITY (20 TRADES)</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
                 Rs. {auditReport.compoundSimulation.endingCapital.toLocaleString()}
               </div>
-              <div style={{ fontSize: 10, color: '#34d399', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: '#34d399', marginTop: 2 }}>
                 +{auditReport.compoundSimulation.netReturnPct}% Net Realized Return
               </div>
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>WIN RATE & PAYOFF</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>WIN RATE & PAYOFF</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
                 {auditReport.compoundSimulation.winRate}% <span style={{ fontSize: 12, color: '#94a3b8' }}>at 2.5 : 1 R:R</span>
               </div>
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>EXPECTED OUTCOME</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>EXPECTED OUTCOME</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: '#fbbf24', marginTop: 2 }}>
                 {auditReport.compoundSimulation.expectedWins} Wins <span style={{ fontSize: 12, color: '#94a3b8' }}>/ {auditReport.compoundSimulation.expectedLosses} Losses</span>
               </div>
@@ -1253,14 +1253,14 @@ export function Master100ProfitWorkstation({
                   borderRadius: 10,
                   padding: '10px 12px'
                 }}>
-                  <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
                     <span>{m.stage}</span>
                     <span style={{ color: '#64748b' }}>{m.trades}</span>
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 4 }}>
                     {m.equity}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: m.color, marginTop: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: m.color, marginTop: 2 }}>
                     {m.gain}
                   </div>
                 </div>
@@ -1269,7 +1269,7 @@ export function Master100ProfitWorkstation({
           </div>
 
           <div style={{
-            fontSize: 11,
+            fontSize: 12,
             color: '#94a3b8',
             background: 'rgba(0,0,0,0.2)',
             padding: '12px 14px',
@@ -1290,7 +1290,7 @@ export function Master100ProfitWorkstation({
             <br />
             Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately{' '}
             <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. 5,00,000 capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
-            <span style={{ color: '#f59e0b', fontSize: 10 }}>
+            <span style={{ color: '#f59e0b', fontSize: 12 }}>
               ⚠️ Win rate is a composite scoring estimate, not a verified historical backtest. Use EntryExitAnalyzer for symbol-specific backtested rates before committing capital.
             </span>
           </div>

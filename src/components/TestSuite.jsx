@@ -252,7 +252,7 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
               {apiStatus === 'online' ? 'Server Online' : 'Network Failure Mode'}
             </button>
           </div>
-          <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
             *Toggle to "Network Failure Mode" to test how the bulk MeroShare IPO Checker handles connection timeouts or proxy failures.
           </p>
         </div>

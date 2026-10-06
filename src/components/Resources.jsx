@@ -76,7 +76,7 @@ export default function Resources({ onNavigateTab }) {
         <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
           <Sparkles style={{ width: 22, height: 22, color: '#f59e0b' }} /> Feature Suites & Intelligence
         </h2>
-        <span style={{ fontSize: 10.5, fontWeight: 800, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '4px 10px', borderRadius: 20, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '4px 10px', borderRadius: 20, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
           50+ TOOLS
         </span>
       </div>
@@ -116,7 +116,7 @@ export default function Resources({ onNavigateTab }) {
             >
               <span>{s.icon}</span> {s.label}
               <span style={{
-                fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                fontSize: 12, padding: '1px 6px', borderRadius: 10,
                 background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)',
                 color: isActive ? '#fff' : 'var(--text-muted)',
                 fontWeight: 800
@@ -139,10 +139,10 @@ export default function Resources({ onNavigateTab }) {
               </div>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 900, color: '#fff', margin: 0 }}>Trader's Zone</h3>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Complete suite breakdown and package details</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Complete suite breakdown and package details</div>
               </div>
             </div>
-            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '8px 0 0' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '8px 0 0' }}>
               Best Package for Active NEPSE Traders. All institutional scanner systems, relative strength ratings, and circuit setups are active and unlocked.
             </p>
           </div>
@@ -162,11 +162,11 @@ export default function Resources({ onNavigateTab }) {
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)' }}>{f.name}</span>
-                          <span style={{ fontSize: 9.5, background: `${f.color}20`, color: f.color, padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+                          <span style={{ fontSize: 12, background: `${f.color}20`, color: f.color, padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
                             {f.tag}
                           </span>
                         </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
                       </div>
                     </div>
                   </div>
@@ -184,22 +184,22 @@ export default function Resources({ onNavigateTab }) {
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)' }}>1 Year Access</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Full Trader's Zone Suite</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Full Trader's Zone Suite</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>Rs 2500</div>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 50%</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 50%</span>
                 </div>
               </div>
 
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)' }}>6 Months Access</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Semi-annual pass</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Semi-annual pass</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>Rs 1750</div>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 50%</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 50%</span>
                 </div>
               </div>
             </div>
@@ -218,10 +218,10 @@ export default function Resources({ onNavigateTab }) {
               </div>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 900, color: '#fff', margin: 0 }}>Market Analytics Suite</h3>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Complete suite breakdown and analytical features</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Complete suite breakdown and analytical features</div>
               </div>
             </div>
-            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '8px 0 0' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '8px 0 0' }}>
               Full institutional broker analytics, float tracking, lock-in calendars, dividend leaderboards, and zero-sum floorsheet.
             </p>
           </div>
@@ -239,11 +239,11 @@ export default function Resources({ onNavigateTab }) {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)' }}>{f.name}</span>
-                        <span style={{ fontSize: 9.5, background: `${f.color}20`, color: f.color, padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+                        <span style={{ fontSize: 12, background: `${f.color}20`, color: f.color, padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
                           {f.tag}
                         </span>
                       </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
                     </div>
                   </div>
                 </div>
@@ -260,18 +260,18 @@ export default function Resources({ onNavigateTab }) {
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)' }}>1 Year Ad-Free + Pro</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Complete institutional access</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Complete institutional access</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>Rs 800</div>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 29%</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', background: 'rgba(16,217,138,0.15)', padding: '2px 6px', borderRadius: 4 }}>SAVE 29%</span>
                 </div>
               </div>
 
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--text-primary)' }}>6 Months Ad-Free + Pro</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Semi-annual pass</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Semi-annual pass</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 17, fontWeight: 900, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>Rs 560</div>
@@ -294,28 +294,28 @@ export default function Resources({ onNavigateTab }) {
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--primary-light)' }}>🔑 MeroShare Portal</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Calculate WACC, apply for IPOs, transfer shares via EDIS.</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Calculate WACC, apply for IPOs, transfer shares via EDIS.</span>
               </a>
               <a href="https://iporesult.cdsc.com.np/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--bull)' }}>🎯 IPO Result Checker</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Fastest public lookup for CDSC allotment results.</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Fastest public lookup for CDSC allotment results.</span>
               </a>
               <a href="https://www.sharesansar.com/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--accent-cyan)' }}>📰 ShareSansar News</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Track market dividends, corporate announcements, IPO dates.</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Track market dividends, corporate announcements, IPO dates.</span>
               </a>
               <a href="https://nepsealpha.com/" target="_blank" rel="noreferrer" className="card-sm clickable" style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 'bold', color: 'var(--accent-violet)' }}>📊 NepseAlpha Charts</span>
                   <ExternalLink style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Advanced technical charting and live market heatmaps.</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>Advanced technical charting and live market heatmaps.</span>
               </a>
             </div>
           </div>
@@ -323,7 +323,7 @@ export default function Resources({ onNavigateTab }) {
           {/* Broker TMS Directory */}
           <div className="card" style={{ marginBottom: 16 }}>
             <h3 className="section-title" style={{ marginBottom: 4, color: 'var(--text-primary)' }}>Broker TMS Logins</h3>
-            <p style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 12 }}>Direct links to Trade Management System (TMS) portals.</p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Direct links to Trade Management System (TMS) portals.</p>
             
             {/* Search (Dashboard Styled) */}
             <div style={{ position: 'relative', marginBottom: 12 }}>

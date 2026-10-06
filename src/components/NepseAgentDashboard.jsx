@@ -183,7 +183,7 @@ export default function NepseAgentDashboard({
                   Drabyashree NEPSE Agent
                 </h2>
                 <span style={{
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: 800,
                   padding: '2px 8px',
                   borderRadius: 12,
@@ -195,7 +195,7 @@ export default function NepseAgentDashboard({
                   GEMINI 3.1 PRO CASCADE
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
                 Deterministic quantitative aggregator & institutional market reasoning
               </div>
             </div>
@@ -245,7 +245,7 @@ export default function NepseAgentDashboard({
 
           {/* Quick Popular Scrips */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Hot:</span>
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Hot:</span>
             {POPULAR_SCRIPS.map(scrip => (
               <button
                 key={scrip}
@@ -256,7 +256,7 @@ export default function NepseAgentDashboard({
                   color: symbol === scrip ? '#93c5fd' : '#cbd5e1',
                   borderRadius: 8,
                   padding: '4px 9px',
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
@@ -308,7 +308,7 @@ export default function NepseAgentDashboard({
                 color: customQuery === q ? '#c084fc' : '#94a3b8',
                 padding: '4px 10px',
                 borderRadius: 8,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap'
@@ -336,7 +336,7 @@ export default function NepseAgentDashboard({
             <div style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
               {loadingStep || 'Executing NEPSE Agent reasoning loop...'}
             </div>
-            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
               Calling deterministic quantitative tools, evaluating broker floor sheet, and cascading Gemini 3.1 Pro
             </div>
           </div>
@@ -357,7 +357,7 @@ export default function NepseAgentDashboard({
           <AlertTriangle style={{ width: 20, height: 20, color: '#f87171', flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171' }}>Agent Analysis Notice</div>
-            <div style={{ fontSize: 11, color: '#cbd5e1', marginTop: 2 }}>{error}</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 2 }}>{error}</div>
           </div>
           <button
             onClick={() => handleRunAnalysis(symbol, customQuery)}
@@ -367,7 +367,7 @@ export default function NepseAgentDashboard({
               color: '#fca5a5',
               padding: '6px 12px',
               borderRadius: 8,
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 700,
               cursor: 'pointer'
             }}
@@ -421,7 +421,7 @@ export default function NepseAgentDashboard({
                     {(dossier?.quote?.pChange || 0) >= 0 ? '+' : ''}{dossier?.quote?.pChange ?? 0}%
                   </span>
                 </div>
-                <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                   Limits: Floor Rs. {dossier?.quote?.circuitFloor || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 0.90).toFixed(1) : 'N/A')} | Ceiling Rs. {dossier?.quote?.circuitCeiling || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 1.10).toFixed(1) : 'N/A')}
                 </div>
               </div>
@@ -438,7 +438,7 @@ export default function NepseAgentDashboard({
               }}>
                 <VerdictIcon style={{ width: 18, height: 18, color: verdictStyle.text }} />
                 <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                     Agent Stance
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 900, color: verdictStyle.text }}>
@@ -458,7 +458,7 @@ export default function NepseAgentDashboard({
                 border: '1px solid rgba(255, 255, 255, 0.08)'
               }}>
                 <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
                     Confidence
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#60a5fa' }}>
@@ -473,7 +473,7 @@ export default function NepseAgentDashboard({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              fontSize: 10,
+              fontSize: 12,
               color: '#64748b',
               borderTop: '1px solid rgba(255, 255, 255, 0.06)',
               paddingTop: 10
@@ -520,7 +520,7 @@ export default function NepseAgentDashboard({
                     color: activeLangTab === 'english' ? '#93c5fd' : '#94a3b8',
                     borderRadius: 6,
                     padding: '3px 10px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer'
                   }}
@@ -535,7 +535,7 @@ export default function NepseAgentDashboard({
                     color: activeLangTab === 'nepali' ? '#93c5fd' : '#94a3b8',
                     borderRadius: 6,
                     padding: '3px 10px',
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer'
                   }}
@@ -565,7 +565,7 @@ export default function NepseAgentDashboard({
                   Institutional Execution Blueprint
                 </h3>
               </div>
-              <span style={{ fontSize: 11, color: '#64748b' }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>
                 Deterministic geometry • No manual guessing
               </span>
             </div>
@@ -586,17 +586,17 @@ export default function NepseAgentDashboard({
                 gap: 6
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>
                     Strategy A: Pullback Dip
                   </span>
-                  <span style={{ fontSize: 9, color: '#93c5fd', background: 'rgba(59, 130, 246, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
+                  <span style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59, 130, 246, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
                     Low Risk
                   </span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc' }}>
                   {agentResult?.executionPlan?.pullbackDipZone || dossier?.executionPlan?.pullbackZone?.label || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
                 </div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>
                   Support: {dossier?.executionPlan?.pullbackZone?.supportRef || '20-EMA base'}
                 </div>
               </div>
@@ -612,17 +612,17 @@ export default function NepseAgentDashboard({
                 gap: 6
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
                     Strategy B: Breakout Trigger
                   </span>
-                  <span style={{ fontSize: 9, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
+                  <span style={{ fontSize: 12, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
                     Momentum
                   </span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: '#f8fafc' }}>
                   {agentResult?.executionPlan?.breakoutTrigger || dossier?.executionPlan?.breakoutZone?.label || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
                 </div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>
                   Trigger on RVOL &gt; 1.4x • Cap: Rs. {dossier?.executionPlan?.breakoutZone?.chaseCap || (dossier?.quote?.ltp ? +(dossier.quote.ltp * 1.04).toFixed(1) : '—')}
                 </div>
               </div>
@@ -638,17 +638,17 @@ export default function NepseAgentDashboard({
                 gap: 6
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#f87171', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#f87171', textTransform: 'uppercase' }}>
                     Invalidation Stop-Loss
                   </span>
-                  <span style={{ fontSize: 9, color: '#fca5a5', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
+                  <span style={{ fontSize: 12, color: '#fca5a5', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
                     Mandatory
                   </span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, color: '#fca5a5' }}>
                   {agentResult?.executionPlan?.stopLoss || dossier?.executionPlan?.stopLoss?.label || (dossier?.executionPlan?.available === false ? 'Unavailable — ' + (dossier.executionPlan.reason || 'insufficient data') : 'Unavailable')}
                 </div>
-                <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>
                   Strict capital preservation floor
                 </div>
               </div>
@@ -664,10 +664,10 @@ export default function NepseAgentDashboard({
                 gap: 6
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
                     Net Profit Targets
                   </span>
-                  <span style={{ fontSize: 9, color: '#d8b4fe', background: 'rgba(147, 51, 234, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
+                  <span style={{ fontSize: 12, color: '#d8b4fe', background: 'rgba(147, 51, 234, 0.15)', padding: '2px 6px', borderRadius: 6 }}>
                     7.5% CGT & Fees Deducted
                   </span>
                 </div>
@@ -789,7 +789,7 @@ export default function NepseAgentDashboard({
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: '#94a3b8' }}>Smart Money Bias:</span>
                   <span style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: 800,
                     padding: '2px 8px',
                     borderRadius: 6,

@@ -74,7 +74,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
               Algorithmic Signal Track Record
             </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>
               Verified historical performance of generated setup plans
             </div>
           </div>
@@ -109,13 +109,13 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             borderBottom: '1px solid rgba(255,255,255,0.06)'
           }}>
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Total Signals</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Total Signals</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{stats.total}</div>
-              <div style={{ fontSize: 9.5, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Closed</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Closed</div>
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Win Rate</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Win Rate</div>
               <div style={{
                 fontSize: 18, fontWeight: 900,
                 color: (stats.winRate || 0) >= 50 ? '#34d399' : '#f87171',
@@ -123,11 +123,11 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
               }}>
                 {stats.closedCount > 0 ? `${stats.winRate.toFixed(1)}%` : '—'}
               </div>
-              <div style={{ fontSize: 9.5, color: '#64748b' }}>Target Hit vs Stop</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Target Hit vs Stop</div>
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Avg Return</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Avg Return</div>
               <div style={{
                 fontSize: 18, fontWeight: 900,
                 color: (stats.avgReturnPct || 0) >= 0 ? '#34d399' : '#f87171',
@@ -135,15 +135,15 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
               }}>
                 {stats.closedCount > 0 ? `${(stats.avgReturnPct || 0) >= 0 ? '+' : ''}${stats.avgReturnPct}%` : '—'}
               </div>
-              <div style={{ fontSize: 9.5, color: '#64748b' }}>Across closed setups</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Across closed setups</div>
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Best Trade</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Best Trade</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
                 {stats.bestTrade?.symbol ? `${stats.bestTrade.symbol} (+${stats.bestTrade.returnPct}%)` : '—'}
               </div>
-              <div style={{ fontSize: 9.5, color: '#64748b' }}>Top recorded gain</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Top recorded gain</div>
             </div>
           </div>
         )}
@@ -171,7 +171,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                 border: filterStatus === tab.id ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: 20,
                 padding: '4px 12px',
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 700,
                 color: filterStatus === tab.id ? '#60a5fa' : '#94a3b8',
                 cursor: 'pointer',
@@ -189,7 +189,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
               <Clock style={{ width: 32, height: 32, margin: '0 auto 10px', opacity: 0.5 }} />
               <div style={{ fontSize: 13, fontWeight: 700 }}>No signals found in this filter</div>
-              <div style={{ fontSize: 11, marginTop: 4 }}>Signals are automatically logged when Entry/Exit plans are viewed.</div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>Signals are automatically logged when Entry/Exit plans are viewed.</div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -228,20 +228,20 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                           color: sig.signalType === 'BUY' ? '#34d399' : '#f87171',
                           padding: '1px 7px',
                           borderRadius: 4,
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: 800
                         }}>
                           {sig.signalType}
                         </span>
-                        <span style={{ fontSize: 10, color: '#64748b' }}>
+                        <span style={{ fontSize: 12, color: '#64748b' }}>
                           📅 {sig.signalDate}
                         </span>
                       </div>
-                      <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4 }}>
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                         Entry: Rs. {sig.entryPrice} • Target: Rs. {sig.targetPrice || '—'} • Stop: Rs. {sig.stopLoss || '—'}
                       </div>
                       {sig.verdict && (
-                        <div style={{ fontSize: 10, color: '#60a5fa', marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: '#60a5fa', marginTop: 2 }}>
                           {sig.verdict}
                         </div>
                       )}
@@ -265,7 +265,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                               : '1px solid rgba(148, 163, 184, 0.3)',
                         borderRadius: 20,
                         padding: '2px 9px',
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: 800,
                         color: isTargetHit ? '#34d399' : isStopHit ? '#f87171' : isOpen ? '#fbbf24' : '#94a3b8'
                       }}>
@@ -284,7 +284,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                         </div>
                       )}
                       {sig.outcome?.holdingDays && (
-                        <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 1 }}>
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
                           Held {sig.outcome.holdingDays} session(s)
                         </div>
                       )}
@@ -301,7 +301,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
           padding: '10px 20px',
           background: '#090d16',
           borderTop: '1px solid rgba(255,255,255,0.06)',
-          fontSize: 10,
+          fontSize: 12,
           color: '#64748b',
           textAlign: 'center'
         }}>

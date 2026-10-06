@@ -90,7 +90,7 @@ export function SmartMoneyBrokerFlowCard({
             border: isDistributionTrap ? '1px solid rgba(244, 63, 94, 0.4)' : isInstitutionalAccumulation ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)',
             color: isDistributionTrap ? '#fb7185' : isInstitutionalAccumulation ? '#34d399' : '#60a5fa',
             fontWeight: 900,
-            fontSize: 10,
+            fontSize: 12,
             letterSpacing: '0.05em',
             flexShrink: 0
           }}>
@@ -101,7 +101,7 @@ export function SmartMoneyBrokerFlowCard({
               <Shield size={15} color={isDistributionTrap ? '#f43f5e' : isInstitutionalAccumulation ? '#10b981' : '#3b82f6'} style={{ flexShrink: 0 }} />
               <span>Smart Money Flow ({symbol})</span>
             </h4>
-            <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1, lineHeight: 1.2 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 1, lineHeight: 1.2 }}>
               Institutional block accumulation (&gt;40%) vs retail dump traps
             </div>
           </div>
@@ -119,7 +119,7 @@ export function SmartMoneyBrokerFlowCard({
               background: 'rgba(244, 63, 94, 0.2)',
               border: '1px solid rgba(244, 63, 94, 0.5)',
               color: '#fda4af',
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: 900,
               letterSpacing: '0.02em',
               animation: 'pulse 2s infinite'
@@ -136,7 +136,7 @@ export function SmartMoneyBrokerFlowCard({
               background: 'rgba(244, 63, 94, 0.2)',
               border: '1px solid rgba(244, 63, 94, 0.5)',
               color: '#fda4af',
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: 900,
               letterSpacing: '0.02em'
             }}>
@@ -152,7 +152,7 @@ export function SmartMoneyBrokerFlowCard({
               background: 'rgba(16, 185, 129, 0.2)',
               border: '1px solid rgba(16, 185, 129, 0.5)',
               color: '#6ee7b7',
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: 900,
               letterSpacing: '0.02em'
             }}>
@@ -168,7 +168,7 @@ export function SmartMoneyBrokerFlowCard({
               background: 'rgba(148, 163, 184, 0.12)',
               border: '1px solid rgba(148, 163, 184, 0.25)',
               color: '#cbd5e1',
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: 800
             }}>
               ⚪ BROAD RETAIL FLOW
@@ -190,7 +190,7 @@ export function SmartMoneyBrokerFlowCard({
           gap: 6
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: 5 }}>
               <TrendingUp size={13} /> 1. Top 3 Buy Share
             </span>
             <span style={{ fontSize: 12, fontWeight: 900, color: bcr3 >= 40.0 ? '#34d399' : '#cbd5e1', fontFamily: 'monospace' }}>
@@ -208,7 +208,7 @@ export function SmartMoneyBrokerFlowCard({
             }} />
           </div>
 
-          <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
             {top3BuyerNames.length > 0 ? (
               <span>Top 3 Buyers: <strong style={{ color: '#ffffff' }}>{top3BuyerNames.join(', ')}</strong></span>
             ) : (
@@ -229,15 +229,15 @@ export function SmartMoneyBrokerFlowCard({
           gap: 6
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: isDumping ? '#fb7185' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: isDumping ? '#fb7185' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 5 }}>
               <TrendingDown size={13} /> 2. Distribution Trap Monitor
             </span>
-            <span style={{ fontSize: 11.5, fontWeight: 900, color: isDumping ? '#fb7185' : '#34d399', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: isDumping ? '#fb7185' : '#34d399', fontFamily: 'monospace' }}>
               {isDistributionTrap ? 'TRAP DETECTED' : isDumping ? 'DISTRIBUTION ACTIVE' : 'CLEAR'}
             </span>
           </div>
 
-          <div style={{ fontSize: 11.5, color: '#e2e8f0', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 12, color: '#e2e8f0', lineHeight: 1.4 }}>
             {isDistributionTrap ? (
               <span style={{ color: '#fca5a5', fontWeight: 600 }}>
                 🚨 <strong>Do Not Buy:</strong> Top institutional brokers ({top3SellerNames.join(', ') || 'Smart Money'}) are net selling into retail enthusiasm, despite the green price action (+{pChange}%).

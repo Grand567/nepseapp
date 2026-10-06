@@ -591,7 +591,7 @@ export function StockSearchSelect({
         >
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 10px', borderBottom: '1px solid #1e293b', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               {search.trim() ? `Matching Securities (${filtered.length})` : `Popular & Active Traded Securities (${filtered.length})`}
             </span>
             <button
@@ -609,7 +609,7 @@ export function StockSearchSelect({
               <div style={{ padding: '24px 16px', textAlign: 'center' }}>
                 <div style={{ fontSize: 24, marginBottom: 6 }}>🔍</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>No NEPSE security matching "{search}"</div>
-                <p style={{ fontSize: 11, color: '#64748b', marginTop: 4, margin: '4px 0 0' }}>
+                <p style={{ fontSize: 12, color: '#64748b', marginTop: 4, margin: '4px 0 0' }}>
                   Try typing another ticker code or company name.
                 </p>
               </div>
@@ -653,11 +653,11 @@ export function StockSearchSelect({
                         <span style={{ color: '#ffffff', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 900, letterSpacing: '0.04em' }}>
                           {stock.symbol}
                         </span>
-                        <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 6, padding: '2px 8px', fontSize: 10.5, fontWeight: 700 }}>
+                        <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700 }}>
                           {stock.sector}
                         </span>
                         {isSelected && (
-                          <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 6, padding: '2px 6px', fontSize: 10, fontWeight: 800 }}>
+                          <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: 6, padding: '2px 6px', fontSize: 12, fontWeight: 800 }}>
                             ACTIVE ✓
                           </span>
                         )}
@@ -673,7 +673,7 @@ export function StockSearchSelect({
                           Rs. {Number(price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                         </div>
                         {pChange != null && !isNaN(pChange) && (
-                          <div style={{ color: pChange >= 0 ? '#10b981' : '#f43f5e', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 800, marginTop: 2 }}>
+                          <div style={{ color: pChange >= 0 ? '#10b981' : '#f43f5e', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 800, marginTop: 2 }}>
                             {pChange >= 0 ? '+' : ''}{Number(pChange).toFixed(2)}%
                           </div>
                         )}
