@@ -368,11 +368,14 @@ export function startWorkers() {
         onTrackHolding: trackCustomHolding,
         onUntrackHolding: untrackCustomHolding,
         onGetTrackedHoldings: getUserTrackedHoldings,
-        getLatestStockPrice: (sym) => {
+        getLatestStockPrice: async (sym) => {
           try {
             const clean = String(sym || '').toUpperCase().trim();
-            const cached = _getCache ? (_getCache('today-prices') || _getCache('market-summary')) : null;
-            const list = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || []);
+            let cached = _getCache ? (_getCache('today-prices') || _getCache('market-summary')) : null;
+            let list = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || []);
+            if (list.length === 0 && _fetchTodayPricesInternal) {
+              list = await _fetchTodayPricesInternal().catch(() => []);
+            }
             const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === clean);
             if (found) {
               return Number(found.ltp || found.lastTradedPrice || found.closePrice || 0);

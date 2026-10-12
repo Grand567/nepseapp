@@ -36,7 +36,8 @@ import {
   sendTelegramSmartAlert,
   sendTelegramPrimePickAlert,
   sendTelegramExitAlert,
-  autoDetectChatId
+  autoDetectChatId,
+  sendTelegramMessage
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -8353,6 +8354,20 @@ app.post('/api/portfolio/track-holding', (req, res) => {
     const { symbol, buyPrice, stopLoss, target1, target2, kitta } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
     const item = trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta });
+
+    const confirmMsg = [
+      `🛡️ <b>APP EXIT GUARD ARMED: <code>${symbol}</code></b>`,
+      `──────────────────────────`,
+      `• <b>Position:</b> ${kitta || 100} Shares`,
+      `• <b>WACC / Cost:</b> Rs. ${Number(buyPrice || 0).toFixed(2)}`,
+      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${Number(stopLoss || 0).toFixed(2)}`,
+      `• 🎯 <b>Target 1:</b> Rs. ${Number(target1 || 0).toFixed(2)}`,
+      `• 🚀 <b>Target 2:</b> Rs. ${Number(target2 || 0).toFixed(2)}`,
+      `──────────────────────────`,
+      `<i>Armed directly from your Drabyashree Portfolio.</i>`
+    ].join('\n');
+    sendTelegramMessage(confirmMsg).catch(() => {});
+
     res.json({ success: true, message: `Active Telegram monitoring armed for ${symbol}`, item });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -8364,6 +8379,11 @@ app.post('/api/portfolio/untrack-holding', (req, res) => {
     const { symbol } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
     const removed = untrackCustomHolding(symbol);
+
+    if (removed) {
+      sendTelegramMessage(`🗑️ <b>Exit Guard Removed:</b> Stopped monitoring <code>${symbol}</code>.`).catch(() => {});
+    }
+
     res.json({ success: removed, message: removed ? `Untracked ${symbol}` : `Holding ${symbol} not found in active list` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -8375,6 +8395,24 @@ app.post('/api/portfolio/sync-holdings', (req, res) => {
     const { holdings } = req.body || {};
     if (!Array.isArray(holdings)) return res.status(400).json({ success: false, error: 'Holdings array required' });
     const items = holdings.map(h => trackCustomHolding(h)).filter(Boolean);
+
+    if (items.length > 0) {
+      const lines = items.slice(0, 8).map(it => 
+        `• <b>${it.symbol}</b>: ${it.kitta} Shares | WACC: Rs. ${it.ltp} | SL: Rs. ${it.stopLoss} | T1: Rs. ${it.target1}`
+      ).join('\n');
+
+      const confirmMsg = [
+        `🛡️ <b>PORTFOLIO EXIT GUARDS ARMED (${items.length} Holdings)</b>`,
+        `──────────────────────────`,
+        `Synced directly from your Drabyashree Demat Portfolio:`,
+        lines,
+        items.length > 8 ? `<i>...and ${items.length - 8} more holdings</i>` : '',
+        `──────────────────────────`,
+        `⚡ <i>Live monitoring armed (11:00 AM – 3:00 PM). Stop-Loss and Target alerts will fire to your phone automatically!</i>`
+      ].filter(Boolean).join('\n');
+      sendTelegramMessage(confirmMsg).catch(() => {});
+    }
+
     res.json({ success: true, message: `Armed Telegram Stop-Loss alerts for ${items.length} portfolio stocks`, count: items.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

@@ -1,5 +1,110 @@
 [
   {
+    "id": "holding_GHL_1791776590599",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T03:43:10.599Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T03:43:10.601Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791776583430",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T03:43:03.430Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T03:43:03.455Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T03:43:06.951Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791776488570",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T03:41:28.570Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T03:41:28.572Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791776481676",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T03:41:21.676Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T03:41:21.696Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T03:41:25.390Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_SHIVM_1791776334057",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T03:38:54.057Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T03:38:54.083Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T03:38:56.848Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791776339591",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T03:38:59.591Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T03:38:59.594Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_GLBSL_1791770047537",
+    "symbol": "GLBSL",
+    "ltp": 1620,
+    "triggeredAt": "2026-10-12T01:54:07.537Z",
+    "stopLoss": 1539,
+    "target1": 1863,
+    "target2": 2025,
+    "kitta": 100,
+    "status": "ACTIVE",
+    "isUserHolding": true
+  },
+  {
     "id": "holding_SHIVM_1791769332180",
     "symbol": "SHIVM",
     "ltp": 512,
@@ -29,47 +134,6 @@
     "isUserHolding": true,
     "closedAt": "2026-10-12T01:42:18.961Z",
     "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791769320941",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-12T01:42:00.941Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "ACTIVE"
   },
   {
     "id": "holding_GHL_1791769287882",

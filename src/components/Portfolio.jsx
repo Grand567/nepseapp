@@ -4,7 +4,7 @@ import {
   ShieldCheck, Layers, BookOpen, Sparkles, X, Loader2, RefreshCw, Key, Lock, 
   HelpCircle, ExternalLink, ArrowRight, ShieldAlert, CheckCircle2, Edit3, Check,
   Search, TrendingUp, TrendingDown, Filter, Target, Activity, Flame, Trophy, AlertTriangle, Clock,
-  AlertCircle, Upload, FileText, CheckCheck, Percent
+  AlertCircle, Upload, FileText, CheckCheck, Percent, Bell
 } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, sanitizeMeroShareHoldings, guessScripBasePrice, getCustomWaccMap, setScripCustomWacc, saveCustomWaccMap, applyDiscoveredWaccMap, classifyHoldingActionSignal, stripHoldingForStorage, safeStorageSetItem, parseBrokerTradeBook } from '../utils/calculations';
 import { getProxyBase } from '../utils/liveData';
@@ -154,6 +154,126 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       setSearchQuery('');
     });
   }, []);
+
+  const [syncingTelegram, setSyncingTelegram] = useState(false);
+  const [telegramSyncMsg, setTelegramSyncMsg] = useState(null);
+  const [trackedSymbols, setTrackedSymbols] = useState(new Set());
+
+  // Fetch currently tracked holdings from backend on mount
+  useEffect(() => {
+    const fetchTracked = async () => {
+      try {
+        const proxyBase = getProxyBase();
+        const res = await fetch(`${proxyBase}/api/portfolio/tracked-holdings`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setTrackedSymbols(new Set(json.data.map(h => (h.symbol || '').toUpperCase())));
+        }
+      } catch (_) {}
+    };
+    fetchTracked();
+  }, []);
+
+  const handleSyncAllToTelegram = async () => {
+    try {
+      setSyncingTelegram(true);
+      const processed = getProcessedHoldings(holdings, '', false);
+      if (!processed || processed.length === 0) {
+        alert("No active holdings found in your portfolio to sync.");
+        setSyncingTelegram(false);
+        return;
+      }
+
+      const syncPayload = processed.map(h => {
+        const buy = Number(h.wacc || h.effectiveWacc || h.currentPrice || 0);
+        const ltp = Number(h.currentPrice || buy);
+        const sl = Math.round(ltp * 0.95 * 10) / 10;
+        const t1 = Math.round(ltp * 1.15 * 10) / 10;
+        const t2 = Math.round(ltp * 1.25 * 10) / 10;
+        return {
+          symbol: h.symbol,
+          buyPrice: buy,
+          kitta: Number(h.units || 100),
+          stopLoss: sl,
+          target1: t1,
+          target2: t2
+        };
+      });
+
+      const proxyBase = getProxyBase();
+      const res = await fetch(`${proxyBase}/api/portfolio/sync-holdings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings: syncPayload })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTrackedSymbols(new Set(syncPayload.map(s => s.symbol.toUpperCase())));
+        setTelegramSyncMsg(`✅ Synced ${syncPayload.length} holdings to Telegram!`);
+        setTimeout(() => setTelegramSyncMsg(null), 6000);
+      } else {
+        alert(data.error || 'Failed to sync to Telegram.');
+      }
+    } catch (err) {
+      alert('Could not sync to Telegram: ' + err.message);
+    } finally {
+      setSyncingTelegram(false);
+    }
+  };
+
+  const handleToggleStockTelegram = async (e, holding) => {
+    e.stopPropagation();
+    const sym = (holding.symbol || '').toUpperCase().trim();
+    if (!sym) return;
+    const isCurrentlyTracked = trackedSymbols.has(sym);
+    const proxyBase = getProxyBase();
+
+    try {
+      if (isCurrentlyTracked) {
+        const res = await fetch(`${proxyBase}/api/portfolio/untrack-holding`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: sym })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setTrackedSymbols(prev => {
+            const next = new Set(prev);
+            next.delete(sym);
+            return next;
+          });
+          setTelegramSyncMsg(`Disarmed Telegram alert for ${sym}`);
+          setTimeout(() => setTelegramSyncMsg(null), 3000);
+        }
+      } else {
+        const buy = Number(holding.wacc || holding.effectiveWacc || holding.currentPrice || 0);
+        const ltp = Number(holding.currentPrice || buy);
+        const sl = Math.round(ltp * 0.95 * 10) / 10;
+        const t1 = Math.round(ltp * 1.15 * 10) / 10;
+        const t2 = Math.round(ltp * 1.25 * 10) / 10;
+        const res = await fetch(`${proxyBase}/api/portfolio/track-holding`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: sym,
+            buyPrice: buy,
+            kitta: Number(holding.units || 100),
+            stopLoss: sl,
+            target1: t1,
+            target2: t2
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setTrackedSymbols(prev => new Set(prev).add(sym));
+          setTelegramSyncMsg(`✅ Armed Telegram alert for ${sym} (SL: Rs. ${sl})`);
+          setTimeout(() => setTelegramSyncMsg(null), 4000);
+        }
+      }
+    } catch (err) {
+      console.warn('Error toggling Telegram tracking:', err.message);
+    }
+  };
   const [filterPnl, setFilterPnl] = useState('all'); // 'all', 'profit', 'loss'
   const [accountSignalFilters, setAccountSignalFilters] = useState({}); // { [accountId]: 'all' | 'profit' | 'defense' | 'breakout' | 'hold' }
   
@@ -1687,8 +1807,29 @@ Based on this data, provide a robust analysis using this exact markdown structur
             )}
           </div>
 
-          {/* Return P&L Badge */}
-          <div>
+          {/* Return P&L Badge & Telegram Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={(e) => handleToggleStockTelegram(e, h)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                background: trackedSymbols.has((h.symbol || '').toUpperCase()) ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.06)',
+                border: `1px solid ${trackedSymbols.has((h.symbol || '').toUpperCase()) ? 'rgba(56,189,248,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                color: trackedSymbols.has((h.symbol || '').toUpperCase()) ? '#38bdf8' : 'var(--text-muted)',
+                padding: '2px 7px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+              title={trackedSymbols.has((h.symbol || '').toUpperCase()) ? "Armed on Telegram! Click to disable" : "Arm Stop-Loss & Target exit alert on Telegram"}
+            >
+              <Bell style={{ width: 11, height: 11 }} />
+              {trackedSymbols.has((h.symbol || '').toUpperCase()) ? '🛡️ Guard Armed' : '🔔 Alert'}
+            </button>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
               background: isProfit ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
@@ -2013,7 +2154,28 @@ Based on this data, provide a robust analysis using this exact markdown structur
               {activeView === 'consolidated' ? 'Consolidated Net Worth' : activeView === 'meroshare' ? 'MeroShare Demat Valuation' : 'Manual Ledger Portfolio'}
             </h2>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button 
+              onClick={handleSyncAllToTelegram}
+              disabled={syncingTelegram}
+              className="btn-xs"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
+                borderRadius: 8,
+                padding: '5px 10px',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+              title="Sync your real portfolio holdings to Telegram for real-time Stop-Loss and Target alerts"
+            >
+              <Bell style={{ width: 13, height: 13 }} />
+              {syncingTelegram ? 'Syncing...' : '🔔 Sync to Telegram'}
+            </button>
             <button 
               onClick={handleAnalyzePortfolio}
               className="btn-secondary btn-xs"
@@ -2032,6 +2194,25 @@ Based on this data, provide a robust analysis using this exact markdown structur
             )}
           </div>
         </div>
+
+        {telegramSyncMsg && (
+          <div style={{
+            background: 'rgba(56, 189, 248, 0.12)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            color: '#38bdf8',
+            padding: '8px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            marginBottom: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}>
+            <Bell style={{ width: 14, height: 14 }} />
+            {telegramSyncMsg}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
           <div>

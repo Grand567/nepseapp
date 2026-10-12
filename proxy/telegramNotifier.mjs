@@ -25,6 +25,14 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'telegram_config.json');
 
+let stockUniverseMap = {};
+try {
+  const stockMapPath = path.join(__dirname, 'stockmap.json');
+  if (fs.existsSync(stockMapPath)) {
+    stockUniverseMap = JSON.parse(fs.readFileSync(stockMapPath, 'utf8'));
+  }
+} catch (_) {}
+
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -567,26 +575,37 @@ async function handleTelegramCommand(text, {
 
     // Multi-stock comma format: e.g. /track SHIVM, GHL, HATHY
     if (content.includes(',')) {
-      const symList = content.split(',').map(s => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+      const rawList = content.split(',').map(s => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
       const trackedItems = [];
-      for (const sym of symList) {
-        let liveLtp = typeof getLatestStockPrice === 'function' ? getLatestStockPrice(sym) : 0;
-        if (!liveLtp || liveLtp <= 0) liveLtp = 100; // fallback baseline
-        const sl = Math.round(liveLtp * 0.95 * 10) / 10;
-        const t1 = Math.round(liveLtp * 1.15 * 10) / 10;
-        const t2 = Math.round(liveLtp * 1.25 * 10) / 10;
+      const rejectedItems = [];
+
+      for (const sym of rawList) {
+        if (!stockUniverseMap[sym]) {
+          rejectedItems.push(sym);
+          continue;
+        }
+
+        let realLtp = typeof getLatestStockPrice === 'function' ? await getLatestStockPrice(sym) : 0;
+        if (!realLtp || realLtp <= 0) realLtp = 100; // safety fallback
+
+        const sl = Math.round(realLtp * 0.95 * 10) / 10;
+        const t1 = Math.round(realLtp * 1.15 * 10) / 10;
+        const t2 = Math.round(realLtp * 1.25 * 10) / 10;
+
         if (typeof onTrackHolding === 'function') {
-          onTrackHolding({ symbol: sym, buyPrice: liveLtp, stopLoss: sl, target1: t1, target2: t2, kitta: 100 });
-          trackedItems.push(`• <code>${sym}</code> (LTP: Rs. ${liveLtp}, SL: Rs. ${sl}, T1: Rs. ${t1})`);
+          onTrackHolding({ symbol: sym, buyPrice: realLtp, stopLoss: sl, target1: t1, target2: t2, kitta: 100 });
+          trackedItems.push(`• <code>${sym}</code> (Last Close: Rs. ${realLtp}, SL: Rs. ${sl}, T1: Rs. ${t1})`);
         }
       }
+
       const resp = [
-        `✅ <b>Mass Tracking Armed (${trackedItems.length} Stocks)</b>`,
+        `✅ <b>Mass Tracking Armed (${trackedItems.length} Verified Stocks)</b>`,
         `──────────────────────────`,
         ...trackedItems,
+        rejectedItems.length > 0 ? `⚠️ <i>Ignored non-NEPSE symbols: ${rejectedItems.join(', ')}</i>` : '',
         `──────────────────────────`,
-        `<i>I will monitor each tick and alert you on Stop-Loss, Target 1, or Target 2!</i>`
-      ].join('\n');
+        `<i>Anchored to verified NEPSE closing prices. Monitoring live ticks (11 AM–3 PM)!</i>`
+      ].filter(Boolean).join('\n');
       return await sendTelegramMessage(resp);
     }
 
@@ -597,58 +616,148 @@ async function handleTelegramCommand(text, {
       return await sendTelegramMessage(`⚠️ Please specify symbol: e.g. <code>/track SHIVM 512 489</code>`);
     }
 
-    let buyPrice = parseFloat(parts[1]);
-    let stopLoss = parseFloat(parts[2]);
+    // 1. Validate against official NEPSE listed universe
+    const stockMeta = stockUniverseMap[sym];
+    if (!stockMeta && !sym.match(/^[A-Z]{2,6}$/)) {
+      return await sendTelegramMessage([
+        `❌ <b>Unrecognized Scrip:</b> <code>${sym}</code>`,
+        `──────────────────────────`,
+        `This stock is not registered on the Nepal Stock Exchange (NEPSE).`,
+        `Please check the spelling. Examples: <code>SHIVM</code>, <code>GHL</code>, <code>NABIL</code>, <code>HATHY</code>, <code>CIT</code>.`
+      ].join('\n'));
+    }
+
+    const companyName = stockMeta?.name || sym;
+
+    // 2. Retrieve the REAL last closing market price from NEPSE feed
+    let realLtp = typeof getLatestStockPrice === 'function' ? await getLatestStockPrice(sym) : 0;
+    if (!realLtp || realLtp <= 0) {
+      return await sendTelegramMessage([
+        `⚠️ <b>Market Data Notice for <code>${sym}</code></b>`,
+        `──────────────────────────`,
+        `Could not retrieve the verified last closing price from the live NEPSE feed.`,
+        `Please open Drabyashree ➔ My Portfolio ➔ tap <b>"🔔 Sync to Telegram"</b> to sync directly from your Demat data!`
+      ].join('\n'));
+    }
+
+    let inputBuyPrice = parseFloat(parts[1]);
+    let inputStopLoss = parseFloat(parts[2]);
     let kitta = parseInt(parts[3], 10) || 100;
 
-    // Auto-resolve buyPrice from live market if omitted
-    if (isNaN(buyPrice) || buyPrice <= 0) {
-      const livePrice = typeof getLatestStockPrice === 'function' ? getLatestStockPrice(sym) : 0;
-      if (livePrice && livePrice > 0) {
-        buyPrice = livePrice;
-      } else {
-        return await sendTelegramMessage(`⚠️ Could not detect live price for <code>${sym}</code>. Please specify your buy price:\n👉 <code>/track ${sym} 512 489</code>`);
+    // Scenario A: No buy price given (e.g. /track NABIL) -> Use real last closing price
+    if (isNaN(inputBuyPrice) || inputBuyPrice <= 0) {
+      const sl = Math.round(realLtp * 0.95 * 10) / 10;
+      const t1 = Math.round(realLtp * 1.15 * 10) / 10;
+      const t2 = Math.round(realLtp * 1.25 * 10) / 10;
+
+      if (typeof onTrackHolding === 'function') {
+        onTrackHolding({
+          symbol: sym,
+          buyPrice: realLtp,
+          stopLoss: sl,
+          target1: t1,
+          target2: t2,
+          kitta
+        });
       }
+
+      const msg = [
+        `✅ <b>Exit Guard Armed: <code>${sym}</code></b>`,
+        `<b>Company:</b> ${companyName}`,
+        `──────────────────────────`,
+        `📊 <b>Verified Last Close LTP:</b> Rs. ${realLtp.toFixed(2)}`,
+        `🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl.toFixed(2)} (-5.0%)`,
+        `🎯 <b>Target 1 (50% Profit):</b> Rs. ${t1.toFixed(2)} (+15.0%)`,
+        `🚀 <b>Target 2 (Full Exit):</b> Rs. ${t2.toFixed(2)} (+25.0%)`,
+        `💼 <b>Position:</b> ${kitta} Shares`,
+        `⏳ <b>T+2 Defense:</b> Active`,
+        `──────────────────────────`,
+        `<i>Anchored strictly to real NEPSE closing market data.</i>`
+      ].join('\n');
+      return await sendTelegramMessage(msg);
     }
 
-    // Auto-calculate 5% Stop-Loss if omitted
-    if (isNaN(stopLoss) || stopLoss <= 0) {
-      stopLoss = Math.round(buyPrice * 0.95 * 10) / 10;
+    // Scenario B: User provided an explicit purchase price
+    const disparityPct = ((realLtp - inputBuyPrice) / inputBuyPrice) * 100;
+    const isOldHolding = Math.abs(disparityPct) > 15;
+
+    let effectiveSl = 0;
+    let effectiveT1 = 0;
+    let effectiveT2 = 0;
+
+    if (isOldHolding) {
+      // Long-term / old purchase (e.g. bought 7 years ago at 1500 or 100)
+      // Stop-loss and targets MUST be anchored to current closing price (realLtp) to avoid nonsensical exits!
+      effectiveSl = Math.round(realLtp * 0.95 * 10) / 10;
+      effectiveT1 = Math.round(realLtp * 1.15 * 10) / 10;
+      effectiveT2 = Math.round(realLtp * 1.25 * 10) / 10;
+
+      if (typeof onTrackHolding === 'function') {
+        onTrackHolding({
+          symbol: sym,
+          buyPrice: inputBuyPrice, // Preserve their real historical cost basis for accounting
+          stopLoss: effectiveSl,
+          target1: effectiveT1,
+          target2: effectiveT2,
+          kitta
+        });
+      }
+
+      const pnlSign = disparityPct >= 0 ? '+' : '';
+      const msg = [
+        `✅ <b>Long-Term Holding Armed: <code>${sym}</code></b>`,
+        `<b>Company:</b> ${companyName}`,
+        `──────────────────────────`,
+        `📊 <b>Verified Last Close LTP:</b> Rs. ${realLtp.toFixed(2)}`,
+        `💼 <b>Historical Cost Basis:</b> Rs. ${inputBuyPrice.toFixed(2)} (${pnlSign}${disparityPct.toFixed(1)}%)`,
+        `──────────────────────────`,
+        `🛡️ <b>Current Defense Stop Floor:</b> Rs. ${effectiveSl.toFixed(2)} (-5.0% from current LTP)`,
+        `🎯 <b>Swing Target 1:</b> Rs. ${effectiveT1.toFixed(2)} (+15.0% from current LTP)`,
+        `🚀 <b>Swing Target 2:</b> Rs. ${effectiveT2.toFixed(2)} (+25.0% from current LTP)`,
+        `💼 <b>Quantity:</b> ${kitta} Shares`,
+        `──────────────────────────`,
+        `💡 <i>Notice: Because this holding was bought at Rs. ${inputBuyPrice.toFixed(2)} and today's last close is Rs. ${realLtp.toFixed(2)}, exit alerts are anchored to CURRENT NEPSE closing data (Rs. ${realLtp.toFixed(2)}) to give you actionable market defense rather than an outdated historical level.</i>`
+      ].join('\n');
+      return await sendTelegramMessage(msg);
+    } else {
+      // Recent trade within normal swing range
+      effectiveSl = !isNaN(inputStopLoss) && inputStopLoss > 0 && inputStopLoss < realLtp 
+        ? inputStopLoss 
+        : Math.round(Math.min(inputBuyPrice, realLtp) * 0.95 * 10) / 10;
+      effectiveT1 = Math.round(inputBuyPrice * 1.15 * 10) / 10;
+      effectiveT2 = Math.round(inputBuyPrice * 1.25 * 10) / 10;
+
+      if (typeof onTrackHolding === 'function') {
+        onTrackHolding({
+          symbol: sym,
+          buyPrice: inputBuyPrice,
+          stopLoss: effectiveSl,
+          target1: effectiveT1,
+          target2: effectiveT2,
+          kitta
+        });
+      }
+
+      const slDiff = (((inputBuyPrice - effectiveSl) / inputBuyPrice) * 100).toFixed(1);
+      const t1Diff = (((effectiveT1 - inputBuyPrice) / inputBuyPrice) * 100).toFixed(1);
+      const t2Diff = (((effectiveT2 - inputBuyPrice) / inputBuyPrice) * 100).toFixed(1);
+
+      const msg = [
+        `✅ <b>Now Tracking: <code>${sym}</code></b>`,
+        `<b>Company:</b> ${companyName}`,
+        `──────────────────────────`,
+        `📊 <b>Verified Last Close LTP:</b> Rs. ${realLtp.toFixed(2)}`,
+        `• <b>Entry Price:</b> Rs. ${inputBuyPrice.toFixed(2)}`,
+        `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${effectiveSl.toFixed(2)} (-${slDiff}%)`,
+        `• 🎯 <b>Target 1 (50% Profit):</b> Rs. ${effectiveT1.toFixed(2)} (+${t1Diff}%)`,
+        `• 🚀 <b>Target 2 (Full Exit):</b> Rs. ${effectiveT2.toFixed(2)} (+${t2Diff}%)`,
+        `• 💼 <b>Quantity:</b> ${kitta} Shares`,
+        `• ⏳ <b>NEPSE Settlement:</b> T+2 Defense Armed`,
+        `──────────────────────────`,
+        `<i>I will alert you instantly if price touches Stop-Loss or Targets!</i>`
+      ].join('\n');
+      return await sendTelegramMessage(msg);
     }
-
-    // Targets
-    const target1 = Math.round(buyPrice * 1.15 * 10) / 10; // +15%
-    const target2 = Math.round(buyPrice * 1.25 * 10) / 10; // +25%
-
-    if (typeof onTrackHolding === 'function') {
-      onTrackHolding({
-        symbol: sym,
-        buyPrice,
-        stopLoss,
-        target1,
-        target2,
-        kitta
-      });
-    }
-
-    const slDiff = (((buyPrice - stopLoss) / buyPrice) * 100).toFixed(1);
-    const t1Diff = (((target1 - buyPrice) / buyPrice) * 100).toFixed(1);
-    const t2Diff = (((target2 - buyPrice) / buyPrice) * 100).toFixed(1);
-
-    const confirmationMsg = [
-      `✅ <b>Now Tracking: <code>${sym}</code></b>`,
-      `──────────────────────────`,
-      `• <b>Entry Price:</b> Rs. ${buyPrice.toFixed(2)}`,
-      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${stopLoss.toFixed(2)} (-${slDiff}%)`,
-      `• 🎯 <b>Target 1 (50% Profit):</b> Rs. ${target1.toFixed(2)} (+${t1Diff}%)`,
-      `• 🚀 <b>Target 2 (Full Exit):</b> Rs. ${target2.toFixed(2)} (+${t2Diff}%)`,
-      `• 💼 <b>Quantity:</b> ${kitta} Shares`,
-      `• ⏳ <b>NEPSE Settlement:</b> T+2 Defense Armed`,
-      `──────────────────────────`,
-      `<i>You will receive an instant lockscreen alert the moment price touches Stop-Loss, Target 1, or Target 2!</i>`
-    ].join('\n');
-
-    return await sendTelegramMessage(confirmationMsg);
   }
 
   // Friendly fallback for unrecognized commands

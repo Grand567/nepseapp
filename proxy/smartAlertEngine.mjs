@@ -604,11 +604,9 @@ export async function runMarketAlertScanCycle({
     // ── 0. EVALUATE ACTIVE POSITIONS FOR STOP-LOSS BREACH & TARGET PROFIT ──
     try {
       let alertHistoryModified = false;
-      const evaluatedSymbolsThisCycle = new Set();
+      const dispatchedAlertsThisCycle = new Set();
       for (const alert of alertHistory) {
         if (alert.status !== 'ACTIVE' && alert.status !== 'ACTIVE_T2') continue;
-        if (evaluatedSymbolsThisCycle.has(alert.symbol)) continue;
-        evaluatedSymbolsThisCycle.add(alert.symbol);
 
         const currentStock = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === alert.symbol);
         if (!currentStock) continue;
@@ -629,15 +627,18 @@ export async function runMarketAlertScanCycle({
           alert.exitPrice = currentLtp;
           alertHistoryModified = true;
           console.log(`[SmartAlertEngine] 🚨 STOP-LOSS TRIGGERED for ${alert.symbol}: LTP Rs. ${currentLtp} <= SL Rs. ${sl} (T+2 Cleared: ${isT2Cleared})`);
-          sendTelegramExitAlert({
-            symbol: alert.symbol,
-            type: 'STOP_LOSS_HIT',
-            ltp: currentLtp,
-            entryPrice: alert.ltp,
-            stopLoss: sl,
-            kitta: alert.kitta || 100,
-            isT2Cleared
-          }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
+          if (!dispatchedAlertsThisCycle.has(`SL_${alert.symbol}`)) {
+            dispatchedAlertsThisCycle.add(`SL_${alert.symbol}`);
+            sendTelegramExitAlert({
+              symbol: alert.symbol,
+              type: 'STOP_LOSS_HIT',
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              stopLoss: sl,
+              kitta: alert.kitta || 100,
+              isT2Cleared
+            }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
+          }
         } else if (t2 > 0 && currentLtp >= t2 && !alert.target2Hit) {
           // TARGET 2 HIT: Full swing profit achieved
           alert.target2Hit = true;
@@ -646,16 +647,19 @@ export async function runMarketAlertScanCycle({
           alert.exitPrice = currentLtp;
           alertHistoryModified = true;
           console.log(`[SmartAlertEngine] 🚀 TARGET 2 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T2 Rs. ${t2} (T+2 Cleared: ${isT2Cleared})`);
-          sendTelegramExitAlert({
-            symbol: alert.symbol,
-            type: 'TARGET_2_REACHED',
-            targetLevel: 2,
-            ltp: currentLtp,
-            entryPrice: alert.ltp,
-            targetPrice: t2,
-            kitta: alert.kitta || 100,
-            isT2Cleared
-          }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+          if (!dispatchedAlertsThisCycle.has(`T2_${alert.symbol}`)) {
+            dispatchedAlertsThisCycle.add(`T2_${alert.symbol}`);
+            sendTelegramExitAlert({
+              symbol: alert.symbol,
+              type: 'TARGET_2_REACHED',
+              targetLevel: 2,
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              targetPrice: t2,
+              kitta: alert.kitta || 100,
+              isT2Cleared
+            }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+          }
         } else if (t1 > 0 && currentLtp >= t1 && !alert.target1Hit) {
           // TARGET 1 HIT: Sell 50% & Move Stop-Loss to Breakeven
           alert.target1Hit = true;
@@ -664,18 +668,21 @@ export async function runMarketAlertScanCycle({
           alert.status = 'ACTIVE_T2'; // Keep active to monitor Target 2!
           alertHistoryModified = true;
           console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}. SL moved to breakeven Rs. ${alert.ltp} (T+2 Cleared: ${isT2Cleared})`);
-          sendTelegramExitAlert({
-            symbol: alert.symbol,
-            type: 'TARGET_REACHED',
-            targetLevel: 1,
-            ltp: currentLtp,
-            entryPrice: alert.ltp,
-            targetPrice: t1,
-            target2: t2,
-            raisedStopLoss: alert.ltp,
-            kitta: alert.kitta || 100,
-            isT2Cleared
-          }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+          if (!dispatchedAlertsThisCycle.has(`T1_${alert.symbol}`)) {
+            dispatchedAlertsThisCycle.add(`T1_${alert.symbol}`);
+            sendTelegramExitAlert({
+              symbol: alert.symbol,
+              type: 'TARGET_REACHED',
+              targetLevel: 1,
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              targetPrice: t1,
+              target2: t2,
+              raisedStopLoss: alert.ltp,
+              kitta: alert.kitta || 100,
+              isT2Cleared
+            }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+          }
         }
       }
       if (alertHistoryModified) {
@@ -850,7 +857,9 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
   const t2 = Number(target2 || (buy > 0 ? (buy * 1.25).toFixed(1) : 0));
   const qty = Number(kitta || 100);
 
-  const existingIdx = alertHistory.findIndex(a => a.symbol === sym && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'));
+  // Clear out any existing active records for this symbol to prevent duplicate or conflicting monitoring
+  alertHistory = alertHistory.filter(a => !(a.symbol === sym && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2')));
+
   const alertItem = {
     id: `holding_${sym}_${Date.now()}`,
     symbol: sym,
@@ -864,12 +873,7 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
     isUserHolding: true
   };
 
-  if (existingIdx >= 0) {
-    alertHistory[existingIdx] = alertItem;
-  } else {
-    alertHistory.unshift(alertItem);
-  }
-
+  alertHistory.unshift(alertItem);
   saveJson(HISTORY_FILE, alertHistory);
   console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
   return alertItem;
