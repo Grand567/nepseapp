@@ -24,7 +24,9 @@ import {
   getSmartAlertSystemStatus, 
   registerPushToken, 
   testTriggerAlert, 
-  subscribeAlertEvents 
+  subscribeAlertEvents,
+  trackCustomHolding,
+  getUserTrackedHoldings
 } from './smartAlertEngine.mjs';
 import { 
   getTelegramStatus, 
@@ -32,6 +34,7 @@ import {
   testTelegramConnection, 
   sendTelegramSmartAlert,
   sendTelegramPrimePickAlert,
+  sendTelegramExitAlert,
   autoDetectChatId
 } from './telegramNotifier.mjs';
 import {
@@ -8332,6 +8335,56 @@ app.get('/api/smart-alerts/events', (req, res) => {
 
   const unsubscribe = subscribeAlertEvents(res);
   req.on('close', unsubscribe);
+});
+
+// ── PERSONAL PORTFOLIO STOP-LOSS & TARGET MONITORING ROUTES ──
+app.get('/api/portfolio/tracked-holdings', (req, res) => {
+  try {
+    const holdings = getUserTrackedHoldings();
+    res.json({ success: true, count: holdings.length, data: holdings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/portfolio/track-holding', (req, res) => {
+  try {
+    const { symbol, buyPrice, stopLoss, target1, target2, kitta } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
+    const item = trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta });
+    res.json({ success: true, message: `Active Telegram monitoring armed for ${symbol}`, item });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/portfolio/sync-holdings', (req, res) => {
+  try {
+    const { holdings } = req.body || {};
+    if (!Array.isArray(holdings)) return res.status(400).json({ success: false, error: 'Holdings array required' });
+    const items = holdings.map(h => trackCustomHolding(h)).filter(Boolean);
+    res.json({ success: true, message: `Armed Telegram Stop-Loss alerts for ${items.length} portfolio stocks`, count: items.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/test-exit-alert', async (req, res) => {
+  try {
+    const { symbol, type, ltp, entryPrice, stopLoss, targetPrice, kitta } = req.body || {};
+    const result = await sendTelegramExitAlert({
+      symbol: symbol || 'GHL',
+      type: type || 'STOP_LOSS_HIT',
+      ltp: Number(ltp || 258),
+      entryPrice: Number(entryPrice || 271),
+      stopLoss: Number(stopLoss || 259),
+      targetPrice: Number(targetPrice || 312),
+      kitta: Number(kitta || 125)
+    });
+    res.json({ success: result.success, message: result.success ? 'Sample exit alert dispatched to Telegram!' : (result.error || result.reason) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── TELEGRAM NOTIFICATION CONTROLS ──

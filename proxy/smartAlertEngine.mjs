@@ -614,33 +614,39 @@ export async function runMarketAlertScanCycle({
         const sl = Number(alert.stopLoss || 0);
         const t1 = Number(alert.target1 || 0);
 
+        const entryTime = new Date(alert.triggeredAt || Date.now()).getTime();
+        const daysHeld = Math.floor((Date.now() - entryTime) / (24 * 60 * 60 * 1000));
+        const isT2Cleared = Boolean(alert.isUserHolding) || daysHeld >= 2;
+
         if (sl > 0 && currentLtp <= sl) {
           alert.status = 'STOPPED_OUT';
           alert.closedAt = new Date().toISOString();
           alert.exitPrice = currentLtp;
           alertHistoryModified = true;
-          console.log(`[SmartAlertEngine] 🚨 STOP-LOSS TRIGGERED for ${alert.symbol}: LTP Rs. ${currentLtp} <= SL Rs. ${sl}`);
+          console.log(`[SmartAlertEngine] 🚨 STOP-LOSS TRIGGERED for ${alert.symbol}: LTP Rs. ${currentLtp} <= SL Rs. ${sl} (T+2 Cleared: ${isT2Cleared})`);
           sendTelegramExitAlert({
             symbol: alert.symbol,
             type: 'STOP_LOSS_HIT',
             ltp: currentLtp,
             entryPrice: alert.ltp,
             stopLoss: sl,
-            kitta: alert.kitta || 100
+            kitta: alert.kitta || 100,
+            isT2Cleared
           }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
         } else if (t1 > 0 && currentLtp >= t1) {
           alert.status = 'TARGET1_HIT';
           alert.closedAt = new Date().toISOString();
           alert.exitPrice = currentLtp;
           alertHistoryModified = true;
-          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}`);
+          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1} (T+2 Cleared: ${isT2Cleared})`);
           sendTelegramExitAlert({
             symbol: alert.symbol,
             type: 'TARGET_REACHED',
             ltp: currentLtp,
             entryPrice: alert.ltp,
             targetPrice: t1,
-            kitta: alert.kitta || 100
+            kitta: alert.kitta || 100,
+            isT2Cleared
           }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
         }
       }
@@ -803,4 +809,46 @@ export function getSmartAlertSystemStatus() {
     updatedAt: new Date().toISOString()
   };
 }
+
+/**
+ * Register personal user holding to be actively monitored for Stop-Loss and Target alerts on Telegram
+ */
+export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta = 100 }) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+  const buy = Number(buyPrice || 0);
+  const sl = Number(stopLoss || (buy > 0 ? (buy * 0.95).toFixed(1) : 0));
+  const t1 = Number(target1 || (buy > 0 ? (buy * 1.15).toFixed(1) : 0));
+  const t2 = Number(target2 || (buy > 0 ? (buy * 1.25).toFixed(1) : 0));
+  const qty = Number(kitta || 100);
+
+  const existingIdx = alertHistory.findIndex(a => a.symbol === sym && a.status === 'ACTIVE');
+  const alertItem = {
+    id: `holding_${sym}_${Date.now()}`,
+    symbol: sym,
+    ltp: buy,
+    triggeredAt: new Date().toISOString(),
+    stopLoss: sl,
+    target1: t1,
+    target2: t2,
+    kitta: qty,
+    status: 'ACTIVE',
+    isUserHolding: true
+  };
+
+  if (existingIdx >= 0) {
+    alertHistory[existingIdx] = alertItem;
+  } else {
+    alertHistory.unshift(alertItem);
+  }
+
+  saveJson(HISTORY_FILE, alertHistory);
+  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, SL: Rs. ${sl}, T1: Rs. ${t1}, Kitta: ${qty})`);
+  return alertItem;
+}
+
+export function getUserTrackedHoldings() {
+  return alertHistory.filter(a => a.isUserHolding && a.status === 'ACTIVE');
+}
+
 

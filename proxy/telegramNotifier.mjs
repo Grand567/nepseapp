@@ -307,6 +307,7 @@ export async function sendTelegramSmartAlert(alertItem) {
     `🛡️ <b>Stop-Loss:</b> Rs. ${sl} (-${(((ltp - sl) / ltp) * 100).toFixed(1)}%)`,
     `──────────────────────────`,
     `💼 <b>100K Sizing (1.5% Risk):</b> <b>${suggestedKitta} Kitta</b> (Rs. ${capitalOutlay.toLocaleString()})`,
+    `⏳ <b>NEPSE Settlement:</b> T+2 holding cycle applies (No intraday selling in NEPSE). Setup filtered for multi-day structural support.`,
     `<i>Open Drabyashree -> Workstation to inspect live floor sheet tape.</i>`
   ].join('\n');
 
@@ -347,7 +348,8 @@ export async function sendTelegramPrimePickAlert(winner) {
     `🎯 <b>Target 2:</b> Rs. ${t2}`,
     `──────────────────────────`,
     `💼 <b>100K Sizing:</b> <b>${kitta} Shares</b> (Outlay: Rs. ${Number(capital).toLocaleString()})`,
-    `<i>Strict Rule: Cancel buy order if pre-open price gaps above Chase Cap.</i>`
+    `⏳ <b>T+2 Execution Cycle:</b> Buy tomorrow (Day T) ➔ Cleared & Sellable on Day T+2.`,
+    `<i>Strict Rule: Cancel buy order if pre-open price gaps above Chase Cap (+2.5% max).</i>`
   ].join('\n');
 
   return await sendTelegramMessage(msg);
@@ -364,7 +366,8 @@ export async function sendTelegramExitAlert({
   stopLoss,
   targetPrice,
   kitta = 100,
-  reason
+  reason,
+  isT2Cleared = true // true if shares in Demat / >= 2 days held
 }) {
   const sym = String(symbol || 'STOCK').toUpperCase();
   const currentPrice = Number(ltp || 0);
@@ -379,11 +382,19 @@ export async function sendTelegramExitAlert({
   if (type === 'STOP_LOSS_HIT') {
     header = `🚨 <b>DRAVYASHREE CAPITAL DEFENSE: STOP-LOSS HIT</b>`;
     levelDetail = `🛡️ <b>Stop Floor:</b> Rs. ${stopLoss || currentPrice} | <b>Loss:</b> -${Math.abs(diffPct)}% (~Rs. ${rupeeChange.toLocaleString()})`;
-    actionText = `⚡ <b>ACTION: SELL IMMEDIATELY IN TMS.</b>\nCut loss now to preserve your capital. Never let a -5% planned loss turn into a -30% baghold!`;
+    if (!isT2Cleared) {
+      actionText = `⏳ <b>T+2 SETTLEMENT LOCK WARNING:</b>\nShares bought within the last 2 sessions are still clearing into Demat. NEPSE TMS will reject sell orders today.\n👉 <b>Action:</b> Place your SELL order during the 10:30–10:45 AM pre-open session on your T+2 settlement morning to exit at market open!`;
+    } else {
+      actionText = `⚡ <b>ACTION: SELL IMMEDIATELY IN TMS.</b>\nShares are settled in your Demat account. Execute sell order now to cut loss and preserve remaining capital!`;
+    }
   } else if (type === 'TARGET_REACHED') {
     header = `🎯 <b>DRAVYASHREE PROFIT LOCK: TARGET REACHED</b>`;
     levelDetail = `💰 <b>Target Hit:</b> Rs. ${targetPrice || currentPrice} | <b>Profit:</b> +${diffPct}% (+Rs. ${rupeeChange.toLocaleString()})`;
-    actionText = `⚡ <b>ACTION: LOCK IN GAINS IN TMS.</b>\nSell 50% shares to book cash profit. Raise stop-loss on remaining 50% shares to entry price (Rs. ${entry}) for a risk-free runner.`;
+    if (!isT2Cleared) {
+      actionText = `⏳ <b>T+2 PROFIT PREPARATION:</b>\nTarget reached while in T+2 clearing. Prepare to lock in 50% gains on your T+2 settlement morning!`;
+    } else {
+      actionText = `⚡ <b>ACTION: LOCK IN GAINS IN TMS.</b>\nSell 50% shares to book cash profit. Raise stop-loss on remaining 50% shares to entry price (Rs. ${entry}) for a risk-free runner.`;
+    }
   } else {
     header = `⚠️ <b>DRAVYASHREE ALERT: INSTITUTIONAL SELLING / CHURN</b>`;
     levelDetail = `📊 <b>Status:</b> ${reason || 'Heavy broker dumping detected at resistance'}`;
