@@ -8353,22 +8353,48 @@ app.post('/api/portfolio/track-holding', (req, res) => {
   try {
     const { symbol, buyPrice, stopLoss, target1, target2, kitta } = req.body || {};
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
-    const item = trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta });
+
+    const sym = String(symbol).toUpperCase().trim();
+    // Retrieve verified live or closing price from cache
+    let realLtp = Number(buyPrice || 0);
+    if (!realLtp || realLtp <= 0) {
+      const stockData = getCache('today-prices') || getCache('market-summary');
+      const list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+      const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === sym);
+      if (found) {
+        realLtp = Number(found.ltp || found.lastTradedPrice || found.closePrice || 0);
+      }
+    }
+
+    const effectiveBuy = realLtp > 0 ? realLtp : Number(buyPrice || 0);
+    const effectiveSl = Number(stopLoss) > 0 ? Number(stopLoss) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 0.95 * 10) / 10 : 0);
+    const effectiveT1 = Number(target1) > 0 ? Number(target1) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 1.08 * 10) / 10 : 0);
+    const effectiveT2 = Number(target2) > 0 ? Number(target2) : (effectiveBuy > 0 ? Math.round(effectiveBuy * 1.145 * 10) / 10 : 0);
+    const effectiveKitta = Number(kitta || 100);
+
+    const item = trackCustomHolding({ 
+      symbol: sym, 
+      buyPrice: effectiveBuy, 
+      stopLoss: effectiveSl, 
+      target1: effectiveT1, 
+      target2: effectiveT2, 
+      kitta: effectiveKitta 
+    });
 
     const confirmMsg = [
-      `🛡️ <b>APP EXIT GUARD ARMED: <code>${symbol}</code></b>`,
+      `🛡️ <b>APP EXIT GUARD ARMED: <code>${sym}</code></b>`,
       `──────────────────────────`,
-      `• <b>Position:</b> ${kitta || 100} Shares`,
-      `• <b>WACC / Cost:</b> Rs. ${Number(buyPrice || 0).toFixed(2)}`,
-      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${Number(stopLoss || 0).toFixed(2)}`,
-      `• 🎯 <b>Target 1:</b> Rs. ${Number(target1 || 0).toFixed(2)}`,
-      `• 🚀 <b>Target 2:</b> Rs. ${Number(target2 || 0).toFixed(2)}`,
+      `• <b>Position:</b> ${effectiveKitta} Shares`,
+      `• <b>LTP / Entry:</b> Rs. ${effectiveBuy.toFixed(2)}`,
+      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${effectiveSl.toFixed(2)} (-5.0%)`,
+      `• 🎯 <b>Target 1:</b> Rs. ${effectiveT1.toFixed(2)} (+8.0% Pre-Circuit)`,
+      `• 🚀 <b>Target 2:</b> Rs. ${effectiveT2.toFixed(2)} (+14.5% Circuit Ceiling)`,
       `──────────────────────────`,
-      `<i>Armed directly from your Drabyashree Portfolio.</i>`
+      `<i>Armed directly from your Drabyashree Portfolio (Live NEPSE Anchored).</i>`
     ].join('\n');
     sendTelegramMessage(confirmMsg).catch(() => {});
 
-    res.json({ success: true, message: `Active Telegram monitoring armed for ${symbol}`, item });
+    res.json({ success: true, message: `Active Telegram monitoring armed for ${sym}`, item });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -8645,18 +8671,25 @@ app.get('/api/prime-pick/daily-verified', async (req, res) => {
         const fetched = [];
         $td('table tbody tr').each((i, row) => {
           const tds = $td(row).find('td');
-          if (tds.length >= 10) {
+          if (tds.length >= 18) {
             const sym = $td(tds[1]).text().trim();
             const meta = stockMap[sym] || {};
-            if (sym) fetched.push({
+            const close = parseMoney($td(tds[6]).text());
+            const ltp = parseMoney($td(tds[7]).text()) || close;
+            const volume = parseMoney($td(tds[11]).text());
+            const prevClose = parseMoney($td(tds[12]).text());
+            const turnover = parseMoney($td(tds[13]).text());
+            const pChange = parseMoney($td(tds[17]).text());
+            if (sym && !isNaN(ltp) && ltp > 0) fetched.push({
               symbol: sym,
               name: meta.name || sym,
               companyName: meta.name || sym,
               sector: meta.sector || 'Others',
-              ltp: parseMoney($td(tds[2]).text()),
-              pChange: parseMoney($td(tds[5]).text()),
-              turnover: parseMoney($td(tds[10]).text()) || parseMoney($td(tds[9]).text()),
-              volume: parseMoney($td(tds[7]).text()),
+              ltp,
+              prevClose: isNaN(prevClose) ? ltp : prevClose,
+              pChange: isNaN(pChange) ? 0 : pChange,
+              turnover: isNaN(turnover) ? (ltp * volume) : turnover,
+              volume: isNaN(volume) ? 0 : volume,
               source: 'sharesansar'
             });
           }
@@ -9350,9 +9383,23 @@ app.listen(PORT, async () => {
                 const $t = cheerio.load(resp.data);
                 $t('table tbody tr').each((i, row) => {
                   const tds = $t(row).find('td');
-                  if (tds.length >= 10) {
+                  if (tds.length >= 18) {
                     const sym = $t(tds[1]).text().trim();
-                    if (sym) list.push({ symbol: sym, ltp: parseMoney($t(tds[2]).text()), pChange: parseMoney($t(tds[5]).text()), turnover: parseMoney($t(tds[10]).text()) || parseMoney($t(tds[9]).text()), volume: parseMoney($t(tds[7]).text()), source: 'sharesansar' });
+                    const close = parseMoney($t(tds[6]).text());
+                    const ltp = parseMoney($t(tds[7]).text()) || close;
+                    const volume = parseMoney($t(tds[11]).text());
+                    const prevClose = parseMoney($t(tds[12]).text());
+                    const turnover = parseMoney($t(tds[13]).text());
+                    const pChange = parseMoney($t(tds[17]).text());
+                    if (sym && !isNaN(ltp) && ltp > 0) list.push({
+                      symbol: sym,
+                      ltp,
+                      prevClose: isNaN(prevClose) ? ltp : prevClose,
+                      pChange: isNaN(pChange) ? 0 : pChange,
+                      turnover: isNaN(turnover) ? (ltp * volume) : turnover,
+                      volume: isNaN(volume) ? 0 : volume,
+                      source: 'sharesansar'
+                    });
                   }
                 });
                 if (list.length > 0) setCache('today-prices', list, 30000);

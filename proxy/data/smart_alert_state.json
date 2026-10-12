@@ -1,16 +1,359 @@
 {
   "GHL": {
-    "state": "COOLDOWN",
-    "pendingScans": 1,
+    "state": "IDLE",
+    "pendingScans": 0,
     "lastTriggeredAt": 1791776572203,
-    "lastEvaluatedAt": 1791776572203,
+    "lastEvaluatedAt": 1791788711383,
     "historyCount": 1
   },
   "SHIVM": {
     "state": "COOLDOWN",
     "pendingScans": 1,
-    "lastTriggeredAt": 1791779099152,
-    "lastEvaluatedAt": 1791779099152,
+    "lastTriggeredAt": 1791788765602,
+    "lastEvaluatedAt": 1791788765602,
+    "historyCount": 2
+  },
+  "UNL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788043278,
+    "historyCount": 0
+  },
+  "BNL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788054745,
+    "historyCount": 0
+  },
+  "RBCL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788067624,
+    "historyCount": 0
+  },
+  "BNT": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788186621,
+    "historyCount": 0
+  },
+  "RBCLPO": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788088549,
+    "historyCount": 0
+  },
+  "SAHAS": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788154175,
+    "historyCount": 0
+  },
+  "KBL": {
+    "state": "COOLDOWN",
+    "pendingScans": 2,
+    "lastTriggeredAt": 1791788600680,
+    "lastEvaluatedAt": 1791788706384,
+    "historyCount": 1
+  },
+  "GBIME": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788170030,
+    "lastEvaluatedAt": 1791788170030,
+    "historyCount": 1
+  },
+  "PCBL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788777583,
+    "historyCount": 0
+  },
+  "LSL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788722939,
+    "historyCount": 0
+  },
+  "SONA": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788727370,
+    "historyCount": 0
+  },
+  "HATHY": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788796879,
+    "historyCount": 0
+  },
+  "HDL": {
+    "state": "PENDING",
+    "pendingScans": 2,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788715314,
+    "historyCount": 0
+  },
+  "BHCL": {
+    "state": "PENDING",
+    "pendingScans": 2,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788826158,
+    "historyCount": 0
+  },
+  "NBL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788225712,
+    "historyCount": 0
+  },
+  "API": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788233612,
+    "lastEvaluatedAt": 1791788750822,
+    "historyCount": 1
+  },
+  "SBI": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788241157,
+    "historyCount": 0
+  },
+  "MBL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788247349,
+    "historyCount": 0
+  },
+  "PRVU": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788838442,
+    "historyCount": 0
+  },
+  "NMB": {
+    "state": "PENDING",
+    "pendingScans": 2,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788830034,
+    "historyCount": 0
+  },
+  "NIMB": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788270780,
+    "historyCount": 0
+  },
+  "MEN": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788278619,
+    "historyCount": 0
+  },
+  "SMH": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788287063,
+    "historyCount": 0
+  },
+  "SBL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788294713,
+    "lastEvaluatedAt": 1791788842454,
+    "historyCount": 1
+  },
+  "NIMBPO": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788302970,
+    "historyCount": 0
+  },
+  "MFIL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788773770,
+    "historyCount": 0
+  },
+  "LEC": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788812246,
+    "historyCount": 0
+  },
+  "BHL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788735310,
+    "historyCount": 0
+  },
+  "NHPC": {
+    "state": "PENDING",
+    "pendingScans": 2,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788808261,
+    "historyCount": 0
+  },
+  "CZBIL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788348907,
+    "historyCount": 0
+  },
+  "SNORL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788362177,
+    "historyCount": 0
+  },
+  "TAMOR": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788369596,
+    "lastEvaluatedAt": 1791788746881,
+    "historyCount": 1
+  },
+  "FMDBLP": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788380661,
+    "historyCount": 0
+  },
+  "HBL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788389239,
+    "historyCount": 0
+  },
+  "SHL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788398576,
+    "historyCount": 0
+  },
+  "MBJC": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788407723,
+    "historyCount": 0
+  },
+  "HPPL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788846538,
+    "historyCount": 0
+  },
+  "SANIMA": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788770315,
+    "historyCount": 0
+  },
+  "PHCL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788833586,
+    "historyCount": 0
+  },
+  "SKBBL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788440335,
+    "historyCount": 0
+  },
+  "SOHL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788447690,
+    "lastEvaluatedAt": 1791788718743,
+    "historyCount": 1
+  },
+  "SYPNL": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788731513,
+    "historyCount": 0
+  },
+  "RSML": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788743416,
+    "lastEvaluatedAt": 1791788743416,
+    "historyCount": 1
+  },
+  "HDHPC": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788757036,
+    "historyCount": 0
+  },
+  "NRN": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788784270,
+    "historyCount": 0
+  },
+  "AKJCL": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788792477,
+    "historyCount": 0
+  },
+  "SBLD89": {
+    "state": "PENDING",
+    "pendingScans": 1,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788804329,
+    "historyCount": 0
+  },
+  "KBSH": {
+    "state": "IDLE",
+    "pendingScans": 0,
+    "lastTriggeredAt": null,
+    "lastEvaluatedAt": 1791788821991,
+    "historyCount": 0
+  },
+  "SSHL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791788854534,
+    "lastEvaluatedAt": 1791788854534,
     "historyCount": 1
   }
 }

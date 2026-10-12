@@ -1,5 +1,396 @@
 [
   {
+    "id": "alert_SSHL_1791788854534",
+    "symbol": "SSHL",
+    "ltp": 210,
+    "triggeredAt": "2026-10-12T07:07:34.534Z",
+    "buyZone": {
+      "low": 210,
+      "high": 216,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 210 - 216"
+    },
+    "dominantBrokersText": "Broker 38 & Broker 14",
+    "concentrationPct": 56,
+    "topBuyerBrokers": [
+      {
+        "broker": "38",
+        "name": "Dipshikha Dhitopatra Karobar",
+        "buyQty": 23460,
+        "buyAmt": 4962317.8
+      },
+      {
+        "broker": "14",
+        "name": "Nepal Stock House",
+        "buyQty": 11000,
+        "buyAmt": 2328654
+      },
+      {
+        "broker": "74",
+        "name": "Elite Stock Brokers",
+        "buyQty": 7347,
+        "buyAmt": 1550014
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.84x of 20-day avg)",
+    "target1": 241,
+    "target2": 263,
+    "stopLoss": 201,
+    "riskRewardRatio": 3.44,
+    "vwap": 211.06,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_SHIVM_1791788765602",
+    "symbol": "SHIVM",
+    "ltp": 686,
+    "triggeredAt": "2026-10-12T07:06:05.602Z",
+    "buyZone": {
+      "low": 684,
+      "high": 702,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 684 - 702"
+    },
+    "dominantBrokersText": "Broker 28 & Broker 81",
+    "concentrationPct": 73,
+    "topBuyerBrokers": [
+      {
+        "broker": "28",
+        "name": "Shree Krishna Securities",
+        "buyQty": 31500,
+        "buyAmt": 21682459.599999998
+      },
+      {
+        "broker": "81",
+        "name": "Broker 81",
+        "buyQty": 12000,
+        "buyAmt": 8279896
+      },
+      {
+        "broker": "4",
+        "name": "Opal Securities",
+        "buyQty": 5073,
+        "buyAmt": 3494723.5
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.61x of 20-day avg)",
+    "target1": 789,
+    "target2": 858,
+    "stopLoss": 661,
+    "riskRewardRatio": 4.12,
+    "vwap": 688.09,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_RSML_1791788743416",
+    "symbol": "RSML",
+    "ltp": 2672,
+    "triggeredAt": "2026-10-12T07:05:43.416Z",
+    "buyZone": {
+      "low": 2650,
+      "high": 2717,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 2650 - 2717"
+    },
+    "dominantBrokersText": "Broker 69 & Broker 28",
+    "concentrationPct": 53,
+    "topBuyerBrokers": [
+      {
+        "broker": "69",
+        "name": "Nabil Stock Dealer",
+        "buyQty": 5737,
+        "buyAmt": 15307945.3
+      },
+      {
+        "broker": "28",
+        "name": "Shree Krishna Securities",
+        "buyQty": 1410,
+        "buyAmt": 3755475
+      },
+      {
+        "broker": "56",
+        "name": "Sri Hari Securities",
+        "buyQty": 887,
+        "buyAmt": 2365655
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.53x of 20-day avg)",
+    "target1": 3073,
+    "target2": 3340,
+    "stopLoss": 2557,
+    "riskRewardRatio": 3.49,
+    "vwap": 2663.53,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "holding_GHL_1791788674882",
+    "symbol": "GHL",
+    "ltp": 285,
+    "triggeredAt": "2026-10-12T07:04:34.882Z",
+    "stopLoss": 270.8,
+    "target1": 307.8,
+    "target2": 326.3,
+    "kitta": 100,
+    "status": "ACTIVE",
+    "isUserHolding": true
+  },
+  {
+    "id": "alert_KBL_1791788600680",
+    "symbol": "KBL",
+    "ltp": 231,
+    "triggeredAt": "2026-10-12T07:03:20.680Z",
+    "buyZone": {
+      "low": 228,
+      "high": 234,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 228 - 234"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 49",
+    "concentrationPct": 61,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 39694,
+        "buyAmt": 9128145.1
+      },
+      {
+        "broker": "49",
+        "name": "Online Securities",
+        "buyQty": 17253,
+        "buyAmt": 3951693
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 13512,
+        "buyAmt": 3092455.5999999996
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.68x of 20-day avg)",
+    "target1": 266,
+    "target2": 289,
+    "stopLoss": 220,
+    "riskRewardRatio": 3.18,
+    "vwap": 229.38,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_SOHL_1791788447690",
+    "symbol": "SOHL",
+    "ltp": 630.3,
+    "triggeredAt": "2026-10-12T07:00:47.690Z",
+    "buyZone": {
+      "low": 615,
+      "high": 631,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 615 - 631"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 71",
+    "concentrationPct": 54,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 2212,
+        "buyAmt": 1370100.5
+      },
+      {
+        "broker": "71",
+        "name": "Purna Securities",
+        "buyQty": 2120,
+        "buyAmt": 1310459.8
+      },
+      {
+        "broker": "67",
+        "name": "Property Wizard",
+        "buyQty": 1790,
+        "buyAmt": 1114996
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.17x of 20-day avg)",
+    "target1": 725,
+    "target2": 788,
+    "stopLoss": 594,
+    "riskRewardRatio": 2.61,
+    "vwap": 618.5,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T07:01:51.085Z",
+    "exitPrice": 42.33
+  },
+  {
+    "id": "alert_TAMOR_1791788369596",
+    "symbol": "TAMOR",
+    "ltp": 553,
+    "triggeredAt": "2026-10-12T06:59:29.596Z",
+    "buyZone": {
+      "low": 543,
+      "high": 557,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 543 - 557"
+    },
+    "dominantBrokersText": "Broker 98 & Broker 67",
+    "concentrationPct": 62,
+    "topBuyerBrokers": [
+      {
+        "broker": "98",
+        "name": "Broker 98",
+        "buyQty": 17750,
+        "buyAmt": 9706438.2
+      },
+      {
+        "broker": "67",
+        "name": "Property Wizard",
+        "buyQty": 6845,
+        "buyAmt": 3731507
+      },
+      {
+        "broker": "62",
+        "name": "Capital Max Securities",
+        "buyQty": 3700,
+        "buyAmt": 2024480
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.5x of 20-day avg)",
+    "target1": 636,
+    "target2": 691,
+    "stopLoss": 524,
+    "riskRewardRatio": 2.86,
+    "vwap": 545.75,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T07:01:51.091Z",
+    "exitPrice": 33.45
+  },
+  {
+    "id": "alert_SBL_1791788294713",
+    "symbol": "SBL",
+    "ltp": 415,
+    "triggeredAt": "2026-10-12T06:58:14.713Z",
+    "buyZone": {
+      "low": 405,
+      "high": 416,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 405 - 416"
+    },
+    "dominantBrokersText": "Broker 4 & Broker 45",
+    "concentrationPct": 60,
+    "topBuyerBrokers": [
+      {
+        "broker": "4",
+        "name": "Opal Securities",
+        "buyQty": 34356,
+        "buyAmt": 14032052.5
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 6326,
+        "buyAmt": 2584865.3
+      },
+      {
+        "broker": "50",
+        "name": "Crystal Kanchenjunga Securities",
+        "buyQty": 5670,
+        "buyAmt": 2306574.9
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.71x of 20-day avg)",
+    "target1": 477,
+    "target2": 519,
+    "stopLoss": 391,
+    "riskRewardRatio": 2.58,
+    "vwap": 407.79,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T07:01:51.101Z",
+    "exitPrice": 36.46
+  },
+  {
+    "id": "alert_API_1791788233612",
+    "symbol": "API",
+    "ltp": 337.7,
+    "triggeredAt": "2026-10-12T06:57:13.612Z",
+    "buyZone": {
+      "low": 335,
+      "high": 345,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 335 - 345"
+    },
+    "dominantBrokersText": "Broker 44 & Broker 43",
+    "concentrationPct": 57,
+    "topBuyerBrokers": [
+      {
+        "broker": "44",
+        "name": "Dynamic Money Market",
+        "buyQty": 25206,
+        "buyAmt": 8504834.100000001
+      },
+      {
+        "broker": "43",
+        "name": "South Asian Bulls",
+        "buyQty": 10342,
+        "buyAmt": 3499085.2
+      },
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 5578,
+        "buyAmt": 1880077
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.62x of 20-day avg)",
+    "target1": 388,
+    "target2": 422,
+    "stopLoss": 324,
+    "riskRewardRatio": 3.67,
+    "vwap": 337.51,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T07:01:51.106Z",
+    "exitPrice": 28.36
+  },
+  {
+    "id": "alert_GBIME_1791788170030",
+    "symbol": "GBIME",
+    "ltp": 247,
+    "triggeredAt": "2026-10-12T06:56:10.030Z",
+    "buyZone": {
+      "low": 242,
+      "high": 249,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 242 - 249"
+    },
+    "dominantBrokersText": "Broker 28 & Broker 38",
+    "concentrationPct": 92,
+    "topBuyerBrokers": [
+      {
+        "broker": "28",
+        "name": "Shree Krishna Securities",
+        "buyQty": 59635,
+        "buyAmt": 14563967.2
+      },
+      {
+        "broker": "38",
+        "name": "Dipshikha Dhitopatra Karobar",
+        "buyQty": 1600,
+        "buyAmt": 390464
+      },
+      {
+        "broker": "29",
+        "name": "Trisul Securities",
+        "buyQty": 1000,
+        "buyAmt": 243000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.72x of 20-day avg)",
+    "target1": 284,
+    "target2": 309,
+    "stopLoss": 234,
+    "riskRewardRatio": 2.85,
+    "vwap": 243.91,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T07:01:51.116Z",
+    "exitPrice": 40.51
+  },
+  {
     "id": "holding_GHL_1791787935105",
     "symbol": "GHL",
     "ltp": 270,
@@ -132,8 +523,10 @@
     "target1": 1863,
     "target2": 2025,
     "kitta": 100,
-    "status": "ACTIVE",
-    "isUserHolding": true
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T06:53:51.979Z",
+    "exitPrice": 29.46
   },
   {
     "id": "holding_SHIVM_1791769332180",

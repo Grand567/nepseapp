@@ -490,8 +490,8 @@ async function handleTelegramCommand(text, {
       ``,
       `📌 <b>How to Track a Stock for Exit Alerts:</b>`,
       `• <code>/track SYMBOL [BUY] [SL] [KITTA]</code>`,
-      `  👉 <code>/track SHIVM 512 489 100</code> (custom entry & SL)`,
-      `  👉 <code>/track GHL 270</code> (auto sets 5% SL & Targets)`,
+      `  👉 <code>/track SHIVM 512 486 100</code> (custom entry & SL)`,
+      `  👉 <code>/track GHL 285</code> (auto sets 5% SL & Targets)`,
       `  👉 <code>/track HATHY</code> (uses live market LTP)`,
       `  👉 <code>/track SHIVM, GHL, HATHY</code> (track multiple stocks)`,
       ``,
@@ -525,26 +525,33 @@ async function handleTelegramCommand(text, {
       `──────────────────────────`
     ];
 
-    holdings.forEach((h, i) => {
+    for (let i = 0; i < holdings.length; i++) {
+      const h = holdings[i];
       const sym = h.symbol;
       const buy = Number(h.ltp || 0);
       const sl = Number(h.stopLoss || 0);
       const t1 = Number(h.target1 || 0);
       const t2 = Number(h.target2 || 0);
       const qty = Number(h.kitta || 100);
-      const curPrice = typeof getLatestStockPrice === 'function' ? (getLatestStockPrice(sym) || buy) : buy;
+      let curPrice = buy;
+      if (typeof getLatestStockPrice === 'function') {
+        try {
+          const fetched = await getLatestStockPrice(sym);
+          if (fetched && fetched > 0) curPrice = fetched;
+        } catch (_) {}
+      }
       const pnl = buy > 0 ? (((curPrice - buy) / buy) * 100).toFixed(1) : '0.0';
       const pnlSign = Number(pnl) >= 0 ? `+${pnl}` : pnl;
 
       lines.push(
         `<b>${i + 1}. <code>${sym}</code></b> (${qty} Kitta)`,
-        `• Entry: Rs. ${buy.toFixed(2)} | Current: Rs. ${curPrice.toFixed(2)} (${pnlSign}%)`,
+        `• Entry: Rs. ${buy.toFixed(2)} | Current: Rs. ${Number(curPrice).toFixed(2)} (${pnlSign}%)`,
         `• 🛡️ Stop-Loss: Rs. ${sl.toFixed(2)}`,
         `• 🎯 Target 1: Rs. ${t1.toFixed(2)} | 🚀 Target 2: Rs. ${t2.toFixed(2)}`,
         `• Status: ${h.target1Hit ? '🎯 Target 1 Locked (SL at Breakeven)' : '🟢 Active Monitoring'}`,
         `──────────────────────────`
       );
-    });
+    }
 
     lines.push(`<i>To remove any stock: <code>/remove SYMBOL</code></i>`);
     return await sendTelegramMessage(lines.join('\n'));
