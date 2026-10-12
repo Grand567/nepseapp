@@ -589,12 +589,12 @@ async function handleTelegramCommand(text, {
         if (!realLtp || realLtp <= 0) realLtp = 100; // safety fallback
 
         const sl = Math.round(realLtp * 0.95 * 10) / 10;
-        const t1 = Math.round(realLtp * 1.15 * 10) / 10;
-        const t2 = Math.round(realLtp * 1.25 * 10) / 10;
+        const t1 = Math.round(realLtp * 1.08 * 10) / 10; // +8.0% Pre-Circuit Target
+        const t2 = Math.round(realLtp * 1.145 * 10) / 10; // +14.5% Circuit Ceiling
 
         if (typeof onTrackHolding === 'function') {
           onTrackHolding({ symbol: sym, buyPrice: realLtp, stopLoss: sl, target1: t1, target2: t2, kitta: 100 });
-          trackedItems.push(`• <code>${sym}</code> (Last Close: Rs. ${realLtp}, SL: Rs. ${sl}, T1: Rs. ${t1})`);
+          trackedItems.push(`• <code>${sym}</code> (Close: Rs. ${realLtp}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2})`);
         }
       }
 
@@ -647,8 +647,8 @@ async function handleTelegramCommand(text, {
     // Scenario A: No buy price given (e.g. /track NABIL) -> Use real last closing price
     if (isNaN(inputBuyPrice) || inputBuyPrice <= 0) {
       const sl = Math.round(realLtp * 0.95 * 10) / 10;
-      const t1 = Math.round(realLtp * 1.15 * 10) / 10;
-      const t2 = Math.round(realLtp * 1.25 * 10) / 10;
+      const t1 = Math.round(realLtp * 1.08 * 10) / 10; // +8.0% (Pre-Circuit Momentum Target)
+      const t2 = Math.round(realLtp * 1.145 * 10) / 10; // +14.5% (Near +15% Circuit Ceiling)
 
       if (typeof onTrackHolding === 'function') {
         onTrackHolding({
@@ -667,12 +667,12 @@ async function handleTelegramCommand(text, {
         `──────────────────────────`,
         `📊 <b>Verified Last Close LTP:</b> Rs. ${realLtp.toFixed(2)}`,
         `🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl.toFixed(2)} (-5.0%)`,
-        `🎯 <b>Target 1 (50% Profit):</b> Rs. ${t1.toFixed(2)} (+15.0%)`,
-        `🚀 <b>Target 2 (Full Exit):</b> Rs. ${t2.toFixed(2)} (+25.0%)`,
+        `🎯 <b>Target 1 (50% Profit):</b> Rs. ${t1.toFixed(2)} (+8.0% Pre-Circuit)`,
+        `🚀 <b>Target 2 (Circuit Exit):</b> Rs. ${t2.toFixed(2)} (+14.5% near +15% Circuit Ceiling)`,
         `💼 <b>Position:</b> ${kitta} Shares`,
         `⏳ <b>T+2 Defense:</b> Active`,
         `──────────────────────────`,
-        `<i>Anchored strictly to real NEPSE closing market data.</i>`
+        `<i>Anchored strictly to real NEPSE closing market data & ±15% circuit limits.</i>`
       ].join('\n');
       return await sendTelegramMessage(msg);
     }
@@ -689,8 +689,8 @@ async function handleTelegramCommand(text, {
       // Long-term / old purchase (e.g. bought 7 years ago at 1500 or 100)
       // Stop-loss and targets MUST be anchored to current closing price (realLtp) to avoid nonsensical exits!
       effectiveSl = Math.round(realLtp * 0.95 * 10) / 10;
-      effectiveT1 = Math.round(realLtp * 1.15 * 10) / 10;
-      effectiveT2 = Math.round(realLtp * 1.25 * 10) / 10;
+      effectiveT1 = Math.round(realLtp * 1.08 * 10) / 10; // +8.0% Pre-Circuit Target
+      effectiveT2 = Math.round(realLtp * 1.145 * 10) / 10; // +14.5% near +15% Circuit Ceiling
 
       if (typeof onTrackHolding === 'function') {
         onTrackHolding({
@@ -712,11 +712,11 @@ async function handleTelegramCommand(text, {
         `💼 <b>Historical Cost Basis:</b> Rs. ${inputBuyPrice.toFixed(2)} (${pnlSign}${disparityPct.toFixed(1)}%)`,
         `──────────────────────────`,
         `🛡️ <b>Current Defense Stop Floor:</b> Rs. ${effectiveSl.toFixed(2)} (-5.0% from current LTP)`,
-        `🎯 <b>Swing Target 1:</b> Rs. ${effectiveT1.toFixed(2)} (+15.0% from current LTP)`,
-        `🚀 <b>Swing Target 2:</b> Rs. ${effectiveT2.toFixed(2)} (+25.0% from current LTP)`,
+        `🎯 <b>Target 1:</b> Rs. ${effectiveT1.toFixed(2)} (+8.0% from current LTP)`,
+        `🚀 <b>Target 2 (Circuit Ceiling):</b> Rs. ${effectiveT2.toFixed(2)} (+14.5% near +15% Circuit Ceiling)`,
         `💼 <b>Quantity:</b> ${kitta} Shares`,
         `──────────────────────────`,
-        `💡 <i>Notice: Because this holding was bought at Rs. ${inputBuyPrice.toFixed(2)} and today's last close is Rs. ${realLtp.toFixed(2)}, exit alerts are anchored to CURRENT NEPSE closing data (Rs. ${realLtp.toFixed(2)}) to give you actionable market defense rather than an outdated historical level.</i>`
+        `💡 <i>Notice: Anchored to current NEPSE close (Rs. ${realLtp.toFixed(2)}) within ±15% daily circuit band. Higher multi-week targets (+25%+) require multi-session T+2 swing holds.</i>`
       ].join('\n');
       return await sendTelegramMessage(msg);
     } else {

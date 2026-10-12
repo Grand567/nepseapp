@@ -5,5 +5,12 @@
     "lastTriggeredAt": 1791776572203,
     "lastEvaluatedAt": 1791776572203,
     "historyCount": 1
+  },
+  "SHIVM": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1791779099152,
+    "lastEvaluatedAt": 1791779099152,
+    "historyCount": 1
   }
 }

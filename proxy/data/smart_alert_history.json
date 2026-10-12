@@ -1,5 +1,36 @@
 [
   {
+    "id": "holding_GHL_1791787935105",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T06:52:15.106Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T06:52:15.114Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791787926086",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T06:52:06.086Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T06:52:06.112Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T06:52:11.077Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1791776590599",
     "symbol": "GHL",
     "ltp": 270,

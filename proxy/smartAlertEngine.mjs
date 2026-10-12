@@ -853,8 +853,8 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
   if (!sym) return null;
   const buy = Number(buyPrice || 0);
   const sl = Number(stopLoss || (buy > 0 ? (buy * 0.95).toFixed(1) : 0));
-  const t1 = Number(target1 || (buy > 0 ? (buy * 1.15).toFixed(1) : 0));
-  const t2 = Number(target2 || (buy > 0 ? (buy * 1.25).toFixed(1) : 0));
+  const t1 = Number(target1 || (buy > 0 ? (buy * 1.08).toFixed(1) : 0)); // +8.0% pre-circuit
+  const t2 = Number(target2 || (buy > 0 ? (buy * 1.145).toFixed(1) : 0)); // +14.5% near +15% circuit ceiling
   const qty = Number(kitta || 100);
 
   // Clear out any existing active records for this symbol to prevent duplicate or conflicting monitoring
