@@ -25,7 +25,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getBrokerName, aggregateFloorsheetRows, fetchShareSansarFloorsheet } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
-import { sendTelegramSmartAlert } from './telegramNotifier.mjs';
+import { sendTelegramSmartAlert, sendTelegramExitAlert } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -599,6 +599,56 @@ export async function runMarketAlertScanCycle({
     if (!Array.isArray(stocks) || stocks.length === 0) {
       isScannerRunning = false;
       return;
+    }
+
+    // ── 0. EVALUATE ACTIVE POSITIONS FOR STOP-LOSS BREACH & TARGET PROFIT ──
+    try {
+      let alertHistoryModified = false;
+      for (const alert of alertHistory) {
+        if (alert.status !== 'ACTIVE') continue;
+        const currentStock = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === alert.symbol);
+        if (!currentStock) continue;
+        const currentLtp = Number(currentStock.ltp || currentStock.lastTradedPrice || 0);
+        if (currentLtp <= 0) continue;
+
+        const sl = Number(alert.stopLoss || 0);
+        const t1 = Number(alert.target1 || 0);
+
+        if (sl > 0 && currentLtp <= sl) {
+          alert.status = 'STOPPED_OUT';
+          alert.closedAt = new Date().toISOString();
+          alert.exitPrice = currentLtp;
+          alertHistoryModified = true;
+          console.log(`[SmartAlertEngine] 🚨 STOP-LOSS TRIGGERED for ${alert.symbol}: LTP Rs. ${currentLtp} <= SL Rs. ${sl}`);
+          sendTelegramExitAlert({
+            symbol: alert.symbol,
+            type: 'STOP_LOSS_HIT',
+            ltp: currentLtp,
+            entryPrice: alert.ltp,
+            stopLoss: sl,
+            kitta: alert.kitta || 100
+          }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
+        } else if (t1 > 0 && currentLtp >= t1) {
+          alert.status = 'TARGET1_HIT';
+          alert.closedAt = new Date().toISOString();
+          alert.exitPrice = currentLtp;
+          alertHistoryModified = true;
+          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}`);
+          sendTelegramExitAlert({
+            symbol: alert.symbol,
+            type: 'TARGET_REACHED',
+            ltp: currentLtp,
+            entryPrice: alert.ltp,
+            targetPrice: t1,
+            kitta: alert.kitta || 100
+          }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+        }
+      }
+      if (alertHistoryModified) {
+        saveJson(HISTORY_FILE, alertHistory);
+      }
+    } catch (exitCheckErr) {
+      console.warn('[SmartAlertEngine] Active position exit check notice:', exitCheckErr.message);
     }
 
     // Sort by turnover / volume to prioritize the most liquid 60 stocks

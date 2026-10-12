@@ -352,3 +352,57 @@ export async function sendTelegramPrimePickAlert(winner) {
 
   return await sendTelegramMessage(msg);
 }
+
+/**
+ * Dispatches a Real-Time Exit / Sell / Stop-Loss Protection Alert to Telegram
+ */
+export async function sendTelegramExitAlert({
+  symbol,
+  type = 'STOP_LOSS_HIT', // 'STOP_LOSS_HIT' | 'TARGET_REACHED' | 'INSTITUTIONAL_DISTRIBUTION'
+  ltp,
+  entryPrice,
+  stopLoss,
+  targetPrice,
+  kitta = 100,
+  reason
+}) {
+  const sym = String(symbol || 'STOCK').toUpperCase();
+  const currentPrice = Number(ltp || 0);
+  const entry = Number(entryPrice || currentPrice);
+  const diffPct = entry > 0 ? (((currentPrice - entry) / entry) * 100).toFixed(1) : '0.0';
+  const rupeeChange = Math.round(Math.abs(currentPrice - entry) * (kitta || 100));
+
+  let header = '';
+  let actionText = '';
+  let levelDetail = '';
+
+  if (type === 'STOP_LOSS_HIT') {
+    header = `🚨 <b>DRAVYASHREE CAPITAL DEFENSE: STOP-LOSS HIT</b>`;
+    levelDetail = `🛡️ <b>Stop Floor:</b> Rs. ${stopLoss || currentPrice} | <b>Loss:</b> -${Math.abs(diffPct)}% (~Rs. ${rupeeChange.toLocaleString()})`;
+    actionText = `⚡ <b>ACTION: SELL IMMEDIATELY IN TMS.</b>\nCut loss now to preserve your capital. Never let a -5% planned loss turn into a -30% baghold!`;
+  } else if (type === 'TARGET_REACHED') {
+    header = `🎯 <b>DRAVYASHREE PROFIT LOCK: TARGET REACHED</b>`;
+    levelDetail = `💰 <b>Target Hit:</b> Rs. ${targetPrice || currentPrice} | <b>Profit:</b> +${diffPct}% (+Rs. ${rupeeChange.toLocaleString()})`;
+    actionText = `⚡ <b>ACTION: LOCK IN GAINS IN TMS.</b>\nSell 50% shares to book cash profit. Raise stop-loss on remaining 50% shares to entry price (Rs. ${entry}) for a risk-free runner.`;
+  } else {
+    header = `⚠️ <b>DRAVYASHREE ALERT: INSTITUTIONAL SELLING / CHURN</b>`;
+    levelDetail = `📊 <b>Status:</b> ${reason || 'Heavy broker dumping detected at resistance'}`;
+    actionText = `⚡ <b>ACTION: TIGHTEN STOPS / TAKE PROFITS.</b>\nInstitutional volume is offloading into retail bids. Protect your unrealized gains.`;
+  }
+
+  const msg = [
+    header,
+    `──────────────────────────`,
+    `<b>Scrip:</b> <code>${sym}</code>`,
+    `<b>Live Price:</b> Rs. ${currentPrice.toFixed(2)}`,
+    `<b>Entry Baseline:</b> Rs. ${entry.toFixed(2)}`,
+    levelDetail,
+    `──────────────────────────`,
+    actionText,
+    `──────────────────────────`,
+    `<i>Time: ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu' })} NPT | Capital: Rs. 100,000 Model</i>`
+  ].join('\n');
+
+  return await sendTelegramMessage(msg);
+}
+
