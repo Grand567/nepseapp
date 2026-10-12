@@ -28,6 +28,7 @@ proxy/data/sync_vaults/
 proxy/data/broker_vault/
 proxy/data/push_tokens.json
 proxy/data/telegram_config.json
+proxy/data/telegram_offset.json
 proxy/data/discord_config.json
 proxy/data/*_config.json
 *firebase-service-account*.json

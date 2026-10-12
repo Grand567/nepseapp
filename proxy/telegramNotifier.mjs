@@ -360,11 +360,14 @@ export async function sendTelegramPrimePickAlert(winner) {
  */
 export async function sendTelegramExitAlert({
   symbol,
-  type = 'STOP_LOSS_HIT', // 'STOP_LOSS_HIT' | 'TARGET_REACHED' | 'INSTITUTIONAL_DISTRIBUTION'
+  type = 'STOP_LOSS_HIT', // 'STOP_LOSS_HIT' | 'TARGET_REACHED' | 'TARGET_2_REACHED' | 'INSTITUTIONAL_DISTRIBUTION'
+  targetLevel = 1,
   ltp,
   entryPrice,
   stopLoss,
   targetPrice,
+  target2,
+  raisedStopLoss,
   kitta = 100,
   reason,
   isT2Cleared = true // true if shares in Demat / >= 2 days held
@@ -387,13 +390,32 @@ export async function sendTelegramExitAlert({
     } else {
       actionText = `⚡ <b>ACTION: SELL IMMEDIATELY IN TMS.</b>\nShares are settled in your Demat account. Execute sell order now to cut loss and preserve remaining capital!`;
     }
-  } else if (type === 'TARGET_REACHED') {
-    header = `🎯 <b>DRAVYASHREE PROFIT LOCK: TARGET REACHED</b>`;
-    levelDetail = `💰 <b>Target Hit:</b> Rs. ${targetPrice || currentPrice} | <b>Profit:</b> +${diffPct}% (+Rs. ${rupeeChange.toLocaleString()})`;
+  } else if (type === 'TARGET_2_REACHED' || targetLevel === 2) {
+    header = `🚀 <b>DRAVYASHREE PROFIT LOCK: TARGET 2 REACHED</b>`;
+    levelDetail = `💰 <b>Target 2 Hit:</b> Rs. ${targetPrice || currentPrice} | <b>Total Profit:</b> +${diffPct}% (+Rs. ${rupeeChange.toLocaleString()})`;
     if (!isT2Cleared) {
-      actionText = `⏳ <b>T+2 PROFIT PREPARATION:</b>\nTarget reached while in T+2 clearing. Prepare to lock in 50% gains on your T+2 settlement morning!`;
+      actionText = `⏳ <b>T+2 PROFIT PREPARATION:</b>\nTarget 2 reached while in T+2 clearing. Queue sell order on T+2 settlement morning at 10:30 AM!`;
     } else {
-      actionText = `⚡ <b>ACTION: LOCK IN GAINS IN TMS.</b>\nSell 50% shares to book cash profit. Raise stop-loss on remaining 50% shares to entry price (Rs. ${entry}) for a risk-free runner.`;
+      actionText = [
+        `⚡ <b>ACTION: EXIT REMAINING 50% SHARES IN TMS!</b>`,
+        `• Full swing expansion target reached (+${diffPct}%).`,
+        `• Book all remaining profits, or trail the 9-day EMA if market momentum is parabolic.`
+      ].join('\n');
+    }
+  } else if (type === 'TARGET_REACHED' || targetLevel === 1) {
+    header = `🎯 <b>DRAVYASHREE PROFIT LOCK: TARGET 1 REACHED</b>`;
+    levelDetail = `💰 <b>Target 1 Hit:</b> Rs. ${targetPrice || currentPrice} | <b>Profit:</b> +${diffPct}% (+Rs. ${rupeeChange.toLocaleString()})`;
+    if (!isT2Cleared) {
+      actionText = `⏳ <b>T+2 PROFIT PREPARATION:</b>\nTarget reached while in T+2 clearing. Prepare to lock in 50% gains on your T+2 settlement morning at 10:30 AM!`;
+    } else {
+      const halfQty = Math.floor((kitta || 100) / 2);
+      actionText = [
+        `⚡ <b>ACTION: SELL 50% SHARES IN TMS NOW!</b>`,
+        `• Book cash profit on half your holding (${halfQty} kitta).`,
+        `• <b>Stop-Loss on remaining 50% shares is raised to Entry (Breakeven Rs. ${entry.toFixed(2)})</b>.`,
+        `• <b>Trade is now 100% RISK-FREE!</b> You cannot lose capital on this position.`,
+        target2 ? `• <b>Next Objective:</b> Target 2 at Rs. ${Number(target2).toFixed(2)}` : ''
+      ].filter(Boolean).join('\n');
     }
   } else {
     header = `⚠️ <b>DRAVYASHREE ALERT: INSTITUTIONAL SELLING / CHURN</b>`;
@@ -416,4 +438,283 @@ export async function sendTelegramExitAlert({
 
   return await sendTelegramMessage(msg);
 }
+
+// ── 5. TWO-WAY INTERACTIVE TELEGRAM COMMAND LISTENER ────────────────────────
+const OFFSET_FILE = path.join(DATA_DIR, 'telegram_offset.json');
+
+function loadLastUpdateId() {
+  try {
+    if (fs.existsSync(OFFSET_FILE)) {
+      const data = JSON.parse(fs.readFileSync(OFFSET_FILE, 'utf8'));
+      return data.lastUpdateId || 0;
+    }
+  } catch (_) {}
+  return 0;
+}
+
+function saveLastUpdateId(lastUpdateId) {
+  try {
+    fs.writeFileSync(OFFSET_FILE, JSON.stringify({ lastUpdateId, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+let isPollingInProgress = false;
+
+/**
+ * Handles incoming chat commands sent by the user directly to the Telegram bot
+ */
+async function handleTelegramCommand(text, {
+  chatId,
+  onTrackHolding,
+  onUntrackHolding,
+  onGetTrackedHoldings,
+  getLatestStockPrice
+}) {
+  const raw = text.trim();
+  const lower = raw.toLowerCase();
+
+  // 1. HELP / START
+  if (lower === '/start' || lower === '/help' || lower === 'help' || lower === 'start') {
+    const helpMsg = [
+      `🤖 <b>DRAVYASHREE NEPSE TRADING ASSISTANT</b>`,
+      `──────────────────────────`,
+      `I monitor your holdings every 60s and send instant lockscreen exit alerts for Stop-Loss, Target 1, and Target 2!`,
+      ``,
+      `📌 <b>How to Track a Stock for Exit Alerts:</b>`,
+      `• <code>/track SYMBOL [BUY] [SL] [KITTA]</code>`,
+      `  👉 <code>/track SHIVM 512 489 100</code> (custom entry & SL)`,
+      `  👉 <code>/track GHL 270</code> (auto sets 5% SL & Targets)`,
+      `  👉 <code>/track HATHY</code> (uses live market LTP)`,
+      `  👉 <code>/track SHIVM, GHL, HATHY</code> (track multiple stocks)`,
+      ``,
+      `📌 <b>Management Commands:</b>`,
+      `• <code>/list</code> or <code>/status</code>: View all monitored stocks & live levels`,
+      `• <code>/remove SYMBOL</code>: Stop exit alerts for a stock`,
+      `• <code>/ping</code>: Verify server connection`,
+      `──────────────────────────`,
+      `<i>All alerts strictly factor in NEPSE T+2 settlement rules.</i>`
+    ].join('\n');
+    return await sendTelegramMessage(helpMsg);
+  }
+
+  // 2. PING
+  if (lower === '/ping' || lower === 'ping') {
+    return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
+  }
+
+  // 3. LIST / STATUS
+  if (lower === '/list' || lower === '/status' || lower === '/holdings' || lower === 'list' || lower === 'status' || lower === 'holdings') {
+    if (typeof onGetTrackedHoldings !== 'function') {
+      return await sendTelegramMessage(`ℹ️ Holdings engine initializing. Try again shortly.`);
+    }
+    const holdings = onGetTrackedHoldings();
+    if (!holdings || holdings.length === 0) {
+      return await sendTelegramMessage(`📭 <b>No stocks actively tracked right now.</b>\nSend <code>/track SYMBOL [BUY_PRICE] [STOP_LOSS]</code> to start monitoring!`);
+    }
+
+    const lines = [
+      `📋 <b>Actively Monitored Holdings (${holdings.length})</b>`,
+      `──────────────────────────`
+    ];
+
+    holdings.forEach((h, i) => {
+      const sym = h.symbol;
+      const buy = Number(h.ltp || 0);
+      const sl = Number(h.stopLoss || 0);
+      const t1 = Number(h.target1 || 0);
+      const t2 = Number(h.target2 || 0);
+      const qty = Number(h.kitta || 100);
+      const curPrice = typeof getLatestStockPrice === 'function' ? (getLatestStockPrice(sym) || buy) : buy;
+      const pnl = buy > 0 ? (((curPrice - buy) / buy) * 100).toFixed(1) : '0.0';
+      const pnlSign = Number(pnl) >= 0 ? `+${pnl}` : pnl;
+
+      lines.push(
+        `<b>${i + 1}. <code>${sym}</code></b> (${qty} Kitta)`,
+        `• Entry: Rs. ${buy.toFixed(2)} | Current: Rs. ${curPrice.toFixed(2)} (${pnlSign}%)`,
+        `• 🛡️ Stop-Loss: Rs. ${sl.toFixed(2)}`,
+        `• 🎯 Target 1: Rs. ${t1.toFixed(2)} | 🚀 Target 2: Rs. ${t2.toFixed(2)}`,
+        `• Status: ${h.target1Hit ? '🎯 Target 1 Locked (SL at Breakeven)' : '🟢 Active Monitoring'}`,
+        `──────────────────────────`
+      );
+    });
+
+    lines.push(`<i>To remove any stock: <code>/remove SYMBOL</code></i>`);
+    return await sendTelegramMessage(lines.join('\n'));
+  }
+
+  // 4. UNTRACK / REMOVE
+  const removeMatch = raw.match(/^\/?(remove|untrack|delete)\s+(.+)$/i);
+  if (removeMatch) {
+    const rawSyms = removeMatch[2].split(/[, ]+/).filter(Boolean);
+    const results = [];
+    for (const s of rawSyms) {
+      const cleanSym = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!cleanSym) continue;
+      const removed = typeof onUntrackHolding === 'function' ? onUntrackHolding(cleanSym) : false;
+      if (removed) {
+        results.push(`✅ Stopped monitoring <code>${cleanSym}</code>.`);
+      } else {
+        results.push(`ℹ️ <code>${cleanSym}</code> was not in active tracked list.`);
+      }
+    }
+    return await sendTelegramMessage(results.join('\n') || 'Please specify a symbol, e.g. <code>/remove SHIVM</code>');
+  }
+
+  // 5. TRACK
+  const trackMatch = raw.match(/^\/?track\s+(.+)$/i);
+  if (trackMatch) {
+    const content = trackMatch[1].trim();
+
+    // Multi-stock comma format: e.g. /track SHIVM, GHL, HATHY
+    if (content.includes(',')) {
+      const symList = content.split(',').map(s => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+      const trackedItems = [];
+      for (const sym of symList) {
+        let liveLtp = typeof getLatestStockPrice === 'function' ? getLatestStockPrice(sym) : 0;
+        if (!liveLtp || liveLtp <= 0) liveLtp = 100; // fallback baseline
+        const sl = Math.round(liveLtp * 0.95 * 10) / 10;
+        const t1 = Math.round(liveLtp * 1.15 * 10) / 10;
+        const t2 = Math.round(liveLtp * 1.25 * 10) / 10;
+        if (typeof onTrackHolding === 'function') {
+          onTrackHolding({ symbol: sym, buyPrice: liveLtp, stopLoss: sl, target1: t1, target2: t2, kitta: 100 });
+          trackedItems.push(`• <code>${sym}</code> (LTP: Rs. ${liveLtp}, SL: Rs. ${sl}, T1: Rs. ${t1})`);
+        }
+      }
+      const resp = [
+        `✅ <b>Mass Tracking Armed (${trackedItems.length} Stocks)</b>`,
+        `──────────────────────────`,
+        ...trackedItems,
+        `──────────────────────────`,
+        `<i>I will monitor each tick and alert you on Stop-Loss, Target 1, or Target 2!</i>`
+      ].join('\n');
+      return await sendTelegramMessage(resp);
+    }
+
+    // Single stock format: /track SYMBOL [BUY] [SL] [KITTA]
+    const parts = content.split(/\s+/).filter(Boolean);
+    const sym = parts[0]?.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!sym) {
+      return await sendTelegramMessage(`⚠️ Please specify symbol: e.g. <code>/track SHIVM 512 489</code>`);
+    }
+
+    let buyPrice = parseFloat(parts[1]);
+    let stopLoss = parseFloat(parts[2]);
+    let kitta = parseInt(parts[3], 10) || 100;
+
+    // Auto-resolve buyPrice from live market if omitted
+    if (isNaN(buyPrice) || buyPrice <= 0) {
+      const livePrice = typeof getLatestStockPrice === 'function' ? getLatestStockPrice(sym) : 0;
+      if (livePrice && livePrice > 0) {
+        buyPrice = livePrice;
+      } else {
+        return await sendTelegramMessage(`⚠️ Could not detect live price for <code>${sym}</code>. Please specify your buy price:\n👉 <code>/track ${sym} 512 489</code>`);
+      }
+    }
+
+    // Auto-calculate 5% Stop-Loss if omitted
+    if (isNaN(stopLoss) || stopLoss <= 0) {
+      stopLoss = Math.round(buyPrice * 0.95 * 10) / 10;
+    }
+
+    // Targets
+    const target1 = Math.round(buyPrice * 1.15 * 10) / 10; // +15%
+    const target2 = Math.round(buyPrice * 1.25 * 10) / 10; // +25%
+
+    if (typeof onTrackHolding === 'function') {
+      onTrackHolding({
+        symbol: sym,
+        buyPrice,
+        stopLoss,
+        target1,
+        target2,
+        kitta
+      });
+    }
+
+    const slDiff = (((buyPrice - stopLoss) / buyPrice) * 100).toFixed(1);
+    const t1Diff = (((target1 - buyPrice) / buyPrice) * 100).toFixed(1);
+    const t2Diff = (((target2 - buyPrice) / buyPrice) * 100).toFixed(1);
+
+    const confirmationMsg = [
+      `✅ <b>Now Tracking: <code>${sym}</code></b>`,
+      `──────────────────────────`,
+      `• <b>Entry Price:</b> Rs. ${buyPrice.toFixed(2)}`,
+      `• 🛡️ <b>Stop-Loss Floor:</b> Rs. ${stopLoss.toFixed(2)} (-${slDiff}%)`,
+      `• 🎯 <b>Target 1 (50% Profit):</b> Rs. ${target1.toFixed(2)} (+${t1Diff}%)`,
+      `• 🚀 <b>Target 2 (Full Exit):</b> Rs. ${target2.toFixed(2)} (+${t2Diff}%)`,
+      `• 💼 <b>Quantity:</b> ${kitta} Shares`,
+      `• ⏳ <b>NEPSE Settlement:</b> T+2 Defense Armed`,
+      `──────────────────────────`,
+      `<i>You will receive an instant lockscreen alert the moment price touches Stop-Loss, Target 1, or Target 2!</i>`
+    ].join('\n');
+
+    return await sendTelegramMessage(confirmationMsg);
+  }
+
+  // Friendly fallback for unrecognized commands
+  if (raw.startsWith('/')) {
+    return await sendTelegramMessage(`❓ Unrecognized command: <code>${raw}</code>\nType <code>/help</code> to see available commands.`);
+  }
+}
+
+/**
+ * Polling worker to fetch and process incoming Telegram commands
+ */
+export async function pollIncomingTelegramCommands({
+  onTrackHolding,
+  onUntrackHolding,
+  onGetTrackedHoldings,
+  getLatestStockPrice
+} = {}) {
+  if (isPollingInProgress) return;
+  const cfg = loadConfig();
+  if (!cfg.enabled || !cfg.botToken) return;
+
+  isPollingInProgress = true;
+  try {
+    let lastUpdateId = loadLastUpdateId();
+    const payload = lastUpdateId > 0 ? { offset: lastUpdateId + 1, timeout: 0 } : { timeout: 0 };
+    const data = await callBotApi(cfg.botToken, 'getUpdates', payload);
+
+    if (!data.ok || !Array.isArray(data.result) || data.result.length === 0) {
+      return;
+    }
+
+    const updates = data.result;
+    for (const u of updates) {
+      const uId = u.update_id;
+      if (uId > lastUpdateId) {
+        lastUpdateId = uId;
+      }
+
+      const msg = u.message || u.edited_message || u.channel_post;
+      if (!msg || !msg.text) continue;
+
+      const chatId = String(msg.chat?.id || '');
+      // If user chat_id is configured, only respond to this authorized user
+      if (cfg.chatId && chatId !== cfg.chatId) {
+        console.warn(`[TelegramNotifier] Ignored command from unauthorized chat ID: ${chatId}`);
+        continue;
+      }
+
+      const text = String(msg.text).trim();
+      console.log(`[TelegramNotifier] 📩 Incoming user command: "${text}" from ${msg.from?.first_name || 'User'}`);
+
+      await handleTelegramCommand(text, {
+        chatId,
+        onTrackHolding,
+        onUntrackHolding,
+        onGetTrackedHoldings,
+        getLatestStockPrice
+      });
+    }
+
+    saveLastUpdateId(lastUpdateId);
+  } catch (err) {
+    console.warn('[TelegramNotifier] Error in pollIncomingTelegramCommands:', err.message);
+  } finally {
+    isPollingInProgress = false;
+  }
+}
+
 

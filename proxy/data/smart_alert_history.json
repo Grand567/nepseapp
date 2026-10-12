@@ -1,5 +1,182 @@
 [
   {
+    "id": "holding_SHIVM_1791769332180",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T01:42:12.180Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T01:42:12.205Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T01:42:15.682Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791769338953",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T01:42:18.953Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T01:42:18.961Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "alert_GHL_1791769320941",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-12T01:42:00.941Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "holding_GHL_1791769287882",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T01:41:27.882Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T01:41:27.891Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791769281146",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T01:41:21.146Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T01:41:21.167Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T01:41:24.509Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_SHIVM_1791769232308",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-12T01:40:32.308Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-12T01:40:32.340Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-12T01:40:37.608Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791769240861",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-12T01:40:40.861Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-12T01:40:40.869Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "alert_GHL_1791768889120",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-12T01:34:49.120Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.874Z",
+    "exitPrice": 255
+  },
+  {
     "id": "alert_GHL_1791768295271",
     "symbol": "GHL",
     "ltp": 269.5,
@@ -38,7 +215,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.881Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791768295248",
@@ -79,7 +258,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.885Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791764861053",
@@ -120,7 +301,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.889Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791764861010",
@@ -161,7 +344,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.892Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791736223022",
@@ -202,7 +387,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.898Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791736223013",
@@ -243,7 +430,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.901Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791733918622",
@@ -284,7 +473,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.904Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791733918615",
@@ -325,7 +516,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.906Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791732894159",
@@ -366,7 +559,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.907Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791732894149",
@@ -407,7 +602,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.909Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791704228433",
@@ -448,7 +645,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.910Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791704228430",
@@ -489,7 +688,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.913Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791701705879",
@@ -530,7 +731,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.916Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791701705876",
@@ -571,7 +774,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.918Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791701119939",
@@ -612,7 +817,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.919Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791701119933",
@@ -653,7 +860,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.921Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791700212574",
@@ -694,7 +903,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.922Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791700212571",
@@ -735,7 +946,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.925Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791698838661",
@@ -776,7 +989,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.926Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791698838658",
@@ -817,7 +1032,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.928Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791629587972",
@@ -858,7 +1075,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.934Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791629587968",
@@ -899,7 +1118,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.935Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791627119432",
@@ -940,7 +1161,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.937Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791627119429",
@@ -981,7 +1204,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.938Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791626288324",
@@ -1022,7 +1247,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.939Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791626288320",
@@ -1063,7 +1290,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.941Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791626228964",
@@ -1104,7 +1333,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.942Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791626228960",
@@ -1145,7 +1376,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.950Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791624678711",
@@ -1186,7 +1419,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.951Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791624678708",
@@ -1227,7 +1462,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.952Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791624426260",
@@ -1268,7 +1505,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.953Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791624426257",
@@ -1309,7 +1548,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.955Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623978359",
@@ -1350,7 +1591,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.956Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623978356",
@@ -1391,7 +1634,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.960Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623691247",
@@ -1432,7 +1677,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.961Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623691242",
@@ -1473,7 +1720,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.963Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623345410",
@@ -1514,7 +1763,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.965Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791623345407",
@@ -1555,7 +1806,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.965Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791471682671",
@@ -1596,7 +1849,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.966Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791471682667",
@@ -1637,7 +1892,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.967Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791468678392",
@@ -1678,7 +1935,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.968Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791468678389",
@@ -1719,7 +1978,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.969Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791335918075",
@@ -1760,7 +2021,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.970Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791335918072",
@@ -1801,7 +2064,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.971Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791280925401",
@@ -1842,7 +2107,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.972Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791280925398",
@@ -1883,7 +2150,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.975Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791276671626",
@@ -1924,7 +2193,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.976Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791276671622",
@@ -1965,7 +2236,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.977Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791274293644",
@@ -2006,7 +2279,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.980Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791274293641",
@@ -2047,7 +2322,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.981Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791272091506",
@@ -2088,7 +2365,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.982Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791272091502",
@@ -2129,7 +2408,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.983Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791272055030",
@@ -2170,7 +2451,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.984Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791272055026",
@@ -2211,7 +2494,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.985Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791270143600",
@@ -2252,7 +2537,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.987Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791270143597",
@@ -2293,7 +2580,9 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.988Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791269199988",
@@ -2334,7 +2623,9 @@
     "stopLoss": 258,
     "riskRewardRatio": 3.52,
     "vwap": 270,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.990Z",
+    "exitPrice": 255
   },
   {
     "id": "alert_GHL_1791269199985",
@@ -2375,6 +2666,8 @@
     "stopLoss": 259,
     "riskRewardRatio": 3.42,
     "vwap": 270.11,
-    "status": "ACTIVE"
+    "status": "STOPPED_OUT",
+    "closedAt": "2026-10-12T01:40:40.991Z",
+    "exitPrice": 255
   }
 ]

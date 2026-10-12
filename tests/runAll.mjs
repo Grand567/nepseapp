@@ -17,11 +17,12 @@ const testFiles = [
   'jBatchAdvancedEngines.test.mjs',
   'kWhaleDailyArchive.test.mjs',
   'testSmartAlertPipeline.mjs',
+  'testTelegramExitAndTracking.mjs',
   'auditCrossModuleConsistency.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (13 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (14 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

@@ -604,8 +604,12 @@ export async function runMarketAlertScanCycle({
     // ── 0. EVALUATE ACTIVE POSITIONS FOR STOP-LOSS BREACH & TARGET PROFIT ──
     try {
       let alertHistoryModified = false;
+      const evaluatedSymbolsThisCycle = new Set();
       for (const alert of alertHistory) {
-        if (alert.status !== 'ACTIVE') continue;
+        if (alert.status !== 'ACTIVE' && alert.status !== 'ACTIVE_T2') continue;
+        if (evaluatedSymbolsThisCycle.has(alert.symbol)) continue;
+        evaluatedSymbolsThisCycle.add(alert.symbol);
+
         const currentStock = stocks.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === alert.symbol);
         if (!currentStock) continue;
         const currentLtp = Number(currentStock.ltp || currentStock.lastTradedPrice || 0);
@@ -613,6 +617,7 @@ export async function runMarketAlertScanCycle({
 
         const sl = Number(alert.stopLoss || 0);
         const t1 = Number(alert.target1 || 0);
+        const t2 = Number(alert.target2 || 0);
 
         const entryTime = new Date(alert.triggeredAt || Date.now()).getTime();
         const daysHeld = Math.floor((Date.now() - entryTime) / (24 * 60 * 60 * 1000));
@@ -633,18 +638,41 @@ export async function runMarketAlertScanCycle({
             kitta: alert.kitta || 100,
             isT2Cleared
           }).catch(err => console.warn('[SmartAlertEngine] Exit alert dispatch notice:', err.message));
-        } else if (t1 > 0 && currentLtp >= t1) {
-          alert.status = 'TARGET1_HIT';
+        } else if (t2 > 0 && currentLtp >= t2 && !alert.target2Hit) {
+          // TARGET 2 HIT: Full swing profit achieved
+          alert.target2Hit = true;
+          alert.status = 'TARGET2_HIT';
           alert.closedAt = new Date().toISOString();
           alert.exitPrice = currentLtp;
           alertHistoryModified = true;
-          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1} (T+2 Cleared: ${isT2Cleared})`);
+          console.log(`[SmartAlertEngine] 🚀 TARGET 2 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T2 Rs. ${t2} (T+2 Cleared: ${isT2Cleared})`);
+          sendTelegramExitAlert({
+            symbol: alert.symbol,
+            type: 'TARGET_2_REACHED',
+            targetLevel: 2,
+            ltp: currentLtp,
+            entryPrice: alert.ltp,
+            targetPrice: t2,
+            kitta: alert.kitta || 100,
+            isT2Cleared
+          }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
+        } else if (t1 > 0 && currentLtp >= t1 && !alert.target1Hit) {
+          // TARGET 1 HIT: Sell 50% & Move Stop-Loss to Breakeven
+          alert.target1Hit = true;
+          alert.target1HitAt = new Date().toISOString();
+          alert.stopLoss = alert.ltp; // Move SL to Entry (Breakeven) for 100% risk elimination!
+          alert.status = 'ACTIVE_T2'; // Keep active to monitor Target 2!
+          alertHistoryModified = true;
+          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}. SL moved to breakeven Rs. ${alert.ltp} (T+2 Cleared: ${isT2Cleared})`);
           sendTelegramExitAlert({
             symbol: alert.symbol,
             type: 'TARGET_REACHED',
+            targetLevel: 1,
             ltp: currentLtp,
             entryPrice: alert.ltp,
             targetPrice: t1,
+            target2: t2,
+            raisedStopLoss: alert.ltp,
             kitta: alert.kitta || 100,
             isT2Cleared
           }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
@@ -822,7 +850,7 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
   const t2 = Number(target2 || (buy > 0 ? (buy * 1.25).toFixed(1) : 0));
   const qty = Number(kitta || 100);
 
-  const existingIdx = alertHistory.findIndex(a => a.symbol === sym && a.status === 'ACTIVE');
+  const existingIdx = alertHistory.findIndex(a => a.symbol === sym && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'));
   const alertItem = {
     id: `holding_${sym}_${Date.now()}`,
     symbol: sym,
@@ -843,12 +871,30 @@ export function trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target
   }
 
   saveJson(HISTORY_FILE, alertHistory);
-  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, SL: Rs. ${sl}, T1: Rs. ${t1}, Kitta: ${qty})`);
+  console.log(`[SmartAlertEngine] 📋 Holding registered for active monitoring: ${sym} (Buy: Rs. ${buy}, SL: Rs. ${sl}, T1: Rs. ${t1}, T2: Rs. ${t2}, Kitta: ${qty})`);
   return alertItem;
 }
 
+export function untrackCustomHolding(symbol) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return false;
+  let removed = false;
+  alertHistory = alertHistory.filter(a => {
+    if (a.symbol === sym && a.isUserHolding && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2')) {
+      removed = true;
+      return false;
+    }
+    return true;
+  });
+  if (removed) {
+    saveJson(HISTORY_FILE, alertHistory);
+    console.log(`[SmartAlertEngine] 🗑️ Untracked user holding: ${sym}`);
+  }
+  return removed;
+}
+
 export function getUserTrackedHoldings() {
-  return alertHistory.filter(a => a.isUserHolding && a.status === 'ACTIVE');
+  return alertHistory.filter(a => a.isUserHolding && (a.status === 'ACTIVE' || a.status === 'ACTIVE_T2'));
 }
 
 

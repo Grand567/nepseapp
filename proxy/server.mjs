@@ -26,6 +26,7 @@ import {
   testTriggerAlert, 
   subscribeAlertEvents,
   trackCustomHolding,
+  untrackCustomHolding,
   getUserTrackedHoldings
 } from './smartAlertEngine.mjs';
 import { 
@@ -8353,6 +8354,17 @@ app.post('/api/portfolio/track-holding', (req, res) => {
     if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
     const item = trackCustomHolding({ symbol, buyPrice, stopLoss, target1, target2, kitta });
     res.json({ success: true, message: `Active Telegram monitoring armed for ${symbol}`, item });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/portfolio/untrack-holding', (req, res) => {
+  try {
+    const { symbol } = req.body || {};
+    if (!symbol) return res.status(400).json({ success: false, error: 'Symbol required' });
+    const removed = untrackCustomHolding(symbol);
+    res.json({ success: removed, message: removed ? `Untracked ${symbol}` : `Holding ${symbol} not found in active list` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -3,7 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
-import { sendTelegramPrimePickAlert } from './telegramNotifier.mjs';
+import { 
+  sendTelegramPrimePickAlert, 
+  pollIncomingTelegramCommands 
+} from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -289,7 +292,12 @@ export async function runPostMarketCloseAnalysis(force = false) {
   }
 }
 
-import { runMarketAlertScanCycle } from './smartAlertEngine.mjs';
+import { 
+  runMarketAlertScanCycle, 
+  trackCustomHolding, 
+  untrackCustomHolding, 
+  getUserTrackedHoldings 
+} from './smartAlertEngine.mjs';
 
 // Start workers
 export function startWorkers() {
@@ -333,7 +341,7 @@ export function startWorkers() {
     }
   }, 60 * 1000);
 
-  // Check every 5 minutes: after 3:15 PM NPT (915 mins), run post-market close analysis ONCE
+  // 2. Check every 5 minutes: after 3:15 PM NPT (915 mins), run post-market close analysis ONCE
   setInterval(() => {
     try {
       const status = getDetailedMarketStatus();
@@ -351,7 +359,34 @@ export function startWorkers() {
     } catch (_) {}
   }, 5 * 60 * 1000);
 
-  console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Post-Market Prime Pick Scanner).');
+  // 3. Two-Way Interactive Telegram Command Poller:
+  // Polls Telegram every 4 seconds for user messages & commands (/track, /remove, /list, /status, /help).
+  // Allows user to chat with the bot and manage personal exit alerts on the fly!
+  setInterval(() => {
+    try {
+      pollIncomingTelegramCommands({
+        onTrackHolding: trackCustomHolding,
+        onUntrackHolding: untrackCustomHolding,
+        onGetTrackedHoldings: getUserTrackedHoldings,
+        getLatestStockPrice: (sym) => {
+          try {
+            const clean = String(sym || '').toUpperCase().trim();
+            const cached = _getCache ? (_getCache('today-prices') || _getCache('market-summary')) : null;
+            const list = Array.isArray(cached) ? cached : (cached?.data || cached?.stocks || []);
+            const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === clean);
+            if (found) {
+              return Number(found.ltp || found.lastTradedPrice || found.closePrice || 0);
+            }
+          } catch (_) {}
+          return 0;
+        }
+      });
+    } catch (cmdErr) {
+      console.warn('[TelegramWorker] Command polling notice:', cmdErr.message);
+    }
+  }, 4000);
+
+  console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Prime Pick Scanner + Telegram Bot Command Poller).');
 }
 
 
