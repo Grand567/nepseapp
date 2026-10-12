@@ -241,7 +241,7 @@ export default function PullToRefresh({
       {/* ── Content Wrapper ── */}
       <div
         style={{
-          transform: `translateY(${pullDistance}px)`,
+          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : 'none',
           transition: isPulling ? 'none' : 'transform 0.28s cubic-bezier(0.33, 1, 0.68, 1)'
         }}
       >

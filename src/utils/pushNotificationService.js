@@ -19,9 +19,10 @@ const PUSH_REGISTERED_KEY = 'dravyashree_fcm_token_registered';
 
 const getApiBase = () => {
   if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return ''; // Vite proxy forwards /api to backend
+    // If native Capacitor platform (Android APK), WebView is served at localhost, but backend is remote!
+    const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+    if (!isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return ''; // Vite proxy forwards /api to backend in desktop browser dev mode
     }
   }
   return import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
@@ -50,6 +51,20 @@ export async function initPushNotifications() {
 
       // 2. Register with Apple / Google APNs / FCM
       await PushNotifications.register();
+
+      // Create high-importance Android Notification Channel so status bar notifications appear
+      try {
+        await PushNotifications.createChannel({
+          id: 'smart-alerts',
+          name: 'Dravyashree Smart Alerts',
+          description: 'Institutional Accumulation, Breakout & Distribution Trap Alerts',
+          importance: 5,
+          visibility: 1,
+          vibration: true
+        });
+      } catch (chErr) {
+        console.warn('[PushService] Channel creation notice:', chErr);
+      }
 
       // 3. Listen for token registration
       PushNotifications.addListener('registration', async (tokenObj) => {

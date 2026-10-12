@@ -58,8 +58,8 @@ export function PromoterSharesService() {
             name: item.name,
             sector: item.sector,
             promoterHolding: item.promoterRatio,
-            ltp: 300,
-            sharesOut: item.totalShares ? parseInt(String(item.totalShares).replace(/,/g, ''), 10) / 1e6 : 10
+            ltp: Number(item.ltp || item.close || 0),
+            sharesOut: item.totalShares ? parseInt(String(item.totalShares).replace(/,/g, ''), 10) / 1e6 : 0
           });
         }
       });
@@ -67,30 +67,23 @@ export function PromoterSharesService() {
       const processed: PromoterStock[] = combinedStocks.map((s) => {
         const sym = (s.symbol || '').toUpperCase();
         const apiItem = lockinMap.get(sym);
-        const ltp = Number(s.ltp || s.closePrice || 350);
+        const ltp = Number(s.ltp || s.closePrice || 0);
         const sec = apiItem?.sector || s.sector || 'Others';
 
-        // Authentic promoter holding: prioritize official filing disclosures, then live stock holding, then SEBON statutory baseline
-        let promoterPct = 51;
+        // Authentic promoter holding: prioritize official filing disclosures, then live stock holding
+        let promoterPct: number | null = null;
         if (apiItem?.promoterRatio != null) {
           promoterPct = Number(apiItem.promoterRatio);
         } else if (s.promoterHolding && Number(s.promoterHolding) > 0) {
           promoterPct = Number(s.promoterHolding);
-        } else {
-          // Statutory regulatory benchmarks per SEBON sector guidelines:
-          if (sec.toLowerCase().includes('hydro')) promoterPct = 70;
-          else if (sec.toLowerCase().includes('insurance')) promoterPct = 70;
-          else if (sec.toLowerCase().includes('manufacturing')) promoterPct = 70;
-          else if (sec.toLowerCase().includes('mutual')) promoterPct = 15;
-          else promoterPct = 51;
         }
 
-        promoterPct = Math.min(95, Math.max(10, +promoterPct.toFixed(1)));
-        const publicPct = +(100 - promoterPct).toFixed(1);
+        const validPromoterPct = promoterPct != null ? Math.min(95, Math.max(5, +promoterPct.toFixed(1))) : 51;
+        const publicPct = +(100 - validPromoterPct).toFixed(1);
 
-        const sharesM = Number(s.sharesOut || (apiItem?.totalShares ? parseInt(String(apiItem.totalShares).replace(/,/g, ''), 10) / 1e6 : 12));
+        const sharesM = Number(s.sharesOut || (apiItem?.totalShares ? parseInt(String(apiItem.totalShares).replace(/,/g, ''), 10) / 1e6 : (s.listedShares ? s.listedShares / 1e6 : 0)));
         const totalShares = Math.round(sharesM * 1e6);
-        const promoterShares = Math.round(totalShares * (promoterPct / 100));
+        const promoterShares = Math.round(totalShares * (validPromoterPct / 100));
         const publicShares = totalShares - promoterShares;
 
         // Authentic lock-in tracking from verified filings

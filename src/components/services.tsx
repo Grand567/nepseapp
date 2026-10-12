@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock } from 'lucide-react';
+import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap } from 'lucide-react';
 import { useBackHandler } from '../context/NavigationContext';
 import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
@@ -18,6 +18,7 @@ import {
   fetchNewsArticle, fetchBrokerHeatmap, fetchMarketDepth,
 } from '../utils/servicesApi';
 import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore, calculateDecisionProbabilityIndex } from '../utils/quantEngine';
+import { calculateStealthAccumulationScore, detectSyndicateCluster, type SyndicateClusterAnalysis } from '../utils/accumulationDistributionEngine';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
@@ -116,7 +117,11 @@ function computeStockTimeframeMetrics(stock: any) {
   const sym = String(stock.symbol || '').toUpperCase().trim();
   const cachedHist = stock.history || stock.candles || stock.priceHistory || (sym ? getCachedRealPriceHistory(sym) : null);
 
-  const baseStealth = Number(stock.stealthAccumulation) || Math.round(35 + pos52 * 40);
+  const baseStealth = Number(stock.stealthAccumulation) || calculateStealthAccumulationScore(
+    stock,
+    Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
+    undefined // no broker flow at this level
+  );
   const baseRsi = Number(stock.rsi) || resolveDynamicStockRSI(stock);
   const baseTech = Number(stock.technicalScore) || calculateCompositeTechnicalScore(stock).normalizedScore;
 
@@ -154,9 +159,23 @@ function computeStockTimeframeMetrics(stock: any) {
 
       const closes = candles.slice(Math.max(0, n - k - 14)).map((c: any) => Number(c.close || 0)).filter((v: number) => v > 0);
       const rsi = closes.length >= 15 ? calcWilderRsi(closes) : baseRsi;
-      const stealth = Math.max(10, Math.min(95, Math.round(baseStealth + pChange * 0.4)));
-      const tech = Math.max(10, Math.min(95, Math.round(baseTech + (rsi - 50) * 0.5 + pChange * 0.3)));
       const sliceZScore = avgVolInSlice > 0 ? Number(((dailyVol - avgVolInSlice) / Math.max(1, avgVolInSlice * 0.5)).toFixed(2)) : dailyZScore;
+      const sliceProxy = {
+        ...stock,
+        ltp: latestClose,
+        high,
+        low,
+        open: startPrice,
+        pChange,
+        volumeSurgeRatio,
+        volumeZScore: sliceZScore
+      };
+      const stealth = calculateStealthAccumulationScore(
+        sliceProxy,
+        slice.length >= 5 ? slice : candles.slice(-25),
+        undefined
+      );
+      const tech = Math.max(10, Math.min(95, Math.round(baseTech + (rsi - 50) * 0.5 + pChange * 0.3)));
 
       return {
         pChange,
@@ -200,6 +219,16 @@ function computeStockTimeframeMetrics(stock: any) {
   }
 
   // Pure deterministic exchange-calibrated calculation when candles are pending fetch (ZERO random noise)
+  // Helper: stealth decreases as price moves up sharply (distribution),
+  //         stealth is highest during flat/slight down consolidation
+  const computeFallbackStealth = (base: number, ret: number) => {
+    if (ret > 10) return Math.max(10, Math.round(base - (ret - 10) * 1.5));  // markup phase, reduce stealth
+    if (ret > 5)  return Math.max(15, Math.round(base - (ret - 5) * 0.8));   // slight markup
+    if (ret >= -2 && ret <= 5) return Math.min(92, Math.round(base + 5));    // consolidation = stealth sweet spot
+    if (ret < -5) return Math.max(10, Math.round(base - (Math.abs(ret) - 5) * 1.0)); // dump, reduce stealth
+    return base;
+  };
+
   // 1W (5 trading days)
   const wRet = +((dailyP * 2.2) + (pos52 - 0.5) * 4.0).toFixed(2);
   const wVol = Math.round(dailyVol * 5);
@@ -207,7 +236,7 @@ function computeStockTimeframeMetrics(stock: any) {
   const wHigh = +(ltp * (1 + Math.max(0.015, wRet > 0 ? (wRet * 0.01) : 0.02))).toFixed(1);
   const wLow = +(ltp * (1 - Math.max(0.015, wRet < 0 ? (Math.abs(wRet) * 0.01) : 0.02))).toFixed(1);
   const wBreakout = wRet > 4.5 && pos52 > 0.65;
-  const wStealth = Math.max(10, Math.min(95, Math.round(baseStealth + (wRet * 0.8))));
+  const wStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, wRet)));
   const wRsi = +(Math.max(15, Math.min(88, baseRsi + (wRet * 0.6))).toFixed(1));
   const wTech = Math.max(15, Math.min(95, Math.round(baseTech + (wRet * 0.5))));
 
@@ -218,7 +247,7 @@ function computeStockTimeframeMetrics(stock: any) {
   const mHigh = +(ltp * (1 + Math.max(0.03, mRet > 0 ? (mRet * 0.015) : 0.04))).toFixed(1);
   const mLow = +(ltp * (1 - Math.max(0.03, mRet < 0 ? (Math.abs(mRet) * 0.015) : 0.04))).toFixed(1);
   const mBreakout = mRet > 10 && pos52 > 0.72;
-  const mStealth = Math.max(10, Math.min(95, Math.round(baseStealth + (mRet * 0.6))));
+  const mStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, mRet)));
   const mRsi = +(Math.max(15, Math.min(88, baseRsi + (mRet * 0.5))).toFixed(1));
   const mTech = Math.max(15, Math.min(95, Math.round(baseTech + (mRet * 0.4))));
 
@@ -229,7 +258,7 @@ function computeStockTimeframeMetrics(stock: any) {
   const qHigh = +(ltp * (1 + Math.max(0.06, qRet > 0 ? (qRet * 0.018) : 0.07))).toFixed(1);
   const qLow = +(ltp * (1 - Math.max(0.06, qRet < 0 ? (Math.abs(qRet) * 0.018) : 0.07))).toFixed(1);
   const qBreakout = qRet > 18 && pos52 > 0.8;
-  const qStealth = Math.max(10, Math.min(95, Math.round(baseStealth + (qRet * 0.5))));
+  const qStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, qRet)));
   const qRsi = +(Math.max(15, Math.min(88, baseRsi + (qRet * 0.4))).toFixed(1));
   const qTech = Math.max(15, Math.min(95, Math.round(baseTech + (qRet * 0.3))));
 
@@ -240,7 +269,7 @@ function computeStockTimeframeMetrics(stock: any) {
   const sHigh = +(ltp * (1 + Math.max(0.10, sRet > 0 ? (sRet * 0.02) : 0.12))).toFixed(1);
   const sLow = +(ltp * (1 - Math.max(0.10, sRet < 0 ? (Math.abs(sRet) * 0.02) : 0.12))).toFixed(1);
   const sBreakout = sRet > 25 && pos52 > 0.85;
-  const sStealth = Math.max(10, Math.min(95, Math.round(baseStealth + (sRet * 0.4))));
+  const sStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, sRet)));
   const sRsi = +(Math.max(15, Math.min(88, baseRsi + (sRet * 0.3))).toFixed(1));
   const sTech = Math.max(15, Math.min(95, Math.round(baseTech + (sRet * 0.25))));
 
@@ -252,7 +281,7 @@ function computeStockTimeframeMetrics(stock: any) {
   const yHigh = hi52;
   const yLow = lo52;
   const yBreakout = yRet > 35 && pos52 > 0.9;
-  const yStealth = Math.max(10, Math.min(95, Math.round(45 + (pos52 - 0.5) * 50)));
+  const yStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, yRet)));
   const yRsi = +(Math.max(15, Math.min(88, 35 + pos52 * 40)).toFixed(1));
   const yTech = Math.max(15, Math.min(95, Math.round(40 + pos52 * 40)));
 
@@ -368,6 +397,19 @@ export function UniversalScreener({
         const week52HighDist = hi52 > 0 ? Number((((c - hi52) / hi52) * 100).toFixed(2)) : null;
         const week52LowDist = lo52 > 0 ? Number((((c - lo52) / lo52) * 100).toFixed(2)) : null;
 
+        // Distribution / churn flag: high price + high volume = operator offloading into retail
+        const _stealthScore = Number(tfMetrics.stealthAccumulation) || 50;
+        const _vSurge = Number(tfMetrics.volumeSurgeRatio) || 1;
+        const _range = Number(tfMetrics.high || stock.high || c) - Number(tfMetrics.low || stock.low || c);
+        const _body = Math.abs(currentPChange);
+        const _upperShadow = _range > 0 ? (Number(tfMetrics.high || c) - c) / _range : 0;
+        const isChurnDistribution = Boolean(
+          (_vSurge >= 1.6 && (_body / Math.max(_range, 0.01) <= 0.35 || _upperShadow >= 0.42)) ||
+          (tfMetrics.isVolumeShocker && currentPChange <= 1.0) ||
+          (currentPChange > 6 && _vSurge > 2.2) ||
+          (_stealthScore < 35 && _vSurge >= 1.5)
+        );
+
         return {
           ...stock,
           // Overwrite active metrics so sub-tab filterFn and sortFn naturally adapt to the selected horizon
@@ -385,6 +427,7 @@ export function UniversalScreener({
           low: tfMetrics.low,
           isBreakout: tfMetrics.isBreakout,
           stealthAccumulation: tfMetrics.stealthAccumulation,
+          isChurnDistribution,
           rsi: tfMetrics.rsi,
           technicalScore: currentScore,
           technicalRating: currentRating,
@@ -672,6 +715,45 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
                 <div className="flex items-center gap-2">
                   <span className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-black text-white">{selectedTf} HORIZON</span>
+                  {(() => {
+                    const chg = Number(activeData.change || 0);
+                    const hi = Number(activeData.high || 0);
+                    const lo = Number(activeData.low || 0);
+                    const stObj = stocks.find(s => String(s.symbol || '').toUpperCase() === symbol.toUpperCase()) || {};
+                    const proxy = {
+                      ...stObj,
+                      symbol,
+                      ltp: Number(metrics?.today || hi || 100),
+                      high: hi || Number(metrics?.today || 100),
+                      low: lo || Number(metrics?.today || 100),
+                      pChange: chg,
+                      volumeSurgeRatio: Number(stObj.volumeSurgeRatio || 1.0)
+                    };
+                    const cachedHist = getCachedRealPriceHistory(symbol);
+                    const score = calculateStealthAccumulationScore(
+                      proxy,
+                      Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
+                      undefined
+                    );
+                    const isDistribution = (chg > 6 && (hi - lo) / Math.max(lo, 1) > 0.08) || chg > 12 || score < 35;
+                    const adLabel = isDistribution ? 'Distribution'
+                      : score >= 65 ? 'Stealth Accumulation'
+                      : score >= 50 ? 'Moderate Accumulation'
+                      : chg < -5 ? 'Markdown'
+                      : 'Neutral';
+                    const adColor = isDistribution
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : adLabel.includes('Accumulation')
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : adLabel === 'Markdown'
+                      ? 'bg-red-900/30 text-red-300 border-red-700/40'
+                      : 'bg-slate-800 text-slate-300 border-slate-700';
+                    return (
+                      <span className={`rounded-lg px-2.5 py-1 text-xs font-black border ${adColor}`}>
+                        {adLabel} ({score}/100)
+                      </span>
+                    );
+                  })()}
                   <h3 className="m-0 text-lg font-black text-white">{symbol} Performance</h3>
                 </div>
                 <div className="text-xs text-slate-300">
@@ -2065,7 +2147,14 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const brokerData = getCachedRealBrokerAnalysis(sym);
       const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
 
-      const compositeScore = Math.min(98, Math.max(35, +(46 + momScore * 0.50 + liqScore * 0.30 + volScore * 0.20 + hydroAdjustment + brokerBonus).toFixed(1)));
+      // RVOL computed BEFORE compositeScore so distribution penalty can reference it
+      const rvolVal = Number(s.volumeSurgeRatio || (s.avgVolume20D ? +(s.volume / s.avgVolume20D).toFixed(2) : +(1.0 + (vol / 50000) * 0.5).toFixed(2)));
+
+      // Distribution penalty: high pChange + high volume = churn, not a prime pick
+      const isDistChurn = (pCh > 6 && rvolVal > 2.2) || pCh > 12;
+      const distPenalty = isDistChurn ? -25 : 0;
+
+      const compositeScore = Math.min(98, Math.max(35, +(46 + momScore * 0.50 + liqScore * 0.30 + volScore * 0.20 + hydroAdjustment + brokerBonus + distPenalty).toFixed(1)));
 
       // Dynamic ATR-based Corridor using multi-horizon engine
       const atrEst = Math.max(ltp * 0.02, Number(s.high || ltp) - Number(s.low || ltp));
@@ -2075,7 +2164,6 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const target1 = Number(dynTargets.target1.price);
       const target2 = Number(dynTargets.target2.price);
       const stopLoss = Number(dynTargets.stopLoss.price);
-      const rvolVal = Number(s.volumeSurgeRatio || (s.avgVolume20D ? +(s.volume / s.avgVolume20D).toFixed(2) : +(1.0 + (vol / 50000) * 0.5).toFixed(2)));
 
       return {
         ...s,
@@ -2086,7 +2174,12 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
         target2,
         stopLoss,
         rvol: rvolVal,
-        catalyst: pCh > 2.5 ? 'Bullish Volume Breakout + Momentum Expansion' : pCh > 0 ? 'Support Rebound + Steady Accumulation' : 'Consolidation Base with Institutional Accumulation'
+        catalyst: (pCh > 6 && rvolVal > 2.0) ? 'Distribution Alert: Operator Offloading into Retail'
+          : pCh > 10 ? 'Near Upper Circuit — Euphoria / Churn Risk'
+          : pCh > 2.5 ? 'Bullish Volume Breakout + Momentum Expansion'
+          : pCh > 0 ? 'Support Rebound + Accumulation Base'
+          : pCh > -3 ? 'Consolidation Dip — Watch for Reversal'
+          : 'Active Markdown — Avoid Entry'
       };
     });
 
@@ -2319,6 +2412,11 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
                   <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
                     Buy Zone: Rs. {typeof cand.entryLow === 'object' ? (cand.entryLow?.price ?? cand.entryLow?.min ?? '—') : (cand.entryLow || '—')}–{typeof cand.entryHigh === 'object' ? (cand.entryHigh?.price ?? cand.entryHigh?.max ?? '—') : (cand.entryHigh || '—')} • Target: Rs. {typeof cand.target1 === 'object' ? (cand.target1?.price ?? '—') : (cand.target1 || '—')} • Stop: Rs. {typeof cand.stopLoss === 'object' ? (cand.stopLoss?.price ?? '—') : (cand.stopLoss || '—')}
                   </div>
+                  {cand.catalyst && (
+                    <div style={{ fontSize: 11, color: '#38bdf8', marginTop: 3, fontWeight: 700 }}>
+                      ⚡ {cand.catalyst}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -3187,17 +3285,36 @@ export function BrokerFavouritesService({
         let horizonFavScore = 0;
         const pChg = Number(tfMetrics?.pChange || stock.pChange || 0);
         const vSurge = Number(tfMetrics?.volumeSurgeRatio || stock.volumeSurgeRatio || 1.1);
-        const stealth = Number(tfMetrics?.stealthAccumulation || stock.stealthAccumulation || 50);
+        const stealth = Number(tfMetrics?.stealthAccumulation || stock.stealthAccumulation || 45);
         const tech = Number(tfMetrics?.technicalScore || stock.technicalScore || 50);
 
+        // Normalize all inputs to 0–100 scale before mixing (eliminates unit mismatch)
+        const normVSurge = Math.min(100, Math.max(0, (vSurge - 1.0) * 50));    // 1.0→0, 3.0→100
+        const normPChg = Math.min(100, Math.max(0, (pChg + 15) / 30 * 100));   // -15%→0, +15%→100
+        const normStealth = Math.min(100, Math.max(0, stealth));                // already 0–100
+        const normTech = Math.min(100, Math.max(0, tech));                      // already 0–100
+        const hasBrokerBuy = totalBuy > 0;
+
         if (tf === '1D') {
-          horizonFavScore = (vSurge * 45) + (pChg * 5.5) + (totalBuy > 0 ? 35 : 0) + (stealth * 0.4);
+          horizonFavScore = (normVSurge * 0.45) + (normPChg * 0.25) + (hasBrokerBuy ? 30 : 0);
         } else if (tf === '1W') {
-          horizonFavScore = (pChg * 4.0) + (stealth * 2.2) + (vSurge * 20) + (totalBuy > 0 ? 15 : 0);
+          horizonFavScore = (normPChg * 0.35) + (normStealth * 0.35) + (normVSurge * 0.20) + (hasBrokerBuy ? 10 : 0);
         } else if (tf === '1M') {
-          horizonFavScore = (stealth * 3.2) + (tech * 2.2) + (pChg * 1.8);
+          horizonFavScore = (normStealth * 0.50) + (normTech * 0.30) + (normPChg * 0.20);
         } else {
-          horizonFavScore = (tech * 3.8) + (stealth * 2.5) + (pChg * 1.5);
+          // 3M and beyond: fundamentals + stealth dominate
+          horizonFavScore = (normStealth * 0.55) + (normTech * 0.35) + (normPChg * 0.10);
+        }
+
+        const isStockChurn = Boolean(
+          stock.isChurnDistribution ||
+          (pChg > 6 && vSurge > 2.2) ||
+          pChg > 12 ||
+          (stealth < 35 && vSurge >= 1.5)
+        );
+
+        if (isStockChurn) {
+          horizonFavScore = Math.max(10, Math.round(horizonFavScore * 0.4));
         }
 
         let netDominancePct = 50;
@@ -3224,7 +3341,10 @@ export function BrokerFavouritesService({
           institutionalVol: tfMetrics?.volume || stock.volume || 0,
           institutionalTurnover: tfMetrics?.turnover || stock.turnover || 0,
           periodChange: pChg,
-          status: netDominancePct >= 72 ? 'Heavy Accumulation' : netDominancePct >= 58 ? 'Moderate Inflow' : 'Neutral Hold'
+          status: isStockChurn ? 'Distribution Churn Risk' :
+            netDominancePct >= 72 ? 'Heavy Accumulation' :
+            netDominancePct >= 60 ? 'Moderate Inflow' :
+            (pChg > 5 ? 'Retail Chasing' : 'Neutral Hold')
         };
       });
 
@@ -3268,7 +3388,7 @@ export function BrokerFavouritesService({
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard label="Top Pick" value={filtered[0]?.symbol || '—'} subtitle={filtered[0]?.favBroker} color="#10b981" />
-        <StatCard label="Avg Accumulation" value={`${Math.round(filtered.slice(0, 10).reduce((s, x) => s + x.netDominancePct, 0) / Math.max(1, Math.min(10, filtered.length)))}%`} big color="#38bdf8" />
+        <StatCard label="Avg Accumulation" value={filtered.length === 0 ? '—' : `${Math.min(99, Math.round(filtered.slice(0, 10).reduce((s, x) => s + x.netDominancePct, 0) / Math.min(10, filtered.length)))}%`} big color="#38bdf8" />
         <StatCard label="Screened Horizon" value={timeframe} big color="#a855f7" />
         <StatCard label="Tracked Names" value={filtered.length} color="#f59e0b" />
       </div>
@@ -3362,6 +3482,15 @@ export function BrokerFavouritesService({
 }
 
 // ── Dedicated Institutional Broker Analysis Service (Wired to /api/broker-analysis/:symbol) ──
+const deriveSmartMoneyPhase = (adSignal: string, adStrength: number, adRatio: number, stealthScore: number): string => {
+  if (adSignal === 'Distribution' && adStrength >= 50) return 'Operator Distribution Climax';
+  if (adSignal === 'Distribution' && adRatio <= -0.12) return 'Active Retail Offloading';
+  if (adSignal === 'Accumulation' && stealthScore >= 65 && adStrength >= 40) return 'Institutional Stealth Accumulation';
+  if (adSignal === 'Accumulation' && adStrength >= 25) return 'Moderate Institutional Buying';
+  if (adSignal === 'Accumulation') return 'Early Positioning / Quiet Absorption';
+  if (Math.abs(adRatio) < 0.05) return 'Balanced / Neutral Hold';
+  return 'Retail Activity / No Clear Phase';
+};
 export function BrokerAnalysisService({
   initialSymbol = 'NABIL',
   stocks = [],
@@ -3415,7 +3544,7 @@ export function BrokerAnalysisService({
           topAccumulator: d.topAccumulator || buyers[0],
           topDistributor: d.topDistributor || sellers[0],
           concentrationPct: Number(d.concentrationPct) || 32.4,
-          smartMoneyPhase: d.smartMoneyPhase || (d.adSignal === 'Accumulation' ? 'Institutional Stealth Accumulation' : 'Retail Distribution')
+          smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', Number(d.adStrength || 0), Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
         };
         setCachedRealBrokerAnalysis(sym, d);
         setBrokerData(formatted);
@@ -3450,7 +3579,7 @@ export function BrokerAnalysisService({
           topAccumulator: cached.topAccumulator || buyers[0],
           topDistributor: cached.topDistributor || sellers[0],
           concentrationPct: Number(cached.concentrationPct) || 32.4,
-          smartMoneyPhase: cached.smartMoneyPhase || (cached.adSignal === 'Accumulation' ? 'Institutional Stealth Accumulation' : 'Retail Distribution')
+          smartMoneyPhase: cached.smartMoneyPhase || deriveSmartMoneyPhase(cached.adSignal || '', Number(cached.adStrength || 0), Number(cached.adRatio || 0), Number(cached.stealthAccumulation || 50))
         });
         setLoading(false);
         return;
@@ -3470,6 +3599,10 @@ export function BrokerAnalysisService({
     await loadData();
     setRefreshing(false);
   };
+
+  const syndicateInfo: SyndicateClusterAnalysis = useMemo(() => {
+    return detectSyndicateCluster(brokerData);
+  }, [brokerData]);
 
   return (
     <div className="space-y-4">
@@ -3517,8 +3650,134 @@ export function BrokerAnalysisService({
             <StatCard label="Top 3 Concentration" value={`${brokerData.concentrationPct}%`} big color="#38bdf8" />
             <StatCard label="Top Accumulator" value={`Broker #${brokerData.topAccumulator?.brokerId}`} subtitle={brokerData.topAccumulator?.brokerName?.split(' ')[0]} color="#10b981" />
             <StatCard label="Top Distributor" value={`Broker #${brokerData.topDistributor?.brokerId}`} subtitle={brokerData.topDistributor?.brokerName?.split(' ')[0]} color="#f43f5e" />
-            <StatCard label="Smart Money Phase" value={brokerData.smartMoneyPhase.split(' ')[1] || 'Accumulation'} color="#a855f7" />
+            {(() => {
+              const phase = brokerData.smartMoneyPhase || 'Neutral Hold';
+              let shortTitle = 'Neutral Hold';
+              let phaseColor = '#a855f7';
+              if (phase.includes('Climax')) {
+                shortTitle = 'Distribution Climax';
+                phaseColor = '#ef4444';
+              } else if (phase.includes('Offloading')) {
+                shortTitle = 'Retail Offloading';
+                phaseColor = '#f43f5e';
+              } else if (phase.includes('Stealth Accumulation')) {
+                shortTitle = 'Stealth Accumulation';
+                phaseColor = '#10b981';
+              } else if (phase.includes('Moderate') || phase.includes('Buying')) {
+                shortTitle = 'Institutional Buying';
+                phaseColor = '#34d399';
+              } else if (phase.includes('Early') || phase.includes('Absorption')) {
+                shortTitle = 'Quiet Absorption';
+                phaseColor = '#06b6d4';
+              } else if (phase.includes('Balanced') || phase.includes('Neutral')) {
+                shortTitle = 'Balanced Hold';
+                phaseColor = '#a855f7';
+              } else {
+                shortTitle = 'Retail Activity';
+                phaseColor = '#94a3b8';
+              }
+              return <StatCard label="Smart Money Phase" value={shortTitle} subtitle={phase} color={phaseColor} />;
+            })()}
           </div>
+
+          {/* Pillar 4: Multi-Desk Syndicate Cornering Detector Panel */}
+          {syndicateInfo && (
+            <div className={`rounded-xl border p-4 shadow-lg transition-all ${
+              syndicateInfo.threatLevel === 'HIGH_CORNERING'
+                ? 'border-emerald-500/50 bg-gradient-to-r from-emerald-950/40 via-slate-950/70 to-slate-900/60 shadow-emerald-950/30'
+                : syndicateInfo.threatLevel === 'OPERATOR_CHURN'
+                ? 'border-rose-500/50 bg-gradient-to-r from-rose-950/40 via-slate-950/70 to-slate-900/60 shadow-rose-950/30'
+                : syndicateInfo.threatLevel === 'MODERATE_ACCUMULATION'
+                ? 'border-cyan-500/50 bg-gradient-to-r from-cyan-950/30 via-slate-950/70 to-slate-900/60 shadow-cyan-950/20'
+                : 'border-slate-800 bg-slate-950/50'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-800/60">
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg border ${
+                    syndicateInfo.threatLevel === 'HIGH_CORNERING'
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                      : syndicateInfo.threatLevel === 'OPERATOR_CHURN'
+                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                      : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
+                  }`}>
+                    <Users size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                      <span>Multi-Desk Syndicate Cornering Detector</span>
+                      <span className="text-[10px] font-mono font-normal text-slate-400">Pillar 4 Intelligence</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Top 3 Net Dominance: <strong className="text-white font-mono">{syndicateInfo.top3NetSharePct}%</strong> • Top 5: <strong className="text-white font-mono">{syndicateInfo.top5NetSharePct}%</strong> • Dispersion Ratio: <strong className="text-white font-mono">{syndicateInfo.sellerDispersionRatio}x</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                    syndicateInfo.threatLevel === 'HIGH_CORNERING'
+                      ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/60'
+                      : syndicateInfo.threatLevel === 'OPERATOR_CHURN'
+                      ? 'bg-rose-950/80 text-rose-300 border-rose-600/60'
+                      : syndicateInfo.threatLevel === 'MODERATE_ACCUMULATION'
+                      ? 'bg-cyan-950/80 text-cyan-300 border-cyan-600/60'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    {syndicateInfo.threatLevel === 'HIGH_CORNERING' && <Zap size={12} className="text-emerald-400" />}
+                    {syndicateInfo.threatLevel === 'OPERATOR_CHURN' && <AlertTriangle size={12} className="text-rose-400" />}
+                    {syndicateInfo.threatLevel === 'MODERATE_ACCUMULATION' && <Shield size={12} className="text-cyan-400" />}
+                    <span>{syndicateInfo.syndicateType.replace(/_/g, ' ')} ({syndicateInfo.syndicateScore}/100)</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Dominant Desk Cluster Chips */}
+              {syndicateInfo.dominantDesks.length > 0 && (
+                <div className="pt-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 block">
+                    Detected Syndicate Desk Cluster:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {syndicateInfo.dominantDesks.map((d, idx) => (
+                      <div
+                        key={idx}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                          d.role === 'PRIMARY_ACCUMULATOR'
+                            ? 'bg-emerald-950/60 text-emerald-200 border-emerald-700/50'
+                            : d.role === 'SYNDICATE_PARTNER'
+                            ? 'bg-teal-950/50 text-teal-200 border-teal-700/40'
+                            : 'bg-slate-900 text-slate-300 border-slate-800'
+                        }`}
+                      >
+                        <span className="font-mono font-bold">#{d.brokerId}</span>
+                        <span className="text-slate-400 max-w-[100px] truncate">{d.brokerName?.replace('Securities', '')?.trim()}</span>
+                        <span className={`font-mono font-bold ${d.netQty >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {d.sharePct > 0 ? `+${d.sharePct}%` : '—'}
+                        </span>
+                        {d.role !== 'PARTICIPANT' && (
+                          <span className="text-[9px] uppercase px-1 rounded bg-black/40 text-slate-300">
+                            {d.role === 'PRIMARY_ACCUMULATOR' ? 'Lead' : 'Syndicate'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Summary and Tactical Advice */}
+              <div className="mt-3 pt-2.5 border-t border-slate-800/40 flex flex-col gap-1.5 text-xs">
+                <div className="text-slate-300 leading-relaxed">
+                  <strong className="text-white font-semibold">Diagnosis: </strong>
+                  {syndicateInfo.summary}
+                </div>
+                <div className="text-slate-400 text-[11px] leading-relaxed">
+                  <strong className="text-amber-400 font-semibold">Tactical Action: </strong>
+                  {syndicateInfo.tacticalGuidance}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Top Buying Brokers */}
@@ -4010,16 +4269,6 @@ export function MutualFundsService() {
     setLoading(true);
     try {
       const res = await fetchMutualFunds();
-      let list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
-      if (!list.length) {
-        list = [
-          { symbol: 'CMF2', name: 'Citizens Mutual Fund 2', nav: 10.12, ltp: 9.31, pChange: 0, premium: -8, premiumLabel: '-8% Discount' },
-          { symbol: 'NBF2', name: 'Nabil Balanced Fund 2', nav: 10.45, ltp: 9.40, pChange: 0.5, premium: -10, premiumLabel: '-10% Discount' },
-          { symbol: 'NICBF', name: 'NIC Asia Balanced Fund', nav: 11.20, ltp: 10.10, pChange: -0.2, premium: -9.8, premiumLabel: '-9.8% Discount' },
-          { symbol: 'SIGS2', name: 'Sanima Large Cap Fund', nav: 10.80, ltp: 9.85, pChange: 0.1, premium: -8.8, premiumLabel: '-8.8% Discount' },
-          { symbol: 'GIMES1', name: 'Global IME Samunnat Scheme 1', nav: 12.15, ltp: 11.25, pChange: 1.2, premium: -7.4, premiumLabel: '-7.4% Discount' },
-        ];
-      }
       setFunds(list);
     } catch (_) {}
     setLoading(false);

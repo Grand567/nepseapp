@@ -79,6 +79,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
     try {
       sessionStorage.setItem('nepse_active_tab', tabId);
     } catch (_) {}
+    setTabHistory(prev => (prev[prev.length - 1] === tabId ? prev : [...prev, tabId]));
     React.startTransition(() => {
       setActiveTabState(tabId);
     });
@@ -116,7 +117,23 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       return true;
     }
 
-    // 4. On any navbar screen: double back within 2 seconds exits app (Kharcha Tracker pattern)
+    // 4. Walk back tab history before prompting to exit
+    if (tabHistory.length > 1) {
+      const nextHistory = tabHistory.slice(0, -1);
+      const prevTab = nextHistory[nextHistory.length - 1] || 'dashboard';
+      setTabHistory(nextHistory);
+      React.startTransition(() => {
+        setActiveTabState(prevTab);
+      });
+      return true;
+    } else if (activeTab !== 'dashboard') {
+      React.startTransition(() => {
+        setActiveTabState('dashboard');
+      });
+      return true;
+    }
+
+    // 5. On root screen (dashboard): double back within 2 seconds exits app (Kharcha Tracker pattern)
     if (now - lastBackTimeRef.current < 2000) {
       try {
         await CapacitorApp.exitApp();
@@ -130,7 +147,7 @@ export function NavigationProvider({ children, initialTab = 'dashboard' }) {
       });
       return true;
     }
-  }, [selectedStock]);
+  }, [selectedStock, tabHistory, activeTab]);
 
   // Hook into Capacitor Native Android Hardware Back Button & Swipe Gestures
   useEffect(() => {

@@ -48,7 +48,15 @@ import {
 import { setCachedStockFundamentals } from '../src/utils/liveData.js';
 
 import {
-  calculateMultiSessionBrokerFootprint
+  calculateMultiSessionBrokerFootprint,
+  calculateBrokerConcentration,
+  calculateEffortVsResult,
+  calculateVolumeDryUp,
+  calculateLeadingOBVDivergence,
+  evaluateEarlyDetectionSignals,
+  calculateStealthAccumulationScore,
+  calculatePumpDumpRiskScore,
+  classifyWyckoffStage
 } from '../src/utils/accumulationDistributionEngine.ts';
 
 import {
@@ -126,6 +134,32 @@ ok(stats.winRate === 50, 'Win rate calculated accurately (1 win, 1 loss = 50%)')
 ok(stats.avgReturnPct === 2, 'Average return calculated accurately ((10 - 6) / 2 = +2.0%)');
 ok(stats.bestTrade?.symbol === 'NABIL' && stats.bestTrade?.returnPct === 10, 'Identifies best trade');
 ok(stats.worstTrade?.symbol === 'SHIVM' && stats.worstTrade?.returnPct === -6, 'Identifies worst trade');
+ok(stats.profitFactor === 1.67, 'Profit factor calculated properly (10 / 6 = 1.67x)');
+
+// Test 5: Deduplication enforcer
+const dup1 = recordSignal({
+  symbol: 'NABIL',
+  source: 'entry-exit',
+  signalType: 'BUY',
+  entryPrice: 450,
+  targetPrice: 500,
+  stopLoss: 420
+});
+ok(getSignals({ symbol: 'NABIL' }).length === 1, 'Deduplication prevents duplicate entry for same symbol');
+
+// Test 6: Running peak/trough tracking on open signal
+const sig3 = recordSignal({
+  symbol: 'CHCL',
+  source: 'entry-exit',
+  signalType: 'BUY',
+  entryPrice: 600,
+  targetPrice: 660,
+  stopLoss: 550
+});
+evaluateOpenSignals([{ symbol: 'CHCL', ltp: 620, high: 630, low: 590 }]);
+const openSig3 = getSignals({ symbol: 'CHCL' })[0];
+ok(openSig3.highestSeen === 630, 'Tracks running highestSeen across sessions');
+ok(openSig3.lowestSeen === 590, 'Tracks running lowestSeen across sessions');
 
 clearSignals();
 
@@ -214,6 +248,43 @@ const churnSession = [
 const footprintChurn = calculateMultiSessionBrokerFootprint([churnSession], 'TEST', 200);
 ok(footprintChurn.washTradingRisk === true, 'Detects wash trading / dual-sided churn on broker 42');
 
+// [J3.1] Thin Floorsheet Micro-Sample Guard
+const thinFloorsheet = [
+  { contractNo: '1', buyer: '45', seller: '34', symbol: 'GCIL', qty: 10, rate: 420, amount: 4200 }
+];
+const bcrThin = calculateBrokerConcentration(thinFloorsheet, 'GCIL');
+ok(bcrThin.isInsufficientSample === true, 'Micro-sample floorsheet (1 trade, 10 kitta) flagged as isInsufficientSample');
+ok(bcrThin.sampleValidity === 'INSUFFICIENT_SAMPLE', 'Micro-sample floorsheet has sampleValidity === INSUFFICIENT_SAMPLE');
+ok(bcrThin.smartMoneyBias === 'Insufficient Data', 'Micro-sample does not fabricate 100% Institutional Cornering');
+
+// [J3.2] Bilateral Cross / Self-Matching Block Transfer Filter
+const bilateralFloorsheet = [
+  { contractNo: '101', buyer: '58', seller: '58', symbol: 'NICA', qty: 50000, rate: 450, amount: 22500000 }
+];
+const bcrBilateral = calculateBrokerConcentration(bilateralFloorsheet, 'NICA');
+ok(bcrBilateral.smartMoneyBias === 'Neutral', 'Single self-matching trade (buyer 58 == seller 58) classified as Neutral');
+ok(bcrBilateral.description.includes('Bilateral Block Transfer'), 'Classified as Neutral / Bilateral Block Transfer');
+
+// [J3.3] OBV Divergence Precedence over Wyckoff Accumulation
+const syntheticCandles = [
+  { date: '2026-01-01', open: 100, high: 105, low: 98, close: 100, volume: 1000 },
+  { date: '2026-01-02', open: 100, high: 102, low: 99, close: 101, volume: 500 },
+  { date: '2026-01-03', open: 101, high: 103, low: 100, close: 101, volume: 400 },
+  { date: '2026-01-04', open: 101, high: 102, low: 99, close: 100, volume: 300 },
+  { date: '2026-01-05', open: 100, high: 101, low: 99, close: 100, volume: 200 },
+  { date: '2026-01-06', open: 100, high: 102, low: 99, close: 101, volume: 200 }
+];
+const stockWithAccumulation = {
+  symbol: 'TESTACC',
+  ltp: 101,
+  pChange: 0.5,
+  wyckoff: { stage: 'STEALTH_ACCUMULATION' },
+  cmf20: 0.08
+};
+const earlySignals = evaluateEarlyDetectionSignals(stockWithAccumulation, syntheticCandles);
+ok(earlySignals.earlyAlertVerdict !== 'EARLY_DISTRIBUTION_CHURN', 'Stealth Accumulation stage suppresses false EARLY_DISTRIBUTION_CHURN');
+
+
 
 // ══════════════════════════════════════════════════════════════════
 // [J4] WALK-FORWARD SETUP SCORE BACKTEST ENGINE
@@ -281,6 +352,133 @@ if (wfResult.evaluations.length > 0) {
     ok(typeof sample.outcomes['T+5'].maePct === 'number', 'Records T+5 Max Adverse Excursion');
   }
 }
+
+// ══════════════════════════════════════════════════════════════════
+// [J5] EARLY DETECTION QUANTITATIVE SUITE
+// ══════════════════════════════════════════════════════════════════
+console.log('\n[J5] Early Detection Quantitative Suite (Wyckoff 3rd Law, VDU, Leading OBV)');
+
+// Test 1: Wyckoff 3rd Law Effort vs Result Churn (Distribution Climax)
+const testCandlesChurn = [
+  { open: 300, high: 305, low: 298, close: 301, volume: 10000 },
+  { open: 301, high: 306, low: 300, close: 303, volume: 10000 },
+  { open: 303, high: 308, low: 302, close: 305, volume: 10000 },
+  { open: 305, high: 310, low: 304, close: 307, volume: 10000 },
+  { open: 307, high: 318, low: 307, close: 309, volume: 35000 } // High volume (3.5x), huge upper wick (318 vs 309)
+];
+const stockChurn = { symbol: 'CHURN_TEST', ltp: 309, pChange: 0.65, volume: 35000 };
+const evrResult = calculateEffortVsResult(stockChurn, testCandlesChurn, { bcr3SellPct: 42, smartMoneyBias: 'Operator Offloading' });
+ok(evrResult && evrResult.effortRatio >= 2.0, 'Effort vs Result detects high volume effort (RVOL >= 2.0x)');
+ok(evrResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN', 'Flags HIGH_DISTRIBUTION_CHURN on effort without price expansion');
+ok(evrResult.wickRatio >= 0.40, 'Identifies large upper rejection wick ratio');
+
+// Test 2: Wyckoff Phase C Volume Dry-Up (VDU & Coil)
+const testCandlesVDU = [
+  { open: 200, high: 206, low: 198, close: 202, volume: 20000 },
+  { open: 202, high: 207, low: 200, close: 204, volume: 20000 },
+  { open: 204, high: 208, low: 202, close: 205, volume: 20000 },
+  { open: 205, high: 207, low: 204, close: 206, volume: 18000 },
+  { open: 206, high: 207, low: 205.5, close: 206.5, volume: 6000 } // Volume drops to 6000 (0.3x), range only 1.5 pts
+];
+const stockVDU = { symbol: 'VDU_TEST', ltp: 206.5, pChange: 0.24, volume: 6000 };
+const vduResult = calculateVolumeDryUp(stockVDU, testCandlesVDU);
+ok(vduResult && vduResult.isVDU === true, 'Volume Dry-Up identifies volume reduction (VDU ratio <= 0.55x)');
+ok(vduResult.isCoil === true, 'Volume Dry-Up identifies narrow range coil (VCP squeeze)');
+ok(vduResult.score >= 70, 'Calculates high coil score (>= 70 pts)');
+
+// Test 3: Leading OBV Breakout Divergence
+const testCandlesOBVLead = [];
+let p = 100;
+for (let i = 0; i < 20; i++) {
+  // Price stays flat between 100 and 102, but on up-days volume is huge (30,000) and down-days tiny (2,000)
+  const isUp = i % 2 === 0;
+  testCandlesOBVLead.push({
+    open: isUp ? 100 : 101,
+    high: 102,
+    low: 100,
+    close: isUp ? 101 : 100.5,
+    volume: isUp ? 30000 : 2000
+  });
+}
+const obvLead = calculateLeadingOBVDivergence(testCandlesOBVLead);
+ok(obvLead && obvLead.signal === 'BULLISH_LEAD', 'Leading OBV detects Bullish Leading Accumulation Divergence');
+ok(obvLead.obvRankPct > obvLead.priceRankPct, 'OBV percentile leads Price percentile');
+
+// Test 4: Composite Early Signals Evaluator
+const compositeEarly = evaluateEarlyDetectionSignals(stockVDU, testCandlesVDU);
+ok(compositeEarly && compositeEarly.earlyAlertVerdict === 'EARLY_ACCUMULATION_COIL', 'Evaluator yields EARLY_ACCUMULATION_COIL for VDU coil');
+ok(typeof compositeEarly.earlyBadge === 'string', 'Yields human-readable early badge');
+
+// ══════════════════════════════════════════════════════════════════
+// [J6] INTRADAY FLOORSHEET FALLBACK & MULTI-SESSION RESILIENCE SUITE
+// ══════════════════════════════════════════════════════════════════
+console.log('\n[J6] Intraday Floorsheet Fallback & Multi-Session Resilience Suite');
+
+// Test 1: calculateStealthAccumulationScore without historical candles (<10 bars)
+const liveGHLStock = {
+  symbol: 'GHL',
+  ltp: 284,
+  high: 286,
+  low: 282,
+  open: 283,
+  pChange: 0.53,
+  volume: 45000,
+  volumeSurgeRatio: 1.45
+};
+const brokerGHL = {
+  symbol: 'GHL',
+  bcr3BuyPct: 57.4,
+  bcr5BuyPct: 68.2,
+  bcr3SellPct: 18.5,
+  tradeSizeRatio: 2.1,
+  netAbsorptionRatio: 0.84,
+  topBuyerBrokers: [{ broker: '42', volume: 20000, pct: 28 }, { broker: '58', volume: 15000, pct: 21 }]
+};
+const stealthScoreFallback = calculateStealthAccumulationScore(liveGHLStock, [], brokerGHL);
+ok(stealthScoreFallback >= 65, `Stealth score computes authentic intraday score without candles (${stealthScoreFallback} >= 65)`);
+
+// Test 2: calculatePumpDumpRiskScore without historical candles (<10 bars)
+const liveCFCLStock = {
+  symbol: 'CFCL',
+  ltp: 850,
+  high: 860,
+  low: 810,
+  open: 820,
+  high52: 860,
+  low52: 320,
+  pChange: 14.8,
+  volume: 250000,
+  volumeSurgeRatio: 3.2
+};
+const brokerCFCL = {
+  symbol: 'CFCL',
+  bcr3BuyPct: 15.0,
+  bcr5BuyPct: 22.0,
+  bcr3SellPct: 52.0,
+  tradeSizeRatio: 0.55,
+  smartMoneyBias: 'Operator Offloading',
+  topSellerBrokers: [{ broker: '45', volume: 100000, pct: 28 }]
+};
+const pumpDumpFallback = calculatePumpDumpRiskScore(liveCFCLStock, [], brokerCFCL);
+ok(pumpDumpFallback.riskScore >= 60, `Pump/Dump risk score computes authentic risk without candles (${pumpDumpFallback.riskScore} >= 60)`);
+ok(pumpDumpFallback.reasons.length >= 2, 'Identifies specific distribution reasons on intraday quote');
+
+// Test 3: classifyWyckoffStage without historical candles classifies stealth accumulation correctly
+const wyckoffGHL = classifyWyckoffStage(liveGHLStock, [], brokerGHL);
+ok(wyckoffGHL.stage === '🟢 STEALTH_ACCUMULATION', `Classifies GHL as STEALTH_ACCUMULATION on floorsheet alone (got ${wyckoffGHL.stage})`);
+ok(wyckoffGHL.stealthScore >= 65, 'Populates valid stealthScore on live floorsheet');
+ok(wyckoffGHL.qaiScore >= 65, 'Populates valid QAI score on live floorsheet');
+
+// Test 4: classifyWyckoffStage without historical candles classifies distribution trap correctly
+const wyckoffCFCL = classifyWyckoffStage(liveCFCLStock, [], brokerCFCL);
+ok(wyckoffCFCL.stage === '⚠️ EUPHORIA_DISTRIBUTION', `Classifies CFCL as EUPHORIA_DISTRIBUTION on floorsheet alone (got ${wyckoffCFCL.stage})`);
+ok(wyckoffCFCL.pumpDumpRiskScore >= 60, 'Populates valid pumpDumpRiskScore on live floorsheet');
+
+// Test 5: Neutral stock without broker interest defaults cleanly to DORMANT_CONSOLIDATION
+const neutralStock = { symbol: 'NEUTRAL', ltp: 150, high: 151, low: 149, open: 150, pChange: 0.0, volume: 1200 };
+const neutralBroker = { symbol: 'NEUTRAL', bcr3BuyPct: 12, bcr3SellPct: 14, tradeSizeRatio: 1.0, smartMoneyBias: 'Neutral' };
+const wyckoffNeutral = classifyWyckoffStage(neutralStock, [], neutralBroker);
+ok(wyckoffNeutral.stage === '💤 DORMANT_CONSOLIDATION', 'Neutral stock classifies cleanly as DORMANT_CONSOLIDATION');
 
 // ══════════════════════════════════════════════════════════════════
 // SUMMARY

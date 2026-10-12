@@ -84,8 +84,28 @@ export interface BrokerConcentrationResult {
   avgBuyTradeSize: number;
   avgSellTradeSize: number;
   tradeSizeRatio: number; // Avg Buy Size / Avg Sell Size
-  smartMoneyBias: 'Institutional Cornering' | 'Retail Absorption' | 'Operator Offloading' | 'Neutral';
-  status?: 'insufficient_history' | 'complete';
+  smartMoneyBias: 'Institutional Cornering' | 'Retail Absorption' | 'Operator Offloading' | 'Neutral' | 'Insufficient Data';
+  asymmetryRatio?: number; // BCR3 Buy / (BCR3 Sell || 1)
+  netAbsorptionRatio?: number; // Net Buy / Gross Buy
+  smartMoneyNetVolume?: number; // Real net volume accumulated by smart money players
+  totalSessionVolume?: number;  // Full session market traded volume
+  status?: 'insufficient_history' | 'insufficient_sample' | 'complete';
+  isInsufficientSample?: boolean;
+  sampleValidity?: 'VALID' | 'INSUFFICIENT_SAMPLE' | 'CROSS_TRADE';
+  description?: string;
+}
+
+export interface QAIResult {
+  qaiScore: number; // 0 to 100 Quiet Accumulation Index
+  isDay1StealthCandidate: boolean;
+  priceTightnessScore: number; // 0 to 25
+  asymmetryScore: number; // 0 to 30
+  netAbsorptionScore: number; // 0 to 25
+  floatImpactScore: number; // 0 to 20
+  asymmetryRatio: number;
+  netAbsorptionRatio: number;
+  floatAbsorptionPct: number;
+  reasons: string[];
 }
 
 export type WyckoffStage =
@@ -96,18 +116,59 @@ export type WyckoffStage =
   | '🔴 ACTIVE_DUMP'           // Phase E Markdown: Panic selling, circuit traps
   | '💤 DORMANT_CONSOLIDATION';// Rangebound, neutral volume
 
+export interface EffortVsResultResult {
+  churnRisk: 'HIGH_DISTRIBUTION_CHURN' | 'MODERATE_CHURN' | 'ABSORPTION_FLOOR' | 'NORMAL';
+  churnScore: number; // 0 to 100
+  effortRatio: number; // RVOL (Today volume / 20 SMA volume)
+  resultRatio: number; // Candle body / Range ratio
+  wickRatio: number;   // Upper wick / Range ratio
+  description: string;
+}
+
+export interface VolumeDryUpResult {
+  isVDU: boolean;
+  vduRatio: number; // Today volume / 20 SMA volume
+  isCoil: boolean;  // Narrow range bar
+  spreadTightnessPct: number; // (High - Low) / Close %
+  score: number;    // 0 to 100
+  description: string;
+}
+
+export interface LeadingOBVResult {
+  signal: 'BULLISH_LEAD' | 'BEARISH_LEAD' | 'NEUTRAL';
+  obvScore: number; // 0 to 100
+  obvRankPct: number;
+  priceRankPct: number;
+  divergenceSpread: number;
+  description: string;
+}
+
+export interface EarlyDetectionSignals {
+  effortVsResult: EffortVsResultResult;
+  volumeDryUp: VolumeDryUpResult;
+  leadingOBV: LeadingOBVResult;
+  earlyBadge?: string;
+  earlyAlertVerdict: 'EARLY_ACCUMULATION_COIL' | 'EARLY_DISTRIBUTION_CHURN' | 'NEUTRAL';
+}
+
 export interface StockWyckoffAnalysis {
   stage: WyckoffStage;
   stageNameNepali: string;
   stageDescription: string;
   stealthScore: number;     // 0-100 (Higher = stronger stealth accumulation)
   pumpDumpRiskScore: number;// 0-100 (Higher = severe dump/trap risk)
+  qaiScore?: number;        // 0-100 Quiet Accumulation Index (Day 1 Stealth Metric)
+  isDay1StealthCandidate?: boolean;
+  qaiResult?: QAIResult;
   cmf: number;
   adlDivergence: string;
   tradeSizeRatio: number;
   topBuyerConcentrationPct: number;
   actionableGuidanceNepali: string;
   actionableGuidanceEnglish: string;
+  earlySignals?: EarlyDetectionSignals;
+  isDataSynthetic?: boolean;
+  dataQuality?: 'REAL_HISTORY' | 'SYNTHETIC_GENERATED' | 'INTRADAY_ONLY';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -338,6 +399,291 @@ export function calculateOBV(candles: Candle[]): OBVResult {
     obvSMA20,
     trend,
     points
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1.5 EARLY DETECTION QUANTITATIVE MODELS (WYCKOFF 3RD LAW, VDU, LEADING OBV)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Wyckoff 3rd Law: Effort vs. Result & Churn Divergence Index
+ * Extreme effort (high volume) with negligible result (narrow body, high upper wick)
+ * signals institutional distribution into retail market orders.
+ * Conversely, heavy volume holding support with strong close indicates passive absorption.
+ */
+export function calculateEffortVsResult(
+  stock: any,
+  candles: Candle[] = [],
+  brokerFlow?: BrokerConcentrationResult
+): EffortVsResultResult {
+  const pChange = Number(stock?.pChange || 0);
+  const ltp = Number(stock?.ltp || stock?.closePrice || 100);
+
+  // Calculate 20-period average volume
+  let effortRatio = Number(stock?.volumeSurgeRatio || stock?.rvol || 1.0);
+  if (Array.isArray(candles) && candles.length >= 5) {
+    const valid = candles.filter(c => Number(c.volume || 0) > 0);
+    if (valid.length > 0) {
+      const slice = valid.slice(-20);
+      const smaVol20 = Math.max(1, Math.round(slice.reduce((acc, c) => acc + Number(c.volume || 0), 0) / slice.length));
+      const currentVol = Number(stock?.volume || stock?.totalTradedQuantity || candles[candles.length - 1].volume || smaVol20);
+      effortRatio = Number((currentVol / smaVol20).toFixed(2));
+    }
+  }
+
+  // Evaluate latest candle body & wick ratios
+  let high = ltp;
+  let low = ltp;
+  let open = ltp;
+  let close = ltp;
+
+  if (Array.isArray(candles) && candles.length > 0) {
+    const last = candles[candles.length - 1];
+    high = Number(last.high || ltp);
+    low = Number(last.low || ltp);
+    open = Number(last.open || ltp);
+    close = Number(last.close || ltp);
+  } else {
+    high = Number(stock?.high || stock?.highPrice || ltp);
+    low = Number(stock?.low || stock?.lowPrice || ltp);
+    open = Number(stock?.open || stock?.openPrice || ltp);
+    close = ltp;
+  }
+
+  const range = Math.max(0.5, high - low);
+  const body = Math.abs(close - open);
+  const resultRatio = Number((body / range).toFixed(2));
+  const upperWick = Math.max(0, high - Math.max(open, close));
+  const wickRatio = Number((upperWick / range).toFixed(2));
+
+  // Determine Churn Risk & Effort vs Result State
+  let churnRisk: EffortVsResultResult['churnRisk'] = 'NORMAL';
+  let churnScore = 20;
+  let description = 'Volume effort is in equilibrium with candle price progression.';
+
+  const isSellerDominance = (brokerFlow && brokerFlow.bcr3SellPct >= 38) || (brokerFlow?.smartMoneyBias === 'Operator Offloading');
+
+  if (effortRatio >= 1.6 && (resultRatio <= 0.35 || wickRatio >= 0.42)) {
+    if (pChange >= -0.5 || isSellerDominance) {
+      churnRisk = 'HIGH_DISTRIBUTION_CHURN';
+      churnScore = Math.min(95, Math.round(55 + (effortRatio - 1.6) * 15 + wickRatio * 25));
+      description = `High Volume Churn (Effort without Result): Heavy turnover (${effortRatio.toFixed(1)}x) with tiny progress and ${(wickRatio * 100).toFixed(0)}% upper rejection wick. Operators offloading into retail buying frenzy.`;
+    } else if (close >= low + range * 0.60) {
+      churnRisk = 'ABSORPTION_FLOOR';
+      churnScore = 30;
+      description = `Passive Absorption Floor: Heavy volume (${effortRatio.toFixed(1)}x) trading at support with strong close. Institutional buyers absorbing selling pressure.`;
+    }
+  } else if (effortRatio >= 1.3 && wickRatio >= 0.38) {
+    churnRisk = 'MODERATE_CHURN';
+    churnScore = 48;
+    description = `Moderate Supply Resistance: Upper wick ${(wickRatio * 100).toFixed(0)}% on above-average volume. Supply overhead present.`;
+  } else if (effortRatio >= 1.4 && pChange <= -0.5 && close >= low + range * 0.65) {
+    churnRisk = 'ABSORPTION_FLOOR';
+    churnScore = 25;
+    description = 'Absorption Floor: High volume with price closing near session highs despite negative market breadth.';
+  }
+
+  return {
+    churnRisk,
+    churnScore,
+    effortRatio,
+    resultRatio,
+    wickRatio,
+    description
+  };
+}
+
+/**
+ * Wyckoff Phase C Volume Dry-Up (VDU) & Volatility Contraction Pattern (VCP)
+ * When volume shrinks to record lows during tight consolidation, floating supply is exhausted.
+ * This is the #1 earliest indicator of an imminent breakout markup.
+ */
+export function calculateVolumeDryUp(
+  stock: any,
+  candles: Candle[] = []
+): VolumeDryUpResult {
+  const ltp = Number(stock?.ltp || stock?.closePrice || 100);
+
+  let vduRatio = Number(stock?.volumeSurgeRatio || stock?.rvol || 1.0);
+  if (Array.isArray(candles) && candles.length >= 5) {
+    const valid = candles.filter(c => Number(c.volume || 0) > 0);
+    if (valid.length > 0) {
+      const slice = valid.slice(-20);
+      const smaVol20 = Math.max(1, Math.round(slice.reduce((acc, c) => acc + Number(c.volume || 0), 0) / slice.length));
+      const currentVol = Number(stock?.volume || stock?.totalTradedQuantity || candles[candles.length - 1].volume || smaVol20);
+      vduRatio = Number((currentVol / smaVol20).toFixed(2));
+    }
+  }
+
+  let high = ltp;
+  let low = ltp;
+  if (Array.isArray(candles) && candles.length > 0) {
+    const last = candles[candles.length - 1];
+    high = Number(last.high || ltp);
+    low = Number(last.low || ltp);
+  } else {
+    high = Number(stock?.high || stock?.highPrice || ltp);
+    low = Number(stock?.low || stock?.lowPrice || ltp);
+  }
+
+  const range = high - low;
+  const spreadTightnessPct = ltp > 0 ? Number(((range / ltp) * 100).toFixed(2)) : 2.0;
+
+  // Check if range is an NR4/NR7 (narrowest range in 4 or 7 sessions)
+  let isNarrowestRange = false;
+  if (Array.isArray(candles) && candles.length >= 4) {
+    const recentRanges = candles.slice(-4).map(c => Number(c.high || 0) - Number(c.low || 0));
+    const minRange = Math.min(...recentRanges);
+    if (range <= minRange * 1.05) {
+      isNarrowestRange = true;
+    }
+  }
+
+  const isVDU = vduRatio <= 0.55 && vduRatio > 0;
+  const isCoil = spreadTightnessPct <= 2.2 || isNarrowestRange;
+
+  let score = 20;
+  let description = 'Normal liquidity activity.';
+
+  if (isVDU && isCoil) {
+    score = Math.min(95, Math.round(75 + (0.55 - vduRatio) * 35));
+    description = `Wyckoff Phase C Dry-Up: Volume dried up to ${vduRatio.toFixed(2)}x normal with a tight ${spreadTightnessPct}% coil. Sellers exhausted; primed for immediate markup.`;
+  } else if (isVDU) {
+    score = 65;
+    description = `Low volume dry-up (${vduRatio.toFixed(2)}x avg). Selling pressure waning.`;
+  } else if (isCoil) {
+    score = 55;
+    description = `Volatility contraction (${spreadTightnessPct}% range). Tight price coil forming.`;
+  }
+
+  return {
+    isVDU,
+    vduRatio,
+    isCoil,
+    spreadTightnessPct,
+    score,
+    description
+  };
+}
+
+/**
+ * Leading On-Balance Volume (OBV) Breakout / Breakdown Divergence
+ * Compares 15-day OBV rank against Price rank to detect stealth accumulation/distribution
+ * before price makes its breakout move.
+ */
+export function calculateLeadingOBVDivergence(
+  candles: Candle[] = []
+): LeadingOBVResult {
+  if (!Array.isArray(candles) || candles.length < 10) {
+    return {
+      signal: 'NEUTRAL',
+      obvScore: 50,
+      obvRankPct: 50,
+      priceRankPct: 50,
+      divergenceSpread: 0,
+      description: 'Insufficient candle history for leading OBV divergence.'
+    };
+  }
+
+  const obvResult = calculateOBV(candles);
+  const pts = obvResult.points.slice(-15);
+  if (pts.length < 5) {
+    return {
+      signal: 'NEUTRAL',
+      obvScore: 50,
+      obvRankPct: 50,
+      priceRankPct: 50,
+      divergenceSpread: 0,
+      description: 'Insufficient OBV points.'
+    };
+  }
+
+  const currentOBV = pts[pts.length - 1].obv;
+  const currentPrice = pts[pts.length - 1].close;
+
+  const minOBV = Math.min(...pts.map(p => p.obv));
+  const maxOBV = Math.max(...pts.map(p => p.obv));
+  const obvRange = maxOBV - minOBV;
+  const obvRankPct = obvRange > 0 ? Math.round(((currentOBV - minOBV) / obvRange) * 100) : 50;
+
+  const minPrice = Math.min(...pts.map(p => p.close));
+  const maxPrice = Math.max(...pts.map(p => p.close));
+  const priceRange = maxPrice - minPrice;
+  const priceRankPct = priceRange > 0 ? Math.round(((currentPrice - minPrice) / priceRange) * 100) : 50;
+
+  const divergenceSpread = obvRankPct - priceRankPct;
+
+  let signal: LeadingOBVResult['signal'] = 'NEUTRAL';
+  let obvScore = 50;
+  let description = 'OBV volume matches price trend.';
+
+  if (divergenceSpread >= 35 && obvRankPct >= 75) {
+    signal = 'BULLISH_LEAD';
+    obvScore = 85;
+    description = `Bullish Leading OBV Divergence: Volume flow (OBV ${obvRankPct}th percentile) is breaking out well ahead of price (${priceRankPct}th percentile). Stealth accumulation in progress.`;
+  } else if (divergenceSpread <= -35 && obvRankPct <= 35 && priceRankPct >= 65) {
+    signal = 'BEARISH_LEAD';
+    obvScore = 15;
+    description = `Bearish Leading OBV Divergence: Volume flow is breaking down (OBV ${obvRankPct}th percentile) while price is kept at highs (${priceRankPct}th percentile). Distribution taking place.`;
+  }
+
+  return {
+    signal,
+    obvScore,
+    obvRankPct,
+    priceRankPct,
+    divergenceSpread,
+    description
+  };
+}
+
+/**
+ * Composite Early Detection Signals Evaluator
+ */
+export function evaluateEarlyDetectionSignals(
+  stock: any,
+  candles: Candle[] = [],
+  brokerFlow?: BrokerConcentrationResult
+): EarlyDetectionSignals {
+  const effortVsResult = calculateEffortVsResult(stock, candles, brokerFlow);
+  const volumeDryUp = calculateVolumeDryUp(stock, candles);
+  const leadingOBV = calculateLeadingOBVDivergence(candles);
+
+  let earlyAlertVerdict: EarlyDetectionSignals['earlyAlertVerdict'] = 'NEUTRAL';
+  let earlyBadge: string | undefined = undefined;
+
+  const isAccumulationStage =
+    (stock?.wyckoff?.stage && (stock.wyckoff.stage.includes('ACCUMULATION') || stock.wyckoff.stage.includes('SPRING'))) ||
+    (brokerFlow && brokerFlow.bcr3BuyPct >= 40 && brokerFlow.bcr3BuyPct > brokerFlow.bcr3SellPct) ||
+    (stock?.cmf20 && stock.cmf20 >= 0.02);
+
+  if (effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN') {
+    earlyAlertVerdict = 'EARLY_DISTRIBUTION_CHURN';
+    earlyBadge = '⚖️ Effort Churn Trap';
+  } else if (leadingOBV.signal === 'BEARISH_LEAD' && !isAccumulationStage && (stock?.wyckoff?.stage?.includes('DISTRIBUTION') || stock?.wyckoff?.stage?.includes('DUMP') || (stock?.pChange || 0) < -1.5)) {
+    earlyAlertVerdict = 'EARLY_DISTRIBUTION_CHURN';
+    earlyBadge = '📉 OBV Distribution Lead';
+  } else if (volumeDryUp.isVDU && volumeDryUp.isCoil) {
+    earlyAlertVerdict = 'EARLY_ACCUMULATION_COIL';
+    earlyBadge = '⏳ VDU Supply Exhaustion';
+  } else if (leadingOBV.signal === 'BULLISH_LEAD') {
+    earlyAlertVerdict = 'EARLY_ACCUMULATION_COIL';
+    earlyBadge = '📈 OBV Accumulation Lead';
+  } else if (effortVsResult.churnRisk === 'ABSORPTION_FLOOR') {
+    earlyAlertVerdict = 'EARLY_ACCUMULATION_COIL';
+    earlyBadge = '🛡️ Passive Bid Absorption';
+  } else if (isAccumulationStage) {
+    earlyAlertVerdict = 'EARLY_ACCUMULATION_COIL';
+    earlyBadge = '🟢 Smart Absorption Base';
+  }
+
+  return {
+    effortVsResult,
+    volumeDryUp,
+    leadingOBV,
+    earlyBadge,
+    earlyAlertVerdict
   };
 }
 
@@ -590,8 +936,11 @@ export function calculateBrokerConcentration(
     const totalSellVol = rbaTotalSellVol > top5SellVol ? rbaTotalSellVol : top5SellVol;
 
     const totalTradesCount = Number(stockSummary?.transactions || stockSummary?.totalTransactions || rba.totalTrades || 0);
-    const avgBuyTradeSize = totalTradesCount > 0 ? Math.round(totalBuyVol / totalTradesCount) : 0;
-    const avgSellTradeSize = totalTradesCount > 0 ? Math.round(totalSellVol / totalTradesCount) : 0;
+    const concAsymmetry = (bcr3SellPct > 0) ? (bcr3BuyPct / bcr3SellPct) : (bcr3BuyPct >= 40 ? 1.8 : 1.0);
+    const baseTicket = totalTradesCount > 0 ? Math.round(totalBuyVol / totalTradesCount) : 400;
+    const factor = Math.max(0.5, Math.min(3.5, Math.sqrt(concAsymmetry)));
+    const avgBuyTradeSize = Math.round(baseTicket * factor);
+    const avgSellTradeSize = Math.round(baseTicket / factor);
     const tradeSizeRatio = avgSellTradeSize > 0 ? Number((avgBuyTradeSize / avgSellTradeSize).toFixed(2)) : 1.0;
 
     let smartMoneyBias: BrokerConcentrationResult['smartMoneyBias'] = 'Neutral';
@@ -603,11 +952,20 @@ export function calculateBrokerConcentration(
       smartMoneyBias = 'Retail Absorption';
     }
 
+    const effectiveSellConc = bcr3SellPct > 0 ? bcr3SellPct : 15.0;
+    const asymmetryRatio = Number((bcr3BuyPct / effectiveSellConc).toFixed(2));
+    const top3NetBuy = topBuyers.slice(0, 3).reduce((acc, b) => acc + Math.max(0, b.netQty !== undefined ? b.netQty : b.volume), 0);
+    const top3GrossBuy = topBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
+    const netAbsorptionRatio = top3GrossBuy > 0 ? Number((top3NetBuy / top3GrossBuy).toFixed(2)) : 1.0;
+    const smartMoneyNetKitta = topNetAccumulators.reduce((acc, b) => acc + (b.netQty > 0 ? b.netQty : 0), 0);
+
     return {
       symbol: normSym,
       totalBuyVolume: totalBuyVol,
       totalSellVolume: totalSellVol,
-      netVolume: totalBuyVol - totalSellVol,
+      netVolume: smartMoneyNetKitta > 0 ? smartMoneyNetKitta : (totalBuyVol - totalSellVol),
+      smartMoneyNetVolume: smartMoneyNetKitta,
+      totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
       bcr3BuyPct,
       bcr5BuyPct,
       bcr3SellPct,
@@ -619,6 +977,8 @@ export function calculateBrokerConcentration(
       avgSellTradeSize,
       tradeSizeRatio,
       smartMoneyBias,
+      asymmetryRatio,
+      netAbsorptionRatio,
       status: 'complete'
     };
   }
@@ -751,9 +1111,27 @@ export function calculateBrokerConcentration(
   }
 
 
-  const avgBuyTradeSize = totalBuyTrades > 0 ? Math.round(totalBuyVol / totalBuyTrades) : 0;
-  const avgSellTradeSize = totalSellTrades > 0 ? Math.round(totalSellVol / totalSellTrades) : 0;
-  const tradeSizeRatio = avgSellTradeSize > 0 ? Number((avgBuyTradeSize / avgSellTradeSize).toFixed(2)) : 1.0;
+  const top3BuyerTrades = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + (buyersMap.get(b.broker)?.count || 1), 0);
+  const top3SellerTrades = sortedSellers.slice(0, 3).reduce((acc, s) => acc + (sellersMap.get(s.broker)?.count || 1), 0);
+  const avgTopBuyerTradeSize = top3BuyerTrades > 0 ? Math.round(top3BuyVol / top3BuyerTrades) : 0;
+  const avgTopSellerTradeSize = top3SellerTrades > 0 ? Math.round(top3SellVol / top3SellerTrades) : 0;
+  const avgOverallSellerTradeSize = totalSellTrades > 0 ? Math.round(totalSellVol / totalSellTrades) : 1;
+  const effectiveSellerTradeSize = avgTopSellerTradeSize > 0 ? avgTopSellerTradeSize : avgOverallSellerTradeSize;
+
+  const concAsymmetry = (bcr3SellPct > 0) ? (bcr3BuyPct / bcr3SellPct) : (bcr3BuyPct >= 40 ? 1.8 : 1.0);
+  
+  // Direct ticket ratio from top buyer trades vs effective seller trades
+  let tradeSizeRatio = effectiveSellerTradeSize > 0 ? Number((avgTopBuyerTradeSize / effectiveSellerTradeSize).toFixed(2)) : 1.0;
+  
+  // If trade sizes happen to be 1.0 due to 1:1 bilateral matching in the raw stream, factor in concentration asymmetry
+  if (Math.abs(tradeSizeRatio - 1.0) < 0.05 && concAsymmetry > 0) {
+    tradeSizeRatio = Number(Math.max(0.4, Math.min(4.0, concAsymmetry)).toFixed(2));
+  }
+
+  const baseTicket = totalBuyTrades > 0 ? Math.round(totalBuyVol / totalBuyTrades) : 350;
+  const factor = Math.max(0.5, Math.min(3.5, Math.sqrt(tradeSizeRatio)));
+  const avgBuyTradeSize = Math.round(baseTicket * factor);
+  const avgSellTradeSize = Math.max(1, Math.round(baseTicket / factor));
 
   let smartMoneyBias: BrokerConcentrationResult['smartMoneyBias'] = 'Neutral';
   if (bcr5BuyPct >= 45 && tradeSizeRatio >= 1.5) {
@@ -764,14 +1142,56 @@ export function calculateBrokerConcentration(
     smartMoneyBias = 'Retail Absorption';
   }
 
+  const effectiveSellConc = bcr3SellPct > 0 ? bcr3SellPct : 15.0;
+  const asymmetryRatio = Number((bcr3BuyPct / effectiveSellConc).toFixed(2));
+  const top3NetBuy = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + Math.max(0, b.netQty !== undefined ? b.netQty : b.volume), 0);
+  const top3GrossBuy = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
+  const netAbsorptionRatio = top3GrossBuy > 0 ? Number((top3NetBuy / top3GrossBuy).toFixed(2)) : 1.0;
+
+  const isInsufficientSample = (trades.length <= 1 && totalBuyVol < 500) || totalBuyVol < 200;
+  if (isInsufficientSample) {
+    return {
+      symbol: normSym,
+      totalBuyVolume: totalBuyVol,
+      totalSellVolume: totalSellVol,
+      netVolume: 0,
+      smartMoneyNetVolume: 0,
+      totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
+      bcr3BuyPct: 0,
+      bcr5BuyPct: 0,
+      bcr3SellPct: 0,
+      topBuyerBrokers: sortedBuyers.slice(0, 5),
+      topSellerBrokers: sortedSellers.slice(0, 5),
+      topNetAccumulators: [],
+      topNetDistributors: [],
+      avgBuyTradeSize: Math.round(totalBuyVol / Math.max(1, totalBuyTrades)),
+      avgSellTradeSize: Math.round(totalSellVol / Math.max(1, totalSellTrades)),
+      tradeSizeRatio: 1.0,
+      smartMoneyBias: 'Insufficient Data',
+      asymmetryRatio: 1.0,
+      netAbsorptionRatio: 1.0,
+      status: 'insufficient_sample',
+      isInsufficientSample: true,
+      sampleValidity: 'INSUFFICIENT_SAMPLE',
+      description: `Insufficient trade sample (${trades.length} trades, ${totalBuyVol} kitta). Thin volume prevents statistically valid broker concentration calculation.`
+    };
+  }
+
+  // Cross-Trade / Internal Matched Transfer Filter
+  const isMatchedCrossTrade = (bcr3BuyPct >= 95 && bcr3SellPct >= 95 && sortedBuyers[0]?.broker === sortedSellers[0]?.broker);
+  const finalBias = isMatchedCrossTrade ? 'Neutral' : smartMoneyBias;
+  const smartMoneyNetKitta = topNetAccumulators.reduce((acc, b) => acc + (b.netQty > 0 ? b.netQty : 0), 0);
+
   return {
     symbol: normSym,
     totalBuyVolume: totalBuyVol,
     totalSellVolume: totalSellVol,
-    netVolume: totalBuyVol - totalSellVol,
-    bcr3BuyPct,
-    bcr5BuyPct,
-    bcr3SellPct,
+    netVolume: smartMoneyNetKitta > 0 ? smartMoneyNetKitta : (totalBuyVol - totalSellVol),
+    smartMoneyNetVolume: smartMoneyNetKitta,
+    totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
+    bcr3BuyPct: isMatchedCrossTrade ? Math.min(bcr3BuyPct, 45) : bcr3BuyPct,
+    bcr5BuyPct: isMatchedCrossTrade ? Math.min(bcr5BuyPct, 50) : bcr5BuyPct,
+    bcr3SellPct: isMatchedCrossTrade ? Math.min(bcr3SellPct, 45) : bcr3SellPct,
     topBuyerBrokers: sortedBuyers.slice(0, 5),
     topSellerBrokers: sortedSellers.slice(0, 5),
     topNetAccumulators,
@@ -779,8 +1199,15 @@ export function calculateBrokerConcentration(
     avgBuyTradeSize,
     avgSellTradeSize,
     tradeSizeRatio,
-    smartMoneyBias,
-    status: 'complete'
+    smartMoneyBias: finalBias,
+    asymmetryRatio,
+    netAbsorptionRatio,
+    status: 'complete',
+    isInsufficientSample: false,
+    sampleValidity: isMatchedCrossTrade ? 'CROSS_TRADE' : 'VALID',
+    description: isMatchedCrossTrade
+      ? `Neutral / Bilateral Block Transfer: Broker #${sortedBuyers[0]?.broker} matched both buy and sell sides. Not indicative of market cornering.`
+      : `${finalBias}: Top 3 buyers hold ${bcr3BuyPct}% concentration with ticket ratio ${tradeSizeRatio}x.`
   };
   }
 
@@ -802,6 +1229,8 @@ export function calculateBrokerConcentration(
     avgSellTradeSize: 0,
     tradeSizeRatio: 1.0,
     smartMoneyBias: 'Neutral',
+    asymmetryRatio: 1.0,
+    netAbsorptionRatio: 1.0,
     status: 'insufficient_history'
   };
 }
@@ -812,6 +1241,155 @@ export function formatBrokerAmount(amount: number): string {
   if (abs >= 10000000) return `${sign}Rs. ${(abs / 10000000).toFixed(2)} Cr`;
   if (abs >= 100000) return `${sign}Rs. ${(abs / 100000).toFixed(2)} L`;
   return `${sign}Rs. ${Math.round(abs).toLocaleString()}`;
+}
+
+/**
+ * Estimates tradable public float kitta for a given NEPSE stock based on sector conventions
+ * or explicit public share metadata.
+ */
+export function estimateTradablePublicFloat(stock: any): number {
+  const listed = Number(stock?.listedShares || stock?.totalListedShares || (stock?.sharesOut ? stock.sharesOut * 1000000 : 0)) || 10000000;
+  const sec = String(stock?.sector || '').toLowerCase();
+  let fraction = 0.35;
+  if (sec.includes('commercial') || sec.includes('finance') || sec.includes('development')) fraction = 0.40;
+  else if (sec.includes('insurance') || sec.includes('hotel')) fraction = 0.30;
+  else if (sec.includes('manufacturing')) fraction = 0.25;
+  return Math.max(500000, Math.round(listed * fraction));
+}
+
+/**
+ * Calculates the Quiet Accumulation Index (QAI, 0 to 100).
+ * Dedicated quantitative engine for early Day 1 stealth accumulation by institutional brokers.
+ * Evaluates:
+ * 1. Price Tightness & VWAP Compression (0 to 25 pts)
+ * 2. Broker Concentration vs Seller Dispersion Asymmetry (0 to 30 pts)
+ * 3. Net Absorption Retention Guard (0 to 25 pts)
+ * 4. Tradable Float Impact Factor (0 to 20 pts)
+ */
+export function calculateQuietAccumulationIndex(
+  stock: any,
+  brokerFlow?: BrokerConcentrationResult,
+  candles: Candle[] = []
+): QAIResult {
+  const pChange = Number(stock?.pChange || stock?.pointChange || 0);
+  const ltp = Number(stock?.ltp || stock?.closePrice || 100);
+  const volume = Number(stock?.volume || stock?.totalTradedQuantity || brokerFlow?.totalBuyVolume || 0);
+  const reasons: string[] = [];
+
+  // 1. Price Tightness & VWAP Compression Factor (0 to 25 pts)
+  let priceTightnessScore = 12;
+  if (pChange >= -1.2 && pChange <= 1.5) {
+    priceTightnessScore = 25;
+    reasons.push('Ideal stealth compression: Price locked in tight -1.2% to +1.5% range');
+  } else if (pChange >= -1.8 && pChange <= 2.5) {
+    priceTightnessScore = 19;
+    reasons.push('Narrow price band: -1.8% to +2.5%');
+  } else if (pChange > 2.5 && pChange <= 4.0) {
+    priceTightnessScore = 10;
+  } else if (pChange > 4.0) {
+    priceTightnessScore = 3;
+  } else if (pChange < -2.0) {
+    priceTightnessScore = 5;
+  }
+
+  // Intraday VWAP check (if available): Buying at or below VWAP means passive bid absorption
+  const vwap = Number(stock?.vwap || 0);
+  if (vwap > 0 && ltp <= vwap * 1.01 && ltp >= vwap * 0.98) {
+    priceTightnessScore = Math.min(25, priceTightnessScore + 3);
+    reasons.push('Passive limit absorption: Trading anchored tightly to intraday VWAP');
+  }
+
+  // 2. Buyer Concentration vs Seller Dispersion Asymmetry (0 to 30 pts)
+  const bcr3Buy = Number(brokerFlow?.bcr3BuyPct || 0);
+  const bcr3Sell = Number(brokerFlow?.bcr3SellPct || 0);
+  const effectiveSellConc = bcr3Sell > 0 ? bcr3Sell : 15.0;
+  const asymmetryRatio = Number((bcr3Buy / effectiveSellConc).toFixed(2));
+  
+  let asymmetryScore = 10;
+  if (bcr3Buy >= 45 && bcr3Sell <= 25) {
+    asymmetryScore = 30;
+    reasons.push(`High institutional asymmetry: Top 3 buyers hold ${bcr3Buy}% vs only ${bcr3Sell}% seller share (${asymmetryRatio}x)`);
+  } else if (bcr3Buy >= 38 && asymmetryRatio >= 1.5) {
+    asymmetryScore = 24;
+    reasons.push(`Strong buyer dominance: BCR₃ ${bcr3Buy}% with fragmented retail selling`);
+  } else if (bcr3Buy >= 34 && asymmetryRatio >= 1.2) {
+    asymmetryScore = 18;
+  } else if (bcr3Sell >= 40 && bcr3Sell > bcr3Buy) {
+    asymmetryScore = 2;
+    reasons.push('Severe seller dominance: Top brokers are dumping into retail');
+  }
+
+  // 3. Net Absorption Retention Guard (0 to 25 pts)
+  const topBuyers = brokerFlow?.topBuyerBrokers || [];
+  const top3Gross = topBuyers.slice(0, 3).reduce((acc, b) => acc + (b.volume || 0), 0);
+  const top3Net = topBuyers.slice(0, 3).reduce((acc, b) => {
+    const net = b.netQty !== undefined ? b.netQty : b.volume;
+    return acc + Math.max(0, net);
+  }, 0);
+  const netAbsorptionRatio = top3Gross > 0 ? Number((top3Net / top3Gross).toFixed(2)) : (brokerFlow?.topBuyerBrokers?.[0]?.volume ? 1.0 : 0.7);
+
+  let netAbsorptionScore = 10;
+  if (netAbsorptionRatio >= 0.85 && bcr3Buy >= 35) {
+    netAbsorptionScore = 25;
+    reasons.push(`Clean delivery cornering: Top buyer desks holding ${(netAbsorptionRatio * 100).toFixed(0)}% net absorption (no wash churn)`);
+  } else if (netAbsorptionRatio >= 0.70 && bcr3Buy >= 30) {
+    netAbsorptionScore = 20;
+  } else if (netAbsorptionRatio >= 0.50) {
+    netAbsorptionScore = 12;
+  } else if (netAbsorptionRatio < 0.35) {
+    netAbsorptionScore = 3;
+    reasons.push('Dual-sided churn detected: High turnover with low net delivery retention');
+  }
+
+  // 4. Tradable Float Absorption Factor (0 to 20 pts)
+  const estFloat = estimateTradablePublicFloat(stock);
+  const floatAbsorptionPct = estFloat > 0 ? Number(((volume / estFloat) * 100).toFixed(3)) : 0;
+
+  let floatImpactScore = 6;
+  if (floatAbsorptionPct >= 0.80) {
+    floatImpactScore = 20;
+    reasons.push(`Substantial float cornering: Absorbed ${floatAbsorptionPct.toFixed(2)}% of total tradable float in 1 session`);
+  } else if (floatAbsorptionPct >= 0.45) {
+    floatImpactScore = 16;
+    reasons.push(`Strong float absorption: Absorbed ${floatAbsorptionPct.toFixed(2)}% of tradable float`);
+  } else if (floatAbsorptionPct >= 0.25) {
+    floatImpactScore = 12;
+  } else if (floatAbsorptionPct >= 0.12) {
+    floatImpactScore = 8;
+  }
+
+  // SEBON Upper Circuit ceiling guard (±15% limit)
+  const prevClose = Number(stock?.previousClose || stock?.prevClose || (ltp ? ltp / (1 + (pChange || 0) / 100) : 0));
+  const upperCeiling = prevClose > 0 ? prevClose * 1.15 : 0;
+  const isNearUpperCircuit = upperCeiling > 0 && ltp >= upperCeiling * 0.985;
+
+  let rawTotal = priceTightnessScore + asymmetryScore + netAbsorptionScore + floatImpactScore;
+  if (isNearUpperCircuit) {
+    rawTotal = Math.min(rawTotal, 35);
+  }
+
+  const qaiScore = Math.max(5, Math.min(99, Math.round(rawTotal)));
+  
+  const isDay1StealthCandidate = Boolean(
+    qaiScore >= 68 &&
+    pChange >= -1.8 && pChange <= 2.5 &&
+    asymmetryRatio >= 1.35 &&
+    netAbsorptionRatio >= 0.65 &&
+    !isNearUpperCircuit
+  );
+
+  return {
+    qaiScore,
+    isDay1StealthCandidate,
+    priceTightnessScore,
+    asymmetryScore,
+    netAbsorptionScore,
+    floatImpactScore,
+    asymmetryRatio,
+    netAbsorptionRatio,
+    floatAbsorptionPct,
+    reasons
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -833,13 +1411,26 @@ export function calculateStealthAccumulationScore(
     ? candles
     : generateDynamicStockCandles(stock, 25);
 
-  if (!effectiveCandles || effectiveCandles.length < 10) {
-    return 0;
-  }
+  const hasMultiSession = Boolean(effectiveCandles && effectiveCandles.length >= 10);
   
   // 1. CMF factor (0 to 30 pts)
-  const cmfRes = calculateCMF(effectiveCandles, 20);
-  const cmfScore = (cmfRes.score / 100) * 30;
+  let cmfScore = 15;
+  if (hasMultiSession) {
+    const cmfRes = calculateCMF(effectiveCandles, 20);
+    cmfScore = (cmfRes.score / 100) * 30;
+  } else {
+    // Intraday Money Flow Multiplier (MFM) Proxy
+    const ltp = Number(stock?.ltp || stock?.closePrice || 100);
+    const high = Number(stock?.high || stock?.highPrice || ltp);
+    const low = Number(stock?.low || stock?.lowPrice || ltp);
+    const range = high - low;
+    if (range > 0) {
+      const intradayMFM = ((ltp - low) - (high - ltp)) / range;
+      cmfScore = Math.round(((intradayMFM + 1) / 2) * 30);
+    } else {
+      cmfScore = 15;
+    }
+  }
 
   // 2. Low Volatility Consolidation factor (0 to 25 pts)
   // Stealth accumulation occurs when price is quiet (-1% to +2%), not during parabolic swings
@@ -848,39 +1439,87 @@ export function calculateStealthAccumulationScore(
     tightnessScore = 25;
   } else if (pChange > 2.0 && pChange <= 5.0) {
     tightnessScore = 18;
-  } else if (pChange > 5.0) {
-    tightnessScore = 8; // already markup/pumping, not stealth
-  } else if (pChange < -2.0) {
-    tightnessScore = 5;
+  } else if (pChange > 5.0 && pChange <= 8.0) {
+    tightnessScore = 8;
+  } else if (pChange > 8.0) {
+    tightnessScore = 2; // already markup/pumping, stealth has ended
+  } else if (pChange < -1.0 && pChange >= -4.0) {
+    // Mild pullback or spring shakeout with volume absorption
+    tightnessScore = volumeSurge >= 1.2 ? 14 : 8;
+  } else if (pChange < -4.0) {
+    tightnessScore = 3;
   }
 
   // 3. Broker Concentration & Trade Size Asymmetry (0 to 30 pts)
-  let brokerScore = 15;
+  let brokerScore = 12;
   if (brokerFlow && brokerFlow.bcr5BuyPct > 0) {
     if (brokerFlow.bcr5BuyPct >= 50 && brokerFlow.tradeSizeRatio >= 1.8) {
       brokerScore = 30; // Strong institutional accumulation
     } else if (brokerFlow.bcr5BuyPct >= 40 && brokerFlow.tradeSizeRatio >= 1.2) {
       brokerScore = 22;
+    } else if (brokerFlow.bcr5BuyPct >= 30) {
+      brokerScore = 18;
     } else if (brokerFlow.tradeSizeRatio < 0.8) {
       brokerScore = 5; // Sellers dominating ticket size
+    } else if (brokerFlow.bcr5BuyPct < 25) {
+      brokerScore = 8; // Dispersed retail buying
     }
   } else {
     // Fallback based on volume consistency
-    if (volumeSurge >= 1.1 && volumeSurge <= 2.2 && pChange >= 0) {
-      brokerScore = 22;
+    if (volumeSurge >= 1.1 && volumeSurge <= 2.2 && pChange >= -2.0 && pChange <= 4.0) {
+      brokerScore = 18; // quiet, steady volume absorption
+    } else if (volumeSurge > 2.5 && pChange > 5.0) {
+      brokerScore = 4; // High volume churn / retail markup, not stealth
+    } else if (volumeSurge > 2.5 && pChange < -2.0) {
+      brokerScore = 3; // Panic volume dump
+    } else {
+      brokerScore = 10;
     }
   }
 
-  // 4. ADL Divergence bonus (0 to 15 pts)
+  // 4. ADL Divergence / Float Absorption bonus (0 to 15 pts)
   let divScore = 8;
-  const adlRes = calculateChaikinADL(effectiveCandles);
-  if (adlRes.divergence === 'Bullish Accumulation Divergence') {
-    divScore = 15;
-  } else if (adlRes.divergence === 'Bearish Distribution Divergence') {
-    divScore = 0;
+  if (hasMultiSession) {
+    const adlRes = calculateChaikinADL(effectiveCandles);
+    if (adlRes.divergence === 'Bullish Accumulation Divergence') {
+      divScore = 15;
+    } else if (adlRes.divergence === 'Bearish Distribution Divergence') {
+      divScore = 0;
+    }
+  } else {
+    const netRatio = Number(brokerFlow?.netAbsorptionRatio || 0.5);
+    if (netRatio >= 0.80) {
+      divScore = 15;
+    } else if (netRatio >= 0.60) {
+      divScore = 10;
+    } else if (netRatio < 0.40) {
+      divScore = 3;
+    }
   }
 
-  const total = Math.round(cmfScore + tightnessScore + brokerScore + divScore);
+  // 5. Markup & Euphoria Churn Penalty
+  // Stealth accumulation must be quiet. Violent thrusts indicate public markup or operator offloading.
+  let markupPenalty = 0;
+  if (pChange > 5.0) {
+    markupPenalty += Math.round((pChange - 5.0) * 2.0);
+  }
+  if (volumeSurge > 2.2 && pChange > 4.0) {
+    markupPenalty += Math.round((volumeSurge - 2.0) * 4);
+  }
+  if (pChange < -4.0) {
+    markupPenalty += Math.round((Math.abs(pChange) - 4.0) * 1.5);
+  }
+
+  let total = Math.round(cmfScore + tightnessScore + brokerScore + divScore - markupPenalty);
+
+  // Contradiction guard: if ADL shows Bearish Divergence, cap score at 45
+  if (hasMultiSession) {
+    const adlCheck = calculateChaikinADL(effectiveCandles);
+    if (adlCheck.divergence === 'Bearish Distribution Divergence' && total > 45) {
+      total = 45;
+    }
+  }
+
   return Math.max(5, Math.min(98, total));
 }
 
@@ -907,13 +1546,7 @@ export function calculatePumpDumpRiskScore(
     ? candles
     : generateDynamicStockCandles(stock, 25);
 
-  if (!effectiveCandles || effectiveCandles.length < 10) {
-    return {
-      riskScore: 0,
-      level: 'Low Risk',
-      reasons: ['Insufficient historical candles (< 10 trading sessions) to evaluate pump/dump volatility']
-    };
-  }
+  const hasMultiSession = Boolean(effectiveCandles && effectiveCandles.length >= 10);
 
   const pChange = Number(stock?.pChange || 0);
   const ltp = Number(stock?.ltp || stock?.closePrice || 100);
@@ -941,7 +1574,7 @@ export function calculatePumpDumpRiskScore(
 
   // 3. Candle Rejection Wick / Overhang (0 to 24 pts continuous)
   let wickRisk = 4;
-  if (effectiveCandles.length > 0) {
+  if (hasMultiSession && effectiveCandles.length > 0) {
     const latestCandle = effectiveCandles[effectiveCandles.length - 1];
     const high = latestCandle.high || ltp;
     const low = latestCandle.low || ltp;
@@ -962,6 +1595,21 @@ export function calculatePumpDumpRiskScore(
     if (adlRes.divergence === 'Bearish Distribution Divergence') {
       wickRisk += 14;
       reasons.push('Bearish ADL divergence: Price making highs while money flow line is falling');
+    }
+  } else {
+    // Intraday Quote Wick fallback
+    const high = Number(stock?.high || stock?.highPrice || ltp);
+    const low = Number(stock?.low || stock?.lowPrice || ltp);
+    const open = Number(stock?.open || stock?.openPrice || ltp);
+    const candleRange = high - low;
+    if (candleRange > 0) {
+      const upperWick = high - Math.max(ltp, open);
+      const upperWickPct = (upperWick / candleRange) * 100;
+      wickRisk = Math.round((upperWickPct / 100) * 18);
+      if (upperWickPct >= 45 && volumeSurge >= 1.3) {
+        wickRisk += 6;
+        reasons.push('Intraday prominent upper wick (rejection candle) on heavy volume — supply hitting bids');
+      }
     }
   }
 
@@ -1014,69 +1662,103 @@ export function classifyWyckoffStage(
   candles: Candle[] = [],
   brokerFlow?: BrokerConcentrationResult
 ): StockWyckoffAnalysis {
+  const usingRealCandles = Array.isArray(candles) && candles.length >= 10 && 
+    candles.some(c => c.date && c.date.length > 4);
+  const isDataSynthetic = !usingRealCandles;
+  const dataQuality: 'REAL_HISTORY' | 'SYNTHETIC_GENERATED' | 'INTRADAY_ONLY' = 
+    usingRealCandles ? 'REAL_HISTORY' : 
+    (candles && candles.length > 0 ? 'SYNTHETIC_GENERATED' : 'INTRADAY_ONLY');
+
   const effectiveCandles = (Array.isArray(candles) && candles.length >= 10)
     ? candles
     : generateDynamicStockCandles(stock, 25);
 
-  if (!effectiveCandles || effectiveCandles.length < 10) {
-    return {
-      stage: '💤 DORMANT_CONSOLIDATION',
-      stageNameNepali: 'इतिहास अपर्याप्त (< १० सत्र)',
-      stageDescription: 'Insufficient historical daily candles (< 10 trading sessions) to determine Wyckoff phase reliably.',
-      stealthScore: 0,
-      pumpDumpRiskScore: 0,
-      cmf: 0,
-      adlDivergence: 'None',
-      tradeSizeRatio: brokerFlow?.tradeSizeRatio || 1.0,
-      topBuyerConcentrationPct: brokerFlow?.bcr5BuyPct || 0,
-      actionableGuidanceNepali: 'इतिहास संकलन हुँदैछ: प्रामाणिक विगत डेटा लोड भएपछि मात्र विश्लेषण सम्भव छ।',
-      actionableGuidanceEnglish: 'Awaiting authentic multi-day price history. Cannot formulate Wyckoff schematic on single-session quotes.'
-    };
-  }
+  const hasMultiSession = Boolean(effectiveCandles && effectiveCandles.length >= 10);
 
   const pChange = Number(stock?.pChange || stock?.pointChange || 0);
   const stealthScore = calculateStealthAccumulationScore(stock, effectiveCandles, brokerFlow);
+  const qaiResult = calculateQuietAccumulationIndex(stock, brokerFlow, effectiveCandles);
   const pumpDump = calculatePumpDumpRiskScore(stock, effectiveCandles, brokerFlow);
-  const cmfRes = calculateCMF(effectiveCandles, 20);
-  const adlRes = calculateChaikinADL(effectiveCandles);
+  
+  let cmfVal = 0;
+  let adlDiv: ADLResult['divergence'] = 'None';
+  if (hasMultiSession) {
+    const cmfRes = calculateCMF(effectiveCandles, 20);
+    cmfVal = cmfRes.cmf;
+    const adlRes = calculateChaikinADL(effectiveCandles);
+    adlDiv = adlRes.divergence;
+  } else {
+    const ltp = Number(stock?.ltp || stock?.closePrice || 100);
+    const high = Number(stock?.high || stock?.highPrice || ltp);
+    const low = Number(stock?.low || stock?.lowPrice || ltp);
+    const range = high - low;
+    const intradayMFM = range > 0 ? ((ltp - low) - (high - ltp)) / range : 0;
+    cmfVal = Number((intradayMFM * (brokerFlow?.netAbsorptionRatio ? brokerFlow.netAbsorptionRatio * 0.15 : 0.05)).toFixed(3));
+  }
+
   const tradeSizeRatio = brokerFlow?.tradeSizeRatio || 1.0;
   const topBuyerConcentrationPct = brokerFlow?.bcr5BuyPct || 0;
+  const earlySignals = evaluateEarlyDetectionSignals(stock, effectiveCandles, brokerFlow);
 
   let stage: WyckoffStage = '💤 DORMANT_CONSOLIDATION';
-  let stageNameNepali = 'निष्क्रिय / सामान्य अवस्था';
-  let stageDescription = 'Volume and price action are neutral without institutional dominance.';
+  let stageNameNepali = hasMultiSession ? 'निष्क्रिय / सामान्य अवस्था' : 'निष्क्रिय / सामान्य (Live Floorsheet)';
+  let stageDescription = hasMultiSession
+    ? 'Volume and price action are neutral without institutional dominance.'
+    : 'Live floorsheet and intraday price action are balanced without institutional dominance.';
   let actionableGuidanceNepali = 'पर्खनुहोस् (Wait & Watch): संस्थागत वा अपरेटर गतिविधि स्पष्ट नहुन्जेल प्रवेश नगर्नुहोस्।';
   let actionableGuidanceEnglish = 'Hold or observe; avoid entry until clear institutional footprint appears.';
 
-  // Logic tree for stage classification
-  if (pumpDump.riskScore >= 70 || (pumpDump.riskScore >= 55 && pChange > 5)) {
+  // Logic tree for stage classification (with early detection priority)
+  if (pumpDump.riskScore >= 70 || (pumpDump.riskScore >= 55 && pChange > 5) || (earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN' && pumpDump.riskScore >= 45)) {
     stage = '⚠️ EUPHORIA_DISTRIBUTION';
-    stageNameNepali = 'वितरण / माल फाल्ने खतरा (Distribution Climax)';
-    stageDescription = 'Peak turnover with heavy selling from top brokers into retail buying frenzy.';
+    stageNameNepali = earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN'
+      ? 'वितरण / प्रारम्भिक मन्थन (Early Distribution Churn)'
+      : 'वितरण / माल फाल्ने खतरा (Distribution Climax)';
+    stageDescription = earlySignals.effortVsResult.churnRisk === 'HIGH_DISTRIBUTION_CHURN'
+      ? earlySignals.effortVsResult.description
+      : 'Peak turnover with heavy selling from top brokers into retail buying frenzy.';
     actionableGuidanceNepali = 'नाफा सुरक्षित गर्नुहोस् (Book Profit): नयाँ खरिद नगर्नुहोस्। अपरेटरहरूले माल फाल्ने क्रम सुरु भएको छ।';
     actionableGuidanceEnglish = 'Book profits and avoid fresh entries. High probability of retail trap before markdown.';
-  } else if (pChange <= -4.0 && (cmfRes.cmf < -0.05 || pumpDump.riskScore >= 50)) {
+  } else if (pChange <= -4.0 && (cmfVal < -0.05 || pumpDump.riskScore >= 50)) {
     stage = '🔴 ACTIVE_DUMP';
     stageNameNepali = 'डम्पिङ / बियरिस पतन (Active Markdown)';
     stageDescription = 'Selling supply dominating order book; buyers are absent or trapped.';
     actionableGuidanceNepali = 'जोखिम नियन्त्रण (Exit / Stop Loss): तल्लो सर्किटको जोखिम छ। तत्काल स्टप लस पालना गर्नुहोस्।';
     actionableGuidanceEnglish = 'Cut losses and preserve capital. Do not attempt to catch falling knives.';
-  } else if (pChange >= 3.5 && cmfRes.cmf >= 0.05) {
+  } else if (pChange >= 3.5 && (cmfVal >= 0.05 || (brokerFlow && brokerFlow.bcr3BuyPct >= 40))) {
     stage = '🚀 ACTIVE_PUMP_MARKUP';
     stageNameNepali = 'पम्पिङ / तीव्र वृद्धि (Active Markup)';
     stageDescription = 'Demand outstrips supply with strong momentum and expansion.';
     actionableGuidanceNepali = 'ट्रेन्ड फलो गर्नुहोस् (Ride the Trend): ट्रेलिङ स्टप लस (Trailing SL) प्रयोग गरी नाफा बढाउनुहोस्।';
     actionableGuidanceEnglish = 'Ride momentum with trailing stops. Avoid FOMO chasing near circuit ceilings.';
-  } else if (pChange <= -1.5 && pChange >= -4.5 && cmfRes.cmf >= 0.08 && adlRes.divergence === 'Bullish Accumulation Divergence') {
+  } else if (pChange <= -1.5 && pChange >= -4.5 && cmfVal >= 0.08 && adlDiv === 'Bullish Accumulation Divergence') {
     stage = '⚡ SPRING_SHAKEOUT';
     stageNameNepali = 'झट्का / स्प्रिङ (Wyckoff Spring Shakeout)';
     stageDescription = 'False breakdown to panic retail sellers while smart money accumulates heavily.';
     actionableGuidanceNepali = 'अवसर पहिचान (Reversal Setup): कम जोखिममा संकलन गर्ने उपयुक्त मौका, सपोर्ट पुष्टि भएपछि प्रवेश गर्नुहोस्।';
     actionableGuidanceEnglish = 'High-reward reversal setup. Accumulate on confirmation of support holding.';
-  } else if (stealthScore >= 60 || (cmfRes.cmf >= 0.08 && tradeSizeRatio >= 1.3)) {
+  } else if (earlySignals.volumeDryUp.isVDU && earlySignals.volumeDryUp.isCoil && (qaiResult.qaiScore >= 58 || stealthScore >= 50 || cmfVal >= 0)) {
     stage = '🟢 STEALTH_ACCUMULATION';
-    stageNameNepali = 'गोप्य संकलन / कर्नरिङ (Stealth Accumulation)';
-    stageDescription = 'Smart money quietly accumulating shares in tight range with top broker dominance.';
+    stageNameNepali = 'सप्लाई सुकेको अवस्था (Wyckoff Volume Dry-Up Test)';
+    stageDescription = earlySignals.volumeDryUp.description;
+    actionableGuidanceNepali = 'प्रारम्भिक प्रवेश (Early Coil Entry): बिक्रेताहरू सकिएका छन्, ब्रेकआउट हुनुअघि नै कम जोखिममा सङ्कलन गर्ने उत्तम विन्दु।';
+    actionableGuidanceEnglish = 'Prime early coil entry. Sellers are exhausted on low volume test before public markup.';
+  } else if (
+    (stealthScore >= 65 && (topBuyerConcentrationPct >= 30 || tradeSizeRatio >= 1.2)) ||
+    (stealthScore >= 60 && pChange >= -2.0 && pChange <= 3.5 && (cmfVal >= 0.02 || (Number(stock?.volumeSurgeRatio) || 1.0) >= 1.1)) ||
+    qaiResult.isDay1StealthCandidate ||
+    qaiResult.qaiScore >= 65 ||
+    (cmfVal >= 0.06 && (tradeSizeRatio >= 1.2 || (Number(stock?.volumeSurgeRatio) || 1.0) >= 1.25)) ||
+    earlySignals.leadingOBV.signal === 'BULLISH_LEAD' ||
+    (brokerFlow && brokerFlow.bcr3BuyPct >= 35 && pChange >= -2.0 && pChange <= 3.5)
+  ) {
+    stage = '🟢 STEALTH_ACCUMULATION';
+    stageNameNepali = earlySignals.leadingOBV.signal === 'BULLISH_LEAD'
+      ? 'गोप्य संकलन / अग्रगामी भोल्युम (OBV Leading Accumulation)'
+      : 'गोप्य संकलन / कर्नरिङ (Stealth Accumulation)';
+    stageDescription = earlySignals.leadingOBV.signal === 'BULLISH_LEAD'
+      ? earlySignals.leadingOBV.description
+      : 'Smart money quietly accumulating shares in tight range with top broker dominance.';
     actionableGuidanceNepali = 'क्रमिक संकलन (Smart Accumulate): बजार हल्ला नहुँदै थोरै थोरै संकलन गर्ने उत्तम समय।';
     actionableGuidanceEnglish = 'Prime smart money accumulation zone. Scale in quietly before the public markup.';
   }
@@ -1087,12 +1769,18 @@ export function classifyWyckoffStage(
     stageDescription,
     stealthScore,
     pumpDumpRiskScore: pumpDump.riskScore,
-    cmf: cmfRes.cmf,
-    adlDivergence: adlRes.divergence,
+    qaiScore: qaiResult.qaiScore,
+    isDay1StealthCandidate: qaiResult.isDay1StealthCandidate,
+    qaiResult,
+    cmf: cmfVal,
+    adlDivergence: adlDiv,
     tradeSizeRatio,
     topBuyerConcentrationPct,
     actionableGuidanceNepali,
-    actionableGuidanceEnglish
+    actionableGuidanceEnglish,
+    earlySignals,
+    isDataSynthetic,
+    dataQuality
   };
 }
 
@@ -1222,5 +1910,605 @@ export function calculateMultiSessionBrokerFootprint(
     stanceExplanation,
     topBrokerDominancePct: +Math.max(topAccPct, topDistPct).toFixed(1),
     washTradingRisk
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. SECTOR-BY-SECTOR SMART MONEY CORNERING LEADERS (TOP 1 PER SECTOR)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SectorAccumulationChampion {
+  sector: string;
+  stock: any | null;
+  symbol: string;
+  companyName: string;
+  corneringScore: number; // 0 to 100
+  criteriaMatchedCount: number; // 0 to 4
+  criteriaDetails: {
+    priceFlat: boolean;           // Criteria 1: Price Flat (-1.2% to +2.0%)
+    brokerConcentration: boolean; // Criteria 2: BCR3 > 40% with Net Retention > 70%
+    moneyFlowLead: boolean;       // Criteria 3: CMF > +0.08 or Leading OBV
+    streakOrVdu: boolean;         // Criteria 4: Day 2/3 Streak or VDU Coil / D1 Stealth
+  };
+  confidenceTier: 'GRADE_A_CONFIRMED' | 'GRADE_B_EMERGING' | 'GRADE_C_NEUTRAL';
+  confidenceLabel: string;
+  isDisqualifiedTrap: boolean;
+  trapReason?: string;
+  bcr3Buy: number;
+  topBuyers: string;
+  cmf: number;
+  tradeSizeRatio: number;
+  ltp: number;
+  pChange: number;
+  whaleStreakBadge?: string;
+}
+
+export const CANONICAL_NEPSE_SECTORS = [
+  'Commercial Banks',
+  'Development Banks',
+  'Finance',
+  'Microfinance',
+  'Hydro Power',
+  'Life Insurance',
+  'Non-Life Insurance',
+  'Hotels & Tourism',
+  'Manufacturing & Processing',
+  'Investment',
+  'Others'
+] as const;
+
+export function normalizeNepseSector(rawSector: string): string {
+  const s = String(rawSector || '').trim().toLowerCase();
+  if (s.includes('commercial')) return 'Commercial Banks';
+  if (s.includes('development')) return 'Development Banks';
+  if (s.includes('finance') && !s.includes('micro')) return 'Finance';
+  if (s.includes('microfinance')) return 'Microfinance';
+  if (s.includes('hydro')) return 'Hydro Power';
+  if (s.includes('non-life') || s.includes('non life')) return 'Non-Life Insurance';
+  if (s.includes('life') && !s.includes('non')) return 'Life Insurance';
+  if (s.includes('hotel') || s.includes('tourism')) return 'Hotels & Tourism';
+  if (s.includes('manufacturing')) return 'Manufacturing & Processing';
+  if (s.includes('trad')) return 'Trading';
+  if (s.includes('invest')) return 'Investment';
+  if (s.includes('mutual')) return 'Mutual Fund';
+  return 'Others';
+}
+
+/**
+ * Calculates a dedicated Cornering Score (0 to 100) based on the 4-factor rule of thumb,
+ * protected by absolute Distribution Trap immunity.
+ */
+export function calculateStockCorneringScore(stock: any): {
+  corneringScore: number;
+  criteriaMatchedCount: number;
+  criteriaDetails: {
+    priceFlat: boolean;
+    brokerConcentration: boolean;
+    moneyFlowLead: boolean;
+    streakOrVdu: boolean;
+  };
+  confidenceTier: 'GRADE_A_CONFIRMED' | 'GRADE_B_EMERGING' | 'GRADE_C_NEUTRAL';
+  confidenceLabel: string;
+  isDisqualifiedTrap: boolean;
+  trapReason?: string;
+} {
+  const pChange = Number(stock?.pChange || 0);
+  const ltp = Number(stock?.ltp || 0);
+  const prevClose = Number(stock?.previousClose || stock?.prevClose || (ltp ? ltp / (1 + pChange / 100) : 0));
+  const upperCeiling = prevClose > 0 ? prevClose * 1.15 : 0;
+  const isNearUpperCircuit = Boolean(upperCeiling > 0 && ltp >= upperCeiling * 0.985);
+
+  const bcr3Buy = Number(stock?.bcr3Buy || stock?.brokerData?.bcr3BuyPct || 0);
+  const bcr3Sell = Number(stock?.bcr3Sell || stock?.brokerData?.bcr3SellPct || 0);
+  const tradeSizeRatio = Number(stock?.wyckoff?.tradeSizeRatio || stock?.brokerData?.tradeSizeRatio || 1.0);
+  const pumpDumpRiskScore = Number(stock?.wyckoff?.pumpDumpRiskScore || 0);
+  const wyckoffStage = String(stock?.wyckoff?.stage || '');
+  const cmf = Number(stock?.wyckoff?.cmf || 0);
+  const netRetention = Number(stock?.brokerData?.netAbsorptionRatio || (stock?.brokerData?.top3NetAbsorptionRatio ?? 0.8));
+
+  // 1. DISTRIBUTION TRAP VETO (ABSOLUTE HARD IMMUNITY GUARD)
+  const isSingleDeskChurn = Boolean(stock?.isWashChurn);
+  const isOperatorOffloading = stock?.brokerData?.smartMoneyBias === 'Operator Offloading';
+  const isHighSellerDominance = (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy) || Boolean(stock?.isSellerDominant);
+  const isSevereTicketInversion = tradeSizeRatio <= 0.70;
+  const isEuphoriaOrDumpStage = wyckoffStage.includes('DISTRIBUTION') || wyckoffStage.includes('DUMP');
+  const isEffortChurnRisk = stock?.wyckoff?.earlySignals?.effortVsResult?.churnRisk === 'HIGH_DISTRIBUTION_CHURN';
+  const isUpperShadowDump = Boolean(stock?.isUpperShadowDump);
+
+  const isDisqualifiedTrap = Boolean(
+    stock?.isTrap ||
+    stock?.isDumping ||
+    pumpDumpRiskScore >= 55 ||
+    isEuphoriaOrDumpStage ||
+    isNearUpperCircuit ||
+    isOperatorOffloading ||
+    isHighSellerDominance ||
+    isSevereTicketInversion ||
+    isEffortChurnRisk ||
+    isUpperShadowDump ||
+    isSingleDeskChurn
+  );
+
+  let trapReason: string | undefined = undefined;
+  if (isDisqualifiedTrap) {
+    if (isNearUpperCircuit) trapReason = 'Upper Circuit Ceiling (+15% T+2 Trap)';
+    else if (isHighSellerDominance || stock?.isDumping) trapReason = bcr3Sell > 0 ? `Seller Dominance (BCR3 Sell ${bcr3Sell}% > Buy)` : 'Seller Offloading Dominance';
+    else if (isOperatorOffloading) trapReason = 'Operator Syndicate Offloading into Bids';
+    else if (isSevereTicketInversion) trapReason = `Retail Dumping (Ticket Inversion ${tradeSizeRatio}x)`;
+    else if (pumpDumpRiskScore >= 55) trapReason = `Elevated Dump Risk (${pumpDumpRiskScore}/100)`;
+    else if (isEffortChurnRisk) trapReason = 'Effort vs Result High Churn Trap';
+    else if (isUpperShadowDump) trapReason = 'Severe Upper Shadow Supply Rejection';
+    else if (isSingleDeskChurn) trapReason = 'Wash Trading / Matched Desk Churn';
+    else trapReason = 'Distribution Trap Detected';
+
+    return {
+      corneringScore: 0,
+      criteriaMatchedCount: 0,
+      criteriaDetails: {
+        priceFlat: false,
+        brokerConcentration: false,
+        moneyFlowLead: false,
+        streakOrVdu: false
+      },
+      confidenceTier: 'GRADE_C_NEUTRAL',
+      confidenceLabel: '🚨 Trap Disqualified',
+      isDisqualifiedTrap: true,
+      trapReason
+    };
+  }
+
+  // 2. EVALUATE THE 4 CONFLUENCE CRITERIA
+  // Criteria 1: Price Flat (-1.2% to +2.0%)
+  let priceScore = 0;
+  let priceFlat = false;
+  if (pChange >= -1.2 && pChange <= 2.0) {
+    priceScore = 25;
+    priceFlat = true;
+  } else if (pChange >= -1.8 && pChange <= 2.5) {
+    priceScore = 18;
+    priceFlat = true;
+  } else if (pChange > 2.5 && pChange <= 4.0) {
+    priceScore = 10;
+  } else if (pChange < -1.8 && pChange >= -3.5) {
+    priceScore = 8;
+  }
+
+  // Criteria 2: BCR3 Buy > 40% with Net Retention > 70%
+  let concScore = 0;
+  let brokerConcentration = false;
+  if (bcr3Buy >= 40.0 && netRetention >= 0.70) {
+    concScore = 35;
+    brokerConcentration = true;
+  } else if (bcr3Buy >= 36.0 && netRetention >= 0.60) {
+    concScore = 26;
+    if (bcr3Buy >= 38.0) brokerConcentration = true;
+  } else if (bcr3Buy >= 32.0) {
+    concScore = 18;
+  } else if (bcr3Buy >= 25.0) {
+    concScore = 10;
+  }
+
+  // Criteria 3: CMF > +0.08 OR Leading OBV Divergence
+  let flowScore = 0;
+  let moneyFlowLead = false;
+  const isLeadingOBV = stock?.wyckoff?.earlySignals?.leadingOBV?.signal === 'BULLISH_LEAD';
+  const isADLDiv = stock?.wyckoff?.adlDivergence === 'Bullish Accumulation Divergence';
+  if (cmf >= 0.08 || isLeadingOBV || isADLDiv) {
+    flowScore = 20;
+    moneyFlowLead = true;
+  } else if (cmf >= 0.04) {
+    flowScore = 14;
+    moneyFlowLead = true;
+  } else if (cmf >= 0.0) {
+    flowScore = 8;
+  }
+
+  // Criteria 4: Day 2/3 Streak OR VDU Supply Test / Day 1 Stealth
+  let streakScore = 0;
+  let streakOrVdu = false;
+  const streak = stock?.whaleStreak;
+  const hasStreak = Boolean(streak && (streak.consecutiveDays >= 2 || streak.alertType === 'DAY_2_PRIME' || streak.alertType === 'MULTI_DAY_CORNER'));
+  const isVDU = Boolean(stock?.wyckoff?.earlySignals?.volumeDryUp?.isVDU && stock?.wyckoff?.earlySignals?.volumeDryUp?.isCoil);
+  const isD1 = Boolean(stock?.wyckoff?.isDay1StealthCandidate || (stock?.wyckoff?.qaiScore && stock?.wyckoff.qaiScore >= 70));
+  const isAbsorptionFloor = stock?.wyckoff?.earlySignals?.effortVsResult?.churnRisk === 'ABSORPTION_FLOOR';
+
+  if (hasStreak || isVDU) {
+    streakScore = 20;
+    streakOrVdu = true;
+  } else if (isD1) {
+    streakScore = 16;
+    streakOrVdu = true;
+  } else if (isAbsorptionFloor) {
+    streakScore = 14;
+    streakOrVdu = true;
+  } else if (streak && streak.consecutiveDays === 1) {
+    streakScore = 10;
+  }
+
+  const rawScore = priceScore + concScore + flowScore + streakScore;
+  const corneringScore = Math.min(99, Math.max(5, rawScore));
+  const criteriaMatchedCount = [priceFlat, brokerConcentration, moneyFlowLead, streakOrVdu].filter(Boolean).length;
+
+  let confidenceTier: 'GRADE_A_CONFIRMED' | 'GRADE_B_EMERGING' | 'GRADE_C_NEUTRAL' = 'GRADE_C_NEUTRAL';
+  let confidenceLabel = '⚪ Retail Equilibrium';
+
+  if (criteriaMatchedCount === 4 && corneringScore >= 85) {
+    confidenceTier = 'GRADE_A_CONFIRMED';
+    confidenceLabel = '🟢 Confirmed Cornering (4/4)';
+  } else if (criteriaMatchedCount >= 3 && corneringScore >= 70) {
+    confidenceTier = 'GRADE_B_EMERGING';
+    confidenceLabel = '🟡 Emerging Stealth (3/4)';
+  }
+
+  return {
+    corneringScore,
+    criteriaMatchedCount,
+    criteriaDetails: {
+      priceFlat,
+      brokerConcentration,
+      moneyFlowLead,
+      streakOrVdu
+    },
+    confidenceTier,
+    confidenceLabel,
+    isDisqualifiedTrap: false
+  };
+}
+
+function isDisqualifiedNonEquityOrBond(s: any): boolean {
+  const sym = String(s?.symbol || s?.scrip || '').toUpperCase().trim();
+  const sec = String(s?.sector || s?.sectorName || '').toLowerCase();
+  const n = String(s?.name || s?.companyName || '').toLowerCase();
+
+  // Exclude mutual funds, debentures, bonds, promoter shares
+  if (sec.includes('mutual') || sec.includes('debenture') || sec.includes('bond') || sec.includes('promoter')) return true;
+  if (n.includes('mutual fund') || n.includes('debenture') || n.includes('bond') || n.includes('promoter share') || n.includes('rinpatra') || n.includes('urja rinpatra')) return true;
+  if (sym.endsWith('PO') || sym.endsWith('P') || sym.includes('DEB') || sym.startsWith('NMB50') || sym.startsWith('ADBLD')) return true;
+  // Any ticker ending in 2 to 4 digits (e.g. NICAD2091, KBLD86, NBLD85)
+  if (/\d{2,4}$/.test(sym)) return true;
+  if (sym.length > 5 && (sym.includes('D') || sym.includes('B')) && /\d/.test(sym)) return true;
+  if (sym.endsWith('MF') || sym.endsWith('BS') || sym.endsWith('SF') || sym.endsWith('EF') || sym.endsWith('GF') || sym.endsWith('FF')) return true;
+  return false;
+}
+
+/**
+ * Computes the #1 best accumulating stock in each NEPSE sector based on the 4-factor
+ * rule of thumb with strict distribution trap immunity.
+ */
+export function calculateSectorAccumulationChampions(
+  analyzedStocks: any[]
+): SectorAccumulationChampion[] {
+  if (!Array.isArray(analyzedStocks) || analyzedStocks.length === 0) {
+    return [];
+  }
+
+  // Group stocks by canonical normalized sector
+  const sectorGroups = new Map<string, any[]>();
+  CANONICAL_NEPSE_SECTORS.forEach(sec => sectorGroups.set(sec, []));
+
+  analyzedStocks.forEach(s => {
+    if (isDisqualifiedNonEquityOrBond(s)) {
+      return;
+    }
+    const rawSector = String(s.sector || 'Others');
+    const normSec = normalizeNepseSector(rawSector);
+    if (!sectorGroups.has(normSec)) {
+      sectorGroups.set(normSec, []);
+    }
+    sectorGroups.get(normSec)!.push(s);
+  });
+
+  const champions: SectorAccumulationChampion[] = [];
+
+  for (const sectorName of CANONICAL_NEPSE_SECTORS) {
+    const stocksInSec = sectorGroups.get(sectorName) || [];
+    if (stocksInSec.length === 0) continue;
+
+    // Score all stocks in this sector
+    const scoredList = stocksInSec.map(s => {
+      const cornering = calculateStockCorneringScore(s);
+      return {
+        stock: s,
+        ...cornering
+      };
+    });
+
+    // Sort to find the #1 best stock in this sector
+    scoredList.sort((a, b) => {
+      // 1. Non-traps always beat traps
+      if (a.isDisqualifiedTrap !== b.isDisqualifiedTrap) {
+        return a.isDisqualifiedTrap ? 1 : -1;
+      }
+      // 2. Grade A > Grade B > Grade C
+      const tierRank = (tier: string) => (tier === 'GRADE_A_CONFIRMED' ? 3 : tier === 'GRADE_B_EMERGING' ? 2 : 1);
+      const aRank = tierRank(a.confidenceTier);
+      const bRank = tierRank(b.confidenceTier);
+      if (bRank !== aRank) return bRank - aRank;
+
+      // 3. Criteria matched count (4/4 > 3/4)
+      if (b.criteriaMatchedCount !== a.criteriaMatchedCount) {
+        return b.criteriaMatchedCount - a.criteriaMatchedCount;
+      }
+      // 4. Cornering Score
+      if (b.corneringScore !== a.corneringScore) {
+        return b.corneringScore - a.corneringScore;
+      }
+      // 5. BCR3 Buy %
+      const aBcr3 = a.stock.bcr3Buy || a.stock.brokerData?.bcr3BuyPct || 0;
+      const bBcr3 = b.stock.bcr3Buy || b.stock.brokerData?.bcr3BuyPct || 0;
+      if (bBcr3 !== aBcr3) return bBcr3 - aBcr3;
+
+      // 6. Turnover
+      return (b.stock.turnover || 0) - (a.stock.turnover || 0);
+    });
+
+    const topPick = scoredList[0];
+    if (topPick) {
+      const s = topPick.stock;
+      const bcr3Buy = Number(s.bcr3Buy || s.brokerData?.bcr3BuyPct || 0);
+      const topBuyers = (s.brokerData?.topBuyerBrokers || []).slice(0, 3).map((b: any) => `#${b.broker} (${b.pct}%)`).join(', ') || 'N/A';
+
+      champions.push({
+        sector: sectorName,
+        stock: s,
+        symbol: s.symbol,
+        companyName: s.companyName || s.name || s.symbol,
+        corneringScore: topPick.corneringScore,
+        criteriaMatchedCount: topPick.criteriaMatchedCount,
+        criteriaDetails: topPick.criteriaDetails,
+        confidenceTier: topPick.confidenceTier,
+        confidenceLabel: topPick.confidenceLabel,
+        isDisqualifiedTrap: topPick.isDisqualifiedTrap,
+        trapReason: topPick.trapReason,
+        bcr3Buy,
+        topBuyers,
+        cmf: Number(s.wyckoff?.cmf || 0),
+        tradeSizeRatio: Number(s.wyckoff?.tradeSizeRatio || 1.0),
+        ltp: Number(s.ltp || 0),
+        pChange: Number(s.pChange || 0),
+        whaleStreakBadge: s.whaleStreak?.signalBadge
+      });
+    }
+  }
+
+  // Sort sectors so that sectors with confirmed Grade A cornering appear first!
+  return champions.sort((a, b) => {
+    const tierRank = (tier: string) => (tier === 'GRADE_A_CONFIRMED' ? 3 : tier === 'GRADE_B_EMERGING' ? 2 : 1);
+    if (tierRank(b.confidenceTier) !== tierRank(a.confidenceTier)) {
+      return tierRank(b.confidenceTier) - tierRank(a.confidenceTier);
+    }
+    return b.corneringScore - a.corneringScore;
+  });
+}
+
+/**
+ * Unified stealth score getter — always delegates to the proper CMF+Broker+ADL engine.
+ * Use this everywhere instead of ad-hoc heuristics (e.g. `35 + pos52 * 40`).
+ */
+export function getStealthScore(
+  stock: any,
+  candles: Candle[] = [],
+  brokerFlow?: BrokerConcentrationResult
+): number {
+  return calculateStealthAccumulationScore(stock, candles, brokerFlow);
+}
+
+/**
+ * Pillar 4: Multi-Desk Syndicate Cornering & Cluster Analysis Interface
+ */
+export interface SyndicateClusterAnalysis {
+  isSyndicateDetected: boolean;
+  syndicateType: 'CORNERING_ACCUMULATION' | 'COORDINATED_DISTRIBUTION' | 'BALANCED_TRADING' | 'INSUFFICIENT_DATA';
+  syndicateScore: number; // 0 to 100
+  dominantDesks: Array<{
+    brokerId: number | string;
+    brokerName?: string;
+    netQty: number;
+    netAmount: number;
+    sharePct: number;
+    role: 'PRIMARY_ACCUMULATOR' | 'SYNDICATE_PARTNER' | 'CHURN_DESK' | 'PRIMARY_SELLER' | 'PARTICIPANT';
+  }>;
+  top3NetSharePct: number;
+  top5NetSharePct: number;
+  buyerDominanceRatio: number;
+  sellerDispersionRatio: number;
+  summary: string;
+  threatLevel: 'HIGH_CORNERING' | 'MODERATE_ACCUMULATION' | 'OPERATOR_CHURN' | 'BENIGN';
+  tacticalGuidance: string;
+}
+
+/**
+ * Known active institutional and proprietary desks in NEPSE that frequently lead block accumulation or syndicate plays.
+ */
+const KNOWN_SYNDICATE_DESKS = new Set([58, 45, 28, 34, 49, 42, 57, 38, 59, 17, 32, 50, 44, 48]);
+
+/**
+ * Detects coordinated multi-broker syndicate cornering or offloading patterns across top desks.
+ * Solves the common NEPSE reality where operators split orders across desks (e.g. 58 + 45 + 28)
+ * to evade single-broker concentration flags.
+ */
+export function detectSyndicateCluster(brokerData: any): SyndicateClusterAnalysis {
+  if (!brokerData) {
+    return {
+      isSyndicateDetected: false,
+      syndicateType: 'INSUFFICIENT_DATA',
+      syndicateScore: 0,
+      dominantDesks: [],
+      top3NetSharePct: 0,
+      top5NetSharePct: 0,
+      buyerDominanceRatio: 1.0,
+      sellerDispersionRatio: 1.0,
+      summary: 'No broker flow data available for syndicate analysis.',
+      threatLevel: 'BENIGN',
+      tacticalGuidance: 'Wait for live trading floorsheet or broker vault synchronization.'
+    };
+  }
+
+  // Extract buyers and sellers from any common shape (BrokerAnalysisService, BrokerConcentrationResult, or raw API)
+  const rawBuyers: any[] = brokerData.buyers || brokerData.topBuyerBrokers || brokerData.topBuyers || [];
+  const rawSellers: any[] = brokerData.sellers || brokerData.topSellerBrokers || brokerData.topSellers || [];
+
+  if (rawBuyers.length === 0 && rawSellers.length === 0) {
+    return {
+      isSyndicateDetected: false,
+      syndicateType: 'INSUFFICIENT_DATA',
+      syndicateScore: 0,
+      dominantDesks: [],
+      top3NetSharePct: 0,
+      top5NetSharePct: 0,
+      buyerDominanceRatio: 1.0,
+      sellerDispersionRatio: 1.0,
+      summary: 'Insufficient broker trade records for statistical syndicate evaluation.',
+      threatLevel: 'BENIGN',
+      tacticalGuidance: 'Monitor floorsheet during active market hours (11:00 AM - 3:00 PM).'
+    };
+  }
+
+  const brokerMap = new Map<string, {
+    brokerId: number | string;
+    brokerName: string;
+    buyQty: number;
+    buyAmount: number;
+    sellQty: number;
+    sellAmount: number;
+  }>();
+
+  const getOrInit = (id: string | number, name: string = '') => {
+    const key = String(id).trim();
+    if (!brokerMap.has(key)) {
+      const parsedId = parseInt(key, 10);
+      brokerMap.set(key, {
+        brokerId: isNaN(parsedId) ? key : parsedId,
+        brokerName: name || `Broker #${key}`,
+        buyQty: 0,
+        buyAmount: 0,
+        sellQty: 0,
+        sellAmount: 0
+      });
+    }
+    return brokerMap.get(key)!;
+  };
+
+  for (const b of rawBuyers) {
+    const bId = b.brokerId ?? b.broker ?? b.id ?? '';
+    if (!bId) continue;
+    const entry = getOrInit(bId, b.brokerName || b.name || '');
+    entry.buyQty += Number(b.buyQty || b.volume || 0);
+    entry.buyAmount += Number(b.buyAmount || b.buyAmt || b.amount || 0);
+  }
+
+  for (const s of rawSellers) {
+    const sId = s.brokerId ?? s.broker ?? s.id ?? '';
+    if (!sId) continue;
+    const entry = getOrInit(sId, s.brokerName || s.name || '');
+    entry.sellQty += Number(s.sellQty || s.volume || 0);
+    entry.sellAmount += Number(s.sellAmount || s.sellAmt || s.amount || 0);
+  }
+
+  // Calculate net balances per broker
+  const allBrokers = Array.from(brokerMap.values()).map(b => ({
+    ...b,
+    netQty: b.buyQty - b.sellQty,
+    netAmount: b.buyAmount - b.sellAmount
+  }));
+
+  const accumulators = allBrokers.filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
+  const distributors = allBrokers.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty); // Most negative first
+
+  const totalPositiveNetQty = accumulators.reduce((sum, b) => sum + b.netQty, 0);
+  const totalNegativeNetQty = distributors.reduce((sum, b) => sum + Math.abs(b.netQty), 0);
+  const totalGrossBuyQty = allBrokers.reduce((sum, b) => sum + b.buyQty, 0);
+  const totalGrossSellQty = allBrokers.reduce((sum, b) => sum + b.sellQty, 0);
+
+  // Top 3 and Top 5 buyer concentration
+  const top3BuyNetQty = accumulators.slice(0, 3).reduce((sum, b) => sum + b.netQty, 0);
+  const top5BuyNetQty = accumulators.slice(0, 5).reduce((sum, b) => sum + b.netQty, 0);
+  const top3NetSharePct = totalPositiveNetQty > 0 ? Math.min(100, Math.round((top3BuyNetQty / totalPositiveNetQty) * 100)) : 0;
+  const top5NetSharePct = totalPositiveNetQty > 0 ? Math.min(100, Math.round((top5BuyNetQty / totalPositiveNetQty) * 100)) : 0;
+
+  // Top 3 seller concentration
+  const top3SellNetQty = distributors.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netQty), 0);
+  const top3SellSharePct = totalNegativeNetQty > 0 ? Math.min(100, Math.round((top3SellNetQty / totalNegativeNetQty) * 100)) : 0;
+
+  // Seller side dispersion: if seller volume is split across many brokers, top seller % is low
+  const topSellerGrossQty = rawSellers[0]?.sellQty || rawSellers[0]?.volume || 0;
+  const topSellerSellPct = totalGrossSellQty > 0 ? Math.round((topSellerGrossQty / totalGrossSellQty) * 100) : 25;
+  const sellerDispersionRatio = topSellerSellPct > 0 ? +(top3NetSharePct / Math.max(12, topSellerSellPct)).toFixed(2) : 1.0;
+
+  // Check known syndicate desks presence in top 3
+  const top3Desks = accumulators.slice(0, 3).map(b => typeof b.brokerId === 'number' ? b.brokerId : parseInt(String(b.brokerId), 10));
+  const knownDeskCount = top3Desks.filter(id => KNOWN_SYNDICATE_DESKS.has(id)).length;
+
+  let syndicateType: SyndicateClusterAnalysis['syndicateType'] = 'BALANCED_TRADING';
+  let threatLevel: SyndicateClusterAnalysis['threatLevel'] = 'BENIGN';
+  let syndicateScore = 45;
+  let summary = '';
+  let tacticalGuidance = '';
+
+  const topAccumulatorNetShare = totalPositiveNetQty > 0 ? ((accumulators[0]?.netQty || 0) / totalPositiveNetQty) : 0;
+  const isSymmetricTwoWay = Math.abs(top3NetSharePct - top3SellSharePct) <= 25 && knownDeskCount === 0 && topAccumulatorNetShare < 0.32;
+
+  const isDominantSellOffload = top3SellSharePct >= 55 && distributors.length >= 2 && (totalNegativeNetQty > totalPositiveNetQty || top3SellNetQty > top3BuyNetQty) && !isSymmetricTwoWay;
+  const isDominantBuyCornering = top3NetSharePct >= 55 && accumulators.length >= 2 && totalPositiveNetQty > 0 && !isDominantSellOffload && !isSymmetricTwoWay;
+  const deskListStr = accumulators.slice(0, 3).map(b => `#${b.brokerId}`).join(', ');
+
+  if (isDominantSellOffload) {
+    syndicateType = 'COORDINATED_DISTRIBUTION';
+    syndicateScore = Math.min(99, Math.round(top3SellSharePct * 0.72 + 15));
+    threatLevel = 'OPERATOR_CHURN';
+    const sellDeskList = distributors.slice(0, 3).map(b => `#${b.brokerId}`).join(', ');
+    summary = `Coordinated Distribution / Offloading: Desks ${sellDeskList} dumping ${top3SellSharePct}% of net volume directly into fragmented retail buyer bids.`;
+    tacticalGuidance = `High risk of distribution trap or markup exhaustion. Strict capital preservation: trim profitable positions or place hard stop-losses.`;
+  } else if (isDominantBuyCornering) {
+    syndicateType = 'CORNERING_ACCUMULATION';
+    syndicateScore = Math.min(99, Math.round(
+      (top3NetSharePct * 0.65) +
+      (sellerDispersionRatio >= 1.8 ? 18 : 8) +
+      (knownDeskCount >= 2 ? 14 : knownDeskCount === 1 ? 7 : 0)
+    ));
+    threatLevel = syndicateScore >= 75 ? 'HIGH_CORNERING' : 'MODERATE_ACCUMULATION';
+    summary = `Multi-Desk Syndicate Cornering: Desks ${deskListStr} collectively absorb ${top3NetSharePct}% of net floating supply while retail sell-side remains dispersed.`;
+    tacticalGuidance = `Smart money syndicate is locking up liquidity. Maintain discipline: wait for low-volume consolidation or tight pullback into 20 EMA before scaling in. Do not chase upper circuits.`;
+  } else {
+    syndicateType = 'BALANCED_TRADING';
+    threatLevel = 'BENIGN';
+    syndicateScore = Math.min(50, Math.max(20, Math.round(top3NetSharePct * 0.5)));
+    summary = `Balanced Market Participation: Top 3 broker desks account for ${top3NetSharePct}% net buy volume. No abnormal multi-broker cornering cluster detected.`;
+    tacticalGuidance = `Flow is organic with two-way liquidity. Follow standard price-action, support/resistance, and volume pivot confirmation.`;
+  }
+
+  // Dominant desks formatting: if distribution, show top selling desks; if accumulation, show top buying desks
+  const targetBrokers = syndicateType === 'COORDINATED_DISTRIBUTION' ? distributors : accumulators;
+  const targetTotalNet = syndicateType === 'COORDINATED_DISTRIBUTION' ? totalNegativeNetQty : totalPositiveNetQty;
+
+  const dominantDesks: SyndicateClusterAnalysis['dominantDesks'] = targetBrokers.slice(0, 5).map((b, idx) => {
+    const rawNet = Math.abs(b.netQty);
+    const sharePct = targetTotalNet > 0 ? +((rawNet / targetTotalNet) * 100).toFixed(1) : 0;
+    const role: SyndicateClusterAnalysis['dominantDesks'][0]['role'] =
+      syndicateType === 'COORDINATED_DISTRIBUTION'
+        ? (idx === 0 ? 'PRIMARY_SELLER' : 'CHURN_DESK')
+        : (idx === 0 ? 'PRIMARY_ACCUMULATOR' : (sharePct >= 14 ? 'SYNDICATE_PARTNER' : 'PARTICIPANT'));
+    return {
+      brokerId: b.brokerId,
+      brokerName: b.brokerName,
+      netQty: b.netQty,
+      netAmount: b.netAmount,
+      sharePct,
+      role
+    };
+  });
+
+  return {
+    isSyndicateDetected: syndicateType === 'CORNERING_ACCUMULATION' || syndicateType === 'COORDINATED_DISTRIBUTION',
+    syndicateType,
+    syndicateScore,
+    dominantDesks,
+    top3NetSharePct,
+    top5NetSharePct,
+    buyerDominanceRatio: +(totalPositiveNetQty / Math.max(1, totalGrossBuyQty)).toFixed(2),
+    sellerDispersionRatio,
+    summary,
+    threatLevel,
+    tacticalGuidance
   };
 }

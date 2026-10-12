@@ -653,56 +653,7 @@ export default function PredictorHub({
         const json = await sentRes.json();
         if (Array.isArray(json.data)) setSentimentNews(json.data);
       } else {
-        setSentimentNews([
-          {
-            id: 1, source: 'ShareSansar',
-            headline: 'NRB leaves policy rate steady, cites resilient remittance and banking system liquidity surge',
-            url: 'https://sharesansar.com',
-            published_at: '2 hours ago',
-            sentiment_score: 0.65, category: 'nrb_policy', related_symbols: ['NABIL', 'NICA', 'GBIME'],
-            description: 'Nepal Rastra Bank maintains accommodative policy stance with liquidity surplus exceeding Rs. 100 Arba.',
-            paragraphs: [
-              'Nepal Rastra Bank (NRB) has decided to keep its key policy rate steady in its latest monetary review, citing robust remittance inflows and comfortable interbank liquidity exceeding Rs. 100 Arba.',
-              'The central bank noted that weighted average lending rates across commercial banks have trended downwards, supporting credit uptake and equity market stability. Top commercial lenders including NABIL, NICA, and GBIME are positioned to benefit from reduced cost of funds.'
-            ]
-          },
-          {
-            id: 2, source: 'MeroLagani',
-            headline: 'Commercial banks record 14.2% expansion in non-interest income and deposit inflows',
-            url: 'https://merolagani.com',
-            published_at: '5 hours ago',
-            sentiment_score: 0.58, category: 'earnings', related_symbols: ['SCB', 'EBL', 'SBI'],
-            description: 'Core operating metrics show strong turnaround driven by trade finance and commission revenue.',
-            paragraphs: [
-              'Commercial banking institutions published encouraging preliminary earnings figures showing an aggregate 14.2% growth in non-interest revenue and sustained double-digit deposit growth.',
-              'Tier-1 capital adequacy remains comfortable above regulatory limits, allowing well-capitalized institutions like Standard Chartered Bank (SCB) and Everest Bank (EBL) to declare attractive dividend payouts for the fiscal year.'
-            ]
-          },
-          {
-            id: 3, source: 'NepaliPaisa',
-            headline: 'SEBON approves public issuance for two major hydropower developers with local quotas',
-            url: 'https://nepalipaisa.com',
-            published_at: '8 hours ago',
-            sentiment_score: 0.42, category: 'ipo', related_symbols: ['UPPER', 'CHCL', 'SHIVM'],
-            description: 'Regulatory green light granted for critical renewable energy projects expanding Nepal energy export capacity.',
-            paragraphs: [
-              'The Securities Board of Nepal (SEBON) has formally granted approval for fresh initial public offerings from two prominent hydropower producers, expanding investment opportunities in clean energy generation.',
-              'With bilateral power trade agreements with India progressing, institutional funds continue to accumulate quality energy stocks with operational run-of-river generation capacity.'
-            ]
-          },
-          {
-            id: 4, source: 'ShareSansar',
-            headline: 'Supreme Court concludes hearing on market regulatory appeals; clears path for smooth operations',
-            url: 'https://sharesansar.com',
-            published_at: '14 hours ago',
-            sentiment_score: 0.35, category: 'political', related_symbols: ['NEPSE'],
-            description: 'Judicial clarity removes policy overhang, reassuring retail and institutional market participants.',
-            paragraphs: [
-              'The Supreme Court of Nepal has disposed of long-pending administrative writ petitions concerning capital market regulations, clearing the path for uninterrupted functioning of broker branches and automated clearing.',
-              'Market participants welcomed the judicial resolution as a stabilizing milestone that reinforces investor confidence across all major NEPSE index sectors.'
-            ]
-          }
-        ]);
+        setSentimentNews([]);
       }
 
       // 4. Fetch Macro
@@ -711,13 +662,7 @@ export default function PredictorHub({
         const json = await macroRes.json();
         if (json.data) setMacroData(json.data);
       } else {
-        setMacroData({
-          m2_growth_pct: 12.8,
-          interest_rate_pct: 5.5,
-          cpi_inflation_pct: 4.25,
-          npr_usd_rate: 134.8,
-          remittance_growth_pct: 16.4
-        });
+        setMacroData(null);
       }
     } catch (e) {
       console.warn('[PredictorHub] Fetch error:', e);
@@ -2118,8 +2063,8 @@ export default function PredictorHub({
 
               // Analog / confidence data (from plan)
               const winRate          = hasPlan ? (primePlan.analogResult?.stats?.winRate ?? null) : null;
-              const analogCount      = hasPlan ? (primePlan.analogResult?.stats?.sampleSize ?? 0) : (primeDailyPick.bayesianEvidence?.sampleSize ?? 0);
-              const confidenceLevel  = hasPlan ? (primePlan.confidence?.level || 'LOW') : (analogCount >= 4 ? 'MEDIUM' : 'LOW');
+              const analogCount      = hasPlan ? (primePlan.analogResult?.stats?.sampleSize ?? 0) : (primeDailyPick.analogCount ?? primeDailyPick.bayesianEvidence?.sampleSize ?? 0);
+              const confidenceLevel  = hasPlan ? (primePlan.confidence?.level || 'LOW') : (primeDailyPick.confidenceLevel || (analogCount >= 4 ? 'MEDIUM' : 'LOW'));
               const signalAgreement  = hasPlan ? primePlan.signalAgreement : null;
               const bullFactors      = hasPlan ? (primePlan.bullishFactors || []) : [];
               const bearFactors      = hasPlan ? (primePlan.bearishFactors || []) : [];
@@ -2292,7 +2237,7 @@ export default function PredictorHub({
                         color: confColor,
                         border: `1px solid ${confColor}40`
                       }}>
-                        🛡️ {confidenceLevel} ({analogCount} Analogs)
+                        🛡️ {confidenceLevel} ({analogCount > 0 ? `${analogCount} Analogs` : 'Backtested Model'})
                       </span>
                     </div>
                   </div>
@@ -2392,7 +2337,7 @@ export default function PredictorHub({
                       <div style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 10px' }}>
                         <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Evidence Confidence</div>
                         <div style={{ fontSize: 12, fontWeight: 800, color: confColor, marginTop: 2 }}>
-                          {confidenceLevel} ({analogCount} ANALOGS)
+                          {confidenceLevel} ({analogCount > 0 ? `${analogCount} ANALOGS` : 'BACKTESTED'})
                         </div>
                       </div>
 
@@ -3114,7 +3059,12 @@ export default function PredictorHub({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {sentimentNews.map((news) => {
+                {sentimentNews.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13, background: 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
+                    No scraped news sentiment articles currently available. Feed updates with real-time news during market hours.
+                  </div>
+                ) : (
+                  sentimentNews.map((news) => {
                   const score = Number(news.sentiment_score || 0);
                   const isBullish = score > 0.15;
                   const isBearish = score < -0.15;
@@ -3201,7 +3151,7 @@ export default function PredictorHub({
                       </div>
                     </div>
                   );
-                })}
+                }))}
               </div>
             </div>
           </div>

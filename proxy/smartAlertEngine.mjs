@@ -25,6 +25,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getBrokerName, aggregateFloorsheetRows, fetchShareSansarFloorsheet } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { sendTelegramSmartAlert } from './telegramNotifier.mjs';
+import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -147,6 +149,16 @@ export function broadcastAlert(alertPayload) {
   // 2. Dispatch Push Notification via FCM
   dispatchFcmNotification(alertPayload).catch(err => {
     console.warn('[SmartAlertEngine] Push dispatch warning:', err.message);
+  });
+
+  // 3. Dispatch Instant Alert to Telegram Bot
+  sendTelegramSmartAlert(alertPayload).catch(err => {
+    console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
+  });
+
+  // 4. Dispatch Instant Alert to Discord Webhook (100% Free / Zero SMS)
+  sendDiscordSmartAlert(alertPayload).catch(err => {
+    console.warn('[SmartAlertEngine] Discord alert dispatch warning:', err.message);
   });
 }
 

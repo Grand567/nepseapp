@@ -387,7 +387,12 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
 
     const isPriceMet = ltp >= targetPrice;
     const isVolumeMet = rvol >= targetRvol;
-    const isTriggered = isPriceMet && isVolumeMet;
+    const pChange = Number(stock.pChange || 0);
+    const stealthScore = Number(stock.stealthAccumulation || 0);
+    const isStealthAccumulation = stealthScore >= 68 && pChange >= -2.0 && pChange <= 3.5 && rvol >= 1.15;
+    const isDistributionTrap = Boolean(stock.isChurnDistribution || (pChange > 6 && rvol > 2.2) || (stealthScore < 35 && pChange < -3 && rvol > 1.5));
+
+    const isTriggered = (isPriceMet && isVolumeMet) || isStealthAccumulation || isDistributionTrap;
 
     // Check if triggered today already
     const lastDate = config.lastTriggeredAt ? new Date(config.lastTriggeredAt).toISOString().slice(0, 10) : null;
@@ -402,10 +407,19 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
         lastTriggeredAt: Date.now()
       });
 
+      const alertType = isDistributionTrap
+        ? 'DISTRIBUTION_TRAP'
+        : isStealthAccumulation
+        ? 'STEALTH_ACCUMULATION'
+        : 'PRICE_BREAKOUT';
+
       const alertPayload = {
         symbol: sym,
         stockName: stock.name || stock.companyName || sym,
+        type: alertType,
         ltp,
+        pChange,
+        stealthScore,
         breakoutPrice: targetPrice,
         rvol,
         rvolThreshold: targetRvol,
@@ -421,14 +435,26 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
       }
 
       // Trigger phone vibration (Android / Mobile)
-      triggerBreakoutVibration([300, 150, 300, 150, 450]);
+      triggerBreakoutVibration(isDistributionTrap ? [400, 200, 400] : [300, 150, 300, 150, 450]);
 
       // Dispatch system notification if enabled
       if (config.pushEnabled !== false) {
-        dispatchSystemNotification(
-          `🚀 Breakout Alert: ${sym} Triggers!`,
-          `${sym} broke above Rs. ${targetPrice} with ${rvol.toFixed(2)}x RVOL! Execution checklist satisfied.`
-        );
+        if (alertType === 'DISTRIBUTION_TRAP') {
+          dispatchSystemNotification(
+            `🚨 Distribution Trap Warning: ${sym}`,
+            `${sym} shows heavy volume churn / operator offloading (${pChange > 0 ? '+' : ''}${pChange}%, ${rvol.toFixed(1)}x RVOL). Protect capital!`
+          );
+        } else if (alertType === 'STEALTH_ACCUMULATION') {
+          dispatchSystemNotification(
+            `🟢 Smart Money Stealth Base: ${sym}`,
+            `${sym} detected in tight institutional accumulation (Score: ${stealthScore}/100, RVOL: ${rvol.toFixed(1)}x). Base building active!`
+          );
+        } else {
+          dispatchSystemNotification(
+            `🚀 Breakout Alert: ${sym} Triggers!`,
+            `${sym} broke above Rs. ${targetPrice} with ${rvol.toFixed(2)}x RVOL! Execution checklist satisfied.`
+          );
+        }
       }
 
       // Fire in-app event

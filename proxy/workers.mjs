@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { sendTelegramPrimePickAlert } from './telegramNotifier.mjs';
+import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -245,6 +247,16 @@ export async function runFullUniversePrimePick() {
 
     setVerifiedPostMarketPrimePick(winner);
     console.log(`[PrimePickWorker] ✅ Winner: ${sym} | Score: ${scoreVal} | Verdict: ${plan.verdict} | ${qualifiedCandidates.length} qualified from ${candidates.length} scanned`);
+
+    // Dispatch 3:45 PM Daily Post-Market Setup to Telegram Bot
+    sendTelegramPrimePickAlert(winner).catch(tErr => {
+      console.warn('[PrimePickWorker] Telegram prime pick dispatch notice:', tErr.message);
+    });
+
+    // Dispatch 3:45 PM Daily Post-Market Setup to Discord Webhook (100% Free)
+    sendDiscordPrimePickAlert(winner).catch(dErr => {
+      console.warn('[PrimePickWorker] Discord prime pick dispatch notice:', dErr.message);
+    });
   } catch (err) {
     console.error('[PrimePickWorker] Fatal error:', err?.message || err);
   }

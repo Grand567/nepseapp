@@ -26,6 +26,21 @@ import {
   testTriggerAlert, 
   subscribeAlertEvents 
 } from './smartAlertEngine.mjs';
+import { 
+  getTelegramStatus, 
+  saveTelegramConfig, 
+  testTelegramConnection, 
+  sendTelegramSmartAlert,
+  sendTelegramPrimePickAlert,
+  autoDetectChatId
+} from './telegramNotifier.mjs';
+import {
+  getDiscordStatus,
+  saveDiscordConfig,
+  testDiscordWebhook,
+  sendDiscordSmartAlert,
+  sendDiscordPrimePickAlert
+} from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
@@ -86,6 +101,7 @@ try {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── A7 Security Fix: Restrict CORS to known front-end origins only.
 // The wildcard '*' was removed because this server proxies credentialled
@@ -134,10 +150,10 @@ const apiLimiter = rateLimit({
     return req.path === '/api/ping' || req.path === '/health';
   }
 });
-// Stricter limiter for expensive scraping endpoints
+// Limiter for data scraping endpoints (floorsheet, price-history, broker-analysis)
 const scrapeLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests to data endpoints. Please wait.' },
@@ -8316,6 +8332,114 @@ app.get('/api/smart-alerts/events', (req, res) => {
 
   const unsubscribe = subscribeAlertEvents(res);
   req.on('close', unsubscribe);
+});
+
+// ── TELEGRAM NOTIFICATION CONTROLS ──
+app.get('/api/telegram/status', (req, res) => {
+  try {
+    const status = getTelegramStatus();
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/config', (req, res) => {
+  try {
+    const { botToken, chatId, enabled } = req.body || {};
+    const result = saveTelegramConfig({ botToken, chatId, enabled });
+    res.json({ success: result.success, message: result.success ? 'Telegram configuration saved successfully' : result.error });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/test', async (req, res) => {
+  try {
+    const { botToken, chatId } = req.body || {};
+    const result = await testTelegramConnection(botToken, chatId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/detect-chat-id', async (req, res) => {
+  try {
+    const { botToken } = req.body || {};
+    const result = await autoDetectChatId(botToken);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/test-alert', async (req, res) => {
+  try {
+    const mockAlert = {
+      symbol: req.body?.symbol || 'HATHY',
+      ltp: Number(req.body?.ltp || 420),
+      buyZone: { low: 415, high: 422 },
+      dominantBrokersText: 'Brokers 58, 45, 34',
+      concentrationPct: 56,
+      stopLoss: 405,
+      target1: 445,
+      target2: 475
+    };
+    const result = await sendTelegramSmartAlert(mockAlert);
+    res.json({ success: result.success, message: result.success ? 'Sample alert sent to your Telegram chat!' : (result.error || result.reason) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── DISCORD NOTIFICATION CONTROLS (100% FREE / ZERO PHONE FEES) ──
+app.get('/api/discord/status', (req, res) => {
+  try {
+    const status = getDiscordStatus();
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/discord/config', (req, res) => {
+  try {
+    const { webhookUrl, enabled } = req.body || {};
+    const result = saveDiscordConfig({ webhookUrl, enabled });
+    res.json({ success: result.success, message: result.success ? 'Discord webhook saved successfully' : result.error });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/discord/test', async (req, res) => {
+  try {
+    const { webhookUrl } = req.body || {};
+    const result = await testDiscordWebhook(webhookUrl);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/discord/test-alert', async (req, res) => {
+  try {
+    const mockAlert = {
+      symbol: req.body?.symbol || 'HATHY',
+      ltp: Number(req.body?.ltp || 420),
+      buyZone: { low: 415, high: 422 },
+      dominantBrokersText: 'Brokers 58, 45, 34',
+      concentrationPct: 56,
+      stopLoss: 405,
+      target1: 445,
+      target2: 475
+    };
+    const result = await sendDiscordSmartAlert(mockAlert);
+    res.json({ success: result.success, message: result.success ? 'Sample alert sent to your Discord channel!' : (result.error || result.reason) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 6. Verified Post-Market / Pre-Open Day Prime Pick

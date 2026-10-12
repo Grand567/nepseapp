@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronLeft, X, Layers, CheckCircle2, TrendingUp, TrendingDown,
   Activity, Zap, BookOpen, Users, LineChart, PieChart, BarChart2,
@@ -32,6 +33,7 @@ import {
   fetchMarketDepth,
   fetchDividendHistory,
   fetchCompareStocks,
+  fetchLiveStockQuote,
   getLatestTradingDateStr,
   getCachedRealPriceHistory,
   getCachedRealBrokerAnalysis,
@@ -705,6 +707,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [compareData, setCompareData] = useState(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [comparePeer, setComparePeer] = useState(null);
+  const [liveQuote, setLiveQuote] = useState(null);
+  const [clockTime, setClockTime] = useState(() => getDetailedMarketStatus().nptTime);
 
   // Register mobile back gesture so Android back swipes close this modal smoothly
   useBackHandler(() => {
@@ -724,8 +728,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       const found = allStocks.find(s => s && s.symbol === stock.symbol);
       if (!found) return stock;
       return {
-        ...found,
         ...stock,
+        ...found,
+        ltp: Number(found.ltp || stock.ltp || 0),
+        pChange: Number(found.pChange !== undefined ? found.pChange : (stock.pChange !== undefined ? stock.pChange : 0)),
+        change: Number(found.change !== undefined ? found.change : (stock.change !== undefined ? stock.change : 0)),
+        volume: Number(found.volume || stock.volume || 0),
+        turnover: Number(found.turnover || stock.turnover || 0),
+        high: Number(found.high || stock.high || 0),
+        low: Number(found.low || stock.low || 0),
+        open: Number(found.open || stock.open || 0),
+        prevClose: Number(found.prevClose || stock.prevClose || 0),
         name: (stock.name && stock.name !== stock.symbol && stock.name !== 'Unknown') ? stock.name : (found.companyName || found.name || stock.symbol),
         companyName: (stock.companyName && stock.companyName !== stock.symbol && stock.companyName !== 'Unknown') ? stock.companyName : (found.companyName || found.name || stock.symbol),
         sector: (stock.sector && stock.sector !== 'Unknown' && stock.sector !== 'NEPSE') ? stock.sector : (found.sector || 'Others')
@@ -751,27 +764,77 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     };
   }, [resolvedStock]);
 
+  // ── High-Frequency Real-Time Live Price & Market Depth Ticker ──
+  useEffect(() => {
+    const sym = resolvedStock?.symbol;
+    if (!sym) return;
+
+    let isMounted = true;
+
+    // Immediately fetch single-stock live quote on modal open
+    fetchLiveStockQuote(sym).then(q => {
+      if (isMounted && q && q.ltp > 0) {
+        setLiveQuote(q);
+      }
+    }).catch(() => {});
+
+    // Clock and active quote ticker
+    const tickInterval = setInterval(() => {
+      if (!isMounted) return;
+      const ms = getDetailedMarketStatus();
+      setClockTime(ms.nptTime);
+
+      if (ms.isOpen || ms.isPreOpen) {
+        fetchLiveStockQuote(sym).then(q => {
+          if (isMounted && q && q.ltp > 0) {
+            setLiveQuote(q);
+          }
+        }).catch(() => {});
+
+        // Proactively refresh market depth if user is viewing depth tab
+        if (activeTab === 'depth_broker') {
+          fetchMarketDepth(sym).then(depth => {
+            if (isMounted && depth) setRealMarketDepth(depth);
+          }).catch(() => {});
+        }
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(tickInterval);
+    };
+  }, [resolvedStock?.symbol, activeTab]);
+
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
     const s = resolvedStock || { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
     
-    // Live exchange price from active market feed (allStocks) ALWAYS takes absolute priority over fundamentals
-    const liveLtp = Number(s.ltp || s.closePrice || s.latestPrice || 0);
+    // Live exchange price from single-stock quote or active market feed (allStocks) ALWAYS takes absolute priority
+    const quoteLtp = Number(liveQuote?.ltp || liveQuote?.closePrice || 0);
+    const liveLtp = quoteLtp > 0 ? quoteLtp : Number(s.ltp || s.closePrice || s.latestPrice || 0);
     const ltp = liveLtp > 0 ? liveLtp : Number(liveDetail?.closePrice || liveDetail?.marketPrice || 0);
 
-    const livePChange = Number(s.pChange !== undefined ? s.pChange : (s.percentageChange !== undefined ? s.percentageChange : (liveDetail?.pChange || 0)));
-    const liveChange = Number(s.change !== undefined ? s.change : (liveDetail?.change || 0));
-    const liveOpen = Number(s.open || s.openPrice || liveDetail?.openPrice || ltp);
-    const liveHigh = Number(s.high || s.highPrice || liveDetail?.highPrice || ltp);
-    const liveLow = Number(s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
-    const livePrevClose = Number(s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
+    const livePChange = Number(
+      liveQuote?.pChange !== undefined ? liveQuote.pChange :
+      (s.pChange !== undefined ? s.pChange : (s.percentageChange !== undefined ? s.percentageChange : (liveDetail?.pChange || 0)))
+    );
+    const liveChange = Number(
+      liveQuote?.change !== undefined ? liveQuote.change :
+      (s.change !== undefined ? s.change : (liveDetail?.change || 0))
+    );
+    const liveOpen = Number(liveQuote?.open || s.open || s.openPrice || liveDetail?.openPrice || ltp);
+    const liveHigh = Number(liveQuote?.high || s.high || s.highPrice || liveDetail?.highPrice || ltp);
+    const liveLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
+    const livePrevClose = Number(liveQuote?.previousClose || s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
 
-    // Derive 52W High / Low from real price history if not in liveDetail
+    // Derive 52W High / Low from real price history (strictly 52 weeks = ~260 trading days) if not in liveDetail
     let histHigh = 0;
     let histLow = 0;
     if (realPriceHistory && realPriceHistory.length > 0) {
-      histHigh = Math.max(...realPriceHistory.map(h => Number(h.high || h.close || 0)));
-      const lows = realPriceHistory.map(h => Number(h.low || h.close || 0)).filter(p => p > 0);
+      const last52wCandles = realPriceHistory.slice(-260);
+      histHigh = Math.max(...last52wCandles.map(h => Number(h.high || h.close || 0)));
+      const lows = last52wCandles.map(h => Number(h.low || h.close || 0)).filter(p => p > 0);
       if (lows.length > 0) histLow = Math.min(...lows);
     }
 
@@ -790,15 +853,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     const effectiveSector = (s.sector && s.sector !== 'Unknown') ? s.sector : (liveDetail?.sector || 'Others');
     const bench = getSectorBenchmark(effectiveSector);
 
-    const effectiveEps = eps !== undefined ? eps : (bench.medianEPS || 20);
-    const effectiveBookValue = bookValue !== undefined
-      ? bookValue
-      : (ltp > 0 && bench.medianPBV ? +(ltp / bench.medianPBV).toFixed(1) : +(effectiveEps * (bench.medianPE || 16) / (bench.medianPBV || 1.6)).toFixed(1));
-
     const isBenchmarkEstimate = (eps === undefined || bookValue === undefined);
 
-    const pe = Number(liveDetail?.pe > 0 ? liveDetail.pe : (s.pe > 0 ? s.pe : (effectiveEps !== 0 && ltp > 0 ? +(ltp / effectiveEps).toFixed(2) : (bench.medianPE || 16))));
-    const pb = Number(liveDetail?.pbv > 0 ? liveDetail.pbv : (liveDetail?.pb > 0 ? liveDetail.pb : (s.pb > 0 ? s.pb : (s.pbv > 0 ? s.pbv : (effectiveBookValue > 0 && ltp > 0 ? +(ltp / effectiveBookValue).toFixed(2) : (bench.medianPBV || 1.6))))));
+    const rawPe = liveDetail?.pe > 0 ? Number(liveDetail.pe) : (s.pe > 0 ? Number(s.pe) : (eps !== undefined && eps > 0 && ltp > 0 ? +(ltp / eps).toFixed(2) : undefined));
+    const pe = (rawPe != null && !isNaN(rawPe) && rawPe > 0) ? rawPe : undefined;
+
+    const rawPb = (liveDetail?.pbv > 0 ? Number(liveDetail.pbv) : (liveDetail?.pb > 0 ? Number(liveDetail.pb) : (s.pb > 0 ? Number(s.pb) : (s.pbv > 0 ? Number(s.pbv) : (bookValue !== undefined && bookValue > 0 && ltp > 0 ? +(ltp / bookValue).toFixed(2) : undefined)))));
+    const pb = (rawPb != null && !isNaN(rawPb) && rawPb > 0) ? rawPb : undefined;
 
     const listedShares = Number(liveDetail?.listedShares || liveDetail?.sharesOutstanding || s.listedShares || 0);
     const paidUpCapital = Number(liveDetail?.paidUpCapital || s.paidUpCapital || 0);
@@ -808,11 +869,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     const promoterPercentage = Number(liveDetail?.promoterPercentage || s.promoterPercentage || 0);
     const publicPercentage = Number(liveDetail?.publicPercentage || s.publicPercentage || (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0));
 
-    const stockVol = Number(s.volume || s.totalTradedQuantity || 0);
+    const quoteVol = Number(liveQuote?.volume || 0);
+    const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
     const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
     const volume = stockVol > 0 ? stockVol : liveVol;
 
-    const stockTurnover = Number(s.turnover || s.totalTradedValue || 0);
+    const quoteTurnover = Number(liveQuote?.turnover || 0);
+    const stockTurnover = quoteTurnover > 0 ? quoteTurnover : Number(s.turnover || s.totalTradedValue || 0);
     const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
     const turnover = stockTurnover > 0 ? stockTurnover : liveTurnover;
 
@@ -832,10 +895,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       turnover,
       rvol,
       avgVolume20D,
-      eps: effectiveEps,
+      eps,
       pe,
       pb,
-      bookValue: effectiveBookValue,
+      bookValue,
       isBenchmarkEstimate,
       hasAuthenticFundamentals: !isBenchmarkEstimate,
       high52w,
@@ -854,7 +917,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       fiscalYear: liveDetail?.fiscalYear || s.fiscalYear || '',
       quarter: liveDetail?.quarter || s.quarter || ''
     };
-  }, [resolvedStock, liveDetail, realPriceHistory]);
+  }, [resolvedStock, liveDetail, realPriceHistory, liveQuote]);
+
+  // Live chart update: when d.ltp changes during active trading session, keep 1D chart tail in sync
+  useEffect(() => {
+    if (chartTimeframe === '1D' && d?.ltp > 0) {
+      setHistory(prev => {
+        if (!prev || prev.length === 0) return prev;
+        const last = prev[prev.length - 1];
+        if (!last || last.close === d.ltp) return prev;
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...last,
+          close: d.ltp,
+          high: Math.max(last.high || d.ltp, d.ltp),
+          low: Math.min(last.low || d.ltp, d.ltp)
+        };
+        return updated;
+      });
+    }
+  }, [d?.ltp, chartTimeframe]);
 
   // ── Unified Entry/Exit & Day Prime Pick Plan Parity ──
   const cachedPrime = useMemo(() => {
@@ -900,19 +982,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         brokerAnalysis: realBrokerAnalysis || null
       });
 
-      if (plan?.verdict && plan?.levels) {
-        recordSignal({
-          symbol: d.symbol,
-          signalType: plan.verdict.includes('BUY') ? 'BUY' : plan.verdict.includes('AVOID') ? 'AVOID' : 'HOLD',
-          source: 'entry-exit',
-          entryPrice: d.ltp,
-          targetPrice: plan.levels?.target1?.price || null,
-          stopLoss: plan.levels?.stopLoss?.price || null,
-          verdict: plan.verdict,
-          setupScore: plan.setupScore || plan.combinedScore || 0
-        });
-      }
-
       return plan;
     } catch (err) {
       console.warn('[StockDetailModal] generateEntryExitPlan error:', err);
@@ -924,6 +993,31 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const modalVerdict = entryExitPlan?.verdict || '';
   const modalIsAvoid = modalVerdict.includes('AVOID') || modalVerdict.includes('EXIT') || modalVerdict.includes('NO TRADE') || modalVerdict.includes('REDUCE') || modalVerdict.includes('STAY OUT') || Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping);
   const modalIsHoldWait = !modalIsAvoid && (modalVerdict.includes('HOLD') || modalVerdict.includes('WAIT') || modalVerdict.includes('NEUTRAL'));
+
+  // Automatically record actionable algorithmic BUY setups to Signal Tracker
+  useEffect(() => {
+    if (!d?.symbol || !entryExitPlan) return;
+    const verdict = String(entryExitPlan.verdict || '');
+    const isActionable = isActionableBuySignal(entryExitPlan) || verdict.includes('BUY') || verdict.includes('ACCUMULATE');
+    if (!isActionable || modalIsAvoid) return;
+
+    const entry = Number(d.ltp || entryExitPlan.levels?.entry?.price || 0);
+    const target = Number(entryExitPlan.levels?.target1?.price || 0);
+    const stop = Number(entryExitPlan.levels?.stopLoss?.price || 0);
+
+    if (entry > 0 && target > 0 && stop > 0) {
+      recordSignal({
+        symbol: String(d.symbol).toUpperCase().trim(),
+        signalType: 'BUY',
+        source: 'entry-exit',
+        entryPrice: entry,
+        targetPrice: target,
+        stopLoss: stop,
+        verdict: entryExitPlan.verdict,
+        setupScore: entryExitPlan.setupScore || entryExitPlan.combinedScore || 0
+      });
+    }
+  }, [d?.symbol, d?.ltp, entryExitPlan, modalIsAvoid]);
 
   const isPrimePick = useMemo(() => {
     if (!d?.symbol) return false;
@@ -1703,14 +1797,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     { id: 'ai_calc',      label: 'AI Guru & Calculator', icon: BrainCircuit }
   ];
 
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, []);
+
   const isBull = (d.pChange || 0) >= 0;
 
-  return (
+  const modalContent = (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 500,
+        zIndex: 99999,
         background: '#0B0E14',
         display: 'flex',
         flexDirection: 'column',
@@ -1803,6 +1907,37 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           >
             <Bell style={{ width: 14, height: 14 }} />
             <span>Alert</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const sym = d.symbol;
+              if (!sym) return;
+              try {
+                const q = await fetchLiveStockQuote(sym);
+                if (q && q.ltp > 0) setLiveQuote(q);
+                if (activeTab === 'depth_broker') {
+                  const depth = await fetchMarketDepth(sym);
+                  if (depth) setRealMarketDepth(depth);
+                }
+              } catch (_) {}
+            }}
+            title="Refresh Live Price"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 8,
+              color: 'rgba(255,255,255,0.8)',
+              cursor: 'pointer',
+              padding: '5px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s'
+            }}
+          >
+            <RefreshCw style={{ width: 14, height: 14 }} />
           </button>
         </div>
       </div>
@@ -1970,10 +2105,30 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                         {isBull ? '▲ +' : '▼ '}{fmt(Math.abs(d.change || 0))} ({isBull ? '+' : ''}{(d.pChange || 0).toFixed(2)}%)
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 5 }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {(() => {
                         const ms = getDetailedMarketStatus();
-                        if (ms.isOpen) return `Market Open • Today, ${ms.nptTime} NPT`;
+                        if (ms.isOpen) {
+                          return (
+                            <>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                color: '#10B981',
+                                fontWeight: 800,
+                                fontSize: 11,
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                padding: '1px 6px',
+                                borderRadius: 4
+                              }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 6px #10B981' }} />
+                                LIVE
+                              </span>
+                              <span>Today, {clockTime || ms.nptTime} NPT</span>
+                            </>
+                          );
+                        }
                         const lastDateStr = ms.lastTradingDay ? new Date(ms.lastTradingDay).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Previous Session';
                         return `Market Closed • Last Session: ${lastDateStr}`;
                       })()}
@@ -2346,6 +2501,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               />
 
               {bookClosureAlert && <BookClosureAlert alert={bookClosureAlert} />}
+
+              {/* Algorithmic Signal Track Record for this stock */}
+              <SignalTrackRecord symbol={d.symbol} />
 
               {/* ── 7. Broker Accumulation & Distribution Footprint Ledger ── */}
               <div style={{
@@ -3959,4 +4117,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       )}
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 }

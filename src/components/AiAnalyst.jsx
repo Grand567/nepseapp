@@ -311,13 +311,13 @@ Respond in this exact JSON format:
   "recommendation": "${quantMetrics?.report?.recommendation || 'BUY / ACCUMULATE'}",
   "confidence": ${quantMetrics?.report?.confidence || 85},
   "riskLevel": "${quantMetrics?.report?.riskLevel || 'LOW'}",
-  "currentPrice": ${price.closePrice || 100},
+  "currentPrice": ${price.closePrice || price.lastTradedPrice || 0},
   "targetPrice": {
-    "oneMonth": ${quantMetrics?.targets?.target1?.price || 105},
-    "threeMonths": ${quantMetrics?.targets?.target2?.price || 115},
-    "sixMonths": ${quantMetrics?.targets?.target3?.price || 130}
+    "oneMonth": ${quantMetrics?.targets?.target1?.price || (price.closePrice ? Number((price.closePrice * 1.05).toFixed(1)) : 'null')},
+    "threeMonths": ${quantMetrics?.targets?.target2?.price || (price.closePrice ? Number((price.closePrice * 1.12).toFixed(1)) : 'null')},
+    "sixMonths": ${quantMetrics?.targets?.target3?.price || (price.closePrice ? Number((price.closePrice * 1.20).toFixed(1)) : 'null')}
   },
-  "stopLoss": ${quantMetrics?.targets?.stopLoss?.price || 95},
+  "stopLoss": ${quantMetrics?.targets?.stopLoss?.price || (price.closePrice ? Number((price.closePrice * 0.94).toFixed(1)) : 'null')},
   "analysis": "<3-4 sentence comprehensive institutional investment thesis based on the accumulation and valuation>",
   "keyReasons": ["<reason1>", "<reason2>", "<reason3>"],
   "risks": ["<risk1>", "<risk2>"],

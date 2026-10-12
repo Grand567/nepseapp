@@ -46,6 +46,7 @@ export interface GateResult {
   actualValue: string | number;
   threshold: string;
   category: string;
+  isDataUnverified?: boolean;  // true when this gate result is based on estimated/default data, not verified live data
 }
 
 export interface MatrixCheck {
@@ -120,6 +121,9 @@ export interface MasterStockEvaluation {
   adv20: number;
   isTargetCircuitLimited: boolean;  // P2: target1 was capped below circuit ceiling
   cmfValue: number;                  // P1: CMF value used for Gate 5 fallback
+  promoterHoldingKnown: boolean;     // true = real data from feed, false = defaulted to 55%
+  rvolVerified: boolean;             // true = real RVOL from data feed, false = volume-based estimate
+  dataConfidence: 'FULLY_VERIFIED' | 'PARTIALLY_VERIFIED' | 'DATA_UNCONFIRMED'; // overall data quality tier
 }
 
 export interface MasterAuditReport {
@@ -385,7 +389,11 @@ export function evaluateMasterStock(
   const pe = eps > 0 ? +(ltp / eps).toFixed(2) : (Number(stock?.pe) || 0);
   const pb = bvps > 0 ? +(ltp / bvps).toFixed(2) : (Number(stock?.pb) || 1.0);
 
-  const promoterHolding = Number(stock?.promoterHolding !== undefined ? stock.promoterHolding : 55.0); // 55% neutral default (not 51% which falsely triggers near-fail)
+  const promoterHoldingRaw = (stock?.promoterHolding !== undefined && stock?.promoterHolding !== null)
+    ? Number(stock.promoterHolding)
+    : null;
+  const promoterHoldingKnown = promoterHoldingRaw !== null;
+  const promoterHolding = promoterHoldingKnown ? promoterHoldingRaw! : 55.0; // 55% used only for display/sizing fallback when real data absent
   const sharesOutM = Number(stock?.sharesOut || stock?.totalShares || 10.0);
   const publicFloatM = Number(((1 - promoterHolding / 100) * sharesOutM).toFixed(2));
 
@@ -429,7 +437,9 @@ export function evaluateMasterStock(
   const bcr3 = isBrokerVerified ? Number(rawBcr3) : 0.0;
   const bcr5 = Number(cachedBroker?.bcr5BuyPct || brokerConc?.bcr5BuyPct || (isBrokerVerified ? bcr3 * 1.15 : 0.0));
   const avgBuySizeRatio = Number(brokerConc?.tradeSizeRatio || 1.15);
-  const rvol = Number(stock?.volumeSurgeRatio || stock?.rvol || (vol > 15000 ? 1.6 : 1.1));
+  const rvolRaw = stock?.volumeSurgeRatio || stock?.rvol || null;
+  const rvolVerified = rvolRaw !== null && Number(rvolRaw) > 0;
+  const rvol = rvolVerified ? Number(rvolRaw) : (vol > 15000 ? 1.6 : 1.1); // fallback only for display purposes, not gate decisions
   const zVolResult = calculateVolumeZScore(vol, vol / Math.max(1, rvol), vol * 0.25);
   const volumeZScore = zVolResult.zScore;
 
@@ -515,25 +525,34 @@ export function evaluateMasterStock(
       category: 'Liquidity / Structure'
     },
     gate2_promoter: {
-      passed: promoterHolding >= 52.0 || (stock?.stealthAccumulation || 0) >= 55 || track === 'BLUE_CHIP_COMPOUNDER',
+      passed: (promoterHoldingKnown ? promoterHolding >= 52.0 : false) || (stock?.stealthAccumulation || 0) >= 55 || track === 'BLUE_CHIP_COMPOUNDER',
       label: 'Promoter / Insider Lock',
-      actualValue: `${promoterHolding}%`,
+      actualValue: promoterHoldingKnown ? `${promoterHolding}%` : 'Unknown (Data Unavailable)',
       threshold: '>= 52.0%',
-      category: 'Supply Control'
+      category: 'Supply Control',
+      isDataUnverified: !promoterHoldingKnown
     },
     gate3_squeeze: {
-      passed: Math.abs(ltp - ema20) / ema20 <= 0.06 || stock?.bollinger?.squeeze === true || isBounceBack,
+      passed: dynEMAs.ema20IsFallback
+        ? (stock?.bollinger?.squeeze === true || isBounceBack)  // no real EMA → only confirmed Bollinger or bounce passes
+        : (Math.abs(ltp - ema20) / ema20 <= 0.06 || stock?.bollinger?.squeeze === true || isBounceBack),
       label: isBounceBack ? 'Support Base / Bounce' : 'VCP / Bollinger Squeeze',
-      actualValue: isBounceBack ? 'Reversal at Support' : `${(Math.abs(ltp - ema20) / ema20 * 100).toFixed(1)}% from 20-EMA`,
+      actualValue: dynEMAs.ema20IsFallback
+        ? 'EMA Unverified (< 20 candles)'
+        : (isBounceBack ? 'Reversal at Support' : `${(Math.abs(ltp - ema20) / ema20 * 100).toFixed(1)}% from 20-EMA`),
       threshold: '<= 6.0% coil / Support',
-      category: 'Volatility Contraction'
+      category: 'Volatility Contraction',
+      isDataUnverified: dynEMAs.ema20IsFallback
     },
     gate4_volume: {
-      passed: rvol >= 1.4 || volumeZScore >= 1.4 || (isBounceBack && rvol >= 1.15),
+      passed: rvolVerified
+        ? (rvol >= 1.4 || volumeZScore >= 1.4 || (isBounceBack && rvol >= 1.15))
+        : (volumeZScore >= 1.4),  // when RVOL is unverified, only VolumeZScore (OHLCV-based) can pass this gate
       label: 'Volume Surge (RVOL >= 1.4x)',
-      actualValue: `${rvol}x RVOL`,
+      actualValue: rvolVerified ? `${rvol}x RVOL` : `VZ ${volumeZScore.toFixed(2)}σ (RVOL unverified)`,
       threshold: isBounceBack ? '>= 1.15x absorption' : '>= 1.4x baseline',
-      category: 'Institutional Footprint'
+      category: 'Institutional Footprint',
+      isDataUnverified: !rvolVerified
     },
     gate5_broker: {
       // P1: CMF >= 0.08 fallback when live broker data unavailable (replaces stealthAccumulation proxy)
@@ -564,10 +583,10 @@ export function evaluateMasterStock(
       category: 'Valuation Shield'
     },
     gate8_season: {
-      passed: seasonScoreBonus >= 0.0,
+      passed: seasonScoreBonus > 0.0,  // neutral season (bonus = 0) no longer auto-passes — only active festival/AGM season qualifies
       label: 'Seasonality Cycle Bias',
-      actualValue: seasonScoreBonus >= 0 ? `+${seasonScoreBonus} Bonus` : `${seasonScoreBonus} Drain`,
-      threshold: 'Bonus >= 0.0',
+      actualValue: seasonScoreBonus > 0 ? `+${seasonScoreBonus} Bonus (Active Season)` : seasonScoreBonus === 0 ? 'Neutral (No Seasonal Bonus)' : `${seasonScoreBonus} Drain (Off-Season)`,
+      threshold: 'Bonus > 0.0 (Active Festival / AGM Season)',
       category: 'Macro Liquidity'
     }
   };
@@ -710,9 +729,12 @@ export function evaluateMasterStock(
     disqualificationReason = `Setup Score (${setupScore}/100) below institutional hurdle of 70`;
   }
 
-  // Sizing with 2% portfolio risk on Rs. 500,000 reference capital + 5% ADV Liquidity Cap
-  const refCapital = 500000;
-  const maxRiskCapital = refCapital * 0.02; // Rs. 10,000
+  // Sizing with strict 1.5% portfolio risk on Rs. 100,000 reference capital (Max Risk: Rs. 1,500)
+  // Enforces dual safety gates:
+  // Gate 1: 5% ADV Liquidity Absorption Cap
+  // Gate 2: Maximum Capital Outlay Cap (never exceed available portfolio capital)
+  const refCapital = 100000;
+  const maxRiskCapital = refCapital * 0.015; // Rs. 1,500 (1.5% risk on Rs. 100K capital)
   const unconstrainedKellyShares = Math.max(10, Math.floor(maxRiskCapital / Math.max(1, ltp - stopLoss)));
   
   // Liquidity absorption cap: Maximum 5% of 20-day Average Daily Volume (or session volume)
@@ -722,11 +744,21 @@ export function evaluateMasterStock(
     ? Math.round(histVols.reduce((a: number, b: number) => a + b, 0) / histVols.length)
     : Number(stock?.adv20 || stock?.averageVolume || vol || 15000);
   const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
+  
+  // Available capital ceiling (cannot commit more than available Rs. 100K capital)
+  const maxAffordableShares = Math.max(10, Math.floor(refCapital / Math.max(1, ltp)));
+
   const isLiquidityCapped = unconstrainedKellyShares > maxLiquidityShares;
-  const kellyShares = isLiquidityCapped ? maxLiquidityShares : unconstrainedKellyShares;
+  const sharesBeforeCapitalCap = isLiquidityCapped ? maxLiquidityShares : unconstrainedKellyShares;
+  const isCapitalCapped = sharesBeforeCapitalCap > maxAffordableShares;
+  const kellyShares = isCapitalCapped ? maxAffordableShares : sharesBeforeCapitalCap;
   const capitalOutlay = kellyShares * ltp;
 
-  const capNote = isLiquidityCapped ? ` [Capped at 5% Daily Vol: ${maxLiquidityShares} units]` : '';
+  const capNote = isLiquidityCapped 
+    ? ` [Capped at 5% Daily Vol: ${maxLiquidityShares} units]` 
+    : isCapitalCapped 
+      ? ` [Capped at 100K Capital: ${maxAffordableShares} units]` 
+      : '';
   const tmsOrderText = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${sym} | Type: LIMIT ORDER\nTrack: ${track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum'}\nSetup: ${setupArchetype}\nEntry Limit: Rs. ${entryLow} (Chase Cap: Rs. ${chaseCap})\nAllocated Qty: ${kellyShares} Shares (Capital: Rs. ${capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${stopLoss} (-${stopLossPct}%)\nTarget 1: Rs. ${target1Gross} (+${t1NetCalc.netReturnPct}% Net after 10% CGT)`;
 
   return {
@@ -789,7 +821,15 @@ export function evaluateMasterStock(
     maxLiquidityShares,
     adv20,
     isTargetCircuitLimited,
-    cmfValue: cmfResult?.cmf ?? 0
+    cmfValue: cmfResult?.cmf ?? 0,
+    promoterHoldingKnown,
+    rvolVerified,
+    dataConfidence: (() => {
+      const verifiedCount = [isBrokerVerified, !dynEMAs.ema20IsFallback, rvolVerified, promoterHoldingKnown].filter(Boolean).length;
+      if (verifiedCount === 4) return 'FULLY_VERIFIED' as const;
+      if (verifiedCount >= 2) return 'PARTIALLY_VERIFIED' as const;
+      return 'DATA_UNCONFIRMED' as const;
+    })()
   };
 }
 
@@ -852,16 +892,16 @@ export function runMasterGuideAudit(
 
   const runnerUps = evaluated.filter(s => s.symbol !== crownedWinner?.symbol).slice(0, 15);
 
-  // 20-Trade Compound Simulation: Rs. 500,000 starting capital
+  // 20-Trade Compound Simulation: Rs. 100,000 starting capital
   // Derive win/loss amounts from the crowned winner's actual levels, not hardcoded values
   const winRate = crownedWinner?.analogWinRate || 65;
   const simWinAmount = crownedWinner
-    ? Math.max(5000, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares))
-    : 45000;
+    ? Math.max(1500, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares))
+    : 6500;
   const simLossAmount = crownedWinner
-    ? Math.max(2000, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares))
-    : 24000;
-  const sim = simulateCompoundExpectancy(500000, 20, winRate, simWinAmount, simLossAmount);
+    ? Math.max(800, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares))
+    : 2000;
+  const sim = simulateCompoundExpectancy(100000, 20, winRate, simWinAmount, simLossAmount);
 
   return {
     timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),

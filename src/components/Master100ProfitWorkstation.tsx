@@ -4,7 +4,8 @@ import {
   TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, AlertTriangle,
   Copy, Check, Calculator, DollarSign, ArrowUpRight, ArrowDownRight,
   RefreshCw, BarChart3, HelpCircle, Layers, FileText, ChevronRight,
-  ExternalLink, Compass, Activity, Eye, Info, Sparkles, Filter, Lock
+  ExternalLink, Compass, Activity, Eye, Info, Sparkles, Filter, Lock,
+  Bell, Send, MessageSquare
 } from 'lucide-react';
 
 import {
@@ -16,6 +17,7 @@ import {
 } from '../utils/masterProfitEngine';
 
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { getProxyBase } from '../utils/liveData';
 
 interface Master100ProfitWorkstationProps {
   stocks?: any[];
@@ -23,28 +25,249 @@ interface Master100ProfitWorkstationProps {
   onSelectStock?: (stock: any) => void;
 }
 
-const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
+const CAPITAL_PRESETS = [100000, 50000, 200000, 500000];
 
 export function Master100ProfitWorkstation({
   stocks = [],
   indices = {},
   onSelectStock
 }: Master100ProfitWorkstationProps) {
-  // Sizing & Portfolio capital
+  // Sizing & Portfolio capital (default to 1 Lakh / NPR 100,000)
   const [portfolioCapital, setPortfolioCapital] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('master_guide_capital');
-      if (saved) return Number(saved) || 500000;
+      if (saved) return Number(saved) || 100000;
     } catch (_) {}
-    return 500000;
+    return 100000;
   });
 
-  const [riskTolerancePct, setRiskTolerancePct] = useState<number>(2.0); // 1.5% or 2.0%
+  const [riskTolerancePct, setRiskTolerancePct] = useState<number>(1.5); // Strict 1.5% risk default (Rs. 1,500 on 100K)
   const [selectedStockSymbol, setSelectedStockSymbol] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [watchlistSuccess, setWatchlistSuccess] = useState(false);
-  const [activeViewTab, setActiveViewTab] = useState<'blueprint' | 'matrix' | 'leaderboard' | 'exits' | 'simulator'>('blueprint');
+  const [activeViewTab, setActiveViewTab] = useState<'blueprint' | 'matrix' | 'leaderboard' | 'exits' | 'simulator' | 'telegram'>('blueprint');
   const [leaderboardTrackFilter, setLeaderboardTrackFilter] = useState<'all' | 'growth' | 'bluechip' | 'bounce'>('all');
+
+  // Telegram Alert State
+  const [telegramStatus, setTelegramStatus] = useState<{ isConfigured: boolean; enabled: boolean; maskedToken: string; chatId: string } | null>(null);
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestMsg, setTelegramTestMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [telegramSaving, setTelegramSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchTgStatus = async () => {
+      try {
+        const base = getProxyBase();
+        const res = await fetch(`${base}/api/telegram/status`);
+        const data = await res.json();
+        if (data && data.success) {
+          setTelegramStatus(data);
+          if (data.chatId) setTelegramChatId(data.chatId);
+        }
+      } catch (_) {}
+    };
+    fetchTgStatus();
+  }, []);
+
+  const handleSaveTelegram = async () => {
+    setTelegramSaving(true);
+    setTelegramTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: telegramToken, chatId: telegramChatId, enabled: true })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramTestMsg({ type: 'success', text: '✅ Telegram Bot configuration saved!' });
+        const sRes = await fetch(`${base}/api/telegram/status`);
+        const sData = await sRes.json();
+        if (sData?.success) setTelegramStatus(sData);
+      } else {
+        setTelegramTestMsg({ type: 'error', text: data.message || 'Failed to save configuration.' });
+      }
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Network error saving settings.' });
+    } finally {
+      setTelegramSaving(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setTelegramTesting(true);
+    setTelegramTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: telegramToken || undefined, chatId: telegramChatId || undefined })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramTestMsg({ type: 'success', text: '✅ Ping received on Telegram! Check your phone.' });
+      } else {
+        setTelegramTestMsg({ type: 'error', text: data.error || 'Failed to send test ping.' });
+      }
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Connection error.' });
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
+
+  const handleSendSampleAlert = async () => {
+    setTelegramTesting(true);
+    setTelegramTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/test-alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: inspectedStock?.symbol || 'HATHY',
+          ltp: inspectedStock?.ltp || 420
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramTestMsg({ type: 'success', text: '🚀 Sample 100K Smart Alert sent to your Telegram!' });
+      } else {
+        setTelegramTestMsg({ type: 'error', text: data.message || 'Failed to dispatch sample alert.' });
+      }
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Failed to dispatch sample alert.' });
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
+
+  const [telegramDetecting, setTelegramDetecting] = useState(false);
+
+  const handleAutoDetectChatId = async () => {
+    setTelegramDetecting(true);
+    setTelegramTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/detect-chat-id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: telegramToken || undefined })
+      });
+      const data = await res.json();
+      if (data.success && data.chatId) {
+        setTelegramChatId(data.chatId);
+        setTelegramTestMsg({ type: 'success', text: `🎯 Successfully detected Chat ID: ${data.chatId}! Click "Save Settings" below.` });
+      } else {
+        setTelegramTestMsg({ type: 'error', text: data.error || 'No message found. Please open your new bot on Telegram and send "hello" or tap START first, then tap Auto-Detect again!' });
+      }
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Error connecting to Telegram.' });
+    } finally {
+      setTelegramDetecting(false);
+    }
+  };
+
+  // Discord Alert State (100% Free - No SMS Fees)
+  const [discordStatus, setDiscordStatus] = useState<{ isConfigured: boolean; enabled: boolean; maskedUrl: string } | null>(null);
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState('');
+  const [discordTesting, setDiscordTesting] = useState(false);
+  const [discordTestMsg, setDiscordTestMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [discordSaving, setDiscordSaving] = useState(false);
+  const [alertPlatformTab, setAlertPlatformTab] = useState<'discord' | 'telegram'>('discord');
+
+  useEffect(() => {
+    const fetchDiscordStatus = async () => {
+      try {
+        const base = getProxyBase();
+        const res = await fetch(`${base}/api/discord/status`);
+        const data = await res.json();
+        if (data && data.success) {
+          setDiscordStatus(data);
+        }
+      } catch (_) {}
+    };
+    fetchDiscordStatus();
+  }, []);
+
+  const handleSaveDiscord = async () => {
+    setDiscordSaving(true);
+    setDiscordTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/discord/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl: discordWebhookUrl, enabled: true })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDiscordTestMsg({ type: 'success', text: '✅ Discord Webhook saved successfully!' });
+        const sRes = await fetch(`${base}/api/discord/status`);
+        const sData = await sRes.json();
+        if (sData?.success) setDiscordStatus(sData);
+      } else {
+        setDiscordTestMsg({ type: 'error', text: data.message || 'Failed to save Discord webhook.' });
+      }
+    } catch (err: any) {
+      setDiscordTestMsg({ type: 'error', text: err.message || 'Network error saving settings.' });
+    } finally {
+      setDiscordSaving(false);
+    }
+  };
+
+  const handleTestDiscord = async () => {
+    setDiscordTesting(true);
+    setDiscordTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/discord/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl: discordWebhookUrl || undefined })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDiscordTestMsg({ type: 'success', text: '✅ Test ping received on Discord! Check your mobile app.' });
+      } else {
+        setDiscordTestMsg({ type: 'error', text: data.error || 'Failed to send test ping to Discord.' });
+      }
+    } catch (err: any) {
+      setDiscordTestMsg({ type: 'error', text: err.message || 'Connection error.' });
+    } finally {
+      setDiscordTesting(false);
+    }
+  };
+
+  const handleSendSampleDiscordAlert = async () => {
+    setDiscordTesting(true);
+    setDiscordTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/discord/test-alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: inspectedStock?.symbol || 'HATHY',
+          ltp: inspectedStock?.ltp || 420
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDiscordTestMsg({ type: 'success', text: '🚀 Sample 100K Alert sent to your Discord channel!' });
+      } else {
+        setDiscordTestMsg({ type: 'error', text: data.message || 'Failed to dispatch Discord sample alert.' });
+      }
+    } catch (err: any) {
+      setDiscordTestMsg({ type: 'error', text: err.message || 'Failed to dispatch Discord sample alert.' });
+    } finally {
+      setDiscordTesting(false);
+    }
+  };
 
   // Run full master quantitative audit across universe
   const auditReport: MasterAuditReport = useMemo(() => {
@@ -62,21 +285,25 @@ export function Master100ProfitWorkstation({
     return auditReport.crownedWinner;
   }, [selectedStockSymbol, auditReport, stocks]);
 
-  // Derived Position Sizing for inspected stock with 5% ADV Liquidity Absorption Cap
+  // Derived Position Sizing for inspected stock with 5% ADV Liquidity and Capital Outlay Cap
   const sizing = useMemo(() => {
     if (!inspectedStock) return null;
     const ltp = Number(inspectedStock.ltp) || 100;
     const stopLoss = Number(inspectedStock.stopLoss) || Number((ltp * 0.95).toFixed(1));
     const target1Gross = Number(inspectedStock.target1Gross) || Number((ltp * 1.08).toFixed(1));
-    const safeCapital = Math.max(10000, Number(portfolioCapital) || 1000000);
-    const safeRiskPct = Math.max(0.5, Number(riskTolerancePct) || 2.0);
+    const safeCapital = Math.max(10000, Number(portfolioCapital) || 100000);
+    const safeRiskPct = Math.max(0.5, Number(riskTolerancePct) || 1.5);
     const maxRiskCapital = safeCapital * (safeRiskPct / 100);
     const riskPerShare = Math.max(1.0, +(ltp - stopLoss).toFixed(2));
     const unconstrainedShares = Math.max(10, Math.floor(maxRiskCapital / riskPerShare));
     const adv20 = Number(inspectedStock.adv20 || inspectedStock.volume || 15000);
     const maxLiquidityShares = Math.max(10, Math.floor(adv20 * 0.05));
+    const maxAffordableShares = Math.max(10, Math.floor(safeCapital / ltp));
+
     const isLiquidityCapped = unconstrainedShares > maxLiquidityShares;
-    const allowedShares = isLiquidityCapped ? maxLiquidityShares : unconstrainedShares;
+    const sharesBeforeCapitalCap = isLiquidityCapped ? maxLiquidityShares : unconstrainedShares;
+    const isCapitalCapped = sharesBeforeCapitalCap > maxAffordableShares;
+    const allowedShares = isCapitalCapped ? maxAffordableShares : sharesBeforeCapitalCap;
     const capitalOutlay = allowedShares * ltp;
     const allocationPct = +((capitalOutlay / safeCapital) * 100).toFixed(1);
     const netDetails = calculateNetTradeGain(ltp, target1Gross, allowedShares);
@@ -87,6 +314,7 @@ export function Master100ProfitWorkstation({
       unconstrainedShares,
       maxLiquidityShares,
       isLiquidityCapped,
+      isCapitalCapped,
       allowedShares,
       capitalOutlay,
       allocationPct,
@@ -96,7 +324,11 @@ export function Master100ProfitWorkstation({
 
   const handleCopyTms = () => {
     if (!inspectedStock || !sizing) return;
-    const capNote = sizing.isLiquidityCapped ? ` [Capped to 5% Daily Vol: ${sizing.maxLiquidityShares} units]` : '';
+    const capNote = sizing.isLiquidityCapped 
+      ? ` [Capped to 5% Daily Vol: ${sizing.maxLiquidityShares} units]` 
+      : sizing.isCapitalCapped 
+        ? ` [Capped to Portfolio Capital: ${sizing.allowedShares} units]` 
+        : '';
     const trackNote = inspectedStock.track === 'BLUE_CHIP_COMPOUNDER' ? '🏛️ Institutional Blue-Chip' : '🚀 High-Growth Momentum';
     const setupNote = inspectedStock.setupArchetype === 'SUPPORT_BOUNCE' ? '🔄 Support Bounce' : inspectedStock.setupArchetype;
     const text = `NEPSE TMS ORDER BLUEPRINT:\nScrip: ${inspectedStock.symbol} | Type: LIMIT ORDER\nTrack: ${trackNote} | Setup: ${setupNote}\nEntry Limit: Rs. ${inspectedStock.entryLow} (Chase Cap: Rs. ${inspectedStock.chaseCap})\nAllocated Qty: ${sizing.allowedShares} Shares (Capital: Rs. ${sizing.capitalOutlay.toLocaleString()})${capNote}\nStop-Loss Floor: Rs. ${inspectedStock.stopLoss} (-${inspectedStock.stopLossPct}%)\nTarget 1: Rs. ${inspectedStock.target1Gross} (+${inspectedStock.target1NetPct}% Net after 7.5% CGT)`;
@@ -290,7 +522,8 @@ export function Master100ProfitWorkstation({
           { id: 'matrix', label: '🎯 6-Point Matrix Audit', icon: ShieldCheck },
           { id: 'leaderboard', label: '🔍 8-Gate Screener Leaderboard', icon: Filter },
           { id: 'exits', label: '📈 4-Tier Trailing Exit', icon: TrendingUp },
-          { id: 'simulator', label: '💰 20-Trade Compound Math', icon: Calculator }
+          { id: 'simulator', label: '💰 20-Trade Compound Math', icon: Calculator },
+          { id: 'telegram', label: '🔔 Phone Alerts (Discord 100% Free / Telegram)', icon: Bell }
         ].map(t => {
           const isActive = activeViewTab === t.id;
           const Icon = t.icon;
@@ -448,12 +681,23 @@ export function Master100ProfitWorkstation({
                         color: inspectedStock.isBrokerVerified ? '#34d399' : '#fbbf24',
                         border: inspectedStock.isBrokerVerified ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)'
                       }}>
-                        {inspectedStock.isBrokerVerified ? '🟢 Verified Flow' : '🟡 Est. Flow'}
+                        {inspectedStock.isBrokerVerified ? '🟢 BCR3 Live' : '🟡 BCR3 Est.'}
+                      </span>
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        padding: '4px 10px',
+                        borderRadius: 8,
+                        background: inspectedStock.dataConfidence === 'FULLY_VERIFIED' ? 'rgba(16, 185, 129, 0.15)' : inspectedStock.dataConfidence === 'PARTIALLY_VERIFIED' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: inspectedStock.dataConfidence === 'FULLY_VERIFIED' ? '#34d399' : inspectedStock.dataConfidence === 'PARTIALLY_VERIFIED' ? '#facc15' : '#f87171',
+                        border: inspectedStock.dataConfidence === 'FULLY_VERIFIED' ? '1px solid rgba(16,185,129,0.3)' : inspectedStock.dataConfidence === 'PARTIALLY_VERIFIED' ? '1px solid rgba(234,179,8,0.3)' : '1px solid rgba(239,68,68,0.3)'
+                      }}>
+                        {inspectedStock.dataConfidence === 'FULLY_VERIFIED' ? '🛡️ FULLY VERIFIED' : inspectedStock.dataConfidence === 'PARTIALLY_VERIFIED' ? '⚠️ PARTIAL DATA' : '❓ DATA UNCONFIRMED'}
                       </span>
                     </div>
                     <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
-                      {inspectedStock.name} &bull; Public Float: <b style={{ color: '#fff' }}>{inspectedStock.publicFloatM}M</b> sh &bull; Promoter: <b style={{ color: '#fff' }}>{inspectedStock.promoterHolding}%</b>
-                    </div>
+                      {inspectedStock.name} &bull; Public Float: <b style={{ color: '#fff' }}>{inspectedStock.publicFloatM}M</b> sh &bull; Promoter: <b style={{ color: inspectedStock.promoterHoldingKnown ? '#fff' : '#fbbf24' }}>{inspectedStock.promoterHoldingKnown ? `${inspectedStock.promoterHolding}%` : 'Unknown ⚠️'}</b>
+                   </div>
                     {inspectedStock.isPromoterLockinNear && (
                       <div style={{
                         marginTop: 8,
@@ -470,6 +714,23 @@ export function Master100ProfitWorkstation({
                       }}>
                         <AlertTriangle style={{ width: 15, height: 15, color: '#f87171', flexShrink: 0 }} />
                         <span>⚠️ 3-Year Promoter Share Lockup Expiry in <b>{inspectedStock.daysToLockin} days</b>! High supply dump hazard.</span>
+                      </div>
+                    )}
+                    {!inspectedStock.promoterHoldingKnown && (
+                      <div style={{
+                        marginTop: 6,
+                        background: 'rgba(245, 158, 11, 0.10)',
+                        border: '1px solid rgba(245, 158, 11, 0.35)',
+                        borderRadius: 10,
+                        padding: '7px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        color: '#fcd34d',
+                        fontSize: 12,
+                        fontWeight: 700
+                      }}>
+                        <span>⚠️ Promoter holding data unavailable — Gate 2 unverified. Treat as <b>WATCHLIST</b> until confirmed from NEPSE/company disclosure.</span>
                       </div>
                     )}
                   </div>
@@ -875,6 +1136,19 @@ export function Master100ProfitWorkstation({
                 }}>
                   Current Reading: {check.actual}
                 </div>
+
+                {!check.passed && check.rejectReason && (
+                  <div style={{
+                    fontSize: 12,
+                    color: '#fcd34d',
+                    background: 'rgba(234, 179, 8, 0.08)',
+                    border: '1px solid rgba(234, 179, 8, 0.22)',
+                    padding: '5px 10px',
+                    borderRadius: 8
+                  }}>
+                    💡 {check.rejectReason}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1013,11 +1287,20 @@ export function Master100ProfitWorkstation({
                             <span style={{
                               padding: '2px 6px',
                               borderRadius: 6,
-                              background: s.gatesPassedCount >= 6 ? '#10b98125' : 'rgba(255,255,255,0.06)',
-                              color: s.gatesPassedCount >= 6 ? '#34d399' : '#cbd5e1',
+                              background: s.gatesPassedCount >= 8 ? '#10b98125' : s.gatesPassedCount >= 6 ? 'rgba(234,179,8,0.18)' : 'rgba(239,68,68,0.18)',
+                              color: s.gatesPassedCount >= 8 ? '#34d399' : s.gatesPassedCount >= 6 ? '#facc15' : '#f87171',
                               fontWeight: 800
                             }}>
                               {s.gatesPassedCount} / 8
+                            </span>
+                            <span style={{
+                              display: 'block',
+                              fontSize: 10,
+                              marginTop: 3,
+                              fontWeight: 700,
+                              color: s.dataConfidence === 'FULLY_VERIFIED' ? '#34d399' : s.dataConfidence === 'PARTIALLY_VERIFIED' ? '#fbbf24' : '#f87171'
+                            }}>
+                              {s.dataConfidence === 'FULLY_VERIFIED' ? '🟢 Verified' : s.dataConfidence === 'PARTIALLY_VERIFIED' ? '🟡 Partial' : '🔴 Unconfirmed'}
                             </span>
                           </td>
                           <td style={{ padding: '10px', fontWeight: 800, color: s.setupScore >= 70 ? '#34d399' : '#f59e0b' }}>
@@ -1289,11 +1572,438 @@ export function Master100ProfitWorkstation({
             )}
             <br />
             Deploying Half-Kelly (&asymp; 25% of capital per position) across 20 sequential trades produces approximately{' '}
-            <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. 5,00,000 capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
+            <b>Rs. {auditReport.compoundSimulation.netProfitAmount.toLocaleString()} net profit on Rs. 1,00,000 capital (+{auditReport.compoundSimulation.netReturnPct}%)</b> in 6 to 10 months.<br />
             <span style={{ color: '#f59e0b', fontSize: 12 }}>
               ⚠️ Win rate is a composite scoring estimate, not a verified historical backtest. Use EntryExitAnalyzer for symbol-specific backtested rates before committing capital.
             </span>
           </div>
+        </div>
+      )}
+
+      {/* ── VIEW 6: REAL-TIME SMARTPHONE ALERTS (DISCORD 100% FREE / TELEGRAM) ── */}
+      {activeViewTab === 'telegram' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Header & Platform Selector */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: 16,
+            padding: '18px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  background: 'rgba(16, 185, 129, 0.2)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#10b981'
+                }}>
+                  <Bell style={{ width: 20, height: 20 }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>
+                    Smartphone Real-Time Alert Dispatcher
+                  </div>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                    Institutional flow alerts & 3:45 PM Post-Market Setups with strict NPR 100,000 position sizing
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 800,
+                background: (alertPlatformTab === 'discord' ? discordStatus?.isConfigured : telegramStatus?.isConfigured) ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                color: (alertPlatformTab === 'discord' ? discordStatus?.isConfigured : telegramStatus?.isConfigured) ? '#34d399' : '#f59e0b',
+                border: (alertPlatformTab === 'discord' ? discordStatus?.isConfigured : telegramStatus?.isConfigured) ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)'
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: (alertPlatformTab === 'discord' ? discordStatus?.isConfigured : telegramStatus?.isConfigured) ? '#10b981' : '#f59e0b' }} />
+                {(alertPlatformTab === 'discord' ? discordStatus?.isConfigured : telegramStatus?.isConfigured) ? 'ACTIVE & CONNECTED' : 'SETUP REQUIRED'}
+              </div>
+            </div>
+
+            {/* Platform Tab Buttons */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              <button
+                onClick={() => setAlertPlatformTab('discord')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 16px',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  border: alertPlatformTab === 'discord' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
+                  background: alertPlatformTab === 'discord' ? '#10b981' : 'rgba(255,255,255,0.05)',
+                  color: alertPlatformTab === 'discord' ? '#0f172a' : '#cbd5e1',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                🎮 Discord Webhook (100% Free • No SMS Fees • Recommended)
+              </button>
+              <button
+                onClick={() => setAlertPlatformTab('telegram')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 16px',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  border: alertPlatformTab === 'telegram' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                  background: alertPlatformTab === 'telegram' ? '#38bdf8' : 'rgba(255,255,255,0.05)',
+                  color: alertPlatformTab === 'telegram' ? '#0f172a' : '#cbd5e1',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                📱 Telegram Bot
+              </button>
+            </div>
+          </div>
+
+          {/* ── TAB OPTION 1: DISCORD (100% FREE, NO PHONE NUMBERS, NO SMS) ── */}
+          {alertPlatformTab === 'discord' && (
+            <>
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.7)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 16,
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Zap style={{ width: 16, height: 16, color: '#10b981' }} />
+                    Discord Webhook Link (Zero Telecom Fees • Free Forever)
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    No Phone Number Required
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#cbd5e1', marginBottom: 6 }}>
+                    Discord Channel Webhook URL
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={discordStatus?.maskedUrl ? `Saved: ${discordStatus.maskedUrl}` : "https://discord.com/api/webhooks/..."}
+                    value={discordWebhookUrl}
+                    onChange={(e) => setDiscordWebhookUrl(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      color: '#fff',
+                      fontSize: 13,
+                      fontFamily: 'monospace',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {discordTestMsg && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: discordTestMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: discordTestMsg.type === 'success' ? '#34d399' : '#f87171',
+                    border: discordTestMsg.type === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                  }}>
+                    {discordTestMsg.text}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                  <button
+                    onClick={handleSaveDiscord}
+                    disabled={discordSaving}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: '#10b981',
+                      color: '#0f172a',
+                      border: 'none',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      opacity: discordSaving ? 0.7 : 1
+                    }}
+                  >
+                    <CheckCircle2 style={{ width: 16, height: 16 }} />
+                    {discordSaving ? 'Saving...' : 'Save Webhook'}
+                  </button>
+
+                  <button
+                    onClick={handleTestDiscord}
+                    disabled={discordTesting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      border: '1px solid rgba(56, 189, 248, 0.4)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      opacity: discordTesting ? 0.7 : 1
+                    }}
+                  >
+                    <RefreshCw style={{ width: 16, height: 16, animation: discordTesting ? 'spin 1s linear infinite' : 'none' }} />
+                    {discordTesting ? 'Testing...' : 'Send Test Ping'}
+                  </button>
+
+                  <button
+                    onClick={handleSendSampleDiscordAlert}
+                    disabled={discordTesting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Zap style={{ width: 16, height: 16 }} />
+                    Trigger Sample 100K Alert
+                  </button>
+                </div>
+              </div>
+
+              {/* Fast 30-Second Discord Setup */}
+              <div style={{
+                background: 'rgba(0,0,0,0.25)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 16,
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>
+                  ⚡ How to Get Your Free Discord Webhook (30 Seconds):
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5 }}>
+                    <b style={{ color: '#34d399' }}>1. Download Discord App:</b><br />
+                    Download Discord on your phone (Google Play Store). Sign up for free using only your <b>Email address</b> (No phone SMS needed).
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5 }}>
+                    <b style={{ color: '#34d399' }}>2. Create a Free Server:</b><br />
+                    Tap the <b>+</b> button on the left sidebar $\rightarrow$ tap <b>Create My Own</b> $\rightarrow$ Name it <i>NEPSE Alerts</i>.
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5 }}>
+                    <b style={{ color: '#34d399' }}>3. Copy Webhook URL:</b><br />
+                    Tap the gear icon on the <code>#general</code> channel $\rightarrow$ tap <b>Integrations</b> $\rightarrow$ <b>Webhooks</b> $\rightarrow$ tap <b>Copy Webhook URL</b>. Paste it above and tap <b>Save</b>!
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── TAB OPTION 2: TELEGRAM BOT ── */}
+          {alertPlatformTab === 'telegram' && (
+            <>
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.7)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 16,
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14
+              }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Bell style={{ width: 16, height: 16, color: '#38bdf8' }} />
+                  Telegram Bot Credentials
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#cbd5e1', marginBottom: 6 }}>
+                      Telegram Bot Token (from @BotFather)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={telegramStatus?.maskedToken ? `Saved: ${telegramStatus.maskedToken}` : "e.g. 7123456789:AAHq_xyz..."}
+                      value={telegramToken}
+                      onChange={(e) => setTelegramToken(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        color: '#fff',
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#cbd5e1' }}>
+                        Your Personal Chat ID
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAutoDetectChatId}
+                        disabled={telegramDetecting}
+                        style={{
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          border: '1px solid rgba(56, 189, 248, 0.4)',
+                          color: '#38bdf8',
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {telegramDetecting ? 'Detecting...' : '🎯 Auto-Detect My ID'}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1234567890 (or click Auto-Detect above)"
+                      value={telegramChatId}
+                      onChange={(e) => setTelegramChatId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        color: '#fff',
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {telegramTestMsg && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: telegramTestMsg.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: telegramTestMsg.type === 'success' ? '#34d399' : '#f87171',
+                    border: telegramTestMsg.type === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                  }}>
+                    {telegramTestMsg.text}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                  <button
+                    onClick={handleSaveTelegram}
+                    disabled={telegramSaving}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: '#10b981',
+                      color: '#0f172a',
+                      border: 'none',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      opacity: telegramSaving ? 0.7 : 1
+                    }}
+                  >
+                    <CheckCircle2 style={{ width: 16, height: 16 }} />
+                    {telegramSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+
+                  <button
+                    onClick={handleTestTelegram}
+                    disabled={telegramTesting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      border: '1px solid rgba(56, 189, 248, 0.4)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      opacity: telegramTesting ? 0.7 : 1
+                    }}
+                  >
+                    <RefreshCw style={{ width: 16, height: 16, animation: telegramTesting ? 'spin 1s linear infinite' : 'none' }} />
+                    {telegramTesting ? 'Testing...' : 'Send Test Ping'}
+                  </button>
+
+                  <button
+                    onClick={handleSendSampleAlert}
+                    disabled={telegramTesting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#fbbf24',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Zap style={{ width: 16, height: 16 }} />
+                    Trigger Sample 100K Alert
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

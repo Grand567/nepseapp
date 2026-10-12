@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle2, AlertTriangle, TrendingUp, Clock, Filter, ArrowUpRight, ArrowDownRight, ShieldCheck } from 'lucide-react';
-import { getSignals, getSignalStats, evaluateOpenSignals } from '../../services/signalTracker.js';
+import { createPortal } from 'react-dom';
+import { X, CheckCircle2, AlertTriangle, TrendingUp, Clock, Filter, ArrowUpRight, ArrowDownRight, ShieldCheck, RotateCw, Trash2, Zap } from 'lucide-react';
+import { getSignals, getSignalStats, evaluateOpenSignals, clearSignals } from '../../services/signalTracker.js';
 
 /**
  * GlobalSignalTrackerModal
@@ -11,13 +12,36 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && !inlineMode && typeof document !== 'undefined') {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen, inlineMode]);
+
+  const stockMap = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(marketStocks)) {
+      for (const s of marketStocks) {
+        if (s && s.symbol) {
+          map.set(String(s.symbol).toUpperCase().trim(), s);
+        }
+      }
+    }
+    return map;
+  }, [marketStocks]);
 
   const loadData = () => {
     if (marketStocks.length > 0) {
       evaluateOpenSignals(marketStocks);
     }
     const all = getSignals();
-    all.sort((a, b) => new Date(b.signalDate) - new Date(a.signalDate));
+    all.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
     setSignals(all);
     setStats(getSignalStats());
   };
@@ -27,6 +51,19 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
       loadData();
     }
   }, [isOpen, marketStocks]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    loadData();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  const handleClearHistory = () => {
+    if (window.confirm('Are you sure you want to clear your local signal track record? This cannot be undone.')) {
+      clearSignals();
+      loadData();
+    }
+  };
 
   const filteredSignals = useMemo(() => {
     if (filterStatus === 'ALL') return signals;
@@ -41,15 +78,15 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
 
   const content = (
     <div style={{
-      background: '#0f172a',
+      background: '#090d16',
       border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: 16,
       width: '100%',
-      maxWidth: inlineMode ? '100%' : 720,
+      maxWidth: inlineMode ? '100%' : 800,
       maxHeight: inlineMode ? 'none' : '90vh',
       display: 'flex',
       flexDirection: 'column',
-      boxShadow: inlineMode ? 'none' : '0 20px 40px rgba(0,0,0,0.6)',
+      boxShadow: inlineMode ? 'none' : '0 25px 50px -12px rgba(0,0,0,0.7)',
       overflow: 'hidden'
     }}>
       {/* Header */}
@@ -59,274 +96,422 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        background: '#151922'
+        background: '#111827'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 10,
+            width: 38, height: 38, borderRadius: 10,
             background: 'rgba(16, 185, 129, 0.15)',
             border: '1px solid rgba(16, 185, 129, 0.3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0
           }}>
-            <ShieldCheck style={{ width: 18, height: 18, color: '#34d399' }} />
+            <ShieldCheck style={{ width: 20, height: 20, color: '#34d399' }} />
           </div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
               Algorithmic Signal Track Record
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>
-              Verified historical performance of generated setup plans
+              Forward out-of-sample execution audit & performance verification
             </div>
           </div>
         </div>
 
-        {onClose && !inlineMode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={onClose}
+            onClick={handleRefresh}
+            title="Re-evaluate open signals against live quotes"
             style={{
-              background: 'rgba(255,255,255,0.06)',
+              background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: 8,
-              width: 32, height: 32,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#94a3b8',
+              padding: '6px 10px',
+              display: 'flex', alignItems: 'center', gap: 6,
+              color: '#cbd5e1',
+              fontSize: 12,
+              fontWeight: 700,
               cursor: 'pointer'
             }}
           >
-            <X style={{ width: 16, height: 16 }} />
+            <RotateCw style={{ width: 13, height: 13, animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+            <span>Audit Live</span>
           </button>
-        )}
+
+          {signals.length > 0 && (
+            <button
+              onClick={handleClearHistory}
+              title="Clear all recorded signals"
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 8,
+                padding: '6px 10px',
+                display: 'flex', alignItems: 'center', gap: 6,
+                color: '#f87171',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              <Trash2 style={{ width: 13, height: 13 }} />
+              <span>Reset</span>
+            </button>
+          )}
+
+          {onClose && !inlineMode && (
+            <button
+              onClick={onClose}
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 8,
+                width: 32, height: 32,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#94a3b8',
+                cursor: 'pointer'
+              }}
+            >
+              <X style={{ width: 16, height: 16 }} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Aggregate Stats Cards */}
-        {stats && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-            gap: 10,
-            padding: '16px 20px',
-            background: 'rgba(0,0,0,0.3)',
-            borderBottom: '1px solid rgba(255,255,255,0.06)'
-          }}>
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Total Signals</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{stats.total}</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Closed</div>
-            </div>
+      {stats && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+          gap: 10,
+          padding: '16px 20px',
+          background: 'rgba(0,0,0,0.3)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Total Setups</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)', marginTop: 2 }}>{stats.total}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Resolved</div>
+          </div>
 
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Win Rate</div>
-              <div style={{
-                fontSize: 18, fontWeight: 900,
-                color: (stats.winRate || 0) >= 50 ? '#34d399' : '#f87171',
-                fontFamily: 'var(--font-mono)', marginTop: 2
-              }}>
-                {stats.closedCount > 0 ? `${stats.winRate.toFixed(1)}%` : '—'}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Target Hit vs Stop</div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Win Rate</div>
+            <div style={{
+              fontSize: 18, fontWeight: 900,
+              color: stats.closedCount === 0 ? '#94a3b8' : (stats.winRate || 0) >= 50 ? '#34d399' : '#f87171',
+              fontFamily: 'var(--font-mono, monospace)', marginTop: 2
+            }}>
+              {stats.closedCount > 0 ? `${stats.winRate.toFixed(1)}%` : '—'}
             </div>
-
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Avg Return</div>
-              <div style={{
-                fontSize: 18, fontWeight: 900,
-                color: (stats.avgReturnPct || 0) >= 0 ? '#34d399' : '#f87171',
-                fontFamily: 'var(--font-mono)', marginTop: 2
-              }}>
-                {stats.closedCount > 0 ? `${(stats.avgReturnPct || 0) >= 0 ? '+' : ''}${stats.avgReturnPct}%` : '—'}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Across closed setups</div>
-            </div>
-
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Best Trade</div>
-              <div style={{ fontSize: 14, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 4 }}>
-                {stats.bestTrade?.symbol ? `${stats.bestTrade.symbol} (+${stats.bestTrade.returnPct}%)` : '—'}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Top recorded gain</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {stats.winCount ?? 0} Wins / {stats.lossCount ?? 0} Losses
             </div>
           </div>
-        )}
 
-        {/* Filter Tabs */}
-        <div style={{
-          display: 'flex',
-          gap: 6,
-          padding: '10px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          overflowX: 'auto'
-        }}>
-          {[
-            { id: 'ALL', label: `All (${signals.length})` },
-            { id: 'OPEN', label: `Open (${signals.filter(s => s.status === 'open').length})` },
-            { id: 'HIT_TARGET', label: `Hit Target (${signals.filter(s => s.status === 'hit_target').length})` },
-            { id: 'HIT_STOP', label: `Hit Stop (${signals.filter(s => s.status === 'hit_stop').length})` },
-            { id: 'EXPIRED', label: `Expired (${signals.filter(s => s.status === 'expired').length})` },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setFilterStatus(tab.id)}
-              style={{
-                background: filterStatus === tab.id ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.04)',
-                border: filterStatus === tab.id ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.06)',
-                borderRadius: 20,
-                padding: '4px 12px',
-                fontSize: 12,
-                fontWeight: 700,
-                color: filterStatus === tab.id ? '#60a5fa' : '#94a3b8',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Signals List */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-          {filteredSignals.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
-              <Clock style={{ width: 32, height: 32, margin: '0 auto 10px', opacity: 0.5 }} />
-              <div style={{ fontSize: 13, fontWeight: 700 }}>No signals found in this filter</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Signals are automatically logged when Entry/Exit plans are viewed.</div>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Avg Return</div>
+            <div style={{
+              fontSize: 18, fontWeight: 900,
+              color: stats.closedCount === 0 ? '#94a3b8' : (stats.avgReturnPct || 0) >= 0 ? '#34d399' : '#f87171',
+              fontFamily: 'var(--font-mono, monospace)', marginTop: 2
+            }}>
+              {stats.closedCount > 0 ? `${(stats.avgReturnPct || 0) >= 0 ? '+' : ''}${stats.avgReturnPct}%` : '—'}
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {filteredSignals.map(sig => {
-                const isTargetHit = sig.status === 'hit_target';
-                const isStopHit = sig.status === 'hit_stop';
-                const isOpen = sig.status === 'open';
-                const retPct = sig.outcome?.returnPct;
+            <div style={{ fontSize: 11, color: '#64748b' }}>Across resolved setups</div>
+          </div>
 
-                return (
-                  <div
-                    key={sig.id}
-                    style={{
-                      background: 'rgba(255,255,255,0.02)',
-                      border: isTargetHit
-                        ? '1px solid rgba(16, 185, 129, 0.3)'
-                        : isStopHit
-                          ? '1px solid rgba(239, 68, 68, 0.3)'
-                          : '1px solid rgba(255,255,255,0.06)',
-                      borderRadius: 12,
-                      padding: '12px 14px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: 10
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                          {sig.symbol}
-                        </span>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Profit Factor</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#c084fc', fontFamily: 'var(--font-mono, monospace)', marginTop: 2 }}>
+              {stats.profitFactor ? `${stats.profitFactor}x` : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Gains vs Losses</div>
+          </div>
+
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Best Trade</div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono, monospace)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {stats.bestTrade?.symbol ? `${stats.bestTrade.symbol} (+${stats.bestTrade.returnPct}%)` : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Top recorded gain</div>
+          </div>
+
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Worst Trade</div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono, monospace)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {stats.worstTrade?.symbol ? `${stats.worstTrade.symbol} (${stats.worstTrade.returnPct}%)` : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Max recorded loss</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div style={{
+        display: 'flex',
+        gap: 6,
+        padding: '10px 20px',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        overflowX: 'auto',
+        background: '#0d131f'
+      }}>
+        {[
+          { id: 'ALL', label: `All (${signals.length})` },
+          { id: 'OPEN', label: `Open (${signals.filter(s => s.status === 'open').length})` },
+          { id: 'HIT_TARGET', label: `Target Met (${signals.filter(s => s.status === 'hit_target').length})` },
+          { id: 'HIT_STOP', label: `Stop Hit (${signals.filter(s => s.status === 'hit_stop').length})` },
+          { id: 'EXPIRED', label: `Expired (${signals.filter(s => s.status === 'expired').length})` },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setFilterStatus(tab.id)}
+            style={{
+              background: filterStatus === tab.id ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
+              border: filterStatus === tab.id ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+              borderRadius: 20,
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+              color: filterStatus === tab.id ? '#34d399' : '#94a3b8',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Signals List */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        {filteredSignals.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
+            <Clock style={{ width: 36, height: 36, margin: '0 auto 10px', opacity: 0.5 }} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#cbd5e1' }}>No setups found in this filter</div>
+            <div style={{ fontSize: 12, marginTop: 4, color: '#94a3b8' }}>
+              Actionable setups are automatically logged and tracked whenever entry/exit plans are evaluated.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filteredSignals.map(sig => {
+              const isTargetHit = sig.status === 'hit_target';
+              const isStopHit = sig.status === 'hit_stop';
+              const isExpired = sig.status === 'expired';
+              const isOpen = sig.status === 'open';
+              const retPct = sig.outcome?.returnPct;
+
+              const liveStock = stockMap.get(sig.symbol);
+              const livePrice = liveStock ? Number(liveStock.ltp || liveStock.close || 0) : null;
+              const unrealizedReturn = isOpen && livePrice && sig.entryPrice
+                ? +(((livePrice - sig.entryPrice) / sig.entryPrice) * 100).toFixed(2)
+                : null;
+
+              return (
+                <div
+                  key={sig.id}
+                  style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: isTargetHit
+                      ? '1px solid rgba(16, 185, 129, 0.35)'
+                      : isStopHit
+                        ? '1px solid rgba(239, 68, 68, 0.35)'
+                        : isOpen
+                          ? '1px solid rgba(245, 158, 11, 0.35)'
+                          : '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: 12,
+                    padding: '14px 16px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 12
+                  }}
+                >
+                  <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
+                        {sig.symbol}
+                      </span>
+                      <span style={{
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#34d399',
+                        padding: '1px 8px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 800
+                      }}>
+                        {sig.signalType || 'BUY'}
+                      </span>
+                      {sig.setupScore != null && sig.setupScore > 0 && (
                         <span style={{
-                          background: sig.signalType === 'BUY' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                          color: sig.signalType === 'BUY' ? '#34d399' : '#f87171',
-                          padding: '1px 7px',
-                          borderRadius: 4,
-                          fontSize: 12,
+                          background: 'rgba(99, 102, 241, 0.15)',
+                          border: '1px solid rgba(99, 102, 241, 0.3)',
+                          color: '#a5b4fc',
+                          padding: '1px 8px',
+                          borderRadius: 6,
+                          fontSize: 11,
                           fontWeight: 800
                         }}>
-                          {sig.signalType}
+                          Score: {sig.setupScore}/100
                         </span>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                          📅 {sig.signalDate}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-                        Entry: Rs. {sig.entryPrice} • Target: Rs. {sig.targetPrice || '—'} • Stop: Rs. {sig.stopLoss || '—'}
-                      </div>
-                      {sig.verdict && (
-                        <div style={{ fontSize: 12, color: '#60a5fa', marginTop: 2 }}>
-                          {sig.verdict}
-                        </div>
                       )}
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{
-                        background: isTargetHit
-                          ? 'rgba(16, 185, 129, 0.15)'
-                          : isStopHit
-                            ? 'rgba(239, 68, 68, 0.15)'
-                            : isOpen
-                              ? 'rgba(245, 158, 11, 0.15)'
-                              : 'rgba(148, 163, 184, 0.15)',
-                        border: isTargetHit
-                          ? '1px solid rgba(16, 185, 129, 0.4)'
-                          : isStopHit
-                            ? '1px solid rgba(239, 68, 68, 0.4)'
-                            : isOpen
-                              ? '1px solid rgba(245, 158, 11, 0.4)'
-                              : '1px solid rgba(148, 163, 184, 0.3)',
-                        borderRadius: 20,
-                        padding: '2px 9px',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: isTargetHit ? '#34d399' : isStopHit ? '#f87171' : isOpen ? '#fbbf24' : '#94a3b8'
-                      }}>
-                        {sig.status.toUpperCase().replace('_', ' ')}
+                      <span style={{ fontSize: 11.5, color: '#64748b' }}>
+                        📅 {sig.signalDate}
                       </span>
-
-                      {retPct != null && (
-                        <div style={{
-                          fontSize: 13,
-                          fontWeight: 900,
-                          fontFamily: 'var(--font-mono)',
-                          color: retPct >= 0 ? '#34d399' : '#f87171',
-                          marginTop: 4
-                        }}>
-                          {retPct >= 0 ? `+${retPct}%` : `${retPct}%`}
-                        </div>
-                      )}
-                      {sig.outcome?.holdingDays && (
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
-                          Held {sig.outcome.holdingDays} session(s)
-                        </div>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Footer Disclaimer */}
-        <div style={{
-          padding: '10px 20px',
-          background: '#090d16',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          fontSize: 12,
-          color: '#64748b',
-          textAlign: 'center'
-        }}>
-          ⚠️ Past performance generated by technical and quantitative filters does not guarantee future market returns. Real execution includes broker commission, SEBON fee, and potential slippage.
-        </div>
+                    <div style={{ fontSize: 12.5, color: '#cbd5e1', marginTop: 5 }}>
+                      Entry: <strong style={{ color: '#ffffff' }}>Rs. {sig.entryPrice}</strong>
+                      {' • '}
+                      Target: <span style={{ color: '#34d399', fontWeight: 700 }}>Rs. {sig.targetPrice || '—'}</span>
+                      {' • '}
+                      Stop: <span style={{ color: '#f87171', fontWeight: 700 }}>Rs. {sig.stopLoss || '—'}</span>
+                    </div>
+
+                    {isOpen && livePrice && (
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+                        Live Market: Rs. {livePrice} {sig.highestSeen && `• Peak seen: Rs. ${sig.highestSeen}`}
+                      </div>
+                    )}
+
+                    {!isOpen && sig.outcome?.exitPrice && (
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+                        Closed at: <strong style={{ color: '#ffffff' }}>Rs. {sig.outcome.exitPrice}</strong> on {sig.outcome.exitDate || 'N/A'}
+                      </div>
+                    )}
+
+                    {sig.verdict && (
+                      <div style={{ fontSize: 11.5, color: '#60a5fa', marginTop: 3, fontStyle: 'italic' }}>
+                        {sig.verdict}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: isTargetHit
+                        ? 'rgba(16, 185, 129, 0.15)'
+                        : isStopHit
+                          ? 'rgba(239, 68, 68, 0.15)'
+                          : isOpen
+                            ? 'rgba(245, 158, 11, 0.15)'
+                            : 'rgba(148, 163, 184, 0.15)',
+                      border: isTargetHit
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : isStopHit
+                          ? '1px solid rgba(239, 68, 68, 0.4)'
+                          : isOpen
+                            ? '1px solid rgba(245, 158, 11, 0.4)'
+                            : '1px solid rgba(148, 163, 184, 0.3)',
+                      borderRadius: 20,
+                      padding: '3px 10px',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      color: isTargetHit ? '#34d399' : isStopHit ? '#f87171' : isOpen ? '#fbbf24' : '#94a3b8'
+                    }}>
+                      {isTargetHit && <CheckCircle2 size={12} />}
+                      {isStopHit && <AlertTriangle size={12} />}
+                      {isOpen && <Clock size={12} />}
+                      {sig.status.toUpperCase().replace('_', ' ')}
+                    </span>
+
+                    {/* Realized or Unrealized Return */}
+                    {retPct != null && (
+                      <div style={{
+                        fontSize: 14,
+                        fontWeight: 900,
+                        fontFamily: 'var(--font-mono, monospace)',
+                        color: retPct >= 0 ? '#34d399' : '#f87171',
+                        marginTop: 4
+                      }}>
+                        {retPct >= 0 ? `+${retPct}%` : `${retPct}%`}
+                      </div>
+                    )}
+
+                    {isOpen && unrealizedReturn != null && (
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        fontFamily: 'var(--font-mono, monospace)',
+                        color: unrealizedReturn >= 0 ? '#34d399' : '#f87171',
+                        marginTop: 4
+                      }}>
+                        {unrealizedReturn >= 0 ? `+${unrealizedReturn}%` : `${unrealizedReturn}%`} (Live)
+                      </div>
+                    )}
+
+                    {sig.outcome?.holdingDays && (
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        Held {sig.outcome.holdingDays} session(s)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Footer Disclaimer */}
+      <div style={{
+        padding: '10px 20px',
+        background: '#090d16',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        fontSize: 11.5,
+        color: '#64748b',
+        textAlign: 'center'
+      }}>
+        ⚠️ Real-market execution includes broker commission, SEBON regulatory fee, and potential liquidity slippage.
+      </div>
+    </div>
   );
 
   if (inlineMode) {
     return content;
   }
 
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.85)',
-      backdropFilter: 'blur(8px)',
-      zIndex: 9999,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '16px'
-    }}>
-      {content}
+  const modalOverlay = (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        background: 'rgba(0,0,0,0.85)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 999999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        overflowY: 'auto',
+        boxSizing: 'border-box'
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 800,
+          margin: 'auto'
+        }}
+      >
+        {content}
+      </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalOverlay, document.body);
+  }
+
+  return modalOverlay;
 }

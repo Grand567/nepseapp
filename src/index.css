@@ -6,6 +6,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import './components/servicesHub.css';
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.font-mono-numbers {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum' on, 'lnum' on;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tap-active:active {
+  transform: scale(0.97);
+  transition: transform 0.08s ease;
+}
+
+.glass-nav {
+  background: rgba(11, 15, 23, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+
 /* ── CSS Variables ── */
 :root {
   color-scheme:       dark;

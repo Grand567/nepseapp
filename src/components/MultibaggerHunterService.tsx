@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Target, Zap, Shield, Award, TrendingUp, TrendingDown, Flame, AlertTriangle, CheckCircle2, XCircle, Filter, ChevronRight, RefreshCw, Star } from 'lucide-react';
 import { getAccurateFestivalSeasonality } from '../utils/quantEngine';
+import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
+import { getCachedRealPriceHistory } from '../utils/liveData';
 
 interface MultibaggerHunterProps {
   stocks?: any[];
@@ -26,16 +28,25 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
         const g = s.eps > 0 && bvps > 0 ? Math.sqrt(22.5 * s.eps * bvps) : 0;
         const mos = g > 0 ? ((g - s.ltp) / g) * 100 : null;
         
-        const gates = [
-          publicFloatM <= 15,
-          (s.promoterHolding || 0) >= 52 || (s.stealthAccumulation || 0) >= 55,
-          s.bollinger?.squeeze === true || (Math.abs(s.pChange || 0) <= 2.0 && (s.volume || 0) > 5000),
-          (s.volumeZScore || 0) >= 1.5 || (s.volumeSurgeRatio || 0) >= 1.8 || s.isVolumeShocker === true,
-          (s.stealthAccumulation || 0) >= 60 || ((s.pChange || 0) > 0 && (s.technicalScore || 0) >= 65),
-          (s.dpi || 0) >= 65 || (s.technicalScore || 0) >= 65,
-          mos !== null ? mos >= 5 : (s.pe > 0 && s.pe < 28),
-          seasonOk,
-        ];
+        const gates = (() => {
+          const sym = String(s.symbol || '').toUpperCase().trim();
+          const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
+          const stealthScore = Number(s.stealthAccumulation) || calculateStealthAccumulationScore(
+            s,
+            Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
+            undefined
+          );
+          return [
+            publicFloatM <= 15,
+            (s.promoterHolding || 0) >= 52 || stealthScore >= 55,
+            s.bollinger?.squeeze === true || (Math.abs(s.pChange || 0) <= 2.0 && (s.volume || 0) > 5000),
+            (s.volumeZScore || 0) >= 1.5 || (s.volumeSurgeRatio || 0) >= 1.8 || s.isVolumeShocker === true,
+            stealthScore >= 60 || ((s.pChange || 0) > 0 && (s.technicalScore || 0) >= 65),
+            (s.dpi || 0) >= 65 || (s.technicalScore || 0) >= 65,
+            mos !== null ? mos >= 5 : (s.pe > 0 && s.pe < 28),
+            seasonOk,
+          ];
+        })();
         
         const gatesPass = gates.filter(Boolean).length;
         const isEstimated = s.rsi === null || s.rsi === undefined || s.volumeZScore === null || s.volumeZScore === undefined;

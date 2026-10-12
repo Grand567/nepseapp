@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search, RefreshCw, ChevronDown, ChevronLeft, X, TrendingUp, TrendingDown,
   BarChart2, BookOpen, Activity, Zap, Target, Calculator, BrainCircuit, Sparkles,
@@ -44,7 +45,7 @@ import {
 import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A2
 import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
 import { classifySector } from '../utils/fundamentals';
-import { evaluateOpenSignals } from '../services/signalTracker';
+import { evaluateOpenSignals, getSignalStats } from '../services/signalTracker';
 import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
 
 /* ─── Formatters & Helpers ─── */
@@ -869,7 +870,7 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
     }
   };
 
-  return (
+  const drawerEl = (
     <div className="drawer-overlay" onClick={onClose}>
       <div className="drawer" style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="drawer-handle" />
@@ -1028,6 +1029,11 @@ function ChangeSummaryModal({ stocks, initialTab = 'advanced', onClose, onSelect
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(drawerEl, document.body);
+  }
+  return drawerEl;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1047,7 +1053,7 @@ function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
 
   const matched = useMemo(() => runStockScanners(stocks, filterKey), [stocks, filterKey]);
 
-  return (
+  const drawerEl = (
     <div className="drawer-overlay" onClick={onClose}>
       <div className="drawer" style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="drawer-handle" />
@@ -1123,6 +1129,11 @@ function ScannerModal({ filterKey, stocks, onClose, onSelectStock }) {
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(drawerEl, document.body);
+  }
+  return drawerEl;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1134,24 +1145,10 @@ function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
     { name: "Float Index", key: "float", val: indices.float },
     { name: "Sensitive Index", key: "sensitive", val: indices.sensitive },
     { name: "Sensitive Float", key: "sensitiveFloat", val: indices.sensitiveFloat },
-    ...(indices.subIndices || [
-      { index: "Commercial Banks", value: 1441.53, change: 3.86, pChange: 0.26 },
-      { index: "Development Banks", value: 5465.92, change: 10.35, pChange: 0.18 },
-      { index: "Finance", value: 2310.94, change: 10.87, pChange: 0.47 },
-      { index: "Hotels And Tourism", value: 7206.25, change: -7.79, pChange: -0.10 },
-      { index: "Hydro Power", value: 3691.09, change: 9.65, pChange: 0.26 },
-      { index: "Investment", value: 95.14, change: 0.01, pChange: 0.01 },
-      { index: "Life Insurance", value: 11523.56, change: 24.62, pChange: 0.21 },
-      { index: "Manufacturing And Processing", value: 10335.33, change: 29.31, pChange: 0.28 },
-      { index: "Microfinance", value: 4463.95, change: -1.63, pChange: -0.03 },
-      { index: "Mutual Fund", value: 20.37, change: -0.16, pChange: -0.82 },
-      { index: "Non Life Insurance", value: 10350.83, change: 48.44, pChange: 0.47 },
-      { index: "Others", value: 1889.25, change: 0.37, pChange: 0.01 },
-      { index: "Tradings", value: 3255.08, change: 18.39, pChange: 0.56 },
-    ]).map(s => ({ name: s.index || s.name, key: s.index || s.name, val: s }))
+    ...(Array.isArray(indices?.subIndices) ? indices.subIndices : []).map(s => ({ name: s.index || s.name, key: s.index || s.name, val: s }))
   ];
 
-  return (
+  const drawerEl = (
     <div className="drawer-overlay" onClick={onClose}>
       <div className="drawer" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="drawer-handle" />
@@ -1205,13 +1202,18 @@ function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(drawerEl, document.body);
+  }
+  return drawerEl;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TRADINGVIEW ADVANCED CHART MODAL
 ═══════════════════════════════════════════════════════════════════════════ */
 function TradingViewModal({ symbol, onClose }) {
-  return (
+  const modalEl = (
     <div className="drawer-overlay" onClick={onClose} style={{ zIndex: 120 }}>
       <div style={{
         position: 'fixed', inset: 10, background: '#131722', borderRadius: 16,
@@ -1243,6 +1245,11 @@ function TradingViewModal({ symbol, onClose }) {
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(modalEl, document.body);
+  }
+  return modalEl;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1503,6 +1510,13 @@ function Dashboard({
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showSubIndicesModal, setShowSubIndicesModal] = useState(false);
   const [showSignalTrackerModal, setShowSignalTrackerModal] = useState(false);
+  const signalTrackerStats = useMemo(() => {
+    try {
+      return getSignalStats();
+    } catch (_) {
+      return null;
+    }
+  }, [stocks, showSignalTrackerModal]);
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
 
@@ -3337,20 +3351,35 @@ function Dashboard({
             <button
               onClick={() => setShowSignalTrackerModal(true)}
               style={{
-                background: 'rgba(16, 185, 129, 0.08)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.22) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
                 borderRadius: 20,
-                padding: '4px 12px',
+                padding: '5px 14px',
                 fontSize: 12,
                 fontWeight: 800,
                 color: '#34d399',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
-                cursor: 'pointer'
+                gap: 7,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.12)'
               }}
             >
-              📊 Algorithmic Signal Track Record
+              <span>📊</span>
+              <span>Algorithmic Signal Track Record</span>
+              {signalTrackerStats && signalTrackerStats.total > 0 && (
+                <span style={{
+                  background: 'rgba(16, 185, 129, 0.25)',
+                  border: '1px solid rgba(16, 185, 129, 0.45)',
+                  borderRadius: 12,
+                  padding: '1px 8px',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  color: '#6ee7b7'
+                }}>
+                  {signalTrackerStats.closedCount > 0 ? `${signalTrackerStats.winRate}% Win Rate` : `${signalTrackerStats.openCount} Active`}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -3821,86 +3850,112 @@ function Dashboard({
       </div>
 
       {/* ── Active Breakout Alert In-App Toast Banner ── */}
-      {activeBreakoutToast && (
-        <div style={{
-          position: 'sticky',
-          top: 10,
-          zIndex: 9999,
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(21, 25, 34, 0.98))',
-          border: '1.5px solid #10B981',
-          borderRadius: 14,
-          padding: '12px 16px',
-          marginBottom: 14,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(16, 185, 129, 0.3)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 10
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 10,
-              background: 'rgba(16, 185, 129, 0.2)',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <Zap size={18} color="#34d399" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>🚀 BREAKOUT TRIGGERED:</span>
-                <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{activeBreakoutToast.symbol}</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 1 }}>
-                Price crossed <strong style={{ color: '#ffffff' }}>Rs. {activeBreakoutToast.breakoutPrice}</strong> with <strong style={{ color: '#34d399' }}>{Number(activeBreakoutToast.rvol).toFixed(2)}x RVOL</strong> surge! Dual-gate satisfied.
-              </div>
-            </div>
-          </div>
+      {activeBreakoutToast && (() => {
+        const isTrap = activeBreakoutToast.type === 'DISTRIBUTION_TRAP';
+        const isStealth = activeBreakoutToast.type === 'STEALTH_ACCUMULATION';
+        const borderColor = isTrap ? '#f43f5e' : isStealth ? '#06b6d4' : '#10B981';
+        const glowColor = isTrap ? 'rgba(244, 63, 94, 0.35)' : isStealth ? 'rgba(6, 182, 212, 0.35)' : 'rgba(16, 185, 129, 0.3)';
+        const iconBg = isTrap ? 'rgba(244, 63, 94, 0.2)' : isStealth ? 'rgba(6, 182, 212, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+        const btnGrad = isTrap ? 'linear-gradient(135deg, #e11d48, #be123c)' : isStealth ? 'linear-gradient(135deg, #0891b2, #0e7490)' : 'linear-gradient(135deg, #10B981, #059669)';
+        const accentText = isTrap ? '#fb7185' : isStealth ? '#38bdf8' : '#34d399';
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => {
-                const targetStock = stocks.find(s => s.symbol === activeBreakoutToast.symbol) || { symbol: activeBreakoutToast.symbol, ltp: activeBreakoutToast.ltp };
-                handleStockClick(targetStock);
-                setActiveBreakoutToast(null);
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #10B981, #059669)',
-                border: 'none',
-                borderRadius: 8,
-                padding: '6px 14px',
-                fontSize: 12,
-                fontWeight: 800,
-                color: '#ffffff',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
-              }}
-            >
-              <span>View {activeBreakoutToast.symbol} Plan →</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveBreakoutToast(null)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: 'none',
-                borderRadius: 8,
-                padding: '6px 10px',
-                fontSize: 12,
-                color: '#94a3b8',
-                cursor: 'pointer'
-              }}
-            >
-              Dismiss ✕
-            </button>
+        return (
+          <div style={{
+            position: 'sticky',
+            top: 10,
+            zIndex: 9999,
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(21, 25, 34, 0.98))',
+            border: `1.5px solid ${borderColor}`,
+            borderRadius: 14,
+            padding: '12px 16px',
+            marginBottom: 14,
+            boxShadow: `0 10px 30px rgba(0,0,0,0.6), 0 0 20px ${glowColor}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: iconBg,
+                border: `1px solid ${borderColor}55`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                {isTrap ? (
+                  <AlertTriangle size={18} color={accentText} />
+                ) : isStealth ? (
+                  <Shield size={18} color={accentText} />
+                ) : (
+                  <Zap size={18} color={accentText} />
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>
+                    {isTrap ? '🚨 DISTRIBUTION TRAP DETECTED:' : isStealth ? '🟢 SMART MONEY STEALTH BASE:' : '🚀 BREAKOUT TRIGGERED:'}
+                  </span>
+                  <span style={{ color: accentText, fontFamily: 'var(--font-mono)' }}>{activeBreakoutToast.symbol}</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 1 }}>
+                  {isTrap ? (
+                    <>Heavy volume churn / operator offloading (<strong style={{ color: '#fb7185' }}>{activeBreakoutToast.pChange > 0 ? '+' : ''}{activeBreakoutToast.pChange}%</strong>, <strong style={{ color: '#ffffff' }}>{Number(activeBreakoutToast.rvol).toFixed(2)}x RVOL</strong>). Protect capital!</>
+                  ) : isStealth ? (
+                    <>Quiet institutional base absorption (<strong style={{ color: '#38bdf8' }}>Score: {activeBreakoutToast.stealthScore}/100</strong>, <strong style={{ color: '#ffffff' }}>{Number(activeBreakoutToast.rvol).toFixed(2)}x RVOL</strong>). Base building active.</>
+                  ) : (
+                    <>Price crossed <strong style={{ color: '#ffffff' }}>Rs. {activeBreakoutToast.breakoutPrice}</strong> with <strong style={{ color: '#34d399' }}>{Number(activeBreakoutToast.rvol).toFixed(2)}x RVOL</strong> surge! Dual-gate satisfied.</>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetStock = stocks.find(s => s.symbol === activeBreakoutToast.symbol) || { symbol: activeBreakoutToast.symbol, ltp: activeBreakoutToast.ltp };
+                  handleStockClick(targetStock);
+                  setActiveBreakoutToast(null);
+                }}
+                style={{
+                  background: btnGrad,
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  boxShadow: `0 2px 8px ${glowColor}`
+                }}
+              >
+                <span>
+                  {isTrap ? `Inspect ${activeBreakoutToast.symbol} Risk →` : isStealth ? `Analyze ${activeBreakoutToast.symbol} Base →` : `View ${activeBreakoutToast.symbol} Plan →`}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveBreakoutToast(null)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  color: '#94a3b8',
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss ✕
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
       {(!stocks || stocks.length === 0) ? (
@@ -4127,7 +4182,13 @@ function Dashboard({
                 background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8',
                 border: '1px solid rgba(56, 189, 248, 0.3)'
               }}>
-                🛡️ {primeDailyPick.confidenceLevel ? `${primeDailyPick.confidenceLevel} (${primeDailyPick.analogCount} Analogs)` : `Base: ${primeDailyPick.sampleDepth || 120}D`}
+                🛡️ {(() => {
+                  const aCount = primeDailyPick.analogCount ?? primeDailyPick.bayesianEvidence?.sampleSize ?? null;
+                  const cLevel = primeDailyPick.confidenceLevel || (aCount && aCount >= 4 ? 'MEDIUM' : 'LOW');
+                  if (aCount != null && aCount > 0) return `${cLevel} (${aCount} Analogs)`;
+                  if (primeDailyPick.isPlanVerified) return `${cLevel} (500D Backtested)`;
+                  return `Base: ${primeDailyPick.sampleDepth || 120}D`;
+                })()}
               </span>
             </div>
           </div>

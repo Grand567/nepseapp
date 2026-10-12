@@ -236,31 +236,8 @@ export const fetchNepseIntradayGraph = async (symbol, forceRefresh = false) => {
     } catch (_) {}
   }
 
-  // Tier 3: Last-resort — synthesize today's session bar from locally-cached daily candle.
-  // Shown only when proxy AND floorsheet both failed (Render offline). Prevents blank 1D chart.
-  if (sym !== 'NEPSE') {
-    try {
-      const { getCachedRealPriceHistory } = await import('./liveData.js');
-      const hist = getCachedRealPriceHistory(sym);
-      if (Array.isArray(hist) && hist.length > 0) {
-        const last = hist[hist.length - 1];
-        if (last && last.close > 0) {
-          // Build a minimal 2-point intraday line: open at 11:00, close at current time / 15:00
-          const nowNPT = new Date(Date.now() + (5 * 60 + 45) * 60000);
-          const hNPT = nowNPT.getUTCHours();
-          const mNPT = nowNPT.getUTCMinutes();
-          const isMktOpen = hNPT >= 11 && (hNPT < 15 || (hNPT === 15 && mNPT === 0));
-          const openTs = Math.floor(new Date(Date.UTC(nowNPT.getUTCFullYear(), nowNPT.getUTCMonth(), nowNPT.getUTCDate(), 11 - 5, 60 - 45)).getTime() / 1000);
-          const closeTs = isMktOpen ? Math.floor(Date.now() / 1000) : Math.floor(new Date(Date.UTC(nowNPT.getUTCFullYear(), nowNPT.getUTCMonth(), nowNPT.getUTCDate(), 15 - 5, 60 - 45)).getTime() / 1000);
-          return [
-            { timestamp: openTs,  time: '11:00 AM', open: last.open  || last.close, high: last.high || last.close, low: last.low || last.close, close: last.open  || last.close, volume: 0, isCachedFallback: true },
-            { timestamp: closeTs, time: isMktOpen ? 'Now' : '3:00 PM', open: last.open || last.close, high: last.high || last.close, low: last.low || last.close, close: last.close, volume: last.volume || 0, isCachedFallback: true },
-          ];
-        }
-      }
-    } catch (_) {}
-  }
-
+  // If Tier 1 and Tier 2 both fail, return null so the UI honestly indicates
+  // that authentic live intraday data is offline rather than generating synthetic ticks.
   return null;
 };
 

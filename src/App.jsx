@@ -3,21 +3,22 @@ import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
   LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
   BarChart3, Wifi, WifiOff, Clock, LogOut, User, Settings, Cpu, RefreshCw,
-  Calendar, X, Info, Crown, Zap, Smartphone, Copy, Bell
+  Calendar, X, Info, Crown, Zap, Smartphone, Copy, Bell, Sparkles
 } from 'lucide-react';
 import Dashboard      from './components/Dashboard';
-import Portfolio      from './components/Portfolio';
-import MeroShareHub   from './components/MeroShareHub';
-import PortfolioHub   from './components/PortfolioHub';
-import PredictorHub   from './components/PredictorHub';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import ServicesHub    from './components/ServicesHub';
-import Calculator     from './components/Calculator';
-import AiAnalyst      from './components/AiAnalyst';
-import Resources      from './components/Resources';
-import LoginScreen    from './components/LoginScreen';
-import TestSuite      from './components/TestSuite';
-import StockDetailModal from './components/StockDetailModal';
+
+// ── Dynamic Code-Splitting for Lightning-Fast Initial Launch ──
+const ServicesHub      = React.lazy(() => import('./components/ServicesHub'));
+const PredictorHub     = React.lazy(() => import('./components/PredictorHub'));
+const PortfolioHub     = React.lazy(() => import('./components/PortfolioHub'));
+const Calculator       = React.lazy(() => import('./components/Calculator'));
+const AiAnalyst        = React.lazy(() => import('./components/AiAnalyst'));
+const Resources        = React.lazy(() => import('./components/Resources'));
+const LoginScreen      = React.lazy(() => import('./components/LoginScreen'));
+const TestSuite        = React.lazy(() => import('./components/TestSuite'));
+const StockDetailModal = React.lazy(() => import('./components/StockDetailModal'));
+const StitchHub        = React.lazy(() => import('./views/StitchHub'));
 import PullToRefresh from './components/PullToRefresh';
 import SubscriptionModal from './components/SubscriptionModal';
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
@@ -511,8 +512,16 @@ function AppInner() {
             currentStocks = res.data;
             liveStocksRef.current = currentStocks;
             setStocks(prev => {
-              if (prev && prev.length === currentStocks.length && prev[0]?.ltp === currentStocks[0]?.ltp && prev[0]?.volume === currentStocks[0]?.volume && prev[0]?.turnover === currentStocks[0]?.turnover) {
-                return prev;
+              if (prev && prev === currentStocks) return prev;
+              if (!prev || prev.length !== currentStocks.length) return currentStocks;
+              const prevTurnover = prev.reduce((acc, s) => acc + (s.turnover || 0), 0);
+              const curTurnover = currentStocks.reduce((acc, s) => acc + (s.turnover || 0), 0);
+              if (prevTurnover > 0 && prevTurnover === curTurnover) {
+                const prevVol = prev.reduce((acc, s) => acc + (s.volume || 0), 0);
+                const curVol = currentStocks.reduce((acc, s) => acc + (s.volume || 0), 0);
+                if (prevVol === curVol) {
+                  return prev;
+                }
               }
               return currentStocks;
             });
@@ -589,12 +598,16 @@ function AppInner() {
 
       if (!isMounted) return;
 
-      // Adaptive intervals: 12s during active market trading (Mon-Fri 11am-3pm NPT, Sun & Sat closed), 120s when closed
-      const baseInterval = isMarketOpen ? 12000 : (isPreOpen ? 30000 : 120000);
+      // Adaptive battery-saving intervals:
+      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 12s
+      // - Pre-Open Session (10:30 - 11:00 AM NPT): 30s
+      // - Post-Close Reconciliation (3:00 - 4:00 PM NPT): 60s
+      // - Off-Hours / Weekend / Holiday: 600s (10 min) to conserve mobile battery & cellular data
+      const isRecon = !isMarketOpen && (status?.isPostCloseReconciling || (status?.nptTotalMinutes >= 15 * 60 && status?.nptTotalMinutes < 16 * 60));
+      const baseInterval = isMarketOpen ? 12000 : (isPreOpen ? 30000 : (isRecon ? 60000 : 600000));
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
-        // Exponential backoff up to 120s on network/server errors
-        nextInterval = Math.min(baseInterval * Math.pow(1.8, Math.min(consecutiveErrors, 5)), 120000);
+        nextInterval = Math.min(baseInterval * Math.pow(1.8, Math.min(consecutiveErrors, 5)), 180000);
       }
 
       scheduleNext(nextInterval);
@@ -675,12 +688,7 @@ function AppInner() {
         if (isReal || (!hasExistingReal && res.data?.length > 0)) {
           currentStocks = res.data;
           liveStocksRef.current = currentStocks;
-          setStocks(prev => {
-            if (prev && prev.length === currentStocks.length && prev[0]?.ltp === currentStocks[0]?.ltp && prev[0]?.volume === currentStocks[0]?.volume && prev[0]?.turnover === currentStocks[0]?.turnover) {
-              return prev;
-            }
-            return currentStocks;
-          });
+          setStocks(currentStocks);
           const isLive = Boolean(marketStatus?.isOpen);
           setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
           if (isFresh) {
@@ -791,9 +799,12 @@ function AppInner() {
     );
   }
 
-  // ── Show Login screen if not authenticated ──
   if (!user) {
-    return <LoginScreen onLogin={setUser} />;
+    return (
+      <React.Suspense fallback={<div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', background: '#090D16' }}><div style={{ width: 32, height: 32, borderRadius: '50%', border: '2.5px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} /></div>}>
+        <LoginScreen onLogin={setUser} />
+      </React.Suspense>
+    );
   }
 
   const nepseChange = indices?.nepse?.change ?? 0;
@@ -850,6 +861,27 @@ function AppInner() {
                 ) : (
                   'NEPSE Index — Fetching Live...'
                 )}
+              </span>
+            </div>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, cursor: 'pointer' }}
+              onClick={() => setShowCalendarModal(true)}
+              title={marketStatus?.message || 'NEPSE Market Status'}
+            >
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-extrabold border ${
+                marketStatus?.isOpen
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                  : marketStatus?.isPreOpen
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${
+                  marketStatus?.isOpen ? 'bg-emerald-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : 'bg-slate-500'
+                }`} />
+                {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Closed')}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : ''}
               </span>
             </div>
           </div>
@@ -975,6 +1007,30 @@ function AppInner() {
               style={{ height: 30, width: 30 }}
             >
               <BookOpen style={{ width: 14, height: 14 }} />
+            </button>
+
+            {/* Stitch UI Design System button */}
+            <button
+              className={`icon-btn ${activeTab === 'stitch' ? 'active' : ''}`}
+              onClick={() => setActiveTab('stitch')}
+              title="Stitch UI Design System"
+              style={{
+                height: 30,
+                padding: '0 8px',
+                borderRadius: 8,
+                background: activeTab === 'stitch' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                color: '#38bdf8',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              <Sparkles style={{ width: 13, height: 13 }} />
+              <span>Stitch</span>
             </button>
 
             {/* User avatar + menu */}
@@ -1475,75 +1531,91 @@ function AppInner() {
                 </div>
               )}
 
-              {/* Tab 2: Portfolio & Bulk IPO */}
-              {visitedTabs.has('portfolio') && (
-                <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <PortfolioHub
-                    marketStocks={stocks}
-                    userId={user?.uid}
-                    userEmail={user?.email}
-                    apiStatus={apiStatus}
-                    initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
-                    onSelectStock={openStockDetail}
-                  />
-                </div>
-              )}
+              {/* Tab 2 to 8: Lazy-loaded modules with Suspense boundary */}
+              <React.Suspense fallback={<div style={{ display: 'flex', minHeight: 320, width: '100%', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} /></div>}>
+                {/* Tab 2: Portfolio & Bulk IPO */}
+                {visitedTabs.has('portfolio') && (
+                  <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <PortfolioHub
+                      marketStocks={stocks}
+                      userId={user?.uid}
+                      userEmail={user?.email}
+                      apiStatus={apiStatus}
+                      initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
+                      onSelectStock={openStockDetail}
+                    />
+                  </div>
+                )}
 
-              {/* Tab 3: Predictor Hub */}
-              {visitedTabs.has('predictor') && (
-                <div style={{ display: (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <PredictorHub
-                    stocks={stocks}
-                    indices={indices}
-                    onSelectStock={openStockDetail}
-                    initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
-                  />
-                </div>
-              )}
+                {/* Tab 3: Predictor Hub */}
+                {visitedTabs.has('predictor') && (
+                  <div style={{ display: (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <PredictorHub
+                      stocks={stocks}
+                      indices={indices}
+                      onSelectStock={openStockDetail}
+                      initialSubTab={activeTab === 'master_100_profit' ? 'master_100_profit' : activeTab === 'entry_exit' ? 'entry_exit' : activeTab === 'short_term_plan' ? 'short_term_plan' : undefined}
+                    />
+                  </div>
+                )}
 
-              {/* Tab 4: Services */}
-              {visitedTabs.has('services') && (
-                <div style={{ display: activeTab === 'services' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <ServicesHub
-                    stocks={stocks}
-                    indices={indices}
-                    apiStatus={apiStatus}
-                    userId={user?.uid}
-                    onNavigateTab={setActiveTab}
-                    onSelectStock={openStockDetail}
-                    onAskGuruAi={(stockOrSymbol) => {
-                      const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
-                      setAiTargetStock(sym);
-                      setActiveTab('ai');
-                    }}
-                  />
-                </div>
-              )}
+                {/* Tab 4: Services */}
+                {visitedTabs.has('services') && (
+                  <div style={{ display: activeTab === 'services' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <ServicesHub
+                      stocks={stocks}
+                      indices={indices}
+                      apiStatus={apiStatus}
+                      userId={user?.uid}
+                      onNavigateTab={setActiveTab}
+                      onSelectStock={openStockDetail}
+                      onAskGuruAi={(stockOrSymbol) => {
+                        const sym = typeof stockOrSymbol === 'string' ? stockOrSymbol : stockOrSymbol?.symbol;
+                        setAiTargetStock(sym);
+                        setActiveTab('ai');
+                      }}
+                    />
+                  </div>
+                )}
 
-              {/* Tab 5: Calculator */}
-              {visitedTabs.has('calculator') && (
-                <div style={{ display: activeTab === 'calculator' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <Calculator />
-                </div>
-              )}
+                {/* Tab 5: Calculator */}
+                {visitedTabs.has('calculator') && (
+                  <div style={{ display: activeTab === 'calculator' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <Calculator />
+                  </div>
+                )}
 
-              {/* Tab 6: Guru AI */}
-              {visitedTabs.has('ai') && (
-                <div style={{ display: activeTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <AiAnalyst
-                    marketStocks={stocks}
-                    initialStock={aiTargetStock}
-                    onClearInitialStock={() => setAiTargetStock(null)}
-                  />
-                </div>
-              )}
+                {/* Tab 6: Guru AI */}
+                {visitedTabs.has('ai') && (
+                  <div style={{ display: activeTab === 'ai' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <AiAnalyst
+                      marketStocks={stocks}
+                      initialStock={aiTargetStock}
+                      onClearInitialStock={() => setAiTargetStock(null)}
+                    />
+                  </div>
+                )}
 
-              {/* Tab 7: Resources */}
-              {visitedTabs.has('resources') && (
-                <div style={{ display: activeTab === 'resources' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
-                  <Resources onNavigateTab={setActiveTab} />
-                </div>
-              )}
+                {/* Tab 7: Resources */}
+                {visitedTabs.has('resources') && (
+                  <div style={{ display: activeTab === 'resources' ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                    <Resources onNavigateTab={setActiveTab} />
+                  </div>
+                )}
+
+                {/* Tab 8: Stitch UI Design System (7 Screens) */}
+                {activeTab === 'stitch' && (
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 9999, overflowY: 'auto', background: '#070A10' }}>
+                    <StitchHub
+                      onExit={() => setActiveTab('dashboard')}
+                      stocks={stocks}
+                      indices={indices}
+                      marketStatus={marketStatus}
+                      apiStatus={apiStatus}
+                    />
+                  </div>
+                )}
+              </React.Suspense>
 
               {/* ── Dravyashree Smart Institutional Alert Banner & Modal ── */}
               <SmartAlertBanner onOpenCard={(alert) => setSmartAlertModal({ isOpen: true, alert })} />
@@ -1557,11 +1629,13 @@ function AppInner() {
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}
               {selectedStock && (
-                <StockDetailModal
-                  stock={selectedStock}
-                  allStocks={stocks}
-                  onClose={closeStockDetail}
-                />
+                <React.Suspense fallback={null}>
+                  <StockDetailModal
+                    stock={selectedStock}
+                    allStocks={stocks}
+                    onClose={closeStockDetail}
+                  />
+                </React.Suspense>
               )}
             </div>
           </ErrorBoundary>

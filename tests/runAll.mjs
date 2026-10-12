@@ -16,11 +16,12 @@ const testFiles = [
   'iBatchInvestorSafety.test.mjs',
   'jBatchAdvancedEngines.test.mjs',
   'kWhaleDailyArchive.test.mjs',
-  'testSmartAlertPipeline.mjs'
+  'testSmartAlertPipeline.mjs',
+  'auditCrossModuleConsistency.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (12 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (13 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

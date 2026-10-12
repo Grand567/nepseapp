@@ -16,6 +16,8 @@
  */
 import React, { useState, useMemo } from 'react';
 import { TrendingUp, Award, Zap, Filter, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react';
+import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
+import { getCachedRealPriceHistory } from '../utils/liveData';
 
 interface Props {
   stocks?: any[];
@@ -85,7 +87,14 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
 }
 
 function computeOAMI(s: any, rsScore: number): number {
-  const stealth = Math.min(100, Math.max(0, Number(s.stealthAccumulation || 50)));
+  // Use real engine with any cached history instead of null fallback
+  const sym = String(s.symbol || '').toUpperCase().trim();
+  const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
+  const stealth = calculateStealthAccumulationScore(
+    s,
+    Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
+    undefined
+  );
   const rawZ    = Number(s.volumeZScore || 0);
   const normZ   = Math.min(100, Math.max(0, (rawZ + 2) * 25)); // map -2..+2 → 0..100
   const rawMom  = Number(s.pChange || 0);
@@ -282,12 +291,12 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
                     </td>
                     <td className="py-2.5 px-2 text-right">
                       <div className="flex flex-col items-end gap-0.5">
-                        <span className={`text-sm font-black ${s.oami >= 70 ? 'text-emerald-400' : s.oami >= 50 ? 'text-amber-400' : 'text-slate-500'}`}>
+                        <span className={`text-sm font-black ${s.oami >= 65 ? 'text-emerald-400' : s.oami >= 48 ? 'text-amber-400' : 'text-slate-500'}`}>
                           {s.oami}
                         </span>
                         <div className="w-16 bg-slate-700 rounded-full h-1">
                           <div
-                            className={`h-1 rounded-full ${s.oami >= 70 ? 'bg-emerald-400' : s.oami >= 50 ? 'bg-amber-400' : 'bg-slate-500'}`}
+                            className={`h-1 rounded-full ${s.oami >= 65 ? 'bg-emerald-400' : s.oami >= 48 ? 'bg-amber-400' : 'bg-slate-500'}`}
                             style={{ width: `${s.oami}%` }}
                           />
                         </div>
@@ -295,7 +304,7 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
                     </td>
                     <td className="py-2.5 px-2 text-right text-xs">
                       {(() => {
-                        const dpiVal = s.dpi != null ? Math.round(Number(s.dpi)) : Math.round(Number(s.stealthAccumulation || 50));
+                        const dpiVal = s.dpi != null ? Math.round(Number(s.dpi)) : s.oami;
                         return (
                           <span className={`font-semibold ${dpiVal >= 70 ? 'text-emerald-400' : dpiVal >= 55 ? 'text-amber-400' : 'text-slate-400'}`}>
                             {dpiVal}

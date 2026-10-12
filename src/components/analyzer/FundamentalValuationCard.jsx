@@ -67,6 +67,24 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
         formattedVal = `${isNegative ? '-' : ''}${unit}${absVal}`;
       }
     }
+
+    let formattedMedian = '—';
+    if (median !== null && median !== undefined && !isNaN(Number(median))) {
+      const medNum = Number(median);
+      const absMed = Math.abs(medNum).toFixed(1);
+      if (label === 'P/E') {
+        formattedMedian = medNum < 0 ? `-${absMed}x` : `${absMed}x`;
+      } else if (label.includes('Rs') || unit.includes('Rs')) {
+        formattedMedian = medNum < 0 ? `-Rs. ${absMed}` : `Rs. ${absMed}`;
+      } else if (unit.includes('%') || label.includes('%')) {
+        formattedMedian = medNum < 0 ? `-${absMed}%` : `${absMed}%`;
+      } else {
+        formattedMedian = `${medNum < 0 ? '-' : ''}${unit}${absMed}`;
+      }
+    } else if (median) {
+      formattedMedian = `${unit}${median}`;
+    }
+
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr', gap: 6, padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>{label}</span>
@@ -74,7 +92,7 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
           {formattedVal}
         </span>
         <span style={{ fontSize: 12, color: '#475569' }}>
-          {median ? `Sector: ${unit}${median}` : '—'}
+          {formattedMedian !== '—' ? `Sector: ${formattedMedian}` : '—'}
         </span>
       </div>
     );

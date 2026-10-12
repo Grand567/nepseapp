@@ -14,22 +14,33 @@ export const SECTORS = [
   'Development Banks',
   'Finance',
   'Microfinance',
-  'Hydro Power',
   'Hydropower',
   'Life Insurance',
   'Non-Life Insurance',
-  'Non Life Insurance',
   'Hotels & Tourism',
-  'Hotels And Tourism',
   'Manufacturing & Processing',
-  'Manufacturing And Processing',
   'Trading',
-  'Tradings',
   'Mutual Funds',
-  'Mutual Fund',
   'Investment',
   'Others',
 ] as const;
+
+export function normalizeSectorName(rawSector: string): string {
+  const s = String(rawSector || '').trim().toLowerCase();
+  if (s.includes('hydro')) return 'Hydropower';
+  if (s.includes('non-life') || s.includes('non life')) return 'Non-Life Insurance';
+  if (s.includes('life')) return 'Life Insurance';
+  if (s.includes('commercial')) return 'Commercial Banks';
+  if (s.includes('development')) return 'Development Banks';
+  if (s.includes('finance')) return 'Finance';
+  if (s.includes('micro')) return 'Microfinance';
+  if (s.includes('hotel')) return 'Hotels & Tourism';
+  if (s.includes('manufacturing')) return 'Manufacturing & Processing';
+  if (s.includes('trading')) return 'Trading';
+  if (s.includes('mutual')) return 'Mutual Funds';
+  if (s.includes('invest')) return 'Investment';
+  return 'Others';
+}
 
 const RAW_NEPSE_UNIVERSE: NepseCompany[] = [
   { symbol: 'ACLBSL', name: 'Aarambha Chautari Laghubitta Bittiya Sanstha Limited', sector: 'Microfinance', basePrice: 894.9, sharesOut: 2 },
@@ -389,7 +400,8 @@ for (const c of RAW_NEPSE_UNIVERSE) {
     symbolSet.add(sym);
     unifiedList.push({
       ...c,
-      symbol: sym
+      symbol: sym,
+      sector: normalizeSectorName(c.sector)
     });
   }
 }
@@ -402,7 +414,7 @@ if (stockmapData) {
       unifiedList.push({
         symbol: s,
         name: info?.name || s,
-        sector: info?.sector || 'Others',
+        sector: normalizeSectorName(info?.sector || 'Others'),
         basePrice: 100,
         sharesOut: 5
       });

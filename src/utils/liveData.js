@@ -31,6 +31,7 @@ import {
   invalidateSymbolCache,
   clearHistoryCache
 } from './historyCache.js';
+import { calculateStealthAccumulationScore } from './accumulationDistributionEngine.ts';
 
 
 // A4: Use NPT (Asia/Kathmandu, UTC+5:45) for all date-keyed cache entries.
@@ -188,11 +189,11 @@ export function getLastDataUpdateTime() {
 function buildEnrichedSnapshot() {
   const universe = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE : (NEPSE_UNIVERSE.stocks || []);
   const stocks = universe.map((c) => {
-    const basePrice = c.basePrice || c.ltp || 200;
+    const basePrice = Number(c.basePrice || c.ltp || 0);
     const ltp = basePrice;
     const prevClose = basePrice;
-    const sharesM = c.sharesOut || 10;
-    const marketCap = Math.floor(ltp * sharesM * 1e6);
+    const sharesM = Number(c.sharesOut || 0);
+    const marketCap = (ltp > 0 && sharesM > 0) ? Math.floor(ltp * sharesM * 1e6) : 0;
 
     return {
       symbol: c.symbol,
@@ -217,7 +218,7 @@ function buildEnrichedSnapshot() {
       bollinger: null,
       volumeZScore: null, volumeSurgeRatio: null,
       technicalScore: null, technicalRating: null, dpi: null,
-      stealthAccumulation: null, floatTurnoverPct: 0,
+      stealthAccumulation: calculateStealthAccumulationScore({ ltp, high: ltp, low: ltp, open: ltp, pChange: 0, volumeSurgeRatio: 1.0, volumeZScore: 0, high52w: null, low52w: null }, [], undefined), floatTurnoverPct: 0,
       isBreakout: false, isVolumeShocker: false, candlestickPattern: null,
       promoterHolding: null, beta: null, dividendYield: null,
       listedShares: sharesM * 1e6,
@@ -956,13 +957,56 @@ function normalizeLiveArray(arr) {
     const sma50 = ema50;
     const bollinger = prev?.bollinger || null;
 
-    const volumeSurgeRatio = Number(r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? null);
-    const volumeZScore = Number(r.volumeZScore ?? prev?.volumeZScore ?? null);
+    const cachedCandles = getCachedRealPriceHistory(sym);
+    const rawSurge = r.volumeSurgeRatio ?? prev?.volumeSurgeRatio ?? null;
+    let volumeSurgeRatio = (rawSurge !== null && rawSurge !== undefined && isFinite(Number(rawSurge)) && Number(rawSurge) > 0)
+      ? Number(rawSurge)
+      : null;
+
+    if (volumeSurgeRatio === null && vol > 0 && Array.isArray(cachedCandles) && cachedCandles.length >= 5) {
+      const hist20 = cachedCandles.slice(-20);
+      const avgVol = hist20.reduce((s, c) => s + (Number(c.volume) || 0), 0) / Math.max(1, hist20.length);
+      if (avgVol > 0) {
+        volumeSurgeRatio = +(vol / avgVol).toFixed(2);
+      }
+    }
+    if (volumeSurgeRatio === null) {
+      volumeSurgeRatio = vol > 1000 ? +(1.0 + Math.min(2.0, (vol / 50000) * 0.5)).toFixed(2) : 1.0;
+    }
+
+    const rawZ = r.volumeZScore ?? prev?.volumeZScore ?? null;
+    let volumeZScore = (rawZ !== null && rawZ !== undefined && isFinite(Number(rawZ))) ? Number(rawZ) : null;
+    if (volumeZScore === null) {
+      volumeZScore = +((volumeSurgeRatio - 1.0) * 1.5).toFixed(2);
+    }
+
     const technicalScore = prev?.technicalScore ?? null;
     const technicalRating = prev?.technicalRating ?? (technicalScore >= 65 ? 'Buy' : technicalScore <= 40 ? 'Sell' : 'Neutral');
     const dayRange = (high || ltp) - (low || ltp);
     const clv = dayRange > 0 ? (((ltp - (low || ltp)) - ((high || ltp) - ltp)) / dayRange) : 0;
-    const stealthAccumulation = prev?.stealthAccumulation ?? null;
+    // Refresh stealth score every ~5 minutes (300s) or compute if never set
+    const lastStealthTs = prev?._stealthTs || 0;
+    const nowTs = Date.now();
+    let stealthAccumulation = prev?.stealthAccumulation ?? null;
+    const shouldRefreshStealth = stealthAccumulation === null || (nowTs - lastStealthTs > 300000);
+
+    if (shouldRefreshStealth) {
+      const intradayProxy = {
+        ltp, high: high || ltp, low: low || ltp, open: open || ltp,
+        pChange: pCh, volumeSurgeRatio: isFinite(volumeSurgeRatio) ? volumeSurgeRatio : 1.0,
+        volumeZScore: isFinite(volumeZScore) ? volumeZScore : 0,
+        high52w: hi52 || null, low52w: lo52 || null,
+      };
+      stealthAccumulation = calculateStealthAccumulationScore(
+        intradayProxy,
+        Array.isArray(cachedCandles) && cachedCandles.length >= 5 ? cachedCandles : [],
+        undefined
+      );
+      // DEV: log initial stealth computations to track startup performance
+      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development' && lastStealthTs === 0) {
+        console.debug('[Stealth] Initial compute for ' + sym + ': ' + stealthAccumulation);
+      }
+    }
 
     const sharesM = prev?.sharesOut || null;
     const marketCap = prev?.marketCap || (sharesM ? Math.floor(ltp * sharesM * 1e6) : null);
@@ -1006,7 +1050,8 @@ function normalizeLiveArray(arr) {
       rsi, macd, ema20, ema50, sma20, sma50, bollinger,
       volumeZScore, volumeSurgeRatio,
       technicalScore, technicalRating, dpi,
-      stealthAccumulation, floatTurnoverPct: (turnover && marketCap) ? +((turnover / Math.max(1, marketCap)) * 100).toFixed(3) : 0,
+      stealthAccumulation, _stealthTs: shouldRefreshStealth ? nowTs : lastStealthTs,
+      floatTurnoverPct: (turnover && marketCap) ? +((turnover / Math.max(1, marketCap)) * 100).toFixed(3) : 0,
       isBreakout: pCh >= 3 || (hi52 && ltp >= hi52 * 0.98),
       isVolumeShocker: volumeZScore && volumeZScore >= 1.5,
       candlestickPattern: prev?.candlestickPattern || null,
@@ -2365,6 +2410,46 @@ export async function fetchCompareStocks(symbols) {
 }
 
 // Additional exports for AiAnalyst and other components
+export async function fetchLiveStockQuote(symbol) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+  try {
+    const res = await fetchFromBackend(`/api/securities/${encodeURIComponent(sym)}/price`, 3500);
+    if (res && res.success && res.data) {
+      const d = res.data;
+      const quote = {
+        symbol: sym,
+        ltp: Number(d.lastTradedPrice || d.closePrice || d.ltp || 0),
+        closePrice: Number(d.lastTradedPrice || d.closePrice || d.ltp || 0),
+        pChange: Number(d.percentageChange ?? d.pChange ?? 0),
+        change: Number(d.pointChange ?? d.change ?? 0),
+        open: Number(d.openPrice || d.open || 0),
+        high: Number(d.highPrice || d.high || 0),
+        low: Number(d.lowPrice || d.low || 0),
+        previousClose: Number(d.previousClose || d.prevClose || 0),
+        volume: Number(d.totalTradedQuantity || d.volume || 0),
+        turnover: Number(d.totalTradedValue || d.turnover || 0),
+        businessDate: d.businessDate || new Date().toISOString().split('T')[0],
+        source: res.source || 'live'
+      };
+
+      if (MEM_STOCKS && quote.ltp > 0) {
+        const idx = MEM_STOCKS.findIndex(x => x && x.symbol === sym);
+        if (idx >= 0) {
+          MEM_STOCKS[idx] = {
+            ...MEM_STOCKS[idx],
+            ...quote,
+            close: quote.ltp
+          };
+        }
+      }
+
+      return quote;
+    }
+  } catch (_) {}
+  return null;
+}
+
 export async function fetchTodayPrice(symbol) {
   ensureSnapshot();
   const sym = String(symbol || '').toUpperCase().trim();

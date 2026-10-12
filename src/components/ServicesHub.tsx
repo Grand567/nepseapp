@@ -18,7 +18,7 @@ import {
   FileText, Eye, Calendar, Landmark, Coins, Receipt, BookOpen, RefreshCw,
   Crown, Heart, Scale, SlidersHorizontal, Clock, Bell, Lock,
   LayoutGrid, Gauge, Crosshair, Brain, Gem, Banknote, Filter, Settings,
-  GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot,
+  GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot, BarChart3,
 } from 'lucide-react';
 import NepseAgentDashboard from './NepseAgentDashboard';
 import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
@@ -117,7 +117,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
     return 'regulatory';
   }
-  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'unusual-trades' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
+  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'broker-top10' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'unusual-trades' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
     return 'smart-money';
   }
   if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
@@ -186,6 +186,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'unusual-trades',             name: 'Top Unusual Block Deals (≥ 1 Cr)',             icon: Zap,                color: 'yellow',  cat: 'smart-money', star: true },
   { id: 'broker-analysis',            name: 'Broker A/D Flow Analysis',                     icon: Users,              color: 'purple',  cat: 'smart-money', star: true },
   { id: 'broker-dominance',           name: 'Broker Dominance & Cornering',                 icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
+  { id: 'broker-top10',               name: 'Broker Top 10 Stocks (Brokers 58, 45, 34)',    icon: BarChart3,          color: 'amber',   cat: 'smart-money', star: true },
   { id: 'broker-heatmap',             name: 'Broker Network Heatmap',                       icon: LayoutGrid,         color: 'purple',  cat: 'smart-money', star: true },
 
   // ── Trading & Technical Setups ──
@@ -241,9 +242,9 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'multibagger-hunter':    MultibaggerHunterService as ComponentType,
   'minervini-leaderboard': MinerviniLeaderboard     as ComponentType,
   'ai-agent-dossier':      NepseAgentDashboard as unknown as ComponentType,
-  'signals-track-record':  (() => (
+  'signals-track-record': (({ stocks }: { stocks?: any[] }) => (
     <div className="py-2">
-      <GlobalSignalTrackerModal isOpen={true} inlineMode={true} />
+      <GlobalSignalTrackerModal isOpen={true} inlineMode={true} marketStocks={stocks || []} />
     </div>
   )) as ComponentType,
   'stock-momentum': StockMomentumAnalyzer,
@@ -267,7 +268,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'ai-momentum': () => (
     <UniversalScreener filterFn={(s) => s.pChange >= 2 && s.volumeSurgeRatio >= 1.3}
-      sortFn={(a, b) => b.pChange * b.volumeSurgeRatio - a.pChange * a.volumeSurgeRatio}
+      sortFn={(a, b) => (b.pChange * (b.volumeSurgeRatio || 1)) - (a.pChange * (a.volumeSurgeRatio || 1))}
       customCols={[{ key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => (v ? `${v.toFixed(1)}×` : '1.0×') }]}
       banner={{ type: 'success', text: 'Momentum with volume confirmation. Wired to /top-gainer + /PriceVolume.' }}
       insight="Momentum + 2× volume often continues for 3–5 sessions. Trail stops under prior-day low." />
@@ -549,7 +550,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'mutual-funds-unlock': MutualFundsService,
   'price-vs-volume': () => (
     <UniversalScreener filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio > 1.3}
-      sortFn={(a, b) => b.pChange * b.volumeSurgeRatio - a.pChange * a.volumeSurgeRatio}
+      sortFn={(a, b) => (b.pChange * (b.volumeSurgeRatio || 1)) - (a.pChange * (a.volumeSurgeRatio || 1))}
       banner={{ text: 'Price rise confirmed by volume — highest-probability setup.' }}
       insight="Price + volume together beat either signal alone." />
   ),
@@ -571,7 +572,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Lower P/E = cheaper per rupee of earnings. Always compare within sector." />
   ),
   'float-analytics': () => (
-    <UniversalScreener sortFn={(a, b) => b.floatTurnoverPct - a.floatTurnoverPct}
+    <UniversalScreener sortFn={(a, b) => (Number(b.floatTurnoverPct) || 0) - (Number(a.floatTurnoverPct) || 0)}
       customCols={[
         { key: 'promoterHolding', label: 'Promoter %', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '51.0%') },
         { key: 'publicFloat', label: 'Public Float %', align: 'right', format: (_, s) => { const prom = Number(s.promoterHolding) || 51; return `${(100 - prom).toFixed(1)}%`; } },
@@ -605,7 +606,11 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'top-traded': () => <TopPerformersService type="transactions" />,
   'market-depth': MarketDepthService,
   'volume-spread': () => (
-    <UniversalScreener filterFn={(s) => s.high && s.low} sortFn={(a, b) => b.volume * ((b.high - b.low) / b.ltp) - a.volume * ((a.high - a.low) / a.ltp)}
+    <UniversalScreener filterFn={(s) => s.high && s.low && s.ltp > 0} sortFn={(a, b) => {
+      const bLtp = Number(b.ltp) || 1;
+      const aLtp = Number(a.ltp) || 1;
+      return (Number(b.volume || 0) * ((b.high - b.low) / bLtp)) - (Number(a.volume || 0) * ((a.high - a.low) / aLtp));
+    }}
       banner={{ type: 'info', text: 'VSA — Volume Spread Analysis. Wide spread + high volume + close near high = bullish.' }}
       insight="Narrow spread + high volume = absorption. Wide spread + low volume = markup risk." />
   ),
@@ -664,16 +669,17 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       filterFn={(s) => {
         const isBank = (s.sector || '').toLowerCase().includes('bank') || (s.sector || '').toLowerCase().includes('finance');
         if (!isBank) return false;
-        const npl = Number(s.npl != null ? s.npl : (s.pe && s.pe < 20 ? 1.8 : 3.2));
-        const car = Number(s.car != null ? s.car : (s.eps && s.eps > 15 ? 13.2 : 11.8));
-        const cd = Number(s.cdRatio != null ? s.cdRatio : 82.5);
-        return npl <= 3.5 && car >= 11.5 && cd <= 88.0 && (s.roe == null || s.roe >= 10);
+        const nplValid = s.npl == null || Number(s.npl) <= 3.5;
+        const carValid = s.car == null || Number(s.car) >= 11.5;
+        const cdValid = s.cdRatio == null || Number(s.cdRatio) <= 88.0;
+        const roeValid = s.roe == null || Number(s.roe) >= 10.0;
+        return nplValid && carValid && cdValid && roeValid;
       }}
       sortFn={(a, b) => (b.roe || b.eps || 0) - (a.roe || a.eps || 0)}
       customCols={[
-        { key: 'car', label: 'CAR', align: 'right', format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.eps && s.eps > 15 ? '13.2%' : '12.0%')), colorFn: () => '#10b981' },
-        { key: 'npl', label: 'NPL', align: 'right', format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.pe && s.pe < 18 ? '1.8%' : '2.6%')), colorFn: (v) => ((Number(v) || 2) <= 2.5 ? '#10b981' : '#34d399') },
-        { key: 'roe', label: 'ROE', align: 'right', bold: true, format: (v, s) => (v ? `${Number(v).toFixed(1)}%` : (s?.eps && s?.bookValue ? `${((s.eps / s.bookValue) * 100).toFixed(1)}%` : '12.8%')) },
+        { key: 'car', label: 'CAR', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—'), colorFn: (v) => (v != null && Number(v) >= 11.5 ? '#10b981' : undefined) },
+        { key: 'npl', label: 'NPL', align: 'right', format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—'), colorFn: (v) => (v != null && Number(v) <= 3.5 ? '#10b981' : '#f43f5e') },
+        { key: 'roe', label: 'ROE', align: 'right', bold: true, format: (v, s) => (v != null ? `${Number(v).toFixed(1)}%` : (s?.eps && s?.bookValue && Number(s.bookValue) > 0 ? `${((s.eps / s.bookValue) * 100).toFixed(1)}%` : '—')) },
       ]}
       banner={{ type: 'success', text: 'NRB Regulatory Safety Shield — Screens for commercial banks & BFIs with CAR ≥ 11.5%, NPL ≤ 3.5%, and CD Ratio ≤ 88.0% to eliminate dividend freeze risks.' }}
       insight="Banks meeting all NRB capital buffer thresholds have the highest dividend distribution safety."
@@ -853,17 +859,24 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'daily-whale-tracker': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
   'aggressive-accumulators': () => (
     <UniversalScreener
-      filterFn={(s) => s.pChange > 0 && s.volumeSurgeRatio >= 1.8}
-      sortFn={(a, b) => ((b.volumeSurgeRatio || 1) * (b.pChange || 0.1)) - ((a.volumeSurgeRatio || 1) * (a.pChange || 0.1))}
+      filterFn={(s) => (
+        !s.isChurnDistribution &&
+        s.volumeSurgeRatio >= 1.5 &&
+        s.stealthAccumulation >= 50 &&
+        s.pChange >= -2.0 &&
+        s.pChange <= 8.0
+      )}
+      sortFn={(a, b) => (b.volumeSurgeRatio || 1) - (a.volumeSurgeRatio || 1)}
       customCols={[{ key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => (v >= 2.5 ? '#10b981' : '#38bdf8') }]}
-      banner={{ type: 'success', text: 'Aggressive institutional buying: positive price thrust supported by strong volume surge.' }}
+      banner={{ type: 'success', text: 'Aggressive institutional buying: positive price thrust supported by strong volume surge without distribution churn.' }}
       insight="Follow strong hands accumulating with size before momentum peaks." />
   ),
   'distribution-leaders': (props: any) => <AccumulationDistributionRadar {...props} initialStage="DISTRIBUTION" />,
   'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
+  'broker-top10': () => <BrokerFlowDominanceService mode="top10" />,
   'aggressive-holdings': () => (
     <UniversalScreener
-      filterFn={(s) => s.pChange > 1.5 && s.volumeSurgeRatio >= 1.3}
+      filterFn={(s) => !s.isChurnDistribution && s.pChange > 1.5 && s.volumeSurgeRatio >= 1.3}
       sortFn={(a, b) => (b.turnover || 0) - (a.turnover || 0)}
       customCols={[
         { key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×` },
@@ -875,10 +888,16 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
   'slow-accumulation': () => (
     <UniversalScreener
-      filterFn={(s) => (s.stealthAccumulation >= 55 || (s.pChange >= 0 && s.pChange <= 2.5 && s.volumeSurgeRatio >= 1.1))}
+      filterFn={(s) => (
+        !s.isChurnDistribution &&
+        s.stealthAccumulation >= 58 &&
+        s.pChange <= 3.5 &&
+        s.pChange >= -4.0 &&
+        s.volumeSurgeRatio >= 1.05
+      )}
       sortFn={(a, b) => (b.stealthAccumulation || 50) - (a.stealthAccumulation || 50)}
       customCols={[{ key: 'stealthAccumulation', label: 'Stealth Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => (v >= 65 ? '#10b981' : '#38bdf8') }]}
-      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base.' }}
+      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base. Filter: Stealth Score ≥58, Price Quiet (-4% to +3.5%), Moderate Volume Interest, Zero Churn.' }}
       insight="Low-volatility consolidation on steady quiet absorption precedes major structural markups." />
   ),
 };

@@ -74,7 +74,11 @@ export function StrategyTrackRecord({ strategyTrackRecord }: StrategyTrackRecord
         <div className="rounded-xl bg-slate-900/70 border border-slate-800 p-3">
           <div className="text-[11px] text-slate-400">Max Drawdown</div>
           <div className="text-xl font-black text-rose-400 mt-0.5">
-            -{strategyTrackRecord.maxDrawdownPct ?? (strategyTrackRecord as any).maxDrawdown ?? 0}%
+            {(() => {
+              const raw = Number(strategyTrackRecord.maxDrawdownPct ?? (strategyTrackRecord as any).maxDrawdown ?? 0);
+              const absVal = Math.abs(raw);
+              return absVal > 0 ? `-${absVal.toFixed(1)}%` : '0.0%';
+            })()}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
             Peak-to-trough risk

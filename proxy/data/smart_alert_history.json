@@ -1,1 +1,2216 @@
-[]
+[
+  {
+    "id": "alert_GHL_1791736223022",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T16:30:23.022Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791736223013",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T16:30:23.013Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791733918622",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T15:51:58.622Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791733918615",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T15:51:58.615Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791732894159",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T15:34:54.159Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791732894149",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T15:34:54.149Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791704228433",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T07:37:08.433Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791704228430",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T07:37:08.430Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791701705879",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T06:55:05.879Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791701705876",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T06:55:05.876Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791701119939",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T06:45:19.939Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791701119933",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T06:45:19.933Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791700212574",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T06:30:12.574Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791700212571",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T06:30:12.571Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791698838661",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-11T06:07:18.661Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791698838658",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-11T06:07:18.658Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791629587972",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T10:53:07.972Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791629587968",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T10:53:07.968Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791627119432",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T10:11:59.432Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791627119429",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T10:11:59.429Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791626288324",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:58:08.324Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791626288320",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:58:08.320Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791626228964",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:57:08.964Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791626228960",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:57:08.960Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791624678711",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:31:18.711Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791624678708",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:31:18.708Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791624426260",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:27:06.260Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791624426257",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:27:06.257Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623978359",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:19:38.359Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623978356",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:19:38.356Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623691247",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:14:51.247Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623691242",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:14:51.242Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623345410",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-10T09:09:05.410Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791623345407",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-10T09:09:05.407Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791471682671",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-08T15:01:22.671Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791471682667",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-08T15:01:22.667Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791468678392",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-08T14:11:18.392Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791468678389",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-08T14:11:18.389Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791335918075",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-07T01:18:38.075Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791335918072",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-07T01:18:38.072Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791280925401",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T10:02:05.401Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791280925398",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T10:02:05.398Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791276671626",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T08:51:11.626Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791276671622",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T08:51:11.622Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791274293644",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T08:11:33.644Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791274293641",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T08:11:33.641Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791272091506",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T07:34:51.506Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791272091502",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T07:34:51.502Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791272055030",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T07:34:15.030Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791272055026",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T07:34:15.026Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791270143600",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T07:02:23.600Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791270143597",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T07:02:23.597Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791269199988",
+    "symbol": "GHL",
+    "ltp": 269.5,
+    "triggeredAt": "2026-10-06T06:46:39.988Z",
+    "buyZone": {
+      "low": 269,
+      "high": 275,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 269 - 275"
+    },
+    "dominantBrokersText": "Broker 58 & 45",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 18500,
+        "buyAmt": 4985750
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12200,
+        "buyAmt": 3287900
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8400,
+        "buyAmt": 2263800
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
+    "target1": 310,
+    "target2": 325,
+    "stopLoss": 258,
+    "riskRewardRatio": 3.52,
+    "vwap": 270,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_GHL_1791269199985",
+    "symbol": "GHL",
+    "ltp": 271,
+    "triggeredAt": "2026-10-06T06:46:39.985Z",
+    "buyZone": {
+      "low": 268,
+      "high": 276,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 268 - 276"
+    },
+    "dominantBrokersText": "Broker 58 & Broker 45",
+    "concentrationPct": 80,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15000,
+        "buyAmt": 4050000
+      },
+      {
+        "broker": "45",
+        "name": "Imperial Securities",
+        "buyQty": 12000,
+        "buyAmt": 3246000
+      },
+      {
+        "broker": "34",
+        "name": "Vision Securities",
+        "buyQty": 8000,
+        "buyAmt": 2156000
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
+    "target1": 312,
+    "target2": 339,
+    "stopLoss": 259,
+    "riskRewardRatio": 3.42,
+    "vwap": 270.11,
+    "status": "ACTIVE"
+  }
+]

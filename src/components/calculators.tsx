@@ -135,24 +135,21 @@ export function GrahamValuation({
       setIsLoadingFund(false);
     }
 
-    // Benchmark fallback if still missing
-    const bench = getSectorBenchmark(found.sector || '');
-    if (epsVal == null) epsVal = bench.medianEPS || 22;
-    if (bvpsVal == null || bvpsVal <= 0) {
-      bvpsVal = priceVal && bench.medianPBV ? +(priceVal / bench.medianPBV).toFixed(1) : +(epsVal * (bench.medianPE || 16) / (bench.medianPBV || 1.6)).toFixed(1);
-    }
-    if (priceVal == null || priceVal <= 0) priceVal = 100;
-
     const newForm = {
-      eps: String(epsVal),
-      bvps: String(bvpsVal),
-      price: String(priceVal),
+      eps: epsVal != null ? String(epsVal) : '',
+      bvps: (bvpsVal != null && bvpsVal > 0) ? String(bvpsVal) : '',
+      price: (priceVal != null && priceVal > 0) ? String(priceVal) : '',
       growthRate: '7.0',
       fdRate: '7.5'
     };
     setForm(newForm);
-    setValidationError('');
-    runCalc(newForm, modelType);
+    if (!epsVal || !bvpsVal || !priceVal) {
+      setValidationError('Please input missing fundamental metrics (EPS / Book Value / Price) to compute intrinsic valuation.');
+      setResult(null);
+    } else {
+      setValidationError('');
+      runCalc(newForm, modelType);
+    }
   };
 
   useEffect(() => {
@@ -337,14 +334,16 @@ export function BrokerageCalculator({ stocks = [], initialSymbol = '' }: { stock
     setSelectedSym(sym);
     const found = stocks.find((s: any) => s.symbol === sym);
     if (found) {
-      const p = Number(found.ltp || found.close || 500);
-      const newForm = {
-        ...form,
-        buy: String(p),
-        sell: String(Math.round(p * 1.10 * 10) / 10),
-      };
-      setForm(newForm);
-      runCalc(newForm);
+      const p = Number(found.ltp || found.close || 0);
+      if (p > 0) {
+        const newForm = {
+          ...form,
+          buy: String(p),
+          sell: String(Math.round(p * 1.10 * 10) / 10),
+        };
+        setForm(newForm);
+        runCalc(newForm);
+      }
     }
   };
 
@@ -602,12 +601,14 @@ export function RiskRewardCalculator({ stocks = [], initialSymbol = '' }: { stoc
     setSelectedSym(sym);
     const found = stocks.find((s: any) => s.symbol === sym);
     if (found) {
-      const e = Number(found.ltp || found.close || 500);
-      const s = Math.round(e * 0.95 * 10) / 10;
-      const t = Math.round(e * 1.10 * 10) / 10;
-      const newForm = { ...form, entry: String(e), stop: String(s), target: String(t) };
-      setForm(newForm);
-      runCalc(newForm);
+      const e = Number(found.ltp || found.close || 0);
+      if (e > 0) {
+        const s = Math.round(e * 0.95 * 10) / 10;
+        const t = Math.round(e * 1.10 * 10) / 10;
+        const newForm = { ...form, entry: String(e), stop: String(s), target: String(t) };
+        setForm(newForm);
+        runCalc(newForm);
+      }
     }
   };
 
