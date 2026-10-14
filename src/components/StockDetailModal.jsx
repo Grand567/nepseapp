@@ -4492,7 +4492,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                               {Number(pv.qty).toLocaleString()}
                             </td>
                             <td style={{ padding: '9px 12px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
-                              {pv.pct}%
+                              {Number(pv.pct !== undefined ? pv.pct : (pv.pctQty !== undefined ? pv.pctQty : (totalFsQty > 0 ? (pv.qty / totalFsQty) * 100 : 0))).toFixed(2)}%
                             </td>
                           </tr>
                         ))}

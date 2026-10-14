@@ -398,6 +398,7 @@ export function computePriceVolumeFromRows(rows = []) {
       trades: item.trades,
       qty: item.qty,
       amount: +item.amount.toFixed(2),
+      pct: totalQty > 0 ? +((item.qty / totalQty) * 100).toFixed(2) : 0,
       pctQty: totalQty > 0 ? +((item.qty / totalQty) * 100).toFixed(2) : 0
     }))
     .sort((a, b) => b.rate - a.rate);

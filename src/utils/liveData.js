@@ -2182,7 +2182,10 @@ function buildFloorsheetResult(rawList, { sym, date, page, size, buyer, seller, 
     rateMap[k].trades += 1;
   });
   const priceVolumeBreakdown = Object.values(rateMap)
-    .map(x => ({ ...x, amount: +x.amount.toFixed(2), pctQty: totalQty > 0 ? +((x.qty / totalQty) * 100).toFixed(2) : 0 }))
+    .map(x => {
+      const pct = totalQty > 0 ? +((x.qty / totalQty) * 100).toFixed(2) : 0;
+      return { ...x, amount: +x.amount.toFixed(2), pct, pctQty: pct };
+    })
     .sort((a, b) => b.rate - a.rate);
 
   // Compute bulk transactions
