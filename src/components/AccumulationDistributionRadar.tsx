@@ -2499,7 +2499,8 @@ export function AccumulationDistributionRadar({
               const bcr3Buy = isSampleValid ? (activeStock.brokerData?.bcr3BuyPct || 0) : 0;
               const bcr3Sell = isSampleValid ? (activeStock.brokerData?.bcr3SellPct || 0) : 0;
               const pChange = Number(activeStock.pChange || 0);
-              const topSellers = activeStock.brokerData?.topSellerBrokers || [];
+              const topSellers = activeStock.brokerData?.topSellerBrokers || activeStock.brokerData?.topSellers || [];
+              const topBuyers = activeStock.brokerData?.topBuyerBrokers || activeStock.brokerData?.topBuyers || [];
               const hasSellingAsymmetry = bcr3Sell >= 45.0 && (bcr3Sell - bcr3Buy) >= 10.0;
               const topSellerNetDumping = isSampleValid && (
                 topSellers.slice(0, 3).some((sel: any) => {
