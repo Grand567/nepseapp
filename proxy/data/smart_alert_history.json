@@ -1,5 +1,511 @@
 [
   {
+    "id": "holding_GHL_1791948555212",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T03:29:15.212Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T03:29:15.218Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791948547723",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T03:29:07.723Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T03:29:07.744Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T03:29:13.204Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791948276551",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T03:24:36.551Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T03:24:36.560Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791948270335",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T03:24:30.335Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T03:24:30.362Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T03:24:34.818Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791946703800",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T02:58:23.800Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T02:58:23.802Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791946697455",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T02:58:17.455Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T02:58:17.481Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T02:58:21.949Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791944245179",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T02:17:25.179Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T02:17:25.186Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791944234687",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T02:17:14.687Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T02:17:14.726Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T02:17:23.010Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791943037189",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T01:57:17.189Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T01:57:17.191Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791943024642",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T01:57:04.642Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T01:57:04.661Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T01:57:13.212Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791937181630",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T00:19:41.630Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T00:19:41.635Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791937175248",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T00:19:35.248Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T00:19:35.295Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T00:19:39.907Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791936763897",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T00:12:43.897Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T00:12:43.903Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791936756446",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T00:12:36.446Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T00:12:36.466Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T00:12:41.677Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791936061584",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-14T00:01:01.584Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-14T00:01:01.586Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791936055154",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-14T00:00:55.154Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-14T00:00:55.176Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-14T00:00:59.715Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791935089912",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T23:44:49.912Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T23:44:49.915Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791935083623",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T23:44:43.623Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T23:44:43.643Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T23:44:47.873Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791909248865",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T16:34:08.865Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T16:34:08.870Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791909238824",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T16:33:58.824Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T16:33:58.844Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T16:34:03.330Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791907860541",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T16:11:00.541Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T16:11:00.543Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791907855815",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T16:10:55.815Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T16:10:55.855Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T16:10:59.391Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791906844574",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T15:54:04.574Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T15:54:04.577Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791906839590",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T15:53:59.590Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T15:53:59.631Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T15:54:03.439Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791905613099",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T15:33:33.099Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T15:33:33.101Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791905608231",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T15:33:28.231Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T15:33:28.268Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T15:33:31.837Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791903239655",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T14:53:59.655Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T14:53:59.658Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791903234847",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T14:53:54.847Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T14:53:54.884Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T14:53:58.632Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1791902535696",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-13T14:42:15.696Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-13T14:42:15.699Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1791902531812",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-13T14:42:11.812Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-13T14:42:11.853Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-13T14:42:14.623Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "alert_AKJCL_1791789261364",
+    "symbol": "AKJCL",
+    "ltp": 349.9,
+    "triggeredAt": "2026-10-12T07:14:21.364Z",
+    "buyZone": {
+      "low": 349,
+      "high": 359,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 349 - 359"
+    },
+    "dominantBrokersText": "Broker 80 & Broker 58",
+    "concentrationPct": 73,
+    "topBuyerBrokers": [
+      {
+        "broker": "80",
+        "name": "Machhapuchchhre Securities",
+        "buyQty": 31328,
+        "buyAmt": 10995928
+      },
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 27397,
+        "buyAmt": 9618840.5
+      },
+      {
+        "broker": "39",
+        "name": "Sumeru Securities",
+        "buyQty": 18113,
+        "buyAmt": 6354877.100000001
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
+    "target1": 402,
+    "target2": 437,
+    "stopLoss": 334,
+    "riskRewardRatio": 3.28,
+    "vwap": 351.01,
+    "status": "ACTIVE"
+  },
+  {
     "id": "alert_SSHL_1791788854534",
     "symbol": "SSHL",
     "ltp": 210,
@@ -38,47 +544,6 @@
     "stopLoss": 201,
     "riskRewardRatio": 3.44,
     "vwap": 211.06,
-    "status": "ACTIVE"
-  },
-  {
-    "id": "alert_SHIVM_1791788765602",
-    "symbol": "SHIVM",
-    "ltp": 686,
-    "triggeredAt": "2026-10-12T07:06:05.602Z",
-    "buyZone": {
-      "low": 684,
-      "high": 702,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 684 - 702"
-    },
-    "dominantBrokersText": "Broker 28 & Broker 81",
-    "concentrationPct": 73,
-    "topBuyerBrokers": [
-      {
-        "broker": "28",
-        "name": "Shree Krishna Securities",
-        "buyQty": 31500,
-        "buyAmt": 21682459.599999998
-      },
-      {
-        "broker": "81",
-        "name": "Broker 81",
-        "buyQty": 12000,
-        "buyAmt": 8279896
-      },
-      {
-        "broker": "4",
-        "name": "Opal Securities",
-        "buyQty": 5073,
-        "buyAmt": 3494723.5
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.61x of 20-day avg)",
-    "target1": 789,
-    "target2": 858,
-    "stopLoss": 661,
-    "riskRewardRatio": 4.12,
-    "vwap": 688.09,
     "status": "ACTIVE"
   },
   {
@@ -121,18 +586,6 @@
     "riskRewardRatio": 3.49,
     "vwap": 2663.53,
     "status": "ACTIVE"
-  },
-  {
-    "id": "holding_GHL_1791788674882",
-    "symbol": "GHL",
-    "ltp": 285,
-    "triggeredAt": "2026-10-12T07:04:34.882Z",
-    "stopLoss": 270.8,
-    "target1": 307.8,
-    "target2": 326.3,
-    "kitta": 100,
-    "status": "ACTIVE",
-    "isUserHolding": true
   },
   {
     "id": "alert_KBL_1791788600680",
@@ -391,130 +844,6 @@
     "exitPrice": 40.51
   },
   {
-    "id": "holding_GHL_1791787935105",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T06:52:15.106Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T06:52:15.114Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1791787926086",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T06:52:06.086Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T06:52:06.112Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T06:52:11.077Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791776590599",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T03:43:10.599Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T03:43:10.601Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1791776583430",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T03:43:03.430Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T03:43:03.455Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T03:43:06.951Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791776488570",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T03:41:28.570Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T03:41:28.572Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1791776481676",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T03:41:21.676Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T03:41:21.696Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T03:41:25.390Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_SHIVM_1791776334057",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T03:38:54.057Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T03:38:54.083Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T03:38:56.848Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791776339591",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T03:38:59.591Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T03:38:59.594Z",
-    "exitPrice": 255
-  },
-  {
     "id": "holding_GLBSL_1791770047537",
     "symbol": "GLBSL",
     "ltp": 1620,
@@ -527,2635 +856,5 @@
     "isUserHolding": true,
     "closedAt": "2026-10-12T06:53:51.979Z",
     "exitPrice": 29.46
-  },
-  {
-    "id": "holding_SHIVM_1791769332180",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T01:42:12.180Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T01:42:12.205Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T01:42:15.682Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791769338953",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T01:42:18.953Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T01:42:18.961Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_GHL_1791769287882",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T01:41:27.882Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T01:41:27.891Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1791769281146",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T01:41:21.146Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T01:41:21.167Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T01:41:24.509Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_SHIVM_1791769232308",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-12T01:40:32.308Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-12T01:40:32.340Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-12T01:40:37.608Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791769240861",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-12T01:40:40.861Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T01:40:40.869Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791768889120",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-12T01:34:49.120Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.874Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791768295271",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-12T01:24:55.271Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.881Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791768295248",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-12T01:24:55.248Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.885Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791764861053",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-12T00:27:41.053Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.889Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791764861010",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-12T00:27:41.010Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.892Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791736223022",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T16:30:23.022Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.898Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791736223013",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T16:30:23.013Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.901Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791733918622",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T15:51:58.622Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.904Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791733918615",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T15:51:58.615Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.906Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791732894159",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T15:34:54.159Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.907Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791732894149",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T15:34:54.149Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.909Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791704228433",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T07:37:08.433Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.910Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791704228430",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T07:37:08.430Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.913Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791701705879",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T06:55:05.879Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.916Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791701705876",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T06:55:05.876Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.918Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791701119939",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T06:45:19.939Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.919Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791701119933",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T06:45:19.933Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.921Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791700212574",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T06:30:12.574Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.922Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791700212571",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T06:30:12.571Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.925Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791698838661",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-11T06:07:18.661Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.926Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791698838658",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-11T06:07:18.658Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.928Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791629587972",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T10:53:07.972Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.934Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791629587968",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T10:53:07.968Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.935Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791627119432",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T10:11:59.432Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.937Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791627119429",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T10:11:59.429Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.938Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791626288324",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:58:08.324Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.939Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791626288320",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:58:08.320Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.941Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791626228964",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:57:08.964Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.942Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791626228960",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:57:08.960Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.950Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791624678711",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:31:18.711Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.951Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791624678708",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:31:18.708Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.952Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791624426260",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:27:06.260Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.953Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791624426257",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:27:06.257Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.955Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623978359",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:19:38.359Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.956Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623978356",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:19:38.356Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.960Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623691247",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:14:51.247Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.961Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623691242",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:14:51.242Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.963Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623345410",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-10T09:09:05.410Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.965Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791623345407",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-10T09:09:05.407Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.965Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791471682671",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-08T15:01:22.671Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.966Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791471682667",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-08T15:01:22.667Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.967Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791468678392",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-08T14:11:18.392Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.968Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791468678389",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-08T14:11:18.389Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.969Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791335918075",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-07T01:18:38.075Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.970Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791335918072",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-07T01:18:38.072Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.971Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791280925401",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T10:02:05.401Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.972Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791280925398",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T10:02:05.398Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.975Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791276671626",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T08:51:11.626Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.976Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791276671622",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T08:51:11.622Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.977Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791274293644",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T08:11:33.644Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.980Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791274293641",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T08:11:33.641Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.981Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791272091506",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T07:34:51.506Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.982Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791272091502",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T07:34:51.502Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.983Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791272055030",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T07:34:15.030Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.984Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791272055026",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T07:34:15.026Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.985Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791270143600",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T07:02:23.600Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.987Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791270143597",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T07:02:23.597Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.988Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791269199988",
-    "symbol": "GHL",
-    "ltp": 269.5,
-    "triggeredAt": "2026-10-06T06:46:39.988Z",
-    "buyZone": {
-      "low": 269,
-      "high": 275,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 269 - 275"
-    },
-    "dominantBrokersText": "Broker 58 & 45",
-    "concentrationPct": 52,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 18500,
-        "buyAmt": 4985750
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12200,
-        "buyAmt": 3287900
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8400,
-        "buyAmt": 2263800
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.59x of 20-day avg)",
-    "target1": 310,
-    "target2": 325,
-    "stopLoss": 258,
-    "riskRewardRatio": 3.52,
-    "vwap": 270,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.990Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "alert_GHL_1791269199985",
-    "symbol": "GHL",
-    "ltp": 271,
-    "triggeredAt": "2026-10-06T06:46:39.985Z",
-    "buyZone": {
-      "low": 268,
-      "high": 276,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 268 - 276"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 45",
-    "concentrationPct": 80,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 15000,
-        "buyAmt": 4050000
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 12000,
-        "buyAmt": 3246000
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 8000,
-        "buyAmt": 2156000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.49x of 20-day avg)",
-    "target1": 312,
-    "target2": 339,
-    "stopLoss": 259,
-    "riskRewardRatio": 3.42,
-    "vwap": 270.11,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T01:40:40.991Z",
-    "exitPrice": 255
   }
 ]

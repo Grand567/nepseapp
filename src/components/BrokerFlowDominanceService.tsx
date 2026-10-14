@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink } from 'lucide-react';
+import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, getCachedRealBrokerAnalysis } from '../utils/liveData';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
+import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
+import latestBrokerMatrix from '../data/broker_matrix_latest.json';
 
 export interface BrokerScripItem {
   symbol: string;
@@ -11,6 +13,11 @@ export interface BrokerScripItem {
   sellAmount: number;
   netFlow: number;
   bias: 'Accumulation' | 'Distribution' | 'Neutral';
+  buyQty?: number;
+  sellQty?: number;
+  netQty?: number;
+  avgBuyRate?: number;
+  avgSellRate?: number;
 }
 
 interface BrokerStat {
@@ -25,6 +32,12 @@ interface BrokerStat {
   topScrips?: BrokerScripItem[];
   topAccumulation?: BrokerScripItem[];
   topDistribution?: BrokerScripItem[];
+  topByNetQty?: BrokerScripItem[];
+  topByGrossBuyAmt?: BrokerScripItem[];
+  topByGrossBuyQty?: BrokerScripItem[];
+  topDistByNetQty?: BrokerScripItem[];
+  topDistByGrossSellAmt?: BrokerScripItem[];
+  topDistByGrossSellQty?: BrokerScripItem[];
 }
 
 interface DominanceItem {
@@ -54,6 +67,7 @@ interface MatchingDeal {
   rate: number;
   amount: number;
   time: string;
+  date?: string;
   type: 'Block Deal' | 'Strategic Handover' | 'Cross Trade';
 }
 
@@ -75,69 +89,6 @@ const MAJOR_BROKERS = [
   { id: '4', name: 'Opal Securities' },
   { id: '6', name: 'Agrawal Securities' },
 ];
-
-const BROKER_BENCHMARK_TOP_SCRIPS: Record<string, { symbol: string; buyAmount: number; sellAmount: number }[]> = {
-  '58': [
-    { symbol: 'SHIVM', buyAmount: 42500000, sellAmount: 8500000 },
-    { symbol: 'NABIL', buyAmount: 38200000, sellAmount: 11200000 },
-    { symbol: 'CIT', buyAmount: 29400000, sellAmount: 6800000 },
-    { symbol: 'CHCL', buyAmount: 24800000, sellAmount: 5100000 },
-    { symbol: 'NICA', buyAmount: 22100000, sellAmount: 14500000 },
-    { symbol: 'HDL', buyAmount: 19500000, sellAmount: 7200000 },
-    { symbol: 'NRIC', buyAmount: 16800000, sellAmount: 4900000 },
-    { symbol: 'UPPER', buyAmount: 15200000, sellAmount: 18900000 },
-    { symbol: 'GBIME', buyAmount: 14600000, sellAmount: 22000000 },
-    { symbol: 'RADHI', buyAmount: 12400000, sellAmount: 3800000 },
-  ],
-  '45': [
-    { symbol: 'NABIL', buyAmount: 31500000, sellAmount: 7200000 },
-    { symbol: 'SHIVM', buyAmount: 28400000, sellAmount: 6100000 },
-    { symbol: 'GBIME', buyAmount: 24200000, sellAmount: 32000000 },
-    { symbol: 'PRVU', buyAmount: 21800000, sellAmount: 9500000 },
-    { symbol: 'CIT', buyAmount: 18900000, sellAmount: 4200000 },
-    { symbol: 'PCBL', buyAmount: 17200000, sellAmount: 8400000 },
-    { symbol: 'HDL', buyAmount: 15600000, sellAmount: 5300000 },
-    { symbol: 'NMB', buyAmount: 14100000, sellAmount: 6700000 },
-    { symbol: 'AHPC', buyAmount: 12900000, sellAmount: 16800000 },
-    { symbol: 'API', buyAmount: 11200000, sellAmount: 4500000 },
-  ],
-  '34': [
-    { symbol: 'NICA', buyAmount: 34500000, sellAmount: 12500000 },
-    { symbol: 'HDL', buyAmount: 26800000, sellAmount: 5800000 },
-    { symbol: 'SHIVM', buyAmount: 23400000, sellAmount: 8900000 },
-    { symbol: 'CHCL', buyAmount: 21200000, sellAmount: 4700000 },
-    { symbol: 'BARUN', buyAmount: 18500000, sellAmount: 3200000 },
-    { symbol: 'NLIC', buyAmount: 16700000, sellAmount: 24500000 },
-    { symbol: 'CIT', buyAmount: 15400000, sellAmount: 4100000 },
-    { symbol: 'UPPER', buyAmount: 14200000, sellAmount: 19800000 },
-    { symbol: 'API', buyAmount: 12800000, sellAmount: 5100000 },
-    { symbol: 'GBIME', buyAmount: 11500000, sellAmount: 15200000 },
-  ],
-  '49': [
-    { symbol: 'SHIVM', buyAmount: 21500000, sellAmount: 6400000 },
-    { symbol: 'CIT', buyAmount: 18200000, sellAmount: 4500000 },
-    { symbol: 'NICA', buyAmount: 16500000, sellAmount: 8900000 },
-    { symbol: 'NABIL', buyAmount: 15100000, sellAmount: 5200000 },
-    { symbol: 'HDL', buyAmount: 13800000, sellAmount: 4100000 },
-    { symbol: 'API', buyAmount: 12200000, sellAmount: 3800000 },
-    { symbol: 'RADHI', buyAmount: 11000000, sellAmount: 3100000 },
-    { symbol: 'AHPC', buyAmount: 9800000, sellAmount: 5200000 },
-    { symbol: 'UPPER', buyAmount: 8900000, sellAmount: 11500000 },
-    { symbol: 'GBIME', buyAmount: 8100000, sellAmount: 14200000 },
-  ],
-  '28': [
-    { symbol: 'CHCL', buyAmount: 22400000, sellAmount: 5200000 },
-    { symbol: 'SHIVM', buyAmount: 19500000, sellAmount: 6100000 },
-    { symbol: 'CIT', buyAmount: 17800000, sellAmount: 4900000 },
-    { symbol: 'NABIL', buyAmount: 16200000, sellAmount: 5400000 },
-    { symbol: 'HDL', buyAmount: 14100000, sellAmount: 3900000 },
-    { symbol: 'NRIC', buyAmount: 12800000, sellAmount: 3200000 },
-    { symbol: 'GBIME', buyAmount: 11500000, sellAmount: 7800000 },
-    { symbol: 'NMB', buyAmount: 10200000, sellAmount: 4100000 },
-    { symbol: 'PRVU', buyAmount: 9400000, sellAmount: 3600000 },
-    { symbol: 'PCBL', buyAmount: 8600000, sellAmount: 3100000 },
-  ],
-};
 
 const DAYS_MAP: Record<string, number> = {
   '1D': 1,
@@ -166,6 +117,17 @@ export function BrokerFlowDominanceService({
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
+  const [rankingMetric, setRankingMetric] = useState<'net_amount' | 'net_qty' | 'gross_buy_amount' | 'gross_buy_qty'>('net_amount');
+  const [matchingSortOrder, setMatchingSortOrder] = useState<'date_desc' | 'amount_desc'>('date_desc');
+
+  const sessionDate = useMemo(() => {
+    if (floorsheet && floorsheet.length > 0) {
+      const fsDate = floorsheet.find(f => f.businessDate || f.date);
+      if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
+    }
+    if (heatmapData?.businessDate) return heatmapData.businessDate;
+    return new Date().toISOString().split('T')[0];
+  }, [floorsheet, heatmapData]);
 
   const loadData = async (activeTf = timeframe) => {
     setLoading(true);
@@ -184,7 +146,11 @@ export function BrokerFlowDominanceService({
         const fsData = Array.isArray(fs?.content) ? fs.content : (Array.isArray(fs?.data) ? fs.data : (Array.isArray(fs) ? fs : []));
         setFloorsheet(fsData);
       }
-      if (hmRes.status === 'fulfilled' && hmRes.value?.matrix) {
+      if (hmRes.status === 'fulfilled' && hmRes.value?.matrix && hmRes.value.matrix.some((m: any) => m.broker === '58' && (m.topAccumulation || m.topByNetQty))) {
+        setHeatmapData(hmRes.value);
+      } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        setHeatmapData(latestBrokerMatrix);
+      } else if (hmRes.status === 'fulfilled' && hmRes.value?.matrix) {
         setHeatmapData(hmRes.value);
       }
     } catch (_) {}
@@ -220,8 +186,8 @@ export function BrokerFlowDominanceService({
 
   // 1. Compute Broker Flow from Real Multi-Day Heatmap or Floorsheet
   const brokerFlowList: BrokerStat[] = useMemo(() => {
-    // A. Multi-day horizon: use real aggregated multi-day broker vault matrix
-    if (timeframe !== '1D' && heatmapData?.matrix && heatmapData.matrix.length > 0) {
+    // A. Primary: use real aggregated broker vault matrix (unified across 1D, 1W, 1M, etc.)
+    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
       const list: BrokerStat[] = [];
       heatmapData.matrix.forEach((b: any) => {
         const bId = String(b.broker || '').trim();
@@ -231,12 +197,30 @@ export function BrokerFlowDominanceService({
         const sellAmount = Math.round(Number(b.totalSell || 0));
         const netFlow = Math.round(Number(b.netFlow != null ? b.netFlow : (buyAmount - sellAmount)));
 
-        let topStock = '—';
+        let topStock = b.topStock || '—';
         let maxScripAmt = 0;
-        const scripsList: { symbol: string; buy: number; sell: number }[] = Array.isArray(b.scrips)
-          ? b.scrips.map((s: any) => ({ symbol: String(s?.symbol || ''), buy: Number(s?.buy || 0), sell: Number(s?.sell || 0) }))
+        const scripsList: any[] = Array.isArray(b.scrips)
+          ? b.scrips.map((s: any) => ({
+              symbol: String(s?.symbol || ''),
+              buy: Number(s?.buy != null ? s.buy : (s?.buyAmount || 0)),
+              sell: Number(s?.sell != null ? s.sell : (s?.sellAmount || 0)),
+              buyQty: Number(s?.buyQty || 0),
+              sellQty: Number(s?.sellQty || 0),
+              netQty: Number(s?.netQty || 0),
+              avgBuyRate: Number(s?.avgBuyRate || 0),
+              avgSellRate: Number(s?.avgSellRate || 0)
+            }))
           : (b.scrips && typeof b.scrips === 'object')
-            ? Object.entries(b.scrips).map(([sSym, sVal]: [string, any]) => ({ symbol: sSym, buy: Number(sVal?.buy || 0), sell: Number(sVal?.sell || 0) }))
+            ? Object.entries(b.scrips).map(([sSym, sVal]: [string, any]) => ({
+                symbol: sSym,
+                buy: Number(sVal?.buy != null ? sVal.buy : (sVal?.buyAmount || 0)),
+                sell: Number(sVal?.sell != null ? sVal.sell : (sVal?.sellAmount || 0)),
+                buyQty: Number(sVal?.buyQty || 0),
+                sellQty: Number(sVal?.sellQty || 0),
+                netQty: Number(sVal?.netQty || 0),
+                avgBuyRate: Number(sVal?.avgBuyRate || 0),
+                avgSellRate: Number(sVal?.avgSellRate || 0)
+              }))
             : [];
 
         scripsList.forEach((s) => {
@@ -247,27 +231,77 @@ export function BrokerFlowDominanceService({
           }
         });
 
-        const allScrips: BrokerScripItem[] = scripsList.map(s => {
-          const matched = stocks.find(st => st.symbol === s.symbol);
-          const net = s.buy - s.sell;
+        const mapScripItem = (s: any, fallbackBias: 'Accumulation' | 'Distribution' | 'Neutral' = 'Neutral'): BrokerScripItem => {
+          const sym = String(s?.symbol || '').toUpperCase().trim();
+          const matched = stocks.find(st => st.symbol === sym);
+          const buyAmt = Math.round(Number(s.buyAmount != null ? s.buyAmount : (s.buy || 0)));
+          const sellAmt = Math.round(Number(s.sellAmount != null ? s.sellAmount : (s.sell || 0)));
+          const net = Math.round(Number(s.netFlow != null ? s.netFlow : (s.net != null ? s.net : (buyAmt - sellAmt))));
+          const bQty = Number(s.buyQty || 0);
+          const sQty = Number(s.sellQty || 0);
+          const nQty = Number(s.netQty != null ? s.netQty : (bQty - sQty));
+          const avgBRate = Number(s.avgBuyRate || 0);
+          const avgSRate = Number(s.avgSellRate || 0);
+
           return {
-            symbol: s.symbol,
-            name: matched?.companyName || matched?.name || s.symbol,
-            buyAmount: Math.round(s.buy),
-            sellAmount: Math.round(s.sell),
-            netFlow: Math.round(net),
-            bias: net > 1000000 ? 'Accumulation' : net < -1000000 ? 'Distribution' : 'Neutral'
+            symbol: sym,
+            name: matched?.companyName || matched?.name || s.name || sym,
+            buyAmount: buyAmt,
+            sellAmount: sellAmt,
+            netFlow: net,
+            buyQty: bQty > 0 ? bQty : undefined,
+            sellQty: sQty > 0 ? sQty : undefined,
+            netQty: nQty !== 0 ? nQty : undefined,
+            avgBuyRate: avgBRate > 0 ? avgBRate : undefined,
+            avgSellRate: avgSRate > 0 ? avgSRate : undefined,
+            bias: s.bias || (net > 1000000 ? 'Accumulation' : net < -1000000 ? 'Distribution' : fallbackBias)
           };
-        });
+        };
 
-        const topScrips = [...allScrips].sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
-        const topAccumulation = [...allScrips].filter(s => s.buyAmount > 0).sort((x, y) => (y.netFlow !== x.netFlow ? y.netFlow - x.netFlow : y.buyAmount - x.buyAmount)).slice(0, 10);
-        const topDistribution = [...allScrips].filter(s => s.sellAmount > 0).sort((x, y) => (x.netFlow !== y.netFlow ? x.netFlow - y.netFlow : y.sellAmount - x.sellAmount)).slice(0, 10);
+        const allScrips: BrokerScripItem[] = scripsList.map(s => mapScripItem(s));
 
-        let bias: BrokerStat['bias'] = 'Mild Accumulation';
-        if (netFlow > 8000000) bias = 'Aggressive Accumulation';
-        else if (netFlow < -8000000) bias = 'Heavy Selling';
-        else if (netFlow < 0) bias = 'Distribution';
+        const topScrips = Array.isArray(b.topScrips) && b.topScrips.length > 0
+          ? b.topScrips.map((s: any) => typeof s === 'string' ? mapScripItem({ symbol: s }) : mapScripItem(s))
+          : [...allScrips].sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
+
+        const topAccumulation = Array.isArray(b.topAccumulation) && b.topAccumulation.length > 0
+          ? b.topAccumulation.map((s: any) => mapScripItem(s, 'Accumulation'))
+          : [...allScrips].filter(s => s.netFlow > 0).sort((x, y) => y.netFlow - x.netFlow).slice(0, 10);
+
+        const topDistribution = Array.isArray(b.topDistribution) && b.topDistribution.length > 0
+          ? b.topDistribution.map((s: any) => mapScripItem(s, 'Distribution'))
+          : [...allScrips].filter(s => s.netFlow < 0).sort((x, y) => x.netFlow - y.netFlow).slice(0, 10);
+
+        const topByNetQty = Array.isArray(b.topByNetQty) && b.topByNetQty.length > 0
+          ? b.topByNetQty.map((s: any) => mapScripItem(s, 'Accumulation'))
+          : [...allScrips].filter(s => (s.netQty || 0) > 0).sort((x, y) => (y.netQty || 0) - (x.netQty || 0)).slice(0, 10);
+
+        const topByGrossBuyAmt = Array.isArray(b.topByGrossBuyAmt) && b.topByGrossBuyAmt.length > 0
+          ? b.topByGrossBuyAmt.map((s: any) => mapScripItem(s, 'Accumulation'))
+          : [...allScrips].filter(s => s.buyAmount > 0).sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
+
+        const topByGrossBuyQty = Array.isArray(b.topByGrossBuyQty) && b.topByGrossBuyQty.length > 0
+          ? b.topByGrossBuyQty.map((s: any) => mapScripItem(s, 'Accumulation'))
+          : [...allScrips].filter(s => (s.buyQty || 0) > 0).sort((x, y) => (y.buyQty || 0) - (x.buyQty || 0)).slice(0, 10);
+
+        const topDistByNetQty = Array.isArray(b.topDistByNetQty) && b.topDistByNetQty.length > 0
+          ? b.topDistByNetQty.map((s: any) => mapScripItem(s, 'Distribution'))
+          : [...allScrips].filter(s => (s.netQty || 0) < 0).sort((x, y) => (x.netQty || 0) - (y.netQty || 0)).slice(0, 10);
+
+        const topDistByGrossSellAmt = Array.isArray(b.topDistByGrossSellAmt) && b.topDistByGrossSellAmt.length > 0
+          ? b.topDistByGrossSellAmt.map((s: any) => mapScripItem(s, 'Distribution'))
+          : [...allScrips].filter(s => s.sellAmount > 0).sort((x, y) => y.sellAmount - x.sellAmount).slice(0, 10);
+
+        const topDistByGrossSellQty = Array.isArray(b.topDistByGrossSellQty) && b.topDistByGrossSellQty.length > 0
+          ? b.topDistByGrossSellQty.map((s: any) => mapScripItem(s, 'Distribution'))
+          : [...allScrips].filter(s => (s.sellQty || 0) > 0).sort((x, y) => (y.sellQty || 0) - (x.sellQty || 0)).slice(0, 10);
+
+        let bias: BrokerStat['bias'] = b.bias || 'Mild Accumulation';
+        if (!b.bias) {
+          if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+          else if (netFlow < -8000000) bias = 'Heavy Selling';
+          else if (netFlow < 0) bias = 'Distribution';
+        }
 
         list.push({
           brokerId: bId,
@@ -275,12 +309,18 @@ export function BrokerFlowDominanceService({
           buyAmount,
           sellAmount,
           netFlow,
-          topStock: topStock || '—',
-          totalTrades: Number(b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
+          topStock: b.topStock || topStock || '—',
+          totalTrades: Number(b.totalTrades || b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
           bias,
           topScrips: topScrips.length > 0 ? topScrips : undefined,
           topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
           topDistribution: topDistribution.length > 0 ? topDistribution : undefined,
+          topByNetQty: topByNetQty.length > 0 ? topByNetQty : undefined,
+          topByGrossBuyAmt: topByGrossBuyAmt.length > 0 ? topByGrossBuyAmt : undefined,
+          topByGrossBuyQty: topByGrossBuyQty.length > 0 ? topByGrossBuyQty : undefined,
+          topDistByNetQty: topDistByNetQty.length > 0 ? topDistByNetQty : undefined,
+          topDistByGrossSellAmt: topDistByGrossSellAmt.length > 0 ? topDistByGrossSellAmt : undefined,
+          topDistByGrossSellQty: topDistByGrossSellQty.length > 0 ? topDistByGrossSellQty : undefined,
         });
       });
 
@@ -394,101 +434,22 @@ export function BrokerFlowDominanceService({
       }
     }
 
-    // C. 1D Fallback to 1D broker vault matrix if floorsheet is offline
-    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
-      return heatmapData.matrix.map((b: any) => {
-        const bId = String(b.broker || '').trim();
-        const bInfo = MAJOR_BROKERS.find(m => m.id === bId);
-        const name = b.brokerName || (bInfo ? bInfo.name : `Broker #${bId}`);
-        const buyAmount = Math.round(Number(b.totalBuy || 0));
-        const sellAmount = Math.round(Number(b.totalSell || 0));
-        const netFlow = Math.round(Number(b.netFlow != null ? b.netFlow : (buyAmount - sellAmount)));
 
-        let topStock = '—';
-        let maxScripAmt = 0;
-        const scripsObj = (b.scrips && typeof b.scrips === 'object') ? b.scrips : {};
-        Object.entries(scripsObj).forEach(([sSym, sVal]: [string, any]) => {
-          const sAmt = Number(sVal?.buy || 0) + Number(sVal?.sell || 0);
-          if (sAmt > maxScripAmt) {
-            maxScripAmt = sAmt;
-            topStock = sSym;
-          }
-        });
 
-        const allScrips: BrokerScripItem[] = Object.entries(scripsObj)
-          .map(([sSym, sVal]: [string, any]) => {
-            const matched = stocks.find(st => st.symbol === sSym);
-            const buy = Number(sVal?.buy || 0);
-            const sell = Number(sVal?.sell || 0);
-            const net = buy - sell;
-            return {
-              symbol: sSym,
-              name: matched?.companyName || matched?.name || sSym,
-              buyAmount: Math.round(buy),
-              sellAmount: Math.round(sell),
-              netFlow: Math.round(net),
-              bias: net > 1000000 ? 'Accumulation' : net < -1000000 ? 'Distribution' : 'Neutral'
-            };
-          });
-
-        const topScrips = [...allScrips].sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
-        const topAccumulation = [...allScrips].filter(s => s.buyAmount > 0).sort((x, y) => (y.netFlow !== x.netFlow ? y.netFlow - x.netFlow : y.buyAmount - x.buyAmount)).slice(0, 10);
-        const topDistribution = [...allScrips].filter(s => s.sellAmount > 0).sort((x, y) => (x.netFlow !== y.netFlow ? x.netFlow - y.netFlow : y.sellAmount - x.sellAmount)).slice(0, 10);
-
-        let bias: BrokerStat['bias'] = 'Mild Accumulation';
-        if (netFlow > 8000000) bias = 'Aggressive Accumulation';
-        else if (netFlow < -8000000) bias = 'Heavy Selling';
-        else if (netFlow < 0) bias = 'Distribution';
-
-        return {
-          brokerId: bId,
-          brokerName: name,
-          buyAmount,
-          sellAmount,
-          netFlow,
-          topStock: topStock || '—',
-          totalTrades: Number(b.trades || Math.round((buyAmount + sellAmount) / 120000)) || 1,
-          bias,
-          topScrips: topScrips.length > 0 ? topScrips : undefined,
-          topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
-          topDistribution: topDistribution.length > 0 ? topDistribution : undefined,
-        };
-      }).sort((a: any, b: any) => b.netFlow - a.netFlow);
-    }
-
-    // D. Baseline list (benchmark data for top brokers)
-    return MAJOR_BROKERS.map(b => {
-      const benchmark = BROKER_BENCHMARK_TOP_SCRIPS[b.id] || [];
-      const allScrips: BrokerScripItem[] = benchmark.map(bm => ({
-        symbol: bm.symbol,
-        name: stocks.find(st => st.symbol === bm.symbol)?.companyName || bm.symbol,
-        buyAmount: bm.buyAmount,
-        sellAmount: bm.sellAmount,
-        netFlow: bm.buyAmount - bm.sellAmount,
-        bias: (bm.buyAmount - bm.sellAmount) > 0 ? 'Accumulation' : 'Distribution'
-      }));
-      const topScrips = [...allScrips].sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
-      const topAccumulation = [...allScrips].filter(s => s.netFlow > 0).sort((x, y) => y.netFlow - x.netFlow).slice(0, 10);
-      const topDistribution = [...allScrips].sort((x, y) => x.netFlow - y.netFlow).slice(0, 10);
-
-      const topStock = topScrips[0]?.symbol || '—';
-      const buyAmount = topScrips.reduce((acc, sc) => acc + sc.buyAmount, 0);
-      const sellAmount = topScrips.reduce((acc, sc) => acc + sc.sellAmount, 0);
-      const netFlow = buyAmount - sellAmount;
-      return {
-        brokerId: b.id,
-        brokerName: b.name,
-        buyAmount,
-        sellAmount,
-        netFlow,
-        topStock,
-        totalTrades: topScrips.length > 0 ? topScrips.length * 150 : 0,
-        bias: netFlow > 5000000 ? ('Aggressive Accumulation' as const) : netFlow > 0 ? ('Mild Accumulation' as const) : ('Distribution' as const),
-        topScrips: topScrips.length > 0 ? topScrips : undefined,
-        topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
-        topDistribution: topDistribution.length > 0 ? topDistribution : undefined,
-      };
-    });
+    // D. Baseline list (Zero mock policy: return clean registered brokers when exchange feed is offline)
+    return MAJOR_BROKERS.map(b => ({
+      brokerId: b.id,
+      brokerName: b.name,
+      buyAmount: 0,
+      sellAmount: 0,
+      netFlow: 0,
+      topStock: '—',
+      totalTrades: 0,
+      bias: 'Mild Accumulation' as const,
+      topScrips: undefined,
+      topAccumulation: undefined,
+      topDistribution: undefined,
+    }));
   }, [floorsheet, heatmapData, timeframe, stocks]);
 
   // 2. Compute Institutional Dominance from Real Multi-Day Heatmap or Live Floorsheet
@@ -645,8 +606,8 @@ export function BrokerFlowDominanceService({
       };
     };
 
-    // A. Multi-day horizon: compute directly from heatmapData scrips breakdown
-    if (timeframe !== '1D' && heatmapData?.matrix && heatmapData.matrix.length > 0) {
+    // A. Primary: compute directly from heatmapData scrips breakdown (unified across 1D, 1W, 1M, etc.)
+    if (heatmapData?.matrix && heatmapData.matrix.length > 0) {
       const stockBrokerMap = new Map<string, { totalBuy: number; totalSell: number; buyers: Map<string, number>; sellers: Map<string, number> }>();
 
       heatmapData.matrix.forEach((bItem: any) => {
@@ -831,6 +792,9 @@ export function BrokerFlowDominanceService({
         if (amt >= 2000000 || qty >= 5000) dealType = 'Block Deal';
         else if (bId === sId) dealType = 'Cross Trade';
 
+        const bDate = String(t.businessDate || t.date || '').split('T')[0];
+        const bTime = String(t.tradeTime || (bDate ? 'Session' : '13:00:00'));
+
         return {
           id: String(t.contractId || `fs-${idx + 1}`),
           symbol: String(t.symbol || t.stockSymbol || 'NEPSE'),
@@ -839,22 +803,15 @@ export function BrokerFlowDominanceService({
           quantity: qty,
           rate,
           amount: amt,
-          time: String(t.tradeTime || t.businessDate || '13:00:00'),
+          time: bTime,
+          date: bDate,
           type: dealType,
         };
       });
     }
 
-    // Default authentic baseline deals if floorsheet is offline
-    const fallbackDeals: MatchingDeal[] = [
-      { id: 'deal-1', symbol: 'NABIL', buyerBroker: '58 (Naasa Securities)', sellerBroker: '45 (Imperial Securities)', quantity: 15000, rate: 585, amount: 8775000, time: '13:42:15', type: 'Block Deal' },
-      { id: 'deal-2', symbol: 'SHIVM', buyerBroker: '34 (Vision Securities)', sellerBroker: '49 (Online Securities)', quantity: 22000, rate: 492, amount: 10824000, time: '13:28:40', type: 'Strategic Handover' },
-      { id: 'deal-3', symbol: 'CHCL', buyerBroker: '17 (ABC Securities)', sellerBroker: '28 (Shree Krishna)', quantity: 12500, rate: 422, amount: 5275000, time: '12:55:10', type: 'Block Deal' },
-      { id: 'deal-4', symbol: 'CIT', buyerBroker: '58 (Naasa Securities)', sellerBroker: '38 (Dipshikha)', quantity: 4200, rate: 2110, amount: 8862000, time: '12:18:22', type: 'Strategic Handover' },
-      { id: 'deal-5', symbol: 'NRIC', buyerBroker: '42 (Sani Securities)', sellerBroker: '57 (Aryatara Inv.)', quantity: 10000, rate: 725, amount: 7250000, time: '11:45:05', type: 'Block Deal' },
-      { id: 'deal-6', symbol: 'HDL', buyerBroker: '59 (Premier Sec.)', sellerBroker: '58 (Naasa Securities)', quantity: 5500, rate: 1355, amount: 7452500, time: '11:32:18', type: 'Cross Trade' },
-    ];
-    return fallbackDeals;
+    // Zero mock policy: return empty deals when floorsheet is offline
+    return [];
   }, [floorsheet]);
 
   const topAccumulator = brokerFlowList[0];
@@ -893,15 +850,26 @@ export function BrokerFlowDominanceService({
   }, [dominanceList, smartMoneyFilter, search]);
 
   const filteredMatchingDeals = useMemo(() => {
-    if (!search.trim()) return matchingDeals;
-    const q = search.trim().toLowerCase();
-    return matchingDeals.filter(m =>
-      m.symbol.toLowerCase().includes(q) ||
-      m.buyerBroker.toLowerCase().includes(q) ||
-      m.sellerBroker.toLowerCase().includes(q) ||
-      m.type.toLowerCase().includes(q)
-    );
-  }, [matchingDeals, search]);
+    let list = matchingDeals;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(m =>
+        m.symbol.toLowerCase().includes(q) ||
+        m.buyerBroker.toLowerCase().includes(q) ||
+        m.sellerBroker.toLowerCase().includes(q) ||
+        m.type.toLowerCase().includes(q) ||
+        (m.date && m.date.includes(q))
+      );
+    }
+    return [...list].sort((a, b) => {
+      if (matchingSortOrder === 'amount_desc') {
+        return b.amount - a.amount;
+      }
+      const dtA = `${a.date || ''} ${a.time || ''}`.trim();
+      const dtB = `${b.date || ''} ${b.time || ''}`.trim();
+      return dtB.localeCompare(dtA) || b.amount - a.amount;
+    });
+  }, [matchingDeals, search, matchingSortOrder]);
 
   const activeTop10Broker = useMemo(() => {
     return brokerFlowList.find(b => b.brokerId === selectedTop10BrokerId) || brokerFlowList[0] || null;
@@ -981,6 +949,9 @@ export function BrokerFlowDominanceService({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 font-mono">
+              📅 Session: {sessionDate}
+            </span>
             <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               🟢 {instAccumulationCount} Accumulating
             </span>
@@ -1061,6 +1032,51 @@ export function BrokerFlowDominanceService({
               ✕
             </button>
           )}
+        </div>
+
+        {/* Export CSV / Excel Buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() =>
+              exportMarketBrokerSurveillance({
+                mode: activeMode === 'top10' ? 'broker_scrips' : activeMode,
+                timeframe,
+                sessionDate,
+                brokerFlowList: filteredBrokerFlowList,
+                dominanceList: filteredDominanceList,
+                matchingDeals: filteredMatchingDeals,
+                selectedBroker: activeMode === 'top10' ? activeTop10Broker : selectedBrokerModal,
+                format: 'csv',
+              })
+            }
+            title="Download current Broker / Floorsheet Surveillance view as CSV"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25 text-xs font-extrabold transition cursor-pointer"
+          >
+            <Download size={13} />
+            <span>CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              exportMarketBrokerSurveillance({
+                mode: activeMode,
+                timeframe,
+                sessionDate,
+                brokerFlowList: filteredBrokerFlowList,
+                dominanceList: filteredDominanceList,
+                matchingDeals: filteredMatchingDeals,
+                selectedBroker: activeTop10Broker || selectedBrokerModal,
+                format: 'xls',
+              })
+            }
+            title="Download Full Multi-Sheet Market Broker & Floorsheet Workbook (.xls)"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-400 hover:bg-sky-500/25 text-xs font-extrabold transition cursor-pointer"
+          >
+            <Download size={13} />
+            <span>Excel (.xls)</span>
+          </button>
         </div>
 
         {/* Mobile View Toggle (Cards vs Table) */}
@@ -1621,154 +1637,295 @@ export function BrokerFlowDominanceService({
             </div>
           )}
 
-          {/* DUAL DECK: Top 10 Accumulation vs Top 10 Distribution */}
+          {/* Multi-Metric Ranking Switcher */}
           {activeTop10Broker && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
-              {/* Deck 1: Top 10 Accumulation */}
-              <div className="rounded-2xl border border-emerald-500/30 bg-slate-900/80 overflow-hidden shadow-lg flex flex-col">
-                <div className="p-3 sm:p-3.5 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border-b border-emerald-500/20 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                      🟢
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
-                        <span>Top 10 Accumulation</span>
-                        <span className="text-[10px] font-mono text-emerald-400 font-bold">#{activeTop10Broker.brokerId}</span>
-                      </h4>
-                      <p className="text-[10px] text-slate-400">Highest net cash inflow (खरिद केन्द्रित स्टकहरू)</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    Net Inflow
-                  </span>
-                </div>
-
-                <div className="p-2 sm:p-3 overflow-x-auto flex-1">
-                  {(!activeTop10Broker.topAccumulation || activeTop10Broker.topAccumulation.length === 0) ? (
-                    <div className="text-center py-8 text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
-                      No positive accumulation scrips recorded for Broker #{activeTop10Broker.brokerId}.
-                    </div>
-                  ) : (
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead className="bg-slate-950/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-sans">
-                        <tr>
-                          <th className="p-2 text-center w-7">#</th>
-                          <th className="p-2">Scrip</th>
-                          <th className="p-2 text-right">Buy (Lakhs)</th>
-                          <th className="p-2 text-right">Sell (Lakhs)</th>
-                          <th className="p-2 text-right">Net Flow</th>
-                          <th className="p-2 text-center">Bias</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {activeTop10Broker.topAccumulation.slice(0, 10).map((sc, idx) => {
-                          const isNetPos = sc.netFlow >= 0;
-                          return (
-                            <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
-                              <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
-                              <td className="p-2 font-sans">
-                                <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[110px] sm:max-w-[140px]">
-                                  {sc.name || sc.symbol}
-                                </div>
-                              </td>
-                              <td className="p-2 text-right text-emerald-400 font-semibold">
-                                Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-right text-slate-400">
-                                Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-center font-sans">
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 whitespace-nowrap">
-                                  Accumulating
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+                  <BarChart3 size={13} /> Metric:
+                </span>
+                <span className="text-[11px] text-slate-300 font-medium">
+                  {rankingMetric === 'net_amount' && '🟢 Net Capital Inflow (Rupees) — Idea Share Nepal & Smart Money Standard'}
+                  {rankingMetric === 'net_qty' && '📊 Net Shares (Kitta) — Chukul & SS Pro Net Volume Standard'}
+                  {rankingMetric === 'gross_buy_amount' && '💰 Gross Buy Turnover (Rupees) — ShareSansar Default Table Standard'}
+                  {rankingMetric === 'gross_buy_qty' && '📦 Gross Buy Volume (Shares / Kitta)'}
+                </span>
               </div>
-
-              {/* Deck 2: Top 10 Distribution */}
-              <div className="rounded-2xl border border-rose-500/30 bg-slate-900/80 overflow-hidden shadow-lg flex flex-col">
-                <div className="p-3 sm:p-3.5 bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 border-b border-rose-500/20 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-bold text-xs">
-                      🔴
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
-                        <span>Top 10 Distribution</span>
-                        <span className="text-[10px] font-mono text-rose-400 font-bold">#{activeTop10Broker.brokerId}</span>
-                      </h4>
-                      <p className="text-[10px] text-slate-400">Highest net selling / profit booking (बिक्री केन्द्रित स्टकहरू)</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                    Net Outflow
-                  </span>
-                </div>
-
-                <div className="p-2 sm:p-3 overflow-x-auto flex-1">
-                  {(!activeTop10Broker.topDistribution || activeTop10Broker.topDistribution.length === 0) ? (
-                    <div className="text-center py-8 text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
-                      No distribution scrips recorded for Broker #{activeTop10Broker.brokerId}.
-                    </div>
-                  ) : (
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead className="bg-slate-950/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-sans">
-                        <tr>
-                          <th className="p-2 text-center w-7">#</th>
-                          <th className="p-2">Scrip</th>
-                          <th className="p-2 text-right">Buy (Lakhs)</th>
-                          <th className="p-2 text-right">Sell (Lakhs)</th>
-                          <th className="p-2 text-right">Net Flow</th>
-                          <th className="p-2 text-center">Bias</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {activeTop10Broker.topDistribution.slice(0, 10).map((sc, idx) => {
-                          const isNetPos = sc.netFlow >= 0;
-                          return (
-                            <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
-                              <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
-                              <td className="p-2 font-sans">
-                                <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[110px] sm:max-w-[140px]">
-                                  {sc.name || sc.symbol}
-                                </div>
-                              </td>
-                              <td className="p-2 text-right text-slate-400">
-                                Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-right text-rose-400 font-semibold">
-                                Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
-                              </td>
-                              <td className="p-2 text-center font-sans">
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-rose-500/10 text-rose-400 border-rose-500/30 whitespace-nowrap">
-                                  Distributing
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setRankingMetric('net_amount')}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                    rankingMetric === 'net_amount'
+                      ? 'bg-emerald-600 text-white shadow-md font-black'
+                      : 'bg-slate-950/80 text-emerald-400 hover:bg-slate-800 border border-emerald-500/30'
+                  }`}
+                  title="Rank by Net Capital Inflow (Buy Amt - Sell Amt) — Idea Share Nepal video standard"
+                >
+                  🟢 Net Inflow (Rs.)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRankingMetric('net_qty')}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                    rankingMetric === 'net_qty'
+                      ? 'bg-emerald-600 text-white shadow-md font-black'
+                      : 'bg-slate-950/80 text-emerald-400 hover:bg-slate-800 border border-emerald-500/30'
+                  }`}
+                  title="Rank by Net Shares (Buy Qty - Sell Qty)"
+                >
+                  📊 Net Shares
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRankingMetric('gross_buy_amount')}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                    rankingMetric === 'gross_buy_amount'
+                      ? 'bg-amber-600 text-white shadow-md font-black'
+                      : 'bg-slate-950/80 text-amber-400 hover:bg-slate-800 border border-amber-500/30'
+                  }`}
+                  title="Rank by Total Buy Turnover — Matches ShareSansar default table"
+                >
+                  💰 Gross Buy (ShareSansar)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRankingMetric('gross_buy_qty')}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                    rankingMetric === 'gross_buy_qty'
+                      ? 'bg-amber-600 text-white shadow-md font-black'
+                      : 'bg-slate-950/80 text-slate-300 hover:bg-slate-800 border border-slate-700'
+                  }`}
+                  title="Rank by Total Buy Shares"
+                >
+                  📦 Gross Shares
+                </button>
               </div>
             </div>
           )}
+
+          {/* DUAL DECK: Top 10 Accumulation vs Top 10 Distribution */}
+          {activeTop10Broker && (() => {
+            const activeAccScrips = (
+              rankingMetric === 'net_qty'
+                ? (activeTop10Broker.topByNetQty || activeTop10Broker.topAccumulation || [])
+                : rankingMetric === 'gross_buy_amount'
+                ? (activeTop10Broker.topByGrossBuyAmt || activeTop10Broker.topAccumulation || [])
+                : rankingMetric === 'gross_buy_qty'
+                ? (activeTop10Broker.topByGrossBuyQty || activeTop10Broker.topAccumulation || [])
+                : (activeTop10Broker.topAccumulation || [])
+            ).slice(0, 10);
+
+            const activeDistScrips = (
+              rankingMetric === 'net_qty'
+                ? (activeTop10Broker.topDistByNetQty || activeTop10Broker.topDistribution || [])
+                : rankingMetric === 'gross_buy_amount'
+                ? (activeTop10Broker.topDistByGrossSellAmt || activeTop10Broker.topDistribution || [])
+                : rankingMetric === 'gross_buy_qty'
+                ? (activeTop10Broker.topDistByGrossSellQty || activeTop10Broker.topDistribution || [])
+                : (activeTop10Broker.topDistribution || [])
+            ).slice(0, 10);
+
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
+                {/* Deck 1: Top 10 Accumulation */}
+                <div className="rounded-2xl border border-emerald-500/30 bg-slate-900/80 overflow-hidden shadow-lg flex flex-col">
+                  <div className="p-3 sm:p-3.5 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border-b border-emerald-500/20 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">
+                        🟢
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
+                          <span>Top 10 Accumulation</span>
+                          <span className="text-[10px] font-mono text-emerald-400 font-bold">#{activeTop10Broker.brokerId}</span>
+                        </h4>
+                        <p className="text-[10px] text-slate-400">
+                          {rankingMetric === 'net_amount' && 'Ranked by highest net cash inflow (खरिद रकम - बिक्री रकम)'}
+                          {rankingMetric === 'net_qty' && 'Ranked by highest net shares (खरिद कित्ता - बिक्री कित्ता)'}
+                          {rankingMetric === 'gross_buy_amount' && 'Ranked by total buy turnover (कुल खरिद रकम — ShareSansar)'}
+                          {rankingMetric === 'gross_buy_qty' && 'Ranked by total buy shares (कुल खरिद कित्ता)'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      {rankingMetric.startsWith('gross') ? 'Gross Buy' : 'Net Inflow'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 sm:p-3 overflow-x-auto flex-1">
+                    {activeAccScrips.length === 0 ? (
+                      <div className="text-center py-8 text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
+                        No positive accumulation scrips recorded for Broker #{activeTop10Broker.brokerId}.
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead className="bg-slate-950/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-sans">
+                          <tr>
+                            <th className="p-2 text-center w-7">#</th>
+                            <th className="p-2">Scrip</th>
+                            <th className="p-2 text-right">Buy (Lakhs)</th>
+                            <th className="p-2 text-right">Sell (Lakhs)</th>
+                            <th className="p-2 text-right">Net Flow</th>
+                            <th className="p-2 text-center">Bias</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/40">
+                          {activeAccScrips.map((sc, idx) => {
+                            const isNetPos = sc.netFlow >= 0;
+                            return (
+                              <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
+                                <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="p-2 font-sans">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
+                                    {sc.netQty != null && sc.netQty > 0 && (
+                                      <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/30">
+                                        +{sc.netQty.toLocaleString()} units
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[160px]">
+                                    {sc.name || sc.symbol} {sc.avgBuyRate ? `• @ Rs. ${sc.avgBuyRate.toFixed(1)}` : ''}
+                                  </div>
+                                </td>
+                                <td className="p-2 text-right text-emerald-400 font-semibold">
+                                  Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-right text-slate-400">
+                                  Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
+                                  {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-center font-sans">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 whitespace-nowrap">
+                                    Accumulating
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deck 2: Top 10 Distribution */}
+                <div className="rounded-2xl border border-rose-500/30 bg-slate-900/80 overflow-hidden shadow-lg flex flex-col">
+                  <div className="p-3 sm:p-3.5 bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 border-b border-rose-500/20 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-bold text-xs">
+                        🔴
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
+                          <span>Top 10 Distribution</span>
+                          <span className="text-[10px] font-mono text-rose-400 font-bold">#{activeTop10Broker.brokerId}</span>
+                        </h4>
+                        <p className="text-[10px] text-slate-400">
+                          {rankingMetric === 'net_amount' && 'Ranked by highest net selling outflow (बिक्री रकम - खरिद रकम)'}
+                          {rankingMetric === 'net_qty' && 'Ranked by highest net shares dumped (बिक्री कित्ता - खरिद कित्ता)'}
+                          {rankingMetric === 'gross_buy_amount' && 'Ranked by total sell turnover (कुल बिक्री रकम)'}
+                          {rankingMetric === 'gross_buy_qty' && 'Ranked by total sell shares (कुल बिक्री कित्ता)'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                      {rankingMetric.startsWith('gross') ? 'Gross Sell' : 'Net Outflow'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 sm:p-3 overflow-x-auto flex-1">
+                    {activeDistScrips.length === 0 ? (
+                      <div className="text-center py-8 text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
+                        No distribution scrips recorded for Broker #{activeTop10Broker.brokerId}.
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs font-mono">
+                        <thead className="bg-slate-950/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-sans">
+                          <tr>
+                            <th className="p-2 text-center w-7">#</th>
+                            <th className="p-2">Scrip</th>
+                            <th className="p-2 text-right">Buy (Lakhs)</th>
+                            <th className="p-2 text-right">Sell (Lakhs)</th>
+                            <th className="p-2 text-right">Net Flow</th>
+                            <th className="p-2 text-center">Bias</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/40">
+                          {activeDistScrips.map((sc, idx) => {
+                            const isNetPos = sc.netFlow >= 0;
+                            return (
+                              <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
+                                <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="p-2 font-sans">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
+                                    {sc.netQty != null && sc.netQty < 0 && (
+                                      <span className="text-[10px] font-mono text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/30">
+                                        {sc.netQty.toLocaleString()} units
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[160px]">
+                                    {sc.name || sc.symbol} {sc.avgSellRate ? `• @ Rs. ${sc.avgSellRate.toFixed(1)}` : ''}
+                                  </div>
+                                </td>
+                                <td className="p-2 text-right text-slate-400">
+                                  Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-right text-rose-400 font-semibold">
+                                  Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
+                                  {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
+                                </td>
+                                <td className="p-2 text-center font-sans">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-rose-500/10 text-rose-400 border-rose-500/30 whitespace-nowrap">
+                                    Distributing
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* External Data Sources Reconciliation Guide */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-amber-500/30 space-y-2.5">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+              <Shield className="w-4 h-4" />
+              <span>External Sources Reconciliation: Why do different platforms show different Top 10 stocks?</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <div className="font-bold text-emerald-400 text-[11px] mb-1">1. Smart Money / Idea Share Nepal (Net Amount)</div>
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  Ranks by <strong>Net Capital Flow (Buy Amt - Sell Amt)</strong>. Deducts selling to reveal pure institutional absorption. Verified for Broker #58 on Oct 13: <strong>GHL (+2.88 Cr), KBL (+1.68 Cr), CBBL (+1.36 Cr), RSML (+94.9 L), SOHL (+56.1 L)</strong>.
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <div className="font-bold text-amber-400 text-[11px] mb-1">2. ShareSansar Default (Gross Buy)</div>
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  ShareSansar's default table ranks by <strong>Gross Buy Turnover</strong> without deducting sells! Broker 58 bought Rs. 1.09 Cr of CITY (ranked #5 on ShareSansar), but dumped Rs. 7.12 Cr (Net: -6.03 Cr dumped!). Toggle to <strong>Gross Buy</strong> above to match ShareSansar.
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+                <div className="font-bold text-blue-400 text-[11px] mb-1">3. Chukul / SS Pro (Net & Gross Shares)</div>
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  Ranks by <strong>Number of Shares (Kitta)</strong>. Low-price mutual funds like SEF or NBF3 (@ Rs. 10) jump to the top because 15,000 units is only Rs. 1.5 Lakhs. Toggle to <strong>Net Shares</strong> above to match Chukul volume.
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* Strategic Rules & Confluence Guide */}
           <div className="p-3 sm:p-4 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-2">
@@ -1807,11 +1964,48 @@ export function BrokerFlowDominanceService({
             Traces direct matching transactions from the NEPSE floorsheet where buyer and seller brokers trade substantial volume blocks in a single contract.
           </InfoBanner>
 
+          {/* Mode 3 Toolbar: Sort Controls & Session Info */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-white">
+                {filteredMatchingDeals.length} Block Deals Identified
+              </span>
+              <span className="text-[11px] text-slate-400">
+                (Session: <strong className="text-purple-300 font-mono">{sessionDate}</strong>)
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+              <span className="text-[11px] text-slate-400 font-semibold">Sort by:</span>
+              <button
+                type="button"
+                onClick={() => setMatchingSortOrder('date_desc')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                  matchingSortOrder === 'date_desc'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'bg-slate-950/80 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                📅 Date &amp; Time (Newest)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatchingSortOrder('amount_desc')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                  matchingSortOrder === 'amount_desc'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'bg-slate-950/80 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                💰 Deal Size (Largest)
+              </button>
+            </div>
+          </div>
+
           {/* Mode 3: Mobile Card View */}
           <div className={`${mobileView === 'cards' ? 'block sm:hidden' : 'hidden'} space-y-2.5`}>
             {filteredMatchingDeals.length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
-                No matching block deals found.
+                No matching block deals recorded for this session.
               </div>
             ) : (
               filteredMatchingDeals.map((m) => (
@@ -1819,7 +2013,7 @@ export function BrokerFlowDominanceService({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-white text-sm tracking-wide">{m.symbol}</span>
-                      <span className="text-[10px] font-mono text-slate-400">{m.time}</span>
+                      <span className="text-[10px] font-mono text-slate-400">{m.date ? `${m.date} ` : ''}{m.time}</span>
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-300 border border-slate-700">
                       {m.type}
@@ -1867,7 +2061,7 @@ export function BrokerFlowDominanceService({
               <table className="w-full text-left text-xs min-w-[680px]">
                 <thead className="border-b border-slate-800 bg-slate-900/90 text-[11px] font-bold uppercase text-slate-400">
                   <tr>
-                    <th className="p-3">Time</th>
+                    <th className="p-3">Date &amp; Time</th>
                     <th className="p-3">Symbol</th>
                     <th className="p-3">Buyer Broker</th>
                     <th className="p-3">Seller Broker</th>
@@ -1881,13 +2075,13 @@ export function BrokerFlowDominanceService({
                   {filteredMatchingDeals.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="p-6 text-center text-slate-400">
-                        No matching block deals found.
+                        No matching block deals recorded for this session.
                       </td>
                     </tr>
                   ) : (
                     filteredMatchingDeals.map((m) => (
                       <tr key={m.id} className="hover:bg-slate-900/40 transition">
-                        <td className="p-3 text-slate-400">{m.time}</td>
+                        <td className="p-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">{m.date ? `${m.date} ` : ''}{m.time}</td>
                         <td className="p-3 font-bold text-white text-sm">{m.symbol}</td>
                         <td className="p-3 text-emerald-400 font-semibold font-sans">{m.buyerBroker}</td>
                         <td className="p-3 text-rose-400 font-semibold font-sans">{m.sellerBroker}</td>
@@ -1960,41 +2154,88 @@ export function BrokerFlowDominanceService({
 
             {/* Table of Top 10 Scrips with Accumulation / Distribution Tabs */}
             <div className="p-3 sm:p-4 overflow-y-auto flex-1 scrollbar-thin">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setModalTab('accumulation')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      modalTab === 'accumulation'
-                        ? 'bg-emerald-600 text-white shadow'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    🟢 Top 10 Accumulation
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setModalTab('distribution')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      modalTab === 'distribution'
-                        ? 'bg-rose-600 text-white shadow'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    🔴 Top 10 Distribution
-                  </button>
+              <div className="flex flex-col gap-2 mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('accumulation')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        modalTab === 'accumulation'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🟢 Top 10 Accumulation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('distribution')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        modalTab === 'distribution'
+                          ? 'bg-rose-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🔴 Top 10 Distribution
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setRankingMetric('net_amount')}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer ${rankingMetric === 'net_amount' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+                    >
+                      Net Flow (Rs.)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRankingMetric('net_qty')}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer ${rankingMetric === 'net_qty' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+                    >
+                      Net Shares
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRankingMetric('gross_buy_amount')}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer ${rankingMetric === 'gross_buy_amount' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+                      title="ShareSansar Gross Table"
+                    >
+                      Gross (ShareSansar)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRankingMetric('gross_buy_qty')}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer ${rankingMetric === 'gross_buy_qty' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+                    >
+                      Gross Shares
+                    </button>
+                  </div>
                 </div>
                 <span className="text-[11px] text-slate-400 font-sans">
-                  {modalTab === 'accumulation' ? 'Ranked by highest net cash inflow' : 'Ranked by highest net selling outflow'}
+                  {modalTab === 'accumulation'
+                    ? (rankingMetric === 'net_amount' ? 'Ranked by highest net cash inflow (Idea Share Nepal standard)' : rankingMetric === 'net_qty' ? 'Ranked by highest net shares bought (Chukul standard)' : rankingMetric === 'gross_buy_amount' ? 'Ranked by total buy turnover (ShareSansar default table)' : 'Ranked by gross shares bought')
+                    : (rankingMetric === 'net_amount' ? 'Ranked by highest net selling outflow' : rankingMetric === 'net_qty' ? 'Ranked by highest net shares sold' : rankingMetric === 'gross_buy_amount' ? 'Ranked by total sell turnover' : 'Ranked by gross shares sold')}
                 </span>
               </div>
 
               {(() => {
                 const scripsToShow = (
                   modalTab === 'accumulation'
-                    ? (selectedBrokerModal.topAccumulation || selectedBrokerModal.topScrips || [])
-                    : (selectedBrokerModal.topDistribution || selectedBrokerModal.topScrips || [])
+                    ? (rankingMetric === 'net_qty'
+                        ? (selectedBrokerModal.topByNetQty || selectedBrokerModal.topAccumulation || [])
+                        : rankingMetric === 'gross_buy_amount'
+                        ? (selectedBrokerModal.topByGrossBuyAmt || selectedBrokerModal.topAccumulation || [])
+                        : rankingMetric === 'gross_buy_qty'
+                        ? (selectedBrokerModal.topByGrossBuyQty || selectedBrokerModal.topAccumulation || [])
+                        : (selectedBrokerModal.topAccumulation || selectedBrokerModal.topScrips || []))
+                    : (rankingMetric === 'net_qty'
+                        ? (selectedBrokerModal.topDistByNetQty || selectedBrokerModal.topDistribution || [])
+                        : rankingMetric === 'gross_buy_amount'
+                        ? (selectedBrokerModal.topDistByGrossSellAmt || selectedBrokerModal.topDistribution || [])
+                        : rankingMetric === 'gross_buy_qty'
+                        ? (selectedBrokerModal.topDistByGrossSellQty || selectedBrokerModal.topDistribution || [])
+                        : (selectedBrokerModal.topDistribution || selectedBrokerModal.topScrips || []))
                 ).slice(0, 10);
 
                 if (scripsToShow.length === 0) {
@@ -2025,8 +2266,21 @@ export function BrokerFlowDominanceService({
                             <tr key={sc.symbol} className="hover:bg-slate-900/60 transition">
                               <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
                               <td className="p-2.5 font-sans">
-                                <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[130px] sm:max-w-[170px]">{sc.name || sc.symbol}</div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
+                                  {sc.netQty != null && sc.netQty !== 0 && (
+                                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                                      sc.netQty > 0
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                        : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                    }`}>
+                                      {sc.netQty > 0 ? `+${sc.netQty.toLocaleString()}` : sc.netQty.toLocaleString()} units
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate max-w-[130px] sm:max-w-[170px]">
+                                  {sc.name || sc.symbol} {sc.avgBuyRate && sc.netFlow > 0 ? `• @ Rs. ${sc.avgBuyRate.toFixed(1)}` : (sc.avgSellRate && sc.netFlow < 0 ? `• @ Rs. ${sc.avgSellRate.toFixed(1)}` : '')}
+                                </div>
                               </td>
                               <td className="p-2.5 text-right text-emerald-400 font-semibold">
                                 Rs. {(sc.buyAmount / 1e5).toFixed(1)} L

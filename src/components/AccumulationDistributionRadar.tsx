@@ -500,6 +500,7 @@ export function AccumulationDistributionRadar({
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>('');
   const [modalStock, setModalStock] = useState<any>(null);
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
+  const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
 
   useEffect(() => {
     let isMounted = true;
@@ -2499,20 +2500,26 @@ export function AccumulationDistributionRadar({
               const bcr3Sell = isSampleValid ? (activeStock.brokerData?.bcr3SellPct || 0) : 0;
               const pChange = Number(activeStock.pChange || 0);
               const topSellers = activeStock.brokerData?.topSellerBrokers || [];
-              const topBuyers = activeStock.brokerData?.topBuyerBrokers || [];
-              const topSellerNetDumping = isSampleValid && (topSellers.slice(0, 3).some((sel: any) => {
-                const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
-                return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((activeStock.brokerData?.totalSellVolume || 1) * 0.15);
-              }) || (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy));
-              const isSellerDominant = isSampleValid && ((bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy) || topSellerNetDumping || activeStock.brokerData?.smartMoneyBias === 'Operator Offloading');
+              const hasSellingAsymmetry = bcr3Sell >= 45.0 && (bcr3Sell - bcr3Buy) >= 10.0;
+              const topSellerNetDumping = isSampleValid && (
+                topSellers.slice(0, 3).some((sel: any) => {
+                  const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+                  return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((activeStock.brokerData?.totalSellVolume || 1) * 0.20);
+                }) && (bcr3Sell > bcr3Buy)
+              );
+              const isSellerDominant = isSampleValid && (
+                hasSellingAsymmetry ||
+                topSellerNetDumping ||
+                (activeStock.brokerData?.smartMoneyBias === 'Operator Offloading' && bcr3Sell > bcr3Buy)
+              );
               const isDumping = Boolean(
                 isSampleValid && (
                   isSellerDominant ||
-                  (activeStock.brokerData?.adSignal === 'Distribution' && (Number(activeStock.brokerData?.adStrength || 0) >= 30 || Number(activeStock.brokerData?.adRatio || 0) <= -0.08))
+                  (activeStock.brokerData?.adSignal === 'Distribution' && (Number(activeStock.brokerData?.adStrength || 0) >= 30 || Number(activeStock.brokerData?.adRatio || 0) <= -0.08) && bcr3Sell > bcr3Buy)
                 )
               );
               const isTrap = isDumping && (pChange >= 0 || activeStock.wyckoff?.stage?.includes('PUMP'));
-              const isAccumulation = isSampleValid && (bcr3Buy >= 40.0 || (activeStock.brokerData?.bcr5BuyPct >= 50.0 && bcr3Buy >= 36.0)) && bcr3Buy > bcr3Sell && !isDumping;
+              const isAccumulation = isSampleValid && (bcr3Buy >= 40.0 || (activeStock.brokerData?.bcr5BuyPct >= 50.0 && bcr3Buy >= 36.0)) && (bcr3Buy > bcr3Sell) && !isDumping;
 
               return (
                 <div className={`p-5 rounded-2xl border shadow-xl space-y-4 ${
@@ -2653,140 +2660,195 @@ export function AccumulationDistributionRadar({
                 </div>
               </div>
 
-              {/* 2-Column Responsive Tables: Top Accumulating vs Top Distributing */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Column 1: Top Buyers / Accumulators */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-emerald-500/20 space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wide">
-                      <TrendingUp className="w-4 h-4" /> Top Buying Brokers (खरिदकर्ता ब्रोकरहरू)
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      Total Buy: {(activeStock.brokerData?.totalBuyVolume || 0).toLocaleString()} kitta
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="text-[10px] uppercase text-slate-400 border-b border-slate-800/80">
-                          <th className="pb-2 font-bold">Broker</th>
-                          <th className="pb-2 text-right font-bold">Buy Kitta</th>
-                          <th className="pb-2 text-right font-bold">Turnover</th>
-                          <th className="pb-2 text-right font-bold">% Vol</th>
-                          <th className="pb-2 text-right font-bold">Net Flow</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {(activeStock.brokerData?.topBuyerBrokers || []).map((b: BrokerDetail, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="py-2.5">
-                              <div className="flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-black flex items-center justify-center">
-                                  {idx + 1}
-                                </span>
-                                <div>
-                                  <div className="font-extrabold text-white">#{b.broker}</div>
-                                  <div className="text-[10px] text-slate-400 truncate max-w-[110px]" title={b.brokerName}>
-                                    {b.brokerName}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-right font-bold text-emerald-400">
-                              +{b.volume.toLocaleString()}
-                            </td>
-                            <td className="py-2.5 text-right font-semibold text-slate-300 text-[11px]">
-                              {formatBrokerAmount(b.amount)}
-                            </td>
-                            <td className="py-2.5 text-right font-semibold text-slate-400 text-[11px]">
-                              {b.pct}%
-                            </td>
-                            <td className="py-2.5 text-right font-extrabold text-[11px]">
-                              <span className={b.netQty >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                {b.netQty >= 0 ? '+' : ''}{b.netQty.toLocaleString()}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {(!activeStock.brokerData?.topBuyerBrokers || activeStock.brokerData.topBuyerBrokers.length === 0) && (
-                          <tr>
-                            <td colSpan={5} className="py-6 text-center text-slate-500 text-xs">
-                              No buying broker activity recorded.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              {/* Multi-Metric Switcher Bar (Reconciliation with ShareSansar & Idea Share Nepal) */}
+              <div className="flex items-center justify-between flex-wrap gap-2 p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Sort Ledger By:</span>
+                  {[
+                    { id: 'netFlow', label: '⚡ Net Flow (Idea Share)', hint: 'Rank by Net Flow (Buy Rs. − Sell Rs.) - Institutional Smart Money' },
+                    { id: 'turnover', label: '💰 Turnover (ShareSansar)', hint: 'Rank by Gross Broker Turnover in Rs. - ShareSansar default' },
+                    { id: 'kitta', label: '📊 Volume (Kitta)', hint: 'Rank by Traded Volume in Shares' }
+                  ].map(m => {
+                    const active = brokerLedgerMetric === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setBrokerLedgerMetric(m.id as any)}
+                        title={m.hint}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          active
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    );
+                  })}
                 </div>
-
-                {/* Column 2: Top Sellers / Distributors */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-red-500/20 space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wide">
-                      <TrendingDown className="w-4 h-4" /> Top Selling Brokers (बिक्रीकर्ता ब्रोकरहरू)
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      Total Sell: {(activeStock.brokerData?.totalSellVolume || 0).toLocaleString()} kitta
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="text-[10px] uppercase text-slate-400 border-b border-slate-800/80">
-                          <th className="pb-2 font-bold">Broker</th>
-                          <th className="pb-2 text-right font-bold">Sell Kitta</th>
-                          <th className="pb-2 text-right font-bold">Turnover</th>
-                          <th className="pb-2 text-right font-bold">% Vol</th>
-                          <th className="pb-2 text-right font-bold">Net Flow</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {(activeStock.brokerData?.topSellerBrokers || []).map((s: BrokerDetail, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                            <td className="py-2.5">
-                              <div className="flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-full bg-red-500/10 text-red-400 text-[10px] font-black flex items-center justify-center">
-                                  {idx + 1}
-                                </span>
-                                <div>
-                                  <div className="font-extrabold text-white">#{s.broker}</div>
-                                  <div className="text-[10px] text-slate-400 truncate max-w-[110px]" title={s.brokerName}>
-                                    {s.brokerName}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-right font-bold text-red-400">
-                              -{s.volume.toLocaleString()}
-                            </td>
-                            <td className="py-2.5 text-right font-semibold text-slate-300 text-[11px]">
-                              {formatBrokerAmount(s.amount)}
-                            </td>
-                            <td className="py-2.5 text-right font-semibold text-slate-400 text-[11px]">
-                              {s.pct}%
-                            </td>
-                            <td className="py-2.5 text-right font-extrabold text-[11px]">
-                              <span className={s.netQty <= 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                {s.netQty > 0 ? '+' : ''}{s.netQty.toLocaleString()}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {(!activeStock.brokerData?.topSellerBrokers || activeStock.brokerData.topSellerBrokers.length === 0) && (
-                          <tr>
-                            <td colSpan={5} className="py-6 text-center text-slate-500 text-xs">
-                              No selling broker activity recorded.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <span className="text-[10px] text-slate-400 italic">
+                  {brokerLedgerMetric === 'turnover'
+                    ? '100% matches ShareSansar broker table'
+                    : brokerLedgerMetric === 'netFlow'
+                    ? 'Smart Money Net Capital Accumulation'
+                    : 'Volume-based sorting'}
+                </span>
               </div>
+
+              {/* 2-Column Responsive Tables: Top Accumulating vs Top Distributing */}
+              {(() => {
+                const rawBuyers = [...(activeStock.brokerData?.topBuyerBrokers || [])];
+                const rawSellers = [...(activeStock.brokerData?.topSellerBrokers || [])];
+
+                const sortedBuyers = rawBuyers.sort((a: BrokerDetail, b: BrokerDetail) => {
+                  if (brokerLedgerMetric === 'netFlow') return (b.netAmount ?? b.netQty ?? 0) - (a.netAmount ?? a.netQty ?? 0);
+                  if (brokerLedgerMetric === 'turnover') return (b.amount ?? 0) - (a.amount ?? 0);
+                  return (b.volume ?? 0) - (a.volume ?? 0);
+                });
+
+                const sortedSellers = rawSellers.sort((a: BrokerDetail, b: BrokerDetail) => {
+                  if (brokerLedgerMetric === 'netFlow') return Math.abs(b.netAmount ?? b.netQty ?? 0) - Math.abs(a.netAmount ?? a.netQty ?? 0);
+                  if (brokerLedgerMetric === 'turnover') return (b.amount ?? 0) - (a.amount ?? 0);
+                  return (b.volume ?? 0) - (a.volume ?? 0);
+                });
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Column 1: Top Buyers / Accumulators */}
+                    <div className="p-3.5 rounded-xl bg-slate-900/60 border border-emerald-500/20 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wide">
+                          <TrendingUp className="w-4 h-4" /> Top Buying Brokers (खरिदकर्ता ब्रोकरहरू)
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          Total Buy: {(activeStock.brokerData?.totalBuyVolume || 0).toLocaleString()} kitta
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase text-slate-400 border-b border-slate-800/80">
+                              <th className="pb-2 font-bold">Broker</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-indigo-400 font-black' : ''}`}>Buy Kitta</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'turnover' ? 'text-indigo-400 font-black' : ''}`}>Turnover</th>
+                              <th className="pb-2 text-right font-bold">% Vol</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/40">
+                            {sortedBuyers.map((b: BrokerDetail, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                                <td className="py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-black flex items-center justify-center">
+                                      {idx + 1}
+                                    </span>
+                                    <div>
+                                      <div className="font-extrabold text-white">#{b.broker}</div>
+                                      <div className="text-[10px] text-slate-400 truncate max-w-[110px]" title={b.brokerName}>
+                                        {b.brokerName}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`py-2.5 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-emerald-300 font-black' : 'text-emerald-400'}`}>
+                                  +{b.volume.toLocaleString()}
+                                </td>
+                                <td className={`py-2.5 text-right font-semibold text-[11px] ${brokerLedgerMetric === 'turnover' ? 'text-amber-300 font-black' : 'text-slate-300'}`}>
+                                  {formatBrokerAmount(b.amount)}
+                                </td>
+                                <td className="py-2.5 text-right font-semibold text-slate-400 text-[11px]">
+                                  {b.pct}%
+                                </td>
+                                <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
+                                  <span className={b.netQty >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                    {b.netQty >= 0 ? '+' : ''}{b.netQty.toLocaleString()}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                            {sortedBuyers.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="py-6 text-center text-slate-500 text-xs">
+                                  No buying broker activity recorded.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Top Sellers / Distributors */}
+                    <div className="p-3.5 rounded-xl bg-slate-900/60 border border-red-500/20 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wide">
+                          <TrendingDown className="w-4 h-4" /> Top Selling Brokers (बिक्रीकर्ता ब्रोकरहरू)
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          Total Sell: {(activeStock.brokerData?.totalSellVolume || 0).toLocaleString()} kitta
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase text-slate-400 border-b border-slate-800/80">
+                              <th className="pb-2 font-bold">Broker</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-indigo-400 font-black' : ''}`}>Sell Kitta</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'turnover' ? 'text-indigo-400 font-black' : ''}`}>Turnover</th>
+                              <th className="pb-2 text-right font-bold">% Vol</th>
+                              <th className={`pb-2 text-right font-bold ${brokerLedgerMetric === 'netFlow' ? 'text-indigo-400 font-black' : ''}`}>Net Flow</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/40">
+                            {sortedSellers.map((s: BrokerDetail, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                                <td className="py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-red-500/10 text-red-400 text-[10px] font-black flex items-center justify-center">
+                                      {idx + 1}
+                                    </span>
+                                    <div>
+                                      <div className="font-extrabold text-white">#{s.broker}</div>
+                                      <div className="text-[10px] text-slate-400 truncate max-w-[110px]" title={s.brokerName}>
+                                        {s.brokerName}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className={`py-2.5 text-right font-bold ${brokerLedgerMetric === 'kitta' ? 'text-rose-300 font-black' : 'text-red-400'}`}>
+                                  -{s.volume.toLocaleString()}
+                                </td>
+                                <td className={`py-2.5 text-right font-semibold text-[11px] ${brokerLedgerMetric === 'turnover' ? 'text-amber-300 font-black' : 'text-slate-300'}`}>
+                                  {formatBrokerAmount(s.amount)}
+                                </td>
+                                <td className="py-2.5 text-right font-semibold text-slate-400 text-[11px]">
+                                  {s.pct}%
+                                </td>
+                                <td className={`py-2.5 text-right font-extrabold text-[11px] ${brokerLedgerMetric === 'netFlow' ? 'underline' : ''}`}>
+                                  <span className={s.netQty <= 0 ? 'text-red-400' : 'text-emerald-400'}>
+                                    {s.netQty > 0 ? '+' : ''}{s.netQty.toLocaleString()}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                            {sortedSellers.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="py-6 text-center text-slate-500 text-xs">
+                                  No selling broker activity recorded.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Net Accumulators vs Net Distributors Highlight Strip */}
               <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">

@@ -732,6 +732,7 @@ export default function ShortTermProfitPlan({
     : Number(activeStock?.target1 || (entryPrice * 1.08).toFixed(1));
 
   // Risk & Position Sizing Math
+  const riskPerShare = Math.max(0.5, +(entryPrice - stopLossPrice).toFixed(1));
   const riskAmount = (Number(totalCapital) * (Number(riskPercent) / 100)); // e.g. 100,000 * 2% = Rs. 2,000
   const rawQty = Math.floor(riskAmount / riskPerShare);
   const calculatedQuantity = Math.max(10, Math.floor(rawQty / 10) * 10);

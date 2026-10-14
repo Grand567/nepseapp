@@ -326,9 +326,12 @@ export function setCachedRealFloorsheet(sym, data) {
   if (!key) return;
 
   memFloorsheetCache.set(key, data);
-  try {
-    localStorage.setItem(FLOORSHEET_LS_PREFIX + key, JSON.stringify(data));
-  } catch (_) {}
+  // Only persist to localStorage if it's a solid dataset (not an end-of-day fragment)
+  if ((data.totalElements || data.rows.length) >= 15) {
+    try {
+      localStorage.setItem(FLOORSHEET_LS_PREFIX + key, JSON.stringify(data));
+    } catch (_) {}
+  }
 }
 
 /**

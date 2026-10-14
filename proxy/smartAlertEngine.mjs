@@ -151,15 +151,22 @@ export function broadcastAlert(alertPayload) {
     console.warn('[SmartAlertEngine] Push dispatch warning:', err.message);
   });
 
-  // 3. Dispatch Instant Alert to Telegram Bot
-  sendTelegramSmartAlert(alertPayload).catch(err => {
-    console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
-  });
+  // 3. Dispatch Instant Alert to Telegram Bot (strictly skip during automated unit tests)
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
+  if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
+    sendTelegramSmartAlert(alertPayload).catch(err => {
+      console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
+    });
+  } else {
+    console.log('[SmartAlertEngine] ℹ️ Skipping live Telegram dispatch during automated test run.');
+  }
 
   // 4. Dispatch Instant Alert to Discord Webhook (100% Free / Zero SMS)
-  sendDiscordSmartAlert(alertPayload).catch(err => {
-    console.warn('[SmartAlertEngine] Discord alert dispatch warning:', err.message);
-  });
+  if (!isTestEnv) {
+    sendDiscordSmartAlert(alertPayload).catch(err => {
+      console.warn('[SmartAlertEngine] Discord alert dispatch warning:', err.message);
+    });
+  }
 }
 
 // ── 3. FCM PUSH DISPATCHER ──────────────────────────────────────────────────

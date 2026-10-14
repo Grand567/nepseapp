@@ -18,11 +18,13 @@ const testFiles = [
   'kWhaleDailyArchive.test.mjs',
   'testSmartAlertPipeline.mjs',
   'testTelegramExitAndTracking.mjs',
-  'auditCrossModuleConsistency.test.mjs'
+  'auditCrossModuleConsistency.test.mjs',
+  'lBatchShareHubParity.test.mjs',
+  'stockyanAndFundamentalsParity.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (14 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (16 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

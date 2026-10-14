@@ -33,3 +33,6 @@ proxy/data/discord_config.json
 proxy/data/*_config.json
 *firebase-service-account*.json
 scratch/
+temp_frames_v3/
+data/
+*.mp4

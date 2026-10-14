@@ -5,12 +5,17 @@ import { sortNewsByNepseImpact, deduplicateNews, sortNews } from './newsImpactSc
 
 const getProxy = () => {
   try {
-    const env = import.meta?.env?.VITE_PROXY_URL;
-    if (env && env.trim()) return env.trim().replace(/\/$/, '');
     if (typeof window !== 'undefined') {
+      const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+      const isLocal = !isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (isLocal) {
+        return 'http://localhost:5000';
+      }
       const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
       if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
     }
+    const env = import.meta?.env?.VITE_PROXY_URL;
+    if (env && env.trim()) return env.trim().replace(/\/$/, '');
     return 'https://nepseapp.onrender.com';
   } catch {
     return 'https://nepseapp.onrender.com';
@@ -41,8 +46,13 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
       try {
         const idbCached = await idbGet(cacheKey, false);
         if (idbCached !== null) {
-          _setCache(cacheKey, idbCached, ttlMs);
-          return idbCached;
+          // Invalidate legacy cached matrix that lacks authentic topAccumulation arrays
+          if (path.includes('broker-heatmap') && Array.isArray(idbCached?.matrix) && idbCached.matrix.some((m) => m?.broker === '58' && !m?.topAccumulation)) {
+            // Outdated schema — refetch fresh authentic floorsheet
+          } else {
+            _setCache(cacheKey, idbCached, ttlMs);
+            return idbCached;
+          }
         }
       } catch (_) {}
     }
@@ -339,6 +349,10 @@ export const fetchBrokerHeatmap = (arg) => {
   }
   return _proxyFetch('/api/smart-money/broker-heatmap' + q, {}, 120000);
 };
+export const fetchBrokerDeskDetail = (brokerId, date) => {
+  const q = date ? `?date=${encodeURIComponent(date)}` : '';
+  return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, {}, 120000);
+};
 export const fetchStealthAccumulation = (symbol, days) => _proxyFetch('/api/smart-money/stealth/' + symbol + '?days=' + (days || 15), {}, 300000);
 export const fetchBrokerAnalysis = (symbol, days) => _proxyFetch('/api/broker-analysis/' + symbol + '?days=' + (days || 30), {}, 1800000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
@@ -460,6 +474,13 @@ export const fetchNrbCirculars = () => _proxyFetch('/api/regulatory/nrb-circular
 export const fetchSebonCirculars = () => _proxyFetch('/api/regulatory/sebon-circulars', {}, 3600000);
 export const fetchPromoterShares = () => _proxyFetch('/api/market/promoter-shares', {}, 3600000);
 export const fetchSeasonalityAnalytics = () => _proxyFetch('/api/market/seasonality', {}, 86400000);
+
+// Share Hub & StockYan Signature Endpoints
+export const fetchGdpVsNepse = () => _proxyFetch('/api/macro/gdp-vs-nepse', {}, 60000);
+export const fetchCandlestickScanner = (type = 'all') => _proxyFetch('/api/scanner/candlesticks?type=' + encodeURIComponent(type), {}, 30000);
+export const fetchTechnicalRatingsScanner = () => _proxyFetch('/api/scanner/technical-ratings', {}, 30000);
+export const fetchCompanyQuarterlyReports = (symbol) => _proxyFetch('/api/company/' + encodeURIComponent(symbol) + '/quarterly-reports', {}, 3600000);
+export const fetchCompanyIndustryComparison = (symbol) => _proxyFetch('/api/company/' + encodeURIComponent(symbol) + '/industry-comparison', {}, 3600000);
 
 export const invalidateCache = (path) => { 
   for (const key of _cache.keys()) { 

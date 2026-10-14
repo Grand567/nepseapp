@@ -389,8 +389,16 @@ export function evaluateWatchlistAlerts(stocks = [], watchedSymbols = [], onTrig
     const isVolumeMet = rvol >= targetRvol;
     const pChange = Number(stock.pChange || 0);
     const stealthScore = Number(stock.stealthAccumulation || 0);
-    const isStealthAccumulation = stealthScore >= 68 && pChange >= -2.0 && pChange <= 3.5 && rvol >= 1.15;
-    const isDistributionTrap = Boolean(stock.isChurnDistribution || (pChange > 6 && rvol > 2.2) || (stealthScore < 35 && pChange < -3 && rvol > 1.5));
+    const isStealthAccumulation = Boolean(
+      stock.isStealthAccumulation ||
+      (stealthScore >= 68 && pChange >= -2.0 && pChange <= 3.5 && rvol >= 1.15)
+    );
+    const isDistributionTrap = Boolean(
+      stock.isChurnDistribution ||
+      stock.isTrap ||
+      (pChange > 6 && rvol > 2.2 && (stock.wyckoff?.earlySignals?.effortVsResult?.churnRisk === 'HIGH_DISTRIBUTION_CHURN' || stock.isUpperShadowDump || stock.wyckoff?.stage?.includes('DISTRIBUTION'))) ||
+      (stealthScore < 35 && pChange < -3 && rvol > 1.5)
+    );
 
     const isTriggered = (isPriceMet && isVolumeMet) || isStealthAccumulation || isDistributionTrap;
 

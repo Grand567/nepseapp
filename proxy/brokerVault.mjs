@@ -5,6 +5,7 @@ import { wrapper } from 'axios-cookiejar-support';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import nepseClient from './nepseClientManager.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,51 +19,129 @@ try {
   console.warn('[brokerVault] Failed to create broker vault dir:', e.message);
 }
 
-const BROKER_NAMES = {
-  '1': 'Kumari Securities', '2': 'Swornalaxmi Securities', '3': 'Arun Securities',
-  '4': 'Opal Securities', '5': 'Market Securities', '6': 'Agrawal Securities',
-  '7': 'J.F. Securities', '8': 'Ashutosh Brokerage', '10': 'Pragyan Securities',
-  '11': 'Malla & Malla Stock Broking', '13': 'Thrive Brokerage House',
-  '14': 'Nepal Stock House', '16': 'Primo Securities', '17': 'ABC Securities',
-  '18': 'Sagarmatha Securities', '19': 'Nepal Investment & Securities',
-  '20': 'Sipla Securities', '21': 'Midas Stock Broking', '22': 'Frist Choice Securities',
-  '25': 'Siprabi Securities', '26': 'Asian Securities', '28': 'Shree Krishna Securities',
-  '29': 'Trisul Securities', '32': 'Premier Securities', '33': 'Dakshinkali Securities',
-  '34': 'Vision Securities', '35': 'Kohinoor Investment & Securities',
-  '36': 'Secured Securities', '37': 'Swarna Laxmi Securities',
-  '38': 'Dipshikha Dhitopatra Karobar', '39': 'Sumeru Securities',
-  '40': 'Creative Securities', '41': 'Lincon Securities', '42': 'Sani Securities',
-  '43': 'South Asian Bulls', '44': 'Dynamic Money Market', '45': 'Imperial Securities',
-  '46': 'Kalika Securities', '47': 'Neev Securities', '48': 'Trisakti Securities',
-  '49': 'Online Securities', '50': 'Crystal Kanchenjunga Securities',
-  '51': 'Oxford Securities', '52': 'Sundhara Securities', '53': 'Investment Management Nepal',
-  '54': 'Sewa Securities', '55': 'Bhikshu Securities', '56': 'Sri Hari Securities',
-  '57': 'Aryatara Investment & Securities', '58': 'Naasa Securities',
-  '59': 'Deeplal Capital Securities', '60': 'Nagarik Stock Dealer',
-  '61': 'Bhole Ganesh Securities', '62': 'Capital Max Securities',
-  '63': 'Himalayan Brokerage', '64': 'Sun Securities', '65': 'Sharepro Securities',
-  '66': 'Miyo Securities', '67': 'Property Wizard', '68': 'KBL Securities',
-  '69': 'Nabil Stock Dealer', '70': 'Garima Securities', '71': 'Purna Securities',
-  '72': 'Stoxkart Securities', '73': 'Sanima Securities', '74': 'Elite Stock Brokers',
-  '75': 'Infinity Securities', '76': 'Index Securities', '77': 'Sunlife Securities',
-  '78': 'NMB Securities', '79': 'Prabhu Stock Market', '80': 'Machhapuchchhre Securities',
+export const BROKER_NAMES = {
+  '1': 'Kumari Securities',
+  '2': 'Arun Securities',
+  '3': 'Opal Securities Investment',
+  '4': 'Market Securities Exchange',
+  '5': 'Market Securities Exchange',
+  '6': 'Agrawal Securities',
+  '7': 'J.F. Securities',
+  '8': 'Ashutosh Brokerage & Securities',
+  '9': 'Pragyan Securities',
+  '10': 'Pragyan Securities',
+  '11': 'Malla & Malla Stock Broking',
+  '12': 'Thrive Brokerage House',
+  '13': 'Thrive Brokerage House',
+  '14': 'Nepal Stock House',
+  '15': 'Primo Securities',
+  '16': 'Primo Securities',
+  '17': 'ABC Securities',
+  '18': 'Sagarmatha Securities',
+  '19': 'Nepal Investment & Securities Trading',
+  '20': 'Sipla Securities',
+  '21': 'Midas Stock Broking',
+  '22': 'Siprabi Securities',
+  '23': 'Swarna Laxmi Securities',
+  '24': 'Sweta Securities',
+  '25': 'Sweta Securities',
+  '26': 'Asian Securities',
+  '27': 'Shree Krishna Securities',
+  '28': 'Shree Krishna Securities',
+  '29': 'Trishul Securities & Investment',
+  '30': 'Premier Securities',
+  '31': 'Dakshinkali Investment & Securities',
+  '32': 'Premier Securities',
+  '33': 'Dakshinkali Investment & Securities',
+  '34': 'Vision Securities',
+  '35': 'Kohinoor Investment & Securities',
+  '36': 'Secured Securities',
+  '37': 'Swarna Laxmi Securities',
+  '38': 'Dipshikha Dhitopatra Karobar',
+  '39': 'Sumeru Securities',
+  '40': 'Creative Securities',
+  '41': 'Linch Stock Market',
+  '42': 'Sani Securities',
+  '43': 'South Asian Bulls',
+  '44': 'Dynamic Money Managers',
+  '45': 'Imperial Securities',
+  '46': 'Kalika Securities',
+  '47': 'Neev Securities',
+  '48': 'Trishakti Securities',
+  '49': 'Online Securities',
+  '50': 'Crystal Kanchenjunga Securities',
+  '51': 'Oxford Securities',
+  '52': 'Sundhara Securities',
+  '53': 'Investment Management Nepal',
+  '54': 'Sewa Securities',
+  '55': 'Bhrikuti Stock Broking',
+  '56': 'Sri Hari Securities',
+  '57': 'Aryatara Investment And Securities',
+  '58': 'Naasa Securities',
+  '59': 'Divya Securities & Stock House',
+  '60': 'Nagarik Stock Dealer',
+  '61': 'Bhole Ganesh Securities',
+  '62': 'Capital Max Securities',
+  '63': 'Himalayan Brokerage',
+  '64': 'Sun Securities',
+  '65': 'Sharepro Securities',
+  '66': 'Miyo Securities',
+  '67': 'Property Wizard',
+  '68': 'Elite Stock House',
+  '69': 'Index Securities',
+  '70': 'Infinity Securities',
+  '71': 'Shubhakamana Securities',
+  '72': 'Hatemalo Financial Services',
+  '73': 'Money World Share Exchange',
+  '74': 'Kalash Stock Market',
+  '75': 'Mega Stock Markets',
+  '76': 'Machhapuchchhre Securities',
+  '77': 'Nabil Stock Dealer',
+  '78': 'Garima Securities',
+  '79': 'Pahi Investment',
+  '80': 'Indira Securities',
+  '81': 'Aakashbhairab Securities',
+  '82': 'N.M.B. Securities',
+  '83': 'Sanima Securities',
+  '84': 'Milky Way Share Broker',
+  '85': 'Capital Hub',
+  '86': 'Stoxkart Securities',
+  '87': 'S.P.S.A. Securities',
+  '88': 'Blue Chip Securities',
+  '89': 'JBNL Securities',
+  '90': 'Sajilo Broker',
+  '91': 'CBIL Securities',
+  '92': 'Roadshow Securities',
+  '93': 'Beni Securities',
+  '94': 'K.B.L. Securities',
+  '95': 'Magnet Securities & Investment',
+  '96': 'Himalayan Securities',
+  '97': 'R.B.B. Securities',
+  '98': 'Trademow Securities',
+  '99': 'Prabhu Stock Market',
+  '100': 'Sunrise Securities',
+  '101': 'Apple Securities'
 };
 
 export function getBrokerName(id) {
-  const cleanId = String(id || '').trim();
-  return BROKER_NAMES[cleanId] || `Broker ${cleanId}`;
+  const cleanId = String(id || '').replace(/^0+/, '').trim();
+  return BROKER_NAMES[cleanId] || `Broker ${cleanId || 'N/A'}`;
 }
 
 const memoryCache = new Map();
+const tradingDatesCache = new Map();
 
-export async function fetchShareSansarFloorsheet(symbol, length = 500) {
-  const sym = String(symbol || '').toUpperCase().trim();
-  if (!sym) return null;
+let cachedSession = null;
+let cachedSessionExpires = 0;
 
+async function getShareSansarSession() {
+  const now = Date.now();
+  if (cachedSession && now < cachedSessionExpires) {
+    return cachedSession;
+  }
   try {
     const jar = new CookieJar();
     const client = wrapper(axios.create({ jar, withCredentials: true }));
-
     const page = await client.get('https://www.sharesansar.com/floorsheet', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -70,112 +149,495 @@ export async function fetchShareSansarFloorsheet(symbol, length = 500) {
       },
       timeout: 10000
     });
-
     const $ = cheerio.load(page.data);
-    const token = $('meta[name="_token"]').attr('content') || $('input[name="_token"]').val();
+    const token = $('input[name="_token"]').val() || $('meta[name="_token"]').attr('content');
+    if (token) {
+      cachedSession = { client, token };
+      cachedSessionExpires = now + (15 * 60 * 1000); // 15 min TTL
+      return cachedSession;
+    }
+    return { client, token: '' };
+  } catch (err) {
+    console.warn('[brokerVault] Failed to initialize ShareSansar session:', err.message);
+    return null;
+  }
+}
 
-    const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=1&start=0&length=${length}&company=${encodeURIComponent(sym)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-CSRF-Token': token,
-        'Referer': 'https://www.sharesansar.com/floorsheet'
-      },
-      timeout: 15000
+/**
+ * Fetches available trading dates for a symbol (newest first) using Chukul historydata API.
+ */
+export async function fetchSymbolTradingDates(symbol) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return [];
+  const now = Date.now();
+  const cached = tradingDatesCache.get(sym);
+  if (cached && (now - cached.timestamp < 10 * 60 * 1000)) {
+    return cached.dates;
+  }
+  try {
+    const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 7000,
+      validateStatus: () => true
     });
+    if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
+      const dates = r.data
+        .filter(item => item && item.date && Number(item.volume || 0) > 0)
+        .map(item => String(item.date).trim())
+        .sort((a, b) => b.localeCompare(a));
+      if (dates.length > 0) {
+        tradingDatesCache.set(sym, { timestamp: now, dates });
+        return dates;
+      }
+    }
+  } catch (e) {
+    console.warn(`[brokerVault] fetchSymbolTradingDates failed for ${sym}:`, e.message);
+  }
+  return cached?.dates || [];
+}
 
-    if (floorRes.status === 200 && Array.isArray(floorRes.data?.data) && floorRes.data.data.length > 0) {
-      return floorRes.data.data.map(r => ({
-        contractId: r.contract_no,
-        buyerBroker: String(r.buyer || ''),
-        sellerBroker: String(r.seller || ''),
-        qty: parseFloat(String(r.quantity || 0).replace(/,/g, '')) || 0,
-        rate: parseFloat(String(r.rate || 0).replace(/,/g, '')) || 0,
-        amount: parseFloat(String(r.amount || 0).replace(/,/g, '')) || 0,
-        businessDate: r.date_ || new Date().toISOString().split('T')[0],
-        symbol: sym
-      }));
+/**
+ * Fetches 100% of floorsheet transactions for a symbol on a specific YYYY-MM-DD date via Chukul API.
+ */
+export async function fetchChukulDateFloorsheet(symbol, dateStr) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  const dt = String(dateStr || '').trim();
+  if (!sym || !dt) return [];
+  try {
+    const r = await axios.get(`https://chukul.com/api/data/floorsheet/?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(dt)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 8000,
+      validateStatus: () => true
+    });
+    if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
+      return r.data.map((row, idx) => {
+        const bBroker = String(row.buyer || '').trim();
+        const sBroker = String(row.seller || '').trim();
+        const qty = Number(row.quantity || row.qty || 0);
+        const rate = Number(row.rate || 0);
+        const amount = Number(row.amount || (qty * rate) || 0);
+        const cId = String(row.transaction || row.contract_no || `${dt}-${idx + 1}`);
+        // Extract YYYY-MM-DD from transaction ID if 16 digits starting with 202x
+        const txDate = (cId.length >= 8 && /^20\d{6}/.test(cId))
+          ? `${cId.slice(0, 4)}-${cId.slice(4, 6)}-${cId.slice(6, 8)}`
+          : dt;
+        return {
+          contractId: cId,
+          buyerBroker: bBroker,
+          buyerBrokerName: getBrokerName(bBroker),
+          sellerBroker: sBroker,
+          sellerBrokerName: getBrokerName(sBroker),
+          qty,
+          quantity: qty,
+          rate,
+          amount,
+          businessDate: txDate,
+          symbol: String(row.symbol || sym).toUpperCase().trim(),
+          stockSymbol: String(row.symbol || sym).toUpperCase().trim()
+        };
+      });
+    }
+  } catch (e) {
+    console.warn(`[brokerVault] Chukul floorsheet fetch failed for ${sym} on ${dt}:`, e.message);
+  }
+  return [];
+}
+
+export async function fetchShareSansarFloorsheet(symbol, maxRecords = 6000) {
+  const sym = String(symbol || '').toUpperCase().trim();
+
+  try {
+    const session = await getShareSansarSession();
+    if (!session) return null;
+    const { client, token } = session;
+
+    const allRows = [];
+    let start = 0;
+    const batchSize = 500;
+    let totalRecords = 1;
+    let draw = 1;
+
+    while (start < totalRecords && allRows.length < maxRecords) {
+      const companyParam = sym ? `&company=${encodeURIComponent(sym)}` : '';
+      const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=${draw++}&start=${start}&length=${batchSize}${companyParam}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-Token': token,
+          'Referer': 'https://www.sharesansar.com/floorsheet'
+        },
+        timeout: 15000
+      });
+
+      if (floorRes.status === 200 && Array.isArray(floorRes.data?.data) && floorRes.data.data.length > 0) {
+        totalRecords = floorRes.data.recordsTotal || floorRes.data.data.length;
+        const mapped = floorRes.data.data.map(r => {
+          let rowSym = sym;
+          if (r.symbol) {
+            rowSym = String(r.symbol).replace(/<[^>]*>/g, '').trim().toUpperCase() || sym;
+          }
+          const bBroker = String(r.buyer || '').trim();
+          const sBroker = String(r.seller || '').trim();
+          const qty = parseFloat(String(r.quantity || 0).replace(/,/g, '')) || 0;
+          const rate = parseFloat(String(r.rate || 0).replace(/,/g, '')) || 0;
+          const amount = parseFloat(String(r.amount || 0).replace(/,/g, '')) || (qty * rate);
+          return {
+            contractId: String(r.contract_no || ''),
+            buyerBroker: bBroker,
+            buyerBrokerName: getBrokerName(bBroker),
+            sellerBroker: sBroker,
+            sellerBrokerName: getBrokerName(sBroker),
+            qty,
+            quantity: qty,
+            rate,
+            amount,
+            businessDate: r.date_ || new Date().toISOString().split('T')[0],
+            symbol: rowSym,
+            stockSymbol: rowSym
+          };
+        });
+
+        allRows.push(...mapped);
+        start += batchSize;
+        if (floorRes.data.data.length < batchSize) break;
+      } else {
+        break;
+      }
+    }
+
+    if (allRows.length > 0) {
+      return allRows;
     }
   } catch (err) {
-    console.warn(`[brokerVault] ShareSansar floorsheet scrape error for ${sym}:`, err.message);
+    console.warn(`[brokerVault] ShareSansar floorsheet scrape error for ${sym || 'ALL'}:`, err.message);
+    cachedSession = null;
+    cachedSessionExpires = 0;
   }
   return null;
 }
 
-export function aggregateFloorsheetRows(rows, symbol) {
+/**
+ * Loads or updates the persistent date-indexed floorsheet vault for a symbol.
+ */
+async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return { rowsByDate: {}, availableDates: [] };
+
+  const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
+  let vaultObj = { symbol: sym, vaultVersion: 2, rowsByDate: {}, updatedAt: null, preAggregated: null };
+
+  if (fs.existsSync(vaultPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.vaultVersion === 2 && parsed.rowsByDate) {
+          vaultObj.rowsByDate = parsed.rowsByDate;
+          vaultObj.updatedAt = parsed.updatedAt || null;
+        } else if (Array.isArray(parsed.rawRows) && parsed.rawRows.length > 0) {
+          for (const r of parsed.rawRows) {
+            const dt = String(r.businessDate || r.date || '').trim();
+            if (dt) {
+              if (!vaultObj.rowsByDate[dt]) vaultObj.rowsByDate[dt] = [];
+              vaultObj.rowsByDate[dt].push(r);
+            }
+          }
+          vaultObj.updatedAt = parsed.updatedAt || null;
+        }
+        if (Array.isArray(parsed.brokers) && parsed.brokers.length > 0) {
+          vaultObj.preAggregated = parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  const allAvailableDates = await fetchSymbolTradingDates(sym);
+  const latestTwoDates = allAvailableDates.slice(0, 2);
+
+  // Determine which dates we need to fetch
+  const datesToFetch = new Set();
+  for (const dt of requestedDates) {
+    if (!dt) continue;
+    const existing = vaultObj.rowsByDate[dt];
+    const isRecent = latestTwoDates.includes(dt);
+    const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
+    if (!Array.isArray(existing) || existing.length === 0 || (isRecent && ageMs > 10 * 60 * 1000)) {
+      datesToFetch.add(dt);
+    }
+  }
+
+  // If no specific dates were requested or vault is empty, ensure the 2 most recent trading dates are checked
+  if (Object.keys(vaultObj.rowsByDate).length === 0) {
+    latestTwoDates.forEach(d => { if (d) datesToFetch.add(d); });
+  }
+
+  let didUpdate = false;
+
+  // 1. Ingest from authentic full session floorsheet (100% NOTS trades)
+  for (const dt of Array.from(datesToFetch)) {
+    try {
+      const fullTrades = await getFullSessionFloorsheet(dt);
+      if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+        const matching = fullTrades.filter(t => (t.stockSymbol || t.symbol || '').toUpperCase() === sym);
+        if (matching.length > 0) {
+          vaultObj.rowsByDate[dt] = matching.map(t => ({
+            contractId: String(t.contractId || ''),
+            buyerBroker: String(t.buyerMemberId || t.buyerBroker || ''),
+            buyerBrokerName: t.buyerBrokerName || getBrokerName(t.buyerMemberId || t.buyerBroker),
+            sellerBroker: String(t.sellerMemberId || t.sellerBroker || ''),
+            sellerBrokerName: t.sellerBrokerName || getBrokerName(t.sellerMemberId || t.sellerBroker),
+            qty: Number(t.contractQuantity || t.quantity || t.qty || 0),
+            rate: Number(t.contractRate || t.rate || 0),
+            amount: Number(t.contractAmount || t.amount || 0),
+            businessDate: t.businessDate || dt,
+            tradeTime: t.tradeTime || '',
+            symbol: sym,
+            stockSymbol: sym
+          }));
+          didUpdate = true;
+          datesToFetch.delete(dt);
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (datesToFetch.size > 0) {
+    const fetchList = Array.from(datesToFetch);
+    const CONCURRENCY = 5;
+    for (let i = 0; i < fetchList.length; i += CONCURRENCY) {
+      const batch = fetchList.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(batch.map(dt => fetchChukulDateFloorsheet(sym, dt)));
+      batch.forEach((dt, idx) => {
+        const rows = results[idx];
+        if (Array.isArray(rows) && rows.length > 0) {
+          vaultObj.rowsByDate[dt] = rows;
+          didUpdate = true;
+        }
+      });
+    }
+  }
+
+  // Fallback to ShareSansar if we still have 0 dates in vaultObj.rowsByDate
+  if (Object.keys(vaultObj.rowsByDate).length === 0) {
+    const ssRows = await fetchShareSansarFloorsheet(sym, 6000);
+    if (Array.isArray(ssRows) && ssRows.length > 0) {
+      for (const r of ssRows) {
+        const dt = String(r.businessDate || '').trim();
+        if (!dt) continue;
+        if (!vaultObj.rowsByDate[dt]) vaultObj.rowsByDate[dt] = [];
+        vaultObj.rowsByDate[dt].push(r);
+      }
+      didUpdate = true;
+    }
+  }
+
+  if (didUpdate) {
+    vaultObj.updatedAt = new Date().toISOString();
+    try {
+      const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
+      const trimmedRowsByDate = {};
+      for (const dt of sortedDates.slice(0, 35)) {
+        trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
+      }
+      vaultObj.rowsByDate = trimmedRowsByDate;
+      fs.writeFileSync(vaultPath, JSON.stringify(vaultObj), 'utf8');
+    } catch (writeErr) {
+      console.warn(`[brokerVault] Failed to write vault for ${sym}:`, writeErr.message);
+    }
+  }
+
+  // Filter out today's date from availableDates if it has 0 floorsheet rows so far
+  const populatedVaultDates = Object.keys(vaultObj.rowsByDate).filter(d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0);
+  const combinedDates = Array.from(new Set([...populatedVaultDates, ...allAvailableDates]))
+    .filter(d => {
+      if (!d) return false;
+      // If it's the very first date in allAvailableDates and we tried fetching it and got 0 rows, put it after populated dates or omit if empty
+      if (d === allAvailableDates[0] && !populatedVaultDates.includes(d) && populatedVaultDates.length > 0) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.localeCompare(a));
+
+  return {
+    rowsByDate: vaultObj.rowsByDate,
+    availableDates: combinedDates,
+    updatedAt: vaultObj.updatedAt,
+    preAggregated: vaultObj.preAggregated
+  };
+}
+
+export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
-  // 1. Wash-Trade Decontamination: Purge internal self-matching where buyer === seller
   let washTradesFiltered = 0;
-  const decontaminatedRows = rows.filter(r => {
-    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
-    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
-    if (b && s && b === s) {
-      washTradesFiltered++;
-      return false; // Skip wash trade
-    }
-    return true;
-  });
-
-  const validRows = decontaminatedRows.length > 0 ? decontaminatedRows : rows;
-
   const brokerMap = {};
   const dateMap = {};
   let totalTradedQty = 0;
   let totalTradedAmt = 0;
   let largeBlockTradedAmt = 0; // Orders with quantity >= 1000 shares (LBAS)
 
-  validRows.forEach(r => {
+  rows.forEach(r => {
     const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
     const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
     const q = Number(r.qty || r.contractQuantity || r.quantity || 0);
-    const amt = Number(r.amount || r.contractAmount || (q * Number(r.rate || 0)) || 0);
+    const rate = Number(r.rate || r.contractRate || 0);
+    const amt = Number(r.amount || r.contractAmount || (q * rate) || 0);
     const d = String(r.businessDate || r.date || r.date_ || '').trim();
+
+    if (q <= 0) return;
 
     if (q >= 1000) {
       largeBlockTradedAmt += amt;
     }
 
     if (b) {
-      brokerMap[b] = brokerMap[b] || { brokerId: b, brokerName: getBrokerName(b), buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+      if (!brokerMap[b]) {
+        brokerMap[b] = {
+          brokerId: b,
+          broker: b,
+          id: b,
+          brokerName: getBrokerName(b),
+          name: getBrokerName(b),
+          buyQty: 0,
+          sellQty: 0,
+          matchedQty: 0,
+          buyAmt: 0,
+          sellAmt: 0,
+          matchedAmt: 0,
+          buyTrades: 0,
+          sellTrades: 0
+        };
+      }
       brokerMap[b].buyQty += q;
       brokerMap[b].buyAmt += amt;
+      brokerMap[b].buyTrades += 1;
     }
     if (s) {
-      brokerMap[s] = brokerMap[s] || { brokerId: s, brokerName: getBrokerName(s), buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+      if (!brokerMap[s]) {
+        brokerMap[s] = {
+          brokerId: s,
+          broker: s,
+          id: s,
+          brokerName: getBrokerName(s),
+          name: getBrokerName(s),
+          buyQty: 0,
+          sellQty: 0,
+          matchedQty: 0,
+          buyAmt: 0,
+          sellAmt: 0,
+          matchedAmt: 0,
+          buyTrades: 0,
+          sellTrades: 0
+        };
+      }
       brokerMap[s].sellQty += q;
       brokerMap[s].sellAmt += amt;
+      brokerMap[s].sellTrades += 1;
     }
+
+    if (b && s && b === s) {
+      washTradesFiltered++;
+      brokerMap[b].matchedQty += q;
+      brokerMap[b].matchedAmt += amt;
+    }
+
     totalTradedQty += q;
     totalTradedAmt += amt;
 
     if (d) {
-      dateMap[d] = dateMap[d] || { date: d, buyVol: 0, sellVol: 0, turnover: 0, totalTrades: 0 };
+      if (!dateMap[d]) {
+        dateMap[d] = {
+          date: d,
+          buyVol: 0,
+          sellVol: 0,
+          turnover: 0,
+          totalTrades: 0,
+          matchedVol: 0,
+          brokerMap: {}
+        };
+      }
       dateMap[d].buyVol += q;
       dateMap[d].sellVol += q;
       dateMap[d].turnover += amt;
       dateMap[d].totalTrades += 1;
+      if (b && s && b === s) dateMap[d].matchedVol += q;
+
+      if (b) {
+        dateMap[d].brokerMap[b] = dateMap[d].brokerMap[b] || {
+          brokerId: b,
+          brokerName: getBrokerName(b),
+          buyQty: 0,
+          sellQty: 0,
+          matchedQty: 0,
+          buyAmt: 0,
+          sellAmt: 0
+        };
+        dateMap[d].brokerMap[b].buyQty += q;
+        dateMap[d].brokerMap[b].buyAmt += amt;
+        if (b === s) dateMap[d].brokerMap[b].matchedQty += q;
+      }
+      if (s) {
+        dateMap[d].brokerMap[s] = dateMap[d].brokerMap[s] || {
+          brokerId: s,
+          brokerName: getBrokerName(s),
+          buyQty: 0,
+          sellQty: 0,
+          matchedQty: 0,
+          buyAmt: 0,
+          sellAmt: 0
+        };
+        dateMap[d].brokerMap[s].sellQty += q;
+        dateMap[d].brokerMap[s].sellAmt += amt;
+      }
     }
   });
 
-  const brokers = Object.values(brokerMap).map(x => ({
-    ...x,
-    netQty: x.buyQty - x.sellQty,
-    netAmt: x.buyAmt - x.sellAmt,
-    totalQty: x.buyQty + x.sellQty,
-    avgBuyRate: x.buyQty > 0 ? +(x.buyAmt / x.buyQty).toFixed(1) : 0,
-    avgSellRate: x.sellQty > 0 ? +(x.sellAmt / x.sellQty).toFixed(1) : 0,
-  })).sort((a, b) => b.totalQty - a.totalQty);
+  const safeTotalQty = totalTradedQty || 1;
 
-  const topBuyers = [...brokers].sort((a, b) => b.buyQty - a.buyQty).slice(0, 5);
-  const topSellers = [...brokers].sort((a, b) => b.sellQty - a.sellQty).slice(0, 5);
-  const topNetBuyers = [...brokers].filter(x => x.netQty > 0).sort((a, b) => b.netQty - a.netQty).slice(0, 5);
-  const topNetSellers = [...brokers].filter(x => x.netQty < 0).sort((a, b) => a.netQty - b.netQty).slice(0, 5);
+  const brokers = Object.values(brokerMap).map(x => {
+    const netQty = x.buyQty - x.sellQty;
+    const netAmt = +(x.buyAmt - x.sellAmt).toFixed(2);
+    const totalQty = x.buyQty + x.sellQty;
+    const avgBuyRate = x.buyQty > 0 ? +(x.buyAmt / x.buyQty).toFixed(2) : 0;
+    const avgSellRate = x.sellQty > 0 ? +(x.sellAmt / x.sellQty).toFixed(2) : 0;
+    const buyMktShare = +((x.buyQty / safeTotalQty) * 100).toFixed(2);
+    const sellMktShare = +((x.sellQty / safeTotalQty) * 100).toFixed(2);
+    const holdPctOfBuy = x.buyQty > 0 ? Math.max(0, +((Math.max(0, netQty) / x.buyQty) * 100).toFixed(2)) : 0;
+    const buyPct = totalQty > 0 ? Math.round((x.buyQty / totalQty) * 100) : 0;
+    const sellPct = totalQty > 0 ? (100 - buyPct) : 0;
 
-  const netBuyerQty = topNetBuyers.reduce((s, b) => s + b.netQty, 0);
-  const netSellerQty = Math.abs(topNetSellers.reduce((s, b) => s + b.netQty, 0));
-  
+    return {
+      ...x,
+      id: x.brokerId,
+      broker: x.brokerId,
+      name: x.brokerName,
+      buyAmount: +x.buyAmt.toFixed(2),
+      sellAmount: +x.sellAmt.toFixed(2),
+      netQty,
+      holdQty: netQty,
+      netAmt,
+      holdAmt: netAmt,
+      totalQty,
+      avgBuyRate,
+      avgSellRate,
+      buyMktShare,
+      sellMktShare,
+      holdPctOfBuy,
+      buyPct,
+      sellPct
+    };
+  }).sort((a, b) => b.totalQty - a.totalQty);
+
+  const topHoldings = [...brokers].sort((a, b) => b.netQty - a.netQty || b.buyQty - a.buyQty).slice(0, 10);
+  const topBuyers = [...brokers].filter(x => x.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty).slice(0, 10);
+  const topSellers = [...brokers].filter(x => x.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty).slice(0, 10);
+  const topNetBuyers = [...brokers].filter(x => x.netQty > 0).sort((a, b) => b.netQty - a.netQty).slice(0, 10);
+  const topNetSellers = [...brokers].filter(x => x.netQty < 0).sort((a, b) => a.netQty - b.netQty).slice(0, 10);
+
+  const netBuyerQty = topNetBuyers.slice(0, 5).reduce((s, b) => s + b.netQty, 0);
+  const netSellerQty = Math.abs(topNetSellers.slice(0, 5).reduce((s, b) => s + b.netQty, 0));
+
   // A/D ratio bounded in [-1.0, 1.0]
   const adRatio = totalTradedQty > 0 ? +((netBuyerQty - netSellerQty) / totalTradedQty).toFixed(4) : 0;
   const adSignal = adRatio >= 0.05 ? 'Accumulation' : adRatio <= -0.05 ? 'Distribution' : 'Neutral';
@@ -185,8 +647,8 @@ export function aggregateFloorsheetRows(rows, symbol) {
   const lbas = totalTradedAmt > 0 ? +(largeBlockTradedAmt / totalTradedAmt).toFixed(3) : 0;
 
   // Net Broker Accumulation Ratio (NBAR): Top-5 buyers quantity vs Top-5 sellers quantity
-  const top5BuyTotal = topBuyers.reduce((s, b) => s + b.buyQty, 0);
-  const top5SellTotal = topSellers.reduce((s, b) => s + b.sellQty, 0);
+  const top5BuyTotal = topBuyers.slice(0, 5).reduce((s, b) => s + b.buyQty, 0);
+  const top5SellTotal = topSellers.slice(0, 5).reduce((s, b) => s + b.sellQty, 0);
   const nbar = top5SellTotal > 0 ? +(top5BuyTotal / top5SellTotal).toFixed(2) : (top5BuyTotal > 0 ? 3.0 : 1.0);
 
   // Top-5 Buyer Concentration (CR_B_5)
@@ -195,23 +657,65 @@ export function aggregateFloorsheetRows(rows, symbol) {
   const top3Volume = brokers.slice(0, 3).reduce((sum, b) => sum + b.totalQty, 0);
   const concentrationPct = totalTradedQty > 0 ? +(Math.min(95, (top3Volume / (totalTradedQty * 2)) * 100)).toFixed(1) : 30;
 
-  const dailyFlow = Object.values(dateMap).map(df => ({
-    ...df,
-    netFlow: Math.round(df.buyVol * adRatio)
-  })).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const dailyFlow = Object.values(dateMap).map(df => {
+    const dayBrokers = Object.values(df.brokerMap).map(b => ({
+      ...b,
+      broker: b.brokerId,
+      id: b.brokerId,
+      name: b.brokerName,
+      netQty: b.buyQty - b.sellQty,
+      netAmt: +(b.buyAmt - b.sellAmt).toFixed(2),
+      avgBuyRate: b.buyQty > 0 ? +(b.buyAmt / b.buyQty).toFixed(2) : 0,
+      avgSellRate: b.sellQty > 0 ? +(b.sellAmt / b.sellQty).toFixed(2) : 0
+    }));
+    const dayTopBuyers = [...dayBrokers].filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty);
+    const dayTopSellers = [...dayBrokers].filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty);
+    const dayTopHolders = [...dayBrokers].sort((a, b) => b.netQty - a.netQty);
+    const dayTopDistributors = [...dayBrokers].filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+    const top3DayNetBuy = dayTopHolders.filter(b => b.netQty > 0).slice(0, 3).reduce((s, b) => s + b.netQty, 0);
+    const top3DayNetSell = Math.abs(dayTopHolders.filter(b => b.netQty < 0).slice(-3).reduce((s, b) => s + b.netQty, 0));
 
-  const resObj = {
+    return {
+      date: df.date,
+      buyVol: df.buyVol,
+      sellVol: df.sellVol,
+      matchedVol: df.matchedVol,
+      turnover: +df.turnover.toFixed(2),
+      totalTrades: df.totalTrades,
+      vwap: df.buyVol > 0 ? +(df.turnover / df.buyVol).toFixed(2) : 0,
+      netFlow: top3DayNetBuy - top3DayNetSell,
+      topBuyer: dayTopBuyers[0] || null,
+      topSeller: dayTopSellers[0] || null,
+      topHolder: dayTopHolders[0] || null,
+      topAccumulator: dayTopHolders.filter(b => b.netQty > 0)[0] || dayTopHolders[0] || null,
+      topDistributor: dayTopDistributors[0] || (dayTopHolders[dayTopHolders.length - 1] && dayTopHolders[dayTopHolders.length - 1].netQty < 0 ? dayTopHolders[dayTopHolders.length - 1] : null),
+      brokers: dayBrokers.sort((a, b) => (b.buyQty + b.sellQty) - (a.buyQty + a.sellQty)).slice(0, 105)
+    };
+  }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  const sortedDatesInDataset = dailyFlow.map(d => d.date);
+
+  return {
     symbol: sym,
+    businessDate: sortedDatesInDataset[0] || '',
+    fromDate: sortedDatesInDataset[sortedDatesInDataset.length - 1] || '',
+    toDate: sortedDatesInDataset[0] || '',
+    tradingDays: sortedDatesInDataset.length,
+    availableDates: availableDates.length > 0 ? availableDates : sortedDatesInDataset,
+    topHoldings,
     topBuyers,
     topSellers,
+    buyers: topBuyers,
+    sellers: topSellers,
     topNetBuyers,
     topNetSellers,
     brokers,
     dailyFlow,
-    totalTrades: validRows.length,
+    totalTrades: rows.length,
     washTradesFiltered,
     totalVolume: totalTradedQty,
-    totalAmount: totalTradedAmt,
+    totalAmount: +totalTradedAmt.toFixed(2),
+    totalTurnover: +totalTradedAmt.toFixed(2),
     adSignal,
     adStrength,
     adRatio,
@@ -220,91 +724,617 @@ export function aggregateFloorsheetRows(rows, symbol) {
     crb5,
     concentrationPct,
     isReal: true,
-    source: 'sharesansar_authentic_floorsheet',
+    source: 'authentic_multi_date_floorsheet',
     updatedAt: new Date().toISOString()
   };
-
-  return resObj;
 }
 
-function filterRowsByDays(rows, days) {
-  if (!Array.isArray(rows) || rows.length === 0 || !days || days >= 365) return rows;
-  const cutoffTime = Date.now() - (days * 24 * 60 * 60 * 1000);
-  const cutoffStr = new Date(cutoffTime).toISOString().split('T')[0];
-  const filtered = rows.filter(r => {
-    const d = String(r.businessDate || r.date || r.date_ || '').trim();
-    return !d || d >= cutoffStr;
-  });
-  return filtered.length > 0 ? filtered : rows;
-}
-
-export async function getOrFetchBrokerAnalysis(symbol, days = 30) {
+/**
+ * Retrieves multi-day or date-specific Broker Analysis for a symbol.
+ * Supports days (1, 3, 5, 7, 15, 30, etc.) or options { date, fromDate, toDate }.
+ */
+export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
 
-  const cacheKey = `${sym}-${days}`;
-  const now = Date.now();
+  const specificDate = String(options.date || '').trim();
+  const fromDate = String(options.fromDate || '').trim();
+  const toDate = String(options.toDate || '').trim();
+  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 365);
 
-  // 1. In-memory check
+  const cacheKey = `ba-${sym}-d${numDays}-${specificDate}-${fromDate}-${toDate}`;
+  const now = Date.now();
   const mem = memoryCache.get(cacheKey);
-  if (mem && (now - mem.timestamp < 10 * 60 * 1000)) {
+  if (mem && !options.refresh && (now - mem.timestamp < 5 * 60 * 1000)) {
     return mem.data;
   }
 
-  // 2. Persistent file vault check
-  const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
-  if (fs.existsSync(vaultPath)) {
-    try {
-      const fileData = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
-      if (fileData && fileData.updatedAt) {
-        const fileAge = now - new Date(fileData.updatedAt).getTime();
-        // If file is less than 30 minutes old during trading hours or market is closed, return it
-        if (fileAge < 30 * 60 * 1000) {
-          if (fileData.rawRows && fileData.rawRows.length > 0) {
-            const scopedRows = filterRowsByDays(fileData.rawRows, days);
-            const scopedData = aggregateFloorsheetRows(scopedRows, sym) || fileData;
-            memoryCache.set(cacheKey, { timestamp: now, data: scopedData });
-            return scopedData;
-          }
-          memoryCache.set(cacheKey, { timestamp: now, data: fileData });
-          return fileData;
-        }
-      }
-    } catch (_) {}
-  }
+  try {
+    const allTradingDates = await fetchSymbolTradingDates(sym);
+    let targetDates = [];
 
-  // 3. Live Authentic Fetch from ShareSansar
-  const rows = await fetchShareSansarFloorsheet(sym, 500);
-  if (rows && rows.length > 0) {
-    const aggregated = aggregateFloorsheetRows(rows, sym);
-    if (aggregated) {
-      // Save to disk vault with raw transactions for timeframe slicing
-      try {
-        const toSave = { ...aggregated, rawRows: rows };
-        fs.writeFileSync(vaultPath, JSON.stringify(toSave, null, 2), 'utf8');
-      } catch (writeErr) {
-        console.warn(`[brokerVault] Failed to save vault file for ${sym}:`, writeErr.message);
-      }
-      const scopedRows = filterRowsByDays(rows, days);
-      const scopedData = (scopedRows.length !== rows.length) ? (aggregateFloorsheetRows(scopedRows, sym) || aggregated) : aggregated;
-      memoryCache.set(cacheKey, { timestamp: now, data: scopedData });
-      return scopedData;
+    if (specificDate) {
+      targetDates = [specificDate];
+    } else if (fromDate || toDate) {
+      targetDates = allTradingDates.filter(d => {
+        if (fromDate && d < fromDate) return false;
+        if (toDate && d > toDate) return false;
+        return true;
+      }).slice(0, 30);
+      if (targetDates.length === 0 && fromDate && !toDate) targetDates = [fromDate];
+    } else {
+      // Select N+1 candidate trading sessions so if today's intraday EOD isn't published yet we still get N full sessions
+      const sessionsToFetch = Math.min(numDays + 1, 16);
+      targetDates = allTradingDates.slice(0, sessionsToFetch);
     }
-  }
 
-  // 4. If fetch timed out, return existing vault file if present
-  if (fs.existsSync(vaultPath)) {
-    try {
-      const fallbackFile = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
-      if (fallbackFile) {
-        if (fallbackFile.rawRows && fallbackFile.rawRows.length > 0) {
-          const scopedRows = filterRowsByDays(fallbackFile.rawRows, days);
-          return aggregateFloorsheetRows(scopedRows, sym) || fallbackFile;
-        }
-        return fallbackFile;
+    const { rowsByDate, availableDates, preAggregated } = await loadAndSyncSymbolVault(sym, targetDates);
+
+    // Collect rows for the requested targetDates (capped at numDays when not a custom range)
+    let activeDates = targetDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);
+    if (!specificDate && !fromDate && !toDate) {
+      activeDates = activeDates.slice(0, numDays);
+    }
+    if (activeDates.length === 0 && !specificDate) {
+      const vaultDates = Object.keys(rowsByDate)
+        .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+        .sort((a, b) => b.localeCompare(a));
+      activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+    }
+
+    const combinedRows = [];
+    for (const dt of activeDates) {
+      if (Array.isArray(rowsByDate[dt])) {
+        combinedRows.push(...rowsByDate[dt]);
       }
-    } catch (_) {}
+    }
+
+    if (combinedRows.length > 0) {
+      const aggregated = aggregateFloorsheetRows(combinedRows, sym, availableDates);
+      if (aggregated) {
+        memoryCache.set(cacheKey, { timestamp: now, data: aggregated });
+        return aggregated;
+      }
+    } else if (preAggregated && (preAggregated.brokers?.length > 0 || preAggregated.topBuyers?.length > 0)) {
+      memoryCache.set(cacheKey, { timestamp: now, data: preAggregated });
+      return preAggregated;
+    }
+  } catch (err) {
+    console.warn(`[brokerVault] getOrFetchBrokerAnalysis failed for ${sym}:`, err.message);
   }
 
   return null;
 }
+
+/**
+ * Retrieves paginated, filterable floorsheet transactions for a symbol
+ * (single date, multi-day horizon, date range, buyer/seller/either broker, bulk, price-vs-volume).
+ */
+export async function getOrFetchSymbolFloorsheet(symbol, {
+  date = '',
+  days = 1,
+  fromDate = '',
+  toDate = '',
+  buyer = '',
+  seller = '',
+  broker = '',
+  minQty = 0,
+  minAmount = 0,
+  selfMatchedOnly = false,
+  page = 1,
+  size = 50
+} = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+
+  const cleanDate = String(date || '').trim();
+  const cleanFrom = String(fromDate || '').trim();
+  const cleanTo = String(toDate || '').trim();
+  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 60);
+  const cleanBuyer = String(buyer || '').trim();
+  const cleanSeller = String(seller || '').trim();
+  const cleanBroker = String(broker || '').trim();
+  const minQtyNum = Math.max(0, Number(minQty) || 0);
+  const minAmtNum = Math.max(0, Number(minAmount) || 0);
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(Math.max(1, parseInt(size, 10) || 50), 50000);
+
+  const allTradingDates = await fetchSymbolTradingDates(sym);
+  let candidateDates = [];
+
+  if (cleanDate) {
+    candidateDates = [cleanDate];
+  } else if (cleanFrom || cleanTo) {
+    candidateDates = allTradingDates.filter(d => {
+      if (cleanFrom && d < cleanFrom) return false;
+      if (cleanTo && d > cleanTo) return false;
+      return true;
+    }).slice(0, 30);
+    if (candidateDates.length === 0 && cleanFrom && !cleanTo) candidateDates = [cleanFrom];
+  } else if (numDays > 1) {
+    candidateDates = allTradingDates.slice(0, Math.min(numDays + 1, 16));
+  } else {
+    candidateDates = allTradingDates.slice(0, 2);
+  }
+
+  const { rowsByDate, availableDates } = await loadAndSyncSymbolVault(sym, candidateDates);
+
+  let activeDates = [];
+  let dayRows = [];
+
+  if (cleanDate) {
+    activeDates = Array.isArray(rowsByDate[cleanDate]) && rowsByDate[cleanDate].length > 0 ? [cleanDate] : [cleanDate];
+    dayRows = Array.isArray(rowsByDate[cleanDate]) ? rowsByDate[cleanDate] : [];
+  } else if (cleanFrom || cleanTo || numDays > 1) {
+    activeDates = candidateDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);
+    if (!cleanFrom && !cleanTo) {
+      activeDates = activeDates.slice(0, numDays);
+    }
+    if (activeDates.length === 0) {
+      const vaultDates = Object.keys(rowsByDate)
+        .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+        .sort((a, b) => b.localeCompare(a));
+      activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+    }
+    for (const dt of activeDates) {
+      if (Array.isArray(rowsByDate[dt])) {
+        dayRows.push(...rowsByDate[dt]);
+      }
+    }
+  } else {
+    let activeDate = candidateDates.find(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0) || '';
+    if (!activeDate) {
+      activeDate = Object.keys(rowsByDate)
+        .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+        .sort((a, b) => b.localeCompare(a))[0] || '';
+    }
+    if (activeDate && Array.isArray(rowsByDate[activeDate])) {
+      activeDates = [activeDate];
+      dayRows = rowsByDate[activeDate];
+    }
+  }
+
+  // Filter by buyer, seller, any-side broker, minQty, minAmount, or selfMatchedOnly
+  const filteredRows = dayRows.filter(r => {
+    const bb = String(r.buyerBroker || '').trim();
+    const sb = String(r.sellerBroker || '').trim();
+    if (cleanBuyer && bb !== cleanBuyer) return false;
+    if (cleanSeller && sb !== cleanSeller) return false;
+    if (cleanBroker && bb !== cleanBroker && sb !== cleanBroker) return false;
+    if (selfMatchedOnly && (bb !== sb || !bb)) return false;
+    if (minQtyNum > 0 && Number(r.qty || 0) < minQtyNum) return false;
+    if (minAmtNum > 0 && Number(r.amount || 0) < minAmtNum) return false;
+    return true;
+  });
+
+  const totalElements = filteredRows.length;
+  const totalAmount = +filteredRows.reduce((s, r) => s + Number(r.amount || 0), 0).toFixed(2);
+  const totalQty = filteredRows.reduce((s, r) => s + Number(r.qty || 0), 0);
+  const totalPages = totalElements > 0 ? Math.ceil(totalElements / pageSize) : 0;
+
+  const startIdx = (pageNum - 1) * pageSize;
+  const pagedRows = filteredRows.slice(startIdx, startIdx + pageSize);
+
+  // Price vs Volume breakdown across ALL matching rows
+  const rateMap = {};
+  filteredRows.forEach(r => {
+    const rateKey = Number(r.rate || 0).toFixed(1);
+    if (!rateMap[rateKey]) {
+      rateMap[rateKey] = { rate: Number(r.rate || 0), trades: 0, qty: 0, amount: 0 };
+    }
+    rateMap[rateKey].trades += 1;
+    rateMap[rateKey].qty += Number(r.qty || 0);
+    rateMap[rateKey].amount += Number(r.amount || 0);
+  });
+  const priceVolumeBreakdown = Object.values(rateMap)
+    .map(item => ({
+      ...item,
+      amount: +item.amount.toFixed(2),
+      pctQty: totalQty > 0 ? +((item.qty / totalQty) * 100).toFixed(2) : 0
+    }))
+    .sort((a, b) => b.rate - a.rate);
+
+  // Bulk transactions (quantity >= 200 or amount >= 100,000 sorted by amount descending)
+  const bulkTransactions = [...filteredRows]
+    .filter(r => Number(r.qty || 0) >= 200 || Number(r.amount || 0) >= 100000)
+    .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
+    .slice(0, 250);
+
+  const primaryDate = activeDates[0] || cleanDate || '';
+  const earliestDate = activeDates[activeDates.length - 1] || primaryDate;
+
+  return {
+    rows: pagedRows,
+    page: pageNum,
+    size: pageSize,
+    totalPages,
+    totalElements,
+    totalAmount,
+    totalQty,
+    totalTrades: totalElements,
+    symbol: sym,
+    businessDate: primaryDate,
+    fromDate: earliestDate,
+    toDate: primaryDate,
+    tradingDays: activeDates.length,
+    availableDates,
+    priceVolumeBreakdown,
+    bulkTransactions,
+    isReal: true
+  };
+}
+
+/**
+ * Aggregates market-wide floorsheet transactions into complete broker telemetry,
+ * broker-by-scrip matrix, and per-broker Top 10 Accumulation & Distribution.
+ */
+export function aggregateMarketFloorsheet(trades, dateStr = '') {
+  if (!Array.isArray(trades) || trades.length === 0) {
+    return { topBrokers: [], topBrokerNames: [], topScrips: [], matrix: [], totalTrades: 0, businessDate: dateStr || '' };
+  }
+
+  const brokerTotals = {};
+  const scripTotals = {};
+  const brokerScripMatrix = {};
+
+  trades.forEach(t => {
+    const buyB = String(t.buyerMemberId || t.buyerBroker || '').replace(/^0+/, '').trim();
+    const sellB = String(t.sellerMemberId || t.sellerBroker || '').replace(/^0+/, '').trim();
+    const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
+    const q = Number(t.contractQuantity || t.quantity || t.qty || 0);
+    const amt = Number(t.contractAmount || t.amount || (q * Number(t.contractRate || t.rate || 0)));
+
+    if (!sym || q <= 0 || amt <= 0) return;
+
+    // Track Scrip Totals
+    if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0, totalQty: 0, trades: 0 };
+    scripTotals[sym].totalAmt += amt;
+    scripTotals[sym].totalQty += q;
+    scripTotals[sym].trades += 1;
+
+    // Track Buyer Broker
+    if (buyB) {
+      if (!brokerTotals[buyB]) {
+        brokerTotals[buyB] = {
+          id: buyB,
+          name: t.buyerBrokerName || getBrokerName(buyB),
+          totalBuy: 0,
+          totalSell: 0,
+          totalTrades: 0,
+          scripsMap: {}
+        };
+      }
+      brokerTotals[buyB].totalBuy += amt;
+      brokerTotals[buyB].totalTrades += 1;
+
+      if (!brokerTotals[buyB].scripsMap[sym]) {
+        brokerTotals[buyB].scripsMap[sym] = {
+          symbol: sym,
+          buyQty: 0,
+          sellQty: 0,
+          buyAmt: 0,
+          sellAmt: 0,
+          trades: 0
+        };
+      }
+      brokerTotals[buyB].scripsMap[sym].buyQty += q;
+      brokerTotals[buyB].scripsMap[sym].buyAmt += amt;
+      brokerTotals[buyB].scripsMap[sym].trades += 1;
+
+      const bk = `${buyB}_${sym}`;
+      if (!brokerScripMatrix[bk]) brokerScripMatrix[bk] = { broker: buyB, symbol: sym, buy: 0, sell: 0 };
+      brokerScripMatrix[bk].buy += amt;
+    }
+
+    // Track Seller Broker
+    if (sellB) {
+      if (!brokerTotals[sellB]) {
+        brokerTotals[sellB] = {
+          id: sellB,
+          name: t.sellerBrokerName || getBrokerName(sellB),
+          totalBuy: 0,
+          totalSell: 0,
+          totalTrades: 0,
+          scripsMap: {}
+        };
+      }
+      brokerTotals[sellB].totalSell += amt;
+      brokerTotals[sellB].totalTrades += 1;
+
+      if (!brokerTotals[sellB].scripsMap[sym]) {
+        brokerTotals[sellB].scripsMap[sym] = {
+          symbol: sym,
+          buyQty: 0,
+          sellQty: 0,
+          buyAmt: 0,
+          sellAmt: 0,
+          trades: 0
+        };
+      }
+      brokerTotals[sellB].scripsMap[sym].sellQty += q;
+      brokerTotals[sellB].scripsMap[sym].sellAmt += amt;
+      brokerTotals[sellB].scripsMap[sym].trades += 1;
+
+      const sk = `${sellB}_${sym}`;
+      if (!brokerScripMatrix[sk]) brokerScripMatrix[sk] = { broker: sellB, symbol: sym, buy: 0, sell: 0 };
+      brokerScripMatrix[sk].sell += amt;
+    }
+  });
+
+  const topBrokersList = Object.values(brokerTotals)
+    .sort((a, b) => (b.totalBuy + b.totalSell) - (a.totalBuy + a.totalSell));
+
+  const topScripsList = Object.values(scripTotals)
+    .sort((a, b) => b.totalAmt - a.totalAmt)
+    .map(s => s.symbol);
+
+  const heatmapMatrix = topBrokersList.map(b => {
+    const scripsArr = Object.values(b.scripsMap).map(s => {
+      const netAmt = s.buyAmt - s.sellAmt;
+      const netQty = s.buyQty - s.sellQty;
+      const avgBuyRate = s.buyQty > 0 ? (s.buyAmt / s.buyQty) : 0;
+      const avgSellRate = s.sellQty > 0 ? (s.sellAmt / s.sellQty) : 0;
+      return {
+        symbol: s.symbol,
+        buy: Math.round(s.buyAmt),
+        sell: Math.round(s.sellAmt),
+        net: Math.round(netAmt),
+        buyAmount: Math.round(s.buyAmt),
+        sellAmount: Math.round(s.sellAmt),
+        netFlow: Math.round(netAmt),
+        buyQty: s.buyQty,
+        sellQty: s.sellQty,
+        netQty,
+        avgBuyRate: +avgBuyRate.toFixed(2),
+        avgSellRate: +avgSellRate.toFixed(2),
+        trades: s.trades,
+        bias: netAmt > 1000000 ? 'Accumulation' : netAmt < -1000000 ? 'Distribution' : 'Neutral'
+      };
+    });
+
+    const topAccumulation = [...scripsArr]
+      .filter(s => s.net > 0)
+      .sort((x, y) => y.net - x.net)
+      .slice(0, 10);
+
+    const topDistribution = [...scripsArr]
+      .filter(s => s.net < 0)
+      .sort((x, y) => x.net - y.net)
+      .slice(0, 10);
+
+    const topByNetQty = [...scripsArr]
+      .filter(s => s.netQty > 0)
+      .sort((x, y) => y.netQty - x.netQty)
+      .slice(0, 10);
+
+    const topByGrossBuyAmt = [...scripsArr]
+      .filter(s => s.buyAmount > 0)
+      .sort((x, y) => y.buyAmount - x.buyAmount)
+      .slice(0, 10);
+
+    const topByGrossBuyQty = [...scripsArr]
+      .filter(s => s.buyQty > 0)
+      .sort((x, y) => y.buyQty - x.buyQty)
+      .slice(0, 10);
+
+    const topDistByNetQty = [...scripsArr]
+      .filter(s => s.netQty < 0)
+      .sort((x, y) => x.netQty - y.netQty)
+      .slice(0, 10);
+
+    const topDistByGrossSellAmt = [...scripsArr]
+      .filter(s => s.sellAmount > 0)
+      .sort((x, y) => y.sellAmount - x.sellAmount)
+      .slice(0, 10);
+
+    const topDistByGrossSellQty = [...scripsArr]
+      .filter(s => s.sellQty > 0)
+      .sort((x, y) => y.sellQty - x.sellQty)
+      .slice(0, 10);
+
+    const netFlow = Math.round(b.totalBuy - b.totalSell);
+    let bias = 'Mild Accumulation';
+    if (netFlow > 8000000) bias = 'Aggressive Accumulation';
+    else if (netFlow < -8000000) bias = 'Heavy Selling';
+    else if (netFlow < 0) bias = 'Distribution';
+
+    return {
+      broker: b.id,
+      brokerName: b.name,
+      totalBuy: Math.round(b.totalBuy),
+      totalSell: Math.round(b.totalSell),
+      netFlow,
+      totalTrades: b.totalTrades,
+      bias,
+      topStock: topAccumulation[0]?.symbol || scripsArr.sort((x, y) => (y.buy + y.sell) - (x.buy + x.sell))[0]?.symbol || '—',
+      topAccumulation,
+      topDistribution,
+      topByNetQty,
+      topByGrossBuyAmt,
+      topByGrossBuyQty,
+      topDistByNetQty,
+      topDistByGrossSellAmt,
+      topDistByGrossSellQty,
+      scrips: scripsArr
+    };
+  });
+
+  const sessionDt = dateStr || trades[0]?.businessDate || new Date().toISOString().split('T')[0];
+
+  return {
+    topBrokers: topBrokersList.slice(0, 20).map(b => b.id),
+    topBrokerNames: topBrokersList.slice(0, 20).map(b => b.name),
+    topScrips: topScripsList.slice(0, 30),
+    matrix: heatmapMatrix,
+    totalTrades: trades.length,
+    businessDate: sessionDt
+  };
+}
+
+/**
+ * Returns 100% of the session's floorsheet records.
+ * Uses local disk cache if available, otherwise queries NEPSE NOTS.
+ */
+export async function getFullSessionFloorsheet(dateStr = '') {
+  const cleanDate = String(dateStr || '').trim();
+  const candidateDirs = [
+    path.join(__dirname, 'data'),
+    path.join(process.cwd(), 'data'),
+    path.join(process.cwd(), 'proxy', 'data')
+  ].filter((d, i, arr) => arr.indexOf(d) === i);
+
+  for (const dataDir of candidateDirs) {
+    if (!fs.existsSync(dataDir)) continue;
+
+    // 1. If explicit date specified, check if that file exists
+    if (cleanDate) {
+      const file = path.join(dataDir, `floorsheet-full-${cleanDate}.json`);
+      if (fs.existsSync(file)) {
+        try {
+          const raw = fs.readFileSync(file, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch (_) {}
+      }
+    }
+
+    // 2. Check today's file
+    const todayIso = new Date().toISOString().split('T')[0];
+    const todayFile = path.join(dataDir, `floorsheet-full-${cleanDate || todayIso}.json`);
+    if (fs.existsSync(todayFile)) {
+      try {
+        const raw = fs.readFileSync(todayFile, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+
+    // 3. Fallback to latest existing floorsheet-full-*.json file in data/
+    try {
+      const files = fs.readdirSync(dataDir)
+        .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
+        .sort().reverse();
+      if (files.length > 0) {
+        const latestFile = path.join(dataDir, files[0]);
+        const raw = fs.readFileSync(latestFile, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+  }
+
+  // 4. Live fetch from NEPSE NOTS if available
+  try {
+    const session = nepseClient?.nepseman?.session;
+    if (session) {
+      const endpoint = "/api/nots/nepse-data/floorsheet";
+      const firstRes = await session.post(endpoint, "floor", { size: "500", page: "0" });
+      const totalElements = Number(firstRes?.floorsheets?.totalElements || 0);
+      const firstList = firstRes?.floorsheets?.content || firstRes?.content || (Array.isArray(firstRes) ? firstRes : []);
+      if (totalElements > 0 && firstList.length > 0) {
+        const totalPages = Math.min(Math.ceil(totalElements / 500), 120);
+        const allTrades = [...firstList];
+        for (let p = 1; p < totalPages; p++) {
+          let list = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const res = await session.post(endpoint, "floor", { size: "500", page: String(p) });
+              list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
+              break;
+            } catch (_) {
+              await new Promise(r => setTimeout(r, 200));
+            }
+          }
+          if (list && list.length > 0) {
+            allTrades.push(...list);
+          }
+          await new Promise(r => setTimeout(r, 60));
+        }
+        if (allTrades.length > 0) {
+          const recDate = allTrades[0]?.businessDate || cleanDate || todayIso;
+          const saveFile = path.join(dataDir, `floorsheet-full-${recDate}.json`);
+          try { fs.writeFileSync(saveFile, JSON.stringify(allTrades)); } catch (_) {}
+          return allTrades;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[brokerVault] Full session floorsheet fetch failed:', err.message);
+  }
+
+  return [];
+}
+
+/**
+ * Returns comprehensive authentic buy & sell trade breakdown for a specific broker desk.
+ */
+export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
+  const bId = String(brokerId || '').replace(/^0+/, '').trim();
+  if (!bId) return null;
+  const dateStr = String(options.date || '').trim();
+
+  // 1. Try to aggregate from full session floorsheet
+  const fullTrades = await getFullSessionFloorsheet(dateStr);
+  if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+    const marketAgg = aggregateMarketFloorsheet(fullTrades, dateStr || fullTrades[0]?.businessDate);
+    const brokerItem = marketAgg.matrix.find(b => String(b.broker).replace(/^0+/, '') === bId);
+    if (brokerItem) {
+      return {
+        ...brokerItem,
+        source: 'full_session_floorsheet',
+        businessDate: marketAgg.businessDate
+      };
+    }
+  }
+
+  // 2. Fetch specifically for this broker from NEPSE NOTS
+  try {
+    const session = nepseClient?.nepseman?.session;
+    if (session) {
+      const endpoint = "/api/nots/nepse-data/floorsheet";
+      const buyTrades = [];
+      const sellTrades = [];
+
+      let pBuy = 0;
+      while (pBuy < 30) {
+        const res = await session.post(endpoint, "floor", { size: "500", page: String(pBuy), buyerBroker: bId });
+        const list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
+        if (!list || list.length === 0) break;
+        buyTrades.push(...list);
+        if (list.length < 500) break;
+        pBuy++;
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      let pSell = 0;
+      while (pSell < 30) {
+        const res = await session.post(endpoint, "floor", { size: "500", page: String(pSell), sellerBroker: bId });
+        const list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
+        if (!list || list.length === 0) break;
+        sellTrades.push(...list);
+        if (list.length < 500) break;
+        pSell++;
+        await new Promise(r => setTimeout(r, 80));
+      }
+
+      const allBrokerTrades = [...buyTrades, ...sellTrades];
+      if (allBrokerTrades.length > 0) {
+        const marketAgg = aggregateMarketFloorsheet(allBrokerTrades, dateStr || allBrokerTrades[0]?.businessDate);
+        const brokerItem = marketAgg.matrix.find(b => String(b.broker).replace(/^0+/, '') === bId);
+        if (brokerItem) {
+          return {
+            ...brokerItem,
+            source: 'nepse_broker_nots',
+            businessDate: marketAgg.businessDate
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`[brokerVault] Broker #${bId} direct fetch failed:`, e.message);
+  }
+
+  return null;
+}
+
+

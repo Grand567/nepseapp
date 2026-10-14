@@ -126,17 +126,18 @@ export function saveStoredSubscription(sub) {
 }
 
 /**
- * Default Free user subscription object
+ * Default User subscription object — Lifetime Unlocked Pro Access
  */
 export function getFreeSubscription() {
+  const now = Date.now();
   return {
-    isPro: false,
-    tier: 'free',
-    planDuration: null,
-    subscribedAt: null,
-    expiresAt: 0,
-    source: 'none',
-    voucherCode: null
+    isPro: true,
+    tier: 'pro',
+    planDuration: 'unlimited',
+    subscribedAt: now,
+    expiresAt: now + 100 * 365 * 24 * 60 * 60 * 1000,
+    source: 'unlocked_by_default',
+    voucherCode: 'LIFETIME_PRO'
   };
 }
 
@@ -144,20 +145,17 @@ export function getFreeSubscription() {
  * Normalize and evaluate subscription state against current timestamp.
  */
 export function normalizeSubscription(data) {
-  if (!data || typeof data !== 'object') return getFreeSubscription();
-  
   const now = Date.now();
-  const expiresAt = Number(data.expiresAt || 0);
-  const isPro = Boolean(data.isPro && expiresAt > now);
+  const expiresAt = Number(data?.expiresAt || (now + 100 * 365 * 24 * 60 * 60 * 1000));
 
   return {
-    isPro,
-    tier: isPro ? 'pro' : 'free',
-    planDuration: data.planDuration || (isPro ? '1m' : null),
-    subscribedAt: data.subscribedAt || (isPro ? now : null),
+    isPro: true,
+    tier: 'pro',
+    planDuration: data?.planDuration || 'unlimited',
+    subscribedAt: data?.subscribedAt || now,
     expiresAt,
-    source: data.source || 'manual',
-    voucherCode: data.voucherCode || null
+    source: data?.source || 'unlocked_by_default',
+    voucherCode: data?.voucherCode || 'LIFETIME_PRO'
   };
 }
 

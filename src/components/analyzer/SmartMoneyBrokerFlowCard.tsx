@@ -34,9 +34,11 @@ export function SmartMoneyBrokerFlowCard({
     : [];
 
   const isDumping = Boolean(
-    brokerCornering.isInstitutionalDumping ||
-    (brokerAnalysis?.adSignal === 'Distribution' && (Number(brokerAnalysis?.adStrength || 0) >= 30 || Number(brokerAnalysis?.adRatio || 0) <= -0.08)) ||
-    (bcr3Sell >= 38.0 && bcr3Sell > bcr3)
+    (bcr3Sell > bcr3) && (
+      brokerCornering.isInstitutionalDumping ||
+      (brokerAnalysis?.adSignal === 'Distribution' && (Number(brokerAnalysis?.adStrength || 0) >= 30 || Number(brokerAnalysis?.adRatio || 0) <= -0.08)) ||
+      (bcr3Sell >= 38.0)
+    )
   );
 
   // Distribution Trap & Invalidation:

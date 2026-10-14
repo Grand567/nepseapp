@@ -21,6 +21,7 @@ import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockR
 import { calculateStealthAccumulationScore, detectSyndicateCluster, type SyndicateClusterAnalysis } from '../utils/accumulationDistributionEngine';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
+import latestBrokerMatrix from '../data/broker_matrix_latest.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
 
 const DEFAULT_COLS: ColDef[] = [
@@ -2737,13 +2738,24 @@ export function LiveFloorsheetService() {
   };
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return data;
-    const q = query.toLowerCase();
-    return data.filter((r) => {
-      const sym = (r.symbol || r.stockSymbol || '').toLowerCase();
-      const buyer = String(r.buyer || r.buyerBroker || '');
-      const seller = String(r.seller || r.sellerBroker || '');
-      return sym.includes(q) || buyer.includes(q) || seller.includes(q);
+    let list = data;
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = data.filter((r) => {
+        const sym = (r.symbol || r.stockSymbol || '').toLowerCase();
+        const buyer = String(r.buyer || r.buyerBroker || '');
+        const seller = String(r.seller || r.sellerBroker || '');
+        return sym.includes(q) || buyer.includes(q) || seller.includes(q);
+      });
+    }
+    return [...list].sort((a, b) => {
+      const dateA = String(a.businessDate || a.date || '');
+      const dateB = String(b.businessDate || b.date || '');
+      const dateComp = dateB.localeCompare(dateA);
+      if (dateComp !== 0) return dateComp;
+      const idA = parseInt(String(a.contractId).replace(/\D/g, ''), 10) || 0;
+      const idB = parseInt(String(b.contractId).replace(/\D/g, ''), 10) || 0;
+      return idB - idA;
     });
   }, [data, query]);
 
@@ -2980,6 +2992,7 @@ export function LiveFloorsheetService() {
               <table className="w-full border-collapse text-left text-xs text-slate-200">
                 <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                   <tr>
+                    <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Date / Time</th>
                     <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Contract #</th>
                     <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">Symbol</th>
                     <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Buyer</th>
@@ -2996,6 +3009,9 @@ export function LiveFloorsheetService() {
                     const isCross = b && s && b === s;
                     return (
                       <tr key={r.contractId || i} className={`transition-colors ${isCross ? 'bg-amber-950/20' : i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50`}>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 font-mono text-[11px] text-slate-400">
+                          {r.tradeTime ? `${r.businessDate ? `${r.businessDate} ` : ''}${r.tradeTime}` : (r.businessDate || '—')}
+                        </td>
                         <td className="whitespace-nowrap px-3.5 py-2.5 font-mono text-[11px] text-slate-400">{r.contractId}</td>
                         <td className="whitespace-nowrap px-3.5 py-2.5 font-bold text-white font-mono">{r.symbol || r.stockSymbol}</td>
                         <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-mono">
@@ -3032,6 +3048,10 @@ export function BrokerHeatmapService() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [viewTab, setViewTab] = useState<'matrix' | 'top10_rankings'>('matrix');
+  const [selectedBroker, setSelectedBroker] = useState<any>(null);
+  const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
+  const [modalMetric, setModalMetric] = useState<'netFlow' | 'netQty' | 'grossBuyAmt' | 'grossBuyQty'>('netFlow');
 
   const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '1Y': 365 };
 
@@ -3041,10 +3061,18 @@ export function BrokerHeatmapService() {
     try {
       const res = await fetchBrokerHeatmap({ days });
       const d = res?.data || res;
-      if (d && (d.matrix || d.topBrokers)) {
+      if (d?.matrix && d.matrix.some((m: any) => m.broker === '58' && m.topAccumulation)) {
+        setData(d);
+      } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        setData(latestBrokerMatrix);
+      } else if (d && (d.matrix || d.topBrokers)) {
         setData(d);
       }
-    } catch (_) {}
+    } catch (_) {
+      if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+        setData(latestBrokerMatrix);
+      }
+    }
     setLoading(false);
   };
 
@@ -3091,18 +3119,30 @@ export function BrokerHeatmapService() {
       />
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard
-          label="Top Net Buyer"
-          value={topBuyerBroker ? `Broker #${topBuyerBroker.broker}` : '—'}
-          subtitle={topBuyerBroker ? topBuyerBroker.brokerName?.split(' ')[0] : undefined}
-          color="#10b981"
-        />
-        <StatCard
-          label="Top Net Seller"
-          value={topSellerBroker ? `Broker #${topSellerBroker.broker}` : '—'}
-          subtitle={topSellerBroker ? topSellerBroker.brokerName?.split(' ')[0] : undefined}
-          color="#f43f5e"
-        />
+        <div
+          onClick={() => topBuyerBroker && setSelectedBroker(topBuyerBroker)}
+          className="cursor-pointer transition-transform hover:scale-[1.02] active:scale-95"
+          title="Click to view Broker Top 10 Accumulation"
+        >
+          <StatCard
+            label="Top Net Buyer"
+            value={topBuyerBroker ? `Broker #${topBuyerBroker.broker}` : '—'}
+            subtitle={topBuyerBroker ? `${topBuyerBroker.brokerName?.split(' ')[0]} (+Rs ${(Math.abs(topBuyerBroker.netFlow) / 1e7).toFixed(2)}Cr)` : undefined}
+            color="#10b981"
+          />
+        </div>
+        <div
+          onClick={() => topSellerBroker && setSelectedBroker(topSellerBroker)}
+          className="cursor-pointer transition-transform hover:scale-[1.02] active:scale-95"
+          title="Click to view Broker Top 10 Distribution"
+        >
+          <StatCard
+            label="Top Net Seller"
+            value={topSellerBroker ? `Broker #${topSellerBroker.broker}` : '—'}
+            subtitle={topSellerBroker ? `${topSellerBroker.brokerName?.split(' ')[0]} (-Rs ${(Math.abs(topSellerBroker.netFlow) / 1e7).toFixed(2)}Cr)` : undefined}
+            color="#f43f5e"
+          />
+        </div>
         <StatCard
           label="Brokers Analyzed"
           value={matrix.length}
@@ -3114,6 +3154,28 @@ export function BrokerHeatmapService() {
           value={topScrips.length}
           color="#a855f7"
         />
+      </div>
+
+      {/* Sub-view switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+        <button
+          type="button"
+          onClick={() => setViewTab('matrix')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            viewTab === 'matrix' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-white'
+          }`}
+        >
+          <LayoutGrid size={13} /> Heatmap Matrix
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewTab('top10_rankings')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            viewTab === 'top10_rankings' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-white'
+          }`}
+        >
+          <Award size={13} /> Top 10 Broker Net Flow & Scrip Breakdown
+        </button>
       </div>
 
       <div className="relative">
@@ -3135,77 +3197,365 @@ export function BrokerHeatmapService() {
         )}
       </div>
 
-      {/* Heatmap Legend */}
-      <div className="flex items-center gap-4 text-[11px] text-slate-400 px-1">
-        <span className="font-semibold text-white">Flow Legend:</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-700/80 border border-emerald-500" /> Net Buying</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-700/80 border border-rose-500" /> Net Selling</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-800 border border-slate-700" /> Neutral</span>
-      </div>
+      {viewTab === 'matrix' ? (
+        <>
+          {/* Heatmap Legend */}
+          <div className="flex items-center gap-4 text-[11px] text-slate-400 px-1">
+            <span className="font-semibold text-white">Flow Legend:</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-700/80 border border-emerald-500" /> Net Buying</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-700/80 border border-rose-500" /> Net Selling</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-800 border border-slate-700" /> Neutral</span>
+          </div>
 
-      {/* Heatmap Matrix Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner max-h-[600px] overflow-y-auto">
-        <table className="w-full border-collapse text-left text-xs text-slate-200">
-          <thead className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900 backdrop-blur">
-            <tr>
-              <th className="sticky left-0 z-30 bg-slate-900 px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[140px] border-r border-slate-800">
-                Broker
-              </th>
-              <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[90px] border-r border-slate-800">
-                Net Flow
-              </th>
-              {topScrips.map((sym: string) => (
-                <th key={sym} className="px-3 py-2.5 text-center text-[11px] font-bold font-mono uppercase text-slate-300 min-w-[80px]">
-                  {sym}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50 font-mono">
-            {matrix.map((row: any) => {
-              const netFlow = Number(row.netFlow || 0);
-              const isNetBuy = netFlow >= 0;
-              return (
-                <tr key={row.broker} className="hover:bg-slate-900/40 transition-colors">
-                  <td className="sticky left-0 z-10 bg-slate-950/95 px-3.5 py-2 whitespace-nowrap border-r border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10.5px] font-bold text-blue-400">
-                        #{row.broker}
-                      </span>
-                      <span className="truncate max-w-[110px] text-slate-200 text-xs font-semibold">
-                        {row.brokerName || `Broker ${row.broker}`}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap font-bold text-xs border-r border-slate-800" style={{ color: isNetBuy ? '#10b981' : '#f43f5e' }}>
-                    {isNetBuy ? '+' : ''}{(netFlow / 1e5).toFixed(1)}L
-                  </td>
-                  {topScrips.map((sym: string) => {
-                    const cell = (row.scrips || []).find((s: any) => s.symbol === sym) || { buy: 0, sell: 0, net: 0 };
-                    const net = Number(cell.net || 0);
-                    const hasActivity = cell.buy > 0 || cell.sell > 0;
-                    let cellBg = 'bg-slate-900/30 text-slate-600';
-                    if (hasActivity) {
-                      if (net > 1000000) cellBg = 'bg-emerald-600/60 text-white font-bold border border-emerald-500/40';
-                      else if (net > 0) cellBg = 'bg-emerald-800/40 text-emerald-300 font-semibold';
-                      else if (net < -1000000) cellBg = 'bg-rose-600/60 text-white font-bold border border-rose-500/40';
-                      else if (net < 0) cellBg = 'bg-rose-800/40 text-rose-300 font-semibold';
-                      else cellBg = 'bg-amber-900/30 text-amber-300 font-medium';
-                    }
-                    return (
-                      <td key={sym} className="p-1 text-center">
-                        <div className={`py-1.5 px-1 rounded text-[11px] tabular-nums transition-colors ${cellBg}`}>
-                          {hasActivity ? `${net > 0 ? '+' : ''}${(net / 1e5).toFixed(1)}L` : '—'}
+          {/* Heatmap Matrix Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner max-h-[600px] overflow-y-auto">
+            <table className="w-full border-collapse text-left text-xs text-slate-200">
+              <thead className="sticky top-0 z-20 border-b border-slate-800 bg-slate-900 backdrop-blur">
+                <tr>
+                  <th className="sticky left-0 z-30 bg-slate-900 px-3.5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[140px] border-r border-slate-800">
+                    Broker (Click to Drilldown)
+                  </th>
+                  <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-300 min-w-[90px] border-r border-slate-800">
+                    Net Flow
+                  </th>
+                  {topScrips.map((sym: string) => (
+                    <th key={sym} className="px-3 py-2.5 text-center text-[11px] font-bold font-mono uppercase text-slate-300 min-w-[80px]">
+                      {sym}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50 font-mono">
+                {matrix.map((row: any) => {
+                  const netFlow = Number(row.netFlow || 0);
+                  const isNetBuy = netFlow >= 0;
+                  return (
+                    <tr
+                      key={row.broker}
+                      onClick={() => setSelectedBroker(row)}
+                      className="hover:bg-slate-900/60 transition-colors cursor-pointer group"
+                    >
+                      <td className="sticky left-0 z-10 bg-slate-950/95 group-hover:bg-slate-900/95 px-3.5 py-2 whitespace-nowrap border-r border-slate-800">
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10.5px] font-bold text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                            #{row.broker}
+                          </span>
+                          <span className="truncate max-w-[110px] text-slate-200 text-xs font-semibold group-hover:text-blue-300 transition-colors">
+                            {row.brokerName || `Broker ${row.broker}`}
+                          </span>
                         </div>
                       </td>
-                    );
-                  })}
-                </tr>
+                      <td className="px-3 py-2 text-right whitespace-nowrap font-bold text-xs border-r border-slate-800" style={{ color: isNetBuy ? '#10b981' : '#f43f5e' }}>
+                        {isNetBuy ? '+' : ''}{(netFlow / 1e5).toFixed(1)}L
+                      </td>
+                      {topScrips.map((sym: string) => {
+                        const cell = (row.scrips || []).find((s: any) => s.symbol === sym) || { buy: 0, sell: 0, net: 0 };
+                        const net = Number(cell.net || 0);
+                        const hasActivity = cell.buy > 0 || cell.sell > 0;
+                        let cellBg = 'bg-slate-900/30 text-slate-600';
+                        if (hasActivity) {
+                          if (net > 1000000) cellBg = 'bg-emerald-600/60 text-white font-bold border border-emerald-500/40';
+                          else if (net > 0) cellBg = 'bg-emerald-800/40 text-emerald-300 font-semibold';
+                          else if (net < -1000000) cellBg = 'bg-rose-600/60 text-white font-bold border border-rose-500/40';
+                          else if (net < 0) cellBg = 'bg-rose-800/40 text-rose-300 font-semibold';
+                          else cellBg = 'bg-amber-900/30 text-amber-300 font-medium';
+                        }
+                        return (
+                          <td key={sym} className="p-1 text-center">
+                            <div className={`py-1.5 px-1 rounded text-[11px] tabular-nums transition-colors ${cellBg}`}>
+                              {hasActivity ? `${net > 0 ? '+' : ''}${(net / 1e5).toFixed(1)}L` : '—'}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        /* Top 10 Broker Net Flow & Scrip Breakdown */
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {matrix.slice(0, 10).map((b: any) => {
+              const netFlow = Number(b.netFlow || 0);
+              const isNetBuy = netFlow >= 0;
+              const topAcc = b.topAccumulation || [];
+              const topDist = b.topDistribution || [];
+              return (
+                <div
+                  key={b.broker}
+                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm hover:border-slate-700 transition-all cursor-pointer"
+                  onClick={() => setSelectedBroker(b)}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-blue-500/20 text-blue-400 font-bold px-2 py-0.5 text-xs">
+                        #{b.broker}
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-bold text-white leading-tight">{b.brokerName || `Broker ${b.broker}`}</h4>
+                        <span className="text-[11px] text-slate-400">{b.totalTrades || 0} authentic trades</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-sm font-extrabold ${isNetBuy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {isNetBuy ? '+' : ''}{(netFlow / 1e7).toFixed(2)} Cr
+                      </span>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Net Turnover</div>
+                    </div>
+                  </div>
+
+                  {topAcc.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Top Net Buy Accumulation</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Click to see all</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {topAcc.slice(0, 4).map((s: any) => (
+                          <div key={s.symbol} className="rounded-lg bg-emerald-950/30 border border-emerald-800/30 p-2 text-xs flex items-center justify-between">
+                            <div>
+                              <span className="font-bold text-white font-mono">{s.symbol}</span>
+                              {s.netQty > 0 && (
+                                <div className="text-[10px] text-emerald-400 font-semibold">+{s.netQty.toLocaleString()} units</div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-emerald-400">+Rs {(s.net / 1e5).toFixed(1)}L</div>
+                              {s.avgBuyRate > 0 && (
+                                <div className="text-[10px] text-slate-400">@{s.avgBuyRate.toFixed(1)}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {topDist.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>Top Net Sell Distribution</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Click to see all</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {topDist.slice(0, 4).map((s: any) => (
+                          <div key={s.symbol} className="rounded-lg bg-rose-950/30 border border-rose-800/30 p-2 text-xs flex items-center justify-between">
+                            <div>
+                              <span className="font-bold text-white font-mono">{s.symbol}</span>
+                              {s.netQty < 0 && (
+                                <div className="text-[10px] text-rose-400 font-semibold">{s.netQty.toLocaleString()} units</div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-rose-400">-Rs {(Math.abs(s.net) / 1e5).toFixed(1)}L</div>
+                              {s.avgSellRate > 0 && (
+                                <div className="text-[10px] text-slate-400">@{s.avgSellRate.toFixed(1)}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drilldown Modal for Selected Broker */}
+      {selectedBroker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setSelectedBroker(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl text-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="rounded-lg bg-blue-600 px-2.5 py-1 text-sm font-extrabold text-white">
+                  #{selectedBroker.broker}
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {selectedBroker.brokerName || `Broker ${selectedBroker.broker}`}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Net Flow: <strong className={selectedBroker.netFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {selectedBroker.netFlow >= 0 ? '+' : ''}{(Number(selectedBroker.netFlow || 0) / 1e7).toFixed(2)} Cr
+                    </strong> • Total Trades: <strong>{selectedBroker.totalTrades || selectedBroker.scrips?.length || 0}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBroker(null)}
+                className="rounded-full bg-slate-800 p-2 text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {(() => {
+              let modalScrips: any[] = [];
+              if (modalTab === 'accumulation') {
+                if (modalMetric === 'grossBuyAmt' && Array.isArray(selectedBroker.topByGrossBuyAmt) && selectedBroker.topByGrossBuyAmt.length) {
+                  modalScrips = selectedBroker.topByGrossBuyAmt;
+                } else if (modalMetric === 'grossBuyQty' && Array.isArray(selectedBroker.topByGrossBuyQty) && selectedBroker.topByGrossBuyQty.length) {
+                  modalScrips = selectedBroker.topByGrossBuyQty;
+                } else if (modalMetric === 'netQty' && Array.isArray(selectedBroker.topByNetQty) && selectedBroker.topByNetQty.length) {
+                  modalScrips = selectedBroker.topByNetQty;
+                } else {
+                  modalScrips = selectedBroker.topAccumulation || [];
+                }
+              } else {
+                if (modalMetric === 'grossBuyAmt' && Array.isArray(selectedBroker.topByGrossSellAmt) && selectedBroker.topByGrossSellAmt.length) {
+                  modalScrips = selectedBroker.topByGrossSellAmt;
+                } else if (modalMetric === 'grossBuyQty' && Array.isArray(selectedBroker.topByGrossSellQty) && selectedBroker.topByGrossSellQty.length) {
+                  modalScrips = selectedBroker.topByGrossSellQty;
+                } else if (modalMetric === 'netQty' && Array.isArray(selectedBroker.topByNetSellQty) && selectedBroker.topByNetSellQty.length) {
+                  modalScrips = selectedBroker.topByNetSellQty;
+                } else {
+                  modalScrips = selectedBroker.topDistribution || [];
+                }
+              }
+              const isAcc = modalTab === 'accumulation';
+
+              return (
+                <>
+                  <div className="flex gap-2 border-b border-slate-800 pb-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('accumulation')}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                        modalTab === 'accumulation' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🟢 Top 10 Accumulation (Buy)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('distribution')}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                        modalTab === 'distribution' ? 'bg-rose-600 text-white shadow-sm' : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🔴 Top 10 Distribution (Sell)
+                    </button>
+                  </div>
+
+                  {/* Multi-Metric Switcher (Unified across app & external sources) */}
+                  <div className="flex items-center justify-between flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 mb-3 text-[11px]">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 pl-1">Metric:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {[
+                        { id: 'netFlow', label: '⚡ Net Flow Rs.', title: 'Rank by Net Capital Flow (Buy Amt - Sell Amt) - Idea Share Standard' },
+                        { id: 'netQty', label: '📊 Net Shares', title: 'Rank by Net Units (Buy Qty - Sell Qty)' },
+                        { id: 'grossBuyAmt', label: isAcc ? '💰 Gross Buy Rs.' : '💰 Gross Sell Rs.', title: 'Rank by Gross Turnover - ShareSansar Standard' },
+                        { id: 'grossBuyQty', label: isAcc ? '📦 Gross Buy Qty' : '📦 Gross Sell Qty', title: 'Rank by Gross Volume' }
+                      ].map(m => {
+                        const active = modalMetric === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setModalMetric(m.id as any)}
+                            title={m.title}
+                            className={`px-2 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                              active
+                                ? isAcc ? 'bg-emerald-600 text-white shadow-sm' : 'bg-rose-600 text-white shadow-sm'
+                                : 'bg-slate-900 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {modalScrips.length === 0 ? (
+                      <p className="text-center py-6 text-xs text-slate-500">No records found for this broker in selected timeframe.</p>
+                    ) : (
+                      modalScrips.map((s: any, idx: number) => (
+                        <div
+                          key={s.symbol}
+                          className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-xs transition-colors ${
+                            isAcc
+                              ? 'border-emerald-900/40 bg-emerald-950/20 hover:border-emerald-700/60'
+                              : 'border-rose-900/40 bg-rose-950/20 hover:border-rose-700/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-5 text-center text-xs font-mono font-bold text-slate-500">
+                              #{idx + 1}
+                            </span>
+                            <div>
+                              <div className="font-extrabold text-white text-sm font-mono tracking-wide">{s.symbol}</div>
+                              <div className="text-[11px] text-slate-400">
+                                {s.trades ? `${s.trades} trades` : ''} {s.avgBuyRate ? `• Avg Buy: Rs ${s.avgBuyRate.toFixed(1)}` : (s.avgSellRate ? `• Avg Sell: Rs ${s.avgSellRate.toFixed(1)}` : '')}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {modalMetric === 'grossBuyAmt' ? (
+                              <>
+                                <div className={`font-extrabold text-sm ${isAcc ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  Rs. {(Number(isAcc ? (s.grossBuyAmt || s.buyAmt || s.net) : (s.grossSellAmt || s.sellAmt || s.net)) / 1e5).toFixed(1)} Lakhs
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Turnover (ShareSansar)
+                                </div>
+                              </>
+                            ) : modalMetric === 'grossBuyQty' ? (
+                              <>
+                                <div className={`font-extrabold text-sm ${isAcc ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {Number(isAcc ? (s.grossBuyQty || s.buyQty || s.netQty) : (s.grossSellQty || s.sellQty || s.netQty)).toLocaleString()} units
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Gross Shares
+                                </div>
+                              </>
+                            ) : modalMetric === 'netQty' ? (
+                              <>
+                                <div className={`font-extrabold text-sm ${isAcc ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {s.netQty >= 0 ? '+' : ''}{Number(s.netQty || 0).toLocaleString()} units
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Net Shares
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className={`font-extrabold text-sm ${isAcc ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {Number(s.net || s.netFlow || 0) >= 0 ? '+' : '-'}Rs {(Math.abs(Number(s.net || s.netFlow || 0)) / 1e5).toFixed(1)} Lakhs
+                                </div>
+                                {s.netQty !== undefined && (
+                                  <div className={`text-[11px] font-bold ${isAcc ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                    {s.netQty >= 0 ? '+' : ''}{s.netQty.toLocaleString()} units
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       <Insight>
         Look for scrips with multiple green cells across top brokers (e.g. Brokers 58, 45, 34). Concurrent multi-broker accumulation is the highest-conviction bullish footprint in NEPSE.
@@ -3240,7 +3590,12 @@ export function BrokerFavouritesService({
       const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
       const tfDays = daysMap[tf] || 1;
       const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
-      const heatmapData = heatmapRes?.data || heatmapRes;
+      let heatmapData = heatmapRes?.data || heatmapRes;
+      if (!heatmapData?.matrix || !heatmapData.matrix.some((m: any) => m.broker === '58' && m.topAccumulation)) {
+        if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+          heatmapData = latestBrokerMatrix;
+        }
+      }
       const matrix = heatmapData?.matrix || [];
 
       if (!stockList || stockList.length === 0) {
@@ -4888,14 +5243,26 @@ export function MarketDepthService() {
         <div className="w-full sm:w-72">
           <StockSearchSelect value={symbol} onChange={setSymbol} placeholder="Select security for depth…" />
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-300 ml-auto font-mono">
+        <div className="flex items-center gap-2 text-xs text-slate-300 ml-auto font-mono flex-wrap">
           <span className="text-slate-400">Symbol: <strong className="text-white">{symbol}</strong></span>
           <span className="text-slate-500">•</span>
           <span className="text-slate-400">LTP: <strong className="text-emerald-400">Rs. {ltp}</strong></span>
           <span className="text-slate-500">•</span>
           <span className="text-slate-400">Spread: <strong className="text-amber-400">Rs. {spread} ({spreadPct}%)</strong></span>
+          {depthData?.isOffMarket && (
+            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold border border-amber-500/30">
+              🌙 Off-Market Snapshot
+            </span>
+          )}
         </div>
       </div>
+
+      {depthData?.isOffMarket && (
+        <div className="px-3.5 py-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between flex-wrap gap-2">
+          <span>🌙 <strong>Market Closed</strong>: Displaying authentic Closing Session Order Book snapshot ({depthData?.sessionLabel || '3:00 PM NPT'}).</span>
+          <span className="text-[11px] text-slate-400">Live NOTS queue streams Sun–Thu 11:00 AM – 3:00 PM</span>
+        </div>
+      )}
 
       {/* Demand vs Supply Ratio Bar */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 space-y-2">

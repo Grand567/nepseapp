@@ -19,6 +19,7 @@ import {
   Crown, Heart, Scale, SlidersHorizontal, Clock, Bell, Lock,
   LayoutGrid, Gauge, Crosshair, Brain, Gem, Banknote, Filter, Settings,
   GitBranch, BellRing, ScanLine, LayoutDashboard, ShieldCheck, Bot, BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 import NepseAgentDashboard from './NepseAgentDashboard';
 import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
@@ -53,10 +54,17 @@ import { BreakoutTrapRadar } from './BreakoutTrapRadar';
 import { MultibaggerHunterService } from './MultibaggerHunterService';
 import { MinerviniLeaderboard } from './MinerviniLeaderboard';
 import { Master100ProfitWorkstation } from './Master100ProfitWorkstation';
+import {
+  CandlestickPatternScannerService,
+  TechnicalRatingsGaugeService,
+  GdpVsNepseMacroService
+} from './ShareHubScannersSuite';
 import ProGate from './ProGate';
 
 export const PRO_SERVICE_IDS = new Set<string>([
   'master-100-profit',
+  'multibagger-hunter',
+  'minervini-leaderboard',
   'short-term-profit-plan',
   'daily-prime-pick',
   'prime-breakout-pick',
@@ -72,6 +80,7 @@ export const PRO_SERVICE_IDS = new Set<string>([
   'broker-heatmap',
   'broker-dominance',
   'aggressive-accumulators',
+  'aggressive-holdings',
   'distribution-leaders',
   'strategy-lab',
   'ai-momentum',
@@ -79,7 +88,13 @@ export const PRO_SERVICE_IDS = new Set<string>([
   'volume-shockers',
   'circuit-setup',
   'ai-agent-dossier',
-  'signals-track-record'
+  'signals-track-record',
+  'magnetic-support',
+  'breakable-resistance',
+  'breakdown-stocks',
+  'volatile-stocks',
+  'smart-trade-journal',
+  'hot-trending-stock',
 ]);
 
 // ── Shared colors (solid, no gradients) ──
@@ -111,25 +126,25 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality'].includes(s.id)) {
+  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
     return 'flagship';
   }
-  if (s.id === 'regulatory-hub' || s.id === 'nrb-forex' || s.id === 'bullion-rates' || s.id === 'regulatory-circulars' || s.id === 'nrb-indicators') {
+  if (['regulatory-hub', 'nrb-safety-shield', 'nrb-forex', 'bullion-rates', 'regulatory-circulars', 'nrb-indicators'].includes(s.id)) {
     return 'regulatory';
   }
-  if (s.id === 'broker-analysis' || s.id === 'broker-favourites' || s.id === 'zero-sum-floorsheet' || s.id === 'broker-flow' || s.id === 'broker-heatmap' || s.id === 'broker-dominance' || s.id === 'broker-top10' || s.id === 'aggressive-accumulators' || s.id === 'distribution-leaders' || s.id === 'matching-buy-sell' || s.id === 'slow-accumulation' || s.id === 'unusual-trades' || s.id === 'sector-wise-ad' || s.id === 'aggressive-holdings' || s.id === 'smart-money') {
+  if (['broker-analysis', 'broker-favourites', 'zero-sum-floorsheet', 'broker-flow', 'broker-heatmap', 'broker-dominance', 'broker-top10', 'aggressive-accumulators', 'aggressive-holdings', 'distribution-leaders', 'matching-buy-sell', 'slow-accumulation', 'unusual-trades', 'sector-wise-ad', 'smart-money', 'players-choices', 'whale-daily-archive', 'daily-whale-tracker'].includes(s.id)) {
     return 'smart-money';
   }
   if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
     return 'calculators';
   }
-  if (s.id === 'portfolio' || s.id === 'watchlist' || s.id === 'trade-notes' || s.id === 'stock-alerts' || s.id === 'smart-portfolio' || s.id === 'target-alert' || s.id === 'credentials' || s.id === 'apply-history' || s.id === 'edit') {
+  if (['portfolio', 'watchlist', 'trade-notes', 'smart-trade-journal', 'stock-alerts', 'smart-portfolio', 'target-alert', 'credentials', 'apply-history', 'edit', 'preferences', 'system-health'].includes(s.id)) {
     return 'desk';
   }
-  if (['live-market', 'market-summary', 'sector-heatmap', 'market-indices', 'top-gainers', 'top-losers', 'volume-leaders', 'turnover-leaders', 'top-transactions', 'live-nepse', '52w-high', '52w-low', 'floor-sheet', 'market-depth', 'ipo-current', 'ipo-result', 'ipo-pipeline', 'news', 'brokers', 'mero-share'].includes(s.id)) {
+  if (['live-market', 'market-summary', 'sector-heatmap', 'sector-rotation', 'market-indices', 'top-gainers', 'top-losers', 'volume-leaders', 'top-volume', 'turnover-leaders', 'top-turnover', 'top-transactions', 'top-traded', 'live-nepse', '52w-high', '52w-low', 'floor-sheet', 'market-depth', 'ipo-current', 'ipo-fpo-alert', 'ipo-result', 'ipo-results', 'ipo-pipeline', 'news', 'nepse-news', 'brokers', 'mero-share', 'beginners-guide', 'api-status'].includes(s.id)) {
     return 'market';
   }
-  if (['dividend-kings', 'fundamentals-pro', 'pe-ranking', 'float-analytics', 'dividend-leaders', 'fundamental-scanner', 'stock-capitalization', 'comparable-stock', 'investment-picks', 'stocks-by-market-cap', 'promoter-shares', 'mutual-funds-unlock'].includes(s.id)) {
+  if (['dividend-kings', 'fundamentals-pro', 'pe-ranking', 'float-analytics', 'dividend-leaders', 'fundamental-scanner', 'stock-capitalization', 'comparable-stock', 'investment-picks', 'stocks-by-market-cap', 'promoter-shares', 'mutual-funds-unlock', 'lynch-garp', 'equity-risk-premium', 'stockwise-analysis'].includes(s.id)) {
     return 'valuation';
   }
   return 'trading';
@@ -158,81 +173,148 @@ const CATEGORIES = [
   { id: 'desk', title: 'Your Personal Desk', subtitle: 'Custom watchlists, portfolio tracker, trade journal notes & price alerts.' },
 ];
 
-
 interface ServiceDef { id: string; name: string; icon: LucideIcon; color: string; cat: string; star?: boolean; }
 
 const ALL_SERVICES: ServiceDef[] = [
-  // ── Flagship Analytical Suites ──
+  // ── 1. Flagship Analytical Suites (15 Tools) ──
   { id: 'master-100-profit',          name: '👑 Master Guide: 100% Profit Engine',          icon: Crown,              color: 'emerald', cat: 'flagship', star: true },
   { id: 'multibagger-hunter',         name: '🎯 100% Hunter — 8-Gate Multibagger Screener', icon: Target,             color: 'rose',    cat: 'flagship', star: true },
   { id: 'minervini-leaderboard',      name: '🏆 Minervini Stage 2 Leader Board + OAMI',     icon: Award,              color: 'purple',  cat: 'flagship', star: true },
   { id: 'daily-prime-pick',           name: 'Daily Prime Breakout & Buy-Zone Pick',          icon: Flame,              color: 'emerald', cat: 'flagship', star: true },
   { id: 'short-term-profit-plan',     name: '1–2W Short-Term Profit Plan',                  icon: Zap,                color: 'yellow',  cat: 'flagship', star: true },
-  { id: 'entry-exit-analyzer',        name: 'Entry/Exit Analyzer',                          icon: Target,             color: 'emerald', cat: 'flagship', star: true },
-  { id: 'stock-momentum',             name: 'Multi-Timeframe Analyzer',                     icon: Clock,              color: 'yellow',  cat: 'flagship', star: true },
+  { id: 'entry-exit-analyzer',        name: 'Entry/Exit Analyzer & Target Matrix',          icon: Target,             color: 'emerald', cat: 'flagship', star: true },
+  { id: 'stock-momentum',             name: 'Multi-Timeframe Momentum Analyzer',            icon: Clock,              color: 'yellow',  cat: 'flagship', star: true },
   { id: 'stealth-accumulation-tracker', name: 'Accumulation & Distribution Radar',          icon: Crosshair,          color: 'emerald', cat: 'flagship', star: true },
-  { id: 'graham-intrinsic',           name: 'Graham Intrinsic Value',                       icon: Award,              color: 'blue',    cat: 'flagship', star: true },
-  { id: 'decision-probability',       name: 'Decision Probability',                         icon: Target,             color: 'purple',  cat: 'flagship', star: true },
-  { id: 'seasonality',                name: 'NEPSE Seasonality 10Y',                        icon: Calendar,           color: 'cyan',    cat: 'flagship', star: true },
-  { id: 'strategy-lab',               name: 'Strategy Lab Backtesting',                     icon: Brain,              color: 'orange',  cat: 'flagship', star: true },
+  { id: 'graham-intrinsic',           name: 'Graham Intrinsic Value Calculator',            icon: Award,              color: 'blue',    cat: 'flagship', star: true },
+  { id: 'gdp-vs-nepse',               name: 'GDP vs NEPSE (Buffett Indicator)',             icon: Landmark,           color: 'cyan',    cat: 'flagship', star: true },
+  { id: 'decision-probability',       name: 'Decision Probability Index (DPI 0–100)',       icon: Target,             color: 'purple',  cat: 'flagship', star: true },
+  { id: 'seasonality',                name: 'NEPSE 10-Year Seasonality Analytics',          icon: Calendar,           color: 'cyan',    cat: 'flagship', star: true },
+  { id: 'strategy-lab',               name: 'Strategy Lab Backtesting Engine',              icon: Brain,              color: 'orange',  cat: 'flagship', star: true },
   { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
   { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
 
-  // ── Smart Money & Institutional Flow ──
+  // ── 2. Smart Money & Institutional Flow (15 Tools) ──
   { id: 'whale-daily-archive',        name: 'Daily Top 5 Whale Archive (दैनिक ह्वेल)',       icon: Calendar,           color: 'emerald', cat: 'smart-money', star: true },
   { id: 'slow-accumulation',          name: 'Slow Institutional Accumulation (2–15D)',      icon: Crosshair,          color: 'emerald', cat: 'smart-money', star: true },
   { id: 'aggressive-accumulators',    name: 'Aggressive Accumulators (Volume Surge)',       icon: Flame,              color: 'emerald', cat: 'smart-money', star: true },
+  { id: 'aggressive-holdings',        name: 'Aggressive Broker Holdings (Zero Dump)',       icon: Shield,             color: 'teal',    cat: 'smart-money', star: true },
   { id: 'distribution-leaders',       name: 'Distribution & Dump Warning Radar',            icon: Shield,             color: 'rose',    cat: 'smart-money', star: true },
   { id: 'unusual-trades',             name: 'Top Unusual Block Deals (≥ 1 Cr)',             icon: Zap,                color: 'yellow',  cat: 'smart-money', star: true },
+  { id: 'players-choices',            name: 'Smart Money / Big Players Choices',            icon: Crown,              color: 'yellow',  cat: 'smart-money', star: true },
+  { id: 'matching-buy-sell',          name: 'Self-Matched / Cross Broker Trades',           icon: ArrowLeftRight,     color: 'cyan',    cat: 'smart-money', star: true },
   { id: 'broker-analysis',            name: 'Broker A/D Flow Analysis',                     icon: Users,              color: 'purple',  cat: 'smart-money', star: true },
-  { id: 'broker-dominance',           name: 'Broker Dominance & Cornering',                 icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
+  { id: 'broker-dominance',           name: 'Broker Dominance & Cornering (BCR3)',          icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
   { id: 'broker-top10',               name: 'Broker Top 10 Stocks (Brokers 58, 45, 34)',    icon: BarChart3,          color: 'amber',   cat: 'smart-money', star: true },
   { id: 'broker-heatmap',             name: 'Broker Network Heatmap',                       icon: LayoutGrid,         color: 'purple',  cat: 'smart-money', star: true },
+  { id: 'broker-favourites',          name: 'Broker Historical Favourites',                 icon: Heart,              color: 'pink',    cat: 'smart-money', star: true },
+  { id: 'broker-flow',                name: 'Institutional Broker Flow Telemetry',          icon: Activity,           color: 'blue',    cat: 'smart-money', star: true },
+  { id: 'zero-sum-floorsheet',        name: 'Zero-Sum Net Floorsheet Engine',               icon: LayoutGrid,         color: 'teal',    cat: 'smart-money', star: true },
 
-  // ── Trading & Technical Setups ──
+  // ── 3. Trading & Technical Setups (35 Tools) ──
+  { id: 'candlestick-patterns',       name: '28 Candlestick Patterns Scanner',              icon: Compass,            color: 'pink',    cat: 'trading', star: true },
+  { id: 'technical-ratings',          name: 'Technical Speedometer (12 Indicators)',        icon: Gauge,              color: 'emerald', cat: 'trading', star: true },
   { id: 'breakout-stocks',            name: 'Breakout & Trap Radar',                        icon: Zap,                color: 'purple',  cat: 'trading', star: true },
+  { id: 'next-breakouts',             name: 'Coiling Under Resistance (Pre-Breakout)',      icon: Target,             color: 'emerald', cat: 'trading', star: true },
+  { id: 'breakout-tradable',          name: 'Real-Time Breakout Scanner',                   icon: Flame,              color: 'rose',    cat: 'trading', star: true },
+  { id: 'trendline-breakout',         name: 'Trendline Breakout with Volume',               icon: TrendingUp,         color: 'cyan',    cat: 'trading', star: true },
   { id: 'consolidating-stocks',       name: 'Consolidating & Coiling Base',                 icon: Layers,             color: 'teal',    cat: 'trading', star: true },
-  { id: 'circuit-setup',              name: 'Circuit Setup (±15%)',                         icon: Radio,              color: 'cyan',    cat: 'trading', star: true },
-  { id: 'volume-shockers',            name: 'Volume Shockers & Z-Score',                    icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
-  { id: 'technical-ratings',          name: 'Technical Ratings (RSI/MACD/EMA)',             icon: Award,              color: 'emerald', cat: 'trading', star: true },
-  { id: 'candlestick-patterns',       name: 'Candlestick Patterns',                         icon: Compass,            color: 'pink',    cat: 'trading', star: true },
-  { id: 'fibonacci-levels',           name: 'Fibonacci Levels',                             icon: SlidersHorizontal,  color: 'purple',  cat: 'trading', star: true },
-  { id: 'pivot-points',               name: 'Classic Pivot Points',                         icon: Target,             color: 'rose',    cat: 'trading', star: true },
+  { id: 'consolidating-picks',        name: 'Ultra-Tight Volatility Contraction Picks',     icon: SlidersHorizontal,  color: 'blue',    cat: 'trading', star: true },
+  { id: 'circuit-setup',              name: 'Circuit Setup Radar (±15% Daily Limit)',       icon: Radio,              color: 'cyan',    cat: 'trading', star: true },
+  { id: 'volume-shockers',            name: 'Volume Shockers & Z-Score Anomaly',            icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
+  { id: 'relative-strength',          name: 'Relative Strength (Alpha vs NEPSE)',           icon: TrendingUp,         color: 'emerald', cat: 'trading', star: true },
+  { id: 'fresh-indicators',           name: 'Fresh RSI / MACD Inflection Signals',          icon: Activity,           color: 'cyan',    cat: 'trading', star: true },
+  { id: 'support-resistance',         name: '52W Support & Resistance Radar',               icon: Crosshair,          color: 'rose',    cat: 'trading', star: true },
+  { id: 'support-setups',             name: 'Basing Near Support (Swing Setups)',           icon: Shield,             color: 'emerald', cat: 'trading', star: true },
+  { id: 'magnetic-support',           name: 'StockYan Magnetic Support Anchors',            icon: Target,             color: 'emerald', cat: 'trading', star: true },
+  { id: 'breakable-resistance',       name: 'StockYan Breakable Resistance Radar',          icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
+  { id: 'breakdown-stocks',           name: 'Share Hub Breakdown & Selloff Radar',          icon: TrendingDown,       color: 'rose',    cat: 'trading', star: true },
+  { id: 'volatile-stocks',            name: 'Share Hub High Volatility & ATR Movers',       icon: Activity,           color: 'purple',  cat: 'trading', star: true },
+  { id: 'hot-trending-stock',         name: 'StockYan Hot Trending Velocity Screener',      icon: Flame,              color: 'orange',  cat: 'trading', star: true },
+  { id: 'ai-momentum',                name: 'AI Momentum with Volume Confirmation',         icon: Zap,                color: 'emerald', cat: 'trading', star: true },
+  { id: 'hot-stocks',                 name: 'Hot Stocks Today (Turnover + Surge)',          icon: Flame,              color: 'yellow',  cat: 'trading', star: true },
+  { id: 'price-vs-volume',            name: 'Price Rise Confirmed by Volume (PVA)',         icon: TrendingUp,         color: 'teal',    cat: 'trading', star: true },
+  { id: 'volume-spread',              name: 'Volume Spread Analysis (VSA Wyckoff)',         icon: BarChart3,          color: 'cyan',    cat: 'trading', star: true },
+  { id: 'rsi-filter',                 name: 'Full-Board Multi-Zone RSI Scanner',            icon: Compass,            color: 'blue',    cat: 'trading', star: true },
+  { id: 'macd-signal',                name: 'MACD Bullish Momentum Expansion',              icon: Activity,           color: 'purple',  cat: 'trading', star: true },
+  { id: 'ema-scanner',                name: 'EMA-20 Short-Term Trend Confirmation',         icon: TrendingUp,         color: 'emerald', cat: 'trading', star: true },
+  { id: 'ema-sma-scanner',            name: 'Golden Cross Scanner (EMA-20 > SMA-50)',       icon: SlidersHorizontal,  color: 'yellow',  cat: 'trading', star: true },
+  { id: 'bollinger-scanner',          name: 'Bollinger Bands Squeeze & Expansion',          icon: Layers,             color: 'pink',    cat: 'trading', star: true },
+  { id: 'volume-scanner',             name: 'Top 30 High-Volume Board',                     icon: Activity,           color: 'cyan',    cat: 'trading', star: true },
+  { id: 'pivot-points',               name: 'Classic Floor Pivot Points (R1/S1/P)',         icon: Target,             color: 'rose',    cat: 'trading', star: true },
+  { id: 'fibonacci-levels',           name: 'Fibonacci Retracement & Extension Levels',     icon: SlidersHorizontal,  color: 'purple',  cat: 'trading', star: true },
+  { id: 'dow-signals',                name: 'Dow Theory Trend Confirmation (HH/HL)',        icon: TrendingUp,         color: 'blue',    cat: 'trading', star: true },
+  { id: 'parallel-channel',           name: 'Regression & Parallel Channel Scanner',        icon: Layers,             color: 'teal',    cat: 'trading', star: true },
+  { id: 'trend-continuation',         name: 'Trend Continuation (Flags & Pennants)',        icon: TrendingUp,         color: 'emerald', cat: 'trading', star: true },
+  { id: 'strong-trend',               name: 'Strong Directional Trend Leaders',             icon: Flame,              color: 'orange',  cat: 'trading', star: true },
+  { id: 'advanced-charts',            name: 'Interactive TradingView Charting Engine',      icon: BarChart3,          color: 'cyan',    cat: 'trading', star: true },
 
-  // ── Valuation & Fundamental Picks ──
-  { id: 'dividend-history',           name: 'Dividend Track Record',                        icon: TrendingUp,         color: 'emerald', cat: 'valuation', star: true },
-  { id: 'fundamentals-pro',           name: 'Fundamentals Pro',                             icon: Award,              color: 'emerald', cat: 'valuation', star: true },
-  { id: 'pe-ranking',                 name: 'P/E & PBV Valuation Ranking',                  icon: Percent,            color: 'blue',    cat: 'valuation', star: true },
-  { id: 'promoter-shares',            name: 'Promoter & Public Shares',                     icon: Layers,             color: 'orange',  cat: 'valuation', star: true },
-  { id: 'mutual-funds-unlock',        name: 'Mutual Funds Unlock',                          icon: PieChart,           color: 'cyan',    cat: 'valuation', star: true },
-  { id: 'float-analytics',            name: 'Float Analytics',                              icon: PieChart,           color: 'teal',    cat: 'valuation', star: true },
+  // ── 4. Valuation & Fundamental Picks (16 Tools) ──
+  { id: 'dividend-history',           name: 'Corporate Dividend Track Record',              icon: TrendingUp,         color: 'emerald', cat: 'valuation', star: true },
+  { id: 'dividend-kings',             name: 'Dividend Kings & High Yield Compounders',      icon: Award,              color: 'emerald', cat: 'valuation', star: true },
+  { id: 'dividend-leaders',           name: 'Top Earnings Capacity Dividend Leaders',       icon: Coins,              color: 'yellow',  cat: 'valuation', star: true },
+  { id: 'fundamentals-pro',           name: 'Pro-Grade Fundamentals & Solvency Filter',     icon: Award,              color: 'blue',    cat: 'valuation', star: true },
+  { id: 'fundamental-scanner',        name: 'Undervalued Fundamental Growth Scanner',       icon: Shield,             color: 'emerald', cat: 'valuation', star: true },
+  { id: 'pe-ranking',                 name: 'P/E & PBV Sector Valuation Ranking',           icon: Percent,            color: 'blue',    cat: 'valuation', star: true },
+  { id: 'lynch-garp',                 name: 'Peter Lynch Growth-At-A-Reasonable-Price',     icon: Target,             color: 'purple',  cat: 'valuation', star: true },
+  { id: 'equity-risk-premium',        name: 'Equity Risk Premium vs Bank FD (> 7.5%)',      icon: Scale,              color: 'cyan',    cat: 'valuation', star: true },
+  { id: 'promoter-shares',            name: 'Promoter vs Public Share Distribution',        icon: Layers,             color: 'orange',  cat: 'valuation', star: true },
+  { id: 'mutual-funds-unlock',        name: 'Mutual Funds Portfolio & NAV Analysis',        icon: PieChart,           color: 'cyan',    cat: 'valuation', star: true },
+  { id: 'float-analytics',            name: 'Public Float & Free-Float Turnover Analysis',  icon: PieChart,           color: 'teal',    cat: 'valuation', star: true },
+  { id: 'stocks-by-market-cap',       name: 'Total Market Capitalization Ladder',           icon: Layers,             color: 'blue',    cat: 'valuation', star: true },
+  { id: 'stock-capitalization',       name: 'Tier-Based Capitalization Screener',           icon: SlidersHorizontal,  color: 'yellow',  cat: 'valuation', star: true },
+  { id: 'stockwise-analysis',         name: 'Stock-by-Stock Fundamental Matrix',            icon: FileText,           color: 'purple',  cat: 'valuation', star: true },
+  { id: 'investment-picks',           name: 'Long-Term Value & Defensive Picks',            icon: Award,              color: 'emerald', cat: 'valuation', star: true },
+  { id: 'compare-stocks',             name: 'Compare Stocks Side-by-Side',                  icon: ArrowLeftRight,     color: 'cyan',    cat: 'valuation', star: true },
 
-  // ── NRB & SEBON Regulatory Hub ──
-  { id: 'regulatory-hub',             name: 'NRB & SEBON Regulatory Hub',                   icon: Landmark,           color: 'blue',    cat: 'regulatory', star: true },
-  { id: 'nrb-safety-shield',          name: 'NRB Safety Shield Screener',                   icon: Shield,             color: 'emerald', cat: 'regulatory', star: true },
+  // ── 5. NRB & SEBON Regulatory Hub (6 Tools) ──
+  { id: 'regulatory-hub',             name: 'Unified NRB & SEBON Regulatory Center',        icon: Landmark,           color: 'blue',    cat: 'regulatory', star: true },
+  { id: 'nrb-safety-shield',          name: 'NRB Safety Shield (CAR ≥ 11.5%, NPL ≤ 3.5%)',  icon: Shield,             color: 'emerald', cat: 'regulatory', star: true },
+  { id: 'nrb-forex',                  name: 'Live NRB Forex Rates & Currency Converter',    icon: DollarSign,         color: 'cyan',    cat: 'regulatory', star: true },
+  { id: 'bullion-rates',              name: 'Federation Bullion Benchmark (Gold & Silver)', icon: Coins,              color: 'yellow',  cat: 'regulatory', star: true },
+  { id: 'regulatory-circulars',       name: 'Central Bank & SEBON Directives & Circulars',  icon: FileText,           color: 'orange',  cat: 'regulatory', star: true },
+  { id: 'nrb-indicators',             name: 'Macroeconomic & Monetary Policy Indicators',   icon: Activity,           color: 'purple',  cat: 'regulatory', star: true },
 
-  // ── Market Data & Primary Market ──
-  { id: 'live-market',                name: 'Live Market Feed',                             icon: Activity,           color: 'teal',    cat: 'market', star: true },
-  { id: 'market-summary',             name: 'Market Summary & Breadth',                     icon: LayoutDashboard,    color: 'blue',    cat: 'market', star: true },
-  { id: 'sector-heatmap',             name: 'Sector Heatmap',                               icon: LayoutGrid,         color: 'emerald', cat: 'market', star: true },
-  { id: 'market-depth',               name: 'Market Depth (Level 2)',                       icon: Layers,             color: 'blue',    cat: 'market', star: true },
-  { id: 'ipo-pipeline',               name: 'IPO & Right Share Pipeline',                   icon: Layers,             color: 'pink',    cat: 'market', star: true },
-  { id: 'floor-sheet',                name: 'Floor Sheet',                                  icon: LayoutGrid,         color: 'purple',  cat: 'market', star: true },
-  { id: 'news',                       name: 'Financial News Feed',                          icon: Newspaper,          color: 'cyan',    cat: 'market', star: true },
+  // ── 6. Market Data & Primary Market (22 Tools) ──
+  { id: 'live-market',                name: 'Live Market Real-Time Trading Board',          icon: Activity,           color: 'teal',    cat: 'market', star: true },
+  { id: 'market-summary',             name: 'Market Summary, Breadth & Indices',            icon: LayoutDashboard,    color: 'blue',    cat: 'market', star: true },
+  { id: 'live-nepse',                 name: 'Live NEPSE Index & Sub-Indices Telemetry',     icon: Activity,           color: 'cyan',    cat: 'market', star: true },
+  { id: 'sector-heatmap',             name: 'Sector Performance & Rotation Heatmap',        icon: LayoutGrid,         color: 'emerald', cat: 'market', star: true },
+  { id: 'market-depth',               name: 'Real-Time 5-Depth Market Order Book',          icon: Layers,             color: 'blue',    cat: 'market', star: true },
+  { id: 'floor-sheet',                name: 'Official Floor Sheet & Live Trade Tape',       icon: LayoutGrid,         color: 'purple',  cat: 'market', star: true },
+  { id: 'top-gainers',                name: 'Top Percentage Gainers',                       icon: TrendingUp,         color: 'emerald', cat: 'market', star: true },
+  { id: 'top-losers',                 name: 'Top Percentage Losers',                        icon: TrendingDown,       color: 'rose',    cat: 'market', star: true },
+  { id: 'volume-leaders',             name: 'Volume Turnover Leaders',                      icon: BarChart3,          color: 'cyan',    cat: 'market', star: true },
+  { id: 'turnover-leaders',           name: 'Rupee Turnover Leaders',                       icon: Coins,              color: 'yellow',  cat: 'market', star: true },
+  { id: 'top-transactions',           name: 'Transaction Count Leaders',                    icon: Activity,           color: 'orange',  cat: 'market', star: true },
+  { id: '52w-high',                   name: '52-Week High Breakout Watch',                  icon: TrendingUp,         color: 'emerald', cat: 'market', star: true },
+  { id: '52w-low',                    name: '52-Week Low Oversold Rebound Watch',           icon: TrendingDown,       color: 'rose',    cat: 'market', star: true },
+  { id: 'ipo-pipeline',               name: 'SEBON IPO, FPO & Right Share Pipeline',        icon: Layers,             color: 'pink',    cat: 'market', star: true },
+  { id: 'ipo-current',                name: 'Current & Active IPOs / Debentures',           icon: Sparkles,           color: 'emerald', cat: 'market', star: true },
+  { id: 'ipo-result',                 name: 'IPO Allotment Result Lookup',                  icon: Award,              color: 'purple',  cat: 'market', star: true },
+  { id: 'mero-share',                 name: 'MeroShare Apply Portal Integration',           icon: ExternalLink,       color: 'blue',    cat: 'market', star: true },
+  { id: 'apply-history',              name: 'IPO Application History & Verification',       icon: FileText,           color: 'cyan',    cat: 'market', star: true },
+  { id: 'brokers',                    name: 'NEPSE Licensed Stockbrokers Directory (1–101)', icon: Users,             color: 'orange',  cat: 'market', star: true },
+  { id: 'news',                       name: 'Real-Time Financial News & Scrip Announcements', icon: Newspaper,       color: 'cyan',    cat: 'market', star: true },
+  { id: 'beginners-guide',            name: 'NEPSE Beginner\'s Glossary & Trading Guide',   icon: BookOpen,           color: 'yellow',  cat: 'market', star: true },
+  { id: 'api-status',                 name: 'Core API & Proxy Telemetry Health Status',     icon: ShieldCheck,        color: 'teal',    cat: 'market', star: true },
 
-  // ── Trading Calculators ──
-  { id: 'calculator',                 name: 'Brokerage & Net P&L Calc',                     icon: Calculator,         color: 'orange',  cat: 'calculators', star: true },
-  { id: 'margin-loan',                name: 'Margin Loan (NRB)',                            icon: Scale,              color: 'rose',    cat: 'calculators', star: true },
-  { id: 'bonus-adjustment',           name: 'Bonus & Right Price Adjustment',               icon: Percent,            color: 'emerald', cat: 'calculators', star: true },
-  { id: 'dividend-calculator',        name: 'Dividend Calculator',                          icon: Coins,              color: 'yellow',  cat: 'calculators', star: true },
-  { id: 'sip-calculator',             name: 'SIP Wealth Calculator',                        icon: PieChart,           color: 'teal',    cat: 'calculators', star: true },
+  // ── 7. Trading Calculators (7 Tools) ──
+  { id: 'calculator',                 name: 'SEBON Brokerage & Net P&L Calculator',         icon: Calculator,         color: 'orange',  cat: 'calculators', star: true },
+  { id: 'margin-loan',                name: 'Margin Loan (NRB 70% LTV Valuation)',          icon: Scale,              color: 'rose',    cat: 'calculators', star: true },
+  { id: 'bonus-adjustment',           name: 'Bonus Share Book-Closure Price Adjustment',    icon: Percent,            color: 'emerald', cat: 'calculators', star: true },
+  { id: 'right-adjustment',           name: 'Right Share Book-Closure Price Adjustment',    icon: Percent,            color: 'teal',    cat: 'calculators', star: true },
+  { id: 'dividend-calculator',        name: 'Cash & Stock Dividend Yield Calculator',       icon: Coins,              color: 'yellow',  cat: 'calculators', star: true },
+  { id: 'sip-calculator',             name: 'SIP Wealth & Compounding Simulator',           icon: PieChart,           color: 'cyan',    cat: 'calculators', star: true },
+  { id: 'risk-reward',                name: 'Position Sizing & Risk/Reward Calculator',     icon: Target,             color: 'purple',  cat: 'calculators', star: true },
 
-  // ── Your Personal Desk ──
-  { id: 'portfolio',                  name: 'Portfolio Tracker',                            icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
+  // ── 8. Your Personal Desk (7 Tools) ──
+  { id: 'portfolio',                  name: 'Portfolio Tracker & Real P&L',                 icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
   { id: 'watchlist',                  name: 'Watchlist & Telemetry Alerts',                 icon: Eye,                color: 'purple',  cat: 'desk', star: true },
-  { id: 'trade-notes',                name: 'Trade Notes & Journal',                        icon: FileText,           color: 'orange',  cat: 'desk', star: true },
-  { id: 'credentials',                name: 'Credentials & Vault',                          icon: Lock,               color: 'orange',  cat: 'desk', star: true },
-  { id: 'edit',                       name: 'Preferences & Settings',                       icon: Settings,           color: 'yellow',  cat: 'desk', star: true },
+  { id: 'trade-notes',                name: 'Trader\'s Journal & Setup Thesis Notes',        icon: FileText,           color: 'orange',  cat: 'desk', star: true },
+  { id: 'smart-trade-journal',        name: 'StockYan Smart Trade Journal & P&L Log',       icon: BookOpen,           color: 'emerald', cat: 'desk', star: true },
+  { id: 'stock-alerts',               name: 'Real-Time Price Target & Stop Alerts',         icon: Bell,               color: 'yellow',  cat: 'desk', star: true },
+  { id: 'credentials',                name: 'Credentials & Local Vault Storage',            icon: Lock,               color: 'rose',    cat: 'desk', star: true },
+  { id: 'edit',                       name: 'Preferences, Themes & Settings',               icon: Settings,           color: 'teal',    cat: 'desk', star: true },
 ];
 
 
@@ -255,6 +337,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'dividend-history': DividendHistoryPanel as ComponentType,
   'advanced-chart': TradingViewChartService,
   'api-status': ApiStatusService,
+  'gdp-vs-nepse': GdpVsNepseMacroService as ComponentType,
 
   // Trader's Zone
   'decision-probability': () => (
@@ -283,15 +366,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'warning', text: 'Unusual volume often precedes major moves. Wired to /trade-qty + Z-score engine.' }}
       insight="Z-score above 2σ = 95% statistical significance. Check news + broker flow before chasing." />
   ),
-  'technical-ratings': () => (
-    <UniversalScreener sortFn={(a, b) => b.technicalScore - a.technicalScore}
-      customCols={[
-        { key: 'technicalScore', label: 'Score', align: 'right', bold: true, format: (v) => `${v}/100` },
-        { key: 'technicalRating', label: 'Rating', align: 'right', bold: true, colorFn: (v) => (v === 'Strong Buy' ? '#16a34a' : v === 'Buy' ? '#22c55e' : v === 'Neutral' ? '#d97706' : '#dc2626') },
-      ]}
-      banner={{ type: 'info', text: 'Composite rating from RSI + MACD + EMA structure + volume. Wired to /technical-signals.' }}
-      insight="Focus on Strong Buy names in confirmed uptrends; avoid Strong Sell even when 'cheap'." />
-  ),
+  'technical-ratings': TechnicalRatingsGaugeService as ComponentType,
   'players-choices': () => (
     <UniversalScreener filterFn={(s) => s.turnover > 5000000 && s.pChange > 0} sortFn={(a, b) => b.turnover - a.turnover}
       banner={{ type: 'success', text: 'Institutional favorites by turnover. Wired to /turnover + /floorsheet.' }}
@@ -324,29 +399,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'warning', text: 'NEPSE circuit: ±15% daily limit (since April 20, 2026). Wired to /today-price.' }}
       insight="Upper circuit = strong buying pressure. Wait for next-day confirmation — circuits often open gap-up then fade." />
   ),
-  'candlestick-patterns': () => (
-    <UniversalScreener filterFn={(s) => !!s.candlestickPattern}
-      customCols={[{
-        key: 'candlestickPattern',
-        label: 'Pattern',
-        align: 'right',
-        bold: true,
-        colorFn: (v) => {
-          const str = String(v || '').toLowerCase();
-          if (str.includes('hammer') || str.includes('bullish')) return '#16a34a';
-          if (str.includes('star') || str.includes('bearish') || str.includes('hanging') || str.includes('breakdown')) return '#dc2626';
-          return '#a855f7';
-        }
-      }]}
-      banner={{ type: 'info', text: 'Auto-detected Hammer / Doji / Engulfing / Marubozu from OHLC shape.' }}
-      insight="Bullish patterns near support carry 60–70% success when confirmed by volume." />
-  ),
-  'candlestick-pattern': () => (
-    <UniversalScreener filterFn={(s) => !!s.candlestickPattern}
-      customCols={[{ key: 'candlestickPattern', label: 'Pattern', align: 'right', bold: true }]}
-      banner={{ text: 'Auto-detected candlestick patterns across all 346 listed stocks.' }}
-      insight="Combine patterns with volume for higher probability entries." />
-  ),
+  'candlestick-patterns': CandlestickPatternScannerService as ComponentType,
+  'candlestick-pattern': CandlestickPatternScannerService as ComponentType,
   'consolidating-stocks': () => (
     <UniversalScreener filterFn={(s) => Math.abs(s.pChange) < 1 && s.volume > 5000} sortFn={(a, b) => b.volume - a.volume}
       customCols={[
@@ -452,6 +506,120 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       ]}
       banner={{ type: 'info', text: 'Relative Strength (Alpha) vs the NEPSE index.' }}
       insight="RS leaders (positive Alpha vs index) tend to keep leading — institutional momentum persists." />
+  ),
+  'magnetic-support': () => (
+    <UniversalScreener
+      filterFn={(s) => {
+        const lowDist = s.low52w && s.ltp ? ((s.ltp - s.low52w) / s.low52w) * 100 : 999;
+        return (lowDist <= 8 || (s.rsi && s.rsi >= 30 && s.rsi <= 45)) && (!s.isChurnDistribution);
+      }}
+      sortFn={(a, b) => {
+        const aDist = a.low52w && a.ltp ? ((a.ltp - a.low52w) / a.low52w) * 100 : 999;
+        const bDist = b.low52w && b.ltp ? ((b.ltp - b.low52w) / b.low52w) * 100 : 999;
+        return aDist - bDist;
+      }}
+      customCols={[
+        { key: 'low52w', label: '52W Base Support', align: 'right', format: (v) => v ? `Rs. ${Number(v).toLocaleString()}` : '—' },
+        {
+          key: 'distSupport',
+          label: 'Cushion Above Support',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const dist = s.low52w && s.ltp ? (((s.ltp - s.low52w) / s.low52w) * 100).toFixed(1) : '—';
+            return dist !== '—' ? `+${dist}%` : '—';
+          },
+          colorFn: () => '#10b981'
+        },
+        { key: 'rsi', label: 'RSI', align: 'right', format: (v) => v != null ? Number(v).toFixed(1) : '—' }
+      ]}
+      banner={{ type: 'success', text: 'StockYan Pro Magnetic Support — Identifies resilient scrips coiling right above major demand floors with institutional volume absorption.' }}
+      insight="Buying within 3–6% of verified magnetic support provides asymmetric 3:1+ reward-to-risk setups."
+    />
+  ),
+  'breakable-resistance': () => (
+    <UniversalScreener
+      filterFn={(s) => {
+        const highDist = s.high52w && s.ltp ? ((s.high52w - s.ltp) / s.high52w) * 100 : 999;
+        return highDist >= 0 && highDist <= 6 && (s.volumeSurgeRatio >= 1.2 || s.pChange > 0);
+      }}
+      sortFn={(a, b) => {
+        const aDist = a.high52w && a.ltp ? ((a.high52w - a.ltp) / a.high52w) * 100 : 999;
+        const bDist = b.high52w && b.ltp ? ((b.high52w - b.ltp) / b.high52w) * 100 : 999;
+        return aDist - bDist;
+      }}
+      customCols={[
+        { key: 'high52w', label: '52W Resistance', align: 'right', format: (v) => v ? `Rs. ${Number(v).toLocaleString()}` : '—' },
+        {
+          key: 'distRes',
+          label: 'Gap to Breakout',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const dist = s.high52w && s.ltp ? (((s.high52w - s.ltp) / s.high52w) * 100).toFixed(1) : '—';
+            return dist !== '—' ? `-${dist}%` : '—';
+          },
+          colorFn: () => '#f59e0b'
+        },
+        { key: 'volumeSurgeRatio', label: 'Vol Pressure', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => v >= 1.5 ? '#10b981' : '#38bdf8' }
+      ]}
+      banner={{ type: 'warning', text: 'StockYan Pro Breakable Resistance — Detects scrips actively chewing through heavy supply barriers with elevated volume momentum.' }}
+      insight="Repeated tests of resistance with higher lows indicate supply exhaustion. Watch for explosive volume follow-through."
+    />
+  ),
+  'breakdown-stocks': () => (
+    <UniversalScreener
+      filterFn={(s) => s.pChange <= -2.5 || (s.rsi && s.rsi < 35 && s.pChange < 0)}
+      sortFn={(a, b) => a.pChange - b.pChange}
+      customCols={[
+        { key: 'pChange', label: 'Selloff %', align: 'right', bold: true, format: (v) => `${Number(v).toFixed(2)}%`, colorFn: () => '#f43f5e' },
+        { key: 'rsi', label: 'RSI (14)', align: 'right', format: (v) => v != null ? Number(v).toFixed(1) : '—', colorFn: (v) => v < 30 ? '#10b981' : '#f43f5e' },
+        { key: 'turnover', label: 'Panic Turnover', align: 'right', format: (v) => v ? `Rs. ${(Number(v) / 1e5).toFixed(1)} L` : '—' }
+      ]}
+      banner={{ type: 'warning', text: 'Share Hub Breakdown Radar — Alerts on scrips cracking below support or undergoing aggressive distribution selloffs.' }}
+      insight="Avoid catching falling knives during early breakdown stages. Wait for climactic washouts and RSI bullish divergence."
+    />
+  ),
+  'volatile-stocks': () => (
+    <UniversalScreener
+      filterFn={(s) => s.high && s.low && s.ltp && ((s.high - s.low) / s.ltp) * 100 >= 3.0}
+      sortFn={(a, b) => {
+        const aRange = a.high && a.low && a.ltp ? ((a.high - a.low) / a.ltp) * 100 : 0;
+        const bRange = b.high && b.low && b.ltp ? ((b.high - b.low) / b.ltp) * 100 : 0;
+        return bRange - aRange;
+      }}
+      customCols={[
+        {
+          key: 'intradayRange',
+          label: 'Intraday Swing',
+          align: 'right',
+          bold: true,
+          format: (_, s) => {
+            const rng = s.high && s.low && s.ltp ? (((s.high - s.low) / s.ltp) * 100).toFixed(2) : '0.00';
+            return `±${rng}%`;
+          },
+          colorFn: () => '#a855f7'
+        },
+        { key: 'high', label: 'Day High', align: 'right', format: (v) => `Rs. ${v}` },
+        { key: 'low', label: 'Day Low', align: 'right', format: (v) => `Rs. ${v}` },
+        { key: 'volume', label: 'Volume', align: 'right', format: (v) => Number(v || 0).toLocaleString() }
+      ]}
+      banner={{ type: 'info', text: 'Share Hub Volatility Radar — High ATR and wide intraday range scrips offering maximum intraday and swing profit opportunities.' }}
+      insight="High volatility scrips require tight stop-loss discipline and scaling out at predetermined resistance levels."
+    />
+  ),
+  'hot-trending-stock': () => (
+    <UniversalScreener
+      filterFn={(s) => s.pChange >= 2.5 && (s.volumeSurgeRatio >= 1.2 || s.turnover >= 5000000)}
+      sortFn={(a, b) => (b.pChange * (b.volumeSurgeRatio || 1)) - (a.pChange * (a.volumeSurgeRatio || 1))}
+      customCols={[
+        { key: 'pChange', label: 'Velocity %', align: 'right', bold: true, format: (v) => `+${Number(v).toFixed(2)}%`, colorFn: () => '#10b981' },
+        { key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => v >= 1.5 ? '#10b981' : '#38bdf8' },
+        { key: 'technicalScore', label: 'Tech Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => v >= 70 ? '#10b981' : '#f59e0b' }
+      ]}
+      banner={{ type: 'success', text: 'StockYan Pro Hot Trending — Fast-moving momentum scrips surging with institutional volume and high technical velocity.' }}
+      insight="Trend velocity leaders often lead sector rallies for 3–5 consecutive trading sessions. Ride with trailing stops."
+    />
   ),
 
   // Analytics
@@ -848,6 +1016,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'portfolio': PortfolioTool,
   'watchlist': WatchlistTool,
   'trade-notes': TradeNotesTool,
+  'smart-trade-journal': TradeNotesTool,
   'stock-alerts': AlertsTool,
   'edit': () => <PreferencesSettingsService initialTab="preferences" />,
   'preferences': () => <PreferencesSettingsService initialTab="preferences" />,

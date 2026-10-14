@@ -153,19 +153,37 @@ export function StockCandlestickChart({
   const ema20Data = useMemo(() => {
     if (closes.length < 20) return [];
     const ema = calculateEMA(closes, 20);
-    return filteredCandles.map((c, i) => ({ time: c.date, value: Number(ema[i].toFixed(2)) }));
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      if (ema && ema[i] != null && !isNaN(ema[i])) {
+        result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
+      }
+    });
+    return result;
   }, [closes, filteredCandles]);
 
   const ema50Data = useMemo(() => {
     if (closes.length < 50) return [];
     const ema = calculateEMA(closes, 50);
-    return filteredCandles.map((c, i) => ({ time: c.date, value: Number(ema[i].toFixed(2)) }));
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      if (ema && ema[i] != null && !isNaN(ema[i])) {
+        result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
+      }
+    });
+    return result;
   }, [closes, filteredCandles]);
 
   const ema200Data = useMemo(() => {
     if (closes.length < 180) return [];
     const ema = calculateEMA(closes, 200);
-    return filteredCandles.map((c, i) => ({ time: c.date, value: Number(ema[i].toFixed(2)) }));
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      if (ema && ema[i] != null && !isNaN(ema[i])) {
+        result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
+      }
+    });
+    return result;
   }, [closes, filteredCandles]);
 
   // Bollinger Bands (20 period, 2 std dev)

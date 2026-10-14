@@ -21,6 +21,10 @@
     "allowNavigation": [
       "sharesansar.com",
       "*.sharesansar.com",
+      "chukul.com",
+      "*.chukul.com",
+      "nepalstock.com.np",
+      "*.nepalstock.com.np",
       "allorigins.win",
       "*.allorigins.win",
       "vercel.app",
