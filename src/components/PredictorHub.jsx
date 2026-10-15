@@ -252,32 +252,36 @@ export default function PredictorHub({
       const vsr = Number(s.volumeSurgeRatio || (vol > 15000 ? 1.55 : 0.95));
 
       // ── Authentic Dynamic RSI & EMAs ─────────────────────────────────────
+      const cachedHist = getCachedRealPriceHistory(sym);
+      const hasEnoughCandles = Array.isArray(cachedHist) && cachedHist.length >= 15;
       const rsi = resolveDynamicStockRSI(s);
-      const rsiIsReal = true;
-      const rsiDataMissing = false;
+      const rsiIsReal = Boolean(hasEnoughCandles && rsi != null && !isNaN(rsi));
+      const rsiDataMissing = !rsiIsReal;
+
+      // Extract closes if cachedHist is available
+      let closes = [];
+      if (Array.isArray(cachedHist) && cachedHist.length > 0) {
+        const isSorted = cachedHist.length <= 1 || (cachedHist[0].date <= cachedHist[cachedHist.length - 1].date);
+        const sorted = isSorted ? cachedHist : cachedHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
+      }
 
       // ── EMA Structural Position ───────────────────────────────────────────
       const dynEMAs = resolveDynamicStockEMAs(s, ltp);
-      let ema50 = Number(s.ema50 || s.sma50 || dynEMAs.ema50);
-      let ema200 = Number(s.ema200 || s.sma200 || dynEMAs.ema200);
+      let ema50 = s.ema50 != null ? Number(s.ema50) : (s.sma50 != null ? Number(s.sma50) : (dynEMAs?.ema50 != null ? Number(dynEMAs.ema50) : null));
+      let ema200 = s.ema200 != null ? Number(s.ema200) : (s.sma200 != null ? Number(s.sma200) : (dynEMAs?.ema200 != null ? Number(dynEMAs.ema200) : null));
 
-      const cachedHist = getCachedRealPriceHistory(sym);
-      if (Array.isArray(cachedHist) && cachedHist.length >= 15) {
-        const isSorted = cachedHist.length <= 1 || (cachedHist[0].date <= cachedHist[cachedHist.length - 1].date);
-        const sorted = isSorted ? cachedHist : cachedHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
-        const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
-        if (closes.length >= 15) {
-          const ema50Arr = calculateEMA(closes, Math.min(50, closes.length));
-          if (ema50Arr.length > 0) ema50 = Number(ema50Arr[ema50Arr.length - 1].toFixed(1));
-        }
-        if (closes.length >= 30) {
-          const ema200Arr = calculateEMA(closes, Math.min(200, closes.length));
-          if (ema200Arr.length > 0) ema200 = Number(ema200Arr[ema200Arr.length - 1].toFixed(1));
-        }
+      if (closes.length >= 15) {
+        const ema50Arr = calculateEMA(closes, Math.min(50, closes.length));
+        if (ema50Arr.length > 0 && ema50Arr[ema50Arr.length - 1] != null) ema50 = Number(ema50Arr[ema50Arr.length - 1].toFixed(1));
+      }
+      if (closes.length >= 30) {
+        const ema200Arr = calculateEMA(closes, Math.min(200, closes.length));
+        if (ema200Arr.length > 0 && ema200Arr[ema200Arr.length - 1] != null) ema200 = Number(ema200Arr[ema200Arr.length - 1].toFixed(1));
       }
 
-      const isAbove50EMA = ltp >= ema50;
-      const isAbove200EMA = ltp >= ema200;
+      const isAbove50EMA = (ema50 != null && ema50 > 0) ? (ltp >= ema50) : null;
+      const isAbove200EMA = (ema200 != null && ema200 > 0) ? (ltp >= ema200) : null;
 
       // ── Hard Trend Ceiling ────────────────────────────────────────────────
       // Physical rule: a stock below its 50 EMA is in a bearish structure.
@@ -289,12 +293,16 @@ export default function PredictorHub({
       const obvTrend = vsr > 1.2 && pCh >= 0 ? 'rising' : pCh < -1 ? 'falling' : 'flat';
 
       // ── 5-day momentum needs actual 5-day data ────────────────────────────
-      const momentum5d = +(pCh * 1.0 + (vsr > 1.4 ? 1.5 : 0)).toFixed(2);
+      const momentum5d = closes.length >= 6 && closes[closes.length - 6] > 0
+        ? +(((closes[closes.length - 1] - closes[closes.length - 6]) / closes[closes.length - 6]) * 100).toFixed(2)
+        : null;
 
       let score = 50;
 
       // Momentum contribution
-      score += Math.max(-12, Math.min(12, momentum5d * 1.5));
+      if (momentum5d != null) {
+        score += Math.max(-12, Math.min(12, momentum5d * 1.5));
+      }
 
       // Volume surge: can add max 10 pts
       score += vsr >= 1.8 ? 10 : vsr >= 1.3 ? 6 : vsr < 0.7 ? -8 : 0;
@@ -516,14 +524,32 @@ export default function PredictorHub({
           explanation: 'Headline NEPSE and free-float index are moving in normal correlation.'
         };
 
-        // Dynamic moving averages for NEPSE Index
-        const ema_20 = Number((nepseIdx * (1 - (nepseChange * 0.004))).toFixed(1));
-        const ema_50 = Number((nepseIdx * (1 - (nepseChange * 0.008 + (dir === 'up' ? 0.015 : -0.015)))).toFixed(1));
-        const ema_200 = Number((nepseIdx * (1 - (dir === 'up' ? 0.06 : -0.04))).toFixed(1));
-        const is_above_50_ema = nepseIdx >= ema_50;
-        const is_above_200_ema = nepseIdx >= ema_200;
-        const golden_cross = ema_50 >= ema_200;
-        const hard_ceiling_applied = !is_above_50_ema;
+        // Dynamic moving averages for NEPSE Index (calculated from genuine history or null)
+        let ema_20 = null;
+        let ema_50 = null;
+        let ema_200 = null;
+        const nepseHist = getCachedRealPriceHistory('NEPSE');
+        if (Array.isArray(nepseHist) && nepseHist.length >= 20) {
+          const isSorted = nepseHist.length <= 1 || (nepseHist[0].date <= nepseHist[nepseHist.length - 1].date);
+          const sorted = isSorted ? nepseHist : nepseHist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+          const closes = sorted.map(c => Number(c.close ?? c.ltp ?? 0)).filter(c => c > 0);
+          if (closes.length >= 20) {
+            const arr = calculateEMA(closes, 20);
+            if (arr.length > 0 && arr[arr.length - 1] != null) ema_20 = Number(arr[arr.length - 1].toFixed(1));
+          }
+          if (closes.length >= 50) {
+            const arr = calculateEMA(closes, 50);
+            if (arr.length > 0 && arr[arr.length - 1] != null) ema_50 = Number(arr[arr.length - 1].toFixed(1));
+          }
+          if (closes.length >= 200) {
+            const arr = calculateEMA(closes, 200);
+            if (arr.length > 0 && arr[arr.length - 1] != null) ema_200 = Number(arr[arr.length - 1].toFixed(1));
+          }
+        }
+        const is_above_50_ema = (ema_50 != null && ema_50 > 0) ? (nepseIdx >= ema_50) : null;
+        const is_above_200_ema = (ema_200 != null && ema_200 > 0) ? (nepseIdx >= ema_200) : null;
+        const golden_cross = (ema_50 != null && ema_200 != null) ? (ema_50 >= ema_200) : null;
+        const hard_ceiling_applied = is_above_50_ema === false;
 
         setIndexPrediction({
           prediction_date: new Date().toISOString().slice(0, 10),
@@ -565,8 +591,8 @@ export default function PredictorHub({
             sector_breadth_pct: +(advances / Math.max(1, stocks?.length || 1)).toFixed(2),
             weighted_breadth_pct: +(advances / Math.max(1, stocks?.length || 1)).toFixed(2),
             turnover_ratio_vs_20d_avg: 1.05,
-            m2_growth_pct: 12.8,
-            interest_rate_pct: 5.5
+            m2_growth_pct: null,
+            interest_rate_pct: null
           },
           model_version: 'quant-v2.2-institutional',
           explanation: dir === 'up'
@@ -1183,7 +1209,7 @@ export default function PredictorHub({
       </div>
 
       {/* ── Tab Content Container ── */}
-      <div style={{ flex: 1, padding: activeTab === 'short_term_plan' ? '8px 4px' : '16px 12px' }} className="predictor-tab-content">
+      <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex-1 predictor-tab-content" style={{ minWidth: 0, boxSizing: 'border-box' }}>
 
         {/* ══════════════════════════════════════════════════════════
             VIEW: NEPSE AGENT (GEMINI 3.1 PRO CASCADE)
@@ -1664,7 +1690,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>20 EMA (Short-term)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Rs. {Number(indexPrediction.trend_structure.ema_20 || 0).toFixed(1)}
+                        {indexPrediction.trend_structure.ema_20 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_20).toFixed(1)}` : 'N/A (<20d)'}
                       </div>
                     </div>
                     <span style={{
@@ -1691,7 +1717,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>50 EMA (Structural)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Rs. {Number(indexPrediction.trend_structure.ema_50 || 0).toFixed(1)}
+                        {indexPrediction.trend_structure.ema_50 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_50).toFixed(1)}` : 'N/A (<50d)'}
                       </div>
                     </div>
                     <span style={{
@@ -1699,10 +1725,10 @@ export default function PredictorHub({
                       fontWeight: 800,
                       padding: '2px 6px',
                       borderRadius: 6,
-                      background: indexPrediction.trend_structure.is_above_50_ema ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: indexPrediction.trend_structure.is_above_50_ema ? '#10b981' : '#ef4444'
+                      background: indexPrediction.trend_structure.is_above_50_ema === null ? 'rgba(255, 255, 255, 0.05)' : indexPrediction.trend_structure.is_above_50_ema ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: indexPrediction.trend_structure.is_above_50_ema === null ? 'var(--text-muted)' : indexPrediction.trend_structure.is_above_50_ema ? '#10b981' : '#ef4444'
                     }}>
-                      {indexPrediction.trend_structure.is_above_50_ema ? 'Above 50 EMA' : 'Below 50 EMA'}
+                      {indexPrediction.trend_structure.is_above_50_ema === null ? 'Data Pending' : indexPrediction.trend_structure.is_above_50_ema ? 'Above 50 EMA' : 'Below 50 EMA'}
                     </span>
                   </div>
 
@@ -1718,7 +1744,7 @@ export default function PredictorHub({
                     <div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>200 EMA (Macro)</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        Rs. {Number(indexPrediction.trend_structure.ema_200 || 0).toFixed(1)}
+                        {indexPrediction.trend_structure.ema_200 != null ? `Rs. ${Number(indexPrediction.trend_structure.ema_200).toFixed(1)}` : 'N/A (<200d)'}
                       </div>
                     </div>
                     <span style={{
@@ -1726,10 +1752,10 @@ export default function PredictorHub({
                       fontWeight: 800,
                       padding: '2px 6px',
                       borderRadius: 6,
-                      background: indexPrediction.trend_structure.is_above_200_ema ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: indexPrediction.trend_structure.is_above_200_ema ? '#10b981' : '#ef4444'
+                      background: indexPrediction.trend_structure.is_above_200_ema === null ? 'rgba(255, 255, 255, 0.05)' : indexPrediction.trend_structure.is_above_200_ema ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: indexPrediction.trend_structure.is_above_200_ema === null ? 'var(--text-muted)' : indexPrediction.trend_structure.is_above_200_ema ? '#10b981' : '#ef4444'
                     }}>
-                      {indexPrediction.trend_structure.is_above_200_ema ? 'Bullish Macro' : 'Bearish Macro'}
+                      {indexPrediction.trend_structure.is_above_200_ema === null ? 'Data Pending' : indexPrediction.trend_structure.is_above_200_ema ? 'Bullish Macro' : 'Bearish Macro'}
                     </span>
                   </div>
                 </div>

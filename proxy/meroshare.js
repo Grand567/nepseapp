@@ -70,11 +70,11 @@ function saveAccounts(accounts) {
 
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
-const sharedJar = new CookieJar();
 
 const createMeroShareSession = () => {
-  return wrapper(axios.create({
-    jar: sharedJar,
+  const jar = new CookieJar();
+  const client = wrapper(axios.create({
+    jar,
     withCredentials: true,
     timeout: 20000,
     headers: {
@@ -85,6 +85,8 @@ const createMeroShareSession = () => {
       'Referer': 'https://meroshare.cdsc.com.np/',
     }
   }));
+  client.jar = jar;
+  return client;
 };
 
 const isWafBlocked = (response) => {
@@ -120,7 +122,8 @@ const validateJsonResponse = (response, label = 'MeroShare API') => {
 
 const primeSession = async (client) => {
   try {
-    const cookies = sharedJar.getCookiesSync('https://backend.cdsc.com.np');
+    const jar = client?.jar;
+    const cookies = jar ? jar.getCookiesSync('https://backend.cdsc.com.np') : [];
     if (cookies && cookies.length > 0) {
       return;
     }

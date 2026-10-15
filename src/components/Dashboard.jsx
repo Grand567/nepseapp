@@ -2007,10 +2007,11 @@ function Dashboard({
   // Movers Navigation Tab State (defaults to null — user clicks tab to view)
   const [moversTab, setMoversTab] = useState(null); // 'gainers' | 'losers' | 'turnover' | 'volume' | 'breakouts' | 'next_breakouts'
 
-  // Breadth Statistics — dynamically and accurately computed from active live stocks
-  const advancedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) > 0).length, [stocks]);
-  const declinedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) < 0).length, [stocks]);
-  const unchangedCount = useMemo(() => stocks.filter(s => (s.pChange || 0) === 0).length, [stocks]);
+  // Breadth Statistics — dynamically harmonized with official NEPSE exchange summary
+  const cachedSummaryForBreadth = getCachedMarketSummary();
+  const advancedCount = useMemo(() => cachedSummaryForBreadth?.advances != null ? cachedSummaryForBreadth.advances : stocks.filter(s => (s.pChange || 0) > 0).length, [stocks, cachedSummaryForBreadth]);
+  const declinedCount = useMemo(() => cachedSummaryForBreadth?.declines != null ? cachedSummaryForBreadth.declines : stocks.filter(s => (s.pChange || 0) < 0).length, [stocks, cachedSummaryForBreadth]);
+  const unchangedCount = useMemo(() => cachedSummaryForBreadth?.unchanged != null ? cachedSummaryForBreadth.unchanged : stocks.filter(s => (s.pChange || 0) === 0).length, [stocks, cachedSummaryForBreadth]);
   const circuitPosCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'pos')).length, [stocks]);
   const circuitNegCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'neg')).length, [stocks]);
 
@@ -2021,7 +2022,18 @@ function Dashboard({
     const breadthScore = adRatio * 100;
     
     const nepseVal = Number(currentHeroValue) || 2550;
-    const sma200 = 2480;
+    
+    // Dynamically compute 200-period SMA from heroHistory when available
+    let dynamicSma200 = null;
+    if (Array.isArray(heroHistory) && heroHistory.length >= 20) {
+      const closeValues = heroHistory.map(h => Number(h.close || h.value || 0)).filter(v => v > 0);
+      if (closeValues.length >= 20) {
+        const period = Math.min(200, closeValues.length);
+        const slice = closeValues.slice(-period);
+        dynamicSma200 = slice.reduce((a, b) => a + b, 0) / period;
+      }
+    }
+    const sma200 = dynamicSma200 || nepseVal;
     const trendScore = nepseVal >= sma200 ? 65 + Math.min(25, (nepseVal - sma200) / 20) : 35 - Math.min(25, (sma200 - nepseVal) / 20);
     
     const avgPChange = stocks.length > 0 ? (stocks.reduce((acc, s) => acc + (Number(s.pChange) || 0), 0) / stocks.length) : 0;
@@ -2057,7 +2069,7 @@ function Dashboard({
     }
 
     return { score, label, color, desc };
-  }, [advancedCount, declinedCount, unchangedCount, currentHeroValue, stocks]);
+  }, [advancedCount, declinedCount, unchangedCount, currentHeroValue, stocks, heroHistory]);
 
   // ── Sector Rotation & Momentum ──
   const [sectorTf, setSectorTf] = useState('1D'); // '1D' | '1W' | '1M'
@@ -2065,16 +2077,36 @@ function Dashboard({
     const sectorMap = {};
     stocks.forEach(s => {
       const sec = s.sector || 'Others';
-      if (!sectorMap[sec]) sectorMap[sec] = { count: 0, sumPChange: 0, turnover: 0 };
+      if (!sectorMap[sec]) sectorMap[sec] = { count: 0, sumPChange: 0, sum1W: 0, sum1M: 0, count1W: 0, count1M: 0, turnover: 0 };
       sectorMap[sec].count++;
       sectorMap[sec].sumPChange += Number(s.pChange) || 0;
       sectorMap[sec].turnover += Number(s.turnover) || (Number(s.ltp || 100) * Number(s.volume || 1000));
+
+      const hist = getCachedRealPriceHistory(s.symbol);
+      if (Array.isArray(hist) && hist.length >= 6) {
+        const last = Number(hist[hist.length - 1]?.close || s.ltp || 0);
+        const prev5 = Number(hist[hist.length - 6]?.close || 0);
+        if (last > 0 && prev5 > 0) {
+          sectorMap[sec].sum1W += ((last - prev5) / prev5) * 100;
+          sectorMap[sec].count1W++;
+        }
+        if (hist.length >= 21) {
+          const prev20 = Number(hist[hist.length - 21]?.close || 0);
+          if (last > 0 && prev20 > 0) {
+            sectorMap[sec].sum1M += ((last - prev20) / prev20) * 100;
+            sectorMap[sec].count1M++;
+          }
+        }
+      }
     });
 
     const list = Object.entries(sectorMap).map(([sector, data]) => {
       let avgChange = data.count > 0 ? (data.sumPChange / data.count) : 0;
-      if (sectorTf === '1W') avgChange = avgChange * 1.8 + ((sector.charCodeAt(0) % 5) - 2.5);
-      else if (sectorTf === '1M') avgChange = avgChange * 3.2 + ((sector.charCodeAt(1) % 8) - 4);
+      if (sectorTf === '1W' && data.count1W > 0) {
+        avgChange = data.sum1W / data.count1W;
+      } else if (sectorTf === '1M' && data.count1M > 0) {
+        avgChange = data.sum1M / data.count1M;
+      }
       return {
         sector,
         avgChange: Number(avgChange.toFixed(2)),
@@ -2707,10 +2739,13 @@ function Dashboard({
     if (!totalVolume || totalVolume <= 0) {
       totalVolume = stocks.reduce((sum, s) => sum + Number(s.volume || s.totalTradedQuantity || 0), 0);
     }
+    if (!totalTrades || totalTrades <= 0) {
+      totalTrades = Number(cachedSummaryForBreadth?.totalTransactions || 0);
+    }
 
-    const adv = stocks.filter(s => (s.pChange || 0) > 0).length;
-    const dec = stocks.filter(s => (s.pChange || 0) < 0).length;
-    const unc = stocks.filter(s => (s.pChange || 0) === 0).length;
+    const adv = cachedSummaryForBreadth?.advances != null ? cachedSummaryForBreadth.advances : stocks.filter(s => (s.pChange || 0) > 0).length;
+    const dec = cachedSummaryForBreadth?.declines != null ? cachedSummaryForBreadth.declines : stocks.filter(s => (s.pChange || 0) < 0).length;
+    const unc = cachedSummaryForBreadth?.unchanged != null ? cachedSummaryForBreadth.unchanged : stocks.filter(s => (s.pChange || 0) === 0).length;
     const breadthRatio = dec > 0 ? (adv / dec).toFixed(2) : (adv > 0 ? `${adv}:0` : '1.0');
 
     const floatVal = indices?.float?.value || 174.35;
@@ -2730,7 +2765,7 @@ function Dashboard({
       floatPChg,
       totalScrips: stocks.length
     };
-  }, [stocks, indices]);
+  }, [stocks, indices, cachedSummaryForBreadth]);
 
   // Watched & Alert Stocks list for the unified Watchlist & Alerts card
   const watchedStocks = useMemo(() => {
@@ -2831,7 +2866,7 @@ function Dashboard({
 
 
   return (
-    <div className="dashboard-container" style={{ maxWidth: 1100, margin: '0 auto', padding: '8px 10px 80px' }}>
+    <div className="dashboard-container" style={{ width: '100%', maxWidth: '100%', margin: 0, padding: '8px 8px 80px', boxSizing: 'border-box' }}>
 
       {/* A1+A2: Risk disclaimer + simulated-data warning. Only visible on cold boot before live feed arrives. */}
       {(() => {
@@ -3152,7 +3187,7 @@ function Dashboard({
                     key={`news_${copyIndex}_${item.id || item.title}`}
                     onClick={() => {
                       if (item.url) window.open(item.url, '_blank');
-                      else if (onNavigateTab) onNavigateTab('news');
+                      else setActiveTab('services');
                     }}
                     style={{
                       display: 'inline-flex',
@@ -3509,10 +3544,16 @@ function Dashboard({
           }}>
             {/* Header row */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Activity style={{ width: 14, height: 14, color: 'var(--primary-light)' }} />
                 <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>Market Breadth & Circuits</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({totalBreadth} Scrips Traded)</span>
+                {cachedSummaryForBreadth?.advances != null ? (
+                  <span style={{ fontSize: 11, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '1px 7px', borderRadius: 6, fontWeight: 700 }}>
+                    Official NEPSE: {cachedSummaryForBreadth.advances} Adv / {cachedSummaryForBreadth.declines} Dec / {cachedSummaryForBreadth.unchanged} Unc
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({totalBreadth} Scrips Traded)</span>
+                )}
               </div>
               <span
                 onClick={() => setBreadthModalTab(breadthFilter || 'advanced')}
@@ -4415,10 +4456,10 @@ function Dashboard({
 
             const t1NetPct = primeDailyPick.levels?.target1?.netReturnPct != null
               ? primeDailyPick.levels.target1.netReturnPct
-              : (t1Pct && Number(t1Pct) > 0.73 ? +((Number(t1Pct) - 0.73) * 0.90).toFixed(1) : t1Pct);
+              : (t1Pct && Number(t1Pct) > 0.73 ? +((Number(t1Pct) - 0.73) * 0.925).toFixed(1) : t1Pct);
             const t2NetPct = primeDailyPick.levels?.target2?.netReturnPct != null
               ? primeDailyPick.levels.target2.netReturnPct
-              : (t2Pct && Number(t2Pct) > 0.73 ? +((Number(t2Pct) - 0.73) * 0.90).toFixed(1) : t2Pct);
+              : (t2Pct && Number(t2Pct) > 0.73 ? +((Number(t2Pct) - 0.73) * 0.925).toFixed(1) : t2Pct);
 
             return (
               <div style={{
@@ -5324,7 +5365,7 @@ function Dashboard({
             <div><span style={{ color: 'var(--text-muted)' }}>Index Value: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmt(heroVal.value)}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Point Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{isHeroBull ? '+' : ''}{fmt(heroVal.change)}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Percent Change: </span><strong style={{ color: isHeroBull ? 'var(--bull)' : '#F43F5E', fontFamily: 'var(--font-mono)' }}>{(heroVal.pChange || 0).toFixed(2)}%</strong></div>
-            <div><span style={{ color: 'var(--text-muted)' }}>Turnover: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmtCr(heroVal.turnover || indices?.nepse?.turnover || 3786455070)}</strong></div>
+            <div><span style={{ color: 'var(--text-muted)' }}>Turnover: </span><strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{fmtCr(heroVal.turnover || indices?.nepse?.turnover || 0)}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>Market: </span><strong style={{ color: marketStatus?.isOpen ? 'var(--bull)' : '#f87171' }}>{marketStatus?.isOpen ? 'OPEN' : 'CLOSED'}</strong></div>
           </div>
         </div>

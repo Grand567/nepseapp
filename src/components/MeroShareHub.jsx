@@ -1529,7 +1529,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   };
 
   return (
-    <div style={{ padding: 16 }}>
+    <div className="meroshare-view-container" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 10px' }}>
       {/* Tab Switch header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -144,9 +144,9 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   const alertsCount = (JSON.parse(localStorage.getItem('nepse_alerts_v1') || '[]')).length;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800">
         <div>
           <h3 className="text-base font-bold text-white tracking-wide">Personal Trading Desk &amp; System Hub</h3>
           <p className="text-xs text-slate-400">Manage MeroShare credentials, app preferences, background data usage, and diagnostic health.</p>

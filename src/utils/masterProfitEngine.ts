@@ -163,19 +163,23 @@ export interface MasterAuditReport {
 /**
  * Calculates statutory tiered SEBON broker commission for a given transaction amount.
  * Statutory brackets under SEBON Bylaws:
- * - Up to Rs. 50,000: 0.40%
- * - Rs. 50,001 to Rs. 500,000: 0.37%
- * - Rs. 500,001 to Rs. 2,000,000: 0.34%
- * - Rs. 2,000,001 to Rs. 10,000,000: 0.30%
- * - Above Rs. 10,000,000: 0.27%
+ * - Up to Rs. 50,000: 0.36% (0.0036)
+ * - Rs. 50,001 to Rs. 500,000: 0.33% (0.0033)
+ * - Rs. 500,001 to Rs. 2,000,000: 0.31% (0.0031)
+ * - Rs. 2,000,001 to Rs. 10,000,000: 0.27% (0.0027)
+ * - Above Rs. 10,000,000: 0.24% (0.0024)
+ * - Minimum commission: Rs. 10
  */
 export function calculateTieredBrokerCommission(amount: number): number {
   const amt = Math.max(0, Number(amount) || 0);
-  if (amt <= 50000) return amt * 0.0040;
-  if (amt <= 500000) return amt * 0.0037;
-  if (amt <= 2000000) return amt * 0.0034;
-  if (amt <= 10000000) return amt * 0.0030;
-  return amt * 0.0027;
+  if (amt <= 0) return 0;
+  let fee = 0;
+  if (amt <= 50000) fee = amt * 0.0036;
+  else if (amt <= 500000) fee = amt * 0.0033;
+  else if (amt <= 2000000) fee = amt * 0.0031;
+  else if (amt <= 10000000) fee = amt * 0.0027;
+  else fee = amt * 0.0024;
+  return Math.max(10, fee);
 }
 
 /**
@@ -183,7 +187,7 @@ export function calculateTieredBrokerCommission(amount: number): number {
  * - Tiered SEBON Broker Commission on buy and sell
  * - SEBON Regulatory Fee (0.015% buy, 0.015% sell)
  * - DP Fee (Rs. 25 flat)
- * - 10.0% Final Capital Gains Tax (CGT) mandated under Finance Act 2083 for holdings < 365 days
+ * - 7.5% Final Capital Gains Tax (CGT) mandated under Nepal Finance Act for individual holdings <= 365 days
  */
 export function calculateNetTradeGain(entryPrice: number, targetPrice: number, shares = 100): {
   grossGain: number;
@@ -195,6 +199,7 @@ export function calculateNetTradeGain(entryPrice: number, targetPrice: number, s
   netRealizedGain: number;
   netReturnPct: number;
   statutoryBreakevenPrice: number;
+  totalFrictionPct: number;
 } {
   const buyValue = entryPrice * shares;
   const sellValue = targetPrice * shares;
@@ -209,10 +214,11 @@ export function calculateNetTradeGain(entryPrice: number, targetPrice: number, s
 
   const totalExpenses = brokerFeeTotal + sebonFeeTotal + dpFee;
   const taxableProfit = Math.max(0, grossGain - totalExpenses);
-  const cgtTax = taxableProfit * 0.10; // 10% Final CGT
+  const cgtTax = taxableProfit * 0.075; // 7.5% Final CGT (Individual Short-Term)
 
   const netRealizedGain = grossGain - totalExpenses - cgtTax;
   const netReturnPct = buyValue > 0 ? +((netRealizedGain / buyValue) * 100).toFixed(2) : 0;
+  const totalFrictionPct = buyValue > 0 ? +(((totalExpenses + cgtTax) / buyValue) * 100).toFixed(2) : 0;
 
   // Breakeven hurdle price: price needed to cover roundtrip broker + sebon + DP
   const statutoryBreakevenPrice = +((buyValue + totalExpenses) / shares).toFixed(1);
@@ -226,7 +232,8 @@ export function calculateNetTradeGain(entryPrice: number, targetPrice: number, s
     cgtTax: +cgtTax.toFixed(2),
     netRealizedGain: +netRealizedGain.toFixed(2),
     netReturnPct,
-    statutoryBreakevenPrice
+    statutoryBreakevenPrice,
+    totalFrictionPct
   };
 }
 
@@ -892,8 +899,8 @@ export function runMasterGuideAudit(
 
   const runnerUps = evaluated.filter(s => s.symbol !== crownedWinner?.symbol).slice(0, 15);
 
-  // 20-Trade Compound Simulation: Rs. 100,000 starting capital
-  // Derive win/loss amounts from the crowned winner's actual levels, not hardcoded values
+  // 20-Trade Compound Simulation: Rs. 500,000 starting capital
+  // Derive win/loss amounts from the crowned winner's actual levels, scaled to Rs. 500k account
   const winRate = crownedWinner?.analogWinRate || 65;
   const simWinAmount = crownedWinner
     ? Math.max(1500, Math.round((crownedWinner.target1Gross - crownedWinner.ltp) * crownedWinner.kellyShares))
@@ -901,7 +908,7 @@ export function runMasterGuideAudit(
   const simLossAmount = crownedWinner
     ? Math.max(800, Math.round((crownedWinner.ltp - crownedWinner.stopLoss) * crownedWinner.kellyShares))
     : 2000;
-  const sim = simulateCompoundExpectancy(100000, 20, winRate, simWinAmount, simLossAmount);
+  const sim = simulateCompoundExpectancy(500000, 20, winRate, simWinAmount * 5, simLossAmount * 5);
 
   return {
     timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),

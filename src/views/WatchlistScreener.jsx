@@ -107,12 +107,16 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
     return stocks.map(stock => {
       const ltp = Number(stock.ltp || stock.close || 0);
       const chg = Number(stock.pointChange || stock.change || 0);
-      const pct = Number(stock.percentChange || stock.pChange || 0);
-      const dayLow = Number(stock.low || (ltp > 0 ? ltp * 0.98 : 0));
-      const dayHigh = Number(stock.high || (ltp > 0 ? ltp * 1.02 : 0));
-      const volNum = Number(stock.volume || 0);
+      const dayLow = stock.low != null ? Number(Number(stock.low).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
+      const dayHigh = stock.high != null ? Number(Number(stock.high).toFixed(2)) : (ltp > 0 ? Number(ltp.toFixed(2)) : 0);
+      const volNum = Number(stock.volume || stock.totalTradedQuantity || 0);
       const volStr = volNum >= 1000 ? `${(volNum / 1000).toFixed(1)}K` : `${volNum}`;
-      const pe = Number(stock.pe || 18.5);
+      const pe = stock.pe != null && Number(stock.pe) > 0 ? Number(Number(stock.pe).toFixed(1)) : null;
+
+      const rawHigh52 = stock.high52 || stock.high52w;
+      const rawLow52 = stock.low52 || stock.low52w;
+      const high52 = rawHigh52 != null && Number(rawHigh52) > 0 ? Number(rawHigh52).toFixed(2) : '—';
+      const low52 = rawLow52 != null && Number(rawLow52) > 0 ? Number(rawLow52).toFixed(2) : '—';
 
       return {
         symbol: stock.symbol,
@@ -122,13 +126,13 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
         ltp,
         change: Math.abs(pct),
         changeAmt: `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}`,
-        dayLow: Number(dayLow.toFixed(2)),
-        dayHigh: Number(dayHigh.toFixed(2)),
-        pe: Number(pe.toFixed(1)),
-        peStatus: pe < 20 ? (isNe ? "उचित मूल्य" : "Fair Value") : (isNe ? "विकास मूल्य" : "Growth"),
+        dayLow,
+        dayHigh,
+        pe: pe != null ? pe : '—',
+        peStatus: pe != null ? (pe < 20 ? (isNe ? "उचित मूल्य" : "Fair Value") : (isNe ? "विकास मूल्य" : "Growth")) : '—',
         vol: volStr,
-        high52: stock.high52 ? Number(stock.high52).toFixed(2) : (ltp * 1.2).toFixed(2),
-        low52: stock.low52 ? Number(stock.low52).toFixed(2) : (ltp * 0.8).toFixed(2),
+        high52,
+        low52,
         isPos: chg >= 0,
         topMover: pct >= 5,
         sentiment: chg >= 0 ? (isNe ? "Bullish (खरिद अनुकूल)" : "Bullish (Buy)") : (isNe ? "Bearish (बिक्री दबाब)" : "Bearish (Sell)")
@@ -286,9 +290,10 @@ export function WatchlistScreener({ onSelectScrip, lang = 'ne', stocks = [] }) {
               ) : (
                 <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#0B0F17]/90 p-2.5 border border-white/[0.04] text-[11px] font-mono">
                   <div>
-                    <span className="text-slate-400 block text-[9px] uppercase">P/E RATIO</span>
                     <span className="text-white font-bold">{stock.pe}</span>
-                    <span className="text-[9px] text-emerald-400 block">{stock.peStatus}</span>
+                    {stock.peStatus !== '—' && (
+                      <span className="text-[9px] text-emerald-400 block">{stock.peStatus}</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[9px] uppercase">52W HIGH/LOW</span>

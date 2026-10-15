@@ -9,7 +9,6 @@
  *   5. Statutory Breakeven Hurdle, Structural Stop Loss & Multi-Horizon Targets
  */
 
-import { generateDynamicStockCandles } from './accumulationDistributionEngine.ts';
 
 export interface Candle {
   date?: string;
@@ -108,7 +107,7 @@ export function calculateConfluenceSR(
   const price = Math.max(1, Number(currentPrice) || 100);
   const effectiveCandles = (Array.isArray(candles) && candles.length >= 5)
     ? candles
-    : generateDynamicStockCandles(stock || { ltp: price, high52w, low52w }, 25);
+    : [];
 
   if (!Array.isArray(effectiveCandles) || effectiveCandles.length < 5) {
     return {
@@ -247,7 +246,7 @@ export function calculateBreakoutQuality(
 
   const effectiveCandles = (Array.isArray(candles) && candles.length >= 5)
     ? candles
-    : generateDynamicStockCandles(stock, 25);
+    : [];
 
   if (!Array.isArray(effectiveCandles) || effectiveCandles.length < 5) {
     return {

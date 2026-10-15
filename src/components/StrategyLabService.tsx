@@ -279,9 +279,9 @@ export function StrategyLabService() {
   if (loading) return <Spinner text="Loading Strategy Lab Backtesting Engine…" />;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-white tracking-wide">NEPSE Strategy Lab &amp; Quantitative Backtester</h3>

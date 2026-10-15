@@ -357,23 +357,15 @@ export function Master100ProfitWorkstation({
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      padding: '16px',
-      color: '#f8fafc',
-      maxWidth: 1200,
-      margin: '0 auto',
-      width: '100%',
-      boxSizing: 'border-box'
-    }}>
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex flex-col gap-3 sm:gap-4 text-slate-100 font-sans box-border">
+      <style>{`
+        .m100-card { padding: 12px 10px !important; border-radius: 14px !important; }
+        @media (min-width: 640px) { .m100-card { padding: 18px 20px !important; border-radius: 18px !important; } }
+      `}</style>
       {/* ── TOP HEADER & MACRO SHIELD ── */}
-      <div style={{
+      <div className="m100-card" style={{
         background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.90) 100%)',
         border: '1px solid rgba(255, 255, 255, 0.10)',
-        borderRadius: 18,
-        padding: '18px 20px',
         boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
         display: 'flex',
         flexDirection: 'column',
@@ -599,11 +591,9 @@ export function Master100ProfitWorkstation({
           {inspectedStock ? (
             <>
               {/* Crowned Hero Card */}
-              <div style={{
+              <div className="m100-card" style={{
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%)',
                 border: '1px solid rgba(16, 185, 129, 0.40)',
-                borderRadius: 20,
-                padding: '20px',
                 boxShadow: '0 12px 35px rgba(0,0,0,0.45)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -944,11 +934,9 @@ export function Master100ProfitWorkstation({
 
               {/* Sizing & Capital Allocation Card */}
               {sizing && (
-                <div style={{
+                <div className="m100-card" style={{
                   background: 'rgba(15, 23, 42, 0.7)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: 18,
-                  padding: '18px 20px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 14
@@ -1361,11 +1349,9 @@ export function Master100ProfitWorkstation({
       {/* ── VIEW 4: 4-TIER TRAILING PROFIT & EXIT PLAYBOOK ── */}
       {activeViewTab === 'exits' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{
+          <div className="m100-card" style={{
             background: 'rgba(15, 23, 42, 0.8)',
             border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: 16,
-            padding: '18px 20px',
             display: 'flex',
             flexDirection: 'column',
             gap: 14
@@ -1449,11 +1435,9 @@ export function Master100ProfitWorkstation({
 
       {/* ── VIEW 5: 20-TRADE COMPOUNDING SIMULATOR ── */}
       {activeViewTab === 'simulator' && (
-        <div style={{
+        <div className="m100-card" style={{
           background: 'rgba(15, 23, 42, 0.8)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: 18,
-          padding: '20px',
           display: 'flex',
           flexDirection: 'column',
           gap: 16
@@ -1584,11 +1568,9 @@ export function Master100ProfitWorkstation({
       {activeViewTab === 'telegram' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Header & Platform Selector */}
-          <div style={{
+          <div className="m100-card" style={{
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.95) 100%)',
             border: '1px solid rgba(16, 185, 129, 0.3)',
-            borderRadius: 16,
-            padding: '18px',
             display: 'flex',
             flexDirection: 'column',
             gap: 12
@@ -1682,11 +1664,9 @@ export function Master100ProfitWorkstation({
           {/* ── TAB OPTION 1: DISCORD (100% FREE, NO PHONE NUMBERS, NO SMS) ── */}
           {alertPlatformTab === 'discord' && (
             <>
-              <div style={{
+              <div className="m100-card" style={{
                 background: 'rgba(15, 23, 42, 0.7)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: 16,
-                padding: '18px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 14
@@ -1840,11 +1820,9 @@ export function Master100ProfitWorkstation({
           {/* ── TAB OPTION 2: TELEGRAM BOT ── */}
           {alertPlatformTab === 'telegram' && (
             <>
-              <div style={{
+              <div className="m100-card" style={{
                 background: 'rgba(15, 23, 42, 0.7)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: 16,
-                padding: '18px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 14

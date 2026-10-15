@@ -149,19 +149,20 @@ export default function NepseAgentDashboard({
   const VerdictIcon = verdictStyle.icon;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 1100, margin: '0 auto', padding: '4px 8px 32px' }}>
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex flex-col gap-3 sm:gap-4 text-slate-100">
       
       {/* ── TOP HERO CONTROL BAR ────────────────────────────────────── */}
-      <div style={{
-        background: 'linear-gradient(145deg, rgba(20, 24, 33, 0.95), rgba(12, 15, 22, 0.98))',
-        border: '1px solid rgba(59, 130, 246, 0.25)',
-        borderRadius: 18,
-        padding: '16px 20px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14
-      }}>
+      <div 
+        className="p-3 sm:p-5 rounded-xl sm:rounded-2xl"
+        style={{
+          background: 'linear-gradient(145deg, rgba(20, 24, 33, 0.95), rgba(12, 15, 22, 0.98))',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
@@ -422,7 +423,7 @@ export default function NepseAgentDashboard({
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  Limits: Floor Rs. {dossier?.quote?.circuitFloor || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 0.90).toFixed(1) : 'N/A')} | Ceiling Rs. {dossier?.quote?.circuitCeiling || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 1.10).toFixed(1) : 'N/A')}
+                  Limits: Floor Rs. {dossier?.quote?.circuitFloor || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 0.85).toFixed(1) : 'N/A')} | Ceiling Rs. {dossier?.quote?.circuitCeiling || (dossier?.quote?.prevClose ? +(dossier.quote.prevClose * 1.15).toFixed(1) : 'N/A')}
                 </div>
               </div>
 

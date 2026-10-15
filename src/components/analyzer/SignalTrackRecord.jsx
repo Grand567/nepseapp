@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Target, TrendingUp, Clock, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
-import { getSignals, getSignalStats } from '../../services/signalTracker';
+import { ShieldCheck, Target, TrendingUp, Clock, AlertCircle, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, ExternalLink } from 'lucide-react';
+import { getSignals, getSignalStats } from '../../services/signalTracker.js';
+import { GlobalSignalTrackerModal } from './GlobalSignalTrackerModal.jsx';
 
-export const SignalTrackRecord = ({ symbol }) => {
+export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) => {
   const [stats, setStats] = useState(null);
   const [recentSignals, setRecentSignals] = useState([]);
+  const [showGlobalModal, setShowGlobalModal] = useState(false);
 
   useEffect(() => {
     if (!symbol) return;
@@ -29,34 +31,67 @@ export const SignalTrackRecord = ({ symbol }) => {
         boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
         gap: 12
       }}>
-        <div style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          background: 'rgba(16, 185, 129, 0.1)',
-          border: '1px solid rgba(16, 185, 129, 0.25)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0
-        }}>
-          <ShieldCheck style={{ width: 18, height: 18, color: '#34d399' }} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
-            Algorithmic Track Record • {cleanSym}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 240 }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <ShieldCheck style={{ width: 18, height: 18, color: '#34d399' }} />
           </div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-            No past signals archived yet. Actionable setups are automatically tracked and evaluated against live market ticks.
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
+              Algorithmic Track Record • {cleanSym}
+            </div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+              No past setups archived for {cleanSym}. Verified signals are automatically logged and tracked against live market ticks.
+            </div>
           </div>
         </div>
+
+        <button
+          onClick={() => setShowGlobalModal(true)}
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8,
+            padding: '6px 12px',
+            fontSize: 11.5,
+            fontWeight: 700,
+            color: '#cbd5e1',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5
+          }}
+        >
+          <span>Market Audit</span>
+          <ExternalLink size={12} />
+        </button>
+
+        {showGlobalModal && (
+          <GlobalSignalTrackerModal
+            isOpen={showGlobalModal}
+            onClose={() => setShowGlobalModal(false)}
+            marketStocks={allStocks}
+          />
+        )}
       </div>
     );
   }
 
-  const { total, openCount, closedCount, winRate, avgReturnPct, profitFactor } = stats;
+  const { total, openCount, closedCount, winRate, avgReturnPct, avgNetReturnPct, profitFactor, bestTrade } = stats;
+  const activeSignal = recentSignals.find(s => s.status === 'open');
 
   return (
     <div style={{
@@ -113,11 +148,86 @@ export const SignalTrackRecord = ({ symbol }) => {
               border: '1px solid rgba(245, 158, 11, 0.3)',
               color: '#fbbf24'
             }}>
-              {openCount} Open
+              {openCount} Active
             </span>
           )}
+          <button
+            onClick={() => setShowGlobalModal(true)}
+            title="Open Market-Wide Signal Tracker"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 8,
+              padding: '4px 8px',
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#94a3b8',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}
+          >
+            <span>All Setups</span>
+            <ExternalLink size={11} />
+          </button>
         </div>
       </div>
+
+      {/* Active Signal Live Banner */}
+      {activeSignal && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: 10,
+          padding: '10px 14px',
+          marginBottom: 12,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                background: '#f59e0b',
+                color: '#000000',
+                padding: '1px 6px',
+                borderRadius: 4,
+                fontSize: 10.5,
+                fontWeight: 900
+              }}>
+                ACTIVE SETUP
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc' }}>
+                Triggered on {activeSignal.signalDate} at Rs. {activeSignal.entryPrice}
+              </span>
+            </div>
+            <div style={{ fontSize: 11.5, color: '#cbd5e1', marginTop: 4 }}>
+              T1: <strong style={{ color: '#34d399' }}>Rs. {activeSignal.targetPrice}</strong>
+              {activeSignal.target2Price && <> • T2: <strong style={{ color: '#2dd4bf' }}>Rs. {activeSignal.target2Price}</strong></>}
+              {' • '}
+              Stop: <strong style={{ color: '#f87171' }}>Rs. {activeSignal.stopLoss}</strong>
+            </div>
+          </div>
+
+          {livePrice != null && activeSignal.entryPrice > 0 && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Live P&L</div>
+              <div style={{
+                fontSize: 14,
+                fontWeight: 900,
+                fontFamily: 'var(--font-mono, monospace)',
+                color: livePrice >= activeSignal.entryPrice ? '#34d399' : '#f87171'
+              }}>
+                {livePrice >= activeSignal.entryPrice ? '+' : ''}
+                {(((livePrice - activeSignal.entryPrice) / activeSignal.entryPrice) * 100).toFixed(2)}%
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div style={{
@@ -164,7 +274,7 @@ export const SignalTrackRecord = ({ symbol }) => {
             {closedCount > 0 ? `${avgReturnPct >= 0 ? '+' : ''}${avgReturnPct}%` : '—'}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            Per closed trade
+            {avgNetReturnPct != null ? `${avgNetReturnPct >= 0 ? '+' : ''}${avgNetReturnPct}% Net` : 'Per closed trade'}
           </div>
         </div>
 
@@ -182,10 +292,31 @@ export const SignalTrackRecord = ({ symbol }) => {
             color: '#c084fc',
             marginTop: 2
           }}>
-            {profitFactor ? `${profitFactor}x` : '—'}
+            {closedCount > 0 && profitFactor ? `${profitFactor}x` : '—'}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
             Gains vs Losses
+          </div>
+        </div>
+
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 10,
+          padding: '10px 12px'
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Best Trade</div>
+          <div style={{
+            fontSize: 15,
+            fontWeight: 900,
+            fontFamily: 'var(--font-mono, monospace)',
+            color: '#34d399',
+            marginTop: 4
+          }}>
+            {bestTrade?.returnPct != null ? `+${bestTrade.returnPct}%` : '—'}
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+            {bestTrade?.netReturnPct != null ? `+${bestTrade.netReturnPct}% Net` : 'Max gain'}
           </div>
         </div>
       </div>
@@ -212,9 +343,11 @@ export const SignalTrackRecord = ({ symbol }) => {
               {recentSignals.map(sig => {
                 const isTargetHit = sig.status === 'hit_target';
                 const isStopHit = sig.status === 'hit_stop';
+                const isManualClose = sig.status === 'manual_close';
                 const isExpired = sig.status === 'expired';
                 const isOpen = sig.status === 'open';
                 const ret = sig.outcome?.returnPct;
+                const netRet = sig.outcome?.netReturnPct;
 
                 return (
                   <tr key={sig.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
@@ -232,7 +365,9 @@ export const SignalTrackRecord = ({ symbol }) => {
                         Entry: <strong style={{ color: '#ffffff' }}>Rs. {sig.entryPrice}</strong>
                       </div>
                       <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
-                        T: Rs. {sig.targetPrice || '—'} • SL: Rs. {sig.stopLoss || '—'}
+                        T1: Rs. {sig.targetPrice || '—'}
+                        {sig.target2Price && ` • T2: Rs. ${sig.target2Price}`}
+                        {' • '}SL: Rs. {sig.stopLoss || '—'}
                       </div>
                     </td>
 
@@ -251,14 +386,18 @@ export const SignalTrackRecord = ({ symbol }) => {
                             ? 'rgba(239, 68, 68, 0.15)'
                             : isOpen
                               ? 'rgba(245, 158, 11, 0.15)'
-                              : 'rgba(148, 163, 184, 0.15)',
+                              : isManualClose
+                                ? 'rgba(99, 102, 241, 0.15)'
+                                : 'rgba(148, 163, 184, 0.15)',
                         color: isTargetHit
                           ? '#34d399'
                           : isStopHit
                             ? '#f87171'
                             : isOpen
                               ? '#fbbf24'
-                              : '#94a3b8'
+                              : isManualClose
+                                ? '#a5b4fc'
+                                : '#94a3b8'
                       }}>
                         {isTargetHit && <CheckCircle2 size={12} />}
                         {isStopHit && <XCircle size={12} />}
@@ -272,16 +411,22 @@ export const SignalTrackRecord = ({ symbol }) => {
                       padding: '8px 10px',
                       textAlign: 'right',
                       fontWeight: 800,
-                      fontFamily: 'var(--font-mono, monospace)',
-                      color: isOpen
-                        ? '#fbbf24'
-                        : ret > 0
-                          ? '#34d399'
-                          : ret < 0
-                            ? '#f87171'
-                            : '#94a3b8'
+                      fontFamily: 'var(--font-mono, monospace)'
                     }}>
-                      {isOpen ? 'Active' : `${ret > 0 ? '+' : ''}${ret}%`}
+                      {isOpen ? (
+                        <span style={{ color: '#fbbf24' }}>Active</span>
+                      ) : (
+                        <div>
+                          <div style={{ color: ret > 0 ? '#34d399' : ret < 0 ? '#f87171' : '#94a3b8' }}>
+                            {ret > 0 ? `+${ret}%` : `${ret}%`}
+                          </div>
+                          {netRet != null && (
+                            <div style={{ fontSize: 10, color: netRet >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                              {netRet >= 0 ? `+${netRet}%` : `${netRet}%`} Net
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -293,8 +438,16 @@ export const SignalTrackRecord = ({ symbol }) => {
 
       {/* Footer note */}
       <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginTop: 4 }}>
-        Automated out-of-sample forward tracking • Past signal success does not guarantee future market returns.
+        Automated out-of-sample forward tracking • Net returns reflect 0.40% brokerage, 0.015% SEBON fee, and 7.5% retail CGT.
       </div>
+
+      {showGlobalModal && (
+        <GlobalSignalTrackerModal
+          isOpen={showGlobalModal}
+          onClose={() => setShowGlobalModal(false)}
+          marketStocks={allStocks}
+        />
+      )}
     </div>
   );
 };

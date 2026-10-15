@@ -60,32 +60,98 @@ export function GrahamSafetyCard({
     }
   }
 
-  // 3. Fallback to sector benchmark if still missing
-  const bench = getSectorBenchmark(sector);
-  let isSectorEstimated = false;
-  if (eps === null) {
-    eps = bench.medianEPS || 22;
-    isSectorEstimated = true;
-  }
-  if (bookValue === null || bookValue <= 0) {
-    bookValue = currentPrice > 0 && bench.medianPBV > 0
-      ? +(currentPrice / bench.medianPBV).toFixed(1)
-      : +(Math.max(10, eps) * (bench.medianPE || 16) / (bench.medianPBV || 1.6)).toFixed(1);
-    isSectorEstimated = true;
+  // 3. Reject synthetic estimation: if real eps or bookValue is missing or <= 0, show explicit insufficient state
+  if (eps === null || bookValue === null || eps <= 0 || bookValue <= 0) {
+    return (
+      <div
+        style={{
+          borderRadius: 16,
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'var(--bg-card, #151922)',
+          padding: '16px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fbbf24',
+              }}
+            >
+              <ShieldAlert size={17} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                  Graham Margin of Safety & Capital Preservation Shield
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    padding: '2px 6px',
+                    borderRadius: 6,
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    color: '#94a3b8',
+                  }}
+                >
+                  Intelligent Investor
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
+                Defensive equity framework: Valuation shock-absorber & permanent capital preservation
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 12,
+            padding: '14px 16px',
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}
+        >
+          <AlertTriangle size={20} className="text-amber-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24', marginBottom: 3 }}>
+              Insufficient Fundamental Filing Data
+            </div>
+            <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
+              Authentic quarterly filings for {sym} are currently unverified or non-positive (Reported EPS: {eps != null ? `Rs. ${eps}` : 'Missing'}, BVPS: {bookValue != null ? `Rs. ${bookValue}` : 'Missing'}). Benjamin Graham’s Intrinsic Value formulation requires verified positive operational earnings and tangible equity. Synthetic estimation from current stock price is strictly disabled to prevent artificial valuation anchors.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const isLossMaking = eps <= 0;
   const grahamFloor = +(bookValue * 0.67).toFixed(1);
-  const lossMosPct = currentPrice > 0 ? +(((grahamFloor - currentPrice) / grahamFloor) * 100).toFixed(1) : 0;
-
   const graham = calculateGrahamIntrinsicValue(eps, bookValue, currentPrice);
-  const interestAdjusted = calculateInterestAdjustedGrahamValue(eps > 0 ? eps : 0, 7.0, 7.5, currentPrice);
+  const interestAdjusted = calculateInterestAdjustedGrahamValue(eps, 7.0, 7.5, currentPrice);
   const erpMetrics = calculateEarningsYieldAndRiskPremium(eps, currentPrice, 7.5);
 
-  const hasValidFundamentals = true; // Always populated with genuine filings or sector calibration
-  const effectiveIntrinsic = isLossMaking ? grahamFloor : graham.intrinsicValue;
-  const mosPct = isLossMaking ? lossMosPct : graham.marginOfSafetyPct;
-  const pePb = graham.pePbProduct > 0 ? graham.pePbProduct : (eps > 0 && bookValue > 0 && currentPrice > 0 ? +((currentPrice / eps) * (currentPrice / bookValue)).toFixed(1) : 0);
+  const effectiveIntrinsic = graham.intrinsicValue;
+  const mosPct = graham.marginOfSafetyPct;
+  const pePb = graham.pePbProduct > 0 ? graham.pePbProduct : +((currentPrice / eps) * (currentPrice / bookValue)).toFixed(1);
+  const isLossMaking = Boolean(eps !== null && eps <= 0);
 
   // Determine Dual-Shield Alignment
   let shieldTier: 'dual' | 'value' | 'momentum' | 'warning' | 'unsupported' = 'warning';
@@ -96,23 +162,7 @@ export function GrahamSafetyCard({
   let tierBadgeText = '';
   let TierIcon = Shield;
 
-  if (isLossMaking) {
-    shieldTier = 'warning';
-    tierTitle = 'Loss-Making Entity (Graham Asset Floor Applied)';
-    tierDescription = `Reported EPS is negative (Rs. ${eps.toFixed(2)}). Under Benjamin Graham's Chapter 14 defensive principles, intrinsic purchase boundary defaults to 2/3 Tangible BVPS (Rs. ${grahamFloor}) liquidation parity.`;
-    tierBadgeBg = 'rgba(239, 68, 68, 0.12)';
-    tierBadgeBorder = 'rgba(239, 68, 68, 0.35)';
-    tierBadgeText = '#f87171';
-    TierIcon = ShieldAlert;
-  } else if (isSectorEstimated) {
-    shieldTier = 'value';
-    tierTitle = 'Sector Baseline Calibration (Filings Pending)';
-    tierDescription = `Company-specific filings pending; calibrated against ${bench.description || 'Sector'} medians (EPS: Rs. ${eps}, BVPS: Rs. ${bookValue}). Estimated Graham Fair Value: Rs. ${effectiveIntrinsic.toFixed(1)} with a ${mosPct >= 0 ? '+' : ''}${mosPct.toFixed(1)}% margin of safety.`;
-    tierBadgeBg = 'rgba(56, 189, 248, 0.12)';
-    tierBadgeBorder = 'rgba(56, 189, 248, 0.35)';
-    tierBadgeText = '#38bdf8';
-    TierIcon = Scale;
-  } else if (mosPct >= 15 && setupScore >= 58) {
+  if (mosPct >= 15 && setupScore >= 58) {
     shieldTier = 'dual';
     tierTitle = 'Institutional Dual-Shield Setup (Value + Timing Aligned)';
     tierDescription = `Both balance sheet safety (Rs. ${effectiveIntrinsic.toFixed(1)} Graham Number with a +${mosPct.toFixed(1)}% margin of safety) and technical entry zone are aligned. Highest empirical defense against permanent capital loss.`;
@@ -151,13 +201,13 @@ export function GrahamSafetyCard({
     {
       label: 'Positive Operational Earnings Power (EPS > 0)',
       passed: eps > 0,
-      value: eps > 0 ? `Rs. ${eps.toFixed(2)}${isSectorEstimated ? ' (Est)' : ''}` : `Loss: Rs. ${eps.toFixed(2)}`,
+      value: eps > 0 ? `Rs. ${eps.toFixed(2)}` : `Loss: Rs. ${eps.toFixed(2)}`,
       sub: 'Proof of commercial vitality',
     },
     {
       label: 'Tangible Asset Backing (BVPS > 0)',
       passed: bookValue > 0,
-      value: bookValue > 0 ? `Rs. ${bookValue.toFixed(1)}${isSectorEstimated ? ' (Est)' : ''}` : 'Deficient',
+      value: bookValue > 0 ? `Rs. ${bookValue.toFixed(1)}` : 'Deficient',
       sub: 'Net assets protecting liquidation parity',
     },
     {
@@ -354,7 +404,7 @@ export function GrahamSafetyCard({
             Rs. {effectiveIntrinsic.toFixed(1)}
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-            {isLossMaking ? '2/3 Tangible BVPS (Liquidation)' : isSectorEstimated ? '√(22.5 × EPS × BVPS) (Sector)' : 'Formula: √(22.5 × EPS × BVPS)'}
+            {isLossMaking ? '2/3 Tangible BVPS (Liquidation)' : 'Formula: √(22.5 × EPS × BVPS)'}
           </div>
         </div>
 
@@ -413,7 +463,7 @@ export function GrahamSafetyCard({
               marginTop: 2,
             }}
           >
-            {eps < 0 ? `-Rs. ${Math.abs(eps).toFixed(2)}` : `Rs. ${eps.toFixed(2)}`}{isSectorEstimated ? ' *' : ''}
+            {eps < 0 ? `-Rs. ${Math.abs(eps).toFixed(2)}` : `Rs. ${eps.toFixed(2)}`}
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {eps > 0 && currentPrice > 0 ? `P/E: ${(currentPrice / eps).toFixed(1)}x (Max 15x)` : 'Negative EPS (Loss)'}
@@ -441,7 +491,7 @@ export function GrahamSafetyCard({
               marginTop: 2,
             }}
           >
-            Rs. ${bookValue.toFixed(1)}{isSectorEstimated ? ' *' : ''}
+            Rs. ${bookValue.toFixed(1)}
           </div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
             {pePb > 0 ? `P/E × P/B: ${pePb.toFixed(1)} (Max 22.5)` : currentPrice > 0 && bookValue > 0 ? `P/B: ${(currentPrice / bookValue).toFixed(1)}x` : 'Multiple pending'}

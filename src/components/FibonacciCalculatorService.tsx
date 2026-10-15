@@ -102,9 +102,9 @@ export function FibonacciCalculatorService() {
   const inGoldenZone = currentLtp >= (highPrice - diff * 0.62) && currentLtp <= (highPrice - diff * 0.49);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       {/* Top selector */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-48 sm:w-60">
             <StockSearchSelect

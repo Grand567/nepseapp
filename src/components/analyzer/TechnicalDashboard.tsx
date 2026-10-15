@@ -68,19 +68,19 @@ export function TechnicalDashboard({
             <div>
               <div className="text-slate-500">EMA 20</div>
               <div className="font-bold text-white mt-0.5">
-                Rs. {trend?.ema?.ema20 ?? trend?.ema20 ?? (trend?.currentPrice ? +(trend.currentPrice * 0.99).toFixed(1) : '—')}
+                {(trend?.ema?.ema20 ?? trend?.ema20) != null ? `Rs. ${trend?.ema?.ema20 ?? trend?.ema20}` : 'N/A (<20d)'}
               </div>
             </div>
             <div>
               <div className="text-slate-500">EMA 50</div>
               <div className="font-bold text-white mt-0.5">
-                Rs. {trend?.ema?.ema50 ?? trend?.ema50 ?? (trend?.currentPrice ? +(trend.currentPrice * 0.97).toFixed(1) : '—')}
+                {(trend?.ema?.ema50 ?? trend?.ema50) != null ? `Rs. ${trend?.ema?.ema50 ?? trend?.ema50}` : 'N/A (<50d)'}
               </div>
             </div>
             <div>
               <div className="text-slate-500">EMA 200</div>
               <div className="font-bold text-white mt-0.5">
-                {trend?.ema?.ema200 ? `Rs. ${trend.ema.ema200}` : (trend?.currentPrice ? `Rs. ${+(trend.currentPrice * 0.92).toFixed(1)} (Est)` : 'Pending History')}
+                {(trend?.ema?.ema200 ?? trend?.ema200) != null ? `Rs. ${trend?.ema?.ema200 ?? trend?.ema200}` : 'N/A (<180d)'}
               </div>
             </div>
           </div>
@@ -113,7 +113,7 @@ export function TechnicalDashboard({
             <div>
               <div className="text-[11px] text-slate-400">RSI (14)</div>
               <div className="text-lg font-black text-white mt-0.5">
-                {momentum?.rsi14 ?? momentum?.rsi ?? '50.0'}
+                {(momentum?.rsi14 ?? momentum?.rsi) != null ? (momentum?.rsi14 ?? momentum?.rsi) : '—'}
               </div>
             </div>
             <div>
@@ -207,13 +207,13 @@ export function TechnicalDashboard({
             <div>
               <div className="text-[11px] text-slate-400">ATR (14)</div>
               <div className="text-lg font-black text-white mt-0.5">
-                Rs. {volatility?.atr14 ?? (trend?.currentPrice ? +(trend.currentPrice * 0.03).toFixed(1) : '5.0')}
+                {volatility?.atr14 != null ? `Rs. ${volatility.atr14}` : '—'}
               </div>
             </div>
             <div>
               <div className="text-[11px] text-slate-400">ATR Percentage</div>
               <div className="text-lg font-black text-teal-400 mt-0.5">
-                {volatility?.atrPct != null ? `${volatility.atrPct}%` : '3.0%'}
+                {volatility?.atrPct != null ? `${volatility.atrPct}%` : '—'}
               </div>
             </div>
           </div>
@@ -221,7 +221,7 @@ export function TechnicalDashboard({
           <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-2 border border-slate-800/80 text-[11px]">
             <span className="text-slate-400">Bollinger Band Width:</span>
             <span className="font-bold text-white">
-              {volatility?.bbwPct != null ? `${volatility.bbwPct}%` : '6.5%'}
+              {volatility?.bbwPct != null ? `${volatility.bbwPct}%` : '—'}
             </span>
           </div>
 

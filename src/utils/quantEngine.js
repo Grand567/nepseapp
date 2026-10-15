@@ -63,31 +63,31 @@ export function resolveDynamicStockEMAs(stock, ltp) {
   let ema50 = Number(stock?.ema50);
   let ema200 = Number(stock?.ema200);
 
-  const candles = resolveDynamicStockCandles(stock, 20);
+  const candles = resolveDynamicStockCandles(stock, 200);
   const closes = candles.map(c => Number(c.close || c.ltp || 0)).filter(p => p > 0);
 
   if ((!ema20 || isNaN(ema20)) && closes.length >= 20) {
-    const arr = calculateEMA(closes, 20);
-    ema20 = arr[arr.length - 1];
+    const arr = calculateEMA(closes, 20).filter(v => v !== null && !isNaN(v));
+    if (arr.length > 0) ema20 = arr[arr.length - 1];
   }
 
   if ((!ema50 || isNaN(ema50)) && closes.length >= 50) {
-    const arr = calculateEMA(closes, 50);
-    ema50 = arr[arr.length - 1];
+    const arr = calculateEMA(closes, 50).filter(v => v !== null && !isNaN(v));
+    if (arr.length > 0) ema50 = arr[arr.length - 1];
   }
 
   if ((!ema200 || isNaN(ema200)) && closes.length >= 200) {
-    const arr = calculateEMA(closes, 200);
-    ema200 = arr[arr.length - 1];
+    const arr = calculateEMA(closes, 200).filter(v => v !== null && !isNaN(v));
+    if (arr.length > 0) ema200 = arr[arr.length - 1];
   }
 
   const ema20Real = ema20 && !isNaN(ema20);
   const ema50Real = ema50 && !isNaN(ema50);
   const ema200Real = ema200 && !isNaN(ema200);
   return {
-    ema20: ema20Real ? Number(ema20.toFixed(2)) : Number((price * 0.98).toFixed(2)),
-    ema50: ema50Real ? Number(ema50.toFixed(2)) : Number((price * 0.98).toFixed(2)),
-    ema200: ema200Real ? Number(ema200.toFixed(2)) : Number((price * 0.98).toFixed(2)),
+    ema20: ema20Real ? Number(ema20.toFixed(2)) : null,
+    ema50: ema50Real ? Number(ema50.toFixed(2)) : null,
+    ema200: ema200Real ? Number(ema200.toFixed(2)) : null,
     ema20IsFallback: !ema20Real,
     ema50IsFallback: !ema50Real,
     ema200IsFallback: !ema200Real
@@ -555,9 +555,15 @@ export function calculateCompositeTechnicalScore(stock) {
 
   // 3. Moving Average Alignment (Weight 30%): EMA20 > EMA50 > EMA200
   let maVector = 0;
-  if (ltp > ema20) maVector += 10; else maVector -= 10;
-  if (ema20 > ema50) maVector += 10; else maVector -= 10;
-  if (ltp > ema200) maVector += 10; else maVector -= 10;
+  if (ema20 != null && !isNaN(ema20)) {
+    if (ltp > ema20) maVector += 10; else maVector -= 10;
+  }
+  if (ema20 != null && !isNaN(ema20) && ema50 != null && !isNaN(ema50)) {
+    if (ema20 > ema50) maVector += 10; else maVector -= 10;
+  }
+  if (ema200 != null && !isNaN(ema200)) {
+    if (ltp > ema200) maVector += 10; else maVector -= 10;
+  }
 
   // 4. Volume & Momentum Vector (Weight 20%)
   let momVector = 0;
@@ -2118,16 +2124,16 @@ export function normalizeCorporateActionPrices(candles = [], corporateActions = 
     // Check for explicit corporate action metadata matching this book closure
     const explicitCA = caMap.get(currDate);
     if (explicitCA && prevClose > 0) {
-      if (explicitCA.type === 'bonus' || explicitCA.bonusPct > 0) {
-        const bPct = Number(explicitCA.bonusPct || explicitCA.ratio || 0);
+      if (explicitCA.type === 'bonus' || explicitCA.bonusPct > 0 || explicitCA.bonusShare > 0) {
+        const bPct = Number(explicitCA.bonusPct || explicitCA.bonusShare || explicitCA.ratio || 0);
         if (bPct > 0) {
           const ratio = 100 / (100 + bPct);
           adjFactor *= ratio;
           corporateActionCount++;
           continue;
         }
-      } else if (explicitCA.type === 'rights' || explicitCA.rightPct > 0) {
-        const rPct = Number(explicitCA.rightPct || explicitCA.ratio || 0) / 100;
+      } else if (explicitCA.type === 'rights' || explicitCA.rightPct > 0 || explicitCA.rightShare > 0) {
+        const rPct = Number(explicitCA.rightPct || explicitCA.rightShare || explicitCA.ratio || 0) / 100;
         const issuePrice = Number(explicitCA.issuePrice || 100);
         if (rPct > 0 && prevClose > 0) {
           const theoreticalEx = (prevClose + (issuePrice * rPct)) / (1 + rPct);
@@ -2139,14 +2145,29 @@ export function normalizeCorporateActionPrices(candles = [], corporateActions = 
       }
     }
 
-    // Heuristic: If overnight step drop matches bonus/rights book closures (8.5% to 52%),
-    // scale all preceding (older) historical bars backwards.
-    if (prev && prevClose > 0 && currClose > 0) {
+    // Require confirmed corporate action match in corporateActions / dividendHistory
+    if (Array.isArray(corporateActions) && corporateActions.length > 0 && prev && prevClose > 0 && currClose > 0) {
       const dropPct = ((prevClose - currClose) / prevClose) * 100;
       if (dropPct >= 8.5 && dropPct <= 52.0) {
-        const expectedRatio = currClose / prevClose;
-        adjFactor *= expectedRatio;
-        corporateActionCount++;
+        const hasConfirmedMatch = corporateActions.some(ca => {
+          const bPct = Number(ca.bonusPct || ca.bonusShare || 0);
+          const rPct = Number(ca.rightPct || ca.rightShare || 0);
+          if (bPct > 0) {
+            const expDrop = (bPct / (100 + bPct)) * 100;
+            if (Math.abs(expDrop - dropPct) <= 6) return true;
+          }
+          if (rPct > 0) {
+            const expDrop = (rPct / (100 + rPct)) * 100;
+            if (Math.abs(expDrop - dropPct) <= 8) return true;
+          }
+          return false;
+        });
+
+        if (hasConfirmedMatch) {
+          const expectedRatio = currClose / prevClose;
+          adjFactor *= expectedRatio;
+          corporateActionCount++;
+        }
       }
     }
   }
@@ -2845,6 +2866,7 @@ export function runAmalgamatedBreakoutPipeline(stocks = [], priceHistories = {},
     // Dynamic Execution Geometry
     const clearanceBuffer = Math.max(high20 * 0.0035, atr * 0.22);
     const triggerBuyBandLow = +(high20 + clearanceBuffer * 0.5).toFixed(1);
+    const triggerBuyBandHigh = +(high20 * 1.025).toFixed(1);
     // Disciplined swing stop loss: strictly bounded between 3.5% (noise clearance) and 7.5% (max swing risk limit)
     const maxSwingRiskPct = 0.075;
     const minNoiseRiskPct = 0.035;
@@ -3459,8 +3481,6 @@ export function calculateBrokerCorneringScore(brokerData = {}) {
       const sumPct = bData.topBuyers.slice(0, 5).reduce((sum, b) => sum + Number(b.pct || 0), 0);
       cr5BuyPct = sumPct > 0 && sumPct < 98 ? Number(sumPct.toFixed(1)) : 0;
     }
-  } else if (bData.top3BuyPct !== undefined) {
-    cr5BuyPct = Number((Number(bData.top3BuyPct) * 1.25).toFixed(1));
   } else {
     cr5BuyPct = 0;
   }

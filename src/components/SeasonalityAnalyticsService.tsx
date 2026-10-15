@@ -58,9 +58,9 @@ export function SeasonalityAnalyticsService() {
   }, [seasonalityData]);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       {/* Header Bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800">
         <div>
           <h3 className="text-base font-bold text-white tracking-wide">NEPSE 10-Year Seasonality Analytics</h3>
           <p className="text-xs text-slate-400">Historical monthly win-rates, median returns, and liquidity cycles (2015–2025).</p>

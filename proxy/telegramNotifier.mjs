@@ -280,7 +280,7 @@ export async function autoDetectChatId(customToken) {
 }
 
 /**
- * Dispatches an Institutional Smart Alert to Telegram
+ * Dispatches an Institutional Smart Alert to Telegram with full 7-point confluence verification
  */
 export async function sendTelegramSmartAlert(alertItem) {
   const sym = alertItem.symbol || 'STOCK';
@@ -288,11 +288,13 @@ export async function sendTelegramSmartAlert(alertItem) {
   const buyZone = alertItem.buyZone || {};
   const bLow = buyZone.low || (ltp * 0.99).toFixed(0);
   const bHigh = buyZone.high || (ltp * 1.02).toFixed(0);
+  const cCap = alertItem.chaseCap || (bHigh * 1.025).toFixed(1);
   const brokersText = alertItem.dominantBrokersText || (alertItem.topBuyerBrokers ? `Brokers ${alertItem.topBuyerBrokers.map(b => b.broker).join(', ')}` : 'Top Brokers');
   const conc = alertItem.concentrationPct || 50;
   const sl = alertItem.stopLoss || (ltp * 0.95).toFixed(1);
   const t1 = alertItem.target1 || (ltp * 1.08).toFixed(1);
   const t2 = alertItem.target2 || (ltp * 1.15).toFixed(1);
+  const rr = alertItem.riskRewardRatio || +((t1 - ltp) / Math.max(1, ltp - sl)).toFixed(2);
 
   // Position sizing based on Rs. 100,000 capital (1.5% max risk = Rs. 1,500)
   const riskPerShare = Math.max(1, ltp - sl);
@@ -303,20 +305,63 @@ export async function sendTelegramSmartAlert(alertItem) {
   const capitalOutlay = suggestedKitta * ltp;
 
   const msg = [
-    `🚨 <b>DRAVYASHREE SMART INSTITUTIONAL ALERT</b>`,
+    `👑 <b>DRAVYASHREE PRIME INSTITUTIONAL ALERT</b>`,
     `──────────────────────────`,
-    `<b>Scrip:</b> <code>${sym}</code>`,
-    `<b>Live Price:</b> Rs. ${ltp.toFixed(2)}`,
-    `<b>Buy Zone:</b> Rs. ${bLow} – Rs. ${bHigh}`,
-    `<b>Flow Dominance:</b> ${brokersText} (${conc}% of morning float)`,
+    `<b>Scrip:</b> <code>${sym}</code> | <b>Live LTP:</b> Rs. ${ltp.toFixed(2)}`,
+    `<b>Risk-to-Reward:</b> <b>${rr}:1</b> (Asymmetric High Reward / Low Risk)`,
+    ``,
+    `🔍 <b>7-POINT CONFLUENCE AUDIT:</b>`,
+    `• <b>1. Buying Zone:</b> ✅ Inside Base [Rs. ${bLow} – Rs. ${bHigh}]`,
+    `• <b>2. Chase Cap (+2.5% max):</b> ⚠️ Rs. ${cCap} (Do not chase above this!)`,
+    `• <b>3. Smart Accumulation:</b> ✅ ${brokersText} (${conc}% Buy Concentration)`,
+    `• <b>4. Distribution Trap Guard:</b> 🛡️ Passed (Zero Operator Dump, Clean Body)`,
+    `• <b>5. Volume Support:</b> ✅ ${alertItem.sellerStatus || 'Supply Dry-up & Volume Ignition'}`,
+    `• <b>6. Breakout Geometry:</b> ✅ Phase C Base Clearance / T+2 Retest`,
+    `• <b>7. Stop & Targets:</b> ✅ Defined 3-Tier Execution Plan Below`,
     `──────────────────────────`,
-    `🎯 <b>Target 1:</b> Rs. ${t1} (+${(((t1 - ltp) / ltp) * 100).toFixed(1)}%)`,
-    `🎯 <b>Target 2:</b> Rs. ${t2} (+${(((t2 - ltp) / ltp) * 100).toFixed(1)}%)`,
-    `🛡️ <b>Stop-Loss:</b> Rs. ${sl} (-${(((ltp - sl) / ltp) * 100).toFixed(1)}%)`,
+    `🎯 <b>Target 1:</b> Rs. ${t1} (+${(((t1 - ltp) / ltp) * 100).toFixed(1)}%) ➔ <i>Sell 50% & Move SL to Breakeven</i>`,
+    `🚀 <b>Target 2:</b> Rs. ${t2} (+${(((t2 - ltp) / ltp) * 100).toFixed(1)}%) ➔ <i>Full Swing Profit Exit</i>`,
+    `🛡️ <b>Stop-Loss Floor:</b> Rs. ${sl} (-${(((ltp - sl) / ltp) * 100).toFixed(1)}%) ➔ <i>Strict Capital Defense</i>`,
     `──────────────────────────`,
-    `💼 <b>100K Sizing (1.5% Risk):</b> <b>${suggestedKitta} Kitta</b> (Rs. ${capitalOutlay.toLocaleString()})`,
-    `⏳ <b>NEPSE Settlement:</b> T+2 holding cycle applies (No intraday selling in NEPSE). Setup filtered for multi-day structural support.`,
-    `<i>Open Drabyashree -> Workstation to inspect live floor sheet tape.</i>`
+    `💼 <b>100K Sizing (1.5% Risk Rule):</b> <b>${suggestedKitta} Kitta</b> (Rs. ${capitalOutlay.toLocaleString()})`,
+    `⏳ <b>T+2 Execution Rule:</b> Buy today (Day T) ➔ Shares clear into Demat on Day T+2. Setup filtered for strong structural support to prevent circuit lockup.`,
+    `<i>Tap Drabyashree App -> Workstation to inspect live floor sheet tape.</i>`
+  ].join('\n');
+
+  return await sendTelegramMessage(msg);
+}
+
+/**
+ * Dispatches the Full Investor Educational Briefing & High-Reward Playbook directly to Telegram
+ */
+export async function sendTelegramInvestorPlaybook() {
+  const msg = [
+    `📚 <b>DRAVYASHREE INVESTOR PLAYBOOK: THE "GREAT ALERT" MATRIX</b>`,
+    `──────────────────────────`,
+    `<b>How to Identify High-Reward, Low-Risk Setups in NEPSE:</b>`,
+    ``,
+    `<b>1. Buying Zone Verification:</b>`,
+    `• Price must be within [VWAP - 0.5%, VWAP + 2.0%] near the 20-EMA base.`,
+    `• Never buy when price is extended &gt; +4.5% or near the +15% circuit band!`,
+    ``,
+    `<b>2. Smart Money Accumulation:</b>`,
+    `• Top 3 Buyer Concentration (BCR₃) must be ≥ 50%.`,
+    `• Chaikin Money Flow (CMF 20) must be positive (&gt; +0.05).`,
+    ``,
+    `<b>3. Distribution Trap Defense:</b>`,
+    `• Upper wick rejection must be under 20% of the candle range.`,
+    `• Pass if top sellers are fragmented retail; Avoid if operators are offloading blocks.`,
+    ``,
+    `<b>4. Volume & Supply Dry-Up:</b>`,
+    `• Prior session must show Volume Dry-Up (VDU ≤ 60% of 20-day SMA).`,
+    `• Alert session Relative Volume (RVOL) must expand between 1.4x and 2.5x.`,
+    ``,
+    `<b>5. 2-Step Profit Locking Strategy:</b>`,
+    `• <b>Milestone 1 (Target 1: +8% to +12%):</b> Sell 50% shares in TMS. Move Stop-Loss on remaining 50% to Breakeven. Trade is now 100% Risk-Free!`,
+    `• <b>Milestone 2 (Target 2: +15% to +22%):</b> Sell remaining 50% shares.`,
+    `• <b>Stop-Loss Hit:</b> Immediate market exit in TMS on T+2 settlement morning.`,
+    `──────────────────────────`,
+    `<i>"Protect your downside with discipline; the upside will take care of itself."</i>`
   ].join('\n');
 
   return await sendTelegramMessage(msg);

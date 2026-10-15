@@ -8,6 +8,7 @@ import {
   pollIncomingTelegramCommands 
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
+import { getOrFetchSymbolFloorsheet } from './brokerVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,26 +31,52 @@ export async function aggregateFloorsheetData() {
         sell_quantity, sell_amount,
         net_quantity, net_amount
       )
+      WITH buys AS (
+        SELECT 
+          traded_date, 
+          buyer_broker AS broker_id, 
+          security_id, 
+          COALESCE(SUM(quantity), 0) AS buy_quantity, 
+          COALESCE(SUM(amount), 0) AS buy_amount
+        FROM floorsheet_transactions
+        WHERE traded_date = CURRENT_DATE
+        GROUP BY traded_date, buyer_broker, security_id
+      ),
+      sells AS (
+        SELECT 
+          traded_date, 
+          seller_broker AS broker_id, 
+          security_id, 
+          COALESCE(SUM(quantity), 0) AS sell_quantity, 
+          COALESCE(SUM(amount), 0) AS sell_amount
+        FROM floorsheet_transactions
+        WHERE traded_date = CURRENT_DATE
+        GROUP BY traded_date, seller_broker, security_id
+      )
       SELECT 
-        traded_date, 
-        buyer_broker AS broker_id, 
-        security_id, 
-        SUM(quantity) AS buy_quantity, 
-        SUM(amount) AS buy_amount,
-        0 AS sell_quantity,
-        0 AS sell_amount,
-        SUM(quantity) AS net_quantity,
-        SUM(amount) AS net_amount
-      FROM floorsheet_transactions
-      WHERE traded_date = CURRENT_DATE
-      GROUP BY traded_date, buyer_broker, security_id
+        COALESCE(b.traded_date, s.traded_date) AS traded_date,
+        COALESCE(b.broker_id, s.broker_id) AS broker_id,
+        COALESCE(b.security_id, s.security_id) AS security_id,
+        COALESCE(b.buy_quantity, 0) AS buy_quantity,
+        COALESCE(b.buy_amount, 0) AS buy_amount,
+        COALESCE(s.sell_quantity, 0) AS sell_quantity,
+        COALESCE(s.sell_amount, 0) AS sell_amount,
+        (COALESCE(b.buy_quantity, 0) - COALESCE(s.sell_quantity, 0)) AS net_quantity,
+        (COALESCE(b.buy_amount, 0) - COALESCE(s.sell_amount, 0)) AS net_amount
+      FROM buys b
+      FULL OUTER JOIN sells s 
+        ON b.traded_date = s.traded_date 
+       AND b.broker_id = s.broker_id 
+       AND b.security_id = s.security_id
       ON CONFLICT (traded_date, broker_id, security_id) DO UPDATE SET 
         buy_quantity = EXCLUDED.buy_quantity,
         buy_amount = EXCLUDED.buy_amount,
-        net_quantity = broker_daily_accumulation.net_quantity + EXCLUDED.buy_quantity,
-        net_amount = broker_daily_accumulation.net_amount + EXCLUDED.buy_amount;
+        sell_quantity = EXCLUDED.sell_quantity,
+        sell_amount = EXCLUDED.sell_amount,
+        net_quantity = EXCLUDED.net_quantity,
+        net_amount = EXCLUDED.net_amount;
     `;
-    // await query(sql);
+    await query(sql);
     console.log('Aggregation complete.');
   } catch (err) {
     console.error('Error in aggregateFloorsheetData:', err);
@@ -73,6 +100,7 @@ let _getOrFetchBrokerAnalysis = null;
 let _generateEntryExitPlan = null;
 let _fetchTodayPricesInternal = null;
 let _getCache = null;
+let _getDividendHistoryInternal = null;
 
 export function initWorkerDependencies({
   getPriceHistoryInternal,
@@ -80,12 +108,14 @@ export function initWorkerDependencies({
   generateEntryExitPlan,
   fetchTodayPricesInternal,
   getCache,
+  getDividendHistoryInternal,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
   _getOrFetchBrokerAnalysis = getOrFetchBrokerAnalysis;
   _generateEntryExitPlan = generateEntryExitPlan;
   _fetchTodayPricesInternal = fetchTodayPricesInternal;
   _getCache = getCache;
+  _getDividendHistoryInternal = getDividendHistoryInternal;
 }
 
 /**
@@ -140,7 +170,14 @@ export async function runFullUniversePrimePick() {
         if (!history || history.length < 20) continue;
 
         const broker = _getOrFetchBrokerAnalysis ? await _getOrFetchBrokerAnalysis(sym, 30).catch(() => null) : null;
-        const plan = _generateEntryExitPlan(cand, history, [], { brokerAnalysis: broker });
+        let dividends = [];
+        if (_getDividendHistoryInternal) {
+          const divRes = await _getDividendHistoryInternal(sym).catch(() => []);
+          dividends = Array.isArray(divRes?.dividends) ? divRes.dividends : (Array.isArray(divRes) ? divRes : []);
+        } else if (Array.isArray(cand.dividends)) {
+          dividends = cand.dividends;
+        }
+        const plan = _generateEntryExitPlan(cand, history, dividends, { brokerAnalysis: broker });
         if (!plan || !plan.supported) continue;
 
         const vUpper = String(plan.verdict || '').toUpperCase();
@@ -324,11 +361,8 @@ export function startWorkers() {
             return [];
           },
           getFloorsheet: async (sym) => {
-            if (_getOrFetchBrokerAnalysis) {
-              const data = await _getOrFetchBrokerAnalysis(sym, 1);
-              return data?.trades || [];
-            }
-            return [];
+            const fsData = await getOrFetchSymbolFloorsheet(sym, { days: 1, page: 1, size: 50000 });
+            return fsData?.rows || [];
           },
           getPriceHistory: async (sym) => {
             if (_getPriceHistoryInternal) return await _getPriceHistoryInternal(sym);

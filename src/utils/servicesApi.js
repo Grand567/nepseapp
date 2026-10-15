@@ -355,6 +355,8 @@ export const fetchBrokerDeskDetail = (brokerId, date) => {
 };
 export const fetchStealthAccumulation = (symbol, days) => _proxyFetch('/api/smart-money/stealth/' + symbol + '?days=' + (days || 15), {}, 300000);
 export const fetchBrokerAnalysis = (symbol, days) => _proxyFetch('/api/broker-analysis/' + symbol + '?days=' + (days || 30), {}, 1800000);
+export const fetchMarketWideBrokerSummary = (days = 1) => _proxyFetch('/api/market/broker-summary?days=' + (days || 1), {}, 180000);
+export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), {}, 60000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
 export const fetchMarketDepth = (symbol) => _proxyFetch('/api/nepse/market-depth/' + symbol, {}, 15000);
 export const fetchDividendHistory = async (symbol) => {

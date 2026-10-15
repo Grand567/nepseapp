@@ -138,8 +138,23 @@ async function getIndexCloses(days = 60, memoryCloses = null) {
        LIMIT $1`,
       [days]
     );
-    if (rows.length < 10) throw new Error('Not enough DB index history');
-    return rows.reverse().map((r) => Number(r.close_price));
+    if (rows && rows.length >= 10) {
+      return rows.reverse().map((r) => Number(r.close_price));
+    }
+
+    const fallback = await pool.query(
+      `SELECT d.closing_price, d.traded_date
+       FROM daily_price_history d
+       JOIN securities s ON s.security_id = d.security_id
+       WHERE s.symbol = 'NEPSE'
+       ORDER BY d.traded_date DESC
+       LIMIT $1`,
+      [days]
+    );
+    if (fallback.rows && fallback.rows.length >= 10) {
+      return fallback.rows.reverse().map((r) => Number(r.closing_price));
+    }
+    return [];
   } catch (_) {
     return [];
   }
@@ -609,45 +624,46 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
     const pChange = Number(stockData.pChange || stockData.percentageChange || 0);
     const volume = Number(stockData.volume || stockData.totalTradedQuantity || 10000);
     const volumeSurgeRatio = Number(stockData.volumeSurgeRatio || (volume > 20000 ? 1.45 : 0.95));
+
+    // Retrieve authentic historical closes from DB
+    let histCloses = [];
+    if (pool) {
+      try {
+        const { rows: histRows } = await pool.query(
+          `SELECT d.close_price FROM daily_price_history d
+           JOIN securities s ON s.security_id = d.security_id
+           WHERE s.symbol = $1 ORDER BY d.traded_date DESC LIMIT 60`,
+          [sym]
+        );
+        if (histRows && histRows.length > 0) {
+          histCloses = histRows.reverse().map(r => Number(r.close_price));
+        }
+      } catch (_) {}
+    }
+
     // Attempt real RSI from DB price history; return null if insufficient
     let rsi14 = Number(stockData.rsi || 0);
     if (!rsi14 || Math.abs(rsi14 - 50) < 0.1) {
-      if (pool) {
-        try {
-          const { rows: histRows } = await pool.query(
-            `SELECT close_price FROM stock_price_history
-             WHERE symbol = $1 ORDER BY trade_date DESC LIMIT 20`,
-            [sym]
-          );
-          if (histRows.length >= 15) {
-            const closes = histRows.reverse().map(r => Number(r.close_price));
-            rsi14 = computeRSI(closes, Math.min(14, closes.length - 1));
-          }
-        } catch (_) {}
-      }
-      if (!rsi14 || Math.abs(rsi14 - 50) < 0.1) {
+      if (histCloses.length >= 15) {
+        rsi14 = computeRSI(histCloses, Math.min(14, histCloses.length - 1));
+      } else {
         rsi14 = null; // Authentic missing data
       }
     }
-    const macdSignal = pChange > 1.2 ? 'bullish' : pChange < -1.2 ? 'bearish' : 'neutral';
+
+    // Authentic momentum and MACD calculated from verified history without synthetic multipliers
+    let momentum5d = null;
+    if (histCloses.length >= 6) {
+      momentum5d = Number((((histCloses[histCloses.length - 1] - histCloses[histCloses.length - 6]) / histCloses[histCloses.length - 6]) * 100).toFixed(2));
+    }
+    const macdSignal = histCloses.length >= 20 ? computeMACDSignal(histCloses) : 'neutral';
     const obvTrend = volumeSurgeRatio > 1.2 && pChange >= 0 ? 'rising' : (pChange < -1 ? 'falling' : 'flat');
-    const momentum5d = +(pChange * 2.2 + (volumeSurgeRatio > 1.5 ? 3 : 0)).toFixed(2);
     const avgTurnover5d = Number(stockData.turnover || (ltp * volume));
 
     // ── EMA 50 Structural Calculation ──────────────────────────────────────
     let ema50 = Number(stockData.ema50 || stockData.sma50 || 0);
-    if (!ema50 && pool) {
-      try {
-        const { rows: histRows } = await pool.query(
-          `SELECT close_price FROM stock_price_history
-           WHERE symbol = $1 ORDER BY trade_date DESC LIMIT 60`,
-          [sym]
-        );
-        if (histRows.length >= 15) {
-          const closes = histRows.reverse().map(r => Number(r.close_price));
-          ema50 = computeEMA(closes, Math.min(50, closes.length));
-        }
-      } catch (_) {}
+    if (!ema50 && histCloses.length >= 15) {
+      ema50 = computeEMA(histCloses, Math.min(50, histCloses.length));
     }
     const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
 
@@ -671,10 +687,11 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
 
   try {
     const { rows } = await pool.query(
-      `SELECT close_price, volume, trade_date
-       FROM stock_price_history
-       WHERE symbol = $1
-       ORDER BY trade_date DESC
+      `SELECT d.close_price, d.total_volume AS volume, d.traded_date AS trade_date
+       FROM daily_price_history d
+       JOIN securities s ON s.security_id = d.security_id
+       WHERE s.symbol = $1
+       ORDER BY d.traded_date DESC
        LIMIT $2`,
       [sym, Math.max(days, 60)]
     );

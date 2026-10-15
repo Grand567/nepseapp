@@ -162,8 +162,8 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
   );
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-950/50 via-slate-900 to-indigo-950/40 p-5 shadow-lg">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-5">
+      <div className="rounded-xl sm:rounded-2xl border border-blue-500/20 bg-gradient-to-r from-blue-950/50 via-slate-900 to-indigo-950/40 p-2.5 sm:p-5 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -220,8 +220,8 @@ export function RegulatoryHub({ initialTab = 'forex' }: { initialTab?: 'forex' |
       </div>
 
       {activeSubTab === 'forex' && (
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 backdrop-blur-sm">
+        <div className="space-y-3 sm:space-y-5">
+          <div className="rounded-xl sm:rounded-2xl border border-slate-800 bg-slate-900/80 p-2.5 sm:p-5 backdrop-blur-sm">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ArrowRightLeft className="h-4 w-4 text-emerald-400" />

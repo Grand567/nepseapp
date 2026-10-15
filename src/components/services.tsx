@@ -512,7 +512,7 @@ export function UniversalScreener({
 
   if (loading) return <Spinner text="Scanning all 346 NEPSE listed securities…" />;
   return (
-    <div className="space-y-3">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3">
       {/* Interactive Timeframe Filter Bar placed on sub-tabs that genuinely benefit from multi-horizon analysis */}
       {!hideTimeframe && (
         <TimeframeFilterBar
@@ -637,7 +637,7 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
   const activeData = metrics ? metrics[selectedTf] : null;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       <TimeframeFilterBar
         timeframe={selectedTf}
         onSelectTimeframe={setSelectedTf}
@@ -2501,7 +2501,7 @@ export function SectorHeatmapService() {
   if (!sectors.length) return <InfoBanner type="warning">No sector data available right now.</InfoBanner>;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       <TimeframeFilterBar
         timeframe={timeframe}
         onSelectTimeframe={setTimeframe}
@@ -2700,10 +2700,10 @@ export function LiveFloorsheetService() {
           );
           const topScrip = sortedScrips[0]?.symbol || '';
 
-          // Average share price estimate (~Rs 450) to project share count
-          const buyQty = Math.round(buyAmt / 450);
-          const sellQty = Math.round(sellAmt / 450);
-          const netQty = Math.round(netAmt / 450);
+          // Use verified share count from matrix if available, otherwise project
+          const buyQty = m.totalBuyQty != null ? Number(m.totalBuyQty) : (m.buyQty != null ? Number(m.buyQty) : Math.round(buyAmt / 450));
+          const sellQty = m.totalSellQty != null ? Number(m.totalSellQty) : (m.sellQty != null ? Number(m.sellQty) : Math.round(sellAmt / 450));
+          const netQty = m.netQty != null ? Number(m.netQty) : Math.round(netAmt / 450);
 
           return {
             broker: bId,
@@ -3109,7 +3109,7 @@ export function BrokerHeatmapService() {
   if (!data || !matrix.length) return <InfoBanner type="warning">Broker heatmap is currently synchronizing with exchange data. Tap refresh to retry.</InfoBanner>;
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4">
       <TimeframeFilterBar
         timeframe={timeframe}
         onSelectTimeframe={setTimeframe}
@@ -3416,12 +3416,12 @@ export function BrokerHeatmapService() {
                   modalScrips = selectedBroker.topAccumulation || [];
                 }
               } else {
-                if (modalMetric === 'grossBuyAmt' && Array.isArray(selectedBroker.topByGrossSellAmt) && selectedBroker.topByGrossSellAmt.length) {
-                  modalScrips = selectedBroker.topByGrossSellAmt;
-                } else if (modalMetric === 'grossBuyQty' && Array.isArray(selectedBroker.topByGrossSellQty) && selectedBroker.topByGrossSellQty.length) {
-                  modalScrips = selectedBroker.topByGrossSellQty;
-                } else if (modalMetric === 'netQty' && Array.isArray(selectedBroker.topByNetSellQty) && selectedBroker.topByNetSellQty.length) {
-                  modalScrips = selectedBroker.topByNetSellQty;
+                if (modalMetric === 'grossBuyAmt' && Array.isArray(selectedBroker.topDistByGrossSellAmt || selectedBroker.topByGrossSellAmt) && (selectedBroker.topDistByGrossSellAmt || selectedBroker.topByGrossSellAmt).length) {
+                  modalScrips = selectedBroker.topDistByGrossSellAmt || selectedBroker.topByGrossSellAmt;
+                } else if (modalMetric === 'grossBuyQty' && Array.isArray(selectedBroker.topDistByGrossSellQty || selectedBroker.topByGrossSellQty) && (selectedBroker.topDistByGrossSellQty || selectedBroker.topByGrossSellQty).length) {
+                  modalScrips = selectedBroker.topDistByGrossSellQty || selectedBroker.topByGrossSellQty;
+                } else if (modalMetric === 'netQty' && Array.isArray(selectedBroker.topDistByNetQty || selectedBroker.topByNetSellQty) && (selectedBroker.topDistByNetQty || selectedBroker.topByNetSellQty).length) {
+                  modalScrips = selectedBroker.topDistByNetQty || selectedBroker.topByNetSellQty;
                 } else {
                   modalScrips = selectedBroker.topDistribution || [];
                 }
@@ -3898,7 +3898,7 @@ export function BrokerAnalysisService({
           sellers,
           topAccumulator: d.topAccumulator || buyers[0],
           topDistributor: d.topDistributor || sellers[0],
-          concentrationPct: Number(d.concentrationPct) || 32.4,
+          concentrationPct: Number(d.concentrationPct ?? d.bcr3BuyPct ?? 0) || 0,
           smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', Number(d.adStrength || 0), Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
         };
         setCachedRealBrokerAnalysis(sym, d);
@@ -3933,7 +3933,7 @@ export function BrokerAnalysisService({
           sellers,
           topAccumulator: cached.topAccumulator || buyers[0],
           topDistributor: cached.topDistributor || sellers[0],
-          concentrationPct: Number(cached.concentrationPct) || 32.4,
+          concentrationPct: Number(cached.concentrationPct ?? cached.bcr3BuyPct ?? 0) || 0,
           smartMoneyPhase: cached.smartMoneyPhase || deriveSmartMoneyPhase(cached.adSignal || '', Number(cached.adStrength || 0), Number(cached.adRatio || 0), Number(cached.stealthAccumulation || 50))
         });
         setLoading(false);

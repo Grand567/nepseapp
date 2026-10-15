@@ -508,9 +508,12 @@ export function auditCorporateActions(adjustFn, dividendHistory = []) {
   // Raw price drop on bonus day
   const rawDrop = ((candles[bonusDayIdx - 1].close - candles[bonusDayIdx].close) / candles[bonusDayIdx - 1].close) * 100;
   const expectedDrop = (bonusPct / (100 + bonusPct)) * 100;
+  const effectiveHistory = Array.isArray(dividendHistory) && dividendHistory.length > 0
+    ? dividendHistory
+    : [{ bonusShare: bonusPct, date: candles[bonusDayIdx].date, fiscalYear: '2079/80' }];
 
   const { adjustedCandles, events } = typeof adjustFn === 'function'
-    ? adjustFn(candles, dividendHistory)
+    ? adjustFn(candles, effectiveHistory)
     : { adjustedCandles: candles, events: [] };
 
   // After adjustment, prices before the event should be adjusted so the

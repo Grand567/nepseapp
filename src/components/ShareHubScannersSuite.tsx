@@ -100,9 +100,9 @@ export function CandlestickPatternScannerService({ stocks = [] }: { stocks?: any
   }, [stockPatternMatches]);
 
   return (
-    <div className="flex flex-col gap-4 text-white">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex flex-col gap-3 sm:gap-4 text-white">
       {/* Header Banner */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-white/10 flex justify-between items-center flex-wrap gap-3">
+      <div className="p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-[#111827] border border-white/10 flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
             <Compass className="w-5 h-5 text-purple-400" />

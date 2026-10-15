@@ -282,6 +282,9 @@ export function setCachedRealBrokerAnalysis(sym, data) {
   } catch (_) {}
 }
 
+export const getCachedBrokerData = getCachedRealBrokerAnalysis;
+export const setCachedBrokerData = setCachedRealBrokerAnalysis;
+
 /**
  * Synchronously retrieves cached floorsheet data for a given symbol.
  * Fast-path: checks in-memory Map first (<0.01ms).

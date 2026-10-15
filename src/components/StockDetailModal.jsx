@@ -41,7 +41,8 @@ import {
   getCachedStockFundamentals
 } from '../utils/liveData';
 import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot';
-import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports } from '../utils/servicesApi';
+import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
+import { getCorporateAlertForSymbol } from '../services/merolaganiNewsService.js';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { exportStockFloorsheet, exportStockPriceHistory } from '../utils/floorsheetExport';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
@@ -192,10 +193,10 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
 
   const t1NetPct = entryExitPlan.levels?.target1?.netReturnPct != null
     ? entryExitPlan.levels.target1.netReturnPct
-    : (t1GrossPct != null && t1GrossPct > 0.73 ? +((t1GrossPct - 0.73) * 0.90).toFixed(1) : t1GrossPct);
+    : (t1GrossPct != null && t1GrossPct > 0.73 ? +((t1GrossPct - 0.73) * 0.925).toFixed(1) : t1GrossPct);
   const t2NetPct = entryExitPlan.levels?.target2?.netReturnPct != null
     ? entryExitPlan.levels.target2.netReturnPct
-    : (t2GrossPct != null && t2GrossPct > 0.73 ? +((t2GrossPct - 0.73) * 0.90).toFixed(1) : t2GrossPct);
+    : (t2GrossPct != null && t2GrossPct > 0.73 ? +((t2GrossPct - 0.73) * 0.925).toFixed(1) : t2GrossPct);
 
   const rrr1 = entryExitPlan.levels?.rrr1 != null
     ? entryExitPlan.levels.rrr1
@@ -700,6 +701,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
   const [showAdvancedModal, setShowAdvancedModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [corporateAlert, setCorporateAlert] = useState(null);
   const [historyTimeframe, setHistoryTimeframe] = useState('1Y');
   const scrollRef = useRef(null);
 
@@ -1031,7 +1033,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         : [];
     
     try {
-      const plan = generateEntryExitPlan(d, hist, [], {
+      const plan = generateEntryExitPlan(d, hist, dividendHistory?.dividends || [], {
         brokerAnalysis: realBrokerAnalysis || null
       });
 
@@ -1040,7 +1042,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       console.warn('[StockDetailModal] generateEntryExitPlan error:', err);
       return null;
     }
-  }, [d, realPriceHistory, history, realBrokerAnalysis, cachedPrime, resolvedStock]);
+  }, [d, realPriceHistory, history, realBrokerAnalysis, cachedPrime, resolvedStock, dividendHistory]);
 
   const modalSetupScore = entryExitPlan ? Math.round(entryExitPlan.setupScore != null ? entryExitPlan.setupScore : (entryExitPlan.combinedScore != null ? entryExitPlan.combinedScore : 0)) : 0;
   const modalVerdict = entryExitPlan?.verdict || '';
@@ -1056,6 +1058,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
     const entry = Number(d.ltp || entryExitPlan.levels?.entry?.price || 0);
     const target = Number(entryExitPlan.levels?.target1?.price || 0);
+    const target2 = Number(entryExitPlan.levels?.target2?.price || 0);
     const stop = Number(entryExitPlan.levels?.stopLoss?.price || 0);
 
     if (entry > 0 && target > 0 && stop > 0) {
@@ -1065,7 +1068,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         source: 'entry-exit',
         entryPrice: entry,
         targetPrice: target,
+        target2Price: target2 > 0 ? target2 : null,
         stopLoss: stop,
+        rrr: entryExitPlan.levels?.rrr1 != null ? Number(entryExitPlan.levels.rrr1) : null,
+        timeframe: entryExitPlan.timeframe || null,
+        companyName: d.name || d.companyName || null,
+        sector: d.sector || null,
         verdict: entryExitPlan.verdict,
         setupScore: entryExitPlan.setupScore || entryExitPlan.combinedScore || 0
       });
@@ -1291,6 +1299,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     fetchRealBrokerAnalysis(d.symbol, 1).then(data => {
       if (active && data) {
         setRealBrokerAnalysis(data);
+      }
+    }).catch(() => {});
+
+    // Check breaking news for corporate alerts (Zero-Dividend risk, fresh dividend proposal)
+    setCorporateAlert(null);
+    fetchMarketNews().then(news => {
+      if (active && Array.isArray(news) && news.length > 0) {
+        const corpAlert = getCorporateAlertForSymbol(d.symbol, news);
+        if (corpAlert) setCorporateAlert(corpAlert);
       }
     }).catch(() => {});
 
@@ -1739,14 +1756,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           })));
         } else if (d.eps != null || d.bookValue != null) {
           setQuarterlyReports([
-            { quarter: '081/082 Q4 (Audited)', eps: Number(d.eps || 0).toFixed(2), netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: Number(d.pe || 0).toFixed(1), bookValue: Number(d.bookValue || 100).toFixed(1) },
-            { quarter: '081/082 Q3', eps: (Number(d.eps || 0) * 0.92).toFixed(2), netProfit: '—', pe: (Number(d.pe || 0) * 1.05).toFixed(1), bookValue: (Number(d.bookValue || 100) * 0.96).toFixed(1) }
+            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
           ]);
         }
       }).catch(() => {
         if (active && (d.eps != null || d.bookValue != null)) {
           setQuarterlyReports([
-            { quarter: '081/082 Q4 (Audited)', eps: Number(d.eps || 0).toFixed(2), netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: Number(d.pe || 0).toFixed(1), bookValue: Number(d.bookValue || 100).toFixed(1) }
+            { quarter: 'Latest Reported', eps: d.eps != null ? Number(d.eps).toFixed(2) : '—', netProfit: d.netProfit ? `Rs. ${d.netProfit}` : '—', pe: d.pe != null ? Number(d.pe).toFixed(1) : '—', bookValue: d.bookValue != null ? Number(d.bookValue).toFixed(1) : '—' }
           ]);
         }
       });
@@ -1880,8 +1896,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         realPriceHistory,
         realBrokerAnalysis
       });
-      if (res && res.text) {
-        setAiResult(res.text);
+      const textOut = res?.report || res?.text;
+      if (textOut) {
+        setAiResult(textOut);
       } else {
         setAiResult(generateOfflineStockReport(d, null, realPriceHistory, realBrokerAnalysis));
       }
@@ -2288,6 +2305,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       {/* ── Scrollable Body with smooth scrollTop=0 on open ── */}
       <div
         ref={scrollRef}
+        className="stock-modal-body"
         style={{
           flex: 1,
           overflowY: 'auto',
@@ -2486,7 +2504,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div>
                     <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Trades</div>
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
-                      {Number(d.trades || d.totalTrades || 894).toLocaleString()}
+                      {d.trades || d.totalTrades ? Number(d.trades || d.totalTrades).toLocaleString() : (realFloorsheet?.totalElements ? Number(realFloorsheet.totalElements).toLocaleString() : '—')}
                     </div>
                   </div>
                   <div>
@@ -2620,38 +2638,27 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   paddingTop: 12,
                   borderTop: '1px solid rgba(255,255,255,0.06)'
                 }}>
-                  {[
-                    { label: '3 Days', fallback: { val: '+4.06%', bull: true } },
-                    { label: '7 Days', fallback: { val: '+2.00%', bull: true } },
-                    { label: '30 Days', fallback: { val: '-2.18%', bull: false } },
-                    { label: '90 Days', fallback: { val: '-8.52%', bull: false } },
-                    { label: '180 Days', fallback: { val: '-6.40%', bull: false } },
-                    { label: '1 Year', fallback: { val: '-12.15%', bull: false } }
-                  ].map((p, idx) => {
-                    const real = performanceValues[idx];
-                    const display = real || p.fallback;
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          borderRadius: 10,
-                          padding: '8px 14px',
-                          minWidth: 84,
-                          textAlign: 'center',
-                          flexShrink: 0
-                        }}
-                      >
-                        <div style={{ fontSize: 13.5, fontWeight: 900, color: display.bull ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                          {display.val}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
-                          {p.label}
-                        </div>
+                  {performanceValues.map((p, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: 10,
+                        padding: '8px 14px',
+                        minWidth: 84,
+                        textAlign: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      <div style={{ fontSize: 13.5, fontWeight: 900, color: p.val === '—' ? '#94a3b8' : p.bull ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                        {p.val}
                       </div>
-                    );
-                  })}
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+                        {p.label}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2936,10 +2943,52 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 loading={realHistoryLoading}
               />
 
+              {corporateAlert && (
+                <div style={{
+                  background: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                  border: `1.5px solid ${corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)'}`,
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  marginBottom: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <AlertTriangle style={{ width: 16, height: 16, color: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '#ef4444' : '#10b981' }} />
+                      <span style={{ fontSize: 12, fontWeight: 900, color: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '#ef4444' : '#10b981', letterSpacing: '0.04em' }}>
+                        {corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '⚠️ ZERO DIVIDEND RISK (लाभांश नदिने निर्णय)' : `🎁 DIVIDEND PROPOSED (${corporateAlert.percentage ? `${corporateAlert.percentage}%` : 'DECLARED'})`}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+                      Breaking Disclosure
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginBottom: 4 }}>
+                    {corporateAlert.title}
+                  </div>
+                  {corporateAlert.warning && (
+                    <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5, marginTop: 4 }}>
+                      {corporateAlert.warning}
+                    </div>
+                  )}
+                  {corporateAlert.url && (
+                    <div style={{ marginTop: 6 }}>
+                      <a
+                        href={corporateAlert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 11.5, color: '#38bdf8', textDecoration: 'none', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        Read official disclosure on {corporateAlert.source || 'news portal'} ↗
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {bookClosureAlert && <BookClosureAlert alert={bookClosureAlert} />}
 
               {/* Algorithmic Signal Track Record for this stock */}
-              <SignalTrackRecord symbol={d.symbol} />
+              <SignalTrackRecord symbol={d.symbol} livePrice={d.ltp || d.close} allStocks={allStocks || []} />
 
               {/* ── StockYan Pro Analytics Suite: Aggressive Holding, Dominance & Parallel Channel ── */}
               <StockYanAnalyticsCard
@@ -2999,24 +3048,27 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   <div style={{ background: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 12, padding: '12px 14px' }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#34d399', textTransform: 'uppercase', marginBottom: 8, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
                       <span>Top Accumulators</span>
-                      <span>BCR₃: {brokerConcentration.bcr3BuyPct || (brokerConcentration.bcr5BuyPct * 0.72).toFixed(1)}%</span>
+                      <span>BCR₃: {brokerConcentration.bcr3BuyPct ?? 0}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {brokerConcentration.topBuyerBrokers.slice(0, 3).map((b, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
-                          <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ color: '#94a3b8', fontSize: 12 }}>#{b.broker}</span>
-                            <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={b.brokerName}>
-                              {b.brokerName}
+                      {(brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])).slice(0, 3).map((b, idx) => {
+                        const qtyVal = b.netQty !== undefined ? b.netQty : b.volume;
+                        return (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                            <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ color: '#94a3b8', fontSize: 12 }}>#{b.broker}</span>
+                              <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={b.brokerName}>
+                                {b.brokerName}
+                              </span>
                             </span>
-                          </span>
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ color: '#34d399', fontWeight: 800 }}>+{b.volume.toLocaleString()}</span>
-                            <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(b.amount)})</span>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ color: '#34d399', fontWeight: 800 }}>+{Number(qtyVal || 0).toLocaleString()}</span>
+                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(b.amount || b.netAmt || b.buyAmt || 0)})</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                      {(!brokerConcentration.topBuyerBrokers || brokerConcentration.topBuyerBrokers.length === 0) && (
+                        );
+                      })}
+                      {(!brokerConcentration.topNetAccumulators?.length && (!brokerConcentration.topBuyerBrokers || brokerConcentration.topBuyerBrokers.length === 0)) && (
                         <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>
                       )}
                     </div>
@@ -3029,21 +3081,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                       <span>BCR₃: {brokerConcentration.bcr3SellPct || 0}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {brokerConcentration.topSellerBrokers.slice(0, 3).map((s, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
-                          <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ color: '#94a3b8', fontSize: 12 }}>#{s.broker}</span>
-                            <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={s.brokerName}>
-                              {s.brokerName}
+                      {(brokerConcentration.topNetDistributors?.length ? brokerConcentration.topNetDistributors : (brokerConcentration.topSellerBrokers || [])).slice(0, 3).map((s, idx) => {
+                        const qtyVal = Math.abs(s.netQty !== undefined ? s.netQty : s.volume);
+                        return (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                            <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ color: '#94a3b8', fontSize: 12 }}>#{s.broker}</span>
+                              <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={s.brokerName}>
+                                {s.brokerName}
+                              </span>
                             </span>
-                          </span>
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ color: '#f87171', fontWeight: 800 }}>-{s.volume.toLocaleString()}</span>
-                            <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(s.amount)})</span>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ color: '#f87171', fontWeight: 800 }}>-{Number(qtyVal || 0).toLocaleString()}</span>
+                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(Math.abs(s.amount || s.netAmt || s.sellAmt || 0))})</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                      {(!brokerConcentration.topSellerBrokers || brokerConcentration.topSellerBrokers.length === 0) && (
+                        );
+                      })}
+                      {(!brokerConcentration.topNetDistributors?.length && (!brokerConcentration.topSellerBrokers || brokerConcentration.topSellerBrokers.length === 0)) && (
                         <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No seller records</div>
                       )}
                     </div>
@@ -5297,17 +5352,29 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           const m1 = calculateStockMetrics(s1, realPriceHistory || []);
           const m2 = s2 ? calculateStockMetrics(s2, []) : null;
 
-          const getPerf = (st, idx, mult) => {
+          const getPerf = (st, idx) => {
             if (!st) return null;
-            if (st.symbol === d.symbol && performanceValues?.[idx]?.val) {
+            if (st.symbol === d.symbol && performanceValues?.[idx]?.val && performanceValues[idx].val !== '—') {
               const parsed = parseFloat(String(performanceValues[idx].val).replace(/[+%]/g, ''));
               if (!isNaN(parsed)) return parsed;
             }
-            const pc = Number(st.pChange ?? st.percentageChange ?? 0);
-            const h52 = Number(st.high52 || st.high52w || (st.ltp * 1.25));
-            const l52 = Number(st.low52 || st.low52w || (st.ltp * 0.8));
-            const pos = h52 > l52 ? ((Number(st.ltp || 0) - l52) / (h52 - l52) - 0.5) * 18 : 0;
-            return +(pc * mult + pos * (idx * 0.22)).toFixed(2);
+            if (idx === 5 && st.returns1Y != null && !isNaN(Number(st.returns1Y))) {
+              return Number(st.returns1Y);
+            }
+            const hist = getCachedRealPriceHistory(st.symbol);
+            if (Array.isArray(hist) && hist.length >= 4) {
+              const daysMap = [3, 7, 30, 90, 180, 365];
+              const targetDays = daysMap[idx] || 3;
+              const isSorted = hist.length <= 1 || (hist[0].date <= hist[hist.length - 1].date);
+              const sorted = isSorted ? hist : hist.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+              const targetIdx = Math.max(0, sorted.length - 1 - targetDays);
+              const pastClose = Number(sorted[targetIdx]?.close ?? sorted[targetIdx]?.ltp ?? 0);
+              const curClose = Number(sorted[sorted.length - 1]?.close ?? sorted[sorted.length - 1]?.ltp ?? st.ltp ?? 0);
+              if (pastClose > 0 && curClose > 0) {
+                return +(((curClose - pastClose) / pastClose) * 100).toFixed(2);
+              }
+            }
+            return null;
           };
 
           const todayRows = [
@@ -5323,12 +5390,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           ];
 
           const perfRows = [
-            { label: '3 Days Return', v1: getPerf(s1, 0, 1.3), v2: getPerf(s2, 0, 1.3) },
-            { label: '7 Days Return', v1: getPerf(s1, 1, 1.8), v2: getPerf(s2, 1, 1.8) },
-            { label: '30 Days (1M) Return', v1: getPerf(s1, 2, 2.5), v2: getPerf(s2, 2, 2.5) },
-            { label: '90 Days (3M) Return', v1: getPerf(s1, 3, 3.2), v2: getPerf(s2, 3, 3.2) },
-            { label: '180 Days (6M) Return', v1: getPerf(s1, 4, 4.0), v2: getPerf(s2, 4, 4.0) },
-            { label: '1 Year Return', v1: s1.returns1Y ?? getPerf(s1, 5, 5.2), v2: s2 ? (s2.returns1Y ?? getPerf(s2, 5, 5.2)) : null }
+            { label: '3 Days Return', v1: getPerf(s1, 0), v2: getPerf(s2, 0) },
+            { label: '7 Days Return', v1: getPerf(s1, 1), v2: getPerf(s2, 1) },
+            { label: '30 Days (1M) Return', v1: getPerf(s1, 2), v2: getPerf(s2, 2) },
+            { label: '90 Days (3M) Return', v1: getPerf(s1, 3), v2: getPerf(s2, 3) },
+            { label: '180 Days (6M) Return', v1: getPerf(s1, 4), v2: getPerf(s2, 4) },
+            { label: '1 Year Return', v1: getPerf(s1, 5) ?? (s1.returns1Y != null ? Number(s1.returns1Y) : null), v2: s2 ? (getPerf(s2, 5) ?? (s2.returns1Y != null ? Number(s2.returns1Y) : null)) : null }
           ];
 
           const fundRows = [
@@ -5521,6 +5588,46 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
         {/* ════ TAB 7: DIVIDENDS & RIGHT SHARES ════ */}
         {activeTab === 'dividends' && (
           <div style={{ padding: '0 4px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {corporateAlert && (
+              <div style={{
+                background: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                border: `1.5px solid ${corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)'}`,
+                borderRadius: 14,
+                padding: '14px 16px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertTriangle style={{ width: 18, height: 18, color: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '#ef4444' : '#10b981' }} />
+                    <span style={{ fontSize: 13, fontWeight: 900, color: corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '#ef4444' : '#10b981', letterSpacing: '0.04em' }}>
+                      {corporateAlert.type === 'ZERO_DIVIDEND_RISK' ? '⚠️ ZERO DIVIDEND RISK (लाभांश वितरण नगर्ने निर्णय)' : `🎁 DIVIDEND PROPOSED (${corporateAlert.percentage ? `${corporateAlert.percentage}%` : 'DECLARED'})`}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+                    Breaking Disclosure
+                  </span>
+                </div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f8fafc', marginBottom: 4 }}>
+                  {corporateAlert.title}
+                </div>
+                {corporateAlert.warning && (
+                  <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5, marginTop: 4 }}>
+                    {corporateAlert.warning}
+                  </div>
+                )}
+                {corporateAlert.url && (
+                  <div style={{ marginTop: 8 }}>
+                    <a
+                      href={corporateAlert.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: '#38bdf8', textDecoration: 'none', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      Read official notice on {corporateAlert.source || 'financial portal'} ↗
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
             <StockRightShareCard stock={d} rightShareData={liveDetail?.rightShare} />
             <DividendHistoryPanel symbol={d.symbol} hideSearch={true} />
           </div>

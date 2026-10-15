@@ -107,8 +107,8 @@ export function StitchHub({ onExit, stocks = [], indices = null, marketStatus = 
   const currentHeader = titles[activeTab] || titles.dashboard;
 
   return (
-    <div className="min-h-screen bg-[#070A10] text-[#F8FAFC] selection:bg-sky-500 selection:text-white flex justify-center">
-      <div className="w-full max-w-md min-h-screen bg-[#0B0F17] border-x border-white/[0.06] flex flex-col relative shadow-2xl overflow-x-hidden">
+    <div className="min-h-screen bg-[#070A10] text-[#F8FAFC] selection:bg-sky-500 selection:text-white flex justify-center w-full">
+      <div className="w-full min-h-screen bg-[#0B0F17] flex flex-col relative shadow-2xl overflow-x-hidden">
         
         {/* Top Sticky Glass Header */}
         <header className="sticky top-0 z-40 glass-nav border-b border-white/[0.07] px-4 py-3 flex items-center justify-between">
@@ -265,7 +265,7 @@ export function StitchHub({ onExit, stocks = [], indices = null, marketStatus = 
 
         {/* Persistent Bottom Glass Navigation */}
         {!isSubPage && (
-          <nav className="fixed bottom-0 max-w-md w-full z-50 border-t border-white/[0.07] glass-nav px-3 py-2.5">
+          <nav className="fixed bottom-0 left-0 right-0 w-full z-50 border-t border-white/[0.07] glass-nav px-3 py-2.5">
             <div className="flex items-center justify-around">
               {[
                 { id: 'dashboard', labelNe: 'ड्यासबोर्ड', labelEn: 'Dashboard', icon: BarChart3 },

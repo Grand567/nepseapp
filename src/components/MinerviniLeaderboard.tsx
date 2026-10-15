@@ -146,10 +146,10 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
   const hasEstimated = evaluated.some(s => s.isEstimated);
 
   return (
-    <div className="w-full space-y-4 p-3 sm:p-4 text-slate-200 font-sans">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4 text-slate-200 font-sans">
 
       {/* ── Header ── */}
-      <div className="rounded-2xl p-4 border border-purple-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl">
+      <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-purple-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl">
         <div className="flex items-center gap-2 mb-1">
           <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
             Stage 2 Template

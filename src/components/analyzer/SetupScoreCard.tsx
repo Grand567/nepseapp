@@ -269,10 +269,10 @@ export function SetupScoreCard({
               <div className={`font-bold mt-0.5 ${
                 (quantMetrics.expectancy?.ev ?? 0) > 0 ? 'text-emerald-400' : (quantMetrics.expectancy?.ev ?? 0) < 0 ? 'text-rose-400' : 'text-slate-300'
               }`}>
-                {(quantMetrics.expectancy?.ev ?? 0) > 0 ? '+' : ''}Rs. {quantMetrics.expectancy?.ev != null ? quantMetrics.expectancy.ev.toLocaleString() : (score >= 50 ? '850 (Est)' : '0 (Neutral)')}
+                {quantMetrics.expectancy?.ev != null ? `${quantMetrics.expectancy.ev > 0 ? '+' : ''}Rs. ${quantMetrics.expectancy.ev.toLocaleString()}` : '—'}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">
-                Profit Factor: {quantMetrics.expectancy?.profitFactor ?? (score >= 55 ? '1.80' : '1.10')}x
+                Profit Factor: {quantMetrics.expectancy?.profitFactor != null ? `${quantMetrics.expectancy.profitFactor}x` : '—'}
               </div>
             </div>
 
@@ -280,8 +280,16 @@ export function SetupScoreCard({
             <div className="rounded-lg bg-slate-900/60 p-2 border border-slate-800">
               <div className="text-[10.5px] text-slate-400">Statistical Edge (Δ)</div>
               {(() => {
-                const empiricalWin = quantMetrics.expectancy?.pWin ?? (score >= 55 ? 55 : 40);
-                const beWin = quantMetrics.expectancy?.breakEvenWinRate ?? 33;
+                const empiricalWin = quantMetrics.expectancy?.pWin;
+                const beWin = quantMetrics.expectancy?.breakEvenWinRate;
+                if (empiricalWin == null || beWin == null) {
+                  return (
+                    <>
+                      <div className="font-bold mt-0.5 text-slate-400">—</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Requires Setup History</div>
+                    </>
+                  );
+                }
                 const delta = +(empiricalWin - beWin).toFixed(1);
                 const hasPositiveEv = (quantMetrics.expectancy?.ev ?? 0) > 0;
                 const isPositive = delta > 0 && hasPositiveEv;

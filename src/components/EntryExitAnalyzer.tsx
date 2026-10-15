@@ -58,6 +58,8 @@ import { SupportResistancePanel } from './analyzer/SupportResistancePanel';
 import { BreakoutPanel } from './analyzer/BreakoutPanel';
 import { HistoricalAnalogPanel } from './analyzer/HistoricalAnalogPanel';
 import { StrategyTrackRecord } from './analyzer/StrategyTrackRecord';
+import { SignalTrackRecord } from './analyzer/SignalTrackRecord';
+import { recordSignal } from '../services/signalTracker';
 import { SignalAgreement } from './analyzer/SignalAgreement';
 import { EvidencePanel } from './analyzer/EvidencePanel';
 import { WhatNextPanel } from './analyzer/WhatNextPanel';
@@ -316,6 +318,29 @@ export function EntryExitAnalyzer({
               candles: candleList
             };
 
+            const target1Num = Number(result.levels?.target1?.price || 0);
+            const target2Num = Number(result.levels?.target2?.price || 0);
+            const slNum = Number(result.levels?.stopLoss?.price || 0);
+            const entryNum = Number(result.levels?.entry?.price || result.ltp || stock?.ltp || 0);
+
+            if (entryNum > 0 && target1Num > 0 && slNum > 0) {
+              recordSignal({
+                symbol: sym,
+                signalType: 'BUY',
+                source: 'entry-exit',
+                entryPrice: entryNum,
+                targetPrice: target1Num,
+                target2Price: target2Num > 0 ? target2Num : null,
+                stopLoss: slNum,
+                rrr: result.levels?.rrr1 != null ? Number(result.levels.rrr1) : null,
+                timeframe: result.timeframe || null,
+                companyName: stock?.companyName || stock?.name || null,
+                sector: stock?.sector || null,
+                verdict: result.verdict,
+                setupScore: scoreVal
+              });
+            }
+
             // CRITICAL FIX: Do NOT overwrite the global Day Prime Pick with arbitrary user-searched stocks!
             // Only update the prime pick cache if the analyzed stock is ALREADY the sealed Day Prime Pick.
             const rawCached = localStorage.getItem('prime_pick_plan_cache');
@@ -489,12 +514,12 @@ export function EntryExitAnalyzer({
   const mktStatus = useMemo(() => getDetailedMarketStatus(), []);
 
   return (
-    <div className="space-y-5 font-sans text-slate-100">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-5 font-sans text-slate-100">
       {/* ── Top Header Banner ── */}
       <InfoBanner type="info">
         <strong>Entry / Exit Analyzer Workstation:</strong> Quantitative decision engine combining
         Benjamin Graham’s Margin of Safety, moving-average structures, momentum velocity, volume confirmation,
-        S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage & 10% CGT Final Tax).
+        S/R clustering, and 500-session historical analog backtesting (net of SEBON brokerage & 7.5% Short-Term / 5% Long-Term Retail CGT).
       </InfoBanner>
 
       {/* ── Market Halt / Session Locking Notice ── */}
@@ -865,6 +890,7 @@ export function EntryExitAnalyzer({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <HistoricalAnalogPanel analogResult={plan.analogResult} />
               <StrategyTrackRecord strategyTrackRecord={plan.strategyTrackRecord} />
+              <SignalTrackRecord symbol={plan.symbol} livePrice={plan.ltp} allStocks={stocks} />
             </div>
           )}
 

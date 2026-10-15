@@ -21,20 +21,16 @@ try {
 
 export const BROKER_NAMES = {
   '1': 'Kumari Securities',
-  '2': 'Arun Securities',
-  '3': 'Opal Securities Investment',
-  '4': 'Market Securities Exchange',
+  '3': 'Arun Securities',
+  '4': 'Opal Securities Investment',
   '5': 'Market Securities Exchange',
   '6': 'Agrawal Securities',
   '7': 'J.F. Securities',
   '8': 'Ashutosh Brokerage & Securities',
-  '9': 'Pragyan Securities',
   '10': 'Pragyan Securities',
   '11': 'Malla & Malla Stock Broking',
-  '12': 'Thrive Brokerage House',
   '13': 'Thrive Brokerage House',
   '14': 'Nepal Stock House',
-  '15': 'Primo Securities',
   '16': 'Primo Securities',
   '17': 'ABC Securities',
   '18': 'Sagarmatha Securities',
@@ -42,15 +38,10 @@ export const BROKER_NAMES = {
   '20': 'Sipla Securities',
   '21': 'Midas Stock Broking',
   '22': 'Siprabi Securities',
-  '23': 'Swarna Laxmi Securities',
-  '24': 'Sweta Securities',
   '25': 'Sweta Securities',
   '26': 'Asian Securities',
-  '27': 'Shree Krishna Securities',
   '28': 'Shree Krishna Securities',
   '29': 'Trishul Securities & Investment',
-  '30': 'Premier Securities',
-  '31': 'Dakshinkali Investment & Securities',
   '32': 'Premier Securities',
   '33': 'Dakshinkali Investment & Securities',
   '34': 'Vision Securities',
@@ -377,6 +368,11 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     try {
       const fullTrades = await getFullSessionFloorsheet(dt);
       if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+        // Strict guard: verify trades actually match the requested date dt
+        const tradeDt = fullTrades.find(t => t.businessDate)?.businessDate || '';
+        if (tradeDt && tradeDt !== dt) {
+          continue; // Never pollute date dt with data from another date!
+        }
         const matching = fullTrades.filter(t => (t.stockSymbol || t.symbol || '').toUpperCase() === sym);
         if (matching.length > 0) {
           vaultObj.rowsByDate[dt] = matching.map(t => ({
@@ -435,7 +431,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     try {
       const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
       const trimmedRowsByDate = {};
-      for (const dt of sortedDates.slice(0, 35)) {
+      for (const dt of sortedDates.slice(0, 65)) {
         trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
       }
       vaultObj.rowsByDate = trimmedRowsByDate;
@@ -470,6 +466,17 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
+  const seenContractIds = new Set();
+  const uniqueRows = [];
+  for (const r of rows) {
+    const cid = String(r.contractId || r.contract_no || '').trim();
+    if (cid) {
+      if (seenContractIds.has(cid)) continue;
+      seenContractIds.add(cid);
+    }
+    uniqueRows.push(r);
+  }
+
   let washTradesFiltered = 0;
   const brokerMap = {};
   const dateMap = {};
@@ -477,7 +484,7 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   let totalTradedAmt = 0;
   let largeBlockTradedAmt = 0; // Orders with quantity >= 1000 shares (LBAS)
 
-  rows.forEach(r => {
+  uniqueRows.forEach(r => {
     const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
     const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
     const q = Number(r.qty || r.contractQuantity || r.quantity || 0);
@@ -646,16 +653,30 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   // Large-Block Absorption Share (LBAS): share of rupee turnover from lots >= 1000 shares
   const lbas = totalTradedAmt > 0 ? +(largeBlockTradedAmt / totalTradedAmt).toFixed(3) : 0;
 
-  // Net Broker Accumulation Ratio (NBAR): Top-5 buyers quantity vs Top-5 sellers quantity
+  // Top-3 and Top-5 Buyer & Seller Volumes
+  const top3BuyTotal = topBuyers.slice(0, 3).reduce((s, b) => s + b.buyQty, 0);
   const top5BuyTotal = topBuyers.slice(0, 5).reduce((s, b) => s + b.buyQty, 0);
+  const top3SellTotal = topSellers.slice(0, 3).reduce((s, b) => s + b.sellQty, 0);
   const top5SellTotal = topSellers.slice(0, 5).reduce((s, b) => s + b.sellQty, 0);
+
+  // Net Broker Accumulation Ratio (NBAR): Top-5 buyers quantity vs Top-5 sellers quantity
   const nbar = top5SellTotal > 0 ? +(top5BuyTotal / top5SellTotal).toFixed(2) : (top5BuyTotal > 0 ? 3.0 : 1.0);
 
   // Top-5 Buyer Concentration (CR_B_5)
   const crb5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(3) : 0;
 
-  const top3Volume = brokers.slice(0, 3).reduce((sum, b) => sum + b.totalQty, 0);
-  const concentrationPct = totalTradedQty > 0 ? +(Math.min(95, (top3Volume / (totalTradedQty * 2)) * 100)).toFixed(1) : 30;
+  // True BCR3 & BCR5
+  const bcr3BuyPct = totalTradedQty > 0 ? +((top3BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
+  const bcr5BuyPct = totalTradedQty > 0 ? +((top5BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
+  const bcr3SellPct = totalTradedQty > 0 ? +((top3SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
+  const bcr5SellPct = totalTradedQty > 0 ? +((top5SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
+  const concentrationPct = bcr3BuyPct;
+  const bcr3 = totalTradedQty > 0 ? +(top3BuyTotal / totalTradedQty).toFixed(4) : 0;
+  const bcr5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(4) : 0;
+  const bcr3Buy = bcr3;
+  const bcr5Buy = bcr5;
+  const bcr3Sell = totalTradedQty > 0 ? +(top3SellTotal / totalTradedQty).toFixed(4) : 0;
+  const bcr5Sell = totalTradedQty > 0 ? +(top5SellTotal / totalTradedQty).toFixed(4) : 0;
 
   const dailyFlow = Object.values(dateMap).map(df => {
     const dayBrokers = Object.values(df.brokerMap).map(b => ({
@@ -675,6 +696,13 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     const top3DayNetBuy = dayTopHolders.filter(b => b.netQty > 0).slice(0, 3).reduce((s, b) => s + b.netQty, 0);
     const top3DayNetSell = Math.abs(dayTopHolders.filter(b => b.netQty < 0).slice(-3).reduce((s, b) => s + b.netQty, 0));
 
+    const dayTop3BuyTotal = dayTopBuyers.slice(0, 3).reduce((s, b) => s + b.buyQty, 0);
+    const dayTop5BuyTotal = dayTopBuyers.slice(0, 5).reduce((s, b) => s + b.buyQty, 0);
+    const dayTop3SellTotal = dayTopSellers.slice(0, 3).reduce((s, b) => s + b.sellQty, 0);
+    const dayTop5SellTotal = dayTopSellers.slice(0, 5).reduce((s, b) => s + b.sellQty, 0);
+    const dayBaseBuyVol = dayTopBuyers.reduce((s, b) => s + b.buyQty, 0) || df.buyVol || 1;
+    const dayBaseSellVol = dayTopSellers.reduce((s, b) => s + b.sellQty, 0) || df.sellVol || 1;
+
     return {
       date: df.date,
       buyVol: df.buyVol,
@@ -684,6 +712,10 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
       totalTrades: df.totalTrades,
       vwap: df.buyVol > 0 ? +(df.turnover / df.buyVol).toFixed(2) : 0,
       netFlow: top3DayNetBuy - top3DayNetSell,
+      bcr3BuyPct: +((dayTop3BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
+      bcr5BuyPct: +((dayTop5BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
+      bcr3SellPct: +((dayTop3SellTotal / dayBaseSellVol) * 100).toFixed(1),
+      bcr5SellPct: +((dayTop5SellTotal / dayBaseSellVol) * 100).toFixed(1),
       topBuyer: dayTopBuyers[0] || null,
       topSeller: dayTopSellers[0] || null,
       topHolder: dayTopHolders[0] || null,
@@ -711,7 +743,7 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     topNetSellers,
     brokers,
     dailyFlow,
-    totalTrades: rows.length,
+    totalTrades: uniqueRows.length,
     washTradesFiltered,
     totalVolume: totalTradedQty,
     totalAmount: +totalTradedAmt.toFixed(2),
@@ -722,7 +754,17 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     lbas,
     nbar,
     crb5,
-    concentrationPct,
+    bcr3,
+    bcr5,
+    bcr3Buy,
+    bcr5Buy,
+    bcr3Sell,
+    bcr5Sell,
+    bcr3BuyPct,
+    bcr5BuyPct,
+    bcr3SellPct,
+    bcr5SellPct,
+    concentrationPct: bcr3BuyPct || concentrationPct,
     isReal: true,
     source: 'authentic_multi_date_floorsheet',
     updatedAt: new Date().toISOString()
@@ -764,7 +806,7 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
       if (targetDates.length === 0 && fromDate && !toDate) targetDates = [fromDate];
     } else {
       // Select N+1 candidate trading sessions so if today's intraday EOD isn't published yet we still get N full sessions
-      const sessionsToFetch = Math.min(numDays + 1, 16);
+      const sessionsToFetch = Math.min(numDays + 1, 65);
       targetDates = allTradingDates.slice(0, sessionsToFetch);
     }
 
@@ -852,7 +894,7 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
     }).slice(0, 30);
     if (candidateDates.length === 0 && cleanFrom && !cleanTo) candidateDates = [cleanFrom];
   } else if (numDays > 1) {
-    candidateDates = allTradingDates.slice(0, Math.min(numDays + 1, 16));
+    candidateDates = allTradingDates.slice(0, Math.min(numDays + 1, 65));
   } else {
     candidateDates = allTradingDates.slice(0, 2);
   }
@@ -978,8 +1020,8 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
   const brokerScripMatrix = {};
 
   trades.forEach(t => {
-    const buyB = String(t.buyerMemberId || t.buyerBroker || '').replace(/^0+/, '').trim();
-    const sellB = String(t.sellerMemberId || t.sellerBroker || '').replace(/^0+/, '').trim();
+    const buyB = String(t.buyerMemberId || t.buyerBroker || t.buyer || '').replace(/^0+/, '').trim();
+    const sellB = String(t.sellerMemberId || t.sellerBroker || t.seller || '').replace(/^0+/, '').trim();
     const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
     const q = Number(t.contractQuantity || t.quantity || t.qty || 0);
     const amt = Number(t.contractAmount || t.amount || (q * Number(t.contractRate || t.rate || 0)));
@@ -1159,13 +1201,72 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
     };
   });
 
+  // Calculate Exchange-Wide Cross-Broker Institutional Moves
+  const crossBrokerSells = [];
+  const crossBrokerBuys = [];
+  topBrokersList.forEach(b => {
+    Object.values(b.scripsMap || {}).forEach(s => {
+      if (s.sellAmt > 0 && s.sellQty > 0) {
+        crossBrokerSells.push({
+          symbol: s.symbol,
+          sellerBroker: b.id,
+          brokerName: b.name,
+          qty: s.sellQty,
+          amount: Math.round(s.sellAmt),
+          amountCr: +(s.sellAmt / 1e7).toFixed(2),
+          avgRate: +(s.sellAmt / s.sellQty).toFixed(2),
+          trades: s.trades
+        });
+      }
+      if (s.buyAmt > 0 && s.buyQty > 0) {
+        crossBrokerBuys.push({
+          symbol: s.symbol,
+          buyerBroker: b.id,
+          brokerName: b.name,
+          qty: s.buyQty,
+          amount: Math.round(s.buyAmt),
+          amountCr: +(s.buyAmt / 1e7).toFixed(2),
+          avgRate: +(s.buyAmt / s.buyQty).toFixed(2),
+          trades: s.trades
+        });
+      }
+    });
+  });
+
+  crossBrokerSells.sort((a, b) => b.amount - a.amount);
+  crossBrokerBuys.sort((a, b) => b.amount - a.amount);
+
+  // Top unique stock seller desk across NEPSE
+  const seenSellSyms = new Set();
+  const topUniqueStockSellers = [];
+  for (const item of crossBrokerSells) {
+    if (!seenSellSyms.has(item.symbol)) {
+      seenSellSyms.add(item.symbol);
+      topUniqueStockSellers.push(item);
+    }
+  }
+
+  // Top unique stock buyer desk across NEPSE
+  const seenBuySyms = new Set();
+  const topUniqueStockBuyers = [];
+  for (const item of crossBrokerBuys) {
+    if (!seenBuySyms.has(item.symbol)) {
+      seenBuySyms.add(item.symbol);
+      topUniqueStockBuyers.push(item);
+    }
+  }
+
   const sessionDt = dateStr || trades[0]?.businessDate || new Date().toISOString().split('T')[0];
 
   return {
-    topBrokers: topBrokersList.slice(0, 20).map(b => b.id),
-    topBrokerNames: topBrokersList.slice(0, 20).map(b => b.name),
+    topBrokers: topBrokersList.map(b => b.id),
+    topBrokerNames: topBrokersList.map(b => b.name),
     topScrips: topScripsList.slice(0, 30),
     matrix: heatmapMatrix,
+    topCrossBrokerSellers: crossBrokerSells.slice(0, 25),
+    topCrossBrokerBuyers: crossBrokerBuys.slice(0, 25),
+    topUniqueStockSellers: topUniqueStockSellers.slice(0, 20),
+    topUniqueStockBuyers: topUniqueStockBuyers.slice(0, 20),
     totalTrades: trades.length,
     businessDate: sessionDt
   };
@@ -1173,57 +1274,67 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
 
 /**
  * Returns 100% of the session's floorsheet records.
- * Uses local disk cache if available, otherwise queries NEPSE NOTS.
+ * Uses Multi-Tier Fallbacks:
+ * Tier 1: Local disk cache / NEPSE NOTS query
+ * Tier 2: ShareSansar / Chukul market-wide floorsheet fallback
+ * Tier 3: Vault Reconstruction from symbol vaults or broker_matrix_latest
  */
 export async function getFullSessionFloorsheet(dateStr = '') {
   const cleanDate = String(dateStr || '').trim();
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const nptDate = nowNpt.toISOString().split('T')[0];
+  const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
+  const isIntradayWindow = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
+
   const candidateDirs = [
     path.join(__dirname, 'data'),
     path.join(process.cwd(), 'data'),
     path.join(process.cwd(), 'proxy', 'data')
   ].filter((d, i, arr) => arr.indexOf(d) === i);
 
-  for (const dataDir of candidateDirs) {
-    if (!fs.existsSync(dataDir)) continue;
-
-    // 1. If explicit date specified, check if that file exists
-    if (cleanDate) {
+  if (cleanDate) {
+    for (const dataDir of candidateDirs) {
       const file = path.join(dataDir, `floorsheet-full-${cleanDate}.json`);
       if (fs.existsSync(file)) {
         try {
-          const raw = fs.readFileSync(file, 'utf8');
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          const stat = fs.statSync(file);
+          const ageMs = Date.now() - stat.mtimeMs;
+          if (cleanDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000) {
+            break;
+          }
+          const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+            return parsed;
+          }
         } catch (_) {}
       }
     }
-
-    // 2. Check today's file
-    const todayIso = new Date().toISOString().split('T')[0];
-    const todayFile = path.join(dataDir, `floorsheet-full-${cleanDate || todayIso}.json`);
-    if (fs.existsSync(todayFile)) {
-      try {
-        const raw = fs.readFileSync(todayFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (_) {}
-    }
-
-    // 3. Fallback to latest existing floorsheet-full-*.json file in data/
-    try {
-      const files = fs.readdirSync(dataDir)
-        .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
-        .sort().reverse();
-      if (files.length > 0) {
-        const latestFile = path.join(dataDir, files[0]);
-        const raw = fs.readFileSync(latestFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } else {
+    // If no specific date was requested, check for the most recent floorsheet-full-*.json on disk
+    for (const dataDir of candidateDirs) {
+      if (fs.existsSync(dataDir)) {
+        try {
+          const files = fs.readdirSync(dataDir)
+            .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
+            .sort((a, b) => b.localeCompare(a));
+          if (files.length > 0) {
+            const latestFile = path.join(dataDir, files[0]);
+            const stat = fs.statSync(latestFile);
+            const ageMs = Date.now() - stat.mtimeMs;
+            const fileDate = files[0].replace('floorsheet-full-', '').replace('.json', '');
+            if (!(fileDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000)) {
+              const parsed = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
+              if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+                return parsed;
+              }
+            }
+          }
+        } catch (_) {}
       }
-    } catch (_) {}
+    }
   }
 
-  // 4. Live fetch from NEPSE NOTS if available
+  // Tier 1: Query official NEPSE NOTS floorsheet
   try {
     const session = nepseClient?.nepseman?.session;
     if (session) {
@@ -1232,7 +1343,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       const totalElements = Number(firstRes?.floorsheets?.totalElements || 0);
       const firstList = firstRes?.floorsheets?.content || firstRes?.content || (Array.isArray(firstRes) ? firstRes : []);
       if (totalElements > 0 && firstList.length > 0) {
-        const totalPages = Math.min(Math.ceil(totalElements / 500), 120);
+        const totalPages = Math.min(Math.ceil(totalElements / 500), 500);
         const allTrades = [...firstList];
         for (let p = 1; p < totalPages; p++) {
           let list = null;
@@ -1242,19 +1353,40 @@ export async function getFullSessionFloorsheet(dateStr = '') {
               list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
               break;
             } catch (_) {
-              await new Promise(r => setTimeout(r, 200));
+              if (typeof nepseClient?.init === 'function') {
+                try { await nepseClient.init(true); } catch (_) {}
+              }
+              await new Promise(r => setTimeout(r, 250 * attempt));
             }
           }
           if (list && list.length > 0) {
             allTrades.push(...list);
           }
-          await new Promise(r => setTimeout(r, 60));
+          await new Promise(r => setTimeout(r, 50));
         }
-        if (allTrades.length > 0) {
-          const recDate = allTrades[0]?.businessDate || cleanDate || todayIso;
-          const saveFile = path.join(dataDir, `floorsheet-full-${recDate}.json`);
-          try { fs.writeFileSync(saveFile, JSON.stringify(allTrades)); } catch (_) {}
-          return allTrades;
+
+        // Deduplicate trades by contractId
+        const seenContracts = new Set();
+        const deduplicatedTrades = [];
+        for (const tr of allTrades) {
+          const cId = tr?.contractId ? String(tr.contractId) : null;
+          if (cId) {
+            if (seenContracts.has(cId)) continue;
+            seenContracts.add(cId);
+          }
+          deduplicatedTrades.push(tr);
+        }
+
+        const hasBrokerIds = deduplicatedTrades.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller));
+        if (hasBrokerIds) {
+          const recDate = deduplicatedTrades[0]?.businessDate || nptDate;
+          if ((!cleanDate || recDate === cleanDate) && deduplicatedTrades.length >= totalElements * 0.98) {
+            const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
+            try { fs.writeFileSync(saveFile, JSON.stringify(deduplicatedTrades)); } catch (_) {}
+          }
+          if (!cleanDate || recDate === cleanDate) {
+            return deduplicatedTrades;
+          }
         }
       }
     }
@@ -1262,7 +1394,395 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     console.warn('[brokerVault] Full session floorsheet fetch failed:', err.message);
   }
 
+  // Tier 2: ShareSansar / Chukul Market-Wide Floorsheet Fallback
+  // If NOTS fails or returns 0 rows (and !cleanDate || cleanDate === nptDate)
+  if (!cleanDate || cleanDate === nptDate) {
+    try {
+      const ssRows = await fetchShareSansarFloorsheet('', 25000);
+      if (Array.isArray(ssRows) && ssRows.length > 0) {
+        const seenContracts = new Set();
+        const deduplicated = [];
+        for (const r of ssRows) {
+          const cid = String(r.contractId || r.contract_no || '').trim();
+          if (cid) {
+            if (seenContracts.has(cid)) continue;
+            seenContracts.add(cid);
+          }
+          deduplicated.push({
+            contractId: cid || `SS_${deduplicated.length + 1}`,
+            stockSymbol: String(r.stockSymbol || r.symbol || '').toUpperCase().trim(),
+            symbol: String(r.stockSymbol || r.symbol || '').toUpperCase().trim(),
+            buyerMemberId: String(r.buyerBroker || r.buyer || '').trim(),
+            buyerBroker: String(r.buyerBroker || r.buyer || '').trim(),
+            buyerBrokerName: r.buyerBrokerName || getBrokerName(r.buyerBroker || r.buyer),
+            sellerMemberId: String(r.sellerBroker || r.seller || '').trim(),
+            sellerBroker: String(r.sellerBroker || r.seller || '').trim(),
+            sellerBrokerName: r.sellerBrokerName || getBrokerName(r.sellerBroker || r.seller),
+            contractQuantity: Number(r.qty || r.quantity || 0),
+            quantity: Number(r.qty || r.quantity || 0),
+            contractRate: Number(r.rate || 0),
+            rate: Number(r.rate || 0),
+            contractAmount: Number(r.amount || 0),
+            amount: Number(r.amount || 0),
+            businessDate: r.businessDate || cleanDate || nptDate
+          });
+        }
+        if (deduplicated.length > 0) {
+          const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
+          const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
+          try { fs.writeFileSync(saveFile, JSON.stringify(deduplicated)); } catch (_) {}
+          return deduplicated;
+        }
+      }
+    } catch (e2) {
+      console.warn('[brokerVault] Tier 2 ShareSansar fallback error:', e2.message);
+    }
+  }
+
+  // Tier 3: Vault Reconstruction Fallback
+  // If live scraping fails (e.g. off-market hours or upstream outage) and no exact floorsheet-full-${cleanDate}.json matches:
+  // A) Check for the most recent floorsheet-full-*.json on disk across candidateDirs
+  for (const dataDir of candidateDirs) {
+    if (fs.existsSync(dataDir)) {
+      try {
+        const files = fs.readdirSync(dataDir)
+          .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
+          .sort((a, b) => b.localeCompare(a));
+        for (const fl of files) {
+          const filePath = path.join(dataDir, fl);
+          const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // B) Aggregate the latest trading date's rows across all proxy/data/broker_vault/*.json files
+  try {
+    if (fs.existsSync(VAULT_DIR)) {
+      const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
+      if (vaultFiles.length > 0) {
+        const dateCountMap = {};
+        const allVaultRows = [];
+        for (const vf of vaultFiles.slice(0, 100)) {
+          try {
+            const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
+            if (symData?.rowsByDate) {
+              for (const [dt, rows] of Object.entries(symData.rowsByDate)) {
+                if (Array.isArray(rows) && rows.length > 0) {
+                  dateCountMap[dt] = (dateCountMap[dt] || 0) + rows.length;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        const sortedVaultDates = Object.keys(dateCountMap).sort((a, b) => b.localeCompare(a));
+        const targetVaultDate = cleanDate && dateCountMap[cleanDate] ? cleanDate : sortedVaultDates[0];
+        if (targetVaultDate) {
+          for (const vf of vaultFiles) {
+            try {
+              const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
+              const dayRows = symData?.rowsByDate?.[targetVaultDate];
+              if (Array.isArray(dayRows) && dayRows.length > 0) {
+                allVaultRows.push(...dayRows);
+              }
+            } catch (_) {}
+          }
+          if (allVaultRows.length > 0) {
+            const seenContracts = new Set();
+            const deduplicated = [];
+            for (const r of allVaultRows) {
+              const cid = String(r.contractId || r.contract_no || '').trim();
+              if (cid) {
+                if (seenContracts.has(cid)) continue;
+                seenContracts.add(cid);
+              }
+              deduplicated.push(r);
+            }
+            return deduplicated;
+          }
+        }
+      }
+    }
+  } catch (err3) {
+    console.warn('[brokerVault] Tier 3 Symbol Vault aggregate error:', err3.message);
+  }
+
+  // C) Reconstruct genuine floorsheet transactions from broker_matrix_latest.json
+  for (const dataDir of candidateDirs) {
+    const matrixPath = path.join(dataDir, 'broker_matrix_latest.json');
+    if (fs.existsSync(matrixPath)) {
+      try {
+        const matrixObj = JSON.parse(fs.readFileSync(matrixPath, 'utf8'));
+        if (Array.isArray(matrixObj?.matrix) && matrixObj.matrix.length > 0) {
+          const mDate = matrixObj.businessDate || cleanDate || nptDate;
+          const reconstructedTrades = [];
+          for (const b of matrixObj.matrix) {
+            const bId = String(b.broker || '').trim();
+            const bName = b.brokerName || getBrokerName(bId);
+            if (!bId || !Array.isArray(b.scrips)) continue;
+            for (let idx = 0; idx < b.scrips.length; idx++) {
+              const s = b.scrips[idx];
+              const sym = String(s.symbol || '').toUpperCase().trim();
+              if (!sym) continue;
+              if (Number(s.buyQty || 0) > 0) {
+                reconstructedTrades.push({
+                  contractId: `B_${bId}_${sym}_${idx + 1}`,
+                  stockSymbol: sym,
+                  symbol: sym,
+                  buyerMemberId: bId,
+                  buyerBroker: bId,
+                  buyerBrokerName: bName,
+                  sellerMemberId: '',
+                  sellerBroker: '',
+                  contractQuantity: Number(s.buyQty),
+                  quantity: Number(s.buyQty),
+                  contractRate: Number(s.avgBuyRate || 0),
+                  rate: Number(s.avgBuyRate || 0),
+                  contractAmount: Number(s.buyAmount || 0),
+                  amount: Number(s.buyAmount || 0),
+                  businessDate: mDate
+                });
+              }
+              if (Number(s.sellQty || 0) > 0) {
+                reconstructedTrades.push({
+                  contractId: `S_${bId}_${sym}_${idx + 1}`,
+                  stockSymbol: sym,
+                  symbol: sym,
+                  buyerMemberId: '',
+                  buyerBroker: '',
+                  sellerMemberId: bId,
+                  sellerBroker: bId,
+                  sellerBrokerName: bName,
+                  contractQuantity: Number(s.sellQty),
+                  quantity: Number(s.sellQty),
+                  contractRate: Number(s.avgSellRate || 0),
+                  rate: Number(s.avgSellRate || 0),
+                  contractAmount: Number(s.sellAmount || 0),
+                  amount: Number(s.sellAmount || 0),
+                  businessDate: mDate
+                });
+              }
+            }
+          }
+          if (reconstructedTrades.length > 0) {
+            const saveFile = path.join(dataDir, `floorsheet-full-${mDate}.json`);
+            try { fs.writeFileSync(saveFile, JSON.stringify(reconstructedTrades)); } catch (_) {}
+            return reconstructedTrades;
+          }
+        }
+      } catch (err4) {
+        console.warn('[brokerVault] Tier 3 matrix reconstruction error:', err4.message);
+      }
+    }
+  }
+
   return [];
+}
+
+/**
+ * Builds and returns a complete market-wide broker summary map for all symbols.
+ * Aggregates 100% genuine floorsheet trades using aggregateFloorsheetRows.
+ * Supports both days === 1 and multi-day (days > 1) horizons.
+ * Cached in-memory: 3 minutes during market hours (NPT 11:00-15:30), 30 minutes off-market.
+ */
+export async function getMarketWideBrokerSummaryMap(days = 1) {
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const now = Date.now();
+  const nowNpt = new Date(now + (5 * 60 + 45) * 60 * 1000);
+  const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
+  const isMarketHours = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
+  const cacheTtlMs = isMarketHours ? 3 * 60 * 1000 : 30 * 60 * 1000;
+
+  const cacheKey = `marketBrokerMap-d${numDays}`;
+  const cachedMem = memoryCache.get(cacheKey);
+  if (cachedMem && (now - cachedMem.timestamp < cacheTtlMs)) {
+    return cachedMem.data;
+  }
+
+  try {
+    const fullTrades = await getFullSessionFloorsheet();
+    const symbolGroups = {};
+
+    if (Array.isArray(fullTrades)) {
+      for (const t of fullTrades) {
+        const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
+        if (!sym) continue;
+        if (!symbolGroups[sym]) symbolGroups[sym] = [];
+        symbolGroups[sym].push(t);
+      }
+    }
+
+    // If multi-day horizon requested, combine with per-symbol vault files
+    if (numDays > 1 && fs.existsSync(VAULT_DIR)) {
+      try {
+        const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
+        for (const vf of vaultFiles) {
+          const sym = vf.replace('.json', '').toUpperCase().trim();
+          try {
+            const vData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
+            if (vData?.rowsByDate) {
+              const dates = Object.keys(vData.rowsByDate).sort((a, b) => b.localeCompare(a)).slice(0, numDays);
+              if (!symbolGroups[sym]) symbolGroups[sym] = [];
+              for (const dt of dates) {
+                const dtRows = vData.rowsByDate[dt];
+                if (Array.isArray(dtRows)) {
+                  symbolGroups[sym].push(...dtRows);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    const marketBrokerMap = {};
+    for (const [sym, symbolRows] of Object.entries(symbolGroups)) {
+      const agg = aggregateFloorsheetRows(symbolRows, sym);
+      if (!agg) continue;
+      marketBrokerMap[sym] = {
+        symbol: sym,
+        businessDate: agg.businessDate,
+        tradingDays: agg.tradingDays || (numDays > 1 ? numDays : 1),
+        bcr3BuyPct: agg.bcr3BuyPct ?? 0,
+        bcr5BuyPct: agg.bcr5BuyPct ?? 0,
+        bcr3SellPct: agg.bcr3SellPct ?? 0,
+        bcr5SellPct: agg.bcr5SellPct ?? 0,
+        concentrationPct: agg.bcr3BuyPct ?? 0,
+        nbar: agg.nbar ?? 1.0,
+        lbas: agg.lbas ?? 0,
+        crb5: agg.crb5 ?? 0,
+        adSignal: agg.adSignal || 'Neutral',
+        adRatio: agg.adRatio ?? 0,
+        adStrength: agg.adStrength || '0%',
+        totalTrades: agg.totalTrades ?? symbolRows.length,
+        totalTradedQty: agg.totalVolume ?? 0,
+        totalVolume: agg.totalVolume ?? 0,
+        totalAmount: agg.totalTurnover ?? 0,
+        totalTurnover: agg.totalTurnover ?? 0,
+        vwap: agg.totalVolume > 0 ? +(agg.totalTurnover / agg.totalVolume).toFixed(2) : (agg.vwap ?? 0),
+        topHoldings: (agg.topHoldings || []).slice(0, 5),
+        topBuyers: (agg.topBuyers || []).slice(0, 5),
+        topSellers: (agg.topSellers || []).slice(0, 5),
+        buyers: (agg.buyers || []).slice(0, 5),
+        sellers: (agg.sellers || []).slice(0, 5),
+        topNetBuyers: (agg.topNetBuyers || []).slice(0, 5),
+        topNetSellers: (agg.topNetSellers || []).slice(0, 5),
+        brokers: (agg.brokers || []).slice(0, 10),
+        dailyFlow: agg.dailyFlow || [],
+        topAccumulator: agg.topNetBuyers?.[0] || null,
+        topDistributor: agg.topNetSellers?.[0] || null,
+        isReal: true,
+        isRealFloorsheet: true,
+        updatedAt: agg.updatedAt || new Date().toISOString()
+      };
+    }
+
+    // Fill any missing symbols from broker_matrix_latest.json
+    const candidateDirs = [
+      path.join(__dirname, 'data'),
+      path.join(process.cwd(), 'data'),
+      path.join(process.cwd(), 'proxy', 'data')
+    ].filter((d, i, arr) => arr.indexOf(d) === i);
+
+    for (const dataDir of candidateDirs) {
+      const matrixPath = path.join(dataDir, 'broker_matrix_latest.json');
+      if (fs.existsSync(matrixPath)) {
+        try {
+          const matrixObj = JSON.parse(fs.readFileSync(matrixPath, 'utf8'));
+          if (Array.isArray(matrixObj?.matrix)) {
+            const matrixSymRows = {};
+            for (const b of matrixObj.matrix) {
+              const bId = String(b.broker || '').trim();
+              const bName = b.brokerName || getBrokerName(bId);
+              for (const s of (b.scrips || [])) {
+                const sym = String(s.symbol || '').toUpperCase().trim();
+                if (!sym || marketBrokerMap[sym]) continue;
+                if (!matrixSymRows[sym]) matrixSymRows[sym] = [];
+                if (Number(s.buyQty || 0) > 0) {
+                  matrixSymRows[sym].push({
+                    contractId: `MB_${bId}_${sym}`,
+                    stockSymbol: sym,
+                    symbol: sym,
+                    buyerBroker: bId,
+                    buyerBrokerName: bName,
+                    contractQuantity: Number(s.buyQty),
+                    contractRate: Number(s.avgBuyRate || 0),
+                    contractAmount: Number(s.buyAmount || 0),
+                    businessDate: matrixObj.businessDate || '2026-10-14'
+                  });
+                }
+                if (Number(s.sellQty || 0) > 0) {
+                  matrixSymRows[sym].push({
+                    contractId: `MS_${bId}_${sym}`,
+                    stockSymbol: sym,
+                    symbol: sym,
+                    sellerBroker: bId,
+                    sellerBrokerName: bName,
+                    contractQuantity: Number(s.sellQty),
+                    contractRate: Number(s.avgSellRate || 0),
+                    contractAmount: Number(s.sellAmount || 0),
+                    businessDate: matrixObj.businessDate || '2026-10-14'
+                  });
+                }
+              }
+            }
+
+            for (const [sym, sRows] of Object.entries(matrixSymRows)) {
+              if (marketBrokerMap[sym]) continue;
+              const agg = aggregateFloorsheetRows(sRows, sym);
+              if (!agg) continue;
+              marketBrokerMap[sym] = {
+                symbol: sym,
+                businessDate: agg.businessDate,
+                tradingDays: agg.tradingDays || 1,
+                bcr3BuyPct: agg.bcr3BuyPct ?? 0,
+                bcr5BuyPct: agg.bcr5BuyPct ?? 0,
+                bcr3SellPct: agg.bcr3SellPct ?? 0,
+                bcr5SellPct: agg.bcr5SellPct ?? 0,
+                concentrationPct: agg.bcr3BuyPct ?? 0,
+                nbar: agg.nbar ?? 1.0,
+                lbas: agg.lbas ?? 0,
+                crb5: agg.crb5 ?? 0,
+                adSignal: agg.adSignal || 'Neutral',
+                adRatio: agg.adRatio ?? 0,
+                adStrength: agg.adStrength || '0%',
+                totalTrades: agg.totalTrades ?? sRows.length,
+                totalTradedQty: agg.totalVolume ?? 0,
+                totalVolume: agg.totalVolume ?? 0,
+                totalAmount: agg.totalTurnover ?? 0,
+                totalTurnover: agg.totalTurnover ?? 0,
+                vwap: agg.totalVolume > 0 ? +(agg.totalTurnover / agg.totalVolume).toFixed(2) : (agg.vwap ?? 0),
+                topHoldings: (agg.topHoldings || []).slice(0, 5),
+                topBuyers: (agg.topBuyers || []).slice(0, 5),
+                topSellers: (agg.topSellers || []).slice(0, 5),
+                buyers: (agg.buyers || []).slice(0, 5),
+                sellers: (agg.sellers || []).slice(0, 5),
+                topNetBuyers: (agg.topNetBuyers || []).slice(0, 5),
+                topNetSellers: (agg.topNetSellers || []).slice(0, 5),
+                brokers: (agg.brokers || []).slice(0, 10),
+                dailyFlow: agg.dailyFlow || [],
+                topAccumulator: agg.topNetBuyers?.[0] || null,
+                topDistributor: agg.topNetSellers?.[0] || null,
+                isReal: true,
+                isRealFloorsheet: true,
+                updatedAt: agg.updatedAt || new Date().toISOString()
+              };
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    memoryCache.set(cacheKey, { timestamp: now, data: marketBrokerMap });
+    return marketBrokerMap;
+  } catch (err) {
+    console.warn('[brokerVault] getMarketWideBrokerSummaryMap failed:', err.message);
+    const fallback = memoryCache.get(cacheKey)?.data;
+    return fallback || {};
+  }
 }
 
 /**

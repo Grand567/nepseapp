@@ -970,13 +970,13 @@ function AppInner() {
               }}
             >
               <Bell style={{ width: 13, height: 13, color: '#10b981' }} />
-              <span>Alerts</span>
+              <span className="header-alerts-label">Alerts</span>
             </button>
 
             {/* Pro Subscription Badge / Upgrade Button */}
             <button
               id="btn-pro-subscription"
-              className="icon-btn"
+              className="icon-btn header-pro-btn"
               onClick={() => openSubscriptionModal()}
               title={isPro ? `⭐ Pro Active (${daysRemaining}d remaining)` : '⚡ Upgrade to Pro (1m, 2m...)'}
               style={{
@@ -996,7 +996,7 @@ function AppInner() {
               }}
             >
               <Crown style={{ width: 13, height: 13, color: isPro ? '#f59e0b' : '#fbbf24' }} />
-              <span>{isPro ? `PRO (${daysRemaining}d)` : 'PRO'}</span>
+              <span>PRO{isPro && <span className="header-pro-days"> ({daysRemaining}d)</span>}</span>
             </button>
 
             {/* Resources button */}
@@ -1011,7 +1011,7 @@ function AppInner() {
 
             {/* Stitch UI Design System button */}
             <button
-              className={`icon-btn ${activeTab === 'stitch' ? 'active' : ''}`}
+              className={`icon-btn ${activeTab === 'stitch' ? 'active' : ''} header-stitch-btn`}
               onClick={() => setActiveTab('stitch')}
               title="Stitch UI Design System"
               style={{

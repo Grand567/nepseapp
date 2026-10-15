@@ -244,7 +244,7 @@ export default function Calculator() {
   }, [riskEntryPrice, riskStopLoss, riskTargetPrice]);
 
   return (
-    <div style={{ padding: '16px 14px 20px', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
+    <div className="calculator-view-container" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 10px 20px', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
       {/* 7-Tab Selector (Dashboard Pill Chips) */}
       <div style={{
         display: 'flex',
@@ -514,8 +514,8 @@ export default function Calculator() {
                 onChange={(e) => setHoldingType(e.target.value)}
                 className="select-input"
               >
-                <option value="short">Individual Short Term (10.0% CGT — Final Tax)</option>
-                <option value="long">Individual Long Term (7.5% CGT — Final Tax)</option>
+                <option value="short">Individual Short Term (7.5% CGT — Final Tax)</option>
+                <option value="long">Individual Long Term (5.0% CGT — Final Tax)</option>
               </select>
             </div>
           </div>

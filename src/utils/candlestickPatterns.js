@@ -683,12 +683,12 @@ export function calculateTechnicalSpeedometer(stock = {}, history = []) {
     return null;
   };
 
-  const ema10 = Number(stock.ema10 || avgSlice(10) || (ltp > 0 ? +(ltp * (1 - pChange * 0.0025)).toFixed(2) : 0));
-  const ema20 = Number(stock.ema20 || avgSlice(20) || (ltp > 0 ? +(ltp * (1 - pChange * 0.004)).toFixed(2) : 0));
-  const sma50 = Number(stock.sma50 || stock.ema50 || avgSlice(50) || (ltp > 0 ? +(ltp * (1 - pChange * 0.006)).toFixed(2) : 0));
+  const ema10 = Number(stock.ema10 || avgSlice(10) || 0);
+  const ema20 = Number(stock.ema20 || avgSlice(20) || 0);
+  const sma50 = Number(stock.sma50 || stock.ema50 || avgSlice(50) || 0);
   const ema50 = Number(stock.ema50 || sma50 || 0);
-  const sma100 = Number(avgSlice(100) || stock.avg120d || (ltp > 0 ? +(ltp * 0.97).toFixed(2) : 0));
-  const sma200 = Number(stock.sma200 || avgSlice(200) || stock.avg180d || (ltp > 0 ? +(ltp * 0.95).toFixed(2) : 0));
+  const sma100 = Number(avgSlice(100) || stock.avg120d || 0);
+  const sma200 = Number(stock.sma200 || avgSlice(200) || stock.avg180d || 0);
 
   const evalMa = (label, val) => {
     if (!val || !ltp) return { label, value: '—', action: 'Neutral' };
@@ -706,36 +706,65 @@ export function calculateTechnicalSpeedometer(stock = {}, history = []) {
     evalMa('SMA (200)', sma200)
   ];
 
-  // Oscillators (6)
-  const rsi = Number(stock.rsi ?? (50 + pChange * 2.2));
-  const rsiClamped = Math.min(95, Math.max(10, +rsi.toFixed(1)));
-  const rsiAction = rsiClamped >= 52 && rsiClamped <= 72 ? 'Buy' : rsiClamped < 32 ? 'Buy' : rsiClamped > 75 || rsiClamped < 44 ? 'Sell' : 'Neutral';
+  // Authentic Oscillators (6)
+  const oscItems = [];
 
-  const macdHist = Number(stock.macd?.histogram ?? (pChange * 0.45));
-  const macdAction = macdHist > 0.05 ? 'Buy' : macdHist < -0.05 ? 'Sell' : 'Neutral';
+  // 1. RSI (14)
+  if (stock.rsi != null && !isNaN(Number(stock.rsi))) {
+    const rsiVal = Number(stock.rsi);
+    const rsiClamped = Math.min(95, Math.max(10, +rsiVal.toFixed(1)));
+    const rsiAction = rsiClamped >= 52 && rsiClamped <= 72 ? 'Buy' : rsiClamped < 32 ? 'Buy' : rsiClamped > 75 || rsiClamped < 44 ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'RSI (14)', value: `${rsiClamped}`, action: rsiAction });
+  } else {
+    oscItems.push({ label: 'RSI (14)', value: '—', action: 'Neutral' });
+  }
 
-  const high52 = Number(stock.high52w || ltp * 1.15);
-  const low52 = Number(stock.low52w || ltp * 0.85);
-  const stochK = high52 > low52 ? +(((ltp - low52) / (high52 - low52)) * 100).toFixed(1) : 50;
-  const stochAction = stochK >= 50 && stochK <= 82 ? 'Buy' : stochK < 22 ? 'Buy' : stochK < 40 || stochK > 88 ? 'Sell' : 'Neutral';
+  // 2. MACD (12, 26, 9)
+  if (stock.macd?.histogram != null && !isNaN(Number(stock.macd.histogram))) {
+    const macdHist = Number(stock.macd.histogram);
+    const macdAction = macdHist > 0.05 ? 'Buy' : macdHist < -0.05 ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'MACD (12, 26, 9)', value: `${macdHist >= 0 ? '+' : ''}${macdHist.toFixed(2)}`, action: macdAction });
+  } else {
+    oscItems.push({ label: 'MACD (12, 26, 9)', value: '—', action: 'Neutral' });
+  }
 
-  const rvol = Number(stock.rvol || stock.volumeSurgeRatio || 1.0);
-  const rvolAction = (rvol >= 1.25 && pChange >= 0) ? 'Buy' : (rvol >= 1.25 && pChange < -1) ? 'Sell' : 'Neutral';
+  // 3. Stochastic %K (52-week)
+  if (stock.high52w && stock.low52w && Number(stock.high52w) > Number(stock.low52w)) {
+    const high52 = Number(stock.high52w);
+    const low52 = Number(stock.low52w);
+    const stochK = +(((ltp - low52) / (high52 - low52)) * 100).toFixed(1);
+    const stochAction = stochK >= 50 && stochK <= 82 ? 'Buy' : stochK < 22 ? 'Buy' : stochK < 40 || stochK > 88 ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'Stochastic %K', value: `${stochK}%`, action: stochAction });
+  } else {
+    oscItems.push({ label: 'Stochastic %K', value: '—', action: 'Neutral' });
+  }
 
-  const adxVal = +(Math.min(60, Math.max(12, Math.abs(pChange) * 4.5 + (rvol * 10)))).toFixed(1);
-  const adxAction = adxVal >= 22 && pChange > 0 ? 'Buy' : adxVal >= 22 && pChange < 0 ? 'Sell' : 'Neutral';
+  // 4. Volume RVOL (20D)
+  if (stock.rvol != null || stock.volumeSurgeRatio != null) {
+    const rvol = Number(stock.rvol || stock.volumeSurgeRatio);
+    const rvolAction = (rvol >= 1.25 && pChange >= 0) ? 'Buy' : (rvol >= 1.25 && pChange < -1) ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'Volume RVOL (20D)', value: `${rvol.toFixed(2)}x`, action: rvolAction });
+  } else {
+    oscItems.push({ label: 'Volume RVOL (20D)', value: '—', action: 'Neutral' });
+  }
 
-  const cciVal = +((rsiClamped - 50) * 4.2).toFixed(0);
-  const cciAction = cciVal > 25 ? 'Buy' : cciVal < -25 ? 'Sell' : 'Neutral';
+  // 5. ADX Trend Strength
+  if (stock.adx != null && !isNaN(Number(stock.adx))) {
+    const adxVal = +Number(stock.adx).toFixed(1);
+    const adxAction = adxVal >= 22 && pChange > 0 ? 'Buy' : adxVal >= 22 && pChange < 0 ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'ADX Trend Strength', value: `${adxVal}`, action: adxAction });
+  } else {
+    oscItems.push({ label: 'ADX Trend Strength', value: '—', action: 'Neutral' });
+  }
 
-  const oscItems = [
-    { label: 'RSI (14)', value: `${rsiClamped}`, action: rsiAction },
-    { label: 'MACD (12, 26, 9)', value: `${macdHist >= 0 ? '+' : ''}${macdHist.toFixed(2)}`, action: macdAction },
-    { label: 'Stochastic %K', value: `${stochK}%`, action: stochAction },
-    { label: 'Volume RVOL (20D)', value: `${rvol.toFixed(2)}x`, action: rvolAction },
-    { label: 'ADX Trend Strength', value: `${adxVal}`, action: adxAction },
-    { label: 'CCI (20)', value: `${cciVal}`, action: cciAction }
-  ];
+  // 6. CCI (20)
+  if (stock.cci != null && !isNaN(Number(stock.cci))) {
+    const cciVal = +Number(stock.cci).toFixed(0);
+    const cciAction = cciVal > 25 ? 'Buy' : cciVal < -25 ? 'Sell' : 'Neutral';
+    oscItems.push({ label: 'CCI (20)', value: `${cciVal}`, action: cciAction });
+  } else {
+    oscItems.push({ label: 'CCI (20)', value: '—', action: 'Neutral' });
+  }
 
   const summarize = (items) => {
     let buy = 0, neutral = 0, sell = 0;

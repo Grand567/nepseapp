@@ -24,8 +24,7 @@ import {
   normalizeCorporateActionPrices,
   calculateBrokerAccumulationScore,
   getHydroSeasonality,
-  resolveDynamicStockRSI,
-  resolveDynamicStockCandles
+  resolveDynamicStockRSI
 } from '../utils/quantEngine';
 import { fetchBrokerAnalysis } from '../utils/servicesApi';
 import { runBacktest, quantMultiFactorStrategy } from '../utils/backtest';
@@ -1256,7 +1255,7 @@ const AiChatInputBar = React.memo(function AiChatInputBar({ onSend, loading, ext
   };
 
   return (
-    <div style={{ maxWidth: 520, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div style={{ width: '100%', maxWidth: '100%', margin: '0 auto', display: 'flex', gap: 8, alignItems: 'center' }}>
       <textarea
         value={text}
         onChange={e => setText(e.target.value)}
@@ -1339,7 +1338,7 @@ export default function AiAnalyst({
   const [paperState, setPaperState] = useState(getPaperState);
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
-  const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.meta.env.VITE_GLM_API_KEY || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r') : ''));
+  const [glmKey, setGlmKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key') || import.meta.env.VITE_GLM_API_KEY || '') : ''));
   const [geminiKey, setGeminiKey] = useState(() => (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_gemini_api_key') || '') : ''));
   const [autoClearChat, setAutoClearChat] = useState(() => {
     if (typeof localStorage !== 'undefined') {
@@ -1437,7 +1436,7 @@ export default function AiAnalyst({
   const callGuruAI = async (prompt, analysisType = 'general') => {
     try {
       const apiKey = localStorage.getItem('nepse_hub_gemini_api_key') || localStorage.getItem('gemini_api_key') || '';
-      const glmApiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r';
+      const glmApiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || '';
       const res = await fetch(`${PROXY}/api/guru/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1519,10 +1518,10 @@ export default function AiAnalyst({
       // Floorsheet Smart Money Broker Data
       const brokerData = brokerRes?.data || brokerRes || {};
 
-      // 2. Compute Institutional Quantitative Models with authentic or dynamic candles
+      // 2. Compute Institutional Quantitative Models with authentic candles
       const dynCandles = (Array.isArray(candles) && candles.length >= 10)
         ? candles
-        : resolveDynamicStockCandles({ symbol: sym, ltp, high52, low52, pChange: pChg, volume }, 35);
+        : (Array.isArray(candles) ? candles : []);
       const dynRsi = Number(technical?.data?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol: sym, ltp, pChange: pChg, candles: dynCandles }));
 
       const adi = calculateAccumulationDistributionIndex(dynCandles);
@@ -1621,7 +1620,7 @@ export default function AiAnalyst({
             adSignal: brokerData.adSignal ?? 'Neutral',
             adStrength: brokerData.adStrength ?? 0
           },
-          apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || '0a3ba31f0185411da1ac1f47e149e32e.d0FPdCzXaOkFqu6r'
+          apiKey: (typeof localStorage !== 'undefined' ? (localStorage.getItem('nepse_hub_glm_api_key') || localStorage.getItem('glm_api_key')) : '') || import.meta.env.VITE_GLM_API_KEY || glmKey || ''
         };
 
         const predictRes = await fetch(`${PROXY}/api/ai/predict`, {
@@ -2483,7 +2482,7 @@ Format as plain text (not JSON) for this conversational response.`;
 
           {/* Quick Prompts Bar */}
           {messages.length <= 2 && (
-            <div style={{ maxWidth: 520, margin: '0 auto', width: '100%', padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ width: '100%', maxWidth: '100%', margin: '0 auto', padding: '0 10px 12px', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
               <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b' }}>Suggested Inquiries</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {QUICK_ACTIONS.map((qa, i) => (

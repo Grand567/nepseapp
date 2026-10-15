@@ -207,9 +207,9 @@ export function BreakoutTrapRadar({
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-3 sm:p-5 text-slate-100 space-y-5">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 text-slate-100 space-y-3 sm:space-y-5">
       {/* Top Banner & Header */}
-      <div className="rounded-2xl p-5 border border-purple-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl relative overflow-hidden">
+      <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-5 border border-purple-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/5 rounded-full blur-3xl -z-10 pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -221,9 +221,9 @@ export function BreakoutTrapRadar({
                 T+2 Trap & Zero-Bid Exit Guard
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-              <Zap className="w-7 h-7 text-purple-400" />
-              Breakout, Entry/Exit & Trap Radar
+            <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
+              <Zap className="w-6 h-6 sm:w-7 sm:h-7 text-purple-400 shrink-0" />
+              <span>Breakout, Entry/Exit & Trap Radar</span>
             </h1>
             <p className="text-sm text-slate-400 mt-1 max-w-2xl">
               ब्रेकआउट तथा प्रवेश/निकास विश्लेषक: Filter out Day-1 circuit traps, identify high-conviction T+2 retests, and protect against zero-bid exit lockups.
@@ -231,10 +231,10 @@ export function BreakoutTrapRadar({
           </div>
 
           {/* Quick Tab Selector */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 self-start md:self-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 w-full overflow-x-auto scrollbar-none self-start md:self-auto">
             <button
               onClick={() => setActiveTab('scanner')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'scanner'
                   ? 'bg-purple-500 text-white shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -244,7 +244,7 @@ export function BreakoutTrapRadar({
             </button>
             <button
               onClick={() => setActiveTab('audit')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'audit'
                   ? 'bg-purple-500 text-white shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -254,7 +254,7 @@ export function BreakoutTrapRadar({
             </button>
             <button
               onClick={() => setActiveTab('playbook')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'playbook'
                   ? 'bg-purple-500 text-white shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -266,34 +266,34 @@ export function BreakoutTrapRadar({
         </div>
 
         {/* Global Summary Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-slate-800/80">
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3 pt-3 border-t border-slate-800/80">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400" /> Prime T+2 Retest Setups
             </div>
-            <div className="text-xl font-black text-emerald-400 mt-1">{stats.retestCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">High probability, dry volume</div>
+            <div className="text-lg sm:text-xl font-black text-emerald-400 mt-0.5">{stats.retestCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">High probability, dry volume</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-blue-400" /> Active Resistance Breakouts
             </div>
-            <div className="text-xl font-black text-blue-400 mt-1">{stats.breakoutCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Decisive clearance beyond pivot</div>
+            <div className="text-lg sm:text-xl font-black text-blue-400 mt-0.5">{stats.breakoutCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Decisive clearance beyond pivot</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-red-400" /> Bull Trap Warnings
             </div>
-            <div className="text-xl font-black text-red-400 mt-1">{stats.trapCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Upper wick rejection / broker dump</div>
+            <div className="text-lg sm:text-xl font-black text-red-400 mt-0.5">{stats.trapCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Upper wick rejection / dump</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-orange-400" /> Exit Trap / Zero-Bid Risk
             </div>
-            <div className="text-xl font-black text-orange-400 mt-1">{stats.exitTrapCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Illiquid book, cannot exit on drops</div>
+            <div className="text-lg sm:text-xl font-black text-orange-400 mt-0.5">{stats.exitTrapCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Illiquid book, drop hazard</div>
           </div>
         </div>
       </div>
@@ -534,7 +534,7 @@ export function BreakoutTrapRadar({
           </div>
 
           {/* Hero Setup Card */}
-          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border border-slate-800 shadow-xl space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -740,9 +740,9 @@ export function BreakoutTrapRadar({
       {/* TAB 3: TRADER PLAYBOOK & TRAPS GUIDE                                */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'playbook' && (
-        <div className="space-y-5">
+        <div className="space-y-3 sm:space-y-5">
           {/* Section 1: The Fatal T+2 Breakout Trap */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
             <h2 className="text-xl font-black text-white flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-red-400" />
               नेपालको बजारमा ब्रेकआउट किन 'ट्र्याप' बन्छ? (The Fatal T+2 Breakout Trap)
@@ -776,7 +776,7 @@ export function BreakoutTrapRadar({
           </div>
 
           {/* Section 2: The T+2 Retest Rule */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-emerald-500/20 space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900 border border-emerald-500/20 space-y-4">
             <h2 className="text-xl font-black text-emerald-400 flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
               T+2 रि-टेस्ट नियम: सुरक्षित प्रवेशको सूत्र (The T+2 Retest Playbook)

@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, HelpCircle, Calendar, History, Clock, Sparkles,
   Download, Upload, Crown, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { loadNepseData, fetchFloorSheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory } from '../utils/liveData';
+import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 import {
   calculateChaikinADL,
   calculateCMF,
@@ -236,7 +236,7 @@ const StockTableRow = React.memo(function StockTableRow({
         </span>
       </td>
       <td className="py-2.5 px-3 text-right font-semibold text-slate-200 whitespace-nowrap">
-        {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : (bcr3Buy > 0 ? `~${Math.round(bcr3Buy * 1.25)}%` : '<25%')}
+        {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : '—'}
       </td>
       <td className="py-2.5 px-3 text-right whitespace-nowrap">
         <span
@@ -326,9 +326,9 @@ const StockRadarCard = React.memo(function StockRadarCard({
   return (
     <div
       onClick={() => onPress(stock)}
-      className="p-3.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:border-slate-700 cursor-pointer shadow-sm space-y-2.5"
+      className="p-2.5 sm:p-3.5 rounded-xl border border-slate-800 bg-slate-900/90 hover:border-slate-700 cursor-pointer shadow-sm space-y-2"
     >
-      <div className="flex items-start justify-between gap-2 border-b border-slate-800/70 pb-2.5">
+      <div className="flex items-start justify-between gap-2 border-b border-slate-800/70 pb-2">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-black text-base text-white hover:text-emerald-400">
@@ -417,28 +417,28 @@ const StockRadarCard = React.memo(function StockRadarCard({
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-1.5 text-center bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 text-[11px]">
+      <div className="grid grid-cols-4 gap-1 text-center bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 text-[11px]">
         <div>
-          <div className="text-[9.5px] text-slate-400">CMF (20)</div>
-          <div className={`font-bold mt-0.5 ${(stock.wyckoff?.cmf || 0) > 0.05 ? 'text-emerald-400' : (stock.wyckoff?.cmf || 0) < -0.05 ? 'text-rose-400' : 'text-slate-300'}`}>
+          <div className="text-[10px] text-slate-300 font-medium">CMF (20)</div>
+          <div className={`font-black mt-0.5 ${(stock.wyckoff?.cmf || 0) > 0.05 ? 'text-emerald-400' : (stock.wyckoff?.cmf || 0) < -0.05 ? 'text-rose-400' : 'text-slate-300'}`}>
             {(stock.wyckoff?.cmf || 0) > 0 ? '+' : ''}{(stock.wyckoff?.cmf || 0).toFixed(2)}
           </div>
         </div>
         <div>
-          <div className="text-[9.5px] text-slate-400">Top 5 Buy</div>
+          <div className="text-[10px] text-slate-300 font-medium">Top 5 Buy</div>
           <div className="font-bold text-slate-200 mt-0.5">
-            {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : (bcr3Buy > 0 ? `~${Math.round(bcr3Buy * 1.25)}%` : '<25%')}
+            {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : '—'}
           </div>
         </div>
         <div>
-          <div className="text-[9.5px] text-slate-400">Ticket</div>
+          <div className="text-[10px] text-slate-300 font-medium">Ticket</div>
           <div className="font-bold text-slate-200 mt-0.5">
             {(stock.wyckoff?.tradeSizeRatio || 1).toFixed(2)}x
           </div>
         </div>
         <div>
-          <div className="text-[9.5px] text-slate-400">Dump Risk</div>
-          <div className={`font-bold mt-0.5 ${isRiskExtreme ? 'text-red-400' : isRiskHigh ? 'text-orange-400' : 'text-emerald-400'}`}>
+          <div className="text-[10px] text-slate-300 font-medium">Dump Risk</div>
+          <div className={`font-black mt-0.5 ${isRiskExtreme ? 'text-red-400' : isRiskHigh ? 'text-orange-400' : 'text-emerald-400'}`}>
             {stock.wyckoff?.pumpDumpRiskScore || 0}
           </div>
         </div>
@@ -507,11 +507,15 @@ export function AccumulationDistributionRadar({
     async function init() {
       setLoading(true);
       try {
-        const [liveRes, fsRes] = await Promise.allSettled([
+        const [liveRes, fsRes, brokerMapRes] = await Promise.allSettled([
           loadNepseData(),
-          fetchFloorSheet(5000)  // Deep session floorsheet buffer: 5,000 trades with multi-scan cumulative vault
+          fetchRealFloorsheet(null, '', 1, 100000),  // 100% full-session floorsheet
+          fetchMarketWideBrokerSummaryMap(1)
         ]);
         if (!isMounted) return;
+        if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
+          setStockBrokerDataMap(prev => ({ ...brokerMapRes.value, ...prev }));
+        }
         if (liveRes.status === 'fulfilled' && liveRes.value?.stocks) {
           setStocks(liveRes.value.stocks);
           if (!initialSymbol && liveRes.value.stocks.length > 0) {
@@ -524,6 +528,10 @@ export function AccumulationDistributionRadar({
             ? fs.content
             : Array.isArray(fs?.data)
             ? fs.data
+            : Array.isArray(fs?.rows)
+            ? fs.rows
+            : Array.isArray(fs?.list)
+            ? fs.list
             : Array.isArray(fs)
             ? fs
             : [];
@@ -714,9 +722,9 @@ export function AccumulationDistributionRadar({
             close: Number(h.close),
             volume: Number(h.volume || 0)
           }))
-        : generateDynamicStockCandles(s, 25);
+        : [];
 
-      const stockBrokerAnalysis = stockBrokerDataMap[sym] || getCachedRealBrokerAnalysis(sym);
+      const stockBrokerAnalysis = s.brokerAnalysis || s.realBrokerAnalysis || stockBrokerDataMap[sym] || getCachedRealBrokerAnalysis(sym);
       const stockSummaryWithBroker = stockBrokerAnalysis ? { ...s, realBrokerAnalysis: stockBrokerAnalysis } : s;
       const stockTrades = floorsheetBySymbol.get(symUpper) || [];
       const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker);
@@ -965,9 +973,9 @@ export function AccumulationDistributionRadar({
   }, [analyzedStocks]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-3 sm:p-5 text-slate-100 space-y-5">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 text-slate-100 space-y-3 sm:space-y-5">
       {/* Top Banner & Header */}
-      <div className="rounded-2xl p-5 border border-emerald-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl relative overflow-hidden">
+      <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-5 border border-emerald-500/20 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl -z-10 pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -979,9 +987,9 @@ export function AccumulationDistributionRadar({
                 Floor Sheet Floor Flow
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-              <Layers className="w-7 h-7 text-emerald-400" />
-              Accumulation & Distribution Radar
+            <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
+              <Layers className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-400 shrink-0" />
+              <span>Accumulation & Distribution Radar</span>
             </h1>
             <p className="text-sm text-slate-400 mt-1 max-w-2xl">
               संकलन र वितरण विश्लेषक: Identify smart money cornering, spot operator pumps early, and avoid high-turnover retail dumping traps.
@@ -989,10 +997,10 @@ export function AccumulationDistributionRadar({
           </div>
 
           {/* Quick Tab Selector */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 self-start md:self-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 w-full overflow-x-auto scrollbar-none self-start md:self-auto">
             <button
               onClick={() => setActiveTab('radar')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'radar'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -1002,7 +1010,7 @@ export function AccumulationDistributionRadar({
             </button>
             <button
               onClick={() => setActiveTab('archive')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'archive'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -1012,7 +1020,7 @@ export function AccumulationDistributionRadar({
             </button>
             <button
               onClick={() => setActiveTab('diagnostic')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'diagnostic'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -1022,7 +1030,7 @@ export function AccumulationDistributionRadar({
             </button>
             <button
               onClick={() => setActiveTab('playbook')}
-              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'playbook'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -1062,34 +1070,34 @@ export function AccumulationDistributionRadar({
         </div>
 
         {/* Global Summary Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80">
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3 pt-3 border-t border-slate-800/80">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400" /> Stealth Accumulation
             </div>
-            <div className="text-xl font-black text-emerald-400 mt-1">{stats.stealthCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Quiet institutional buying</div>
+            <div className="text-lg sm:text-xl font-black text-emerald-400 mt-0.5">{stats.stealthCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Quiet institutional buying</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-blue-400" /> Active Markup / Pump
             </div>
-            <div className="text-xl font-black text-blue-400 mt-1">{stats.pumpCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Price & volume expansion</div>
+            <div className="text-lg sm:text-xl font-black text-blue-400 mt-0.5">{stats.pumpCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Price & volume expansion</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-orange-400" /> Distribution Danger
             </div>
-            <div className="text-xl font-black text-orange-400 mt-1">{stats.distributionCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Peak churning & selling</div>
+            <div className="text-lg sm:text-xl font-black text-orange-400 mt-0.5">{stats.distributionCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Peak churning & selling</div>
           </div>
-          <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
-            <div className="text-xs text-slate-400 flex items-center gap-1">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-300 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-red-400" /> Active Dump / Markdown
             </div>
-            <div className="text-xl font-black text-red-400 mt-1">{stats.dumpCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
-            <div className="text-[10.5px] text-slate-400 mt-0.5">Capitulation & lower circuit risk</div>
+            <div className="text-lg sm:text-xl font-black text-red-400 mt-0.5">{stats.dumpCount} <span className="text-xs text-slate-400 font-normal">stocks</span></div>
+            <div className="text-[10px] sm:text-[10.5px] text-slate-400 mt-0.5">Capitulation & lower circuit risk</div>
           </div>
         </div>
       </div>
@@ -1743,9 +1751,9 @@ export function AccumulationDistributionRadar({
       {/* TAB: DAILY TOP 5 WHALE ARCHIVE & CONSECUTIVE ALERT TRACKER          */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'archive' && (
-        <div className="space-y-5">
+        <div className="space-y-3 sm:space-y-5">
           {/* Header Card & Date Selector */}
-          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-5 shadow-2xl">
+          <div className="rounded-xl sm:rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-2.5 sm:p-5 shadow-2xl">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -2013,7 +2021,7 @@ export function AccumulationDistributionRadar({
                   );
                 })
               ) : (
-                <div className="p-6 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
+                <div className="p-3 sm:p-6 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
                   No slow accumulation stocks recorded for this session date yet.
                 </div>
               )}
@@ -2176,7 +2184,7 @@ export function AccumulationDistributionRadar({
                   );
                 })
               ) : (
-                <div className="p-6 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
+                <div className="p-3 sm:p-6 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
                   No unusual distribution traps recorded for this session date.
                 </div>
               )}
@@ -2189,9 +2197,9 @@ export function AccumulationDistributionRadar({
       {/* TAB 2: DEEP STOCK DIAGNOSTIC                                        */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'diagnostic' && activeStock && (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {/* Stock Selector Search Bar */}
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="p-2.5 sm:p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Inspecting Stock:</span>
               <div className="relative flex-1 sm:w-64">
@@ -2226,7 +2234,7 @@ export function AccumulationDistributionRadar({
           </div>
 
           {/* Wyckoff Phase Hero Card */}
-          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border border-slate-800 shadow-xl space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -2523,7 +2531,7 @@ export function AccumulationDistributionRadar({
               const isAccumulation = isSampleValid && (bcr3Buy >= 40.0 || (activeStock.brokerData?.bcr5BuyPct >= 50.0 && bcr3Buy >= 36.0)) && (bcr3Buy > bcr3Sell) && !isDumping;
 
               return (
-                <div className={`p-5 rounded-2xl border shadow-xl space-y-4 ${
+                <div className={`p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border shadow-xl space-y-4 ${
                   isTrap
                     ? 'bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-950 border-rose-500/40'
                     : isDumping
@@ -2638,7 +2646,7 @@ export function AccumulationDistributionRadar({
             })()}
 
             {/* ── 3. BROKER ACCUMULATION & DISTRIBUTION FOOTPRINT LEDGER ── */}
-            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 shadow-xl space-y-4">
+            <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-950 border border-slate-800 shadow-xl space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -2947,9 +2955,9 @@ export function AccumulationDistributionRadar({
       {/* TAB 3: THEORY & NEPALI PLAYBOOK GUIDE                               */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'playbook' && (
-        <div className="space-y-5">
+        <div className="space-y-3 sm:space-y-5">
           {/* Section 1: Wyckoff Cycle in Plain Nepali & English */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
             <h2 className="text-xl font-black text-white flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-emerald-400" />
               वाइकोफ थ्योरी र नेपालको शेयर बजार (The Wyckoff Market Cycle in NEPSE)
@@ -2990,7 +2998,7 @@ export function AccumulationDistributionRadar({
           </div>
 
           {/* Section 2: Mathematical Calculations Explained */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
             <h2 className="text-lg font-black text-white flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-blue-400" />
               गणितीय सूत्रहरू (Mathematical Formulas Used in This App)
@@ -3049,7 +3057,7 @@ export function AccumulationDistributionRadar({
           </div>
 
           {/* Section 3: NEPSE Nuances & Circuit Trap Warning */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-red-500/20 space-y-3">
+          <div className="p-2.5 sm:p-5 rounded-xl sm:rounded-2xl bg-slate-900 border border-red-500/20 space-y-3">
             <h2 className="text-lg font-black text-red-400 flex items-center gap-2">
               <ShieldAlert className="w-5 h-5" />
               नेपालको बजारमा के फरक छ? (Crucial NEPSE Nuances)

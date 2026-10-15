@@ -16,27 +16,46 @@ export function StockDetails({
   // Look up live data if available
   const liveStock = stocks.find(s => s.symbol?.toUpperCase() === symbol?.toUpperCase());
 
-  const ltp = liveStock?.ltp ? Number(liveStock.ltp) : (liveStock?.close ? Number(liveStock.close) : 585.00);
-  const chg = liveStock?.pointChange !== undefined ? Number(liveStock.pointChange) : (liveStock?.change !== undefined ? Number(liveStock.change) : 11.00);
-  const pct = liveStock?.percentChange !== undefined ? Number(liveStock.percentChange) : (liveStock?.pChange !== undefined ? Number(liveStock.pChange) : 1.92);
+  const ltp = liveStock?.ltp ? Number(liveStock.ltp) : (liveStock?.close ? Number(liveStock.close) : 0);
+  const chg = liveStock?.pointChange !== undefined ? Number(liveStock.pointChange) : (liveStock?.change !== undefined ? Number(liveStock.change) : 0);
+  const pct = liveStock?.percentChange !== undefined ? Number(liveStock.percentChange) : (liveStock?.pChange !== undefined ? Number(liveStock.pChange) : 0);
   const isPos = chg >= 0;
 
-  const dayLow = Number(liveStock?.low || (ltp > 0 ? ltp * 0.98 : 572.00));
-  const dayHigh = Number(liveStock?.high || (ltp > 0 ? ltp * 1.02 : 588.50));
+  const dayLow = liveStock?.low != null ? Number(liveStock.low) : (ltp > 0 ? ltp : 0);
+  const dayHigh = liveStock?.high != null ? Number(liveStock.high) : (ltp > 0 ? ltp : 0);
   const rangeSpan = Math.max(0.1, dayHigh - dayLow);
   const rangePct = Math.min(100, Math.max(0, ((ltp - dayLow) / rangeSpan) * 100));
 
-  const volumeStr = liveStock?.volume ? Number(liveStock.volume).toLocaleString() : '142,890';
+  const volumeStr = liveStock?.volume ? Number(liveStock.volume).toLocaleString() : (liveStock?.totalTradedQuantity ? Number(liveStock.totalTradedQuantity).toLocaleString() : '—');
   const turnoverVal = liveStock?.turnover;
   const turnoverStr = turnoverVal
     ? (turnoverVal >= 1e7
       ? (isNe ? `रु ${(turnoverVal / 1e7).toFixed(2)} करोड` : `NPR ${(turnoverVal / 1e7).toFixed(2)} Cr`)
       : `रु ${Number(turnoverVal).toLocaleString()}`)
-    : (isNe ? 'रु ८.३४ करोड' : 'NPR 8.34 Cr');
+    : '—';
 
-  const companyNameNe = liveStock?.name || (symbol === 'NABIL' ? 'नबिल बैंक लिमिटेड' : symbol);
+  const companyNameNe = liveStock?.name || symbol;
   const companyNameEn = symbol;
-  const sectorName = liveStock?.sector || (symbol === 'NABIL' ? 'Commercial Bank' : 'Equity');
+  const sectorName = liveStock?.sector || 'Equity';
+
+  const h52 = liveStock?.high52w || liveStock?.high52;
+  const l52 = liveStock?.low52w || liveStock?.low52;
+  const range52wStr = (h52 != null && l52 != null)
+    ? `52W: Rs ${Number(l52).toFixed(0)} - ${Number(h52).toFixed(0)}`
+    : '52W: —';
+
+  const ema20 = liveStock?.ema20;
+  const ema20Str = ema20 != null ? Number(ema20).toFixed(2) : '—';
+
+  const epsStr = liveStock?.eps != null ? `Rs ${Number(liveStock.eps).toFixed(2)}` : '—';
+  const peStr = liveStock?.pe != null && Number(liveStock.pe) > 0 ? Number(liveStock.pe).toFixed(2) : '—';
+  const bvStr = liveStock?.bookValue != null ? `Rs ${Number(liveStock.bookValue).toFixed(2)}` : '—';
+  const pbStr = (liveStock?.bookValue && ltp > 0) ? `P/B: ${(ltp / Number(liveStock.bookValue)).toFixed(1)}x` : '—';
+  const mCapStr = liveStock?.marketCap
+    ? (liveStock.marketCap >= 1e9
+      ? `NPR ${(liveStock.marketCap / 1e9).toFixed(2)} Arba`
+      : `NPR ${(liveStock.marketCap / 1e7).toFixed(2)} Cr`)
+    : '—';
 
   return (
     <div className="space-y-4 pb-24">
@@ -78,7 +97,7 @@ export function StockDetails({
             </span>
           </h2>
           <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-            ISIN: NPN019000008 • NEPSE Script: {symbol} • Promoter/Public: 60:40
+            ISIN: {liveStock?.isin || '—'} • NEPSE Script: {symbol} • Promoter/Public: {liveStock?.promoterShare && liveStock?.publicShare ? `${liveStock.promoterShare}:${liveStock.publicShare}` : '—'}
           </div>
         </div>
 
@@ -89,15 +108,17 @@ export function StockDetails({
               {isNe ? 'अन्तिम कारोबार मूल्य (LTP)' : 'Last Traded Price (LTP)'}
             </div>
             <div className="flex items-baseline gap-2.5 mt-0.5">
-              <span className="font-mono text-3xl font-extrabold text-white">Rs {ltp.toFixed(2)}</span>
-              <span className={`inline-flex items-center rounded-lg border px-2 py-0.5 font-mono text-xs font-bold ${
-                isPos
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
-                  : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
-              }`}>
-                {isPos ? <ArrowUpRight size={14} className="mr-0.5" /> : <ArrowDownRight size={14} className="mr-0.5" />}
-                {isPos ? '+' : ''}{chg.toFixed(2)} ({isPos ? '+' : ''}{pct.toFixed(2)}%)
-              </span>
+              <span className="font-mono text-3xl font-extrabold text-white">Rs {ltp > 0 ? ltp.toFixed(2) : '—'}</span>
+              {ltp > 0 && (
+                <span className={`inline-flex items-center rounded-lg border px-2 py-0.5 font-mono text-xs font-bold ${
+                  isPos
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                }`}>
+                  {isPos ? <ArrowUpRight size={14} className="mr-0.5" /> : <ArrowDownRight size={14} className="mr-0.5" />}
+                  {isPos ? '+' : ''}{chg.toFixed(2)} ({isPos ? '+' : ''}{pct.toFixed(2)}%)
+                </span>
+              )}
             </div>
           </div>
           <div className="text-right font-mono">
@@ -110,11 +131,11 @@ export function StockDetails({
         {/* Day Range Bar */}
         <div className="rounded-xl bg-[#0B0F17]/70 p-2.5 border border-white/[0.04] space-y-1 font-mono text-xs text-slate-400">
           <div className="flex justify-between text-[11px]">
-            <span>{isNe ? 'दिनको न्यून:' : 'Day Low:'} <strong className="text-white">Rs {dayLow.toFixed(2)}</strong></span>
+            <span>{isNe ? 'दिनको न्यून:' : 'Day Low:'} <strong className="text-white">{dayLow > 0 ? `Rs ${dayLow.toFixed(2)}` : '—'}</strong></span>
             <span className={`${isPos ? 'text-emerald-400' : 'text-rose-400'} font-bold`}>
-              {isNe ? `52 हप्ता: ${(ltp * 0.8).toFixed(0)} - ${(ltp * 1.2).toFixed(0)}` : `52W: ${(ltp * 0.8).toFixed(0)} - ${(ltp * 1.2).toFixed(0)}`}
+              {range52wStr}
             </span>
-            <span>{isNe ? 'दिनको उच्च:' : 'Day High:'} <strong className="text-white">Rs {dayHigh.toFixed(2)}</strong></span>
+            <span>{isNe ? 'दिनको उच्च:' : 'Day High:'} <strong className="text-white">{dayHigh > 0 ? `Rs ${dayHigh.toFixed(2)}` : '—'}</strong></span>
           </div>
           <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-500 ${isPos ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: `${rangePct}%` }} />
@@ -138,19 +159,19 @@ export function StockDetails({
               ))}
             </div>
             <span className="text-[11px] font-mono text-slate-400">
-              EMA(20): <span className="text-emerald-400 font-bold">{(ltp * 0.985).toFixed(2)}</span>
+              EMA(20): <span className="text-emerald-400 font-bold">{ema20Str}</span>
             </span>
           </div>
 
           <div className="h-28 w-full pt-1">
             <svg viewBox="0 0 300 80" className="h-full w-full overflow-visible">
               <defs>
-                <linearGradient id="nabilGradLive" x1="0%" y1="0%" x2="0%" y2="100%">
+                <linearGradient id="scripGradLive" x1="0%" y1="0%" x2="0%" y2="100%">
                   <stop offset="0%" stopColor={isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.30" />
                   <stop offset="100%" stopColor={isPos ? "#10B981" : "#F43F5E"} stopOpacity="0.0" />
                 </linearGradient>
               </defs>
-              <path d="M0,70 Q40,65 80,68 T160,40 T240,25 L300,10 L300,80 L0,80 Z" fill="url(#nabilGradLive)" />
+              <path d="M0,70 Q40,65 80,68 T160,40 T240,25 L300,10 L300,80 L0,80 Z" fill="url(#scripGradLive)" />
               <path d="M0,70 Q40,65 80,68 T160,40 T240,25 L300,10" fill="none" stroke={isPos ? "#10B981" : "#F43F5E"} strokeWidth="2.5" />
               <circle cx="300" cy="10" r="4" fill={isPos ? "#10B981" : "#F43F5E"} />
             </svg>
@@ -193,31 +214,37 @@ export function StockDetails({
             <div className="rounded-2xl border border-white/[0.07] bg-[#111622] p-3.5 space-y-1">
               <div className="text-[11px] text-slate-400 flex items-center justify-between">
                 <span>{isNe ? 'प्रति सेयर आम्दानी (EPS)' : 'Earnings Per Share'}</span>
-                <span className="text-[9px] text-emerald-400 font-mono font-bold">{isNe ? 'नाफामूलक' : 'Profitable'}</span>
+                {liveStock?.eps != null && (
+                  <span className={`text-[9px] font-mono font-bold ${Number(liveStock.eps) > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {Number(liveStock.eps) > 0 ? (isNe ? 'नाफामूलक' : 'Profitable') : (isNe ? 'घाटा' : 'Loss')}
+                  </span>
+                )}
               </div>
-              <div className="font-mono text-xl font-extrabold text-white">Rs 28.40</div>
+              <div className="font-mono text-xl font-extrabold text-white">{epsStr}</div>
               <p className="text-[10px] text-slate-400 leading-tight">
-                {isNe ? '१ कित्ता सेयरबाट बैंकले वर्षमा कमाएको खुद नाफा।' : 'Annual net profit generated per share.'}
+                {isNe ? '१ कित्ता सेयरबाट कम्पनीले कमाएको खुद नाफा।' : 'Annual net profit generated per share.'}
               </p>
             </div>
 
             <div className="rounded-2xl border border-white/[0.07] bg-[#111622] p-3.5 space-y-1">
               <div className="text-[11px] text-slate-400 flex items-center justify-between">
                 <span>{isNe ? 'मूल्य/आम्दानी (P/E Ratio)' : 'P/E Ratio'}</span>
-                <span className="text-[9px] text-emerald-400 font-mono font-bold">{isNe ? 'उचित मूल्य' : 'Fair Value'}</span>
+                {liveStock?.pe != null && Number(liveStock.pe) > 0 && (
+                  <span className="text-[9px] text-emerald-400 font-mono font-bold">{isNe ? 'मूल्याङ्कन' : 'Multiple'}</span>
+                )}
               </div>
-              <div className="font-mono text-xl font-extrabold text-white">20.60</div>
+              <div className="font-mono text-xl font-extrabold text-white">{peStr}</div>
               <p className="text-[10px] text-slate-400 leading-tight">
-                {isNe ? 'क्षेत्रीय औसत २२.१ भन्दा कम; खरिदका लागि सन्तुलित।' : 'Lower than sector avg 22.1; balanced valuation.'}
+                {isNe ? 'मूल्य र प्रति सेयर आम्दानीको अनुपात।' : 'Price-to-earnings multiple.'}
               </p>
             </div>
 
             <div className="rounded-2xl border border-white/[0.07] bg-[#111622] p-3.5 space-y-1">
               <div className="text-[11px] text-slate-400 flex items-center justify-between">
                 <span>{isNe ? 'किताबी मूल्य (Book Value)' : 'Book Value per Share'}</span>
-                <span className="text-[9px] text-sky-400 font-mono font-bold">P/B: 2.6x</span>
+                <span className="text-[9px] text-sky-400 font-mono font-bold">{pbStr}</span>
               </div>
-              <div className="font-mono text-xl font-extrabold text-white">Rs 224.50</div>
+              <div className="font-mono text-xl font-extrabold text-white">{bvStr}</div>
               <p className="text-[10px] text-slate-400 leading-tight">
                 {isNe ? 'कम्पनीको सम्पत्ति अनुसार प्रत्येक कित्ताको आन्तरिक मूल्य।' : 'Net asset value per unit share.'}
               </p>
@@ -226,11 +253,10 @@ export function StockDetails({
             <div className="rounded-2xl border border-white/[0.07] bg-[#111622] p-3.5 space-y-1">
               <div className="text-[11px] text-slate-400 flex items-center justify-between">
                 <span>{isNe ? 'कुल बजार पूँजीकरण' : 'Market Capitalization'}</span>
-                <span className="text-[9px] text-sky-400 font-mono font-bold">Rank #1</span>
               </div>
-              <div className="font-mono text-xl font-extrabold text-white">{isNe ? 'Rs १.५८ खर्ब' : 'NPR 158 Arba'}</div>
+              <div className="font-mono text-xl font-extrabold text-white">{mCapStr}</div>
               <p className="text-[10px] text-slate-400 leading-tight">
-                {isNe ? 'नेपालको सबैभन्दा ठूलो निजी वाणिज्य बैंक।' : 'Largest private commercial bank in Nepal.'}
+                {isNe ? 'कम्पनीको कुल बजार मूल्य।' : 'Total market equity valuation.'}
               </p>
             </div>
           </div>
@@ -239,12 +265,14 @@ export function StockDetails({
           <div className="rounded-2xl border border-sky-500/25 bg-sky-500/[0.07] p-3.5 space-y-1.5 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-sky-400">
               <HelpCircle size={16} />
-              <span>{isNe ? 'शुरुवाती लगानीकर्ताका लागि सारांश (Analyst Verdict)' : 'Analyst Verdict Summary'}</span>
+              <span>{isNe ? 'विश्लेषक सारांश (Analyst Summary)' : 'Analyst Summary'}</span>
             </div>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              {isNe
-                ? `${symbol} को वित्तीय स्वास्थ्य बलियो छ। यसको खराब कर्जा (NPL 1.35%) नियन्त्रणमा छ भने विगत ५ वर्षको औसत लाभांश १५% भन्दा माथि रहेको छ।`
-                : `${symbol} exhibits resilient financial health. Non-performing loan (NPL 1.35%) is tightly controlled, with a 5-year average dividend exceeding 15%.`}
+              {liveStock?.reasoning || (
+                isNe
+                  ? `${symbol} को विश्लेषण हेर्न विस्तृत अनुसन्धान मोड्युल प्रयोग गर्नुहोस्। वित्तीय विवरण र प्राविधिक सूचकहरू आधिकारिक डेटा स्रोतबाट प्रमाणीकरण गरिएका छन्।`
+                  : `Review ${symbol} in detail via the full Analyzer workstation. Financial filings and technical parameters are verified against exchange data.`
+              )}
             </p>
           </div>
         </div>
@@ -254,67 +282,51 @@ export function StockDetails({
       {subTab === 'depth' && (
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/[0.08] bg-[#111622] p-4 space-y-3">
-            {/* Buyer vs Seller Dominance Gauge */}
-            <div className="space-y-1.5 pb-2 border-b border-white/[0.06]">
-              <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-emerald-400 font-bold">{isNe ? 'खरिद माग (Bids): 41,200 (52%)' : 'Bids: 41,200 (52%)'}</span>
-                <span className="text-rose-400 font-bold">{isNe ? 'बिक्री आपूर्ति (Asks): 38,450 (48%)' : 'Asks: 38,450 (48%)'}</span>
+            {liveStock?.marketDepth && Array.isArray(liveStock.marketDepth.bids) && liveStock.marketDepth.bids.length > 0 ? (
+              <>
+                <div className="space-y-1.5 pb-2 border-b border-white/[0.06]">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <span className="text-emerald-400 font-bold">
+                      {isNe ? `खरिद माग: ${Number(liveStock.totalBuyQty || 0).toLocaleString()}` : `Bids: ${Number(liveStock.totalBuyQty || 0).toLocaleString()}`}
+                    </span>
+                    <span className="text-rose-400 font-bold">
+                      {isNe ? `बिक्री आपूर्ति: ${Number(liveStock.totalSellQty || 0).toLocaleString()}` : `Asks: ${Number(liveStock.totalSellQty || 0).toLocaleString()}`}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-xs font-mono">
+                  <div className="grid grid-cols-2 gap-3 text-[10px] text-slate-400 uppercase font-semibold pb-1">
+                    <div className="flex justify-between px-1">
+                      <span>{isNe ? 'किन्ने अर्डर (Bids)' : 'Orders (Bids)'}</span>
+                      <span>{isNe ? 'मूल्य (NPR)' : 'Price'}</span>
+                    </div>
+                    <div className="flex justify-between px-1">
+                      <span>{isNe ? 'मूल्य (NPR)' : 'Price'}</span>
+                      <span>{isNe ? 'बेच्ने अर्डर (Asks)' : 'Orders (Asks)'}</span>
+                    </div>
+                  </div>
+                  {liveStock.marketDepth.bids.slice(0, 5).map((bid, i) => {
+                    const ask = liveStock.marketDepth.asks?.[i];
+                    return (
+                      <div key={i} className="grid grid-cols-2 gap-3">
+                        <div className="flex justify-between rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 px-2.5 py-1.5">
+                          <span className="text-slate-300 font-medium">{Number(bid.quantity || 0).toLocaleString()}</span>
+                          <span className="font-bold text-emerald-400">Rs {Number(bid.rate || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-2.5 py-1.5">
+                          <span className="font-bold text-rose-400">{ask ? `Rs ${Number(ask.rate || 0).toFixed(2)}` : '—'}</span>
+                          <span className="text-slate-300 font-medium">{ask ? Number(ask.quantity || 0).toLocaleString() : '—'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-400">
+                {isNe ? 'यो सत्रको लागि प्रत्यक्ष मार्केट डेप्थ हाल उपलब्ध छैन।' : 'Live Market Depth is unavailable for this session or off-market.'}
               </div>
-              <div className="h-2 w-full rounded-full bg-rose-500/30 overflow-hidden flex">
-                <div className="h-full bg-emerald-500" style={{ width: '52%' }} />
-              </div>
-              <div className="text-[10px] text-slate-400 text-center font-mono">
-                {isNe ? '🟢 खरिदकर्ता हावी (High Buyer Demand)' : '🟢 Buyers Dominating (High Demand)'}
-              </div>
-            </div>
-
-            {/* 5-Depth Table */}
-            <div className="space-y-1.5 text-xs font-mono">
-              <div className="grid grid-cols-2 gap-3 text-[10px] text-slate-400 uppercase font-semibold pb-1">
-                <div className="flex justify-between px-1">
-                  <span>{isNe ? 'किन्ने अर्डर (Bids)' : 'Orders (Bids)'}</span>
-                  <span>{isNe ? 'मूल्य (NPR)' : 'Price'}</span>
-                </div>
-                <div className="flex justify-between px-1">
-                  <span>{isNe ? 'मूल्य (NPR)' : 'Price'}</span>
-                  <span>{isNe ? 'बेच्ने अर्डर (Asks)' : 'Orders (Asks)'}</span>
-                </div>
-              </div>
-
-              {/* Depth Rows */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex justify-between rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 px-2.5 py-1.5">
-                  <span className="text-slate-300 font-medium">12,450 <span className="text-[10px] text-slate-500">(14)</span></span>
-                  <span className="font-bold text-emerald-400">{(ltp - 1).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-2.5 py-1.5">
-                  <span className="font-bold text-rose-400">{ltp.toFixed(2)}</span>
-                  <span className="text-slate-300 font-medium">9,800 <span className="text-[10px] text-slate-500">(8)</span></span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex justify-between rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 px-2.5 py-1.5">
-                  <span className="text-slate-300 font-medium">10,200 <span className="text-[10px] text-slate-500">(9)</span></span>
-                  <span className="font-bold text-emerald-400">{(ltp - 1.5).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-2.5 py-1.5">
-                  <span className="font-bold text-rose-400">{(ltp + 1).toFixed(2)}</span>
-                  <span className="text-slate-300 font-medium">11,400 <span className="text-[10px] text-slate-500">(13)</span></span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex justify-between rounded-xl bg-emerald-500/[0.08] border border-emerald-500/20 px-2.5 py-1.5">
-                  <span className="text-slate-300 font-medium">8,150 <span className="text-[10px] text-slate-500">(11)</span></span>
-                  <span className="font-bold text-emerald-400">{(ltp - 2).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between rounded-xl bg-rose-500/[0.08] border border-rose-500/20 px-2.5 py-1.5">
-                  <span className="font-bold text-rose-400">{(ltp + 2).toFixed(2)}</span>
-                  <span className="text-slate-300 font-medium">7,250 <span className="text-[10px] text-slate-500">(6)</span></span>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -324,33 +336,33 @@ export function StockDetails({
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/[0.08] bg-[#111622] p-4 space-y-3">
             <div className="flex justify-between items-center text-xs font-semibold text-slate-200 pb-2 border-b border-white/[0.06]">
-              <span>{isNe ? 'विगतका लाभांश विवरण (Dividend Track Record)' : 'Dividend Track Record'}</span>
-              <span className="text-[10px] font-mono text-sky-400 font-bold">{isNe ? 'अन्तिम साधारणसभा: पुस २२' : 'Last AGM: Poush 22'}</span>
+              <span>{isNe ? 'लाभांश विवरण (Dividend Track Record)' : 'Dividend Track Record'}</span>
             </div>
 
-            <div className="space-y-2 font-mono text-xs">
-              <div className="rounded-xl bg-[#0B0F17] p-3 border border-white/[0.05] flex justify-between items-center">
-                <div>
-                  <div className="font-bold text-white font-sans text-sm">{isNe ? 'आ.व. २०७९/८० (FY 79/80)' : 'FY 2079/80'}</div>
-                  <div className="text-[10px] text-slate-400 font-sans mt-0.5">{isNe ? '१०% नगद लाभांश + ५% बोनस सेयर' : '10% Cash + 5% Bonus Shares'}</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-emerald-400 font-extrabold text-sm">{isNe ? 'कुल १५%' : 'Total 15%'}</span>
-                  <div className="text-[9px] text-slate-400 font-sans">{isNe ? 'वितरण सम्पन्न' : 'Distributed'}</div>
-                </div>
+            {Array.isArray(liveStock?.dividendHistory) && liveStock.dividendHistory.length > 0 ? (
+              <div className="space-y-2 font-mono text-xs">
+                {liveStock.dividendHistory.map((div, idx) => (
+                  <div key={idx} className="rounded-xl bg-[#0B0F17] p-3 border border-white/[0.05] flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-white font-sans text-sm">{div.fiscalYear || div.year || 'Corporate Action'}</div>
+                      <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                        {div.cashDividend ? `${div.cashDividend}% Cash ` : ''}
+                        {div.bonusShare ? `+ ${div.bonusShare}% Bonus` : ''}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-emerald-400 font-extrabold text-sm">
+                        {div.totalDividend ? `Total ${div.totalDividend}%` : 'Approved'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              <div className="rounded-xl bg-[#0B0F17] p-3 border border-white/[0.05] flex justify-between items-center">
-                <div>
-                  <div className="font-bold text-white font-sans text-sm">{isNe ? 'आ.व. २०७८/७९ (FY 78/79)' : 'FY 2078/79'}</div>
-                  <div className="text-[10px] text-slate-400 font-sans mt-0.5">{isNe ? '१८.५% बोनस सेयर + ११.५% नगद' : '18.5% Bonus + 11.5% Cash'}</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-emerald-400 font-extrabold text-sm">{isNe ? 'कुल ३०%' : 'Total 30%'}</span>
-                  <div className="text-[9px] text-slate-400 font-sans">{isNe ? 'वितरण सम्पन्न' : 'Distributed'}</div>
-                </div>
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-400">
+                {isNe ? 'हाल कुनै लाभांश विवरण उपलब्ध छैन।' : `No historical dividend track record recorded for ${symbol}.`}
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -369,7 +381,7 @@ export function StockDetails({
           className="tap-active rounded-2xl bg-sky-500 hover:bg-sky-400 py-3.5 text-xs font-bold font-mono text-white shadow-lg shadow-sky-500/25 transition-all flex items-center justify-center gap-1.5"
         >
           <Zap size={16} />
-          <span>{isNe ? '⚡ किनबेच (Buy/Sell) →' : '⚡ Buy/Sell (TMS 58) →'}</span>
+          <span>{isNe ? '⚡ किनबेच (Buy/Sell) →' : '⚡ Buy/Sell (TMS) →'}</span>
         </button>
       </div>
     </div>

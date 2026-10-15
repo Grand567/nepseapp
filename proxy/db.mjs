@@ -71,6 +71,24 @@ export async function initDB() {
           ema_200 NUMERIC(12, 2),
           CONSTRAINT unique_sec_date UNIQUE(security_id, traded_date)
       );
+
+      CREATE OR REPLACE VIEW stock_price_history AS 
+      SELECT 
+        d.id, 
+        s.symbol, 
+        d.traded_date AS trade_date, 
+        d.open_price, 
+        d.high_price, 
+        d.low_price, 
+        d.close_price, 
+        d.total_volume AS volume, 
+        d.total_turnover, 
+        d.rsi_14, 
+        d.ema_20, 
+        d.ema_50, 
+        d.ema_200 
+      FROM daily_price_history d 
+      JOIN securities s ON s.security_id = d.security_id;
     `);
 
     // Floorsheet Execution Contracts

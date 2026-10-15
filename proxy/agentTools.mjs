@@ -32,18 +32,21 @@ export async function assembleScripDossier(symbol, helpers) {
   const normSym = String(symbol || '').toUpperCase().trim();
   if (!normSym) throw new Error('Invalid stock symbol');
 
-  const { getStockDetailInternal, getPriceHistoryInternal } = helpers;
+  const { getStockDetailInternal, getPriceHistoryInternal, getDividendHistoryInternal } = helpers;
 
-  // 1. Fetch live detail, candle history, and broker analytics in parallel
-  const [stockDetailResult, historyResult, brokerResult] = await Promise.allSettled([
+  // 1. Fetch live detail, candle history, broker analytics, and dividends in parallel
+  const [stockDetailResult, historyResult, brokerResult, dividendResult] = await Promise.allSettled([
     getStockDetailInternal(normSym, false),
     getPriceHistoryInternal(normSym, 120),
-    getOrFetchBrokerAnalysis(normSym, 30)
+    getOrFetchBrokerAnalysis(normSym, 30),
+    typeof getDividendHistoryInternal === 'function' ? getDividendHistoryInternal(normSym) : Promise.resolve([])
   ]);
 
   const stock = stockDetailResult.status === 'fulfilled' && stockDetailResult.value ? stockDetailResult.value : null;
   const rawCandles = historyResult.status === 'fulfilled' && Array.isArray(historyResult.value) ? historyResult.value : [];
   const broker = brokerResult.status === 'fulfilled' && brokerResult.value ? brokerResult.value : null;
+  const rawDividends = dividendResult?.status === 'fulfilled' && dividendResult.value ? dividendResult.value : [];
+  const verifiedDividends = Array.isArray(rawDividends?.dividends) ? rawDividends.dividends : (Array.isArray(rawDividends) ? rawDividends : []);
 
   if (!stock && rawCandles.length === 0) {
     throw new Error(`No authentic market data found for scrip: ${normSym}`);
@@ -131,20 +134,25 @@ export async function assembleScripDossier(symbol, helpers) {
   const topSellers = (broker?.topSellers || broker?.sellers || []).slice(0, 5);
   const top3BuyVol = topBuyers.slice(0, 3).reduce((acc, b) => acc + Number(b.buyQty || b.volume || b.shares || 0), 0);
   const top5BuyVol = topBuyers.slice(0, 5).reduce((acc, b) => acc + Number(b.buyQty || b.volume || b.shares || 0), 0);
-  const ratio = (top5BuyVol > 0 && top3BuyVol > 0) ? (top3BuyVol / top5BuyVol) : null;
+  const top3SellVol = topSellers.slice(0, 3).reduce((acc, b) => acc + Number(b.sellQty || b.volume || b.shares || 0), 0);
+  const totalBrokerVol = Number(broker?.totalVolume || broker?.totalTradedQty || currentVol || 0);
 
-  const bcr5Raw = Number(broker?.bcr5BuyPct || (broker?.crb5 ? Number(broker.crb5) * 100 : 0));
+  const directBcr3 = (totalBrokerVol > 0 && top3BuyVol > 0) ? +((top3BuyVol / totalBrokerVol) * 100).toFixed(1) : null;
+  const directBcr5 = (totalBrokerVol > 0 && top5BuyVol > 0) ? +((top5BuyVol / totalBrokerVol) * 100).toFixed(1) : null;
+  const directBcr3Sell = (totalBrokerVol > 0 && top3SellVol > 0) ? +((top3SellVol / totalBrokerVol) * 100).toFixed(1) : null;
+
+  const bcr5Raw = Number(broker?.bcr5BuyPct || directBcr5 || (broker?.crb5 ? Number(broker.crb5) * 100 : 0));
   const bcr5 = bcr5Raw > 0 ? bcr5Raw : null;
-  const bcr3Raw = Number(broker?.bcr3BuyPct || (bcr5 && ratio ? +(bcr5 * ratio).toFixed(1) : 0));
+  const bcr3Raw = Number(broker?.bcr3BuyPct || directBcr3 || 0);
   const bcr3 = bcr3Raw > 0 ? bcr3Raw : null;
-  const bcr3SellRaw = Number(broker?.bcr3SellPct || 0);
+  const bcr3SellRaw = Number(broker?.bcr3SellPct || directBcr3Sell || 0);
   const bcr3Sell = bcr3SellRaw > 0 ? bcr3SellRaw : null;
 
   // 6. Actionable Execution Geometry (Setup Analyzer Engine) — real levels only
   let entryExitPlan = null;
   try {
     entryExitPlan = candles.length >= 20
-      ? generateEntryExitPlan(stock || { ltp, pChange }, candles, [], { maxHoldDays: 20 })
+      ? generateEntryExitPlan(stock || { ltp, pChange }, candles, verifiedDividends, { maxHoldDays: 20 })
       : null;
   } catch (e) { entryExitPlan = null; }
 

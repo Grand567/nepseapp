@@ -744,7 +744,7 @@ export default function IPOList({ initialTab = 'apply' }) {
   const allottedCount = checkResults.filter(r => r.status === 'allotted').length;
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="ipo-view-container" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
       {/* Sub Tabs */}
       <div className="tab-bar" style={{ marginBottom: 0 }}>

@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download } from 'lucide-react';
-import { loadNepseData, fetchFloorSheet, getCachedRealBrokerAnalysis } from '../utils/liveData';
+import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
+import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
+
+export function formatNepaliCurrency(amt: number): string {
+  const abs = Math.abs(amt);
+  if (abs >= 10000000) return `Rs. ${(amt / 10000000).toFixed(2)} Cr`;
+  if (abs >= 100000) return `Rs. ${(amt / 100000).toFixed(2)} L`;
+  if (abs >= 1000) return `Rs. ${(amt / 1000).toFixed(1)} K`;
+  return `Rs. ${amt.toLocaleString('en-IN')}`;
+}
 
 export interface BrokerScripItem {
   symbol: string;
@@ -80,8 +88,8 @@ const MAJOR_BROKERS = [
   { id: '28', name: 'Shree Krishna' },
   { id: '42', name: 'Sani Securities' },
   { id: '57', name: 'Aryatara Inv.' },
-  { id: '38', name: 'Dipshikha' },
-  { id: '59', name: 'Premier Sec.' },
+  { id: '32', name: 'Premier Securities' },
+  { id: '59', name: 'Divya Securities' },
   { id: '50', name: 'Crystal Kanchenjunga' },
   { id: '44', name: 'Dynamic Money' },
   { id: '14', name: 'Nepal Stock House' },
@@ -102,9 +110,9 @@ const DAYS_MAP: Record<string, number> = {
 export function BrokerFlowDominanceService({
   mode = 'flow',
 }: {
-  mode?: 'flow' | 'dominance' | 'top10' | 'matching';
+  mode?: 'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise';
 }) {
-  const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching'>(mode);
+  const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise'>(mode);
   const [timeframe, setTimeframe] = useState('1D');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -119,39 +127,146 @@ export function BrokerFlowDominanceService({
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
   const [rankingMetric, setRankingMetric] = useState<'net_amount' | 'net_qty' | 'gross_buy_amount' | 'gross_buy_qty'>('net_amount');
   const [matchingSortOrder, setMatchingSortOrder] = useState<'date_desc' | 'amount_desc'>('date_desc');
+  const [brokerWiseTab, setBrokerWiseTab] = useState<'sellers' | 'buyers'>('sellers');
+  const [uniqueStockOnly, setUniqueStockOnly] = useState<boolean>(true);
+  const [copiedCard, setCopiedCard] = useState<boolean>(false);
 
   const sessionDate = useMemo(() => {
+    if (heatmapData?.businessDate) return heatmapData.businessDate;
     if (floorsheet && floorsheet.length > 0) {
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
-    if (heatmapData?.businessDate) return heatmapData.businessDate;
     return new Date().toISOString().split('T')[0];
   }, [floorsheet, heatmapData]);
+
+  // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
+  const brokerWiseLeaderboard = useMemo(() => {
+    if (heatmapData) {
+      if (brokerWiseTab === 'sellers') {
+        if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockSellers) && heatmapData.topUniqueStockSellers.length > 0) {
+          return heatmapData.topUniqueStockSellers;
+        }
+        if (!uniqueStockOnly && Array.isArray(heatmapData.topCrossBrokerSellers) && heatmapData.topCrossBrokerSellers.length > 0) {
+          return heatmapData.topCrossBrokerSellers;
+        }
+      } else {
+        if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockBuyers) && heatmapData.topUniqueStockBuyers.length > 0) {
+          return heatmapData.topUniqueStockBuyers;
+        }
+        if (!uniqueStockOnly && Array.isArray(heatmapData.topCrossBrokerBuyers) && heatmapData.topCrossBrokerBuyers.length > 0) {
+          return heatmapData.topCrossBrokerBuyers;
+        }
+      }
+    }
+
+    // Client-side fallback aggregation
+    const items: any[] = [];
+    const matrix = Array.isArray(heatmapData?.matrix) ? heatmapData.matrix : [];
+    matrix.forEach((b: any) => {
+      const brokerId = b.broker || b.id;
+      const brokerName = b.brokerName || b.name || `Broker ${brokerId}`;
+      const list = brokerWiseTab === 'sellers'
+        ? (b.topDistByGrossSellAmt || b.scrips?.filter((s: any) => s.sellAmount > 0) || [])
+        : (b.topByGrossBuyAmt || b.scrips?.filter((s: any) => s.buyAmount > 0) || []);
+
+      list.forEach((s: any) => {
+        const qty = Number(brokerWiseTab === 'sellers' ? (s.sellQty || s.qty || 0) : (s.buyQty || s.qty || 0));
+        const amt = Number(brokerWiseTab === 'sellers' ? (s.sellAmount || s.amount || 0) : (s.buyAmount || s.amount || 0));
+        if (qty > 0 && amt > 0) {
+          items.push({
+            symbol: s.symbol,
+            sellerBroker: brokerId,
+            buyerBroker: brokerId,
+            brokerName,
+            qty,
+            amount: amt,
+            amountCr: +(amt / 1e7).toFixed(2),
+            avgRate: s.avgSellRate || s.avgBuyRate || +(amt / qty).toFixed(2),
+            trades: s.trades || 0
+          });
+        }
+      });
+    });
+
+    items.sort((a, b) => b.amount - a.amount);
+
+    if (uniqueStockOnly) {
+      const seen = new Set<string>();
+      const deduplicated: any[] = [];
+      for (const it of items) {
+        if (!seen.has(it.symbol)) {
+          seen.add(it.symbol);
+          deduplicated.push(it);
+        }
+      }
+      return deduplicated.slice(0, 20);
+    }
+
+    return items.slice(0, 25);
+  }, [heatmapData, brokerWiseTab, uniqueStockOnly]);
+
+  const handleCopySocialCard = () => {
+    const isSeller = brokerWiseTab === 'sellers';
+    let text = `🔥 TOP ${isSeller ? 'SELLER' : 'BUYER'} STOCKS BY BROKER-WISE\n`;
+    text += `📅 As of ${sessionDate}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    brokerWiseLeaderboard.slice(0, 10).forEach((row, idx) => {
+      const brokerId = isSeller ? row.sellerBroker : row.buyerBroker;
+      const rate = row.avgRate ? Number(row.avgRate).toFixed(2) : '-';
+      text += `${idx + 1}. ${row.symbol.padEnd(7)} | Broker ${brokerId.padEnd(2)} | ${row.qty.toLocaleString()} Qty | ${formatNepaliCurrency(row.amount)} | Avg: ${rate}\n`;
+    });
+    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `⚡ Verified by Drabyashree NEPSE Surveillance`;
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      setCopiedCard(true);
+      setTimeout(() => setCopiedCard(false), 2500);
+    }
+  };
 
   const loadData = async (activeTf = timeframe) => {
     setLoading(true);
     try {
       const days = DAYS_MAP[activeTf] || 1;
-      const [liveDataRes, fsRes, hmRes] = await Promise.allSettled([
+      const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
-        fetchFloorSheet(5000),
-        fetchBrokerHeatmap({ days })
+        fetchRealFloorsheet(null, '', 1, 100000),
+        fetchBrokerHeatmap({ days }),
+        fetchMarketWideBrokerSummaryMap(days)
       ]);
       if (liveDataRes.status === 'fulfilled') {
-        setStocks(liveDataRes.value?.stocks || []);
+        const liveStocks = liveDataRes.value?.stocks || [];
+        if (summaryMapRes.status === 'fulfilled' && summaryMapRes.value && typeof summaryMapRes.value === 'object') {
+          setStocks(liveStocks.map((st: any) => {
+            const sym = st.symbol;
+            const bSummary = summaryMapRes.value[sym];
+            return bSummary ? { ...st, brokerAnalysis: bSummary, realBrokerAnalysis: bSummary } : st;
+          }));
+        } else {
+          setStocks(liveStocks);
+        }
       }
       if (fsRes.status === 'fulfilled') {
         const fs = fsRes.value;
-        const fsData = Array.isArray(fs?.content) ? fs.content : (Array.isArray(fs?.data) ? fs.data : (Array.isArray(fs) ? fs : []));
+        const fsData = Array.isArray(fs?.content)
+          ? fs.content
+          : Array.isArray(fs?.data)
+          ? fs.data
+          : Array.isArray(fs?.rows)
+          ? fs.rows
+          : Array.isArray(fs?.list)
+          ? fs.list
+          : Array.isArray(fs)
+          ? fs
+          : [];
         setFloorsheet(fsData);
       }
-      if (hmRes.status === 'fulfilled' && hmRes.value?.matrix && hmRes.value.matrix.some((m: any) => m.broker === '58' && (m.topAccumulation || m.topByNetQty))) {
+      if (hmRes.status === 'fulfilled' && Array.isArray(hmRes.value?.matrix) && hmRes.value.matrix.length > 0) {
         setHeatmapData(hmRes.value);
       } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
-      } else if (hmRes.status === 'fulfilled' && hmRes.value?.matrix) {
-        setHeatmapData(hmRes.value);
       }
     } catch (_) {}
     setLoading(false);
@@ -464,18 +579,19 @@ export function BrokerFlowDominanceService({
       pChange: number
     ) => {
       // 1. Prioritize authentic cached broker analysis if available (e.g. multi-day verified broker vault)
-      const cachedRba = getCachedRealBrokerAnalysis(sym);
-      if (cachedRba && (cachedRba.topBuyers?.length > 0 || cachedRba.buyers?.length > 0)) {
+      const matchedStock = stocks.find(st => st.symbol === sym);
+      const cachedRba = matchedStock?.brokerAnalysis || matchedStock?.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
+      if (cachedRba && (cachedRba.topBuyers?.length > 0 || cachedRba.buyers?.length > 0 || (cachedRba.bcr3BuyPct != null && cachedRba.bcr3BuyPct > 0))) {
         const rawB = cachedRba.topBuyers || cachedRba.buyers || [];
         const rawS = cachedRba.topSellers || cachedRba.sellers || [];
-        const topBId = String(rawB[0]?.broker || rawB[0]?.brokerId || sortedBuyers[0]?.id || '58').trim();
+        const topBId = String(rawB[0]?.broker || rawB[0]?.brokerId || rawB[0]?.id || sortedBuyers[0]?.id || '58').trim();
         const topBInfo = MAJOR_BROKERS.find(b => b.id === topBId);
-        const topBName = rawB[0]?.brokerName || rawB[0]?.name || (topBInfo ? topBInfo.name : `Broker #${topBId}`);
+        const topBName = rawB[0]?.brokerName || rawB[0]?.name || (topBInfo ? topBInfo.name : (topBId && topBId !== '—' ? `Broker #${topBId}` : 'Dispersed Flow'));
 
         const bcr3Buy = Number(cachedRba.bcr3BuyPct || (cachedRba.crb5 ? cachedRba.crb5 * 100 : 0)) || 0;
         const bcr3Sell = Number(cachedRba.bcr3SellPct || 0);
-        const buyerBrokers = rawB.slice(0, 3).map((b: any) => `#${b.broker || b.brokerId}`);
-        const sellerBrokers = rawS.slice(0, 3).map((s: any) => `#${s.broker || s.brokerId}`);
+        const buyerBrokers = rawB.slice(0, 3).map((b: any) => `#${b.broker || b.brokerId || b.id}`);
+        const sellerBrokers = rawS.slice(0, 3).map((s: any) => `#${s.broker || s.brokerId || s.id}`);
 
         const isGreenOrElevated = pChange >= 0;
         const isDistributionTrap = isGreenOrElevated && (bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy);
@@ -645,8 +761,36 @@ export function BrokerFlowDominanceService({
       });
 
       const res: DominanceItem[] = [];
+      const seenSymbols = new Set<string>();
+
+      // 1. Iterate over all stocks that have verified brokerAnalysis attached
+      stocks.forEach((st) => {
+        const sym = st.symbol;
+        if (!sym || seenSymbols.has(sym)) return;
+        const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
+        if (rba && (rba.topBuyers?.length > 0 || rba.buyers?.length > 0 || (rba.bcr3BuyPct != null && rba.bcr3BuyPct > 0) || (rba.totalBuyAmount || 0) > 0)) {
+          seenSymbols.add(sym);
+          const ltp = Number(st.ltp || st.closePrice || 500);
+          const pChange = Number(st.pChange || 0);
+          const turnover = Number(st.turnover || rba.totalBuyAmount || 0);
+          const val = stockBrokerMap.get(sym) || { totalBuy: turnover, totalSell: turnover, buyers: new Map(), sellers: new Map() };
+          const step4 = evaluateStep4(sym, val, [], [], 0, pChange);
+          res.push({
+            symbol: sym,
+            name: st.companyName || st.name || sym,
+            ltp,
+            pChange,
+            turnover,
+            ...step4,
+          });
+        }
+      });
+
+      // 2. Add remaining scrips computed from heatmapData matrix
       stockBrokerMap.forEach((val, sym) => {
+        if (seenSymbols.has(sym)) return;
         if (val.totalBuy <= 0) return;
+        seenSymbols.add(sym);
         let topBrokerAmt = 0;
         const sortedBuyers: { id: string; amt: number }[] = [];
         val.buyers.forEach((bAmt, bId) => {
@@ -710,8 +854,36 @@ export function BrokerFlowDominanceService({
       });
 
       const res: DominanceItem[] = [];
+      const seenSymbols = new Set<string>();
+
+      // 1. Iterate over all stocks that have verified brokerAnalysis attached
+      stocks.forEach((st) => {
+        const sym = st.symbol;
+        if (!sym || seenSymbols.has(sym)) return;
+        const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
+        if (rba && (rba.topBuyers?.length > 0 || rba.buyers?.length > 0 || (rba.bcr3BuyPct != null && rba.bcr3BuyPct > 0) || (rba.totalBuyAmount || 0) > 0)) {
+          seenSymbols.add(sym);
+          const ltp = Number(st.ltp || st.closePrice || 500);
+          const pChange = Number(st.pChange || 0);
+          const turnover = Number(st.turnover || rba.totalBuyAmount || 0);
+          const val = stockBrokerMap.get(sym) || { totalBuy: turnover, totalSell: turnover, buyers: new Map(), sellers: new Map() };
+          const step4 = evaluateStep4(sym, val, [], [], 0, pChange);
+          res.push({
+            symbol: sym,
+            name: st.companyName || st.name || sym,
+            ltp,
+            pChange,
+            turnover,
+            ...step4,
+          });
+        }
+      });
+
+      // 2. Add remaining scrips computed from floorsheet
       stockBrokerMap.forEach((val, sym) => {
+        if (seenSymbols.has(sym)) return;
         if (val.totalBuy <= 0) return;
+        seenSymbols.add(sym);
         let topBrokerAmt = 0;
         const sortedBuyers: { id: string; amt: number }[] = [];
         val.buyers.forEach((bAmt, bId) => {
@@ -748,7 +920,31 @@ export function BrokerFlowDominanceService({
       }
     }
 
-    // C. Baseline from active stocks with 0 dominance if offline (ZERO synthetic percent formula)
+    // C. Check if stocks have brokerAnalysis attached before falling back to offline
+    const stocksWithBroker = stocks.filter(
+      st => st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(st.symbol)
+    );
+    if (stocksWithBroker.length > 0) {
+      const res: DominanceItem[] = stocksWithBroker.map(st => {
+        const sym = st.symbol;
+        const ltp = Number(st.ltp || st.closePrice || 500);
+        const pChange = Number(st.pChange || 0);
+        const rba = st.brokerAnalysis || st.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
+        const turnover = Number(st.turnover || rba?.totalBuyAmount || 0);
+        const step4 = evaluateStep4(sym, { totalBuy: turnover, totalSell: turnover, buyers: new Map(), sellers: new Map() }, [], [], 0, pChange);
+        return {
+          symbol: sym,
+          name: st.companyName || st.name || sym,
+          ltp,
+          pChange,
+          turnover,
+          ...step4,
+        };
+      });
+      return res.sort((a, b) => b.top3BuyPct - a.top3BuyPct);
+    }
+
+    // Baseline from active stocks with 0 dominance if completely offline (ZERO synthetic percent formula)
     const active = stocks.filter(s => Number(s.turnover || 0) > 0).slice(0, 20);
     return active.map(s => ({
       symbol: s.symbol,
@@ -878,13 +1074,15 @@ export function BrokerFlowDominanceService({
   if (loading) return <Spinner text="Aggregating Real-Time Institutional Broker Flow…" />;
 
   return (
-    <div className="space-y-3 sm:space-y-4 w-full max-w-full min-w-0 overflow-x-hidden">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4 min-w-0 overflow-x-hidden">
       {/* Header with Mode Switcher */}
-      <div className="flex flex-col gap-2.5 sm:gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-3 sm:p-3.5 rounded-2xl border border-slate-800 w-full min-w-0">
+      <div className="flex flex-col gap-2.5 sm:gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800 w-full min-w-0">
         <div className="min-w-0">
           <h3 className="text-sm sm:text-base font-extrabold text-white tracking-wide truncate">
             {activeMode === 'flow'
               ? 'Institutional Broker Flow Matrix'
+              : activeMode === 'brokerWise'
+              ? 'Exchange Top Stock by Broker-Wise'
               : activeMode === 'dominance'
               ? 'Stock Dominance & Cornering Board'
               : activeMode === 'top10'
@@ -894,6 +1092,8 @@ export function BrokerFlowDominanceService({
           <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
             {activeMode === 'flow'
               ? 'Net buy/sell capital flow, accumulated scrips, and bias per broker.'
+              : activeMode === 'brokerWise'
+              ? 'Exchange-wide leaderboard ranking largest single-broker selling and buying positions.'
               : activeMode === 'dominance'
               ? 'Which brokers control the largest percentage of volume per scrip.'
               : activeMode === 'top10'
@@ -903,12 +1103,18 @@ export function BrokerFlowDominanceService({
         </div>
 
         {/* View Mode Switcher */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 sm:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 w-full sm:w-auto shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-5 sm:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 w-full sm:w-auto shrink-0">
           <button
             onClick={() => setActiveMode('flow')}
             className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'flow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <Users size={12} className="shrink-0" /> <span className="truncate">Broker Flow</span>
+          </button>
+          <button
+            onClick={() => setActiveMode('brokerWise')}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'brokerWise' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
+            <Target size={12} className="shrink-0" /> <span className="truncate">Broker-Wise</span>
           </button>
           <button
             onClick={() => setActiveMode('dominance')}
@@ -1003,7 +1209,7 @@ export function BrokerFlowDominanceService({
       <div className="grid grid-cols-2 gap-2 sm:gap-2.5 sm:grid-cols-4 w-full">
         <StatCard label="Top Accumulator" value={topAccumulator ? `Broker #${topAccumulator.brokerId}` : '—'} subtitle={topAccumulator ? `+Rs. ${(topAccumulator.netFlow / 1e7).toFixed(1)} Cr (${topAccumulator.topStock})` : undefined} color="#10b981" />
         <StatCard label="Top Distributor" value={topDistributor ? `Broker #${topDistributor.brokerId}` : '—'} subtitle={topDistributor ? `-Rs. ${(Math.abs(topDistributor.netFlow) / 1e7).toFixed(1)} Cr` : undefined} color="#f43f5e" />
-        <StatCard label="Monitored Brokers" value={`${MAJOR_BROKERS.length} Firms`} subtitle="Live TMS Feed" color="#3b82f6" />
+        <StatCard label="Monitored Brokers" value={`${brokerFlowList.length} Firms`} subtitle="Live TMS Feed" color="#3b82f6" />
         <StatCard label="Dominance Alert" value={`${corneredCount} Scrips`} subtitle=">35% Single Broker" color="#f59e0b" />
       </div>
 
@@ -1548,7 +1754,8 @@ export function BrokerFlowDominanceService({
                 { id: '57', name: '#57 Aryatara', isMajor: false },
                 { id: '42', name: '#42 Sani', isMajor: false },
                 { id: '38', name: '#38 Dipshikha', isMajor: false },
-                { id: '59', name: '#59 Premier', isMajor: false },
+                { id: '32', name: '#32 Premier', isMajor: false },
+                { id: '59', name: '#59 Divya', isMajor: false },
               ].map((pill) => {
                 const isSelected = selectedTop10BrokerId === pill.id;
                 return (
@@ -1790,13 +1997,13 @@ export function BrokerFlowDominanceService({
                                   </div>
                                 </td>
                                 <td className="p-2 text-right text-emerald-400 font-semibold">
-                                  Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
+                                  {formatNepaliCurrency(sc.buyAmount)}
                                 </td>
                                 <td className="p-2 text-right text-slate-400">
-                                  Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
+                                  {formatNepaliCurrency(sc.sellAmount)}
                                 </td>
                                 <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                  {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
+                                  {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
                                 </td>
                                 <td className="p-2 text-center font-sans">
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 whitespace-nowrap">
@@ -1874,13 +2081,13 @@ export function BrokerFlowDominanceService({
                                   </div>
                                 </td>
                                 <td className="p-2 text-right text-slate-400">
-                                  Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
+                                  {formatNepaliCurrency(sc.buyAmount)}
                                 </td>
                                 <td className="p-2 text-right text-rose-400 font-semibold">
-                                  Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
+                                  {formatNepaliCurrency(sc.sellAmount)}
                                 </td>
                                 <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                  {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
+                                  {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
                                 </td>
                                 <td className="p-2 text-center font-sans">
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-rose-500/10 text-rose-400 border-rose-500/30 whitespace-nowrap">
@@ -2024,7 +2231,7 @@ export function BrokerFlowDominanceService({
                     <div>
                       <div className="text-[10px] text-slate-400 uppercase font-semibold">Deal Value</div>
                       <div className="font-black text-blue-400 text-sm font-mono">
-                        Rs. {(m.amount / 1e5).toFixed(2)} Lakhs
+                        {formatNepaliCurrency(m.amount)}
                       </div>
                     </div>
                     <div className="text-right">
@@ -2088,7 +2295,7 @@ export function BrokerFlowDominanceService({
                         <td className="p-3 text-right text-slate-200 font-bold">{m.quantity.toLocaleString()}</td>
                         <td className="p-3 text-right text-white">Rs. {m.rate}</td>
                         <td className="p-3 text-right font-black text-blue-400 text-sm">
-                          Rs. {(m.amount / 1e5).toFixed(2)} Lakhs
+                          {formatNepaliCurrency(m.amount)}
                         </td>
                         <td className="p-3 text-right font-sans">
                           <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-300">
@@ -2101,6 +2308,239 @@ export function BrokerFlowDominanceService({
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODE 5: EXCHANGE-WIDE BROKER-WISE LEADERBOARD */}
+      {activeMode === 'brokerWise' && (
+        <div className="space-y-3.5 w-full min-w-0">
+          <InfoBanner type="info">
+            Exchange-wide institutional surveillance ranking single-broker dump and accumulation moves across all active trading desks in NEPSE.
+          </InfoBanner>
+
+          {/* Broker-Wise Toolbar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 p-3 rounded-2xl border border-slate-800 shadow-md">
+            {/* Left: Tab Switcher (Top Sellers vs Top Buyers) */}
+            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setBrokerWiseTab('sellers')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'sellers'
+                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TrendingDown size={14} />
+                <span>Top Seller Stocks</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBrokerWiseTab('buyers')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'buyers'
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TrendingUp size={14} />
+                <span>Top Buyer Stocks</span>
+              </button>
+            </div>
+
+            {/* Right: Deduplication toggle + Session Date badge + Copy Social Card */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                📅 As of {sessionDate}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setUniqueStockOnly(!uniqueStockOnly)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                  uniqueStockOnly
+                    ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+                title="Toggle between showing only the single top broker per stock or all broker desks"
+              >
+                {uniqueStockOnly ? '✓ 1 Broker Per Stock' : 'All Broker Desks'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopySocialCard}
+                className="flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer"
+                title="Copy ready-to-share social text card for Telegram / Facebook / Viber"
+              >
+                {copiedCard ? (
+                  <>
+                    <Check size={13} className="text-emerald-400" />
+                    <span className="text-emerald-400 font-extrabold">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} />
+                    <span>Copy Card</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop & Tablet Table */}
+          <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th className="p-3 w-12 text-center">#</th>
+                  <th className="p-3">Symbol</th>
+                  <th className="p-3">{brokerWiseTab === 'sellers' ? 'Seller Desk' : 'Buyer Desk'}</th>
+                  <th className="p-3 text-right">Quantity</th>
+                  <th className="p-3 text-right">Amount</th>
+                  <th className="p-3 text-right">Avg. Rate</th>
+                  <th className="p-3 text-center">Desk Dominance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {brokerWiseLeaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 font-sans">
+                      No broker-wise records available for this session.
+                    </td>
+                  </tr>
+                ) : (
+                  brokerWiseLeaderboard.map((item, idx) => {
+                    const brokerId = brokerWiseTab === 'sellers' ? item.sellerBroker : item.buyerBroker;
+                    const isTop3 = idx < 3;
+                    return (
+                      <tr
+                        key={`${item.symbol}_${brokerId}_${idx}`}
+                        className="hover:bg-slate-900/60 transition group cursor-pointer"
+                        onClick={() => {
+                          const found = brokerFlowList.find(b => b.brokerId === brokerId);
+                          if (found) setSelectedBrokerModal(found);
+                        }}
+                      >
+                        <td className="p-3 text-center">
+                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
+                            idx === 0
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : idx === 1
+                              ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
+                              : idx === 2
+                              ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                              : 'text-slate-500'
+                          }`}>
+                            {idx + 1}
+                          </span>
+                        </td>
+                        <td className="p-3 font-sans">
+                          <span className="font-black text-white text-sm group-hover:text-blue-400 transition">
+                            {item.symbol}
+                          </span>
+                        </td>
+                        <td className="p-3 font-sans">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
+                              brokerWiseTab === 'sellers'
+                                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                            }`}>
+                              Broker {brokerId}
+                            </span>
+                            <span className="text-slate-300 text-xs truncate max-w-[160px]">
+                              {item.brokerName}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-right font-bold text-slate-200">
+                          {Number(item.qty).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-black">
+                          <span className={`text-sm ${brokerWiseTab === 'sellers' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {formatNepaliCurrency(item.amount)}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-bold text-slate-300">
+                          Rs. {Number(item.avgRate || 0).toFixed(2)}
+                        </td>
+                        <td className="p-3 text-center font-sans">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            isTop3
+                              ? brokerWiseTab === 'sellers'
+                                ? 'bg-rose-950/60 text-rose-300 border-rose-700/60'
+                                : 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                              : 'bg-slate-900 text-slate-400 border-slate-800'
+                          }`}>
+                            {brokerWiseTab === 'sellers' ? 'Heavy Dump' : 'Aggressive Accum.'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="sm:hidden space-y-2.5">
+            {brokerWiseLeaderboard.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+                No broker-wise records available for this session.
+              </div>
+            ) : (
+              brokerWiseLeaderboard.map((item, idx) => {
+                const brokerId = brokerWiseTab === 'sellers' ? item.sellerBroker : item.buyerBroker;
+                return (
+                  <div
+                    key={`m_${item.symbol}_${brokerId}_${idx}`}
+                    className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
+                    onClick={() => {
+                      const found = brokerFlowList.find(b => b.brokerId === brokerId);
+                      if (found) setSelectedBrokerModal(found);
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
+                        <span className="font-extrabold text-white text-sm">{item.symbol}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
+                        brokerWiseTab === 'sellers'
+                          ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                          : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                      }`}>
+                        Broker {brokerId}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {item.brokerName}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/70 text-xs font-mono">
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-sans">Qty</div>
+                        <div className="font-bold text-slate-200">{Number(item.qty).toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-sans">Amount</div>
+                        <div className={`font-black ${brokerWiseTab === 'sellers' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {formatNepaliCurrency(item.amount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400 font-sans">Avg Rate</div>
+                        <div className="font-bold text-slate-300">Rs. {Number(item.avgRate || 0).toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -2283,13 +2723,13 @@ export function BrokerFlowDominanceService({
                                 </div>
                               </td>
                               <td className="p-2.5 text-right text-emerald-400 font-semibold">
-                                Rs. {(sc.buyAmount / 1e5).toFixed(1)} L
+                                {formatNepaliCurrency(sc.buyAmount)}
                               </td>
                               <td className="p-2.5 text-right text-rose-400 font-semibold">
-                                Rs. {(sc.sellAmount / 1e5).toFixed(1)} L
+                                {formatNepaliCurrency(sc.sellAmount)}
                               </td>
                               <td className="p-2.5 text-right font-bold" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                {isNetPos ? '+' : ''}Rs. {(sc.netFlow / 1e5).toFixed(1)} L
+                                {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
                               </td>
                               <td className="p-2.5 text-center font-sans">
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${

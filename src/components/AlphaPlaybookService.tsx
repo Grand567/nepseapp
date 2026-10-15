@@ -170,24 +170,19 @@ export function AlphaPlaybookService() {
   };
 
   return (
-    <div style={{
-      maxWidth: 960,
-      margin: '0 auto',
-      padding: '16px 14px 40px',
-      color: '#f8fafc',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
+    <div className="w-full max-w-5xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 text-slate-100 font-sans">
       {/* ── Top Hero Card ── */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85))',
-        border: '1px solid rgba(99, 102, 241, 0.3)',
-        borderRadius: 20,
-        padding: '20px 22px',
-        marginBottom: 16,
-        boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
+      <div 
+        className="p-3 sm:p-5 rounded-xl sm:rounded-2xl"
+        style={{
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85))',
+          border: '1px solid rgba(99, 102, 241, 0.3)',
+          marginBottom: 16,
+          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
         <div style={{
           position: 'absolute',
           top: -30,

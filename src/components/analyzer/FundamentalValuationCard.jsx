@@ -196,24 +196,24 @@ export function FundamentalValuationCard({ stock, allStocks = [] }) {
           <div style={{
             fontSize: 12,
             fontWeight: 700,
-            color: '#38bdf8',
-            background: 'rgba(56, 189, 248, 0.1)',
-            border: '1px solid rgba(56, 189, 248, 0.25)',
-            padding: '4px 8px',
+            color: '#f87171',
+            background: 'rgba(248, 113, 113, 0.1)',
+            border: '1px solid rgba(248, 113, 113, 0.25)',
+            padding: '6px 10px',
             borderRadius: 6,
             marginBottom: 8
           }}>
-            ℹ️ Sector Baseline Model (Company filings pending — showing {bench.name || 'sector'} medians)
+            ⚠️ Insufficient Fundamental Filing Data (Company filings pending — showing {bench.name || 'sector'} medians for reference)
           </div>
-          <Row label="P/E" val={bench.medianPE} median={bench.medianPE} lowerIsBetter />
-          <Row label="P/BV" val={bench.medianPBV} median={bench.medianPBV} lowerIsBetter />
-          <Row label="ROE %" val={bench.medianROE} median={bench.medianROE} unit="%" />
-          <Row label="EPS Rs." val={bench.medianEPS} median={bench.medianEPS} />
-          <Row label="Book Value" val={stock?.ltp && bench.medianPBV ? +(stock.ltp / bench.medianPBV).toFixed(1) : +(bench.medianEPS * (bench.medianPE || 16) / (bench.medianPBV || 1.6)).toFixed(1)} median={null} unit="Rs. " />
+          <Row label="P/E" val={null} median={bench.medianPE} lowerIsBetter />
+          <Row label="P/BV" val={null} median={bench.medianPBV} lowerIsBetter />
+          <Row label="ROE %" val={null} median={bench.medianROE} unit="%" />
+          <Row label="EPS Rs." val={null} median={bench.medianEPS} />
+          <Row label="Book Value" val={null} median={null} unit="Rs. " />
           {isBfi && (
             <>
-              <Row label="NPL %" val={bench.medianNPL || 2.5} median={bench.medianNPL} lowerIsBetter unit="%" />
-              <Row label="CAR %" val={bench.minCAR || 11.5} median={bench.minCAR} unit="%" />
+              <Row label="NPL %" val={null} median={bench.medianNPL} lowerIsBetter unit="%" />
+              <Row label="CAR %" val={null} median={bench.minCAR} unit="%" />
             </>
           )}
         </div>

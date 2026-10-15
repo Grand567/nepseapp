@@ -433,7 +433,13 @@
   background: rgba(11, 14, 20, 0.96);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  padding: 10px 14px;
+  padding: 8px 10px;
+}
+
+@media (min-width: 640px) {
+  .services-detail-header {
+    padding: 10px 14px;
+  }
 }
 
 .services-back-btn {
@@ -465,29 +471,49 @@
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 10px 8px 30px;
+  padding: 0 0 24px 0;
   box-sizing: border-box;
   overflow-x: hidden;
 }
 
 .services-detail-card {
-  border-radius: 18px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  background: var(--bg-card, #151922);
-  padding: 12px 10px;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
   color: var(--text-primary, #f8fafc);
-  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
   max-width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .services-detail-body {
-    padding: 16px 14px 40px;
+    padding: 16px 16px 40px;
   }
   .services-detail-card {
+    border-radius: 18px;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    background: var(--bg-card, #151922);
     padding: 20px 18px;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Ensure all sub-services and tools inside ServicesHub detail view cover mobile edge-to-edge (px-1 parity) */
+.services-detail-card > div {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  .services-detail-card > div {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    padding-top: 6px;
+    padding-bottom: 20px;
   }
 }
 

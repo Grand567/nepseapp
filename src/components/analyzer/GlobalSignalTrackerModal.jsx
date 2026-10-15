@@ -1,7 +1,32 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle2, AlertTriangle, TrendingUp, Clock, Filter, ArrowUpRight, ArrowDownRight, ShieldCheck, RotateCw, Trash2, Zap } from 'lucide-react';
-import { getSignals, getSignalStats, evaluateOpenSignals, clearSignals } from '../../services/signalTracker.js';
+import {
+  X,
+  CheckCircle2,
+  AlertTriangle,
+  TrendingUp,
+  Clock,
+  Filter,
+  ArrowUpRight,
+  ArrowDownRight,
+  ShieldCheck,
+  RotateCw,
+  Trash2,
+  Search,
+  Check,
+  Percent,
+  SlidersHorizontal,
+  ChevronDown,
+  Info
+} from 'lucide-react';
+import {
+  getSignals,
+  getSignalStats,
+  evaluateOpenSignals,
+  clearSignals,
+  deleteSignal,
+  closeSignalManually
+} from '../../services/signalTracker.js';
 
 /**
  * GlobalSignalTrackerModal
@@ -10,6 +35,8 @@ import { getSignals, getSignalStats, evaluateOpenSignals, clearSignals } from '.
  */
 export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks = [], inlineMode = false }) {
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('DATE_DESC');
   const [signals, setSignals] = useState([]);
   const [stats, setStats] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -41,7 +68,6 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
       evaluateOpenSignals(marketStocks);
     }
     const all = getSignals();
-    all.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
     setSignals(all);
     setStats(getSignalStats());
   };
@@ -65,14 +91,66 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
     }
   };
 
+  const handleDeleteSingle = (id, e) => {
+    e?.stopPropagation();
+    if (window.confirm('Delete this signal from your track record?')) {
+      deleteSignal(id);
+      loadData();
+    }
+  };
+
+  const handleManualClose = (sig, e) => {
+    e?.stopPropagation();
+    const liveStock = stockMap.get(sig.symbol);
+    const livePrice = liveStock ? Number(liveStock.ltp || liveStock.close || 0) : sig.entryPrice;
+    if (window.confirm(`Close ${sig.symbol} position manually at current market price Rs. ${livePrice}?`)) {
+      closeSignalManually(sig.id, livePrice);
+      loadData();
+    }
+  };
+
   const filteredSignals = useMemo(() => {
-    if (filterStatus === 'ALL') return signals;
-    if (filterStatus === 'OPEN') return signals.filter(s => s.status === 'open');
-    if (filterStatus === 'HIT_TARGET') return signals.filter(s => s.status === 'hit_target');
-    if (filterStatus === 'HIT_STOP') return signals.filter(s => s.status === 'hit_stop');
-    if (filterStatus === 'EXPIRED') return signals.filter(s => s.status === 'expired');
-    return signals;
-  }, [signals, filterStatus]);
+    let list = [...signals];
+
+    // Status Filter
+    if (filterStatus === 'OPEN') list = list.filter(s => s.status === 'open');
+    else if (filterStatus === 'HIT_TARGET') list = list.filter(s => s.status === 'hit_target');
+    else if (filterStatus === 'HIT_STOP') list = list.filter(s => s.status === 'hit_stop');
+    else if (filterStatus === 'MANUAL_CLOSE') list = list.filter(s => s.status === 'manual_close');
+    else if (filterStatus === 'EXPIRED') list = list.filter(s => s.status === 'expired');
+
+    // Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toUpperCase().trim();
+      list = list.filter(s =>
+        (s.symbol && s.symbol.toUpperCase().includes(q)) ||
+        (s.verdict && s.verdict.toUpperCase().includes(q)) ||
+        (s.sector && s.sector.toUpperCase().includes(q))
+      );
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      if (sortBy === 'DATE_DESC') return new Date(b.signalDate || 0) - new Date(a.signalDate || 0);
+      if (sortBy === 'DATE_ASC') return new Date(a.signalDate || 0) - new Date(b.signalDate || 0);
+      if (sortBy === 'RETURN_DESC') {
+        const retA = a.outcome?.returnPct ?? (a.entryPrice && stockMap.get(a.symbol)?.ltp ? ((stockMap.get(a.symbol).ltp - a.entryPrice) / a.entryPrice) * 100 : -Infinity);
+        const retB = b.outcome?.returnPct ?? (b.entryPrice && stockMap.get(b.symbol)?.ltp ? ((stockMap.get(b.symbol).ltp - b.entryPrice) / b.entryPrice) * 100 : -Infinity);
+        return retB - retA;
+      }
+      if (sortBy === 'RETURN_ASC') {
+        const retA = a.outcome?.returnPct ?? (a.entryPrice && stockMap.get(a.symbol)?.ltp ? ((stockMap.get(a.symbol).ltp - a.entryPrice) / a.entryPrice) * 100 : Infinity);
+        const retB = b.outcome?.returnPct ?? (b.entryPrice && stockMap.get(b.symbol)?.ltp ? ((stockMap.get(b.symbol).ltp - b.entryPrice) / b.entryPrice) * 100 : Infinity);
+        return retA - retB;
+      }
+      if (sortBy === 'SCORE_DESC') {
+        return (b.setupScore || 0) - (a.setupScore || 0);
+      }
+      return 0;
+    });
+
+    return list;
+  }, [signals, filterStatus, searchQuery, sortBy, stockMap]);
 
   if (!isOpen) return null;
 
@@ -82,7 +160,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
       border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: 16,
       width: '100%',
-      maxWidth: inlineMode ? '100%' : 800,
+      maxWidth: inlineMode ? '100%' : 860,
       maxHeight: inlineMode ? 'none' : '90vh',
       display: 'flex',
       flexDirection: 'column',
@@ -96,7 +174,9 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        background: '#111827'
+        background: '#111827',
+        flexWrap: 'wrap',
+        gap: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
@@ -126,7 +206,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: 8,
-              padding: '6px 10px',
+              padding: '6px 12px',
               display: 'flex', alignItems: 'center', gap: 6,
               color: '#cbd5e1',
               fontSize: 12,
@@ -182,16 +262,16 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
       {stats && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
           gap: 10,
-          padding: '16px 20px',
+          padding: '14px 20px',
           background: 'rgba(0,0,0,0.3)',
           borderBottom: '1px solid rgba(255,255,255,0.06)'
         }}>
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
             <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Total Setups</div>
             <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)', marginTop: 2 }}>{stats.total}</div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Resolved</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{stats.openCount} Open • {stats.closedCount} Closed</div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -217,15 +297,19 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             }}>
               {stats.closedCount > 0 ? `${(stats.avgReturnPct || 0) >= 0 ? '+' : ''}${stats.avgReturnPct}%` : '—'}
             </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Across resolved setups</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {stats.avgNetReturnPct != null ? `${stats.avgNetReturnPct >= 0 ? '+' : ''}${stats.avgNetReturnPct}% Net` : 'Gross return'}
+            </div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
             <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800 }}>Profit Factor</div>
             <div style={{ fontSize: 18, fontWeight: 900, color: '#c084fc', fontFamily: 'var(--font-mono, monospace)', marginTop: 2 }}>
-              {stats.profitFactor ? `${stats.profitFactor}x` : '—'}
+              {stats.closedCount > 0 && stats.profitFactor ? `${stats.profitFactor}x` : '—'}
             </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Gains vs Losses</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {stats.expectancy != null ? `Expectancy: ${stats.expectancy >= 0 ? '+' : ''}${stats.expectancy}%` : 'Gains vs Losses'}
+            </div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -233,7 +317,9 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             <div style={{ fontSize: 13, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono, monospace)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {stats.bestTrade?.symbol ? `${stats.bestTrade.symbol} (+${stats.bestTrade.returnPct}%)` : '—'}
             </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Top recorded gain</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {stats.bestTrade?.netReturnPct != null ? `+${stats.bestTrade.netReturnPct}% Net` : 'Top gain'}
+            </div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -241,45 +327,118 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', fontFamily: 'var(--font-mono, monospace)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {stats.worstTrade?.symbol ? `${stats.worstTrade.symbol} (${stats.worstTrade.returnPct}%)` : '—'}
             </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Max recorded loss</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {stats.worstTrade?.netReturnPct != null ? `${stats.worstTrade.netReturnPct}% Net` : 'Max loss'}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Filter Tabs */}
+      {/* Controls: Search, Sort, Filter */}
       <div style={{
         display: 'flex',
-        gap: 6,
-        padding: '10px 20px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '12px 20px',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
-        overflowX: 'auto',
         background: '#0d131f'
       }}>
-        {[
-          { id: 'ALL', label: `All (${signals.length})` },
-          { id: 'OPEN', label: `Open (${signals.filter(s => s.status === 'open').length})` },
-          { id: 'HIT_TARGET', label: `Target Met (${signals.filter(s => s.status === 'hit_target').length})` },
-          { id: 'HIT_STOP', label: `Stop Hit (${signals.filter(s => s.status === 'hit_stop').length})` },
-          { id: 'EXPIRED', label: `Expired (${signals.filter(s => s.status === 'expired').length})` },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setFilterStatus(tab.id)}
+        {/* Search Bar */}
+        <div style={{
+          position: 'relative',
+          flex: '1 1 200px',
+          maxWidth: 280
+        }}>
+          <Search style={{
+            position: 'absolute',
+            left: 10,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: 14,
+            height: 14,
+            color: '#64748b'
+          }} />
+          <input
+            type="text"
+            placeholder="Search symbol, sector..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
             style={{
-              background: filterStatus === tab.id ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
-              border: filterStatus === tab.id ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 20,
-              padding: '4px 12px',
+              width: '100%',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 8,
+              padding: '6px 10px 6px 30px',
+              color: '#ffffff',
+              fontSize: 12,
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        {/* Sort Dropdown */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 700 }}>Sort:</span>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 8,
+              color: '#cbd5e1',
+              padding: '5px 10px',
               fontSize: 12,
               fontWeight: 700,
-              color: filterStatus === tab.id ? '#34d399' : '#94a3b8',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
+              outline: 'none',
+              cursor: 'pointer'
             }}
           >
-            {tab.label}
-          </button>
-        ))}
+            <option value="DATE_DESC" style={{ background: '#111827' }}>Date: Newest First</option>
+            <option value="DATE_ASC" style={{ background: '#111827' }}>Date: Oldest First</option>
+            <option value="RETURN_DESC" style={{ background: '#111827' }}>Return: High to Low</option>
+            <option value="RETURN_ASC" style={{ background: '#111827' }}>Return: Low to High</option>
+            <option value="SCORE_DESC" style={{ background: '#111827' }}>Setup Score: High to Low</option>
+          </select>
+        </div>
+
+        {/* Filter Pills */}
+        <div style={{
+          display: 'flex',
+          gap: 6,
+          overflowX: 'auto',
+          maxWidth: '100%'
+        }}>
+          {[
+            { id: 'ALL', label: `All (${signals.length})` },
+            { id: 'OPEN', label: `Active (${signals.filter(s => s.status === 'open').length})` },
+            { id: 'HIT_TARGET', label: `Target Met (${signals.filter(s => s.status === 'hit_target').length})` },
+            { id: 'HIT_STOP', label: `Stop Hit (${signals.filter(s => s.status === 'hit_stop').length})` },
+            { id: 'MANUAL_CLOSE', label: `Manual (${signals.filter(s => s.status === 'manual_close').length})` },
+            { id: 'EXPIRED', label: `Expired (${signals.filter(s => s.status === 'expired').length})` },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterStatus(tab.id)}
+              style={{
+                background: filterStatus === tab.id ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.04)',
+                border: filterStatus === tab.id ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 20,
+                padding: '4px 11px',
+                fontSize: 11.5,
+                fontWeight: 700,
+                color: filterStatus === tab.id ? '#34d399' : '#94a3b8',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Signals List */}
@@ -287,9 +446,9 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
         {filteredSignals.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
             <Clock style={{ width: 36, height: 36, margin: '0 auto 10px', opacity: 0.5 }} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#cbd5e1' }}>No setups found in this filter</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#cbd5e1' }}>No setups found matching filter</div>
             <div style={{ fontSize: 12, marginTop: 4, color: '#94a3b8' }}>
-              Actionable setups are automatically logged and tracked whenever entry/exit plans are evaluated.
+              Actionable setups are automatically logged whenever high-conviction entry/exit plans are evaluated.
             </div>
           </div>
         ) : (
@@ -297,9 +456,11 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
             {filteredSignals.map(sig => {
               const isTargetHit = sig.status === 'hit_target';
               const isStopHit = sig.status === 'hit_stop';
+              const isManualClose = sig.status === 'manual_close';
               const isExpired = sig.status === 'expired';
               const isOpen = sig.status === 'open';
               const retPct = sig.outcome?.returnPct;
+              const netRetPct = sig.outcome?.netReturnPct;
 
               const liveStock = stockMap.get(sig.symbol);
               const livePrice = liveStock ? Number(liveStock.ltp || liveStock.close || 0) : null;
@@ -318,7 +479,9 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                         ? '1px solid rgba(239, 68, 68, 0.35)'
                         : isOpen
                           ? '1px solid rgba(245, 158, 11, 0.35)'
-                          : '1px solid rgba(255,255,255,0.07)',
+                          : isManualClose
+                            ? '1px solid rgba(99, 102, 241, 0.35)'
+                            : '1px solid rgba(255,255,255,0.07)',
                     borderRadius: 12,
                     padding: '14px 16px',
                     display: 'flex',
@@ -328,11 +491,16 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                     gap: 12
                   }}
                 >
-                  <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+                  <div style={{ flex: '1 1 320px', minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono, monospace)' }}>
                         {sig.symbol}
                       </span>
+                      {sig.companyName && (
+                        <span style={{ fontSize: 12, color: '#94a3b8', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {sig.companyName}
+                        </span>
+                      )}
                       <span style={{
                         background: 'rgba(16, 185, 129, 0.15)',
                         border: '1px solid rgba(16, 185, 129, 0.3)',
@@ -357,96 +525,170 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
                           Score: {sig.setupScore}/100
                         </span>
                       )}
+                      {sig.rrr != null && (
+                        <span style={{
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                          color: '#fbbf24',
+                          padding: '1px 7px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 700
+                        }}>
+                          {sig.rrr}:1 RRR
+                        </span>
+                      )}
                       <span style={{ fontSize: 11.5, color: '#64748b' }}>
                         📅 {sig.signalDate}
                       </span>
                     </div>
 
-                    <div style={{ fontSize: 12.5, color: '#cbd5e1', marginTop: 5 }}>
+                    <div style={{ fontSize: 12.5, color: '#cbd5e1', marginTop: 6 }}>
                       Entry: <strong style={{ color: '#ffffff' }}>Rs. {sig.entryPrice}</strong>
                       {' • '}
-                      Target: <span style={{ color: '#34d399', fontWeight: 700 }}>Rs. {sig.targetPrice || '—'}</span>
+                      T1: <span style={{ color: '#34d399', fontWeight: 700 }}>Rs. {sig.targetPrice || '—'}</span>
+                      {sig.target2Price && (
+                        <>
+                          {' • '}
+                          T2: <span style={{ color: '#2dd4bf', fontWeight: 700 }}>Rs. {sig.target2Price}</span>
+                        </>
+                      )}
                       {' • '}
                       Stop: <span style={{ color: '#f87171', fontWeight: 700 }}>Rs. {sig.stopLoss || '—'}</span>
                     </div>
 
                     {isOpen && livePrice && (
-                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
-                        Live Market: Rs. {livePrice} {sig.highestSeen && `• Peak seen: Rs. ${sig.highestSeen}`}
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                        Live Quote: <strong style={{ color: '#f8fafc' }}>Rs. {livePrice}</strong>
+                        {sig.highestSeen && ` • Peak seen: Rs. ${sig.highestSeen}`}
+                        {sig.lowestSeen && ` • Trough: Rs. ${sig.lowestSeen}`}
                       </div>
                     )}
 
                     {!isOpen && sig.outcome?.exitPrice && (
-                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
+                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                         Closed at: <strong style={{ color: '#ffffff' }}>Rs. {sig.outcome.exitPrice}</strong> on {sig.outcome.exitDate || 'N/A'}
+                        {sig.outcome.maxUpsidePct != null && ` • Peak: +${sig.outcome.maxUpsidePct}%`}
+                        {sig.outcome.maxDrawdownPct != null && ` • Drawdown: ${sig.outcome.maxDrawdownPct}%`}
                       </div>
                     )}
 
                     {sig.verdict && (
-                      <div style={{ fontSize: 11.5, color: '#60a5fa', marginTop: 3, fontStyle: 'italic' }}>
+                      <div style={{ fontSize: 11.5, color: '#60a5fa', marginTop: 4, fontStyle: 'italic' }}>
                         {sig.verdict}
                       </div>
                     )}
                   </div>
 
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      background: isTargetHit
-                        ? 'rgba(16, 185, 129, 0.15)'
-                        : isStopHit
-                          ? 'rgba(239, 68, 68, 0.15)'
-                          : isOpen
-                            ? 'rgba(245, 158, 11, 0.15)'
-                            : 'rgba(148, 163, 184, 0.15)',
-                      border: isTargetHit
-                        ? '1px solid rgba(16, 185, 129, 0.4)'
-                        : isStopHit
-                          ? '1px solid rgba(239, 68, 68, 0.4)'
-                          : isOpen
-                            ? '1px solid rgba(245, 158, 11, 0.4)'
-                            : '1px solid rgba(148, 163, 184, 0.3)',
-                      borderRadius: 20,
-                      padding: '3px 10px',
-                      fontSize: 11.5,
-                      fontWeight: 800,
-                      color: isTargetHit ? '#34d399' : isStopHit ? '#f87171' : isOpen ? '#fbbf24' : '#94a3b8'
-                    }}>
-                      {isTargetHit && <CheckCircle2 size={12} />}
-                      {isStopHit && <AlertTriangle size={12} />}
-                      {isOpen && <Clock size={12} />}
-                      {sig.status.toUpperCase().replace('_', ' ')}
-                    </span>
-
-                    {/* Realized or Unrealized Return */}
-                    {retPct != null && (
-                      <div style={{
-                        fontSize: 14,
-                        fontWeight: 900,
-                        fontFamily: 'var(--font-mono, monospace)',
-                        color: retPct >= 0 ? '#34d399' : '#f87171',
-                        marginTop: 4
+                  <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: isTargetHit
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : isStopHit
+                            ? 'rgba(239, 68, 68, 0.15)'
+                            : isOpen
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : isManualClose
+                                ? 'rgba(99, 102, 241, 0.15)'
+                                : 'rgba(148, 163, 184, 0.15)',
+                        border: isTargetHit
+                          ? '1px solid rgba(16, 185, 129, 0.4)'
+                          : isStopHit
+                            ? '1px solid rgba(239, 68, 68, 0.4)'
+                            : isOpen
+                              ? '1px solid rgba(245, 158, 11, 0.4)'
+                              : isManualClose
+                                ? '1px solid rgba(99, 102, 241, 0.4)'
+                                : '1px solid rgba(148, 163, 184, 0.3)',
+                        borderRadius: 20,
+                        padding: '3px 10px',
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        color: isTargetHit ? '#34d399' : isStopHit ? '#f87171' : isOpen ? '#fbbf24' : isManualClose ? '#a5b4fc' : '#94a3b8'
                       }}>
-                        {retPct >= 0 ? `+${retPct}%` : `${retPct}%`}
+                        {isTargetHit && <CheckCircle2 size={12} />}
+                        {isStopHit && <AlertTriangle size={12} />}
+                        {isOpen && <Clock size={12} />}
+                        {sig.status.toUpperCase().replace('_', ' ')}
+                      </span>
+
+                      <button
+                        onClick={(e) => handleDeleteSingle(sig.id, e)}
+                        title="Delete this signal"
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#64748b',
+                          cursor: 'pointer',
+                          padding: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          borderRadius: 4
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+
+                    {/* Realized Return */}
+                    {retPct != null && (
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{
+                          fontSize: 15,
+                          fontWeight: 900,
+                          fontFamily: 'var(--font-mono, monospace)',
+                          color: retPct >= 0 ? '#34d399' : '#f87171'
+                        }}>
+                          {retPct >= 0 ? `+${retPct}%` : `${retPct}%`}
+                        </div>
+                        {netRetPct != null && (
+                          <div style={{
+                            fontSize: 11,
+                            color: netRetPct >= 0 ? '#6ee7b7' : '#fca5a5',
+                            fontWeight: 700
+                          }}>
+                            {netRetPct >= 0 ? `+${netRetPct}%` : `${netRetPct}%`} Net (CGT+fees)
+                          </div>
+                        )}
                       </div>
                     )}
 
+                    {/* Live Unrealized Return */}
                     {isOpen && unrealizedReturn != null && (
-                      <div style={{
-                        fontSize: 13,
-                        fontWeight: 800,
-                        fontFamily: 'var(--font-mono, monospace)',
-                        color: unrealizedReturn >= 0 ? '#34d399' : '#f87171',
-                        marginTop: 4
-                      }}>
-                        {unrealizedReturn >= 0 ? `+${unrealizedReturn}%` : `${unrealizedReturn}%`} (Live)
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{
+                          fontSize: 14,
+                          fontWeight: 900,
+                          fontFamily: 'var(--font-mono, monospace)',
+                          color: unrealizedReturn >= 0 ? '#34d399' : '#f87171'
+                        }}>
+                          {unrealizedReturn >= 0 ? `+${unrealizedReturn}%` : `${unrealizedReturn}%`} (Live)
+                        </div>
+                        <button
+                          onClick={(e) => handleManualClose(sig, e)}
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            borderRadius: 6,
+                            padding: '2px 8px',
+                            color: '#cbd5e1',
+                            fontSize: 10.5,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            marginTop: 3
+                          }}
+                        >
+                          Close at Market
+                        </button>
                       </div>
                     )}
 
                     {sig.outcome?.holdingDays && (
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
                         Held {sig.outcome.holdingDays} session(s)
                       </div>
                     )}
@@ -467,7 +709,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
         color: '#64748b',
         textAlign: 'center'
       }}>
-        ⚠️ Real-market execution includes broker commission, SEBON regulatory fee, and potential liquidity slippage.
+        ⚠️ Real-market execution includes SEBON tiered brokerage (0.27%-0.40%), regulatory fee (0.015%), DP fee (Rs 25), and 7.5% retail short-term CGT.
       </div>
     </div>
   );
@@ -500,7 +742,7 @@ export function GlobalSignalTrackerModal({ isOpen = true, onClose, marketStocks 
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 800,
+          maxWidth: 860,
           margin: 'auto'
         }}
       >

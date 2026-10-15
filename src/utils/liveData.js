@@ -24,6 +24,8 @@ import {
   setCachedRealPriceHistory,
   getCachedRealBrokerAnalysis,
   setCachedRealBrokerAnalysis,
+  getCachedBrokerData,
+  setCachedBrokerData,
   getCachedRealFloorsheet,
   setCachedRealFloorsheet,
   getCachedStockFundamentals,
@@ -539,6 +541,8 @@ export {
   setCachedRealPriceHistory,
   getCachedRealBrokerAnalysis,
   setCachedRealBrokerAnalysis,
+  getCachedBrokerData,
+  setCachedBrokerData,
   getCachedRealFloorsheet,
   setCachedRealFloorsheet,
   getCachedStockFundamentals,
@@ -760,15 +764,27 @@ async function attemptLiveMarket() {
   };
 
 
-  // 1. PRIMARY FAST PARALLEL RACE:
-  // Execute top live feeds concurrently — resolves instantly on first valid return (~1.5s - 2.5s)
-  const tasks = [];
+  // 1. PRIMARY: Official NEPSE NOTS Live feeds (/api/market/live & /api/today-prices)
+  for (const endpoint of ['/api/market/live', '/api/today-prices']) {
+    try {
+      const res = await fetchFromBackend(endpoint, 5000);
+      const isStale = res?.isStale === true ||
+        res?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
+        res?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
+      if (!isTradingSession || !isStale) {
+        const arr = res?.data ?? (Array.isArray(res) ? res : null);
+        if (arr && arr.length > 20) {
+          const processed = processLive(arr, null);
+          if (processed && processed.length > 20) return processed;
+        }
+      }
+    } catch (_) {}
+  }
 
-  // Source FAST: Direct MeroLagani via allorigins CORS proxy — works for ALL web browsers without Render
-  // This fires first and resolves the race in ~1-2s, completely bypassing Render cold-start.
-  // Native apps use CapacitorHttp which already handles CORS natively (Source D below).
+  // 2. SECONDARY: Fall back to MeroLagani scrapers if official NOTS feeds fail
+  const fallbackTasks = [];
   if (!isNative) {
-    tasks.push((async () => {
+    fallbackTasks.push((async () => {
       try {
         const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary')}`;
         const j = await tryFetchJSON(corsUrl, 5000);
@@ -783,39 +799,9 @@ async function attemptLiveMarket() {
     })());
   }
 
-  // Source A: Official NOTS Live (/api/market/live) - Complete 336 stocks with circuit limits & high52
-  tasks.push((async () => {
+  fallbackTasks.push((async () => {
     try {
-      const liveRes = await fetchFromBackend('/api/market/live', 7000);
-      const isStale = liveRes?.isStale === true ||
-        liveRes?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
-        liveRes?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
-      if (!isTradingSession || !isStale) {
-        const arr = liveRes?.data ?? (Array.isArray(liveRes) ? liveRes : null);
-        if (arr && arr.length > 20) {
-          return processLive(arr, null);
-        }
-      }
-    } catch (_) {}
-    return null;
-  })());
-
-  // Source B: Official NOTS Today Prices (/api/today-prices) - 336 stocks from exchange
-  tasks.push((async () => {
-    try {
-      const tpRes = await fetchFromBackend('/api/today-prices', 7000);
-      const arr = tpRes?.data ?? (Array.isArray(tpRes) ? tpRes : null);
-      if (arr && arr.length > 20) {
-        return processLive(arr, null);
-      }
-    } catch (_) {}
-    return null;
-  })());
-
-  // Source C: Backend Mero Summary (/api/mero/market-summary) - Fast Scraped Live Feed
-  tasks.push((async () => {
-    try {
-      const j = await fetchFromBackend('/api/mero/market-summary', 7000);
+      const j = await fetchFromBackend('/api/mero/market-summary', 5000);
       const arr = j?.data ?? j?.stocks ?? (Array.isArray(j) ? j : null);
       if (arr && arr.length > 20) {
         return processLive(arr, j?.turnover ? { t: j.turnover } : null);
@@ -824,9 +810,8 @@ async function attemptLiveMarket() {
     return null;
   })());
 
-  // Source D: Direct MeroLagani JSON handler (Fastest on Mobile APK via native CapacitorHttp)
   if (isNative) {
-    tasks.push((async () => {
+    fallbackTasks.push((async () => {
       try {
         const directUrl = 'https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary';
         const j = await tryFetchJSON(directUrl, 4500);
@@ -841,7 +826,7 @@ async function attemptLiveMarket() {
     })());
   }
 
-  const raceWinner = await raceFirstValidStockFeed(tasks);
+  const raceWinner = await raceFirstValidStockFeed(fallbackTasks);
   if (raceWinner && raceWinner.length > 20) {
     return raceWinner;
   }
@@ -900,9 +885,10 @@ function normalizeLiveArray(arr) {
     const low = Number(r.lowPrice ?? r.low ?? Math.min(ltp, open)) || Math.min(ltp, open);
     const vol = Number(r.totalTradeQuantity ?? r.totalTradedQuantity ?? r.totalVolume ?? r.volume ?? r.vol ?? prev?.volume ?? 0) || 0;
     const turnover = Number(r.totalTradeValue ?? r.totalTradedValue ?? r.turnover ?? prev?.turnover ?? Math.round(vol * ltp)) || Math.round(vol * ltp);
-    const tx = Number(r.totalTrades ?? r.totalTransactions ?? r.transactions ?? r.trans ?? prev?.transactions ?? 0) || 0;
-    const hi52 = Number(r.fiftyTwoWeekHigh ?? r.high52w ?? prev?.high52w ?? +(ltp * 1.15).toFixed(1));
-    const lo52 = Number(r.fiftyTwoWeekLow ?? r.low52w ?? prev?.low52w ?? +(ltp * 0.85).toFixed(1));
+    const rawHi52 = r.fiftyTwoWeekHigh ?? r.high52w ?? prev?.high52w ?? null;
+    const hi52 = (rawHi52 !== null && rawHi52 !== undefined && !isNaN(Number(rawHi52))) ? Number(rawHi52) : null;
+    const rawLo52 = r.fiftyTwoWeekLow ?? r.low52w ?? prev?.low52w ?? null;
+    const lo52 = (rawLo52 !== null && rawLo52 !== undefined && !isNaN(Number(rawLo52))) ? Number(rawLo52) : null;
 
     // Preserve authentic company name and sector from universe map if incoming is only symbol
     const uni = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.find(u => u && u.symbol === sym) : null;
@@ -982,13 +968,9 @@ function normalizeLiveArray(arr) {
         volumeSurgeRatio = +(vol / avgVol).toFixed(2);
       }
     }
-    if (volumeSurgeRatio === null) {
-      volumeSurgeRatio = vol > 1000 ? +(1.0 + Math.min(2.0, (vol / 50000) * 0.5)).toFixed(2) : 1.0;
-    }
-
     const rawZ = r.volumeZScore ?? prev?.volumeZScore ?? null;
     let volumeZScore = (rawZ !== null && rawZ !== undefined && isFinite(Number(rawZ))) ? Number(rawZ) : null;
-    if (volumeZScore === null) {
+    if (volumeZScore === null && volumeSurgeRatio !== null) {
       volumeZScore = +((volumeSurgeRatio - 1.0) * 1.5).toFixed(2);
     }
 
@@ -1038,6 +1020,24 @@ function normalizeLiveArray(arr) {
 
     // dpi must be declared here — it is referenced in out.push() but was previously undefined
     const dpi = Number(r.dpi ?? prev?.dpi ?? null) || null;
+    const tx = Number(r.totalTrades ?? r.totalTransactions ?? r.transactions ?? prev?.transactions ?? 0) || 0;
+
+    // Preserve authentic broker summary and broker concentration metrics
+    const brokerAnalysis = r.brokerAnalysis || prev?.brokerAnalysis || null;
+    const bcr3BuyPct = Number(r.bcr3BuyPct ?? brokerAnalysis?.bcr3BuyPct ?? prev?.bcr3BuyPct ?? 0);
+    const bcr5BuyPct = Number(r.bcr5BuyPct ?? brokerAnalysis?.bcr5BuyPct ?? prev?.bcr5BuyPct ?? 0);
+    const bcr3SellPct = Number(r.bcr3SellPct ?? brokerAnalysis?.bcr3SellPct ?? prev?.bcr3SellPct ?? 0);
+    const bcr5SellPct = Number(r.bcr5SellPct ?? brokerAnalysis?.bcr5SellPct ?? prev?.bcr5SellPct ?? 0);
+    const nbar = Number(r.nbar ?? brokerAnalysis?.nbar ?? prev?.nbar ?? 0);
+    const lbas = Number(r.lbas ?? brokerAnalysis?.lbas ?? prev?.lbas ?? 0);
+    const topBuyers = r.topBuyers || brokerAnalysis?.topBuyers || prev?.topBuyers || [];
+    const topSellers = r.topSellers || brokerAnalysis?.topSellers || prev?.topSellers || [];
+    const topNetBuyers = r.topNetBuyers || brokerAnalysis?.topNetBuyers || prev?.topNetBuyers || [];
+    const topNetSellers = r.topNetSellers || brokerAnalysis?.topNetSellers || prev?.topNetSellers || [];
+
+    if (brokerAnalysis && brokerAnalysis.isRealFloorsheet) {
+      setCachedBrokerData(sym, brokerAnalysis);
+    }
 
     // C3: Classify liquidity based on today's turnover
     const liquidity = classifyLiquidity({ turnover });
@@ -1055,6 +1055,17 @@ function normalizeLiveArray(arr) {
       volume: vol, totalTradedQuantity: vol, totalTradeQuantity: vol,
       turnover, totalTurnover: turnover, totalTradeValue: turnover,
       transactions: tx, totalTransactions: tx, totalTrades: tx,
+      brokerAnalysis,
+      bcr3BuyPct,
+      bcr5BuyPct,
+      bcr3SellPct,
+      bcr5SellPct,
+      nbar,
+      lbas,
+      topBuyers,
+      topSellers,
+      topNetBuyers,
+      topNetSellers,
       high52w: hi52, low52w: lo52,
       week52HighDist: hi52 ? +(((ltp - hi52) / hi52) * 100).toFixed(2) : null,
       week52LowDist: lo52 ? +(((ltp - lo52) / lo52) * 100).toFixed(2) : null,
@@ -2271,8 +2282,8 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   const todayIso = formatNptDateIso(new Date());
   const lastTradingIso = mkt.lastTradingDay ? formatNptDateIso(mkt.lastTradingDay) : getLatestTradingDateStr();
   const dateCandidates = date
-    ? [date, lastTradingIso, todayIso, '2026-10-13', '2026-10-12', '2026-10-09'].filter(Boolean)
-    : (mkt.isOpen ? [todayIso, lastTradingIso, '2026-10-13', '2026-10-12'] : [lastTradingIso, todayIso, '2026-10-13', '2026-10-12']).filter(Boolean);
+    ? [date, lastTradingIso, todayIso, '2026-10-14', '2026-10-13', '2026-10-12', '2026-10-09'].filter(Boolean)
+    : (mkt.isOpen ? [todayIso, lastTradingIso, '2026-10-14', '2026-10-13', '2026-10-12'] : [lastTradingIso, todayIso, '2026-10-14', '2026-10-13', '2026-10-12']).filter(Boolean);
   const uniqueDates = Array.from(new Set(dateCandidates));
 
   // Direct authentic Chukul exchange floorsheet fallback for individual equities
@@ -2382,6 +2393,42 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
     businessDate: date || '',
     isReal: true
   };
+}
+
+let marketWideBrokerSummaryMapCache = { timestamp: 0, data: null };
+
+export function getCachedMarketWideBrokerSummaryMap() {
+  return marketWideBrokerSummaryMapCache.data || null;
+}
+
+export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const now = Date.now();
+  if (
+    !options?.refresh &&
+    marketWideBrokerSummaryMapCache.data &&
+    now - marketWideBrokerSummaryMapCache.timestamp < 3 * 60 * 1000
+  ) {
+    return marketWideBrokerSummaryMapCache.data;
+  }
+
+  try {
+    const res = await fetchFromBackend(`/api/broker-analysis/summary-map?days=${numDays}`, 20000);
+    const map = res?.data || res;
+    if (map && typeof map === 'object' && Object.keys(map).length > 0) {
+      marketWideBrokerSummaryMapCache = { timestamp: now, data: map };
+      for (const [symKey, dataObj] of Object.entries(map)) {
+        if (dataObj && typeof dataObj === 'object') {
+          setCachedRealBrokerAnalysis(symKey, dataObj);
+        }
+      }
+      return map;
+    }
+  } catch (err) {
+    console.warn('[liveData] fetchMarketWideBrokerSummaryMap error:', err.message);
+  }
+
+  return marketWideBrokerSummaryMapCache.data || {};
 }
 
 export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
@@ -2584,100 +2631,13 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
     return cached;
   }
 
-  // Tier 4: Authentic Historical Session Distribution Fallback
-  // If market is closed or exchange returns 0 intraday records, reconstruct broker flows
-  // using the stock's verified historical volume and NEPSE institutional broker market-share weights.
+  // Tier 4: Check or fetch market-wide summary map
   try {
-    const candles = getCachedRealPriceHistory(sym);
-    if (Array.isArray(candles) && candles.length > 0) {
-      const lastCandle = candles[candles.length - 1];
-      const candleVol = Number(lastCandle.volume || lastCandle.vol || 0);
-      const candleClose = Number(lastCandle.close || lastCandle.c || lastCandle.rate || 100);
-      const candleDate = String(lastCandle.date || lastCandle.businessDate || new Date().toISOString().split('T')[0]);
-      if (candleVol > 0) {
-        const authenticShareMap = [
-          { id: '58', share: 0.165 },
-          { id: '45', share: 0.125 },
-          { id: '34', share: 0.098 },
-          { id: '49', share: 0.088 },
-          { id: '17', share: 0.075 },
-          { id: '42', share: 0.065 },
-          { id: '28', share: 0.055 },
-          { id: '48', share: 0.048 },
-          { id: '20', share: 0.042 },
-          { id: '57', share: 0.038 },
-          { id: '38', share: 0.035 },
-          { id: '59', share: 0.032 },
-          { id: '62', share: 0.028 },
-          { id: '63', share: 0.026 },
-          { id: '4',  share: 0.024 },
-          { id: '52', share: 0.020 },
-          { id: '14', share: 0.018 },
-          { id: '19', share: 0.018 }
-        ];
-        const isBullishSession = Number(lastCandle.close) >= Number(lastCandle.open || lastCandle.close);
-
-        const histBrokers = authenticShareMap.map((item, idx) => {
-          const brokerVol = Math.max(10, Math.round(candleVol * item.share));
-          const buySkew = isBullishSession
-            ? (idx % 2 === 0 ? 0.65 : 0.40)
-            : (idx % 2 === 0 ? 0.38 : 0.62);
-          const buyQty = Math.round(brokerVol * buySkew);
-          const sellQty = brokerVol - buyQty;
-          const buyAmt = +(buyQty * candleClose).toFixed(2);
-          const sellAmt = +(sellQty * candleClose).toFixed(2);
-          const netQty = buyQty - sellQty;
-          return normalizeBrokerItem({
-            brokerId: item.id,
-            brokerName: getBrokerName(item.id),
-            buyQty,
-            buyAmt,
-            sellQty,
-            sellAmt,
-            netQty,
-            totalQty: brokerVol,
-            avgBuyRate: candleClose,
-            avgSellRate: candleClose,
-            trades: Math.max(1, Math.round(brokerVol / 120))
-          });
-        }).filter(Boolean);
-
-        const histHoldings = histBrokers.filter(b => b.signedHoldQty > 0).sort((a, b) => b.signedHoldQty - a.signedHoldQty);
-        const histBuyers = [...histBrokers].sort((a, b) => b.buyQty - a.buyQty);
-        const histSellers = [...histBrokers].sort((a, b) => b.sellQty - a.sellQty);
-
-        const reconstructed = {
-          symbol: sym,
-          businessDate: candleDate,
-          availableDates: [candleDate],
-          brokers: histBrokers,
-          topHoldings: histHoldings,
-          topBuyers: histBuyers.slice(0, 10),
-          topSellers: histSellers.slice(0, 10),
-          topNetBuyers: histHoldings.slice(0, 10),
-          topNetSellers: histBrokers.filter(b => b.signedHoldQty < 0).sort((a, b) => a.signedHoldQty - b.signedHoldQty).slice(0, 10),
-          dailyFlow: [{
-            date: candleDate,
-            buyVol: candleVol,
-            sellVol: candleVol,
-            turnover: +(candleVol * candleClose).toFixed(2),
-            totalTrades: Math.max(1, Math.round(candleVol / 150)),
-            vwap: candleClose,
-            netFlow: isBullishSession ? Math.round(candleVol * 0.12) : -Math.round(candleVol * 0.12),
-            topBuyer: histBuyers[0],
-            topSeller: histSellers[0]
-          }],
-          totalTrades: Math.max(1, Math.round(candleVol / 150)),
-          totalVolume: candleVol,
-          totalAmount: +(candleVol * candleClose).toFixed(2),
-          adSignal: isBullishSession ? 'Accumulation' : 'Distribution',
-          adStrength: '68.5%',
-          adRatio: isBullishSession ? 0.12 : -0.12,
-          isReal: true,
-          source: 'historical_volume_reconstruction'
-        };
-        return reconstructed;
-      }
+    const marketMap = await fetchMarketWideBrokerSummaryMap(days);
+    if (marketMap && marketMap[sym]) {
+      const item = marketMap[sym];
+      setCachedRealBrokerAnalysis(sym, item);
+      return item;
     }
   } catch (_) {}
 

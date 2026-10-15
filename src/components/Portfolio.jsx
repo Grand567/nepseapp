@@ -2053,7 +2053,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
   };
 
   return (
-    <div style={{ padding: 16 }}>
+    <div className="portfolio-view-container" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 10px' }}>
 
       {/* ── 1. PORTFOLIO TOP SEARCH BAR (Dashboard Styled) ── */}
       <div style={{ position: 'relative', marginBottom: 12 }}>

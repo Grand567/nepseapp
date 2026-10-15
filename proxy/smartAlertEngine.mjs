@@ -391,7 +391,7 @@ export function evaluateStockAlertConditions({
     }
 
     if (topBuyerBrokers.length > 0) {
-      const bNames = topBuyerBrokers.map(b => `Broker ${b.broker}`);
+      const bNames = topBuyerBrokers.map(b => `${getBrokerName(b.broker)} (#${b.broker})`);
       dominantBrokersText = bNames.slice(0, 2).join(' & ');
     }
   }

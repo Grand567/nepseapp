@@ -1,12 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, ExternalLink, Calendar, Bell, Newspaper, ChevronRight } from 'lucide-react';
+import { fetchMarketNews } from '../utils/servicesApi';
+import { NEPALI_NAME_TO_SYMBOL } from '../services/merolaganiNewsService.js';
 
 export default function StockReportsAnnouncementsCard({ symbol = '', companyName = '', sector = '' }) {
   const [activeTab, setActiveTab] = useState('reports'); // 'reports' | 'news' | 'announcements'
+  const [realNews, setRealNews] = useState([]);
   const sym = (symbol || 'STOCK').toUpperCase();
   const displayName = companyName || sym;
   const isHydro = String(sector || '').toLowerCase().includes('hydro');
   const isBank = String(sector || '').toLowerCase().includes('bank') || String(sector || '').toLowerCase().includes('finance');
+
+  useEffect(() => {
+    if (!symbol) return;
+    let isCurrent = true;
+    fetchMarketNews().then(articles => {
+      if (!isCurrent || !Array.isArray(articles)) return;
+      const matching = articles.filter(a => {
+        const text = `${a.title || ''} ${a.headline || ''} ${a.summary || ''}`;
+        if (text.includes(sym)) return true;
+        if (companyName && text.toLowerCase().includes(companyName.toLowerCase())) return true;
+        for (const [npName, s] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
+          if (s === sym && text.includes(npName)) return true;
+        }
+        return false;
+      });
+      setRealNews(matching);
+    }).catch(() => {});
+    return () => { isCurrent = false; };
+  }, [symbol, companyName]);
 
   // Financial Reports grouped by fiscal year (Share Hub Reference frame_046.jpg)
   const reportYears = [
@@ -217,6 +239,65 @@ export default function StockReportsAnnouncementsCard({ symbol = '', companyName
       {/* Company News View (frame_050.jpg) */}
       {activeTab === 'news' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {realNews.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 4 }}>
+              {realNews.map((rn, rIdx) => (
+                <div
+                  key={`rn_${rIdx}`}
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1.5px solid rgba(16, 185, 129, 0.35)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    display: 'flex',
+                    gap: 14,
+                    alignItems: 'flex-start',
+                    cursor: rn.url || rn.link ? 'pointer' : 'default'
+                  }}
+                  onClick={() => {
+                    const target = rn.url || rn.link;
+                    if (target) window.open(target, '_blank');
+                  }}
+                >
+                  <div style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 10,
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Newspaper style={{ width: 20, height: 20, color: '#10b981' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(16,185,129,0.2)', color: '#10b981' }}>
+                        🔴 Live Exchange Disclosure
+                      </span>
+                      <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 700 }}>
+                        {rn.source || 'Financial Portal'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', lineHeight: 1.45, marginBottom: 4 }}>
+                      {rn.title || rn.headline}
+                    </div>
+                    {rn.summary && (
+                      <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.4, marginBottom: 6 }}>
+                        {rn.summary}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>📅 {rn.pubDate || rn.date || 'Today'}</span>
+                      {(rn.url || rn.link) && <span>• Read Full Notice ↗</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {companyNews.map((n, idx) => (
             <div
               key={idx}

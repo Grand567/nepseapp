@@ -18,20 +18,28 @@ export function SmartMoneyBrokerFlowCard({
 }: SmartMoneyBrokerFlowCardProps) {
   const brokerCornering = quantMetrics?.brokerCornering || {};
   const bcr5 = Number(brokerAnalysis?.bcr5BuyPct || brokerCornering.cr5BuyPct || 0);
-  const bcr3 = Number(brokerAnalysis?.bcr3BuyPct || (bcr5 > 0 ? (bcr5 * 0.72).toFixed(1) : 0));
+  const bcr3 = Number(brokerAnalysis?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(brokerAnalysis?.bcr3SellPct || 0);
 
-  const topBuyers = Array.isArray(brokerAnalysis?.topBuyers)
-    ? brokerAnalysis.topBuyers
-    : Array.isArray(brokerAnalysis?.topBuyerBrokers)
-    ? brokerAnalysis.topBuyerBrokers
-    : [];
+  const netAccumulators: any[] = Array.isArray(brokerAnalysis?.topNetAccumulators) && brokerAnalysis.topNetAccumulators.length > 0
+    ? brokerAnalysis.topNetAccumulators
+    : Array.isArray(brokerAnalysis?.topNetBuyers) && brokerAnalysis.topNetBuyers.length > 0
+    ? brokerAnalysis.topNetBuyers
+    : (Array.isArray(brokerAnalysis?.topBuyers)
+        ? brokerAnalysis.topBuyers.filter((b: any) => Number(b.netQty) > 0)
+        : Array.isArray(brokerAnalysis?.topBuyerBrokers)
+        ? brokerAnalysis.topBuyerBrokers.filter((b: any) => Number(b.netQty) > 0)
+        : []);
 
-  const topSellers = Array.isArray(brokerAnalysis?.topSellers)
-    ? brokerAnalysis.topSellers
-    : Array.isArray(brokerAnalysis?.topSellerBrokers)
-    ? brokerAnalysis.topSellerBrokers
-    : [];
+  const netDistributors: any[] = Array.isArray(brokerAnalysis?.topNetDistributors) && brokerAnalysis.topNetDistributors.length > 0
+    ? brokerAnalysis.topNetDistributors
+    : Array.isArray(brokerAnalysis?.topNetSellers) && brokerAnalysis.topNetSellers.length > 0
+    ? brokerAnalysis.topNetSellers
+    : (Array.isArray(brokerAnalysis?.topSellers)
+        ? brokerAnalysis.topSellers.filter((s: any) => Number(s.netQty) < 0)
+        : Array.isArray(brokerAnalysis?.topSellerBrokers)
+        ? brokerAnalysis.topSellerBrokers.filter((s: any) => Number(s.netQty) < 0)
+        : []);
 
   const isDumping = Boolean(
     (bcr3Sell > bcr3) && (
@@ -50,12 +58,12 @@ export function SmartMoneyBrokerFlowCard({
   // Requires concentration >40% AND strictly NO institutional dumping!
   const isInstitutionalAccumulation = (bcr3 >= 40.0 || (bcr5 >= 50.0 && bcr3 >= 36.0)) && !isDumping;
 
-  const top3BuyerNames = topBuyers.slice(0, 3).map((b: any) => {
+  const top3BuyerNames = netAccumulators.slice(0, 3).map((b: any) => {
     const id = b.brokerId || b.broker || b.brokerNo || b.memberId || b.id || '';
     return id ? `#${id}` : '';
   }).filter(Boolean);
 
-  const top3SellerNames = topSellers.slice(0, 3).map((s: any) => {
+  const top3SellerNames = netDistributors.slice(0, 3).map((s: any) => {
     const id = s.brokerId || s.broker || s.brokerNo || s.memberId || s.id || '';
     return id ? `#${id}` : '';
   }).filter(Boolean);

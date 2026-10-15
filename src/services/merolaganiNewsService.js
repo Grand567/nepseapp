@@ -164,15 +164,22 @@ export function analyzePoliticalAndMarketPulse(newsArticles = []) {
   let riskScore = 0;
   const highlights = [];
 
+  const zeroDivTerms = ['लाभांश वितरण नगर्ने', 'लाभांश नदिने', 'लाभांश नबाँड्ने', 'शून्य लाभांश', 'no dividend', 'zero dividend'];
   const positiveTerms = ['लाभांश', 'बोनस', 'ब्याजदर घट्यो', 'सहमति', 'सुधार', 'वृद्धि', 'उद्धार', 'नाफा', 'कर्जा सहज', 'सहयोग'];
   const riskTerms = ['बाढी', 'पहिरो', 'बेपत्ता', 'अन्तरिम आदेश', 'विवाद', 'गिरावट', 'घोटाला', 'कारबाही', 'घाटा', 'संसदीय छानबिन'];
   const politicalTerms = ['सरकार', 'मन्त्री', 'महाधिवेशन', 'संसद', 'सर्वोच्च', 'राजनीतिक', 'कांग्रेस', 'एमाले', 'माओवादी', 'प्रधानमन्त्री'];
 
-  newsArticles.slice(0, 10).forEach(article => {
-    const t = article.title;
+  newsArticles.slice(0, 15).forEach(article => {
+    const t = article.title || article.headline || '';
     highlights.push(t);
 
-    positiveTerms.forEach(term => { if (t.includes(term)) positiveScore += 1; });
+    const isZeroDiv = zeroDivTerms.some(z => t.includes(z));
+    if (isZeroDiv) {
+      riskScore += 2.0; // Severe scrip risk
+    } else {
+      positiveTerms.forEach(term => { if (t.includes(term)) positiveScore += 1; });
+    }
+
     riskTerms.forEach(term => { if (t.includes(term)) riskScore += 1; });
     politicalTerms.forEach(term => {
       if (t.includes(term)) {
@@ -199,6 +206,184 @@ export function analyzePoliticalAndMarketPulse(newsArticles = []) {
     keyHighlights: highlights.slice(0, 4),
     summary: `Merolagani News Pulse indicates ${sentiment} (Macro Score: ${score}/100). Institutional players are pricing in monetary liquidity alongside political headlines.`
   };
+}
+
+export const NEPALI_NAME_TO_SYMBOL = {
+  'स्वाभिमान': 'SMFBS',
+  'एनआईएमबी एस क्यापिटल': 'NIMB',
+  'एस क्यापिटल': 'NIMB',
+  'मुक्तिनाथ': 'MNBBL',
+  'सानिमा': 'SANIMA',
+  'कुमारी': 'KBL',
+  'सिटिजन्स': 'CZBIL',
+  'प्राइम': 'PCBL',
+  'माछापुच्छ्रे': 'MBL',
+  'ग्लोबल आइएमई': 'GBIME',
+  'नेपाल इन्भेष्टमेन्ट': 'NIMB',
+  'नबिल': 'NABIL',
+  'शिखर': 'SICL',
+  'एनएलजी': 'NLG',
+  'नेपाल टेलिकम': 'NTC',
+  'शिवम': 'SHIVM',
+  'सोल्टी': 'SHL',
+  'साहस': 'SAHAS',
+  'अपी': 'API',
+  'न्यादी': 'NYADI',
+  'माउन्टेन इनर्जी': 'MEN',
+  'सिइडिबी': 'CHDC',
+  'कामना सेवा': 'KSBBL',
+  'गरिमा': 'GBBL',
+  'महालक्ष्मी': 'MLBL',
+  'ज्योति': 'JBBL',
+  'सांग्रिला': 'SADBL',
+  'शाइन': 'SHINE',
+  'लुम्बिनी विकास': 'LBBL',
+  'मन्जुश्री': 'MFIL',
+  'गुहेश्वरी': 'GMFIL',
+  'गुडविल': 'GWFD',
+  'आइसिएफसी': 'ICFC',
+  'श्री इन्भेष्टमेन्ट': 'SIFC',
+  'पोखरा फाइनान्स': 'PFL',
+  'जानकी': 'JFL',
+  'सेन्ट्रल': 'CFCL',
+  'प्रोग्रेसिभ': 'PROFL',
+  'रिलायन्स': 'RLF',
+  'मल्टिपर्पस': 'MPFL',
+  'बेस्ट फाइनान्स': 'BFC',
+  'छिमेक': 'CBBL',
+  'निर्धन उत्थान': 'NUBL',
+  'डिप्रोक्स': 'DDBL',
+  'सानाकिसान': 'SKBBL',
+  'महिला लघुवित्त': 'MLBSL',
+  'आशा लघुवित्त': 'ALBSL',
+  'फरवार्ड': 'FOWAD',
+  'जीवन विकास': 'JBLB',
+  'नेपाल एसबिआई': 'SBI',
+  'एभरेष्ट': 'EBL',
+  'प्रभु': 'PRVU',
+  'सिद्धार्थ': 'SBL',
+  'नेपाल बैंक': 'NBL',
+  'कृषि विकास': 'ADBL',
+  'लक्ष्मी सनराइज': 'LSL',
+  'एनआइसी एशिया': 'NICA',
+  'नेपाल लाइफ': 'NLIC',
+  'नेशनल लाइफ': 'NLICL',
+  'लाइफ इन्स्योरेन्स कर्पोरेसन': 'LICN',
+  'सूर्यज्योति': 'SJLIC',
+  'एशियन लाइफ': 'ALICL',
+  'हिमालयन लाइफ': 'HLI',
+  'सन नेपाल': 'SNLI',
+  'आइएमई लाइफ': 'ILI',
+  'सिटिजन लाइफ': 'CLI',
+  'रिलायबल नेपाल': 'RNLI',
+  'सिद्धार्थ प्रिमियर': 'SPIL',
+  'सगरमाथा लुम्बिनी': 'SALICO',
+  'हिमालयन एभरेष्ट': 'HEI',
+  'सानिमा जिआइसी': 'SGIC',
+  'आइजीआई': 'IGI',
+  'प्रभु इन्स्योरेन्स': 'PRIN',
+  'नेको': 'NIL',
+  'युनाइटेड अजोड': 'UAJIL',
+  'सिक्लेस': 'SIKLES',
+  'सान्जेन': 'SJCL',
+  'रसुवागढी': 'RGHP',
+  'तामाकोशी': 'UPPER',
+  'चिलिमे': 'CHCL',
+  'बुटवल पावर': 'BPCL',
+  'अरुण भ्याली': 'AHPC',
+  'अरुण काबेली': 'AKPL',
+  'पिपल्स पावर': 'PPCL',
+  'हिमाल दोलखा': 'HDHPC',
+  'मध्य भोटेकोशी': 'MBJC',
+  'सिटी होटल': 'CITY',
+  'तारागाउँ': 'TRH',
+  'नेपाल पुनर्बीमा': 'NRIC',
+  'हिमालयन रि': 'HRL',
+  'नागरिक लगानी': 'CIT',
+  'हाथवे': 'HATHY'
+};
+
+export function resolveSymbolFromText(text) {
+  if (!text) return null;
+  const symMatch = text.match(/\(([A-Z0-9]+)\)/) || text.match(/\b([A-Z]{3,6})\b/);
+  if (symMatch) return symMatch[1].toUpperCase();
+
+  for (const [nepaliName, sym] of Object.entries(NEPALI_NAME_TO_SYMBOL)) {
+    if (text.includes(nepaliName)) return sym;
+  }
+  return null;
+}
+
+/**
+ * Scans breaking headlines for corporate actions (dividends declared, zero-dividend decisions, AGMs).
+ */
+export function detectCorporateActionAlerts(newsArticles = []) {
+  const zeroDivAlerts = [];
+  const dividendDeclarations = [];
+
+  const zeroDivTerms = ['लाभांश वितरण नगर्ने', 'लाभांश नदिने', 'लाभांश नबाँड्ने', 'शून्य लाभांश', 'no dividend', 'zero dividend'];
+  const divDeclTerms = ['प्रतिशत नगद लाभांश', 'प्रतिशत बोनस', 'प्रतिशत लाभांश', 'लाभांश प्रस्ताव', 'लाभांश पारित'];
+
+  for (const article of (newsArticles || [])) {
+    const text = (article.title || article.headline || '').trim();
+    if (!text) continue;
+
+    const detectedSym = resolveSymbolFromText(text);
+
+    // Detect Zero Dividend announcement
+    const hasZeroDiv = zeroDivTerms.some(term => text.includes(term));
+    if (hasZeroDiv) {
+      zeroDivAlerts.push({
+        type: 'ZERO_DIVIDEND_RISK',
+        symbol: detectedSym,
+        title: text,
+        url: article.url || article.link,
+        source: article.source || 'Breaking Financial News',
+        warning: 'सम्बन्धित संस्थाले यस आर्थिक वर्षका लागि शेयरधनीहरूलाई कुनै पनि लाभांश वितरण नगर्ने निर्णय गरेको छ। बजारमा नकारात्मक मूल्य दबाब तथा सेलिङ प्रेसर हुन सक्ने उच्च जोखिम।'
+      });
+    }
+
+    // Detect Dividend Declaration
+    const hasDivDecl = divDeclTerms.some(term => text.includes(term)) && !hasZeroDiv;
+    if (hasDivDecl) {
+      const pctMatch = text.match(/([०-९0-9.]+)\s*प्रतिशत/);
+      dividendDeclarations.push({
+        type: 'DIVIDEND_DECLARED',
+        symbol: detectedSym,
+        percentage: pctMatch ? pctMatch[1] : null,
+        title: text,
+        url: article.url || article.link,
+        source: article.source || 'Breaking Financial News'
+      });
+    }
+  }
+
+  return { zeroDivAlerts, dividendDeclarations };
+}
+
+/**
+ * Find corporate action alert for a specific symbol
+ */
+export function getCorporateAlertForSymbol(symbol, newsArticles = []) {
+  if (!symbol) return null;
+  const sym = symbol.toUpperCase().trim();
+  const alerts = detectCorporateActionAlerts(newsArticles);
+
+  // Check zero dividend risk first
+  const zeroDiv = alerts.zeroDivAlerts.find(a =>
+    a.symbol === sym ||
+    (a.title && (a.title.includes(sym) || Object.entries(NEPALI_NAME_TO_SYMBOL).some(([np, s]) => s === sym && a.title.includes(np))))
+  );
+  if (zeroDiv) return zeroDiv;
+
+  // Check dividend declared
+  const divDecl = alerts.dividendDeclarations.find(a =>
+    a.symbol === sym ||
+    (a.title && (a.title.includes(sym) || Object.entries(NEPALI_NAME_TO_SYMBOL).some(([np, s]) => s === sym && a.title.includes(np))))
+  );
+  if (divDecl) return divDecl;
+
+  return null;
 }
 
 /**

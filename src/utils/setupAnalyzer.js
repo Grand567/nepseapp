@@ -72,6 +72,7 @@ import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 import { getCachedRealPriceHistory } from './historyCache.js';
+import { getCachedBrokerData } from './liveData.js';
 
 // ══════════════════════════════════════════════════════════════════
 // 0.  CONSTANTS
@@ -125,8 +126,8 @@ export function toAscendingCandles(candles) {
  * @returns {{ adjustedCandles, events, unconfirmedCount }}
  */
 export function adjustForCorporateActionsWithConfirmation(candlesAscending, dividendHistory = []) {
-  // Step 1 — use the proven quantEngine normalizer (identical algorithm)
-  const adjusted = normalizeCorporateActionPrices(candlesAscending);
+  // Step 1 — use the proven quantEngine normalizer with confirmed dividendHistory
+  const adjusted = normalizeCorporateActionPrices(candlesAscending, dividendHistory);
 
   // Step 2 — find which days were flagged and cross-check vs real records
   const events = [];
@@ -180,6 +181,8 @@ export function adjustForCorporateActionsWithConfirmation(candlesAscending, divi
 
   return { adjustedCandles: adjusted, events, unconfirmedCount };
 }
+
+export const adjustForCorporateActions = adjustForCorporateActionsWithConfirmation;
 
 // ══════════════════════════════════════════════════════════════════
 // 3.  CIRCUIT-BREAKER-AWARE TARGET CAPPING (Stage 3 fix)
@@ -676,6 +679,7 @@ export function getStrategyTrackRecord(candlesAscending) {
   let avgWin  = null;
   let avgLoss = null;
   let profitFactor = null;
+  let averageDaysHeld = null;
 
   if (result.trades && result.trades.length > 0) {
     const sells = result.trades.filter((t) => t.type === 'SELL');
@@ -686,18 +690,31 @@ export function getStrategyTrackRecord(candlesAscending) {
     let buyIdx = 0;
     for (const sell of sells) {
       if (buyIdx < buys.length && buys[buyIdx].index < sell.index) {
-        roundTrips.push({ ret: ((sell.price - buys[buyIdx].price) / buys[buyIdx].price) * 100 });
+        roundTrips.push({
+          ret: ((sell.price - buys[buyIdx].price) / buys[buyIdx].price) * 100,
+          daysHeld: Math.max(1, sell.index - buys[buyIdx].index)
+        });
         buyIdx++;
       }
     }
 
     const winTrips  = roundTrips.filter((r) => r.ret > 0);
     const lossTrips = roundTrips.filter((r) => r.ret <= 0);
-    avgWin  = winTrips.length  ? winTrips.reduce((s, r)  => s + r.ret, 0) / winTrips.length  : null;
-    avgLoss = lossTrips.length ? lossTrips.reduce((s, r) => s + r.ret, 0) / lossTrips.length : null;
+    const sumWins   = winTrips.reduce((s, r)  => s + r.ret, 0);
+    const sumLosses = lossTrips.reduce((s, r) => s + Math.abs(r.ret), 0);
 
-    if (avgWin !== null && avgLoss !== null && avgLoss !== 0) {
-      profitFactor = +Math.abs(avgWin / avgLoss).toFixed(2);
+    avgWin  = winTrips.length  ? +(sumWins / winTrips.length).toFixed(2)  : null;
+    avgLoss = lossTrips.length ? +(sumLosses / lossTrips.length).toFixed(2) : null;
+
+    if (sumLosses > 0) {
+      profitFactor = +(sumWins / sumLosses).toFixed(2);
+    } else if (sumWins > 0) {
+      profitFactor = 9.99;
+    }
+
+    if (roundTrips.length > 0) {
+      const totalDays = roundTrips.reduce((s, r) => s + r.daysHeld, 0);
+      averageDaysHeld = +(totalDays / roundTrips.length).toFixed(1);
     }
   }
 
@@ -720,7 +737,7 @@ export function getStrategyTrackRecord(candlesAscending) {
     profitFactor,
     maxDrawdown:   maxDrawdown !== null ? +maxDrawdown.toFixed(2) : null,
     maxDrawdownPct: maxDrawdown !== null ? +maxDrawdown.toFixed(2) : 0,
-    averageDaysHeld: null, // backtest.js does not currently track hold time — null, not fake
+    averageDaysHeld,
     sampleQuality,
   };
 }
@@ -1172,6 +1189,8 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     options = dividendHistoryOrOptions;
     dividendHistory = Array.isArray(options.dividendHistory) ? options.dividendHistory : [];
   }
+
+  const resolvedBrokerAnalysis = options.brokerAnalysis || stock?.brokerAnalysis || (stock?.symbol ? getCachedBrokerData(stock.symbol) : null) || null;
 
   // ── Accept both old (plain array) and new ({ real, data, source }) form ──
   let rawCandles;
@@ -1643,7 +1662,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const minerviniTemplate = evaluateMinerviniTemplate(adjustedCandles, ltp, high52w, low52w);
   const mansfieldRS = calculateMansfieldRS(adjustedCandles, options.nepseCandles);
   const volumeDryUp = calculateVolumeDryUp(adjustedCandles);
-  const brokerCornering = calculateBrokerCorneringScore(options.brokerAnalysis || stock?.brokerAnalysis);
+  const brokerCornering = calculateBrokerCorneringScore(resolvedBrokerAnalysis);
   const t2CircuitGuard = calculateT2CircuitTrapGuard(stock, adjustedCandles);
 
   const dynamicBaseWinRate = Math.max(32, Math.min(76, +(
@@ -1783,7 +1802,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   ];
 
   // ── Broker Floorsheet & Smart Money Integration ───────────────
-  const brokerAnalysis = options.brokerAnalysis || stock?.brokerAnalysis || null;
+  const brokerAnalysis = resolvedBrokerAnalysis;
   const brokerAdRatio = brokerAnalysis?.adRatio ?? 0;
   const brokerAdSignal = brokerAnalysis?.adSignal ?? 'Neutral';
   const brokerAdStrength = parseFloat(brokerAnalysis?.adStrength) || 0;
@@ -1972,6 +1991,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     dataQuality,
     riskGate,
     t2Risk,
+    brokerAnalysis: resolvedBrokerAnalysis,
 
     // ── Advanced Quant Engine Metrics ──
     quantMetrics: {

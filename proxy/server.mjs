@@ -17,7 +17,7 @@ import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.m
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates } from './brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
   getSmartAlertHistory, 
@@ -182,11 +182,11 @@ function sanitizeSymbol(raw) {
 // --- MeroShare Session & WAF Bypass logic ---
 const MEROSHARE_BASE = 'https://webbackend.cdsc.com.np/api/meroShare';
 const MEROSHARE_VIEW_BASE = 'https://webbackend.cdsc.com.np/api/meroShareView';
-const sharedJar = new CookieJar();
 
 const createMeroShareSession = () => {
-  return wrapper(axios.create({
-    jar: sharedJar,
+  const jar = new CookieJar();
+  const client = wrapper(axios.create({
+    jar,
     withCredentials: true,
     timeout: 20000,
     headers: {
@@ -197,6 +197,8 @@ const createMeroShareSession = () => {
       'Referer': 'https://meroshare.cdsc.com.np/',
     }
   }));
+  client.jar = jar;
+  return client;
 };
 
 const isWafBlocked = (response) => {
@@ -220,7 +222,8 @@ const isWafBlocked = (response) => {
 
 const primeSession = async (client) => {
   try {
-    const cookies = sharedJar.getCookiesSync('https://backend.cdsc.com.np');
+    const jar = client?.jar;
+    const cookies = jar ? jar.getCookiesSync('https://backend.cdsc.com.np') : [];
     if (cookies && cookies.length > 0) return;
   } catch (e) {}
 
@@ -506,10 +509,100 @@ app.get('/api/nepse/diagnostics', (req, res) => {
   });
 });
 
+/**
+ * Enriches an array of stocks with real floorsheet broker concentration data (BCR3/5, NBAR, LBAS, Top Net Desks).
+ */
+export async function enrichStocksWithBrokerSummary(stocks) {
+  if (!Array.isArray(stocks) || stocks.length === 0) return stocks;
+  try {
+    const brokerMap = await getMarketWideBrokerSummaryMap();
+    if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
+      return stocks.map(stock => {
+        const sym = String(stock.symbol || '').toUpperCase().trim();
+        const bData = brokerMap[sym] || null;
+        return {
+          ...stock,
+          brokerAnalysis: bData,
+          brokerConcentration: bData,
+          concentrationPct: bData ? (bData.concentrationPct ?? bData.bcr3BuyPct ?? 0) : (stock.concentrationPct ?? 0),
+          bcr3BuyPct: bData ? bData.bcr3BuyPct : (stock.bcr3BuyPct ?? 0),
+          bcr5BuyPct: bData ? bData.bcr5BuyPct : (stock.bcr5BuyPct ?? 0),
+          bcr3SellPct: bData ? bData.bcr3SellPct : (stock.bcr3SellPct ?? 0),
+          bcr5SellPct: bData ? bData.bcr5SellPct : (stock.bcr5SellPct ?? 0),
+          nbar: bData ? bData.nbar : (stock.nbar ?? 1.0),
+          lbas: bData ? bData.lbas : (stock.lbas ?? 0),
+          crb5: bData ? bData.crb5 : (stock.crb5 ?? 0),
+          adSignal: bData ? bData.adSignal : (stock.adSignal || 'Neutral'),
+          adStrength: bData ? bData.adStrength : (stock.adStrength || '0%'),
+          adRatio: bData ? bData.adRatio : (stock.adRatio ?? 0),
+          topBuyers: bData ? bData.topBuyers : (stock.topBuyers || []),
+          topSellers: bData ? bData.topSellers : (stock.topSellers || []),
+          topNetBuyers: bData ? bData.topNetBuyers : (stock.topNetBuyers || []),
+          topNetSellers: bData ? bData.topNetSellers : (stock.topNetSellers || []),
+          topAccumulator: bData ? bData.topAccumulator : (stock.topAccumulator || null),
+          topDistributor: bData ? bData.topDistributor : (stock.topDistributor || null)
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('[proxy] enrichStocksWithBrokerSummary error:', err.message);
+  }
+  return stocks.map(stock => ({
+    ...stock,
+    brokerAnalysis: stock.brokerAnalysis || null,
+    brokerConcentration: stock.brokerConcentration || null
+  }));
+}
+
 app.get('/api/market-summary', async (req, res) => {
   const cacheKey = 'market-summary';
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, source: 'live', cached: true });
+
+  // 1. Primary: Official NEPSE NOTS / Nepseman via nepseManager
+  try {
+    const market = await nepseManager.getLiveOrClosingMarket();
+    if (market && Array.isArray(market.data) && market.data.length > 50) {
+      const stocks = market.data.map(item => {
+        const symbol = String(item.symbol || '').toUpperCase().trim();
+        const ltp = Number(item.lastTradedPrice || item.closePrice || 0);
+        const prevClose = Number(item.previousClose || item.previousDayClosePrice || item.prevClose || ltp);
+        const change = Number(item.pointChange !== undefined ? item.pointChange : (ltp - prevClose));
+        const pChange = prevClose > 0 ? Number((((ltp - prevClose) / prevClose) * 100).toFixed(2)) : Number(item.percentageChange || 0);
+        const open = Number(item.openPrice || ltp);
+        const high = Number(item.highPrice || ltp);
+        const low = Number(item.lowPrice || ltp);
+        const volume = Number(item.totalTradedQuantity || item.volume || 0);
+        const turnover = Number(item.totalTradedValue || item.turnover || (ltp * volume));
+
+        return {
+          symbol,
+          name: item.securityName || symbol,
+          ltp,
+          change: isNaN(change) ? 0 : +change.toFixed(2),
+          pChange: isNaN(pChange) ? 0 : +pChange.toFixed(2),
+          open: isNaN(open) ? ltp : open,
+          high: isNaN(high) ? ltp : high,
+          low: isNaN(low) ? ltp : low,
+          prevClose: isNaN(prevClose) ? ltp : prevClose,
+          volume: isNaN(volume) ? 0 : volume,
+          turnover: isNaN(turnover) ? 0 : turnover,
+          rsi: calcRSI(isNaN(pChange) ? 0 : pChange),
+          macd: calcMACD(isNaN(pChange) ? 0 : pChange),
+          sector: item.sectorName || 'Unknown',
+          source: market.source || 'nepse-official'
+        };
+      }).filter(s => s.symbol && s.ltp > 0);
+
+      if (stocks.length > 0) {
+        const enriched = await enrichStocksWithBrokerSummary(stocks);
+        setCache(cacheKey, enriched, 45000);
+        return res.json({ success: true, data: enriched, source: market.source || 'nepse-official' });
+      }
+    }
+  } catch (nmErr) {
+    console.warn('[proxy] nepseManager.getLiveOrClosingMarket failed for market-summary:', nmErr.message);
+  }
 
   try {
     const response = await axios.get('https://www.sharesansar.com/live-trading', {
@@ -557,8 +650,9 @@ app.get('/api/market-summary', async (req, res) => {
     });
 
     if (stocks.length > 0) {
-      setCache(cacheKey, stocks, 45000);
-      return res.json({ success: true, data: stocks, source: 'live' });
+      const enriched = await enrichStocksWithBrokerSummary(stocks);
+      setCache(cacheKey, enriched, 45000);
+      return res.json({ success: true, data: enriched, source: 'live' });
     } else {
       throw new Error('No live trading data found from ShareSansar');
     }
@@ -567,8 +661,9 @@ app.get('/api/market-summary', async (req, res) => {
     try {
       const mero = await fetchInternalMeroMarketSummary();
       if (mero && mero.stocks && mero.stocks.length > 0) {
-        setCache(cacheKey, mero.stocks, 45000);
-        return res.json({ success: true, data: mero.stocks, source: 'merolagani-live' });
+        const enriched = await enrichStocksWithBrokerSummary(mero.stocks);
+        setCache(cacheKey, enriched, 45000);
+        return res.json({ success: true, data: enriched, source: 'merolagani-live' });
       }
     } catch (meroErr) {
       console.error('[proxy] MeroLagani fallback error:', meroErr.message);
@@ -578,10 +673,10 @@ app.get('/api/market-summary', async (req, res) => {
 });
 
 let LAST_GOOD_INDICES = {
-  nepse: { value: 2654.28, change: 7.06, pChange: 0.26, open: 2650.19, high: 2662.71, low: 2637.57, prevClose: 2647.22, turnover: 7050398624.96 },
-  sensitive: { value: 473.79, change: 2.71, pChange: 0.57, open: 471.51, high: 473.94, low: 469.90, prevClose: 471.08 },
-  float: { value: 182.99, change: 0.53, pChange: 0.29, open: 182.81, high: 183.53, low: 181.82, prevClose: 182.46 },
-  sensitiveFloat: { value: 160.00, change: 0.68, pChange: 0.42, open: 159.45, high: 160.29, low: 158.80, prevClose: 159.32 },
+  nepse: { value: 2621.26, change: 21.32, pChange: 0.82, open: 2603.48, high: 2632.11, low: 2598.15, prevClose: 2599.94, turnover: 4136161331.43 },
+  sensitive: { value: 466.82, change: 3.45, pChange: 0.74, open: 463.50, high: 468.20, low: 462.10, prevClose: 463.37 },
+  float: { value: 181.12, change: 1.48, pChange: 0.82, open: 179.80, high: 181.90, low: 179.40, prevClose: 179.64 },
+  sensitiveFloat: { value: 157.90, change: 1.15, pChange: 0.73, open: 156.80, high: 158.40, low: 156.20, prevClose: 156.75 },
   subIndices: []
 };
 
@@ -769,8 +864,9 @@ app.get('/api/today-prices', async (req, res) => {
           sector: item.sector || stockMap[item.symbol]?.sector || 'Unknown',
           source: 'smartwealthpro-mdp'
         }));
-        setCache(cacheKey, normalized, 30000);
-        return res.json({ success: true, data: normalized, source: 'smartwealthpro-mdp', count: normalized.length });
+        const enriched = await enrichStocksWithBrokerSummary(normalized);
+        setCache(cacheKey, enriched, 30000);
+        return res.json({ success: true, data: enriched, source: 'smartwealthpro-mdp', count: enriched.length });
       }
     } catch (e) {
       console.warn('[proxy] MDP today-prices query error, falling back to scrapers:', e.message);
@@ -809,8 +905,9 @@ app.get('/api/today-prices', async (req, res) => {
       }).filter(s => s.symbol && s.ltp > 0);
 
       if (normalized.length > 50) {
-        setCache(cacheKey, normalized, 30000);
-        return res.json({ success: true, data: normalized, source: market.source || 'nepse-nots', count: normalized.length });
+        const enriched = await enrichStocksWithBrokerSummary(normalized);
+        setCache(cacheKey, enriched, 30000);
+        return res.json({ success: true, data: enriched, source: market.source || 'nepse-nots', count: enriched.length });
       }
     }
   } catch (notsErr) {
@@ -882,8 +979,9 @@ app.get('/api/today-prices', async (req, res) => {
       return res.status(200).json({ success: false, message: 'Could not parse today\'s price table.', stocks: [] });
     }
 
-    setCache(cacheKey, stocks, 30000); // 30s TTL
-    res.json({ success: true, data: stocks, source: 'closing', count: stocks.length });
+    const enriched = await enrichStocksWithBrokerSummary(stocks);
+    setCache(cacheKey, enriched, 30000); // 30s TTL
+    res.json({ success: true, data: enriched, source: 'closing', count: enriched.length });
   } catch (error) {
     console.error('[today-prices] Error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to fetch today\'s prices.', error: error.message });
@@ -2974,7 +3072,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     if (cleanSym && (rows.length < 15 && !buyer && !seller && !broker && minQty === 0 && minAmount === 0)) {
       try {
         const mktStatus = getDetailedMarketStatus();
-        const lastTradingDayStr = mktStatus?.lastTradingDay ? (typeof mktStatus.lastTradingDay === 'string' ? mktStatus.lastTradingDay.split('T')[0] : mktStatus.lastTradingDay.toISOString().split('T')[0]) : '2026-10-13';
+        const lastTradingDayStr = mktStatus?.lastTradingDay ? (typeof mktStatus.lastTradingDay === 'string' ? mktStatus.lastTradingDay.split('T')[0] : mktStatus.lastTradingDay.toISOString().split('T')[0]) : '2026-10-14';
         const targetDt = businessDate || (mktStatus?.isOpen ? new Date().toISOString().split('T')[0] : lastTradingDayStr);
         let directRows = await fetchChukulDateFloorsheet(cleanSym, targetDt);
         if (!directRows || directRows.length === 0) {
@@ -3202,138 +3300,18 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     const dateFilter = new Set(sortedDates);
     const filtered = raw.filter(r => !r.businessDate || dateFilter.has(r.businessDate));
 
-    // Aggregate per broker
-    const brokerMap = {};
-    let totalBuyVol = 0, totalAmount = 0;
+    // Route fallback filtered array directly through aggregateFloorsheetRows
+    const aggregated = aggregateFloorsheetRows(filtered, symbol, sortedDates);
+    if (aggregated) {
+      setCache(cacheKey, aggregated, 10 * 60 * 1000);
+      return res.json({ success: true, data: aggregated, source: 'floorsheet_aggregated' });
+    }
 
-    filtered.forEach(item => {
-      const buyBroker = String(item.buyerMemberId || item.buyerBroker || '?');
-      const sellBroker = String(item.sellerMemberId || item.sellerBroker || '?');
-      const buyName = item.buyerBrokerName || `Broker ${buyBroker}`;
-      const sellName = item.sellerBrokerName || `Broker ${sellBroker}`;
-      const qty = Number(item.contractQuantity || 0);
-      const amount = Number(item.contractAmount || 0);
-
-      if (!brokerMap[buyBroker]) brokerMap[buyBroker] = { broker: buyBroker, name: buyName, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
-      if (!brokerMap[sellBroker]) brokerMap[sellBroker] = { broker: sellBroker, name: sellName, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
-
-      brokerMap[buyBroker].buyQty += qty;
-      brokerMap[buyBroker].buyAmt += amount;
-      brokerMap[sellBroker].sellQty += qty;
-      brokerMap[sellBroker].sellAmt += amount;
-      totalBuyVol += qty;
-      totalAmount += amount;
+    res.status(503).json({
+      success: false,
+      message: `Floorsheet records insufficient for broker analysis of ${symbol}`,
+      data: null
     });
-
-    const brokers = Object.values(brokerMap).map(b => ({
-      ...b,
-      netQty: b.buyQty - b.sellQty,
-      netAmt: b.buyAmt - b.sellAmt,
-      totalQty: b.buyQty + b.sellQty,
-      avgBuyRate: b.buyQty > 0 ? Number((b.buyAmt / b.buyQty).toFixed(2)) : 0,
-      avgSellRate: b.sellQty > 0 ? Number((b.sellAmt / b.sellQty).toFixed(2)) : 0,
-    })).sort((a, b) => b.totalQty - a.totalQty);
-
-    const topBuyers = [...brokers].sort((a, b) => b.buyQty - a.buyQty).slice(0, 5);
-    const topSellers = [...brokers].sort((a, b) => b.sellQty - a.sellQty).slice(0, 5);
-    const topNetBuyers = [...brokers].filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty).slice(0, 5);
-    const topNetSellers = [...brokers].filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty).slice(0, 5);
-
-    const netBuyerQty = topNetBuyers.reduce((s, b) => s + b.netQty, 0);
-    const netSellerQty = Math.abs(topNetSellers.reduce((s, b) => s + b.netQty, 0));
-    const adRatio = totalBuyVol > 0 ? (netBuyerQty - netSellerQty) / totalBuyVol : 0;
-    const adSignal = adRatio > 0.05 ? 'Accumulation' : adRatio < -0.05 ? 'Distribution' : 'Neutral';
-    const adStrength = Math.min(Math.abs(adRatio) * 100, 100).toFixed(1);
-
-    const dailyFlow = sortedDates.map(date => {
-      const dayRows = filtered.filter(r => r.businessDate === date);
-      const dayBrokerMap = {};
-      let dayTurnover = 0;
-      dayRows.forEach(r => {
-        const buyB = String(r.buyerMemberId || r.buyerBroker || '?');
-        const sellB = String(r.sellerMemberId || r.sellerBroker || '?');
-        const q = Number(r.contractQuantity || 0);
-        dayTurnover += Number(r.contractAmount || 0);
-        if (!dayBrokerMap[buyB]) dayBrokerMap[buyB] = { buy: 0, sell: 0 };
-        if (!dayBrokerMap[sellB]) dayBrokerMap[sellB] = { buy: 0, sell: 0 };
-        dayBrokerMap[buyB].buy += q;
-        dayBrokerMap[sellB].sell += q;
-      });
-      const db = Object.values(dayBrokerMap);
-      const instBuy = db.filter(b => b.buy > b.sell).reduce((s, b) => s + b.buy, 0);
-      const instSell = db.filter(b => b.sell > b.buy).reduce((s, b) => s + b.sell, 0);
-      return {
-        date,
-        buyVol: instBuy + instSell,
-        sellVol: instBuy + instSell,
-        netFlow: instBuy - instSell,
-        turnover: dayTurnover,
-        totalTrades: dayRows.length
-      };
-    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-
-    const buyers = topBuyers.map(b => ({
-      brokerId: parseInt(b.broker, 10) || b.broker,
-      brokerName: b.name,
-      buyQty: b.buyQty,
-      buyAmount: b.buyAmt,
-      avgRate: b.avgBuyRate
-    }));
-    const sellers = topSellers.map(b => ({
-      brokerId: parseInt(b.broker, 10) || b.broker,
-      brokerName: b.name,
-      sellQty: b.sellQty,
-      sellAmount: b.sellAmt,
-      avgRate: b.avgSellRate
-    }));
-    const top3Buy = buyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
-    const concentrationPct = totalBuyVol > 0 ? +((top3Buy / totalBuyVol) * 100).toFixed(1) : 0;
-    const topAccumulator = topNetBuyers[0] ? {
-      brokerId: parseInt(topNetBuyers[0].broker, 10) || topNetBuyers[0].broker,
-      brokerName: topNetBuyers[0].name,
-      buyQty: topNetBuyers[0].buyQty,
-      buyAmount: topNetBuyers[0].buyAmt,
-      avgRate: topNetBuyers[0].avgBuyRate,
-      netQty: topNetBuyers[0].netQty
-    } : (buyers[0] || null);
-    const topDistributor = topNetSellers[0] ? {
-      brokerId: parseInt(topNetSellers[0].broker, 10) || topNetSellers[0].broker,
-      brokerName: topNetSellers[0].name,
-      sellQty: topNetSellers[0].sellQty,
-      sellAmount: topNetSellers[0].sellAmt,
-      avgRate: topNetSellers[0].avgSellRate,
-      netQty: Math.abs(topNetSellers[0].netQty)
-    } : (sellers[0] || null);
-    const smartMoneyPhase = adSignal === 'Accumulation' ? 'Institutional Stealth Accumulation' : adSignal === 'Distribution' ? 'Retail Distribution' : 'Neutral Range';
-
-    const data = {
-      symbol,
-      period: `${days} days`,
-      timeframe: days <= 7 ? '1W' : days <= 30 ? '1M' : days <= 90 ? '3M' : days <= 180 ? '6M' : '1Y',
-      tradingDays: sortedDates.length,
-      totalTrades: filtered.length,
-      totalVolume: totalBuyVol,
-      totalAmount,
-      totalTurnover: totalAmount,
-      concentrationPct,
-      buyers,
-      sellers,
-      topAccumulator,
-      topDistributor,
-      smartMoneyPhase,
-      adSignal,
-      adStrength: `${adStrength}%`,
-      adRatio: Number(adRatio.toFixed(4)),
-      brokers: brokers.slice(0, 30),
-      topBuyers,
-      topSellers,
-      topNetBuyers,
-      topNetSellers,
-      dailyFlow
-    };
-
-    setCache(cacheKey, data, 30 * 60 * 1000);
-    res.json({ success: true, data, source: 'nepse-api' });
   } catch (err) {
     console.warn(`[broker-analysis] Live floorsheet unavailable for ${symbol}:`, err.message);
     res.status(503).json({
@@ -3419,63 +3397,29 @@ function reconstructClosingOrderBook(symbol) {
     }
   } catch (_) {}
 
-  const ltp = Number(stock?.lastTradedPrice || stock?.ltp || stock?.closePrice || 100);
-  const openPrice = Number(stock?.openPrice || ltp);
-  const highPrice = Number(stock?.highPrice || ltp);
-  const lowPrice = Number(stock?.lowPrice || ltp);
-  const prevClose = Number(stock?.previousClose || stock?.previousDayClosePrice || ltp);
-  const vol = Number(stock?.totalTradedQuantity || 15000);
-  const pChange = prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
-  const tick = ltp > 1000 ? 1.0 : ltp > 500 ? 0.5 : 0.1;
+  const ltp = Number(stock?.lastTradedPrice || stock?.ltp || stock?.closePrice || 0);
 
-  const buyWeight = pChange >= 0 ? 0.55 + Math.min(0.25, pChange * 0.03) : 0.45 - Math.min(0.25, Math.abs(pChange) * 0.03);
-  const sellWeight = 1 - buyWeight;
-
-  const bids = [];
-  const asks = [];
-
-  for (let i = 1; i <= 5; i++) {
-    const bPrice = Number((ltp - (i - 1) * tick).toFixed(1));
-    const bQty = Math.max(10, Math.round(vol * 0.04 * buyWeight * (1 - (i - 1) * 0.12)));
-    const bOrders = Math.max(1, Math.round(bQty / 200));
-    bids.push({ price: bPrice, quantity: bQty, qty: bQty, orders: bOrders });
-
-    const aPrice = Number((ltp + i * tick).toFixed(1));
-    const aQty = Math.max(10, Math.round(vol * 0.04 * sellWeight * (1 - (i - 1) * 0.12)));
-    const aOrders = Math.max(1, Math.round(aQty / 200));
-    asks.push({ price: aPrice, quantity: aQty, qty: aQty, orders: aOrders });
-  }
-
-  const totalBidQty = bids.reduce((s, b) => s + b.quantity, 0);
-  const totalAskQty = asks.reduce((s, a) => s + a.quantity, 0);
-  const obir = (totalBidQty + totalAskQty) > 0 ? Number(((totalBidQty - totalAskQty) / (totalBidQty + totalAskQty)).toFixed(4)) : 0;
-  const spread = Number((asks[0].price - bids[0].price).toFixed(2));
-  const spreadPct = bids[0].price > 0 ? Number(((spread / bids[0].price) * 100).toFixed(2)) : 0;
-
-  const depth = {
+  return {
     symbol,
     ltp,
-    openPrice,
-    highPrice,
-    lowPrice,
-    previousClose: prevClose,
-    volume: vol,
-    bids,
-    asks,
-    totalBidQty,
-    totalAskQty,
-    obir,
-    spread,
-    spreadPct,
+    openPrice: Number(stock?.openPrice || ltp),
+    highPrice: Number(stock?.highPrice || ltp),
+    lowPrice: Number(stock?.lowPrice || ltp),
+    previousClose: Number(stock?.previousClose || stock?.previousDayClosePrice || ltp),
+    volume: Number(stock?.totalTradedQuantity || 0),
+    bids: [],
+    asks: [],
+    totalBidQty: 0,
+    totalAskQty: 0,
+    obir: 0,
+    spread: 0,
+    spreadPct: 0,
     isOffMarket: true,
-    sessionLabel: 'Closing Session Snapshot (3:00 PM NPT)',
-    demandStatus: obir > 0.08 ? 'Demand Heavy' : obir < -0.08 ? 'Supply Heavy' : 'Balanced Flow',
-    source: 'closing_session_snapshot',
+    sessionLabel: 'Market Closed — Order Book Empty Outside Trading Hours',
+    demandStatus: 'Market Closed',
+    source: 'empty_off_market',
     fetchedAt: new Date().toISOString()
   };
-
-  saveMarketDepthSnapshot(symbol, depth);
-  return depth;
 }
 
 /**
@@ -3558,16 +3502,15 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
 });
 
 /**
- * GET /api/dividend-history/:symbol
- * Returns verified dividend, bonus share, and right share history for a given stock
+ * Fetches verified dividend, bonus share, and right share history for a given stock
  * by querying ShareSansar corporate actions with Merolagani fallback.
  */
-app.get('/api/dividend-history/:symbol', async (req, res) => {
-  const symbol = sanitizeSymbol(req.params.symbol);
-  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
+export async function getDividendHistoryInternal(rawSymbol) {
+  const symbol = sanitizeSymbol(rawSymbol);
+  if (!symbol) return { symbol: '', dividends: [], data: [], totalEntries: 0, sources: [] };
   const cacheKey = `dividend-history-${symbol}`;
   const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, cached: true });
+  if (cached) return cached;
 
   const normalizeDividendFy = (raw, fallbackDate = null) => {
     if (raw) {
@@ -3610,7 +3553,6 @@ app.get('/api/dividend-history/:symbol', async (req, res) => {
     return raw ? `FY ${String(raw).trim()}` : '—';
   };
 
-
   try {
     const fyMap = new Map();
 
@@ -3621,6 +3563,19 @@ app.get('/api/dividend-history/:symbol', async (req, res) => {
       }
       return fyMap.get(fy);
     };
+
+    // Pre-seed from verified registry file if available
+    if (verifiedDividends && verifiedDividends[symbol]) {
+      const preList = Array.isArray(verifiedDividends[symbol]) ? verifiedDividends[symbol] : (verifiedDividends[symbol]?.dividends || []);
+      for (const item of preList) {
+        const entry = getEntry(item.fiscalYear || item.year, item.bookClosure || item.bookclose_date);
+        if (Number(item.cashDividend || 0) > 0 && entry.cashDividend === 0) entry.cashDividend = Number(item.cashDividend);
+        if (Number(item.bonusShare || 0) > 0 && entry.bonusShare === 0) entry.bonusShare = Number(item.bonusShare);
+        if (Number(item.rightShare || 0) > 0 && entry.rightShare === 0) entry.rightShare = Number(item.rightShare);
+        if (item.bookClosure && !entry.bookClosure) entry.bookClosure = item.bookClosure;
+        if (!entry.source) entry.source = 'verified-registry';
+      }
+    }
 
     // ── 1. ShareSansar corporate actions (primary for detailed bonus, cash & rights) ──
     try {
@@ -3810,7 +3765,23 @@ app.get('/api/dividend-history/:symbol', async (req, res) => {
       fetchedAt: new Date().toISOString()
     };
     setCache(cacheKey, data, 6 * 60 * 60 * 1000); // 6h TTL
-    res.json({ success: true, data, source: dividends.length > 0 ? 'live-multi-source' : 'empty' });
+    return data;
+  } catch (err) {
+    console.error(`[dividend-history] ${symbol}:`, err.message);
+    return { symbol, dividends: [], data: [], totalEntries: 0, sources: [], error: err.message };
+  }
+}
+
+/**
+ * GET /api/dividend-history/:symbol
+ * Returns verified dividend, bonus share, and right share history for a given stock
+ */
+app.get('/api/dividend-history/:symbol', async (req, res) => {
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
+  try {
+    const data = await getDividendHistoryInternal(symbol);
+    res.json({ success: true, data, source: data.dividends?.length > 0 ? 'live-multi-source' : 'empty' });
   } catch (err) {
     console.error(`[dividend-history] ${symbol}:`, err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -5108,53 +5079,56 @@ app.get('/api/market/live', async (req, res) => {
         };
       });
 
+      const withBroker = await enrichStocksWithBrokerSummary(enrichedData);
       return res.json({
         success: true,
         isMockData: false,
         source: marketPayload.source || 'LIVE - NEPSE NOTS API',
         marketOpen: marketPayload.isOpen,
         marketStatus: marketPayload.marketStatus,
-        count: enrichedData.length,
+        count: withBroker.length,
         asOf: marketPayload.asOf || new Date().toISOString(),
         message: marketPayload.message,
-        data: enrichedData
+        data: withBroker
       });
     }
 
     // 2. High-reliability Live Feed from MeroLagani handler (always accessible, ultra-fast)
     const summary = await fetchInternalMeroMarketSummary();
     if (summary && Array.isArray(summary.stocks) && summary.stocks.length > 0) {
+      const rawStocks = summary.stocks.map(s => ({
+        symbol: s.symbol,
+        securityName: s.name || stockMap[s.symbol]?.name || s.symbol,
+        openPrice: s.open,
+        highPrice: s.high,
+        lowPrice: s.low,
+        closePrice: s.ltp,
+        lastTradedPrice: s.ltp,
+        lastUpdatedPrice: s.ltp,
+        ltp: s.ltp,
+        previousClose: s.prevClose,
+        previousDayClosePrice: s.prevClose,
+        percentageChange: s.pChange,
+        pChange: s.pChange,
+        pointChange: s.change,
+        change: s.change,
+        totalTradedQuantity: s.volume,
+        volume: s.volume,
+        totalTradedValue: s.turnover,
+        turnover: s.turnover,
+        sector: s.sector || stockMap[s.symbol]?.sector || 'Others',
+        businessDate: new Date().toISOString().split('T')[0]
+      }));
+      const withBroker = await enrichStocksWithBrokerSummary(rawStocks);
       return res.json({
         success: true,
         isMockData: false,
         source: isMarketOpen ? 'LIVE - MEROLAGANI REAL-TIME' : 'REAL CLOSING - NEPSE',
         marketOpen: isMarketOpen,
         marketStatus: mStatus,
-        count: summary.stocks.length,
+        count: withBroker.length,
         asOf: new Date().toISOString(),
-        data: summary.stocks.map(s => ({
-          symbol: s.symbol,
-          securityName: s.name || stockMap[s.symbol]?.name || s.symbol,
-          openPrice: s.open,
-          highPrice: s.high,
-          lowPrice: s.low,
-          closePrice: s.ltp,
-          lastTradedPrice: s.ltp,
-          lastUpdatedPrice: s.ltp,
-          ltp: s.ltp,
-          previousClose: s.prevClose,
-          previousDayClosePrice: s.prevClose,
-          percentageChange: s.pChange,
-          pChange: s.pChange,
-          pointChange: s.change,
-          change: s.change,
-          totalTradedQuantity: s.volume,
-          volume: s.volume,
-          totalTradedValue: s.turnover,
-          turnover: s.turnover,
-          sector: s.sector || stockMap[s.symbol]?.sector || 'Others',
-          businessDate: new Date().toISOString().split('T')[0]
-        }))
+        data: withBroker
       });
     }
 
@@ -5162,6 +5136,7 @@ app.get('/api/market/live', async (req, res) => {
     const snapshot = nepseManager.lastKnownSnapshot;
     const snapData = marketPayload?.data || snapshot?.todayPrices;
     if (snapData && snapData.length > 0) {
+      const withBroker = await enrichStocksWithBrokerSummary(snapData);
       return res.json({
         success: true,
         isMockData: false,
@@ -5169,10 +5144,10 @@ app.get('/api/market/live', async (req, res) => {
         marketOpen: isMarketOpen,
         marketStatus: mStatus,
         isStale: true,
-        count: snapData.length,
+        count: withBroker.length,
         asOf: new Date().toISOString(),
         message: 'Serving last verified market snapshot.',
-        data: snapData
+        data: withBroker
       });
     }
 
@@ -5191,6 +5166,65 @@ app.get('/api/market/live', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, isMockData: false });
+  }
+});
+
+// ============================================================
+// MARKET-WIDE BROKER SUMMARY & AUDIT VERIFY ENDPOINTS
+// ============================================================
+app.get(['/api/market/broker-summary', '/api/broker-analysis/summary-map'], async (req, res) => {
+  try {
+    const days = parseInt(req.query.days || '1', 10) || 1;
+    const brokerMap = await getMarketWideBrokerSummaryMap(days);
+    res.json({
+      success: true,
+      count: Object.keys(brokerMap || {}).length,
+      data: brokerMap || {},
+      asOf: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[server] GET broker summary map error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/audit/broker-verify/:symbol', async (req, res) => {
+  try {
+    const symbol = String(req.params.symbol || '').toUpperCase().trim();
+    if (!symbol) return res.status(400).json({ success: false, message: 'Symbol is required' });
+
+    const brokerAnalysis = await getOrFetchBrokerAnalysis(symbol, 1, { refresh: req.query.refresh === 'true' });
+    if (!brokerAnalysis) {
+      return res.status(404).json({
+        success: false,
+        symbol,
+        message: `No authentic floorsheet trades recorded for ${symbol}`
+      });
+    }
+
+    res.json({
+      success: true,
+      symbol,
+      isReal: true,
+      totalTrades: brokerAnalysis.totalTrades || 0,
+      totalVolume: brokerAnalysis.totalVolume || 0,
+      totalAmount: brokerAnalysis.totalAmount || 0,
+      bcr3BuyPct: brokerAnalysis.bcr3BuyPct ?? 0,
+      bcr5BuyPct: brokerAnalysis.bcr5BuyPct ?? 0,
+      bcr3SellPct: brokerAnalysis.bcr3SellPct ?? 0,
+      bcr5SellPct: brokerAnalysis.bcr5SellPct ?? 0,
+      nbar: brokerAnalysis.nbar ?? 0,
+      lbas: brokerAnalysis.lbas ?? 0,
+      topNetBuyers: (brokerAnalysis.topNetBuyers || []).slice(0, 5),
+      topNetSellers: (brokerAnalysis.topNetSellers || []).slice(0, 5),
+      topBuyers: (brokerAnalysis.topBuyers || []).slice(0, 5),
+      topSellers: (brokerAnalysis.topSellers || []).slice(0, 5),
+      verifiedAt: new Date().toISOString(),
+      businessDate: brokerAnalysis.businessDate || null
+    });
+  } catch (err) {
+    console.error('[server] /api/audit/broker-verify error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -9517,7 +9551,8 @@ app.get('/api/agent/stock/:symbol', async (req, res) => {
 
     const dossier = await assembleScripDossier(rawSymbol, {
       getStockDetailInternal,
-      getPriceHistoryInternal
+      getPriceHistoryInternal,
+      getDividendHistoryInternal
     });
 
     setCache(cacheKey, dossier, 45000); // 45s cache
@@ -9562,7 +9597,8 @@ app.post('/api/agent/analyze', async (req, res) => {
     // 1. Assemble quantitative dossier (deterministic truth)
     const dossier = await assembleScripDossier(rawSymbol, {
       getStockDetailInternal,
-      getPriceHistoryInternal
+      getPriceHistoryInternal,
+      getDividendHistoryInternal
     });
 
     // 2. Build anti-hallucination prompt embedded with computed indicators
@@ -10034,6 +10070,7 @@ app.listen(PORT, async () => {
           getOrFetchBrokerAnalysis,
           generateEntryExitPlan,
           getCache,
+          getDividendHistoryInternal,
           fetchTodayPricesInternal: async () => {
             const stockData = getCache('today-prices') || getCache('market-summary');
             let list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);

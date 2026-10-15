@@ -37,6 +37,7 @@ import {
 import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { getCachedStockFundamentals, getCachedRealPriceHistory } from './historyCache.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
+import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 
 /**
  * Evaluates a single stock setup with unified quantitative & statistical gates.
@@ -52,8 +53,6 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     const cached = getCachedRealPriceHistory(sym);
     if (Array.isArray(cached) && cached.length >= 20) {
       candles = toAscendingCandles(cached);
-    } else {
-      candles = resolveDynamicStockCandles(stock, 35);
     }
   }
   const historyDays = candles.length;
@@ -82,9 +81,8 @@ export function evaluateGuruMasterSetup(stock = {}, rawCandles = [], brokerData 
     } catch (_) {}
   }
 
-  const dynEMAs = resolveDynamicStockEMAs(stock, ltp);
-  const ema50 = Number(stock?.ema50 || stock?.sma50 || technicalReport?.trend?.ema?.ema50 || dynEMAs.ema50);
-  const ema200 = Number(stock?.ema200 || stock?.sma200 || technicalReport?.trend?.ema?.ema200 || dynEMAs.ema200);
+  const ema50 = Number(stock?.ema50 || stock?.sma50 || technicalReport?.trend?.ema?.ema50 || 0);
+  const ema200 = Number(stock?.ema200 || stock?.sma200 || technicalReport?.trend?.ema?.ema200 || 0);
 
   const isAbove50 = ema50 > 0 ? ltp >= ema50 : null;
   const isAbove200 = ema200 > 0 ? ltp >= ema200 : null;
@@ -645,7 +643,8 @@ function isDisqualifiedNonEquityOrLossMaking(s) {
         strongProfitGrowth: cachedFundForCatalyst.epsGrowth > 20 || (cachedFundForCatalyst.eps > 25 && cachedFundForCatalyst.pe < 15),
         rightShare: cachedFundForCatalyst.hasRightShare || false
       };
-      const plan = generateEntryExitPlan(stockObj, history, [], { brokerAnalysis: broker, catalysts });
+      const verifiedDivs = VERIFIED_DIVIDEND_DATABASE?.[sym] || [];
+      const plan = generateEntryExitPlan(stockObj, history, verifiedDivs, { brokerAnalysis: broker, catalysts });
       if (!plan || !plan.supported) return null;
 
       // STRICT USER DIRECTIVE: Day Prime Pick MUST be a genuine BUY or ACCUMULATE signal!

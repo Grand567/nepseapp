@@ -93,7 +93,7 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
   };
 
   return (
-    <div className="w-full flex flex-col space-y-4 font-sans text-slate-200 p-4">
+    <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 flex flex-col space-y-3 sm:space-y-4 font-sans text-slate-200">
       
       {/* 1. Top Banner */}
       {season && (
