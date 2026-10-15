@@ -1002,7 +1002,7 @@ function normalizeLiveArray(arr) {
       }
     }
 
-    const sharesM = prev?.sharesOut || null;
+    const sharesM = prev?.sharesOut || uni?.sharesOut || null;
     const marketCap = prev?.marketCap || (sharesM ? Math.floor(ltp * sharesM * 1e6) : null);
     const cachedFund = getCachedStockFundamentals(sym);
     const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (prev?.eps ?? null));

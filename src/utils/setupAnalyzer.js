@@ -72,7 +72,17 @@ import { analyzeTechnical } from './technicalAnalysisEngine.js';
 import { analyzePriceAction } from './priceActionEngine.js';
 import { calculateStockRvol } from './watchlistAlerts.js';
 import { getCachedRealPriceHistory } from './historyCache.js';
-import { getCachedBrokerData } from './liveData.js';
+
+function getSafeCachedBrokerData(symbol) {
+  if (!symbol || typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const sym = String(symbol).toUpperCase().trim();
+    const raw = window.localStorage.getItem(`nepse_real_broker_${sym}`) || window.localStorage.getItem(`broker_cache_${sym}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════
 // 0.  CONSTANTS
@@ -1190,7 +1200,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     dividendHistory = Array.isArray(options.dividendHistory) ? options.dividendHistory : [];
   }
 
-  const resolvedBrokerAnalysis = options.brokerAnalysis || stock?.brokerAnalysis || (stock?.symbol ? getCachedBrokerData(stock.symbol) : null) || null;
+  const resolvedBrokerAnalysis = options.brokerAnalysis || stock?.brokerAnalysis || (stock?.symbol ? getSafeCachedBrokerData(stock.symbol) : null) || null;
 
   // ── Accept both old (plain array) and new ({ real, data, source }) form ──
   let rawCandles;
