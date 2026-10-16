@@ -13,6 +13,8 @@
     "test": "node tests/runAll.mjs",
     "audit:app": "node scripts/fullAppAudit.mjs",
     "audit:prod": "node scripts/fullAppAudit.mjs --prod",
+    "audit:export": "node scripts/exportForGemini4Argon.mjs",
+    "export:argon": "node scripts/exportForGemini4Argon.mjs",
     "preview": "vite preview",
     "whitelabel": "node white-label.mjs",
     "desktop": "electron .",
