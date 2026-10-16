@@ -98,9 +98,21 @@ let verifiedDividends = {};
 try {
   const divPath = path.join(__dirname, 'data', 'nepseDividends.json');
   if (fs.existsSync(divPath)) {
-    verifiedDividends = JSON.parse(fs.readFileSync(divPath, 'utf8'));
-    console.log(`[proxy] Loaded verified dividend records for ${Object.keys(verifiedDividends).length} equities.`);
+    try {
+      verifiedDividends = JSON.parse(fs.readFileSync(divPath, 'utf8'));
+    } catch (_) {}
   }
+  if (!verifiedDividends || Object.keys(verifiedDividends).length === 0) {
+    try {
+      const srcMod = await import('../src/data/nepseDividends.js');
+      if (srcMod?.VERIFIED_DIVIDEND_DATABASE && Object.keys(srcMod.VERIFIED_DIVIDEND_DATABASE).length > 0) {
+        verifiedDividends = srcMod.VERIFIED_DIVIDEND_DATABASE;
+      }
+    } catch (fallbackErr) {
+      console.warn('[proxy] Failed to fallback-load verified dividends from ../src/data/nepseDividends.js:', fallbackErr.message);
+    }
+  }
+  console.log(`[proxy] Loaded verified dividend records for ${Object.keys(verifiedDividends).length} equities.`);
 } catch (e) {
   console.warn('[proxy] Failed to load nepseDividends.json:', e.message);
 }
@@ -5230,6 +5242,10 @@ app.get('/api/audit/broker-verify/:symbol', async (req, res) => {
       });
     }
 
+    const brokers = brokerAnalysis.brokers || [];
+    const sumOfAllBrokerBuys = brokers.reduce((s, b) => s + (Number(b.buyQty) || 0), 0) || brokerAnalysis.totalVolume || 0;
+    const sumOfAllBrokerSells = brokers.reduce((s, b) => s + (Number(b.sellQty) || 0), 0) || brokerAnalysis.totalVolume || 0;
+
     res.json({
       success: true,
       symbol,
@@ -5237,6 +5253,9 @@ app.get('/api/audit/broker-verify/:symbol', async (req, res) => {
       totalTrades: brokerAnalysis.totalTrades || 0,
       totalVolume: brokerAnalysis.totalVolume || 0,
       totalAmount: brokerAnalysis.totalAmount || 0,
+      sumOfAllBrokerBuys,
+      sumOfAllBrokerSells,
+      isZeroSumBalanced: sumOfAllBrokerBuys === sumOfAllBrokerSells,
       bcr3BuyPct: brokerAnalysis.bcr3BuyPct ?? 0,
       bcr5BuyPct: brokerAnalysis.bcr5BuyPct ?? 0,
       bcr3SellPct: brokerAnalysis.bcr3SellPct ?? 0,

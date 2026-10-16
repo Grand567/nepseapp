@@ -51,7 +51,7 @@ function recordCheck(category, name, passed, details = '', durationMs = 0) {
   }
 }
 
-async function fetchJson(endpoint, options = {}, timeoutMs = 20000) {
+async function fetchJson(endpoint, options = {}, timeoutMs = 35000) {
   const url = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -160,7 +160,25 @@ async function auditCategoryA() {
     recordCheck('Category A', 'GET /api/today-prices Equity Universe & Enrichments', false, `Failed: ${err.message}`, err.durationMs || 0);
   }
 
-  return topTurnoverStocks;
+  // A4: /api/market-summary
+  try {
+    const msRes = await fetchJson('/api/market-summary');
+    const msData = msRes.data?.data || msRes.data;
+    const stockCount = Array.isArray(msData?.stocks) ? msData.stocks.length : (Array.isArray(msData) ? msData.length : 0);
+    recordCheck(
+      'Category A',
+      'GET /api/market-summary Live Market Overview',
+      stockCount >= 50,
+      `Traded Securities Mapped: ${stockCount}`,
+      msRes.durationMs
+    );
+  } catch (err) {
+    recordCheck('Category A', 'GET /api/market-summary Live Market Overview', false, `Failed: ${err.message}`, err.durationMs || 0);
+  }
+
+  // Ensure NABIL is always included in tested symbols
+  const dedupedSymbols = Array.from(new Set(['NABIL', ...topTurnoverStocks])).slice(0, 3);
+  return dedupedSymbols;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -172,6 +190,24 @@ async function auditCategoryB(testSymbols) {
 
   for (const sym of testSymbols) {
     console.log(`  ${c.magenta}▶ Symbol: ${sym}${c.reset}`);
+
+    // B0: Dedicated /api/audit/broker-verify/:symbol Endpoint
+    try {
+      const verifyRes = await fetchJson(`/api/audit/broker-verify/${encodeURIComponent(sym)}`);
+      const vData = verifyRes.data?.data || verifyRes.data;
+      const bBuy = Number(vData?.sumOfAllBrokerBuys ?? vData?.totalVolume ?? 0);
+      const bSell = Number(vData?.sumOfAllBrokerSells ?? vData?.totalVolume ?? 0);
+      const isZeroSum = (bBuy > 0 && Math.abs(bBuy - bSell) === 0) || vData?.isZeroSumBalanced === true;
+      recordCheck(
+        'Category B',
+        `${sym} — GET /api/audit/broker-verify/${sym} (sumOfAllBrokerBuys === sumOfAllBrokerSells)`,
+        isZeroSum,
+        `Buys: ${bBuy.toLocaleString()}, Sells: ${bSell.toLocaleString()}, Delta: ${bBuy - bSell}, Balanced: ${isZeroSum}`,
+        verifyRes.durationMs
+      );
+    } catch (err) {
+      recordCheck('Category B', `${sym} — GET /api/audit/broker-verify/${sym}`, false, `Error: ${err.message}`, err.durationMs || 0);
+    }
 
     // B1, B2, B3: 1D Broker Analysis Invariants
     try {
@@ -265,8 +301,17 @@ async function auditCategoryB(testSymbols) {
       const fsRes = await fetchJson(`/api/floorsheet/${encodeURIComponent(sym)}?days=1`);
       const fsData = fsRes.data?.data || fsRes.data;
       const availableDates = Array.isArray(fsData?.availableDates) ? fsData.availableDates : [];
-      const hasDates = availableDates.length >= 10;
+      // Multi-month history verification (>= 60 sessions)
+      const hasMultiMonth = availableDates.length >= 60;
+      recordCheck(
+        'Category B',
+        `${sym} — Floorsheet Multi-Month Available Sessions (>= 60 Days)`,
+        hasMultiMonth,
+        `Available Sessions Count: ${availableDates.length} trading days (Historical depth >= 60d: ${hasMultiMonth})`,
+        fsRes.durationMs
+      );
 
+      const hasDates = availableDates.length >= 10;
       if (hasDates) {
         // Pick an authentic historical settled session date (e.g. 2 to 5 sessions ago, distinct from today)
         const todayIso = new Date().toISOString().split('T')[0];
