@@ -3557,6 +3557,7 @@ function Dashboard({
           showAdvancedChartBtn={true}
           onOpenTradingView={() => setShowTVModal(true)}
           onToggleFullscreen={handleToggleHeroFullscreen}
+          height={240}
         />
       </div>
 

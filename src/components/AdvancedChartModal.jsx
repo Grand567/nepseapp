@@ -1,9 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import {
-  X, Maximize2, Minimize2, LineChart, BarChart2, Activity,
-  Layers, Zap, ChevronLeft, Sliders, Eye, RefreshCw
-} from 'lucide-react';
-import * as servicesApi from '../utils/servicesApi';
+import React, { useState } from 'react';
+import { ChevronLeft, X, Globe, Cpu } from 'lucide-react';
+import ShareHubChart from './ShareHubChart';
 import { useBackHandler } from '../context/NavigationContext';
 
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -11,744 +8,206 @@ const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-
 export default function AdvancedChartModal({
   symbol = 'NEPSE',
   stock = null,
-  initialTimeframe = '6M',
+  initialTimeframe = '1M',
+  entryExitPlan = null,
+  brokerAnalysis = null,
+  floorsheetData = null,
   onClose
 }) {
   useBackHandler(onClose, true, 110);
 
-  const [timeframe, setTimeframe] = useState(initialTimeframe);
-  const [chartMode, setChartMode] = useState('candle'); // 'candle' | 'line'
-  const [showSMA, setShowSMA] = useState(true);
-  const [showSMA200, setShowSMA200] = useState(true);
-  const [showBollinger, setShowBollinger] = useState(false);
-  const [showRSI, setShowRSI] = useState(true);
-  const [showVolume, setShowVolume] = useState(true);
+  const [timeframe, setTimeframe] = useState(initialTimeframe || '1M');
   const [chartSource, setChartSource] = useState('native'); // 'native' | 'web'
-  const [hoverIndex, setHoverIndex] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  const ltp = Number(stock?.ltp || 350);
-  const [history, setHistory] = useState([]);
-
-  // Fetch real historical data from proxy API
-  useEffect(() => {
-    let active = true;
-    async function fetchData() {
-      setLoading(true);
-      try {
-        let days = 66;
-        if (timeframe === '1D') days = 1;
-        else if (timeframe === '2D') days = 2;
-        else if (timeframe === '3D') days = 3;
-        else if (timeframe === '1W') days = 5;
-        else if (timeframe === '1M') days = 22;
-        else if (timeframe === '3M') days = 66;
-        else if (timeframe === '6M') days = 132;
-        else if (timeframe === '1Y') days = 260;
-        else if (timeframe === '2Y' || timeframe === 'All') days = 500;
-
-        // Check for 1D intraday (11 AM to 3 PM)
-        if (timeframe === '1D') {
-          try {
-            const intraday = await servicesApi.fetchNepseIntradayGraph(symbol);
-            if (active && intraday && Array.isArray(intraday) && intraday.length > 0) {
-              const formattedIntraday = intraday.map(item => ({
-                time: item.time,
-                timestamp: item.timestamp,
-                open: Number(item.open) || Number(item.close),
-                high: Number(item.high) || Number(item.close),
-                low: Number(item.low) || Number(item.close),
-                close: Number(item.close),
-                volume: Number(item.volume) || 0
-              }));
-              setHistory(formattedIntraday);
-              return;
-            }
-          } catch (_) {}
-        }
-
-        const data = await servicesApi.fetchPriceHistory(symbol, 500);
-        if (!active) return;
-        
-        if (data && Array.isArray(data) && data.length > 0) {
-          const sorted = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-          const latestDate = new Date(sorted[sorted.length - 1].date + 'T00:00:00Z');
-          let sliced = sorted;
-          if (timeframe === '2D') {
-            sliced = sorted.slice(-Math.min(2, sorted.length));
-          } else if (timeframe === '3D') {
-            sliced = sorted.slice(-Math.min(3, sorted.length));
-          } else if (timeframe === '1W' || timeframe === '7') {
-            const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
-            const weekBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneWeekAgo);
-            sliced = weekBars.length >= 4 ? weekBars : sorted.slice(-Math.min(5, sorted.length));
-          } else if (timeframe === '1M' || timeframe === '30') {
-            const oneMonthAgo = new Date(latestDate.getTime() - 30 * 24 * 3600 * 1000);
-            const monthBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneMonthAgo);
-            sliced = monthBars.length >= 15 ? monthBars : sorted.slice(-Math.min(22, sorted.length));
-          } else if (timeframe === '3M' || timeframe === '90') {
-            const threeMonthsAgo = new Date(latestDate.getTime() - 90 * 24 * 3600 * 1000);
-            const qtrBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= threeMonthsAgo);
-            sliced = qtrBars.length >= 45 ? qtrBars : sorted.slice(-Math.min(66, sorted.length));
-          } else if (timeframe === '6M' || timeframe === '180') {
-            const sixMonthsAgo = new Date(latestDate.getTime() - 180 * 24 * 3600 * 1000);
-            const halfYearBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= sixMonthsAgo);
-            sliced = halfYearBars.length >= 90 ? halfYearBars : sorted.slice(-Math.min(132, sorted.length));
-          } else if (timeframe === '1Y' || timeframe === '365') {
-            const oneYearAgo = new Date(latestDate.getTime() - 365 * 24 * 3600 * 1000);
-            const yearBars = sorted.filter(b => new Date(b.date + 'T00:00:00Z') >= oneYearAgo);
-            sliced = yearBars.length >= 180 ? yearBars : sorted.slice(-Math.min(260, sorted.length));
-          }
-
-          const formatted = sliced.map(item => ({
-            time: item.date,
-            open: Number(item.open) || Number(item.close),
-            high: Number(item.high) || Number(item.close),
-            low: Number(item.low) || Number(item.close),
-            close: Number(item.close),
-            volume: Number(item.volume) || 0
-          }));
-          setHistory(formatted);
-        } else {
-          setHistory([]);
-        }
-      } catch (err) {
-        console.warn('[AdvancedChartModal] Failed to fetch real price history:', err);
-        if (active) setHistory([]);
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    fetchData();
-    return () => { active = false; };
-  }, [symbol, timeframe]);
-
-  // Technical Calculations (SMA5, SMA10, SMA20, SMA50, SMA200, Bollinger Bands, RSI)
-  const technicalData = useMemo(() => {
-    if (!history || history.length === 0) return [];
-
-    const closes = history.map(h => h.close);
-
-    return history.map((item, idx) => {
-      // Moving Averages
-      const getSMA = period => {
-        if (idx < period - 1) return null;
-        const slice = closes.slice(idx - period + 1, idx + 1);
-        return slice.reduce((a, b) => a + b, 0) / period;
-      };
-
-      const ma5 = getSMA(5);
-      const ma10 = getSMA(10);
-      const ma20 = getSMA(20);
-      const ma50 = getSMA(50);
-      const ma200 = item.sma200 || getSMA(200);
-
-      // Bollinger Bands (20, 2)
-      let bbUpper = null;
-      let bbLower = null;
-      if (ma20 != null && idx >= 19) {
-        const slice = closes.slice(idx - 19, idx + 1);
-        const variance = slice.reduce((sum, val) => sum + Math.pow(val - ma20, 2), 0) / 20;
-        const stdDev = Math.sqrt(variance);
-        bbUpper = ma20 + (stdDev * 2);
-        bbLower = ma20 - (stdDev * 2);
-      }
-
-      // RSI (14)
-      let rsi = 50;
-      if (idx >= 14) {
-        let gains = 0;
-        let losses = 0;
-        for (let i = idx - 13; i <= idx; i++) {
-          const diff = closes[i] - closes[i - 1];
-          if (diff >= 0) gains += diff;
-          else losses += Math.abs(diff);
-        }
-        const avgGain = gains / 14;
-        const avgLoss = losses / 14 || 0.001;
-        const rs = avgGain / avgLoss;
-        rsi = 100 - (100 / (1 + rs));
-      }
-
-      return {
-        ...item,
-        ma5,
-        ma10,
-        ma20,
-        ma50,
-        ma200,
-        bbUpper,
-        bbLower,
-        rsi
-      };
-    });
-  }, [history]);
-
-  const activePoint = hoverIndex != null ? technicalData[hoverIndex] : technicalData[technicalData.length - 1];
-
-  // SVG Chart Geometry
-  const W = 700;
-  const H_MAIN = 260;
-  const H_VOL = showVolume ? 60 : 0;
-  const H_RSI = showRSI ? 60 : 0;
-  const H_XAXIS = 22;
-  const H_TOTAL = H_MAIN + H_VOL + H_RSI + H_XAXIS;
-  const LEFT_AXIS = 45;
-  const PLOT_W = W - LEFT_AXIS - 10;
-
-  const getX = i => {
-    if (technicalData.length <= 1) return LEFT_AXIS + PLOT_W / 2;
-    return LEFT_AXIS + (i / (technicalData.length - 1)) * PLOT_W;
-  };
-
-  const prices = technicalData.flatMap(d => [d.high || d.close, d.low || d.close]);
-  const minPrice = Math.min(...prices) * 0.985;
-  const maxPrice = Math.max(...prices) * 1.015;
-  const priceRng = maxPrice - minPrice || 1;
-
-  const getY = p => {
-    return H_MAIN - ((p - minPrice) / priceRng) * (H_MAIN - 20) - 10;
-  };
-
-  const volumes = technicalData.map(d => d.volume || 1000);
-  const maxVol = Math.max(...volumes) || 1;
-  const getVolY = v => {
-    return (H_MAIN + H_VOL) - (v / maxVol) * (H_VOL - 10) - 5;
-  };
-
-  const getRsiY = r => {
-    const rsiTop = H_MAIN + H_VOL;
-    return rsiTop + H_RSI - (r / 100) * (H_RSI - 14) - 7;
-  };
-
-  // Milestone date/time ticks along the X axis
-  const xTicks = useMemo(() => {
-    if (!technicalData || technicalData.length === 0) return [];
-    const count = Math.min(5, technicalData.length);
-    if (count <= 1) return [{ index: 0, label: technicalData[0]?.time || '' }];
-    const step = (technicalData.length - 1) / (count - 1);
-    const ticks = [];
-    for (let i = 0; i < count; i++) {
-      const idx = Math.min(technicalData.length - 1, Math.round(i * step));
-      const pt = technicalData[idx];
-      let label = pt?.time || '';
-      if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
-        const d = new Date(label + 'T00:00:00Z');
-        const weekday = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
-        const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-        const day = d.getUTCDate();
-        label = (timeframe === '1W' || timeframe === '7') ? `${weekday} ${month} ${day}` : `${month} ${day}`;
-      }
-      ticks.push({ index: idx, label });
-    }
-    return ticks;
-  }, [technicalData, timeframe]);
-
-  // Touch / Mouse Move Handlers
-  const handleTouch = (clientX, targetRect) => {
-    const x = clientX - targetRect.left;
-    const relX = (x - LEFT_AXIS) / PLOT_W;
-    const idx = Math.max(0, Math.min(technicalData.length - 1, Math.round(relX * (technicalData.length - 1))));
-    setHoverIndex(idx);
-  };
-
-  const isBull = stock?.change != null ? stock.change >= 0 : (stock?.pChange != null ? stock.pChange >= 0 : true);
+  const ltp = Number(stock?.ltp || 0);
+  const change = Number(stock?.change || 0);
+  const pChange = Number(stock?.pChange || 0);
+  const isBull = change >= 0;
+  const cleanSymbol = (symbol || 'NEPSE').replace(/ Index$/i, '').trim().toUpperCase();
+  const companyName = stock?.name || stock?.companyName || stock?.sector || 'Nepal Stock Exchange';
 
   return (
     <div
+      className="fullscreen-chart-modal fixed inset-0 z-50 flex flex-col"
       style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 600,
-        background: '#070b14',
-        display: 'flex',
-        flexDirection: 'column',
-        animation: 'fadeIn 0.2s ease-out'
+        background: '#080c14',
+        color: '#f8fafc',
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden'
       }}
     >
-      {/* ── Header with Safe Area Protection ── */}
+      {/* ── Top Technician Header Bar ── */}
       <div style={{
-        paddingTop: 'max(12px, calc(env(safe-area-inset-top, 0px) + 8px))',
-        paddingBottom: '10px',
-        paddingLeft: '16px',
-        paddingRight: '16px',
-        background: '#0B0E14',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
+        padding: '8px 14px calc(env(safe-area-inset-top, 0px) + 8px)',
+        background: '#0d131f',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        flexShrink: 0,
+        gap: 10,
+        flexWrap: 'wrap'
       }}>
+        {/* Left: Back button & Stock info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Back to Stock Details"
             style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: 'none',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
               borderRadius: 8,
-              padding: 6,
-              color: '#ffffff',
+              padding: '6px',
+              color: '#94a3b8',
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <ChevronLeft style={{ width: 22, height: 22 }} />
-          </button>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>{symbol}</span>
-              <span style={{
-                fontSize: 12, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
-                background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
-                color: isBull ? 'var(--bull)' : '#F43F5E'
-              }}>
-                {isBull ? '▲ +' : '▼ '}{fmt(stock?.change || 0)} ({fmt(stock?.pChange || 0)}%)
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {stock?.name || 'Nepal Stock Exchange'} · {stock?.sector || 'Index'}
-            </div>
-          </div>
-        </div>
-
-        {/* Source Switcher (Native Interactive vs Web TradingView) */}
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 2 }}>
-            <button
-              onClick={() => setChartSource('native')}
-              style={{
-                background: chartSource === 'native' ? '#10B981' : 'transparent',
-                color: chartSource === 'native' ? '#000000' : 'rgba(255,255,255,0.7)',
-                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-              }}
-            >
-              Native
-            </button>
-            <button
-              onClick={() => setChartSource('web')}
-              style={{
-                background: chartSource === 'web' ? '#10B981' : 'transparent',
-                color: chartSource === 'web' ? '#000000' : 'rgba(255,255,255,0.7)',
-                border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-              }}
-            >
-              Web TV
-            </button>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: 'none',
-              borderRadius: 8,
-              padding: 6,
-              color: 'var(--text-muted)',
-              cursor: 'pointer'
-            }}
-          >
-            <X style={{ width: 18, height: 18 }} />
-          </button>
-        </div>
-      </div>
-
-      {chartSource === 'web' ? (
-        /* ── Web TradingView / NepseAlpha Embed ── */
-        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', background: '#131722' }}>
-          <iframe
-            title="TradingView Technical Chart"
-            src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=NEPSE%3A${symbol.toUpperCase()}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FKathmandu&withdateranges=1&showpopupbutton=1`}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-          />
-        </div>
-      ) : (
-        /* ── Native High-Performance Interactive Chart ── */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Top Control Bar: Mode & Indicators */}
-          <div style={{
-            padding: '8px 14px',
-            background: '#090d16',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            overflowX: 'auto',
-            gap: 8
-          }}>
-            {/* Chart Type (Line / Candle) */}
-            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-              <button
-                onClick={() => setChartMode('candle')}
-                style={{
-                  background: chartMode === 'candle' ? '#10B981' : 'rgba(255,255,255,0.05)',
-                  color: chartMode === 'candle' ? '#000' : '#fff',
-                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                🕯️ Candle
-              </button>
-              <button
-                onClick={() => setChartMode('line')}
-                style={{
-                  background: chartMode === 'line' ? '#10B981' : 'rgba(255,255,255,0.05)',
-                  color: chartMode === 'line' ? '#000' : '#fff',
-                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                📈 Line
-              </button>
-            </div>
-
-            {/* Indicator Pills */}
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button
-                onClick={() => setShowSMA(v => !v)}
-                style={{
-                  background: showSMA ? 'rgba(234, 179, 8, 0.18)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${showSMA ? '#eab308' : 'rgba(255,255,255,0.1)'}`,
-                  color: showSMA ? '#eab308' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                MA 5/10/20
-              </button>
-
-              <button
-                onClick={() => setShowSMA200(v => !v)}
-                style={{
-                  background: showSMA200 ? 'rgba(168, 85, 247, 0.18)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${showSMA200 ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
-                  color: showSMA200 ? '#a855f7' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                50/200 SMA
-              </button>
-
-              <button
-                onClick={() => setShowBollinger(v => !v)}
-                style={{
-                  background: showBollinger ? 'rgba(6, 182, 212, 0.18)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${showBollinger ? '#06b6d4' : 'rgba(255,255,255,0.1)'}`,
-                  color: showBollinger ? '#06b6d4' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                Bollinger (20,2)
-              </button>
-
-              <button
-                onClick={() => setShowRSI(v => !v)}
-                style={{
-                  background: showRSI ? 'rgba(236, 72, 153, 0.18)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${showRSI ? '#ec4899' : 'rgba(255,255,255,0.1)'}`,
-                  color: showRSI ? '#ec4899' : 'rgba(255,255,255,0.5)',
-                  borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
-                }}
-              >
-                RSI (14)
-              </button>
-            </div>
-          </div>
-
-          {/* Interactive HUD / Crosshair Info Bar */}
-          {activePoint && (
-            <div style={{
-              background: '#0B0E14',
-              padding: '6px 14px',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '6px 12px',
-              fontSize: 12,
-              fontFamily: 'var(--font-mono)'
-            }}>
-              <span style={{ color: '#fff', fontWeight: 800 }}>📅 {activePoint.time || activePoint.date}</span>
-              <span style={{ color: 'var(--text-muted)' }}>O: <strong style={{ color: '#fff' }}>Rs {fmt(activePoint.open || activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>H: <strong style={{ color: 'var(--bull)' }}>Rs {fmt(activePoint.high || activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>L: <strong style={{ color: '#F43F5E' }}>Rs {fmt(activePoint.low || activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>C: <strong style={{ color: '#10B981' }}>Rs {fmt(activePoint.close)}</strong></span>
-              <span style={{ color: 'var(--text-muted)' }}>Vol: <strong style={{ color: '#fff' }}>{(activePoint.volume || 0).toLocaleString()}</strong></span>
-              {showSMA200 && activePoint.ma200 && (
-                <span style={{ color: '#a855f7' }}>200 SMA: Rs {fmt(activePoint.ma200)}</span>
-              )}
-              {showRSI && (
-                <span style={{ color: activePoint.rsi > 70 ? '#F43F5E' : (activePoint.rsi < 30 ? 'var(--bull)' : '#ec4899') }}>
-                  RSI: {activePoint.rsi?.toFixed(1)}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* SVG Canvas Area */}
-          <div
-            style={{
-              flex: 1,
-              position: 'relative',
-              touchAction: 'none',
-              userSelect: 'none',
-              background: '#070b14',
-              padding: '8px 4px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
-            onTouchMove={e => handleTouch(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
-            onTouchStart={e => handleTouch(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
-            onMouseMove={e => handleTouch(e.clientX, e.currentTarget.getBoundingClientRect())}
-            onMouseLeave={() => setHoverIndex(null)}
           >
-            {loading ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10B981', fontSize: 13, fontWeight: 700 }}>
-                <RefreshCw style={{ width: 18, height: 18, animation: 'spin 1s linear infinite' }} />
-                <span>Loading verified NEPSE historical price data...</span>
-              </div>
-            ) : technicalData.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: 20 }}>
-                No historical price records found for {symbol} from NEPSE.
-              </div>
-            ) : (
-            <svg
-              viewBox={`0 0 ${W} ${H_TOTAL}`}
-              style={{ width: '100%', height: '100%', overflow: 'visible' }}
-              preserveAspectRatio="none"
-            >
-              {/* Background Grid Lines */}
-              {[0.2, 0.4, 0.6, 0.8].map((ratio, idx) => {
-                const y = H_MAIN * ratio;
-                const price = maxPrice - (ratio * priceRng);
-                return (
-                  <g key={idx}>
-                    <line x1={LEFT_AXIS} y1={y} x2={W} y2={y} stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
-                    <text x={LEFT_AXIS - 6} y={y + 3.5} fill="rgba(255,255,255,0.35)" fontSize="9" textAnchor="end" fontFamily="var(--font-mono)">
-                      {price.toFixed(0)}
-                    </text>
-                  </g>
-                );
-              })}
+            <ChevronLeft size={18} />
+          </button>
 
-              {/* Bollinger Bands Shading */}
-              {showBollinger && (
-                <>
-                  <polygon
-                    fill="rgba(6, 182, 212, 0.08)"
-                    points={`
-                      ${technicalData.filter(d => d.bbUpper != null).map((d, i) => `${getX(i)},${getY(d.bbUpper)}`).join(' ')}
-                      ${technicalData.filter(d => d.bbLower != null).reverse().map((d, i) => {
-                        const origIdx = technicalData.length - 1 - i;
-                        return `${getX(origIdx)},${getY(d.bbLower)}`;
-                      }).join(' ')}
-                    `}
-                  />
-                  <polyline
-                    fill="none" stroke="#06b6d4" strokeWidth="1" strokeDasharray="2 2"
-                    points={technicalData.filter(d => d.bbUpper != null).map((d, i) => `${getX(i)},${getY(d.bbUpper)}`).join(' ')}
-                  />
-                  <polyline
-                    fill="none" stroke="#06b6d4" strokeWidth="1" strokeDasharray="2 2"
-                    points={technicalData.filter(d => d.bbLower != null).map((d, i) => `${getX(i)},${getY(d.bbLower)}`).join(' ')}
-                  />
-                </>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 900, color: '#ffffff', letterSpacing: '0.02em' }}>
+                {symbol}
+              </span>
+              {ltp > 0 && (
+                <span style={{ fontSize: 15, fontWeight: 800, color: isBull ? '#10B981' : '#F43F5E', fontFamily: 'var(--font-mono, monospace)' }}>
+                  Rs. {fmt(ltp)}
+                </span>
               )}
-
-              {/* Candles or Line */}
-              {chartMode === 'candle' ? (
-                technicalData.map((d, i) => {
-                  const x = getX(i);
-                  const oY = getY(d.open || d.close);
-                  const cY = getY(d.close);
-                  const hY = getY(d.high || d.close);
-                  const lY = getY(d.low || d.close);
-                  const candleBull = (d.close >= (d.open || d.close));
-                  const col = candleBull ? '#10B981' : '#F43F5E';
-                  const topY = Math.min(oY, cY);
-                  const bH = Math.max(2, Math.abs(cY - oY));
-                  const bW = Math.max(2, Math.min(8, (PLOT_W / technicalData.length) * 0.7));
-
-                  return (
-                    <g key={i}>
-                      {/* High-Low Wick */}
-                      <line x1={x} y1={hY} x2={x} y2={lY} stroke={col} strokeWidth="1.2" />
-                      {/* Candle Body */}
-                      <rect x={x - bW / 2} y={topY} width={bW} height={bH} fill={col} rx="1" />
-                    </g>
-                  );
-                })
-              ) : (
-                <>
-                  {/* Line Chart Gradient Area */}
-                  <defs>
-                    <linearGradient id="advChartGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <polygon
-                    fill="url(#advChartGrad)"
-                    points={`
-                      ${LEFT_AXIS},${H_MAIN}
-                      ${technicalData.map((d, i) => `${getX(i)},${getY(d.close)}`).join(' ')}
-                      ${getX(technicalData.length - 1)},${H_MAIN}
-                    `}
-                  />
-                  <polyline
-                    fill="none" stroke="#10B981" strokeWidth="2" strokeLinejoin="round"
-                    points={technicalData.map((d, i) => `${getX(i)},${getY(d.close)}`).join(' ')}
-                  />
-                </>
+              {(change !== 0 || pChange !== 0) && (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: isBull ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                  border: isBull ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)',
+                  color: isBull ? '#10B981' : '#F43F5E',
+                  fontFamily: 'var(--font-mono, monospace)'
+                }}>
+                  {isBull ? '▲ +' : '▼ '}{Math.abs(change).toFixed(2)} ({isBull ? '+' : ''}{pChange.toFixed(2)}%)
+                </span>
               )}
-
-              {/* Moving Averages Overlays */}
-              {showSMA && (
-                <>
-                  <polyline
-                    fill="none" stroke="#eab308" strokeWidth="1.2"
-                    points={technicalData.filter(d => d.ma5 != null).map((d, i) => `${getX(i + 4)},${getY(d.ma5)}`).join(' ')}
-                  />
-                  <polyline
-                    fill="none" stroke="#ec4899" strokeWidth="1.2"
-                    points={technicalData.filter(d => d.ma10 != null).map((d, i) => `${getX(i + 9)},${getY(d.ma10)}`).join(' ')}
-                  />
-                  <polyline
-                    fill="none" stroke="#06b6d4" strokeWidth="1.4"
-                    points={technicalData.filter(d => d.ma20 != null).map((d, i) => `${getX(i + 19)},${getY(d.ma20)}`).join(' ')}
-                  />
-                </>
-              )}
-
-              {/* 50 SMA & 200 SMA (Long Term Trend) */}
-              {showSMA200 && (
-                <>
-                  <polyline
-                    fill="none" stroke="#3b82f6" strokeWidth="1.5"
-                    points={technicalData.filter(d => d.ma50 != null).map((d, i) => `${getX(i + 49)},${getY(d.ma50)}`).join(' ')}
-                  />
-                  <polyline
-                    fill="none" stroke="#a855f7" strokeWidth="1.8" strokeDasharray="4 2"
-                    points={technicalData.filter(d => d.ma20 != null).map((d, i) => `${getX(i)},${getY(d.ma200 || d.close)}`).join(' ')}
-                  />
-                </>
-              )}
-
-              {/* Volume Subchart */}
-              {showVolume && (
-                <g>
-                  <line x1={LEFT_AXIS} y1={H_MAIN} x2={W} y2={H_MAIN} stroke="rgba(255,255,255,0.12)" />
-                  <text x={LEFT_AXIS - 6} y={H_MAIN + 12} fill="rgba(255,255,255,0.3)" fontSize="8" textAnchor="end">VOL</text>
-                  {technicalData.map((d, i) => {
-                    const x = getX(i);
-                    const y = getVolY(d.volume || 1000);
-                    const bW = Math.max(1.5, Math.min(6, (PLOT_W / technicalData.length) * 0.6));
-                    const candleBull = (d.close >= (d.open || d.close));
-                    return (
-                      <rect
-                        key={i}
-                        x={x - bW / 2}
-                        y={y}
-                        width={bW}
-                        height={(H_MAIN + H_VOL) - y}
-                        fill={candleBull ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}
-                      />
-                    );
-                  })}
-                </g>
-              )}
-
-              {/* RSI Subchart */}
-              {showRSI && (
-                <g>
-                  <line x1={LEFT_AXIS} y1={H_MAIN + H_VOL} x2={W} y2={H_MAIN + H_VOL} stroke="rgba(255,255,255,0.12)" />
-                  <line x1={LEFT_AXIS} y1={getRsiY(70)} x2={W} y2={getRsiY(70)} stroke="rgba(244,63,94,0.3)" strokeDasharray="2 2" />
-                  <line x1={LEFT_AXIS} y1={getRsiY(30)} x2={W} y2={getRsiY(30)} stroke="rgba(16,185,129,0.3)" strokeDasharray="2 2" />
-                  <text x={LEFT_AXIS - 6} y={getRsiY(50)} fill="rgba(236, 72, 153, 0.6)" fontSize="8" textAnchor="end">RSI</text>
-                  <polyline
-                    fill="none" stroke="#ec4899" strokeWidth="1.5"
-                    points={technicalData.map((d, i) => `${getX(i)},${getRsiY(d.rsi || 50)}`).join(' ')}
-                  />
-                </g>
-              )}
-
-              {/* X-Axis Milestone Dates & Times */}
-              <g>
-                <line x1={LEFT_AXIS} y1={H_MAIN + H_VOL + H_RSI} x2={W} y2={H_MAIN + H_VOL + H_RSI} stroke="rgba(255,255,255,0.12)" />
-                {xTicks.map((t, i) => (
-                  <text
-                    key={i}
-                    x={getX(t.index)}
-                    y={H_MAIN + H_VOL + H_RSI + 15}
-                    fill="rgba(255,255,255,0.55)"
-                    fontSize="9.5"
-                    textAnchor="middle"
-                    fontFamily="var(--font-mono, monospace)"
-                  >
-                    {t.label}
-                  </text>
-                ))}
-              </g>
-
-              {/* Interactive Crosshair Cursor */}
-              {hoverIndex != null && (
-                <g>
-                  <line
-                    x1={getX(hoverIndex)} y1={0} x2={getX(hoverIndex)} y2={H_TOTAL}
-                    stroke="rgba(255,255,255,0.4)" strokeDasharray="3 3" strokeWidth="1"
-                  />
-                  <circle
-                    cx={getX(hoverIndex)} cy={getY(technicalData[hoverIndex].close)}
-                    r="4" fill="#10B981" stroke="#fff" strokeWidth="1.5"
-                  />
-                </g>
-              )}
-            </svg>
-            )}
-          </div>
-
-          {/* Bottom Timeframe Selector Bar */}
-          <div style={{
-            padding: '8px 14px calc(env(safe-area-inset-bottom, 0px) + 8px)',
-            background: '#090d16',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            overflowX: 'auto',
-            gap: 4
-          }}>
-            {[
-              { id: '1D', label: '1D' },
-              { id: '2D', label: '2D' },
-              { id: '3D', label: '3D' },
-              { id: '1W', label: '1W' },
-              { id: '1M', label: '1M' },
-              { id: '3M', label: '3M' },
-              { id: '6M', label: '6M' },
-              { id: '1Y', label: '1Y' },
-              { id: '2Y', label: '2Y' },
-              { id: 'All', label: 'All' }
-            ].map(tf => {
-              const isSelected = timeframe === tf.id;
-              return (
-                <button
-                  key={tf.id}
-                  onClick={() => setTimeframe(tf.id)}
-                  style={{
-                    background: isSelected ? '#10B981' : 'transparent',
-                    color: isSelected ? '#000000' : 'rgba(255,255,255,0.65)',
-                    border: 'none',
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    fontSize: 12,
-                    fontWeight: isSelected ? '900' : '600',
-                    cursor: 'pointer',
-                    flexShrink: 0
-                  }}
-                >
-                  {tf.label}
-                </button>
-              );
-            })}
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>
+              {companyName}
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Right: Native vs Web Switcher & Close button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            display: 'flex',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: 8,
+            padding: 2
+          }}>
+            <button
+              type="button"
+              onClick={() => setChartSource('native')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                borderRadius: 6,
+                fontSize: 11.5,
+                fontWeight: chartSource === 'native' ? 800 : 600,
+                cursor: 'pointer',
+                border: 'none',
+                background: chartSource === 'native' ? '#3875F6' : 'transparent',
+                color: chartSource === 'native' ? '#ffffff' : '#94a3b8',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Cpu size={12} />
+              <span>Native Pro Chart</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartSource('web')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                borderRadius: 6,
+                fontSize: 11.5,
+                fontWeight: chartSource === 'web' ? 800 : 600,
+                cursor: 'pointer',
+                border: 'none',
+                background: chartSource === 'web' ? '#3875F6' : 'transparent',
+                color: chartSource === 'web' ? '#ffffff' : '#94a3b8',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Globe size={12} />
+              <span>TradingView Web</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 8,
+              padding: '6px',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Main Workstation Content Area ── */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {chartSource === 'web' ? (
+          <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', background: '#131722' }}>
+            <iframe
+              title="TradingView Technical Chart"
+              src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=NEPSE%3A${encodeURIComponent(cleanSymbol)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FKathmandu&withdateranges=1&showpopupbutton=1`}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              allowFullScreen
+              onError={(e) => {
+                console.warn('TradingView iframe load warning:', e);
+              }}
+            />
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '6px 8px 10px' }}>
+            <ShareHubChart
+              symbol={symbol}
+              stock={stock}
+              chartTimeframe={timeframe}
+              onTimeframeChange={setTimeframe}
+              isFullscreen={true}
+              height={500}
+              entryExitPlan={entryExitPlan}
+              brokerAnalysis={brokerAnalysis}
+              floorsheetData={floorsheetData}
+              onToggleFullscreen={onClose}
+              showTimeframeBar={true}
+              showAdvancedChartBtn={false}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

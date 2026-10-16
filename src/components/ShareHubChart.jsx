@@ -172,9 +172,9 @@ function computeVolSMA(volumes, period = 20) {
 export default function ShareHubChart({
   history,
   symbol = 'NEPSE',
-  mode = 'candle',
+  mode = 'line',
   chartTimeframe = '1M',
-  height = 360,
+  height,
   isIntraday = false,
   stock = null,
   showTimeframeBar = true,
@@ -192,42 +192,50 @@ export default function ShareHubChart({
   const mainSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
 
+  const activeIsFullscreen = Boolean(isFullscreen);
+
   const [activeTf, setActiveTf] = useState(chartTimeframe || '1M');
-  const [activeMode, setActiveMode] = useState(mode || 'candle');
+  const [activeMode, setActiveMode] = useState(mode || 'line');
   const [rawHistory, setRawHistory] = useState(Array.isArray(history) && history.length > 0 ? history : []);
   const [intradayData, setIntradayData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hoverData, setHoverData] = useState(null);
 
-  // ── Technical Indicator Toggles for Analyst Workstation ──
+  // ── Technical Indicator Toggles for Analyst Workstation (Active in Fullscreen) ──
   const isIndividualStock = symbol && symbol !== 'NEPSE' && symbol !== 'NEPSE Index';
-  const [showEma20, setShowEma20] = useState(isIndividualStock);
-  const [showEma50, setShowEma50] = useState(isIndividualStock);
+  const [showEma20, setShowEma20] = useState(true);
+  const [showEma50, setShowEma50] = useState(true);
   const [showEma200, setShowEma200] = useState(false);
   const [showBollinger, setShowBollinger] = useState(false);
   const [showVwap, setShowVwap] = useState(isIndividualStock);
   const [showPivots, setShowPivots] = useState(false);
   const [showFib, setShowFib] = useState(false);
   const [show52W, setShow52W] = useState(false);
-  const [showPatterns, setShowPatterns] = useState(true);
-  const [showRsi, setShowRsi] = useState(false);
+  const [showPatterns, setShowPatterns] = useState(false);
+  const [showRsi, setShowRsi] = useState(true);
   const [showMacd, setShowMacd] = useState(false);
-  const [showVolSma, setShowVolSma] = useState(isIndividualStock);
+  const [showVolSma, setShowVolSma] = useState(true);
   const [showTradePlan, setShowTradePlan] = useState(isIndividualStock);
   const [showInstVwap, setShowInstVwap] = useState(isIndividualStock);
   const [showPoc, setShowPoc] = useState(isIndividualStock);
 
-  useEffect(() => {
-    const isIndiv = symbol && symbol !== 'NEPSE' && symbol !== 'NEPSE Index';
-    setShowEma20(isIndiv);
-    setShowEma50(isIndiv);
-    setShowVwap(isIndiv);
-    setShowVolSma(isIndiv);
-    setShowTradePlan(isIndiv);
-    setShowInstVwap(isIndiv);
-    setShowPoc(isIndiv);
-  }, [symbol]);
+  // When in inline mode (!activeIsFullscreen), FORCE ALL OVERLAYS & INDICATORS OFF for 100% clean chart
+  const effectiveShowEma20 = activeIsFullscreen && showEma20;
+  const effectiveShowEma50 = activeIsFullscreen && showEma50;
+  const effectiveShowEma200 = activeIsFullscreen && showEma200;
+  const effectiveShowBollinger = activeIsFullscreen && showBollinger;
+  const effectiveShowVwap = activeIsFullscreen && showVwap;
+  const effectiveShowPivots = activeIsFullscreen && showPivots;
+  const effectiveShowFib = activeIsFullscreen && showFib;
+  const effectiveShow52W = activeIsFullscreen && show52W;
+  const effectiveShowPatterns = activeIsFullscreen && showPatterns;
+  const effectiveShowRsi = activeIsFullscreen && showRsi;
+  const effectiveShowMacd = activeIsFullscreen && showMacd;
+  const effectiveShowVolSma = activeIsFullscreen && showVolSma;
+  const effectiveShowTradePlan = activeIsFullscreen && showTradePlan;
+  const effectiveShowInstVwap = activeIsFullscreen && showInstVwap;
+  const effectiveShowPoc = activeIsFullscreen && showPoc;
 
   // Sync props when chartTimeframe or mode changes from parent
   useEffect(() => {
@@ -828,9 +836,11 @@ export default function ShareHubChart({
   const low52w = Number(stock?.low52w || 0);
   const rvol = Number(stock?.rvol || stock?.volumeSurgeRatio || 0);
 
-  // Sub-pane dynamic layout
-  const subPaneCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
-  const dynamicHeight = Math.max(340, height) + (subPaneCount * 85);
+  // Sub-pane dynamic layout (Active in fullscreen only)
+  const effectiveSubPaneCount = (effectiveShowRsi ? 1 : 0) + (effectiveShowMacd ? 1 : 0);
+  const dynamicHeight = activeIsFullscreen
+    ? (Math.max(400, height || 440) + (effectiveSubPaneCount * 85))
+    : (height || 260);
 
   const handleSelectTimeframe = (tfId) => {
     setActiveTf(tfId);
@@ -858,15 +868,15 @@ export default function ShareHubChart({
     let rsiTop = 0, rsiBottom = 0;
     let macdTop = 0, macdBottom = 0;
 
-    if (subPaneCount === 1 && showRsi) {
+    if (effectiveSubPaneCount === 1 && effectiveShowRsi) {
       mainBottom = 0.32;
       volTop = 0.74; volBottom = 0.14;
       rsiTop = 0.86; rsiBottom = 0;
-    } else if (subPaneCount === 1 && showMacd) {
+    } else if (effectiveSubPaneCount === 1 && effectiveShowMacd) {
       mainBottom = 0.32;
       volTop = 0.74; volBottom = 0.14;
       macdTop = 0.86; macdBottom = 0;
-    } else if (subPaneCount === 2) {
+    } else if (effectiveSubPaneCount === 2) {
       mainBottom = 0.44;
       volTop = 0.76; volBottom = 0.26;
       rsiTop = 0.74; rsiBottom = 0.14;
@@ -960,7 +970,7 @@ export default function ShareHubChart({
         })));
 
         // Pattern Markers on Candlesticks
-        if (showPatterns && patternMarkers.length > 0) {
+        if (effectiveShowPatterns && patternMarkers.length > 0) {
           try {
             mainSeries.setMarkers(patternMarkers);
           } catch (_) {}
@@ -1015,7 +1025,7 @@ export default function ShareHubChart({
         })));
         volumeSeriesRef.current = volumeSeries;
 
-        if (showVolSma && volSmaData.length > 0) {
+        if (effectiveShowVolSma && volSmaData.length > 0) {
           const volSmaSeries = chart.addSeries(LineSeries, {
             color: '#fbbf24',
             lineWidth: 1.5,
@@ -1028,21 +1038,21 @@ export default function ShareHubChart({
       }
 
       // 3. EMA Overlays
-      if (showEma20 && ema20Data.length > 0) {
+      if (effectiveShowEma20 && ema20Data.length > 0) {
         const ema20Series = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 1.5, title: 'EMA 20' });
         ema20Series.setData(ema20Data);
       }
-      if (showEma50 && ema50Data.length > 0) {
+      if (effectiveShowEma50 && ema50Data.length > 0) {
         const ema50Series = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1.5, title: 'EMA 50' });
         ema50Series.setData(ema50Data);
       }
-      if (showEma200 && ema200Data.length > 0) {
+      if (effectiveShowEma200 && ema200Data.length > 0) {
         const ema200Series = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, title: 'EMA 200' });
         ema200Series.setData(ema200Data);
       }
 
       // 4. Bollinger Bands Overlays
-      if (showBollinger && bollingerData.upper.length > 0) {
+      if (effectiveShowBollinger && bollingerData.upper.length > 0) {
         const bbU = chart.addSeries(LineSeries, { color: 'rgba(56, 189, 248, 0.65)', lineWidth: 1, lineStyle: LineStyle.Dotted, title: 'BB Upper' });
         bbU.setData(bollingerData.upper);
         const bbL = chart.addSeries(LineSeries, { color: 'rgba(56, 189, 248, 0.65)', lineWidth: 1, lineStyle: LineStyle.Dotted, title: 'BB Lower' });
@@ -1052,13 +1062,13 @@ export default function ShareHubChart({
       }
 
       // 5. VWAP Overlay
-      if (showVwap && vwapData.length > 0) {
+      if (effectiveShowVwap && vwapData.length > 0) {
         const vwapSeries = chart.addSeries(LineSeries, { color: '#fbbf24', lineWidth: 1.5, lineStyle: LineStyle.Dashed, title: 'VWAP' });
         vwapSeries.setData(vwapData);
       }
 
       // 6. Pivot Points & Support/Resistance Lines
-      if (showPivots && pivotData) {
+      if (effectiveShowPivots && pivotData) {
         const pivotLines = [
           { price: pivotData.P, color: '#e2e8f0', title: `PP: ${pivotData.P}` },
           { price: pivotData.R1, color: '#34d399', title: `R1: ${pivotData.R1}` },
@@ -1081,7 +1091,7 @@ export default function ShareHubChart({
       }
 
       // 7. Fibonacci Retracements
-      if (showFib && fibData) {
+      if (effectiveShowFib && fibData) {
         const fibLines = [
           { price: fibData.level_0, color: '#c4b5fd', title: `Fib 0%: ${fibData.level_0}` },
           { price: fibData.level_236, color: '#a78bfa', title: `Fib 23.6%: ${fibData.level_236}` },
@@ -1105,7 +1115,7 @@ export default function ShareHubChart({
       }
 
       // 8. 52-Week High / Low Markers
-      if (show52W) {
+      if (effectiveShow52W) {
         if (high52w > 0) {
           mainSeries.createPriceLine({
             price: high52w,
@@ -1129,7 +1139,7 @@ export default function ShareHubChart({
       }
 
       // 9. RSI Sub-Pane
-      if (showRsi && rsiData.length > 0) {
+      if (effectiveShowRsi && rsiData.length > 0) {
         const rsiSeries = chart.addSeries(LineSeries, {
           color: '#f472b6',
           lineWidth: 1.5,
@@ -1148,7 +1158,7 @@ export default function ShareHubChart({
       }
 
       // 10. MACD Sub-Pane
-      if (showMacd) {
+      if (effectiveShowMacd) {
         if (macdArrays.histogram.length > 0) {
           const macdHist = chart.addSeries(HistogramSeries, {
             priceFormat: { type: 'price', precision: 3, minMove: 0.001 },
@@ -1187,7 +1197,7 @@ export default function ShareHubChart({
       }
 
       // 11. Volume Profile Point of Control (POC)
-      if (showPoc && pocPrice && pocPrice > 0) {
+      if (effectiveShowPoc && pocPrice && pocPrice > 0) {
         try {
           mainSeries.createPriceLine({
             price: pocPrice,
@@ -1201,7 +1211,7 @@ export default function ShareHubChart({
       }
 
       // 12. Institutional Broker VWAP (Top Accumulators Cost Basis)
-      if (showInstVwap && instVwap && instVwap > 0) {
+      if (effectiveShowInstVwap && instVwap && instVwap > 0) {
         try {
           mainSeries.createPriceLine({
             price: instVwap,
@@ -1215,7 +1225,7 @@ export default function ShareHubChart({
       }
 
       // 13. Live Trade Plan Corridors
-      if (showTradePlan && tradePlanCorridor) {
+      if (effectiveShowTradePlan && tradePlanCorridor) {
         try {
           if (tradePlanCorridor.t2) {
             mainSeries.createPriceLine({
@@ -1278,9 +1288,12 @@ export default function ShareHubChart({
         }
         const sData = param.seriesData.get(mainSeries);
         if (sData) {
-          const matchingEma20 = ema20Data.find(e => e.time === param.time)?.value ?? null;
-          const matchingRsi = rsiData.find(r => r.time === param.time)?.value ?? null;
-          const matchingVwap = vwapData.find(v => v.time === param.time)?.value ?? null;
+          const matchingEma20 = effectiveShowEma20 ? (ema20Data.find(e => e.time === param.time)?.value ?? null) : null;
+          const matchingEma50 = effectiveShowEma50 ? (ema50Data.find(e => e.time === param.time)?.value ?? null) : null;
+          const matchingEma200 = effectiveShowEma200 ? (ema200Data.find(e => e.time === param.time)?.value ?? null) : null;
+          const matchingRsi = effectiveShowRsi ? (rsiData.find(r => r.time === param.time)?.value ?? null) : null;
+          const matchingVwap = effectiveShowVwap ? (vwapData.find(v => v.time === param.time)?.value ?? null) : null;
+          const matchingVol = volumeSeriesRef.current ? (param.seriesData.get(volumeSeriesRef.current)?.value ?? null) : null;
           setHoverData({
             time: param.time,
             open: sData.open ?? sData.value,
@@ -1288,7 +1301,10 @@ export default function ShareHubChart({
             low: sData.low ?? sData.value,
             close: sData.close ?? sData.value,
             value: sData.value ?? sData.close,
+            volume: matchingVol,
             ema20: matchingEma20,
+            ema50: matchingEma50,
+            ema200: matchingEma200,
             rsi: matchingRsi,
             vwap: matchingVwap
           });
@@ -1329,23 +1345,23 @@ export default function ShareHubChart({
     activeMode,
     isTrulyIntraday,
     dynamicHeight,
-    showEma20,
-    showEma50,
-    showEma200,
-    showBollinger,
-    showVwap,
-    showPivots,
-    showFib,
-    show52W,
-    showPatterns,
-    showRsi,
-    showMacd,
-    showVolSma,
-    showPoc,
+    effectiveShowEma20,
+    effectiveShowEma50,
+    effectiveShowEma200,
+    effectiveShowBollinger,
+    effectiveShowVwap,
+    effectiveShowPivots,
+    effectiveShowFib,
+    effectiveShow52W,
+    effectiveShowPatterns,
+    effectiveShowRsi,
+    effectiveShowMacd,
+    effectiveShowVolSma,
+    effectiveShowPoc,
     pocPrice,
-    showInstVwap,
+    effectiveShowInstVwap,
     instVwap,
-    showTradePlan,
+    effectiveShowTradePlan,
     tradePlanCorridor,
     ema20Data,
     ema50Data,
@@ -1360,7 +1376,7 @@ export default function ShareHubChart({
     high52w,
     low52w,
     patternMarkers,
-    subPaneCount
+    effectiveSubPaneCount
   ]);
 
   // Active HUD Price & Metadata
@@ -1458,37 +1474,144 @@ export default function ShareHubChart({
   return (
     <div style={{
       width: '100%',
-      height: isFullscreen ? '100%' : 'auto',
+      height: activeIsFullscreen ? '100%' : 'auto',
       display: 'flex',
       flexDirection: 'column',
       userSelect: 'none',
       position: 'relative'
     }}>
-      {/* ── Top Legend & Crosshair HUD Bar ── */}
-      {activeHud && (
+      {/* ── Stage 1: Clean Minimalist First-Glance Top Bar (Inline Mode) ── */}
+      {!activeIsFullscreen && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '4px 6px 8px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-          marginBottom: 8,
+          padding: '4px 2px 8px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+          marginBottom: 6,
           fontSize: 12,
           fontFamily: 'var(--font-mono, monospace)',
-          flexWrap: 'wrap',
           gap: 6
         }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em', fontSize: 13 }}>{symbol}</span>
+            {hoverData ? (
+              <>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  color: isUp ? '#10B981' : '#F43F5E'
+                }}>
+                  Rs. {Number(hoverData.close || hoverData.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                {hudTimeLabel && (
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>({hudTimeLabel})</span>
+                )}
+              </>
+            ) : (
+              <>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  color: isUp ? '#10B981' : '#F43F5E'
+                }}>
+                  Rs. {Number(authoritativeLtp).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: isUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
+                  color: isUp ? '#10B981' : '#F43F5E'
+                }}>
+                  {isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)} ({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)
+                </span>
+                {latestBar && (
+                  <span style={{ fontSize: 11, color: '#64748b' }} className="hidden sm:inline">
+                    H: {latestBar.high != null ? Number(latestBar.high).toFixed(1) : '—'} • L: {latestBar.low != null ? Number(latestBar.low).toFixed(1) : '—'}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {/* Compact Line | Candle Toggle */}
+            <button
+              type="button"
+              onClick={() => setActiveMode(m => m === 'candle' ? 'line' : 'candle')}
+              title={activeMode === 'candle' ? 'Switch to Area Line' : 'Switch to Candlesticks'}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.22)' : 'rgba(255,255,255,0.04)',
+                color: activeMode === 'candle' ? '#60a5fa' : '#94a3b8',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              {activeMode === 'candle' ? <BarChart2 size={12} /> : <TrendingUp size={12} />}
+              <span>{activeMode === 'candle' ? 'Candles' : 'Line'}</span>
+            </button>
+
+            {/* Fullscreen Technical Chart Expand Button */}
+            {(onOpenTradingView || onToggleFullscreen) && (
+              <button
+                type="button"
+                onClick={onOpenTradingView || onToggleFullscreen}
+                title="Open Fullscreen Technical Chart"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 6,
+                  padding: '4px 7px',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Maximize2 size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Stage 2: Fullscreen Live Crosshair Technician HUD Strip ── */}
+      {activeIsFullscreen && activeHud && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 8px 6px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          marginBottom: 6,
+          fontSize: 11.5,
+          fontFamily: 'var(--font-mono, monospace)',
+          flexWrap: 'wrap',
+          gap: 6,
+          background: '#090d16',
+          borderRadius: 6
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em' }}>{symbol}</span>
+            <span style={{ fontWeight: 800, color: '#f8fafc', letterSpacing: '0.02em', fontSize: 13 }}>{symbol}</span>
             <span style={{
-              fontSize: 12,
-              padding: '1px 6px',
+              fontSize: 11,
+              padding: '1px 5px',
               borderRadius: 4,
               background: isTrulyIntraday ? 'rgba(56, 117, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
               color: isTrulyIntraday ? '#60a5fa' : '#94a3b8',
               fontWeight: 700
             }}>
-              {isTrulyIntraday ? (activeMode === 'candle' ? '5m Intraday' : '1m Ticks') : 'Daily'}
+              {isTrulyIntraday ? (activeMode === 'candle' ? '5m Intraday' : '1m Ticks') : activeTf}
             </span>
             <span style={{
               fontSize: '13px',
@@ -1498,10 +1621,10 @@ export default function ShareHubChart({
               Rs. {Number(activeHud.close || activeHud.value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span style={{
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 800,
-              padding: '2px 7px',
-              borderRadius: 6,
+              padding: '1px 6px',
+              borderRadius: 4,
               background: isUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)',
               border: isUp ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(244, 63, 94, 0.35)',
               color: isUp ? '#10B981' : '#F43F5E',
@@ -1509,467 +1632,302 @@ export default function ShareHubChart({
               alignItems: 'center',
               gap: 3
             }}>
-              <span>{isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)} pts</span>
+              <span>{isUp ? '▲ +' : '▼ '}{Math.abs(hudMetrics.change).toFixed(2)}</span>
               <span>({isUp ? '+' : ''}{hudMetrics.pChange.toFixed(2)}%)</span>
             </span>
             {hudTimeLabel && (
-              <span style={{ fontSize: 12, color: '#64748b' }}>({hudTimeLabel})</span>
+              <span style={{ fontSize: 11, color: '#64748b' }}>({hudTimeLabel})</span>
             )}
-            {activeHud.ema20 != null && (
-              <span style={{ color: '#38bdf8', fontSize: 11 }}>EMA20: {activeHud.ema20}</span>
-            )}
-            {activeHud.vwap != null && (
-              <span style={{ color: '#fbbf24', fontSize: 11 }}>VWAP: {activeHud.vwap}</span>
-            )}
-            {instVwap != null && (
-              <span style={{ color: '#06b6d4', fontSize: 11, fontWeight: 700 }}>Inst. VWAP: Rs. {instVwap}</span>
-            )}
-            {pocPrice != null && (
-              <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>POC: Rs. {pocPrice}</span>
-            )}
-            {activeHud.rsi != null && (
-              <span style={{ color: '#f472b6', fontSize: 11 }}>RSI: {activeHud.rsi}</span>
-            )}
+            {activeHud.open != null && <span><span style={{ color: '#64748b' }}>O:</span> {Number(activeHud.open).toFixed(2)}</span>}
+            {activeHud.high != null && <span><span style={{ color: '#64748b' }}>H:</span> <span style={{ color: '#10B981' }}>{Number(activeHud.high).toFixed(2)}</span></span>}
+            {activeHud.low != null && <span><span style={{ color: '#64748b' }}>L:</span> <span style={{ color: '#F43F5E' }}>{Number(activeHud.low).toFixed(2)}</span></span>}
+            {activeHud.close != null && <span><span style={{ color: '#64748b' }}>C:</span> <span style={{ color: isUp ? '#10B981' : '#F43F5E' }}>{Number(activeHud.close).toFixed(2)}</span></span>}
+            {activeHud.volume != null && <span><span style={{ color: '#64748b' }}>Vol:</span> {Number(activeHud.volume).toLocaleString()}</span>}
+            {activeHud.ema20 != null && <span style={{ color: '#38bdf8' }}>EMA20: {activeHud.ema20}</span>}
+            {activeHud.ema50 != null && <span style={{ color: '#f59e0b' }}>EMA50: {activeHud.ema50}</span>}
+            {activeHud.ema200 != null && <span style={{ color: '#a855f7' }}>EMA200: {activeHud.ema200}</span>}
+            {activeHud.vwap != null && <span style={{ color: '#fbbf24' }}>VWAP: {activeHud.vwap}</span>}
+            {activeHud.rsi != null && <span style={{ color: '#f472b6' }}>RSI: {activeHud.rsi}</span>}
+            {instVwap != null && <span style={{ color: '#06b6d4' }}>Whale: Rs. {instVwap}</span>}
+            {pocPrice != null && <span style={{ color: '#f59e0b' }}>POC: Rs. {pocPrice}</span>}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#94a3b8' }}>
-            {activeHud.open != null && (
-              <span><span style={{ color: '#64748b' }}>O</span> {Number(activeHud.open).toFixed(2)}</span>
-            )}
-            {activeHud.high != null && (
-              <span><span style={{ color: '#64748b' }}>H</span> <span style={{ color: '#10B981' }}>{Number(activeHud.high).toFixed(2)}</span></span>
-            )}
-            {activeHud.low != null && (
-              <span><span style={{ color: '#64748b' }}>L</span> <span style={{ color: '#F43F5E' }}>{Number(activeHud.low).toFixed(2)}</span></span>
-            )}
-            {activeHud.close != null && (
-              <span><span style={{ color: '#64748b' }}>C</span> <span style={{ color: isUp ? '#10B981' : '#F43F5E' }}>{Number(activeHud.close).toFixed(2)}</span></span>
-            )}
-          </div>
+          {onToggleFullscreen && (
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              title="Exit Fullscreen"
+              style={{
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 6,
+                padding: '3px 8px',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <Minimize2 size={12} />
+              <span style={{ fontSize: 11 }}>Exit</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── At-A-Glance Predictive Analyst Telemetry Bar ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 6,
-        padding: '6px 8px',
-        background: '#0d131f',
-        borderRadius: 8,
-        border: '1px solid rgba(255, 255, 255, 0.06)',
-        marginBottom: 8,
-        fontSize: 11.5
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {/* Trend verdict */}
-          <span style={{
-            padding: '2px 8px',
-            borderRadius: 6,
-            fontWeight: 800,
-            color: trendVerdict.color,
-            background: trendVerdict.bg,
-            border: `1px solid ${trendVerdict.color}44`,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}>
-            <Sparkles size={11} />
-            {trendVerdict.label}
-          </span>
-
-          {/* Trade Plan Setup Score & Verdict Badge */}
-          {tradePlanCorridor && (
-            <span style={{
-              padding: '2px 8px',
-              borderRadius: 6,
-              fontWeight: 800,
-              color: tradePlanCorridor.setupScore >= 70 ? '#10b981' : tradePlanCorridor.setupScore >= 50 ? '#38bdf8' : '#fb923c',
-              background: tradePlanCorridor.setupScore >= 70 ? 'rgba(16, 185, 129, 0.15)' : tradePlanCorridor.setupScore >= 50 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(251, 146, 60, 0.15)',
-              border: `1px solid ${tradePlanCorridor.setupScore >= 70 ? '#10b98144' : tradePlanCorridor.setupScore >= 50 ? '#38bdf844' : '#fb923c44'}`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <span>🎯 Setup: {tradePlanCorridor.setupScore}/100</span>
-              {tradePlanCorridor.verdict && <span style={{ opacity: 0.85 }}>• {tradePlanCorridor.verdict}</span>}
-            </span>
-          )}
-
-          {/* Broker Accumulation / Distribution Status */}
-          {brokerAnalysis && (brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias) && (() => {
-            const sig = brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias;
-            const isAcc = String(sig).includes('Accum') || String(sig).includes('Cornering');
-            const isDist = String(sig).includes('Dist') || String(sig).includes('Offloading');
-            const col = isAcc ? '#10b981' : isDist ? '#f43f5e' : '#94a3b8';
-            return (
-              <span style={{
-                padding: '2px 8px',
-                borderRadius: 6,
+      {/* ── Stage 2: Single-Row Horizontal Scrollable Technician Toolbar (Fullscreen Only) ── */}
+      {activeIsFullscreen && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          scrollbarWidth: 'none',
+          padding: '4px 6px',
+          background: '#0d131f',
+          borderRadius: 8,
+          border: '1px solid rgba(255, 255, 255, 0.06)',
+          marginBottom: 6,
+          flexShrink: 0
+        }}>
+          {/* Chart Type: Candles | Area Line */}
+          <div style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setActiveMode('candle')}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 5,
+                fontSize: 11,
                 fontWeight: 800,
-                color: col,
-                background: col + '18',
-                border: `1px solid ${col}44`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4
-              }}>
-                <span>🏦 Broker: {sig}</span>
-                {Number(brokerAnalysis.bcr3BuyPct) > 0 && <span style={{ fontSize: 10.5, opacity: 0.85 }}>({Number(brokerAnalysis.bcr3BuyPct).toFixed(0)}% BCR3)</span>}
-              </span>
-            );
-          })()}
+                cursor: 'pointer',
+                border: activeMode === 'candle' ? '1px solid #3875f6' : '1px solid rgba(255,255,255,0.06)',
+                background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.25)' : 'rgba(255,255,255,0.03)',
+                color: activeMode === 'candle' ? '#60a5fa' : '#94a3b8'
+              }}
+            >
+              🕯️ Candles
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMode('line')}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 5,
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: activeMode === 'line' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+                background: activeMode === 'line' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255,255,255,0.03)',
+                color: activeMode === 'line' ? '#10b981' : '#94a3b8'
+              }}
+            >
+              📈 Area Line
+            </button>
+          </div>
 
-          {/* RSI Badge */}
-          {rsiBadge && (
-            <span style={{
-              padding: '2px 8px',
-              borderRadius: 6,
-              fontWeight: 800,
-              color: rsiBadge.color,
-              background: rsiBadge.bg,
-              border: `1px solid ${rsiBadge.color}44`,
-              fontFamily: 'var(--font-mono, monospace)'
-            }}>
-              {rsiBadge.text}
-            </span>
+          <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 2px', flexShrink: 0 }} />
+
+          {/* Moving Averages & Trend */}
+          <button
+            type="button"
+            onClick={() => setShowEma20(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showEma20 ? 800 : 600, cursor: 'pointer',
+              border: showEma20 ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+              background: showEma20 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showEma20 ? '#38bdf8' : '#64748b'
+            }}
+          >
+            EMA 20
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowEma50(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showEma50 ? 800 : 600, cursor: 'pointer',
+              border: showEma50 ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.06)',
+              background: showEma50 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showEma50 ? '#f59e0b' : '#64748b'
+            }}
+          >
+            EMA 50
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowEma200(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showEma200 ? 800 : 600, cursor: 'pointer',
+              border: showEma200 ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.06)',
+              background: showEma200 ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showEma200 ? '#a855f7' : '#64748b'
+            }}
+          >
+            EMA 200
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowVwap(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showVwap ? 800 : 600, cursor: 'pointer',
+              border: showVwap ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.06)',
+              background: showVwap ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showVwap ? '#fbbf24' : '#64748b'
+            }}
+          >
+            VWAP
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBollinger(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showBollinger ? 800 : 600, cursor: 'pointer',
+              border: showBollinger ? '1px solid #22d3ee' : '1px solid rgba(255,255,255,0.06)',
+              background: showBollinger ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showBollinger ? '#22d3ee' : '#64748b'
+            }}
+          >
+            Bollinger (20,2)
+          </button>
+
+          <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 2px', flexShrink: 0 }} />
+
+          {/* Sub-Panes */}
+          <button
+            type="button"
+            onClick={() => setShowRsi(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showRsi ? 800 : 600, cursor: 'pointer',
+              border: showRsi ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.06)',
+              background: showRsi ? 'rgba(244, 114, 182, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showRsi ? '#f472b6' : '#64748b'
+            }}
+          >
+            RSI (14)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowMacd(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showMacd ? 800 : 600, cursor: 'pointer',
+              border: showMacd ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+              background: showMacd ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showMacd ? '#38bdf8' : '#64748b'
+            }}
+          >
+            MACD (12,26,9)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowVolSma(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showVolSma ? 800 : 600, cursor: 'pointer',
+              border: showVolSma ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.06)',
+              background: showVolSma ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showVolSma ? '#fbbf24' : '#64748b'
+            }}
+          >
+            Vol SMA 20
+          </button>
+
+          <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)', margin: '0 2px', flexShrink: 0 }} />
+
+          {/* Key Action Levels & Geometry */}
+          {tradePlanCorridor && (
+            <button
+              type="button"
+              onClick={() => setShowTradePlan(v => !v)}
+              style={{
+                padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showTradePlan ? 800 : 600, cursor: 'pointer',
+                border: showTradePlan ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+                background: showTradePlan ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: showTradePlan ? '#10b981' : '#64748b'
+              }}
+            >
+              🎯 Trade Plan
+            </button>
           )}
 
-          {/* MACD Hist Badge */}
-          {currentMacdHist != null && (
-            <span style={{
-              padding: '2px 8px',
-              borderRadius: 6,
-              fontWeight: 800,
-              color: currentMacdHist >= 0 ? '#34d399' : '#fb7185',
-              background: currentMacdHist >= 0 ? 'rgba(52, 211, 153, 0.12)' : 'rgba(251, 113, 133, 0.12)',
-              border: `1px solid ${currentMacdHist >= 0 ? '#34d399' : '#fb7185'}44`,
-              fontFamily: 'var(--font-mono, monospace)'
-            }}>
-              MACD {currentMacdHist >= 0 ? '▲ +' : '▼ '}{currentMacdHist.toFixed(2)}
-            </span>
+          {(instVwap != null || pocPrice != null) && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !(showInstVwap || showPoc);
+                setShowInstVwap(next);
+                setShowPoc(next);
+              }}
+              style={{
+                padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: (showInstVwap || showPoc) ? 800 : 600, cursor: 'pointer',
+                border: (showInstVwap || showPoc) ? '1px solid #06b6d4' : '1px solid rgba(255,255,255,0.06)',
+                background: (showInstVwap || showPoc) ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255,255,255,0.03)',
+                color: (showInstVwap || showPoc) ? '#06b6d4' : '#64748b'
+              }}
+            >
+              🐋 Whale Cost & POC
+            </button>
           )}
 
-          {/* RVOL Badge */}
-          {rvolBadge && (
-            <span style={{
-              padding: '2px 8px',
-              borderRadius: 6,
-              fontWeight: 800,
-              color: rvolBadge.color,
-              background: rvolBadge.bg,
-              border: `1px solid ${rvolBadge.color}44`
-            }}>
-              {rvolBadge.text}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowPivots(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showPivots ? 800 : 600, cursor: 'pointer',
+              border: showPivots ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.06)',
+              background: showPivots ? 'rgba(203, 213, 225, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showPivots ? '#ffffff' : '#64748b'
+            }}
+          >
+            Pivots
+          </button>
 
-          {/* Latest Pattern Alert */}
-          {latestPattern && (
-            <span style={{
-              padding: '2px 8px',
-              borderRadius: 6,
-              fontWeight: 800,
-              color: latestPattern.color,
-              background: latestPattern.color + '18',
-              border: `1px solid ${latestPattern.color}44`
-            }}>
-              🕯 {latestPattern.text}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowFib(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showFib ? 800 : 600, cursor: 'pointer',
+              border: showFib ? '1px solid #c084fc' : '1px solid rgba(255,255,255,0.06)',
+              background: showFib ? 'rgba(192, 132, 252, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showFib ? '#c084fc' : '#64748b'
+            }}
+          >
+            Fibonacci
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShow52W(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: show52W ? 800 : 600, cursor: 'pointer',
+              border: show52W ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+              background: show52W ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: show52W ? '#10b981' : '#64748b'
+            }}
+          >
+            52W H/L
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPatterns(v => !v)}
+            style={{
+              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: showPatterns ? 800 : 600, cursor: 'pointer',
+              border: showPatterns ? '1px solid #fb923c' : '1px solid rgba(255,255,255,0.06)',
+              background: showPatterns ? 'rgba(251, 146, 60, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showPatterns ? '#fb923c' : '#64748b'
+            }}
+          >
+            🕯 Patterns
+          </button>
         </div>
-
-        {/* Trade Plan / Pivot Support & Resistance Corridors */}
-        {tradePlanCorridor ? (
-          <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8', flexWrap: 'wrap' }}>
-            {tradePlanCorridor.t1 && <span>T1: <strong style={{ color: '#34d399' }}>Rs. {tradePlanCorridor.t1}</strong></span>}
-            {tradePlanCorridor.t2 && <span>T2: <strong style={{ color: '#10b981' }}>Rs. {tradePlanCorridor.t2}</strong></span>}
-            {tradePlanCorridor.sl && <span>SL: <strong style={{ color: '#ef4444' }}>Rs. {tradePlanCorridor.sl}</strong></span>}
-            {tradePlanCorridor.rrRatio && <span>R:R: <strong style={{ color: '#38bdf8' }}>1:{Number(tradePlanCorridor.rrRatio).toFixed(1)}</strong></span>}
-          </div>
-        ) : pivotData ? (
-          <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8' }}>
-            <span>Target (R1): <strong style={{ color: '#34d399' }}>Rs. {pivotData.R1}</strong></span>
-            <span>Stop (S1): <strong style={{ color: '#fb7185' }}>Rs. {pivotData.S1}</strong></span>
-          </div>
-        ) : null}
-      </div>
-
-      {/* ── Interactive Indicator Toolbar ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 5,
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
-        padding: '2px 0 6px 0',
-        marginBottom: 4,
-        flexWrap: 'wrap'
-      }}>
-        {/* Candle / Line toggle */}
-        <button
-          type="button"
-          onClick={() => setActiveMode(activeMode === 'candle' ? 'line' : 'candle')}
-          style={{
-            padding: '3px 8px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: 800,
-            cursor: 'pointer',
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.25)' : 'rgba(255,255,255,0.04)',
-            color: activeMode === 'candle' ? '#60a5fa' : '#94a3b8',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}
-        >
-          {activeMode === 'candle' ? <BarChart2 size={12} /> : <TrendingUp size={12} />}
-          {activeMode === 'candle' ? 'Candles' : 'Line'}
-        </button>
-
-        {/* Trade Plan Corridor Toggle */}
-        {tradePlanCorridor && (
-          <button
-            type="button"
-            onClick={() => setShowTradePlan(v => !v)}
-            style={{
-              padding: '3px 8px',
-              borderRadius: 6,
-              fontSize: 11,
-              fontWeight: showTradePlan ? 800 : 600,
-              cursor: 'pointer',
-              border: showTradePlan ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
-              background: showTradePlan ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
-              color: showTradePlan ? '#10b981' : '#64748b'
-            }}
-          >
-            🎯 Trade Plan
-          </button>
-        )}
-
-        {/* Whale Cost & POC Combined Pill */}
-        {(instVwap != null || pocPrice != null) && (
-          <button
-            type="button"
-            onClick={() => {
-              const next = !(showInstVwap || showPoc);
-              setShowInstVwap(next);
-              setShowPoc(next);
-            }}
-            style={{
-              padding: '3px 8px',
-              borderRadius: 6,
-              fontSize: 11,
-              fontWeight: (showInstVwap || showPoc) ? 800 : 600,
-              cursor: 'pointer',
-              border: (showInstVwap || showPoc) ? '1px solid #06b6d4' : '1px solid rgba(255,255,255,0.06)',
-              background: (showInstVwap || showPoc) ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255,255,255,0.03)',
-              color: (showInstVwap || showPoc) ? '#06b6d4' : '#64748b'
-            }}
-          >
-            🐋 Whale Cost & POC
-          </button>
-        )}
-
-        {/* EMA Toggles */}
-        <button
-          type="button"
-          onClick={() => setShowEma20(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showEma20 ? 800 : 600,
-            cursor: 'pointer',
-            border: showEma20 ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
-            background: showEma20 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showEma20 ? '#38bdf8' : '#64748b'
-          }}
-        >
-          EMA 20
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowEma50(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showEma50 ? 800 : 600,
-            cursor: 'pointer',
-            border: showEma50 ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.06)',
-            background: showEma50 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showEma50 ? '#f59e0b' : '#64748b'
-          }}
-        >
-          EMA 50
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowEma200(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showEma200 ? 800 : 600,
-            cursor: 'pointer',
-            border: showEma200 ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.06)',
-            background: showEma200 ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showEma200 ? '#a855f7' : '#64748b'
-          }}
-        >
-          EMA 200
-        </button>
-
-        {/* VWAP Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowVwap(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showVwap ? 800 : 600,
-            cursor: 'pointer',
-            border: showVwap ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.06)',
-            background: showVwap ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showVwap ? '#fbbf24' : '#64748b'
-          }}
-        >
-          VWAP
-        </button>
-
-        {/* Bollinger Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowBollinger(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showBollinger ? 800 : 600,
-            cursor: 'pointer',
-            border: showBollinger ? '1px solid #22d3ee' : '1px solid rgba(255,255,255,0.06)',
-            background: showBollinger ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showBollinger ? '#22d3ee' : '#64748b'
-          }}
-        >
-          Bollinger
-        </button>
-
-        {/* Pivots Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowPivots(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showPivots ? 800 : 600,
-            cursor: 'pointer',
-            border: showPivots ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.06)',
-            background: showPivots ? 'rgba(203, 213, 225, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showPivots ? '#ffffff' : '#64748b'
-          }}
-        >
-          Pivots
-        </button>
-
-        {/* Fib Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowFib(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showFib ? 800 : 600,
-            cursor: 'pointer',
-            border: showFib ? '1px solid #c084fc' : '1px solid rgba(255,255,255,0.06)',
-            background: showFib ? 'rgba(192, 132, 252, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showFib ? '#c084fc' : '#64748b'
-          }}
-        >
-          Fibonacci
-        </button>
-
-        {/* 52W Toggle */}
-        <button
-          type="button"
-          onClick={() => setShow52W(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: show52W ? 800 : 600,
-            cursor: 'pointer',
-            border: show52W ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
-            background: show52W ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: show52W ? '#10b981' : '#64748b'
-          }}
-        >
-          52W H/L
-        </button>
-
-        {/* Patterns Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowPatterns(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showPatterns ? 800 : 600,
-            cursor: 'pointer',
-            border: showPatterns ? '1px solid #fb923c' : '1px solid rgba(255,255,255,0.06)',
-            background: showPatterns ? 'rgba(251, 146, 60, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showPatterns ? '#fb923c' : '#64748b'
-          }}
-        >
-          🕯 Patterns
-        </button>
-
-        {/* RSI Sub-pane Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowRsi(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showRsi ? 800 : 600,
-            cursor: 'pointer',
-            border: showRsi ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.06)',
-            background: showRsi ? 'rgba(244, 114, 182, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showRsi ? '#f472b6' : '#64748b'
-          }}
-        >
-          RSI Sub-Pane
-        </button>
-
-        {/* MACD Sub-pane Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowMacd(v => !v)}
-          style={{
-            padding: '3px 7px',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: showMacd ? 800 : 600,
-            cursor: 'pointer',
-            border: showMacd ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
-            background: showMacd ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
-            color: showMacd ? '#38bdf8' : '#64748b'
-          }}
-        >
-          MACD Sub-Pane
-        </button>
-      </div>
+      )}
 
       {/* ── Loading Overlay ── */}
       {loading && activeDataset.length === 0 && (
@@ -2019,14 +1977,14 @@ export default function ShareHubChart({
         }}
       />
 
-      {/* ── Interactive Timeframe Bar & Mode Switcher ── */}
+      {/* ── Interactive Timeframe Bar ── */}
       {showTimeframeBar && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginTop: 10,
-          padding: '6px 8px',
+          marginTop: 8,
+          padding: '5px 8px',
           background: '#151922',
           borderRadius: 10,
           border: '1px solid rgba(255, 255, 255, 0.07)',
@@ -2063,7 +2021,6 @@ export default function ShareHubChart({
 
           {/* Mode & Action Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* Fullscreen Toggle */}
             {onToggleFullscreen && (
               <button
                 type="button"
@@ -2087,63 +2044,207 @@ export default function ShareHubChart({
         </div>
       )}
 
-      {/* ── Pattern Detected Footer Strip ── */}
-      {showPatterns && patternMarkers.length > 0 && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          marginTop: 6,
-          padding: '4px 8px',
-          background: 'rgba(255,255,255,0.02)',
-          borderRadius: 8,
-          fontSize: 11,
-          flexWrap: 'wrap'
-        }}>
-          <span style={{ color: '#64748b', fontWeight: 700 }}>Signals:</span>
-          {patternMarkers.slice(-5).map((m, i) => (
-            <span
-              key={i}
-              style={{
-                padding: '1px 6px',
-                borderRadius: 4,
-                color: m.color,
-                background: m.color + '15',
-                border: `1px solid ${m.color}33`,
-                fontFamily: 'var(--font-mono, monospace)',
-                fontSize: 10.5
-              }}
-            >
-              {m.shape === 'arrowUp' ? '▲' : '▼'} {m.text} ({String(m.time).slice(5)})
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── View Advanced Chart Button ── */}
-      {showAdvancedChartBtn && onOpenTradingView && (
-        <div style={{ textAlign: 'center', marginTop: 10 }}>
+      {/* ── Tap-to-Expand Trigger (Inline Mode) ── */}
+      {!activeIsFullscreen && (showAdvancedChartBtn || onOpenTradingView || onToggleFullscreen) && (
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
           <button
             type="button"
-            onClick={onOpenTradingView}
+            onClick={onOpenTradingView || onToggleFullscreen}
             style={{
+              width: '100%',
               background: 'rgba(56, 117, 246, 0.08)',
-              border: '1px solid rgba(56, 117, 246, 0.25)',
-              borderRadius: 20,
-              padding: '6px 18px',
+              border: '1px solid rgba(56, 117, 246, 0.22)',
+              borderRadius: 8,
+              padding: '7px 14px',
               color: '#60a5fa',
               fontSize: 12,
-              fontWeight: 800,
+              fontWeight: 700,
               cursor: 'pointer',
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 6,
               transition: 'all 0.15s ease'
             }}
           >
             <span>📊</span>
-            <span>Open Advanced Fullscreen TradingView Terminal &gt;</span>
+            <span>Tap for Fullscreen Technical Analysis (EMA, RSI, MACD, Pivots, Targets) ↗</span>
           </button>
+        </div>
+      )}
+
+      {/* ── Stage 2: Technician's Quick Diagnosis Drawer (Fullscreen Only) ── */}
+      {activeIsFullscreen && (
+        <div style={{
+          marginTop: 8,
+          padding: '8px 10px',
+          background: '#0d131f',
+          borderRadius: 8,
+          border: '1px solid rgba(255, 255, 255, 0.07)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 6,
+            fontSize: 11.5
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {/* Trend verdict */}
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: 6,
+                fontWeight: 800,
+                color: trendVerdict.color,
+                background: trendVerdict.bg,
+                border: `1px solid ${trendVerdict.color}44`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <Sparkles size={11} />
+                {trendVerdict.label}
+              </span>
+
+              {/* Trade Plan Setup Score & Verdict Badge */}
+              {tradePlanCorridor && (
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontWeight: 800,
+                  color: tradePlanCorridor.setupScore >= 70 ? '#10b981' : tradePlanCorridor.setupScore >= 50 ? '#38bdf8' : '#fb923c',
+                  background: tradePlanCorridor.setupScore >= 70 ? 'rgba(16, 185, 129, 0.15)' : tradePlanCorridor.setupScore >= 50 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(251, 146, 60, 0.15)',
+                  border: `1px solid ${tradePlanCorridor.setupScore >= 70 ? '#10b98144' : tradePlanCorridor.setupScore >= 50 ? '#38bdf844' : '#fb923c44'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <span>🎯 Setup: {tradePlanCorridor.setupScore}/100</span>
+                  {tradePlanCorridor.verdict && <span style={{ opacity: 0.85 }}>• {tradePlanCorridor.verdict}</span>}
+                </span>
+              )}
+
+              {/* Broker Accumulation / Distribution Status */}
+              {brokerAnalysis && (brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias) && (() => {
+                const sig = brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias;
+                const isAcc = String(sig).includes('Accum') || String(sig).includes('Cornering');
+                const isDist = String(sig).includes('Dist') || String(sig).includes('Offloading');
+                const col = isAcc ? '#10b981' : isDist ? '#f43f5e' : '#94a3b8';
+                return (
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    fontWeight: 800,
+                    color: col,
+                    background: col + '18',
+                    border: `1px solid ${col}44`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <span>🏦 Broker: {sig}</span>
+                    {Number(brokerAnalysis.bcr3BuyPct) > 0 && <span style={{ fontSize: 10.5, opacity: 0.85 }}>({Number(brokerAnalysis.bcr3BuyPct).toFixed(0)}% BCR3)</span>}
+                  </span>
+                );
+              })()}
+
+              {/* RSI Badge */}
+              {rsiBadge && (
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontWeight: 800,
+                  color: rsiBadge.color,
+                  background: rsiBadge.bg,
+                  border: `1px solid ${rsiBadge.color}44`,
+                  fontFamily: 'var(--font-mono, monospace)'
+                }}>
+                  {rsiBadge.text}
+                </span>
+              )}
+
+              {/* MACD Hist Badge */}
+              {currentMacdHist != null && (
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontWeight: 800,
+                  color: currentMacdHist >= 0 ? '#34d399' : '#fb7185',
+                  background: currentMacdHist >= 0 ? 'rgba(52, 211, 153, 0.12)' : 'rgba(251, 113, 133, 0.12)',
+                  border: `1px solid ${currentMacdHist >= 0 ? '#34d399' : '#fb7185'}44`,
+                  fontFamily: 'var(--font-mono, monospace)'
+                }}>
+                  MACD {currentMacdHist >= 0 ? '▲ +' : '▼ '}{currentMacdHist.toFixed(2)}
+                </span>
+              )}
+
+              {/* RVOL Badge */}
+              {rvolBadge && (
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  fontWeight: 800,
+                  color: rvolBadge.color,
+                  background: rvolBadge.bg,
+                  border: `1px solid ${rvolBadge.color}44`
+                }}>
+                  {rvolBadge.text}
+                </span>
+              )}
+            </div>
+
+            {/* Trade Plan / Pivot Corridors */}
+            {tradePlanCorridor ? (
+              <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8', flexWrap: 'wrap' }}>
+                {tradePlanCorridor.entry && <span>Entry: <strong style={{ color: '#38bdf8' }}>Rs. {tradePlanCorridor.entry}</strong></span>}
+                {tradePlanCorridor.t1 && <span>T1: <strong style={{ color: '#34d399' }}>Rs. {tradePlanCorridor.t1}</strong></span>}
+                {tradePlanCorridor.t2 && <span>T2: <strong style={{ color: '#10b981' }}>Rs. {tradePlanCorridor.t2}</strong></span>}
+                {tradePlanCorridor.sl && <span>SL: <strong style={{ color: '#ef4444' }}>Rs. {tradePlanCorridor.sl}</strong></span>}
+                {tradePlanCorridor.rrRatio && <span>R:R: <strong style={{ color: '#38bdf8' }}>1:{Number(tradePlanCorridor.rrRatio).toFixed(1)}</strong></span>}
+              </div>
+            ) : pivotData ? (
+              <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8' }}>
+                <span>Target (R1): <strong style={{ color: '#34d399' }}>Rs. {pivotData.R1}</strong></span>
+                <span>Stop (S1): <strong style={{ color: '#fb7185' }}>Rs. {pivotData.S1}</strong></span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Pattern Detected Signals Strip */}
+          {effectiveShowPatterns && patternMarkers.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 6px',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: 6,
+              fontSize: 11,
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ color: '#64748b', fontWeight: 700 }}>Signals:</span>
+              {patternMarkers.slice(-5).map((m, i) => (
+                <span
+                  key={i}
+                  style={{
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    color: m.color,
+                    background: m.color + '15',
+                    border: `1px solid ${m.color}33`,
+                    fontFamily: 'var(--font-mono, monospace)',
+                    fontSize: 10.5
+                  }}
+                >
+                  {m.shape === 'arrowUp' ? '▲' : '▼'} {m.text} ({String(m.time).slice(5)})
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1040,7 +1040,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   const [tabCategory, setTabCategory] = useState('all'); // 'all' | 'trading' | 'financials' | 'tools'
   const tabBarRef = useRef(null);
   const [chartTimeframe, setChartTimeframe] = useState('1M');
-  const [chartMode, setChartMode] = useState('candle');
+  const [chartMode, setChartMode] = useState('line');
   const [liveDetail, setLiveDetail] = useState(null);
   const initialSym = (stock?.symbol || (typeof stock === 'string' ? stock : '')).toUpperCase();
   const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
@@ -2925,6 +2925,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                   entryExitPlan={entryExitPlan}
                   brokerAnalysis={realBrokerAnalysis}
                   floorsheetData={realFloorsheet}
+                  height={260}
                 />
               </div>
 
@@ -6592,6 +6593,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
           symbol={d.symbol}
           stock={d}
           initialTimeframe={chartTimeframe}
+          entryExitPlan={entryExitPlan}
+          brokerAnalysis={realBrokerAnalysis}
+          floorsheetData={realFloorsheet}
           onClose={() => setShowAdvancedModal(false)}
         />
       )}
