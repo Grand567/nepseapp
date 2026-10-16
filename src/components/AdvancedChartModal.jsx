@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ChevronLeft, X, Globe, Cpu } from 'lucide-react';
+import { ChevronLeft, X, ExternalLink, Cpu, Layers } from 'lucide-react';
 import ShareHubChart from './ShareHubChart';
+import { StockCandlestickChart } from './charts/StockCandlestickChart';
 import { useBackHandler } from '../context/NavigationContext';
 
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -17,7 +18,7 @@ export default function AdvancedChartModal({
   useBackHandler(onClose, true, 110);
 
   const [timeframe, setTimeframe] = useState(initialTimeframe || '1M');
-  const [chartSource, setChartSource] = useState('native'); // 'native' | 'web'
+  const [chartMode, setChartMode] = useState('pro'); // 'pro' | 'ribbon'
 
   const ltp = Number(stock?.ltp || 0);
   const change = Number(stock?.change || 0);
@@ -25,6 +26,15 @@ export default function AdvancedChartModal({
   const isBull = change >= 0;
   const cleanSymbol = (symbol || 'NEPSE').replace(/ Index$/i, '').trim().toUpperCase();
   const companyName = stock?.name || stock?.companyName || stock?.sector || 'Nepal Stock Exchange';
+
+  const chartLevels = entryExitPlan ? {
+    entryZone: entryExitPlan.levels?.entryZone || (entryExitPlan.buyPrice ? { low: entryExitPlan.buyPrice, high: entryExitPlan.buyPrice * 1.02, label: 'Entry' } : undefined),
+    stopLoss: entryExitPlan.levels?.stopLoss || (entryExitPlan.stopLoss ? { price: entryExitPlan.stopLoss, pct: entryExitPlan.stopLossPct || 5, label: 'Stop Loss' } : undefined),
+    target1: entryExitPlan.levels?.target1 || (entryExitPlan.target1 ? { price: entryExitPlan.target1, pct: entryExitPlan.target1Pct || 10, label: 'Target 1' } : undefined),
+    target2: entryExitPlan.levels?.target2 || (entryExitPlan.target2 ? { price: entryExitPlan.target2, pct: entryExitPlan.target2Pct || 20, label: 'Target 2' } : undefined),
+    support: entryExitPlan.supportResistance?.support,
+    resistance: entryExitPlan.supportResistance?.resistance,
+  } : undefined;
 
   return (
     <div
@@ -101,8 +111,8 @@ export default function AdvancedChartModal({
           </div>
         </div>
 
-        {/* Right: Native vs Web Switcher & Close button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Right: Mode Switcher + NepseAlpha External Launcher + Close button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
             display: 'flex',
             background: 'rgba(255, 255, 255, 0.04)',
@@ -112,7 +122,7 @@ export default function AdvancedChartModal({
           }}>
             <button
               type="button"
-              onClick={() => setChartSource('native')}
+              onClick={() => setChartMode('pro')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -120,20 +130,20 @@ export default function AdvancedChartModal({
                 padding: '4px 9px',
                 borderRadius: 6,
                 fontSize: 11.5,
-                fontWeight: chartSource === 'native' ? 800 : 600,
+                fontWeight: chartMode === 'pro' ? 800 : 600,
                 cursor: 'pointer',
                 border: 'none',
-                background: chartSource === 'native' ? '#3875F6' : 'transparent',
-                color: chartSource === 'native' ? '#ffffff' : '#94a3b8',
+                background: chartMode === 'pro' ? '#2563eb' : 'transparent',
+                color: chartMode === 'pro' ? '#ffffff' : '#94a3b8',
                 transition: 'all 0.15s ease'
               }}
             >
               <Cpu size={12} />
-              <span>Native Pro Chart</span>
+              <span>Pro Chart (TradingView Engine)</span>
             </button>
             <button
               type="button"
-              onClick={() => setChartSource('web')}
+              onClick={() => setChartMode('ribbon')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -141,18 +151,43 @@ export default function AdvancedChartModal({
                 padding: '4px 9px',
                 borderRadius: 6,
                 fontSize: 11.5,
-                fontWeight: chartSource === 'web' ? 800 : 600,
+                fontWeight: chartMode === 'ribbon' ? 800 : 600,
                 cursor: 'pointer',
                 border: 'none',
-                background: chartSource === 'web' ? '#3875F6' : 'transparent',
-                color: chartSource === 'web' ? '#ffffff' : '#94a3b8',
+                background: chartMode === 'ribbon' ? '#2563eb' : 'transparent',
+                color: chartMode === 'ribbon' ? '#ffffff' : '#94a3b8',
                 transition: 'all 0.15s ease'
               }}
             >
-              <Globe size={12} />
-              <span>TradingView Web</span>
+              <Layers size={12} />
+              <span>Multi-MA & Ribbon View</span>
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              window.open(`https://nepsealpha.com/trading/chart?symbol=${encodeURIComponent(cleanSymbol)}`, '_blank', 'noopener,noreferrer');
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 10px',
+              borderRadius: 8,
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: '#34d399',
+              transition: 'all 0.15s ease'
+            }}
+            title="Open TradingView Chart on NepseAlpha in a new tab"
+          >
+            <ExternalLink size={12} />
+            <span>NepseAlpha Web ↗</span>
+          </button>
 
           <button
             type="button"
@@ -177,33 +212,31 @@ export default function AdvancedChartModal({
 
       {/* ── Main Workstation Content Area ── */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {chartSource === 'web' ? (
-          <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative', background: '#131722' }}>
-            <iframe
-              title="TradingView Technical Chart"
-              src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=NEPSE%3A${encodeURIComponent(cleanSymbol)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FKathmandu&withdateranges=1&showpopupbutton=1`}
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              allowFullScreen
-              onError={(e) => {
-                console.warn('TradingView iframe load warning:', e);
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '6px 8px 10px' }}>
+        {chartMode === 'pro' ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '6px 8px 10px' }}>
             <ShareHubChart
               symbol={symbol}
               stock={stock}
               chartTimeframe={timeframe}
               onTimeframeChange={setTimeframe}
               isFullscreen={true}
-              height={500}
+              height={520}
               entryExitPlan={entryExitPlan}
               brokerAnalysis={brokerAnalysis}
               floorsheetData={floorsheetData}
               onToggleFullscreen={onClose}
               showTimeframeBar={true}
               showAdvancedChartBtn={false}
+            />
+          </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '10px 14px' }}>
+            <StockCandlestickChart
+              symbol={symbol}
+              stock={stock}
+              ltp={ltp}
+              initialTimeframe={timeframe}
+              levels={chartLevels}
             />
           </div>
         )}

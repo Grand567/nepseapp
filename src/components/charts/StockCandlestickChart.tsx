@@ -11,10 +11,12 @@ import {
 } from 'lightweight-charts';
 import { calculateEMA, calculatePivotPoints, calculateFibonacci } from '../../utils/indicators';
 import { detectCandlestickPatternsFromHistory } from '../../utils/candlestickPatterns';
+import { fetchNepseIntradayGraph } from '../../utils/servicesApi';
+import { fetchPriceHistory } from '../../utils/liveData';
 import { Layers, Eye, EyeOff, Calendar, Maximize2 } from 'lucide-react';
 
 export interface CandleData {
-  date: string;
+  date: string | number;
   open: number;
   high: number;
   low: number;
@@ -32,20 +34,23 @@ export interface ChartLevels {
 }
 
 interface StockCandlestickChartProps {
-  candles: CandleData[];
+  candles?: CandleData[];
   levels?: ChartLevels;
   symbol: string;
   ltp?: number;
+  initialTimeframe?: string;
   onFetchMore?: (days: number) => void;
   stock?: any; // for 52W high/low, rvol, etc.
 }
 
 const TIMEFRAMES = [
-  { id: '1M', label: '1M', days: 30 },
-  { id: '3M', label: '3M', days: 90 },
-  { id: '6M', label: '6M', days: 180 },
-  { id: '1Y', label: '1Y', days: 365 },
-  { id: '2Y', label: '2Y', days: 730 },
+  { id: '1D', label: '1D', days: 1 },
+  { id: '1W', label: '1W', days: 5 },
+  { id: '1M', label: '1M', days: 22 },
+  { id: '3M', label: '3M', days: 66 },
+  { id: '6M', label: '6M', days: 132 },
+  { id: '1Y', label: '1Y', days: 250 },
+  { id: '2Y', label: '2Y', days: 500 },
   { id: 'MAX', label: 'MAX', days: 9999 },
 ];
 
@@ -117,11 +122,102 @@ function computeVolSMA(volumes: number[], period = 20): (number | null)[] {
   return result;
 }
 
+// ── Parse Intraday Ticks into 5-minute Candles ────────────────────────────────
+function parseIntradayCandles(rawTicks: any[], ltp?: number): CandleData[] {
+  if (!Array.isArray(rawTicks) || rawTicks.length === 0) return [];
+  const intervalSec = 5 * 60; // 5-minute candles
+  const buckets = new Map<number, { open: number; high: number; low: number; close: number; volume: number }>();
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+
+  for (const pt of rawTicks) {
+    if (!pt) continue;
+    let ts: number | null = null;
+    let price = 0;
+    let vol = 0;
+
+    if (Array.isArray(pt)) {
+      const t = pt[0];
+      price = Number(pt[1]) || 0;
+      vol = Number(pt[2]) || 0;
+      if (typeof t === 'number') {
+        ts = t > 1e11 ? Math.floor(t / 1000) : Math.floor(t);
+      }
+    } else {
+      price = Number(pt.close ?? pt.price ?? pt.rate ?? pt.ltp ?? pt.open ?? 0);
+      vol = Number(pt.volume ?? pt.qty ?? 0);
+      if (pt.timestamp && pt.timestamp > 1e8) {
+        ts = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
+      } else if (typeof pt.time === 'number' && pt.time > 1e8) {
+        ts = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
+      } else if (pt.time || pt.date) {
+        const timeStr = String(pt.time || pt.date).trim();
+        const match = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+        if (match) {
+          let hrs = parseInt(match[1], 10);
+          const mins = parseInt(match[2], 10);
+          const secs = match[3] ? parseInt(match[3], 10) : 0;
+          const ampm = (match[4] || '').toUpperCase();
+          if (ampm === 'PM' && hrs < 12) hrs += 12;
+          if (ampm === 'AM' && hrs === 12) hrs = 0;
+          ts = Math.floor(Date.UTC(year, month, day, hrs, mins, secs) / 1000);
+        }
+      }
+    }
+
+    if (!ts || isNaN(ts) || price <= 0) continue;
+    const bucketKey = Math.floor(ts / intervalSec) * intervalSec;
+
+    const existing = buckets.get(bucketKey);
+    if (!existing) {
+      buckets.set(bucketKey, {
+        open: Number(pt.open || price),
+        high: Number(pt.high || price),
+        low: Number(pt.low || price),
+        close: price,
+        volume: vol,
+      });
+    } else {
+      existing.high = Math.max(existing.high, price, Number(pt.high || price));
+      existing.low = Math.min(existing.low, price, Number(pt.low || price));
+      existing.close = price;
+      existing.volume += vol;
+    }
+  }
+
+  const result: CandleData[] = [];
+  for (const [bucketSec, b] of buckets.entries()) {
+    result.push({
+      date: bucketSec,
+      open: b.open,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+      volume: b.volume,
+    });
+  }
+
+  result.sort((a, b) => Number(a.date) - Number(b.date));
+
+  if (result.length > 0 && ltp && Number(ltp) > 0) {
+    const last = result[result.length - 1];
+    last.close = Number(ltp);
+    last.high = Math.max(last.high, Number(ltp));
+    last.low = Math.min(last.low, Number(ltp));
+  }
+
+  return result;
+}
+
 export function StockCandlestickChart({
   candles = [],
   levels,
   symbol,
   ltp,
+  initialTimeframe = '6M',
   onFetchMore,
   stock,
 }: StockCandlestickChartProps) {
@@ -129,7 +225,56 @@ export function StockCandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
 
-  const [timeframe, setTimeframe] = useState('6M');
+  const [timeframe, setTimeframe] = useState(initialTimeframe || '6M');
+  const [internalCandles, setInternalCandles] = useState<CandleData[]>([]);
+  const [intradayCandles, setIntradayCandles] = useState<CandleData[]>([]);
+  const [intradayLoading, setIntradayLoading] = useState(false);
+
+  // Auto-fetch price history if candles prop is not supplied
+  useEffect(() => {
+    if (Array.isArray(candles) && candles.length > 0) {
+      setInternalCandles(candles);
+      return;
+    }
+    if (!symbol) return;
+    let cancelled = false;
+    const cleanSym = (symbol === 'NEPSE Index' || symbol === 'nepse' || !symbol) ? 'NEPSE' : symbol.replace(/ Index$/i, '').trim();
+    fetchPriceHistory(cleanSym, 500).then((hist: any) => {
+      if (cancelled) return;
+      const list = Array.isArray(hist) ? hist : (Array.isArray(hist?.data) ? hist.data : []);
+      if (list.length > 0) {
+        setInternalCandles(list.map((h: any) => ({
+          date: String(h.date || h.businessDate || '').slice(0, 10),
+          open: Number(h.open || h.openPrice || h.close || 0),
+          high: Number(h.high || h.highPrice || h.close || 0),
+          low: Number(h.low || h.lowPrice || h.close || 0),
+          close: Number(h.close || h.closePrice || h.ltp || 0),
+          volume: Number(h.volume || h.totalTradedQuantity || 0)
+        })).filter((c: any) => c.date && c.close > 0));
+      }
+    }).catch(err => console.warn('[StockCandlestickChart] Error loading history:', err));
+    return () => { cancelled = true; };
+  }, [symbol, candles]);
+
+  // Load intraday data when 1D is selected
+  useEffect(() => {
+    if (timeframe !== '1D') return;
+    let cancelled = false;
+    setIntradayLoading(true);
+    const cleanSym = (symbol === 'NEPSE Index' || symbol === 'nepse' || !symbol) ? 'NEPSE' : symbol.replace(/ Index$/i, '').trim();
+    fetchNepseIntradayGraph(cleanSym).then((ticks: any) => {
+      if (cancelled) return;
+      const parsed = parseIntradayCandles(ticks, ltp);
+      if (parsed.length > 0) {
+        setIntradayCandles(parsed);
+      }
+    }).catch(err => {
+      console.warn('[StockCandlestickChart] Intraday fetch error:', err);
+    }).finally(() => {
+      if (!cancelled) setIntradayLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [symbol, timeframe, ltp]);
 
   // ── Indicator Toggles ──
   const [showCandles, setShowCandles] = useState(true);
@@ -166,20 +311,15 @@ export function StockCandlestickChart({
     vwap?: number | null;
   } | null>(null);
 
+  const activeCandles = (Array.isArray(candles) && candles.length > 0) ? candles : internalCandles;
+
   // ── Normalize, clean, sort ascending, de-duplicate candles ──────────────────
   const ascendingCandles = useMemo(() => {
-    if (!Array.isArray(candles) || candles.length === 0) return [];
+    if (!Array.isArray(activeCandles) || activeCandles.length === 0) return [];
 
-    const map = new Map<string, {
-      date: string;
-      open: number;
-      high: number;
-      low: number;
-      close: number;
-      volume: number;
-    }>();
+    const map = new Map<string, CandleData>();
 
-    for (const c of candles) {
+    for (const c of activeCandles) {
       if (!c) continue;
       const rawDate = c.date || (c as any).t || (c as any).time;
       if (!rawDate) continue;
@@ -211,17 +351,25 @@ export function StockCandlestickChart({
       map.set(dateStr, { date: dateStr, open, high, low, close, volume });
     }
 
-    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [candles]);
+    return Array.from(map.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [activeCandles]);
 
   // ── Filter candles based on timeframe ────────────────────────────────────────
   const filteredCandles = useMemo(() => {
+    if (timeframe === '1D') {
+      if (intradayCandles.length > 0) return intradayCandles;
+      if (ascendingCandles.length > 0) return [ascendingCandles[ascendingCandles.length - 1]];
+      return [];
+    }
     if (ascendingCandles.length === 0) return [];
+    if (timeframe === '1W') {
+      return ascendingCandles.slice(-5);
+    }
     const tf = TIMEFRAMES.find((t) => t.id === timeframe);
-    const days = tf ? tf.days : 180;
+    const days = tf ? tf.days : 132;
     if (days >= 9000 || ascendingCandles.length <= days) return ascendingCandles;
     return ascendingCandles.slice(-days);
-  }, [ascendingCandles, timeframe]);
+  }, [ascendingCandles, intradayCandles, timeframe]);
 
   const closes = useMemo(() => filteredCandles.map((c) => Number(c.close)), [filteredCandles]);
   const volumes = useMemo(() => filteredCandles.map((c) => Number(c.volume) || 0), [filteredCandles]);
@@ -230,7 +378,7 @@ export function StockCandlestickChart({
   const ema20Data = useMemo(() => {
     if (closes.length < 20) return [];
     const ema = calculateEMA(closes, 20);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       if (ema && ema[i] != null && !isNaN(ema[i])) {
         result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
@@ -242,7 +390,7 @@ export function StockCandlestickChart({
   const ema50Data = useMemo(() => {
     if (closes.length < 50) return [];
     const ema = calculateEMA(closes, 50);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       if (ema && ema[i] != null && !isNaN(ema[i])) {
         result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
@@ -254,7 +402,7 @@ export function StockCandlestickChart({
   const ema200Data = useMemo(() => {
     if (closes.length < 180) return [];
     const ema = calculateEMA(closes, 200);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       if (ema && ema[i] != null && !isNaN(ema[i])) {
         result.push({ time: c.date, value: Number(Number(ema[i]).toFixed(2)) });
@@ -266,9 +414,9 @@ export function StockCandlestickChart({
   // ── Bollinger Bands ───────────────────────────────────────────────────────────
   const bollingerData = useMemo(() => {
     if (closes.length < 20) return { upper: [], lower: [], middle: [] };
-    const upper: Array<{ time: string; value: number }> = [];
-    const lower: Array<{ time: string; value: number }> = [];
-    const middle: Array<{ time: string; value: number }> = [];
+    const upper: Array<{ time: any; value: number }> = [];
+    const lower: Array<{ time: any; value: number }> = [];
+    const middle: Array<{ time: any; value: number }> = [];
 
     for (let i = 19; i < closes.length; i++) {
       const slice = closes.slice(i - 19, i + 1);
@@ -286,7 +434,7 @@ export function StockCandlestickChart({
   // ── RSI array ─────────────────────────────────────────────────────────────────
   const rsiData = useMemo(() => {
     const rsiArr = computeRSIArray(closes, 14);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       const v = rsiArr[i];
       if (v != null) result.push({ time: c.date, value: v as number });
@@ -303,9 +451,9 @@ export function StockCandlestickChart({
   // ── MACD arrays ───────────────────────────────────────────────────────────────
   const macdArrays = useMemo(() => {
     const { macdArr, signalArr, histArr } = computeMACDArrays(closes);
-    const macdLine: Array<{ time: string; value: number }> = [];
-    const signalLine: Array<{ time: string; value: number }> = [];
-    const histogram: Array<{ time: string; value: number; color: string }> = [];
+    const macdLine: Array<{ time: any; value: number }> = [];
+    const signalLine: Array<{ time: any; value: number }> = [];
+    const histogram: Array<{ time: any; value: number; color: string }> = [];
 
     filteredCandles.forEach((c, i) => {
       const m = macdArr[i], s = signalArr[i], h = histArr[i];
@@ -329,7 +477,7 @@ export function StockCandlestickChart({
   // ── VWAP ──────────────────────────────────────────────────────────────────────
   const vwapData = useMemo(() => {
     const vwapArr = computeVWAP(filteredCandles);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       const v = vwapArr[i];
       if (v != null) result.push({ time: c.date, value: v });
@@ -340,7 +488,7 @@ export function StockCandlestickChart({
   // ── Volume SMA 20 ─────────────────────────────────────────────────────────────
   const volSmaData = useMemo(() => {
     const smaArr = computeVolSMA(volumes, 20);
-    const result: Array<{ time: string; value: number }> = [];
+    const result: Array<{ time: any; value: number }> = [];
     filteredCandles.forEach((c, i) => {
       const v = smaArr[i];
       if (v != null) result.push({ time: c.date, value: v });
@@ -860,7 +1008,7 @@ export function StockCandlestickChart({
       }
 
       const bar: any = param.seriesData.get(candleSeries);
-      const prevBar = filteredCandles.find((c) => c.date === param.time);
+      const prevBar = filteredCandles.find((c) => c.date === param.time || String(c.date) === String(param.time));
       const chg = bar.open > 0 ? ((bar.close - bar.open) / bar.open) * 100 : 0;
 
       const matchingEma20 = ema20Data.find((d) => d.time === param.time)?.value ?? null;
@@ -869,8 +1017,12 @@ export function StockCandlestickChart({
       const matchingHist = macdArrays.histogram.find((d) => d.time === param.time)?.value ?? null;
       const matchingVwap = vwapData.find((d) => d.time === param.time)?.value ?? null;
 
+      const dateStr = typeof param.time === 'number'
+        ? new Date(param.time * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+        : String(param.time);
+
       setTooltipData({
-        date: String(param.time),
+        date: dateStr,
         open: bar.open,
         high: bar.high,
         low: bar.low,

@@ -1210,49 +1210,6 @@ function SubIndicesModal({ indices, selectedIndex, onSelectIndex, onClose }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   TRADINGVIEW ADVANCED CHART MODAL
-═══════════════════════════════════════════════════════════════════════════ */
-function TradingViewModal({ symbol, onClose }) {
-  const modalEl = (
-    <div className="drawer-overlay" onClick={onClose} style={{ zIndex: 120 }}>
-      <div style={{
-        position: 'fixed', inset: 10, background: '#131722', borderRadius: 16,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        boxShadow: '0 25px 80px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.1)'
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '10px 16px', background: '#1e222d', borderBottom: '1px solid rgba(255,255,255,0.08)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <BarChart2 style={{ width: 18, height: 18, color: 'var(--primary-light)' }} />
-            <span style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-              {symbol} · Advanced Technical Chart
-            </span>
-          </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, padding: '4px 8px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700 }}>
-            <X style={{ width: 14, height: 14 }} /> Close
-          </button>
-        </div>
-
-        <div style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}>
-          <iframe
-            title="TradingView Technical Chart"
-            src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=NEPSE%3A${symbol.toUpperCase()}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FKathmandu&withdateranges=1&showpopupbutton=1`}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  if (typeof document !== 'undefined') {
-    return createPortal(modalEl, document.body);
-  }
-  return modalEl;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    DECOUPLED ULTRA-LOW-LATENCY SEARCH BAR (0ms typing lag)
 ═══════════════════════════════════════════════════════════════════════════ */
 const TopSearchBar = React.memo(function TopSearchBar({
