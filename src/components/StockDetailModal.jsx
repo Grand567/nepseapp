@@ -1713,8 +1713,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
   // Broker Accumulation History: fetch when depth tab active or period selector changes
   useEffect(() => {
     if ((activeTab !== 'market_depth' && activeTab !== 'depth_broker') || !d?.symbol) return;
-    const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60, '1W': 7, '1M': 30, '3M': 90 };
-    const days = daysMap[brokerAccumPeriod] || 5;
+    const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60, '1W': 7, '1M': 30, '2M': 60, '3M': 90, '6M': 180, '1Y': 260, '500D': 500, '2Y/All': 500 };
+    const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
     setBrokerAccumLoading(true);
     fetchRealBrokerAnalysis(d.symbol, days, { refresh: true })
       .then(data => {
@@ -4100,11 +4100,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
               const biasColor = bias.includes('Cornering') || bias.includes('Accumulation') || bias.includes('Institutional') ? '#10b981' : bias.includes('Offloading') || bias.includes('Distribution') ? '#f43f5e' : '#94a3b8';
               const PERIOD_ITEMS = [
-                { id: '1D', label: 'Today (1D)' },
+                { id: '1D', label: '1D' },
                 { id: '5D', label: '5D' },
                 { id: '15D', label: '15D' },
-                { id: '30D', label: '30D' },
-                { id: '60D', label: '60D (Vault)' }
+                { id: '30D', label: '1M' },
+                { id: '60D', label: '2M' },
+                { id: '90D', label: '3M' },
+                { id: '180D', label: '6M' },
+                { id: '260D', label: '1Y' },
+                { id: '500D', label: '2Y/All' }
               ];
 
               // ── Order Book vs. Executed Flow Divergence Detection ──
@@ -4202,34 +4206,62 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                         <span>Sessions Analyzed: {(realBrokerAnalysis || ba)?.tradingDays || 1} Trading Days ({(realBrokerAnalysis || ba)?.fromDate || 'Latest'} → {(realBrokerAnalysis || ba)?.toDate || 'Latest'}) • Total Volume: {((realBrokerAnalysis || ba)?.totalVolume || 0).toLocaleString()} Shares</span>
                       </div>
                     </div>
-                    {/* Horizon Selector Pills */}
-                    <div style={{ display: 'flex', gap: 4, background: '#0f172a', borderRadius: 8, padding: 3, border: '1px solid rgba(255,255,255,0.08)' }}>
-                      {PERIOD_ITEMS.map(p => {
-                        const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setBrokerAccumPeriod(p.id);
-                              if (daysMap[p.id]) handleBrokerDaysChange(daysMap[p.id]);
-                            }}
-                            style={{
-                              padding: '5px 11px',
-                              borderRadius: 6,
-                              border: 'none',
-                              fontSize: 11.5,
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              background: brokerAccumPeriod === p.id ? '#3b82f6' : 'transparent',
-                              color: brokerAccumPeriod === p.id ? '#ffffff' : '#94a3b8',
-                              transition: 'all 0.15s'
-                            }}
+                    {/* Horizon Selector Pills & Date Session Selector */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 3, background: '#0f172a', borderRadius: 8, padding: 3, border: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
+                        {PERIOD_ITEMS.map(p => {
+                          const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60, '90D': 90, '180D': 180, '260D': 260, '500D': 500 };
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                setBrokerAccumPeriod(p.id);
+                                if (daysMap[p.id]) handleBrokerDaysChange(daysMap[p.id]);
+                              }}
+                              style={{
+                                padding: '5px 9px',
+                                borderRadius: 6,
+                                border: 'none',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                background: brokerAccumPeriod === p.id ? '#3b82f6' : 'transparent',
+                                color: brokerAccumPeriod === p.id ? '#ffffff' : '#94a3b8',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Historical Date Picker (up to 500 dates) */}
+                      {((realBrokerAnalysis || ba)?.availableDates?.length > 0) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#0f172a', padding: '3px 8px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>📅 Session:</span>
+                          <select
+                            value={brokerDate}
+                            onChange={(e) => handleBrokerDateChange(e.target.value)}
+                            style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none', cursor: 'pointer' }}
                           >
-                            {p.label}
-                          </button>
-                        );
-                      })}
+                            <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>Latest / Aggregate ({((realBrokerAnalysis || ba)?.availableDates || [])[0]})</option>
+                            {((realBrokerAnalysis || ba)?.availableDates || []).slice(0, 500).map(dt => (
+                              <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>{dt}</option>
+                            ))}
+                          </select>
+                          {brokerDate && (
+                            <button
+                              type="button"
+                              onClick={() => handleBrokerDateChange('')}
+                              style={{ background: 'rgba(244, 63, 94, 0.2)', border: 'none', borderRadius: 4, padding: '2px 6px', color: '#fb7185', fontSize: 10, fontWeight: 800, cursor: 'pointer' }}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

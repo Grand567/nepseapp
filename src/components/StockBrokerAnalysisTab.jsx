@@ -47,6 +47,8 @@ export default function StockBrokerAnalysisTab({
   const [filterQuery, setFilterQuery] = useState('');
   const [localDays, setLocalDays] = useState(selectedDays || 1);
   const [localDate, setLocalDate] = useState(selectedDate || '');
+  const [localFromDate, setLocalFromDate] = useState('');
+  const [localToDate, setLocalToDate] = useState('');
   const [internalBrokerData, setInternalBrokerData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
 
@@ -113,12 +115,30 @@ export default function StockBrokerAnalysisTab({
 
   const handleDateSelect = (dt) => {
     setLocalDate(dt);
+    setLocalFromDate('');
+    setLocalToDate('');
     if (onDateChange) onDateChange(dt);
     setInternalLoading(true);
     fetchRealBrokerAnalysis(symbol, effectiveDays, { date: dt, refresh: true })
       .then(res => { if (res) setInternalBrokerData(res); })
       .catch(() => {})
       .finally(() => setInternalLoading(false));
+  };
+
+  const handleRangeApply = (fromVal = localFromDate, toVal = localToDate) => {
+    if (!fromVal && !toVal) return;
+    setLocalDate('');
+    setInternalLoading(true);
+    fetchRealBrokerAnalysis(symbol, 500, { fromDate: fromVal, toDate: toVal, refresh: true })
+      .then(res => { if (res) setInternalBrokerData(res); })
+      .catch(() => {})
+      .finally(() => setInternalLoading(false));
+  };
+
+  const handleRangeReset = () => {
+    setLocalFromDate('');
+    setLocalToDate('');
+    handleDaysSelect(1);
   };
 
   // Extract available trading dates from activeBrokerData or floorsheetData
@@ -594,10 +614,14 @@ export default function StockBrokerAnalysisTab({
             { days: 1, label: '1D' },
             { days: 5, label: '5D' },
             { days: 15, label: '15D' },
-            { days: 30, label: '30D' },
-            { days: 60, label: '60D' }
+            { days: 30, label: '1M' },
+            { days: 60, label: '2M' },
+            { days: 90, label: '3M' },
+            { days: 180, label: '6M' },
+            { days: 260, label: '1Y' },
+            { days: 500, label: '2Y/All' }
           ].map(item => {
-            const isActive = !effectiveDate && Number(effectiveDays) === item.days;
+            const isActive = !effectiveDate && !localFromDate && !localToDate && Number(effectiveDays) === item.days;
             return (
               <button
                 key={item.days}
@@ -636,7 +660,7 @@ export default function StockBrokerAnalysisTab({
           <span>Sessions Analyzed: {activeBrokerData?.tradingDays || effectiveDays || 1} Trading Days ({activeBrokerData?.fromDate || 'Latest'} → {activeBrokerData?.toDate || 'Latest'}) • Total Volume: {(activeBrokerData?.totalVolume || 0).toLocaleString()} Shares</span>
         </div>
 
-        {/* Date-Wise Picker & Trading Session Selector */}
+        {/* Date-Wise Picker & Custom Date Range */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
             display: 'flex',
@@ -663,9 +687,9 @@ export default function StockBrokerAnalysisTab({
                 }}
               >
                 <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                  Select Date ({availableDates[0]})
+                  Select Session ({availableDates[0]})
                 </option>
-                {availableDates.map(dt => (
+                {availableDates.slice(0, 500).map(dt => (
                   <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
                     {dt}
                   </option>
@@ -685,6 +709,66 @@ export default function StockBrokerAnalysisTab({
                   outline: 'none'
                 }}
               />
+            )}
+          </div>
+
+          {/* Custom Date Range Selector (From → To) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8,
+            padding: '5px 10px'
+          }}>
+            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>From:</span>
+            <input
+              type="date"
+              value={localFromDate}
+              onChange={e => setLocalFromDate(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none' }}
+            />
+            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>To:</span>
+            <input
+              type="date"
+              value={localToDate}
+              onChange={e => setLocalToDate(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none' }}
+            />
+            <button
+              type="button"
+              onClick={() => handleRangeApply(localFromDate, localToDate)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 6,
+                background: '#3b82f6',
+                color: '#fff',
+                border: 'none',
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              Apply
+            </button>
+            {(localFromDate || localToDate) && (
+              <button
+                type="button"
+                onClick={handleRangeReset}
+                style={{
+                  padding: '3px 6px',
+                  borderRadius: 6,
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  color: '#fb7185',
+                  border: '1px solid rgba(244, 63, 94, 0.3)',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                Reset
+              </button>
             )}
           </div>
 

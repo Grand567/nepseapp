@@ -2859,7 +2859,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
   const page = Math.max(0, parseInt(req.query.page || '1', 10) - 1);
   const size = Math.min(Math.max(parseInt(req.query.size || '50', 10), 1), 50000);
   const businessDate = String(req.query.date || '').trim();
-  const days = Math.min(Math.max(parseInt(req.query.days || '1', 10) || 1, 1), 60);
+  const days = Math.min(Math.max(parseInt(req.query.days || '1', 10) || 1, 1), 500);
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
   const buyer = String(req.query.buyer || '').trim();
@@ -2962,7 +2962,7 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
               try {
                 const dates = await fetchSymbolTradingDates(cleanSym);
                 if (Array.isArray(dates) && dates.length > 0) {
-                  availableDates = Array.from(new Set([availableDates[0], ...dates])).slice(0, 35);
+                  availableDates = Array.from(new Set([availableDates[0], ...dates])).slice(0, 500);
                 }
               } catch (_) {}
             }
@@ -3209,7 +3209,7 @@ app.get('/api/nepse/company-id/:symbol', async (req, res) => {
 app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
-  const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 365);
+  const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 730);
   const date = String(req.query.date || '').trim();
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
@@ -4263,18 +4263,29 @@ app.get('/api/scanner/bulk', async (req, res) => {
    ══════════════════════════════════════════════════════════════════════════════ */
 app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   const businessDate = req.query.date || '';
-  const days = Math.min(365, Math.max(1, parseInt(req.query.days || (businessDate ? '1' : '1'), 10) || 1));
-  const cacheKey = `broker-heatmap-${businessDate || 'today'}-${days}`;
-  const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, cached: true });
+  const fromDate = String(req.query.fromDate || '').trim();
+  const toDate = String(req.query.toDate || '').trim();
+  const days = Math.min(500, Math.max(1, parseInt(req.query.days || (businessDate ? '1' : '1'), 10) || 1));
+  const refresh = req.query.refresh === 'true';
+  const cacheKey = `broker-heatmap-${businessDate || 'today'}-${days}-${fromDate}-${toDate}`;
+  if (!refresh) {
+    const cached = getCache(cacheKey);
+    if (cached) return res.json({ success: true, data: cached, cached: true });
+  }
 
   try {
     // 1. Primary for 1D Session: Aggregate from 100% authentic market floorsheet transactions
-    if (days === 1) {
+    if (days === 1 && !fromDate && !toDate) {
       try {
         const fullTrades = await getFullSessionFloorsheet(businessDate);
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
           const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
+          let availableDates = [];
+          try {
+            const dates = await fetchSymbolTradingDates('NABIL');
+            if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
+          } catch (_) {}
+          aggData.availableDates = availableDates;
           setCache(cacheKey, aggData, 5 * 60 * 1000);
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
@@ -4292,6 +4303,12 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
             try {
               const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
               if (parsed?.matrix?.length > 0) {
+                let availableDates = [];
+                try {
+                  const dates = await fetchSymbolTradingDates('NABIL');
+                  if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
+                } catch (_) {}
+                parsed.availableDates = availableDates;
                 setCache(cacheKey, parsed, 5 * 60 * 1000);
                 return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot' });
               }
@@ -4325,7 +4342,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 
     // Fetch authentic broker transactions for each top scrip from brokerVault in parallel
     const vaultResults = await Promise.all(
-      scripsToFetch.map(sym => getOrFetchBrokerAnalysis(sym, days).catch(() => null))
+      scripsToFetch.map(sym => getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null))
     );
 
     const brokerTotals = {}, scripTotals = {}, matrix = {}, brokerScripsMap = {};
@@ -4439,6 +4456,12 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
       };
     });
 
+    let availableDates = [];
+    try {
+      const dates = await fetchSymbolTradingDates(scripsToFetch[0] || 'NABIL');
+      if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
+    } catch (_) {}
+
     const data = {
       topBrokers: topBrokers.map(b => b.id),
       topBrokerNames: topBrokers.map(b => b.name),
@@ -4446,7 +4469,8 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
       matrix: heatmapMatrix,
       totalTrades: totalTradesCount || 1200,
       timeframeDays: days,
-      businessDate: businessDate || new Date().toISOString().split('T')[0]
+      businessDate: businessDate || new Date().toISOString().split('T')[0],
+      availableDates
     };
 
     setCache(cacheKey, data, 5 * 60 * 1000);
@@ -5174,8 +5198,9 @@ app.get('/api/market/live', async (req, res) => {
 // ============================================================
 app.get(['/api/market/broker-summary', '/api/broker-analysis/summary-map'], async (req, res) => {
   try {
-    const days = parseInt(req.query.days || '1', 10) || 1;
-    const brokerMap = await getMarketWideBrokerSummaryMap(days);
+    const days = Math.min(Math.max(parseInt(req.query.days || '1', 10) || 1, 1), 500);
+    const date = String(req.query.date || '').trim();
+    const brokerMap = await getMarketWideBrokerSummaryMap(days, { date });
     res.json({
       success: true,
       count: Object.keys(brokerMap || {}).length,

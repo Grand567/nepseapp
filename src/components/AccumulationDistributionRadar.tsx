@@ -501,6 +501,59 @@ export function AccumulationDistributionRadar({
   const [modalStock, setModalStock] = useState<any>(null);
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
   const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
+  const [radarDays, setRadarDays] = useState<number>(1);
+  const [radarDate, setRadarDate] = useState<string>('');
+
+  const handleRadarTimeframeChange = async (d: number) => {
+    setRadarDays(d);
+    setRadarDate('');
+    try {
+      const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { refresh: true });
+      if (brokerMap && typeof brokerMap === 'object') {
+        setStockBrokerDataMap(prev => ({ ...brokerMap, ...prev }));
+      }
+      if (selectedStockSymbol) {
+        fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true })
+          .then(res => { if (res) setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res })); })
+          .catch(() => {});
+      }
+    } catch (_) {}
+  };
+
+  const handleRadarDateChange = async (dt: string) => {
+    setRadarDate(dt);
+    try {
+      const brokerMap = await fetchMarketWideBrokerSummaryMap(radarDays, { date: dt, refresh: true });
+      if (brokerMap && typeof brokerMap === 'object') {
+        setStockBrokerDataMap(prev => ({ ...brokerMap, ...prev }));
+      }
+      if (selectedStockSymbol) {
+        fetchRealBrokerAnalysis(selectedStockSymbol, radarDays, { date: dt, refresh: true })
+          .then(res => { if (res) setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res })); })
+          .catch(() => {});
+      }
+    } catch (_) {}
+  };
+
+  const radarAvailableDates = useMemo(() => {
+    const datesSet = new Set<string>();
+    if (selectedStockSymbol) {
+      const bData = stockBrokerDataMap[selectedStockSymbol.toUpperCase()];
+      if (Array.isArray(bData?.availableDates)) {
+        bData.availableDates.forEach((d: string) => { if (d) datesSet.add(d); });
+      }
+    }
+    if (Array.isArray(whaleArchive)) {
+      whaleArchive.forEach((w: any) => { if (w?.date) datesSet.add(w.date); });
+    }
+    if (Array.isArray(floorsheet)) {
+      floorsheet.slice(0, 500).forEach((t: any) => {
+        const d = t?.businessDate || t?.date;
+        if (d && typeof d === 'string' && d.length >= 8) datesSet.add(d);
+      });
+    }
+    return Array.from(datesSet).sort((a, b) => b.localeCompare(a)).slice(0, 500);
+  }, [stockBrokerDataMap, selectedStockSymbol, whaleArchive, floorsheet]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1066,6 +1119,61 @@ export function AccumulationDistributionRadar({
             <span className="px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-300 border border-emerald-800/40 font-bold">
               Market Bias: {stats.marketBias}
             </span>
+          </div>
+        </div>
+
+        {/* ── TIMEFRAME & HISTORICAL SESSION ANALYSIS BAR (UP TO 500 SESSIONS) ── */}
+        <div className="mt-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">Horizon:</span>
+            {[
+              { label: '1D', days: 1 },
+              { label: '5D', days: 5 },
+              { label: '15D', days: 15 },
+              { label: '1M', days: 30 },
+              { label: '2M', days: 60 },
+              { label: '3M', days: 90 },
+              { label: '6M', days: 180 },
+              { label: '1Y', days: 260 },
+              { label: '2Y / All', days: 500 },
+            ].map(pill => (
+              <button
+                key={pill.label}
+                onClick={() => handleRadarTimeframeChange(pill.days)}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all shrink-0 ${
+                  radarDays === pill.days && !radarDate
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm font-black'
+                    : 'bg-slate-900/90 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Session Date:</span>
+            <select
+              value={radarDate}
+              onChange={(e) => handleRadarDateChange(e.target.value)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              <option value="">Latest Session ({radarDays}D Cumulative)</option>
+              {radarAvailableDates.map((dt) => (
+                <option key={dt} value={dt}>
+                  {dt}
+                </option>
+              ))}
+            </select>
+            {radarDate && (
+              <button
+                onClick={() => handleRadarDateChange('')}
+                className="px-2 py-1 text-xs text-slate-400 hover:text-amber-400 border border-slate-800 rounded bg-slate-900"
+                title="Reset to Latest"
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 

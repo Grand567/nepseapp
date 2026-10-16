@@ -2611,9 +2611,11 @@ export function LiveFloorsheetService() {
     '1W': 7,
     '15D': 15,
     '1M': 30,
+    '2M': 60,
     '3M': 90,
     '6M': 180,
-    '1Y': 365,
+    '1Y': 260,
+    'ALL': 500,
   };
 
   const loadData = async (activeTf = timeframe) => {
@@ -2622,7 +2624,7 @@ export function LiveFloorsheetService() {
     try {
       // Parallel fetch: Real floorsheet raw contracts + multi-horizon broker aggregation heatmap
       const [fsRes, hmRes] = await Promise.allSettled([
-        fetchServicesFloorsheet(null, 1, 2500),
+        fetchServicesFloorsheet(null, days, 2500),
         fetchBrokerHeatmap({ days })
       ]);
 
@@ -3037,13 +3039,25 @@ export function BrokerHeatmapService() {
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
   const [modalMetric, setModalMetric] = useState<'netFlow' | 'netQty' | 'grossBuyAmt' | 'grossBuyQty'>('netFlow');
 
-  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '1Y': 365 };
+  const [selectedDate, setSelectedDate] = useState<string>('');
 
-  const loadData = async (activeTf = timeframe) => {
+  const daysMap: Record<string, number> = {
+    '1D': 1,
+    '1W': 7,
+    '15D': 15,
+    '1M': 30,
+    '2M': 60,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 260,
+    'ALL': 500,
+  };
+
+  const loadData = async (activeTf = timeframe, activeDate = selectedDate) => {
     setLoading(true);
     const days = daysMap[activeTf] || 1;
     try {
-      const res = await fetchBrokerHeatmap({ days });
+      const res = await fetchBrokerHeatmap({ days, date: activeDate, refresh: refreshing });
       const d = res?.data || res;
       if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
         setData(d);
@@ -3060,7 +3074,7 @@ export function BrokerHeatmapService() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(timeframe); }, [timeframe]);
+  useEffect(() => { loadData(timeframe, selectedDate); }, [timeframe, selectedDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -3101,6 +3115,32 @@ export function BrokerHeatmapService() {
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
+
+      {Array.isArray(data?.availableDates) && data.availableDates.length > 0 && (
+        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Historical Session:</span>
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
+              {data.availableDates.slice(0, 500).map((dt: string) => (
+                <option key={dt} value={dt}>{dt}</option>
+              ))}
+            </select>
+          </div>
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate('')}
+              className="px-2.5 py-1 text-xs font-semibold text-amber-400 hover:text-white bg-amber-500/10 border border-amber-500/30 rounded-lg transition"
+            >
+              Reset to Latest
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <div
@@ -3571,7 +3611,17 @@ export function BrokerFavouritesService({
         stockList = nepseRes?.stocks || [];
       }
 
-      const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+      const daysMap: Record<string, number> = {
+        '1D': 1,
+        '1W': 7,
+        '15D': 15,
+        '1M': 30,
+        '2M': 60,
+        '3M': 90,
+        '6M': 180,
+        '1Y': 260,
+        'ALL': 500,
+      };
       const tfDays = daysMap[tf] || 1;
       const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
       let heatmapData = heatmapRes?.data || heatmapRes;
@@ -3860,10 +3910,21 @@ export function BrokerAnalysisService({
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [brokerData, setBrokerData] = useState<any>(null);
+  const [selectedDate, setSelectedDate] = useState<string>('');
 
-  const daysMap: Record<string, number> = { '1D': 1, '1W': 7, '15D': 15, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+  const daysMap: Record<string, number> = {
+    '1D': 1,
+    '1W': 7,
+    '15D': 15,
+    '1M': 30,
+    '2M': 60,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 260,
+    'ALL': 500,
+  };
 
-  const loadData = async () => {
+  const loadData = async (activeDate = selectedDate) => {
     if (!selectedSymbol) {
       setBrokerData(null);
       setLoading(false);
@@ -3874,7 +3935,7 @@ export function BrokerAnalysisService({
     const days = daysMap[timeframe] || 30;
 
     try {
-      const res = await fetchBrokerAnalysis(sym, days);
+      const res = await fetchBrokerAnalysis(sym, days, { date: activeDate, refresh: refreshing });
       const d = res?.data || res;
       if (d && (d.buyers || d.topBuyers || d.brokers)) {
         const buyers = (d.buyers || d.topBuyers || []).map((b: any) => ({
@@ -3950,12 +4011,12 @@ export function BrokerAnalysisService({
   };
 
   useEffect(() => {
-    loadData();
-  }, [selectedSymbol, timeframe]);
+    loadData(selectedDate);
+  }, [selectedSymbol, timeframe, selectedDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(selectedDate);
     setRefreshing(false);
   };
 
@@ -3972,6 +4033,32 @@ export function BrokerAnalysisService({
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
+
+      {Array.isArray(brokerData?.availableDates) && brokerData.availableDates.length > 0 && (
+        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Historical Session:</span>
+            <select
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+            >
+              <option value="">Latest Session ({daysMap[timeframe] || 30}D Cumulative)</option>
+              {brokerData.availableDates.slice(0, 500).map((dt: string) => (
+                <option key={dt} value={dt}>{dt}</option>
+              ))}
+            </select>
+          </div>
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate('')}
+              className="px-2.5 py-1 text-xs font-semibold text-amber-400 hover:text-white bg-amber-500/10 border border-amber-500/30 rounded-lg transition"
+            >
+              Reset to Latest
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-800">
         <div className="flex-1 max-w-sm">
@@ -5177,11 +5264,25 @@ export function MarketDepthService() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Broker Accumulation State across horizons (1D, 5D, 15D, 30D, 60D)
+  // Broker Accumulation State across horizons (up to 500 sessions / 2+ years)
+  type HorizonType = '1D' | '5D' | '15D' | '1M' | '2M' | '3M' | '6M' | '1Y' | '2Y/All';
   const [brokerDays, setBrokerDays] = useState<number>(5);
-  const [brokerAccumPeriod, setBrokerAccumPeriod] = useState<'1D' | '5D' | '15D' | '30D' | '60D'>('5D');
+  const [brokerAccumPeriod, setBrokerAccumPeriod] = useState<HorizonType>('5D');
+  const [selectedBrokerDate, setSelectedBrokerDate] = useState<string>('');
   const [brokerAccumData, setBrokerAccumData] = useState<any>(null);
   const [brokerAccumLoading, setBrokerAccumLoading] = useState(false);
+
+  const horizonDaysMap: Record<HorizonType, number> = {
+    '1D': 1,
+    '5D': 5,
+    '15D': 15,
+    '1M': 30,
+    '2M': 60,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 260,
+    '2Y/All': 500,
+  };
 
   const loadDepth = async (sym: string) => {
     if (!sym) return;
@@ -5198,14 +5299,14 @@ export function MarketDepthService() {
     loadDepth(symbol);
   }, [symbol]);
 
-  const handleHorizonClick = async (hId: '1D' | '5D' | '15D' | '30D' | '60D') => {
-    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
-    const newDays = daysMap[hId] || 5;
+  const handleHorizonClick = async (hId: HorizonType) => {
+    const newDays = horizonDaysMap[hId] || 5;
     setBrokerAccumPeriod(hId);
     setBrokerDays(newDays);
+    setSelectedBrokerDate('');
     setBrokerAccumLoading(true);
     try {
-      const res = await fetchBrokerAnalysis(symbol, newDays, true);
+      const res = await fetchBrokerAnalysis(symbol, newDays, { refresh: true });
       const data = res?.data || res;
       if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
         setBrokerAccumData(data);
@@ -5223,50 +5324,71 @@ export function MarketDepthService() {
     }
   };
 
+  const handleBrokerDateChange = async (dt: string) => {
+    setSelectedBrokerDate(dt);
+    setBrokerAccumLoading(true);
+    const days = horizonDaysMap[brokerAccumPeriod] || brokerDays || 5;
+    try {
+      const res = await fetchBrokerAnalysis(symbol, days, { date: dt, refresh: true });
+      const data = res?.data || res;
+      if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
+        setBrokerAccumData(data);
+      } else {
+        const realData = await fetchRealBrokerAnalysis(symbol, days, { date: dt, refresh: true });
+        if (realData) setBrokerAccumData(realData);
+      }
+    } catch (_) {
+      try {
+        const realData = await fetchRealBrokerAnalysis(symbol, days, { date: dt, refresh: true });
+        if (realData) setBrokerAccumData(realData);
+      } catch (_) {}
+    } finally {
+      setBrokerAccumLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!symbol) return;
-    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
-    const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
+    const days = horizonDaysMap[brokerAccumPeriod] || brokerDays || 5;
     setBrokerAccumLoading(true);
-    fetchBrokerAnalysis(symbol, days, true)
+    fetchBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true })
       .then((res: any) => {
         const data = res?.data || res;
         if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
           setBrokerAccumData(data);
         } else {
-          return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+          return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
             if (rData) setBrokerAccumData(rData);
           });
         }
       })
       .catch(() => {
-        fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+        fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
           if (rData) setBrokerAccumData(rData);
         }).catch(() => {});
       })
       .finally(() => setBrokerAccumLoading(false));
-  }, [symbol, brokerAccumPeriod]);
+  }, [symbol, brokerAccumPeriod, selectedBrokerDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     setBrokerAccumLoading(true);
-    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
-    const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
+    const days = horizonDaysMap[brokerAccumPeriod] || brokerDays || 5;
     await Promise.all([
       loadDepth(symbol),
-      fetchBrokerAnalysis(symbol, days, true)
+      fetchBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true })
         .then((res: any) => {
           const data = res?.data || res;
           if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
             setBrokerAccumData(data);
           } else {
-            return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+            return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
               if (rData) setBrokerAccumData(rData);
             });
           }
         })
         .catch(() => {
-          return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+          return fetchRealBrokerAnalysis(symbol, days, { date: selectedBrokerDate, refresh: true }).then(rData => {
             if (rData) setBrokerAccumData(rData);
           }).catch(() => {});
         })
@@ -5405,12 +5527,16 @@ export function MarketDepthService() {
     }
   }
 
-  const HORIZONS: Array<{ id: '1D' | '5D' | '15D' | '30D' | '60D'; label: string }> = [
-    { id: '1D', label: 'Today (1D)' },
+  const HORIZONS: Array<{ id: HorizonType; label: string }> = [
+    { id: '1D', label: '1D' },
     { id: '5D', label: '5D' },
     { id: '15D', label: '15D' },
-    { id: '30D', label: '30D' },
-    { id: '60D', label: '60D (Vault)' },
+    { id: '1M', label: '1M' },
+    { id: '2M', label: '2M' },
+    { id: '3M', label: '3M' },
+    { id: '6M', label: '6M' },
+    { id: '1Y', label: '1Y' },
+    { id: '2Y/All', label: '2Y/All' },
   ];
 
   return (
@@ -5569,22 +5695,48 @@ export function MarketDepthService() {
             </div>
           </div>
 
-          {/* Horizons: 1D, 5D, 15D, 30D, 60D */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-            {HORIZONS.map((h) => (
-              <button
-                key={h.id}
-                type="button"
-                onClick={() => handleHorizonClick(h.id)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  brokerAccumPeriod === h.id
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                {h.label}
-              </button>
-            ))}
+          {/* Horizons & Historical Session Selector */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto scrollbar-none">
+              {HORIZONS.map((h) => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => handleHorizonClick(h.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition shrink-0 ${
+                    brokerAccumPeriod === h.id && !selectedBrokerDate
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  {h.label}
+                </button>
+              ))}
+            </div>
+
+            {Array.isArray(brokerAccumData?.availableDates) && brokerAccumData.availableDates.length > 0 && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <select
+                  value={selectedBrokerDate}
+                  onChange={(e) => handleBrokerDateChange(e.target.value)}
+                  className="px-2 py-1 text-xs font-semibold rounded-lg bg-slate-950 text-slate-200 border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="">Latest Session ({brokerDays}D Cumulative)</option>
+                  {brokerAccumData.availableDates.slice(0, 500).map((dt: string) => (
+                    <option key={dt} value={dt}>{dt}</option>
+                  ))}
+                </select>
+                {selectedBrokerDate && (
+                  <button
+                    onClick={() => handleBrokerDateChange('')}
+                    className="px-2 py-1 text-xs text-amber-400 hover:text-white border border-amber-500/30 rounded bg-amber-500/10"
+                    title="Reset to Latest"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

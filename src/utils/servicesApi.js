@@ -148,11 +148,26 @@ export const fetchFullIndex = () => _proxyFetch('/api/nepse/full-index', {}, 300
 export const fetchMarketIndices = () => _proxyFetch('/api/market-indices', {}, 30000);
 export const fetchTodayPrices = () => _proxyFetch('/api/today-prices', {}, 30000);
 
-export const fetchFloorsheet = (symbol, page, size, date) => {
+export const fetchFloorsheet = (symbol, page, size, date, days, fromDate, toDate, options = {}) => {
   const p = page || 1, s = size || 25;
-  const params = 'page=' + p + '&size=' + s + (date ? '&date=' + date : '');
-  const path = symbol ? '/api/floorsheet/' + symbol + '?' + params : '/api/floorsheet?' + params;
-  return _proxyFetch(path, {}, 300000);
+  const params = new URLSearchParams();
+  params.set('page', String(p));
+  params.set('size', String(s));
+  if (date) params.set('date', String(date));
+  if (days && Number(days) > 1) params.set('days', String(days));
+  if (fromDate) params.set('fromDate', String(fromDate));
+  if (toDate) params.set('toDate', String(toDate));
+  if (options && typeof options === 'object') {
+    if (options.buyer) params.set('buyer', String(options.buyer));
+    if (options.seller) params.set('seller', String(options.seller));
+    if (options.broker) params.set('broker', String(options.broker));
+    if (options.minQty) params.set('minQty', String(options.minQty));
+    if (options.minAmount) params.set('minAmount', String(options.minAmount));
+    if (options.selfMatchedOnly) params.set('selfMatchedOnly', 'true');
+    if (options.refresh) params.set('refresh', 'true');
+  }
+  const path = symbol ? `/api/floorsheet/${encodeURIComponent(symbol)}?${params.toString()}` : `/api/floorsheet?${params.toString()}`;
+  return _proxyFetch(path, {}, 300000, Boolean(options?.refresh));
 };
 
 export const fetchPriceHistory = async (symbol, length) => {
@@ -343,11 +358,14 @@ export const fetchBrokerHeatmap = (arg) => {
     const p = new URLSearchParams();
     if (arg.days) p.set('days', String(arg.days));
     if (arg.date) p.set('date', String(arg.date));
+    if (arg.fromDate) p.set('fromDate', String(arg.fromDate));
+    if (arg.toDate) p.set('toDate', String(arg.toDate));
+    if (arg.refresh) p.set('refresh', 'true');
     q = p.toString() ? `?${p.toString()}` : '';
   } else if (arg) {
     q = `?date=${arg}`;
   }
-  return _proxyFetch('/api/smart-money/broker-heatmap' + q, {}, 120000);
+  return _proxyFetch('/api/smart-money/broker-heatmap' + q, {}, 120000, Boolean(arg?.refresh));
 };
 export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
@@ -357,16 +375,38 @@ export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => 
   const sym = String(symbol || '').toUpperCase().trim();
   let numDays = 30;
   let refresh = Boolean(forceRefresh);
+  let date = '';
+  let fromDate = '';
+  let toDate = '';
   if (typeof days === 'object' && days !== null) {
     numDays = Math.max(1, parseInt(days.days || 30, 10) || 30);
     if (days.refresh) refresh = true;
+    if (days.date) date = String(days.date).trim();
+    if (days.fromDate) fromDate = String(days.fromDate).trim();
+    if (days.toDate) toDate = String(days.toDate).trim();
   } else {
     numDays = Math.max(1, parseInt(days || 30, 10) || 30);
   }
-  const path = `/api/broker-analysis/${encodeURIComponent(sym)}?days=${numDays}${refresh ? '&refresh=true' : ''}`;
+  const params = new URLSearchParams();
+  params.set('days', String(numDays));
+  if (date) params.set('date', date);
+  if (fromDate) params.set('fromDate', fromDate);
+  if (toDate) params.set('toDate', toDate);
+  if (refresh) params.set('refresh', 'true');
+  const path = `/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`;
   return _proxyFetch(path, {}, 120000, refresh);
 };
-export const fetchMarketWideBrokerSummary = (days = 1) => _proxyFetch('/api/market/broker-summary?days=' + (days || 1), {}, 180000);
+export const fetchMarketWideBrokerSummary = (days = 1, options = {}) => {
+  const p = new URLSearchParams();
+  p.set('days', String(days || 1));
+  if (typeof options === 'string' && options) {
+    p.set('date', options);
+  } else if (options && typeof options === 'object') {
+    if (options.date) p.set('date', String(options.date));
+    if (options.refresh) p.set('refresh', 'true');
+  }
+  return _proxyFetch('/api/market/broker-summary?' + p.toString(), {}, 180000, Boolean(options?.refresh));
+};
 export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), {}, 60000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
 export const fetchMarketDepth = (symbol) => _proxyFetch('/api/nepse/market-depth/' + symbol, {}, 15000);

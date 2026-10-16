@@ -28,12 +28,26 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [buyerFilter, setBuyerFilter] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
+  const [timeframe, setTimeframe] = useState('1D');
+  const [selectedDate, setSelectedDate] = useState('');
   const [page, setPage] = useState(1);
   const [size] = useState(50);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAutoRefresh, setIsAutoRefresh] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString('en-US', { hour12: false }));
+
+  const daysMap = {
+    '1D': 1,
+    '5D': 5,
+    '15D': 15,
+    '1M': 30,
+    '2M': 60,
+    '3M': 90,
+    '6M': 180,
+    '1Y': 260,
+    'ALL': 500,
+  };
 
   // Raw data from API
   const [floorsheetData, setFloorsheetData] = useState({
@@ -42,22 +56,26 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
     totalPages: 1,
     totalAmount: 0,
     totalQty: 0,
-    businessDate: ''
+    businessDate: '',
+    availableDates: []
   });
 
-  const loadFloorsheet = useCallback(async (pg = 1, showRefreshSpinner = false) => {
+  const loadFloorsheet = useCallback(async (pg = 1, showRefreshSpinner = false, currentTf = timeframe, currentDate = selectedDate) => {
     if (showRefreshSpinner) setRefreshing(true);
     else setLoading(true);
 
     try {
       const sym = filterScrip !== 'ALL' ? filterScrip : (searchQuery.trim() ? searchQuery.trim().toUpperCase() : '');
+      const numDays = daysMap[currentTf] || 1;
       const opts = {
         buyer: buyerFilter.trim(),
         seller: sellerFilter.trim(),
-        refresh: showRefreshSpinner
+        refresh: showRefreshSpinner,
+        days: numDays,
+        date: currentDate
       };
 
-      const res = await fetchRealFloorsheet(sym, '', pg, size, opts);
+      const res = await fetchRealFloorsheet(sym, currentDate, pg, size, opts);
       if (res && Array.isArray(res.rows)) {
         setFloorsheetData(res);
         setPage(pg);
@@ -69,7 +87,18 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filterScrip, searchQuery, buyerFilter, sellerFilter, size]);
+  }, [filterScrip, searchQuery, buyerFilter, sellerFilter, size, timeframe, selectedDate]);
+
+  const handleTimeframeChange = (tf) => {
+    setTimeframe(tf);
+    setSelectedDate('');
+    loadFloorsheet(1, false, tf, '');
+  };
+
+  const handleDateChange = (dt) => {
+    setSelectedDate(dt);
+    loadFloorsheet(1, false, timeframe, dt);
+  };
 
   // Initial and reactive load
   useEffect(() => {
@@ -237,6 +266,52 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
             >
               Filter
             </button>
+          </div>
+        </div>
+
+        {/* Timeframe & Historical Date Selector (up to 500 sessions / 2+ years) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-[#111622] border border-white/[0.08] text-xs">
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">
+              {isNe ? 'अवधि:' : 'Horizon:'}
+            </span>
+            {['1D', '5D', '15D', '1M', '2M', '3M', '6M', '1Y', 'ALL'].map((tf) => (
+              <button
+                key={tf}
+                onClick={() => handleTimeframeChange(tf)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition shrink-0 ${
+                  timeframe === tf && !selectedDate
+                    ? 'bg-sky-500 text-slate-950 font-black shadow-sm'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+              {isNe ? 'मिति:' : 'Session:'}
+            </span>
+            <select
+              value={selectedDate}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-sky-500 cursor-pointer"
+            >
+              <option value="">{isNe ? 'पछिल्लो सत्र' : 'Latest Session'} ({daysMap[timeframe] || 1}D)</option>
+              {Array.isArray(floorsheetData.availableDates) && floorsheetData.availableDates.slice(0, 500).map((dt) => (
+                <option key={dt} value={dt}>{dt}</option>
+              ))}
+            </select>
+            {selectedDate && (
+              <button
+                onClick={() => handleDateChange('')}
+                className="px-2 py-0.5 text-xs text-amber-400 hover:text-white border border-amber-500/30 rounded bg-amber-500/10"
+              >
+                Reset
+              </button>
+            )}
           </div>
         </div>
 

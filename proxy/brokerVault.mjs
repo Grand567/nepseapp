@@ -162,9 +162,13 @@ export async function fetchSymbolTradingDates(symbol) {
   if (!sym) return [];
   const now = Date.now();
   const cached = tradingDatesCache.get(sym);
-  if (cached && (now - cached.timestamp < 10 * 60 * 1000)) {
+  if (cached && (now - cached.timestamp < 10 * 60 * 1000) && cached.dates?.length >= 65) {
     return cached.dates;
   }
+
+  const dateSet = new Set();
+
+  // 1. Chukul historydata API
   try {
     const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -172,36 +176,37 @@ export async function fetchSymbolTradingDates(symbol) {
       validateStatus: () => true
     });
     if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
-      const dates = r.data
-        .filter(item => item && item.date && Number(item.volume || 0) > 0)
-        .map(item => String(item.date).trim())
-        .sort((a, b) => b.localeCompare(a));
-      if (dates.length > 0) {
-        tradingDatesCache.set(sym, { timestamp: now, dates });
-        return dates;
-      }
-    }
-  } catch (e) {
-    console.warn(`[brokerVault] fetchSymbolTradingDates failed for ${sym}:`, e.message);
-  }
-
-  // Fallback 1: Query authentic NEPSE NOTS price history via nepseClient,
-  // plus read dates from local floorsheet-full-*.json files and existing VAULT_DIR files.
-  try {
-    const dateSet = new Set();
-    const historyRows = await nepseClient.getSecurityPriceHistory(sym, { length: 90 }).catch(() => []);
-    if (Array.isArray(historyRows) && historyRows.length > 0) {
-      for (const row of historyRows) {
-        const dt = String(row?.date || '').trim();
-        const vol = Number(row?.volume || row?.tradedQuantity || 0);
-        const close = Number(row?.close || 0);
-        if (dt && (vol > 0 || close > 0)) {
-          dateSet.add(dt);
+      for (const item of r.data) {
+        if (item && item.date && Number(item.volume || 0) > 0) {
+          dateSet.add(String(item.date).trim());
         }
       }
     }
+  } catch (e) {
+    console.warn(`[brokerVault] Chukul historydata failed for ${sym}:`, e.message);
+  }
 
-    // Also read dates from existing floorsheet-full-*.json files
+  // 2. Query authentic NEPSE NOTS price history (length 500) via nepseClient
+  if (dateSet.size < 500) {
+    try {
+      const historyRows = await nepseClient.getSecurityPriceHistory(sym, { length: 500 }).catch(() => []);
+      if (Array.isArray(historyRows) && historyRows.length > 0) {
+        for (const row of historyRows) {
+          const dt = String(row?.date || '').trim();
+          const vol = Number(row?.volume || row?.tradedQuantity || 0);
+          const close = Number(row?.close || 0);
+          if (dt && (vol > 0 || close > 0)) {
+            dateSet.add(dt);
+          }
+        }
+      }
+    } catch (e1) {
+      console.warn(`[brokerVault] Fallback 1 NOTS price history discovery failed for ${sym}:`, e1.message);
+    }
+  }
+
+  // 3. Read dates from existing floorsheet-full-*.json files and existing VAULT_DIR files
+  try {
     const candidateDirs = [
       path.join(__dirname, 'data'),
       path.join(process.cwd(), 'data'),
@@ -219,7 +224,6 @@ export async function fetchSymbolTradingDates(symbol) {
       }
     }
 
-    // Also read dates from existing symbol vault file
     const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
     if (fs.existsSync(vaultPath)) {
       try {
@@ -233,54 +237,48 @@ export async function fetchSymbolTradingDates(symbol) {
         }
       } catch (_) {}
     }
+  } catch (_) {}
 
-    if (dateSet.size > 0) {
-      const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
-      tradingDatesCache.set(sym, { timestamp: now, dates });
-      return dates;
+  // 4. Fallback 2: Query MeroLagani's company graph handler to extract up to 500 trading dates
+  if (dateSet.size < 500) {
+    try {
+      const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(sym)}`;
+      const mlRes = await axios.get(mlUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'application/json'
+        },
+        timeout: 9000,
+        validateStatus: () => true
+      });
+      if (mlRes.status === 200 && mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
+        for (const q of mlRes.data.quotes) {
+          if (!q || !q.date) continue;
+          let dateIso = String(q.date).trim();
+          if (dateIso.includes('/')) {
+            const parts = dateIso.split('/');
+            if (parts.length === 3) {
+              dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+            const vol = Number(q.volume || 0);
+            const close = Number(q.close || 0);
+            if (vol > 0 || close > 0) {
+              dateSet.add(dateIso);
+            }
+          }
+        }
+      }
+    } catch (e2) {
+      console.warn(`[brokerVault] Fallback 2 MeroLagani discovery failed for ${sym}:`, e2.message);
     }
-  } catch (e1) {
-    console.warn(`[brokerVault] Fallback 1 price history discovery failed for ${sym}:`, e1.message);
   }
 
-  // Fallback 2: Query MeroLagani's company graph handler to extract last 65 trading dates
-  try {
-    const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(sym)}`;
-    const mlRes = await axios.get(mlUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json'
-      },
-      timeout: 9000,
-      validateStatus: () => true
-    });
-    if (mlRes.status === 200 && mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
-      const mlDates = new Set();
-      for (const q of mlRes.data.quotes) {
-        if (!q || !q.date) continue;
-        let dateIso = String(q.date).trim();
-        if (dateIso.includes('/')) {
-          const parts = dateIso.split('/');
-          if (parts.length === 3) {
-            dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-          }
-        }
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
-          const vol = Number(q.volume || 0);
-          const close = Number(q.close || 0);
-          if (vol > 0 || close > 0) {
-            mlDates.add(dateIso);
-          }
-        }
-      }
-      if (mlDates.size > 0) {
-        const sorted = Array.from(mlDates).sort((a, b) => b.localeCompare(a)).slice(0, 65);
-        tradingDatesCache.set(sym, { timestamp: now, dates: sorted });
-        return sorted;
-      }
-    }
-  } catch (e2) {
-    console.warn(`[brokerVault] Fallback 2 MeroLagani discovery failed for ${sym}:`, e2.message);
+  if (dateSet.size > 0) {
+    const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a)).slice(0, 500);
+    tradingDatesCache.set(sym, { timestamp: now, dates });
+    return dates;
   }
 
   return cached?.dates || [];
@@ -333,7 +331,7 @@ export async function fetchChukulDateFloorsheet(symbol, dateStr) {
   return [];
 }
 
-export async function fetchShareSansarFloorsheet(symbol, maxRecords = 6000) {
+export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000) {
   const sym = String(symbol || '').toUpperCase().trim();
 
   try {
@@ -497,8 +495,18 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   if (datesToFetch.size > 0) {
     const fetchList = Array.from(datesToFetch);
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 18;
+    const syncStartMs = Date.now();
+    let inlineCompletedIdx = 0;
+
     for (let i = 0; i < fetchList.length; i += CONCURRENCY) {
+      // Check elapsed time and count limit to prevent HTTP timeouts
+      const elapsedMs = Date.now() - syncStartMs;
+      if (i >= 80 || elapsedMs > 8500) {
+        inlineCompletedIdx = i;
+        break;
+      }
+
       const batch = fetchList.slice(i, i + CONCURRENCY);
       const results = await Promise.all(batch.map(dt => fetchChukulDateFloorsheet(sym, dt)));
       batch.forEach((dt, idx) => {
@@ -506,6 +514,42 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
         if (Array.isArray(rows) && rows.length > 0) {
           vaultObj.rowsByDate[dt] = rows;
           didUpdate = true;
+          datesToFetch.delete(dt);
+        }
+      });
+      inlineCompletedIdx = i + batch.length;
+    }
+
+    // If more dates remain in fetchList after 8500ms or 80 dates, spawn non-blocking background worker
+    if (inlineCompletedIdx < fetchList.length) {
+      const remainingDates = fetchList.slice(inlineCompletedIdx);
+      setImmediate(async () => {
+        try {
+          let bgUpdated = false;
+          for (let j = 0; j < remainingDates.length; j += CONCURRENCY) {
+            const batch = remainingDates.slice(j, j + CONCURRENCY);
+            const results = await Promise.all(batch.map(dt => fetchChukulDateFloorsheet(sym, dt).catch(() => [])));
+            batch.forEach((dt, idx) => {
+              const rows = results[idx];
+              if (Array.isArray(rows) && rows.length > 0) {
+                vaultObj.rowsByDate[dt] = rows;
+                bgUpdated = true;
+              }
+            });
+          }
+          if (bgUpdated) {
+            vaultObj.updatedAt = new Date().toISOString();
+            const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
+            const trimmedRowsByDate = {};
+            for (const dt of sortedDates.slice(0, 500)) {
+              trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
+            }
+            vaultObj.rowsByDate = trimmedRowsByDate;
+            fs.writeFileSync(vaultPath, JSON.stringify(vaultObj), 'utf8');
+            console.log(`[brokerVault] Background sync completed for ${sym}: saved ${Object.keys(trimmedRowsByDate).length} sessions`);
+          }
+        } catch (bgErr) {
+          console.warn(`[brokerVault] Background sync error for ${sym}:`, bgErr.message);
         }
       });
     }
@@ -514,14 +558,14 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   // Fallback to ShareSansar:
   // When datesToFetch.size > 0 and fetchChukulDateFloorsheet(sym, dt) returns empty for historical dates
   // (or if Object.keys(vaultObj.rowsByDate).length < Math.min(requestedDates.length, 5)),
-  // ALWAYS run fetchShareSansarFloorsheet(sym, 15000) and group the returned rows by r.businessDate
+  // ALWAYS run fetchShareSansarFloorsheet(sym, 50000) and group the returned rows by r.businessDate
   // into vaultObj.rowsByDate[dt] so multi-day historical dates are populated even when only 1 date
   // was previously in vaultObj.rowsByDate!
   const populatedDatesCount = Object.keys(vaultObj.rowsByDate).filter(d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0).length;
   const targetThreshold = requestedDates.length > 0 ? Math.min(requestedDates.length, 5) : 2;
 
   if (datesToFetch.size > 0 || populatedDatesCount < targetThreshold || Object.keys(vaultObj.rowsByDate).length === 0) {
-    const ssRows = await fetchShareSansarFloorsheet(sym, 15000);
+    const ssRows = await fetchShareSansarFloorsheet(sym, 50000);
     if (Array.isArray(ssRows) && ssRows.length > 0) {
       for (const r of ssRows) {
         const dt = String(r.businessDate || '').trim();
@@ -543,7 +587,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     try {
       const sortedDates = Object.keys(vaultObj.rowsByDate).sort((a, b) => b.localeCompare(a));
       const trimmedRowsByDate = {};
-      for (const dt of sortedDates.slice(0, 65)) {
+      for (const dt of sortedDates.slice(0, 500)) {
         trimmedRowsByDate[dt] = vaultObj.rowsByDate[dt];
       }
       vaultObj.rowsByDate = trimmedRowsByDate;
@@ -894,7 +938,7 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
   const specificDate = String(options.date || '').trim();
   const fromDate = String(options.fromDate || '').trim();
   const toDate = String(options.toDate || '').trim();
-  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 365);
+  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 730);
 
   const cacheKey = `ba-${sym}-d${numDays}-${specificDate}-${fromDate}-${toDate}`;
   const now = Date.now();
@@ -914,11 +958,11 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
         if (fromDate && d < fromDate) return false;
         if (toDate && d > toDate) return false;
         return true;
-      }).slice(0, 30);
+      }).slice(0, 500);
       if (targetDates.length === 0 && fromDate && !toDate) targetDates = [fromDate];
     } else {
-      // Select N+1 candidate trading sessions so if today's intraday EOD isn't published yet we still get N full sessions
-      const sessionsToFetch = Math.min(numDays + 1, 65);
+      // Select N+2 candidate trading sessions so if today's intraday EOD isn't published yet we still get N full sessions
+      const sessionsToFetch = Math.min(numDays + 2, 500);
       targetDates = allTradingDates.slice(0, sessionsToFetch);
     }
 
@@ -951,7 +995,7 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
         return aggregated;
       }
     } else if (preAggregated && (preAggregated.brokers?.length > 0 || preAggregated.topBuyers?.length > 0)) {
-      if (numDays <= 1 || Number(preAggregated.tradingDays || 1) === numDays) {
+      if (!specificDate && !fromDate && !toDate && (numDays <= 1 || Number(preAggregated.tradingDays || 1) === numDays)) {
         memoryCache.set(cacheKey, { timestamp: now, data: preAggregated });
         return preAggregated;
       }
@@ -987,7 +1031,7 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
   const cleanDate = String(date || '').trim();
   const cleanFrom = String(fromDate || '').trim();
   const cleanTo = String(toDate || '').trim();
-  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 60);
+  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 500);
   const cleanBuyer = String(buyer || '').trim();
   const cleanSeller = String(seller || '').trim();
   const cleanBroker = String(broker || '').trim();
@@ -1006,10 +1050,10 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
       if (cleanFrom && d < cleanFrom) return false;
       if (cleanTo && d > cleanTo) return false;
       return true;
-    }).slice(0, 30);
+    }).slice(0, 500);
     if (candidateDates.length === 0 && cleanFrom && !cleanTo) candidateDates = [cleanFrom];
   } else if (numDays > 1) {
-    candidateDates = allTradingDates.slice(0, Math.min(numDays + 1, 65));
+    candidateDates = allTradingDates.slice(0, Math.min(numDays + 2, 500));
   } else {
     candidateDates = allTradingDates.slice(0, 2);
   }
@@ -1704,22 +1748,23 @@ export async function getFullSessionFloorsheet(dateStr = '') {
  * Supports both days === 1 and multi-day (days > 1) horizons.
  * Cached in-memory: 3 minutes during market hours (NPT 11:00-15:30), 30 minutes off-market.
  */
-export async function getMarketWideBrokerSummaryMap(days = 1) {
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
+  const numDays = Math.min(Math.max(parseInt(days || 1, 10) || 1, 1), 500);
+  const targetDate = String(options.date || '').trim();
   const now = Date.now();
   const nowNpt = new Date(now + (5 * 60 + 45) * 60 * 1000);
   const nptMinutesOfDay = nowNpt.getUTCHours() * 60 + nowNpt.getUTCMinutes();
   const isMarketHours = nptMinutesOfDay >= 660 && nptMinutesOfDay <= 930;
   const cacheTtlMs = isMarketHours ? 3 * 60 * 1000 : 30 * 60 * 1000;
 
-  const cacheKey = `marketBrokerMap-d${numDays}`;
+  const cacheKey = `marketBrokerMap-d${numDays}-${targetDate || 'latest'}`;
   const cachedMem = memoryCache.get(cacheKey);
   if (cachedMem && (now - cachedMem.timestamp < cacheTtlMs)) {
     return cachedMem.data;
   }
 
   try {
-    const fullTrades = await getFullSessionFloorsheet();
+    const fullTrades = await getFullSessionFloorsheet(targetDate);
     const symbolGroups = {};
 
     if (Array.isArray(fullTrades)) {

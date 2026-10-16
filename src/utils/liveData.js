@@ -2513,17 +2513,15 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
         topNetSellers: normalizedNetSellers,
         isReal: true
       };
-      if (!date && !fromDate) {
-        setCachedRealBrokerAnalysis(sym, enriched, numDays, options);
-      }
+      setCachedRealBrokerAnalysis(sym, enriched, numDays, options);
       return enriched;
     }
   } catch (_) {}
 
   // If cached real broker analysis exists matching the requested timeframe, return it
-  if (cached && !date && !fromDate) {
+  if (cached) {
     const cachedDays = Number(cached.tradingDays || 1);
-    if (numDays === 1 || cachedDays >= Math.min(numDays, 3)) {
+    if (numDays === 1 || cachedDays === numDays) {
       return cached;
     }
   }

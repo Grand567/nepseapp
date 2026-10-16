@@ -101,10 +101,13 @@ const MAJOR_BROKERS = [
 const DAYS_MAP: Record<string, number> = {
   '1D': 1,
   '1W': 7,
+  '15D': 15,
   '1M': 30,
+  '2M': 60,
   '3M': 90,
   '6M': 180,
-  '1Y': 365,
+  '1Y': 260,
+  'ALL': 500,
 };
 
 export function BrokerFlowDominanceService({
@@ -114,6 +117,9 @@ export function BrokerFlowDominanceService({
 }) {
   const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise'>(mode);
   const [timeframe, setTimeframe] = useState('1D');
+  const [sessionDateFilter, setSessionDateFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
@@ -131,14 +137,30 @@ export function BrokerFlowDominanceService({
   const [uniqueStockOnly, setUniqueStockOnly] = useState<boolean>(true);
   const [copiedCard, setCopiedCard] = useState<boolean>(false);
 
+  const availableDates = useMemo(() => {
+    const set = new Set<string>();
+    if (Array.isArray(heatmapData?.availableDates)) {
+      heatmapData.availableDates.forEach((d: any) => d && set.add(String(d)));
+    }
+    if (heatmapData?.businessDate) set.add(String(heatmapData.businessDate));
+    if (floorsheet && floorsheet.length > 0) {
+      floorsheet.forEach((f: any) => {
+        const dt = f.businessDate || f.date;
+        if (dt) set.add(String(dt).split('T')[0]);
+      });
+    }
+    return Array.from(set).sort().reverse().slice(0, 500);
+  }, [heatmapData, floorsheet]);
+
   const sessionDate = useMemo(() => {
+    if (sessionDateFilter) return sessionDateFilter;
     if (heatmapData?.businessDate) return heatmapData.businessDate;
     if (floorsheet && floorsheet.length > 0) {
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
     return new Date().toISOString().split('T')[0];
-  }, [floorsheet, heatmapData]);
+  }, [sessionDateFilter, floorsheet, heatmapData]);
 
   // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
   const brokerWiseLeaderboard = useMemo(() => {
@@ -226,15 +248,20 @@ export function BrokerFlowDominanceService({
     }
   };
 
-  const loadData = async (activeTf = timeframe) => {
+  const loadData = async (
+    activeTf = timeframe,
+    targetDate = sessionDateFilter,
+    targetFrom = fromDate,
+    targetTo = toDate
+  ) => {
     setLoading(true);
     try {
       const days = DAYS_MAP[activeTf] || 1;
       const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
-        fetchRealFloorsheet(null, '', 1, 100000),
-        fetchBrokerHeatmap({ days }),
-        fetchMarketWideBrokerSummaryMap(days)
+        fetchRealFloorsheet(null, targetDate || '', 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),
+        fetchBrokerHeatmap({ days, date: targetDate, fromDate: targetFrom, toDate: targetTo }),
+        fetchMarketWideBrokerSummaryMap(days, { date: targetDate })
       ]);
       if (liveDataRes.status === 'fulfilled') {
         const liveStocks = liveDataRes.value?.stocks || [];
@@ -273,8 +300,8 @@ export function BrokerFlowDominanceService({
   };
 
   useEffect(() => {
-    loadData(timeframe);
-  }, [timeframe]);
+    loadData(timeframe, sessionDateFilter, fromDate, toDate);
+  }, [timeframe, sessionDateFilter, fromDate, toDate]);
 
   // ── Intraday Auto-Refresh (10 min during NEPSE market hours 11:00 AM – 3:00 PM NPT) ──
   useEffect(() => {
@@ -287,15 +314,15 @@ export function BrokerFlowDominanceService({
     };
     const intervalId = setInterval(() => {
       if (isNepseMarketOpen()) {
-        loadData(timeframe);
+        loadData(timeframe, sessionDateFilter, fromDate, toDate);
       }
     }, 10 * 60 * 1000); // every 10 minutes
     return () => clearInterval(intervalId);
-  }, [timeframe]); // re-register if timeframe changes
+  }, [timeframe, sessionDateFilter, fromDate, toDate]); // re-register if timeframe or date changes
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData(timeframe);
+    await loadData(timeframe, sessionDateFilter, fromDate, toDate);
     setRefreshing(false);
   };
 
@@ -1197,13 +1224,98 @@ export function BrokerFlowDominanceService({
         </div>
       </div>
 
-      {/* Timeframe Filter Bar */}
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        onRefresh={handleRefresh}
-        isRefreshing={refreshing}
-      />
+      {/* Timeframe Filter Bar & Historical Session / Range Bar */}
+      <div className="flex flex-col gap-2 w-full">
+        <TimeframeFilterBar
+          timeframe={timeframe}
+          timeframes={['1D', '1W', '15D', '1M', '2M', '3M', '6M', '1Y', 'ALL']}
+          onSelectTimeframe={(tf) => {
+            setTimeframe(tf);
+            setSessionDateFilter('');
+            setFromDate('');
+            setToDate('');
+          }}
+          onRefresh={handleRefresh}
+          isRefreshing={refreshing}
+        />
+
+        {/* Historical Session Date Picker & Custom Date Range */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-400 font-bold flex items-center gap-1.5">
+              📅 Historical Session:
+            </span>
+            {availableDates.length > 0 ? (
+              <select
+                value={sessionDateFilter}
+                onChange={(e) => {
+                  setSessionDateFilter(e.target.value);
+                  setFromDate('');
+                  setToDate('');
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-sky-400 outline-none focus:border-sky-500 cursor-pointer"
+              >
+                <option value="">Latest Session ({sessionDate})</option>
+                {availableDates.map(dt => (
+                  <option key={dt} value={dt}>{dt}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="date"
+                value={sessionDateFilter}
+                onChange={(e) => {
+                  setSessionDateFilter(e.target.value);
+                  setFromDate('');
+                  setToDate('');
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-sky-400 outline-none focus:border-sky-500"
+              />
+            )}
+            {sessionDateFilter && (
+              <button
+                type="button"
+                onClick={() => setSessionDateFilter('')}
+                className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-bold hover:bg-rose-500/30 cursor-pointer"
+              >
+                Reset Date
+              </button>
+            )}
+          </div>
+
+          {/* Custom Date Range Selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-400 font-bold">Range:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-sky-400 outline-none focus:border-sky-500"
+              title="From Date"
+            />
+            <span className="text-slate-500">→</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] text-sky-400 outline-none focus:border-sky-500"
+              title="To Date"
+            />
+            {(fromDate || toDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromDate('');
+                  setToDate('');
+                }}
+                className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-bold hover:bg-rose-500/30 cursor-pointer"
+              >
+                Clear Range
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Telemetry Cards */}
       <div className="grid grid-cols-2 gap-2 sm:gap-2.5 sm:grid-cols-4 w-full">
