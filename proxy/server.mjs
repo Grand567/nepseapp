@@ -3250,7 +3250,10 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
         vaultData = result;
       } else {
         // Return fast on-disk vault snapshot immediately to prevent aborts
-        const fastSnapshot = getFastVaultSnapshot(symbol, days);
+        let fastSnapshot = getFastVaultSnapshot(symbol, days);
+        if (!fastSnapshot || (!fastSnapshot.brokers?.length && !fastSnapshot.totalVolume)) {
+          fastSnapshot = getFastVaultSnapshot(symbol, 1);
+        }
         if (fastSnapshot && (fastSnapshot.brokers?.length > 0 || fastSnapshot.totalVolume > 0)) {
           vaultData = fastSnapshot;
           setCache(cacheKey, fastSnapshot, 2 * 60 * 1000);
@@ -3260,7 +3263,8 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
           }).catch(() => {});
           return res.json({ success: true, data: fastSnapshot, source: 'broker_vault_fast_snapshot', isPartial: true });
         } else {
-          vaultData = await fullPromise;
+          const fallbackTimeout = new Promise(resolve => setTimeout(() => resolve(null), 4500));
+          vaultData = await Promise.race([fullPromise, fallbackTimeout]);
         }
       }
     } else {

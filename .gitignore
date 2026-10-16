@@ -34,8 +34,11 @@ proxy/data/*_config.json
 *firebase-service-account*.json
 scratch/
 temp_frames_v3/
-data/
+proxy/data/floorsheet-full-*.json
+/data/
 *.mp4
 dist-electron/
 *.exe
 drabyashree_*.txt
+audit_*.txt
+src/data/broker_matrix_latest.json

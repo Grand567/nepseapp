@@ -1,0 +1,80 @@
+{
+  "NABIL": {
+    "symbol": "NABIL",
+    "bids": [
+      {
+        "price": 547,
+        "quantity": 10,
+        "qty": 10,
+        "orders": 1
+      },
+      {
+        "price": 546.5,
+        "quantity": 39,
+        "qty": 39,
+        "orders": 1
+      },
+      {
+        "price": 546.1,
+        "quantity": 455,
+        "qty": 455,
+        "orders": 1
+      },
+      {
+        "price": 546,
+        "quantity": 1390,
+        "qty": 1390,
+        "orders": 8
+      },
+      {
+        "price": 545.1,
+        "quantity": 21,
+        "qty": 21,
+        "orders": 1
+      }
+    ],
+    "asks": [
+      {
+        "price": 548,
+        "quantity": 2193,
+        "qty": 2193,
+        "orders": 16
+      },
+      {
+        "price": 548.4,
+        "quantity": 400,
+        "qty": 400,
+        "orders": 1
+      },
+      {
+        "price": 548.5,
+        "quantity": 160,
+        "qty": 160,
+        "orders": 2
+      },
+      {
+        "price": 549,
+        "quantity": 1228,
+        "qty": 1228,
+        "orders": 8
+      },
+      {
+        "price": 549.1,
+        "quantity": 1010,
+        "qty": 1010,
+        "orders": 2
+      }
+    ],
+    "totalBidQty": 15575,
+    "totalAskQty": 40323,
+    "obir": -0.4427,
+    "spread": 1,
+    "spreadPct": 0.18,
+    "isOffMarket": false,
+    "sessionLabel": "Live NEPSE NOTS Order Book",
+    "demandStatus": "Supply Heavy",
+    "source": "nepse-api",
+    "fetchedAt": "2026-10-16T07:23:11.063Z",
+    "savedAt": "2026-10-16T07:23:11.063Z"
+  }
+}

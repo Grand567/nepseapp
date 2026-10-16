@@ -508,20 +508,20 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   if (datesToFetch.size > 0) {
     const fetchList = Array.from(datesToFetch);
-    const CONCURRENCY = 18;
+    const CONCURRENCY = 4;
     const syncStartMs = Date.now();
     let inlineCompletedIdx = 0;
 
     for (let i = 0; i < fetchList.length; i += CONCURRENCY) {
       // Check elapsed time and count limit to prevent HTTP timeouts
       const elapsedMs = Date.now() - syncStartMs;
-      if (i >= 80 || elapsedMs > 8500) {
+      if (i >= 40 || elapsedMs > 6000) {
         inlineCompletedIdx = i;
         break;
       }
 
       const batch = fetchList.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(batch.map(dt => fetchChukulDateFloorsheet(sym, dt)));
+      const results = await Promise.all(batch.map(dt => fetchChukulDateFloorsheet(sym, dt).catch(() => [])));
       batch.forEach((dt, idx) => {
         const rows = results[idx];
         if (Array.isArray(rows) && rows.length > 0) {
@@ -531,9 +531,10 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
         }
       });
       inlineCompletedIdx = i + batch.length;
+      await new Promise(r => setTimeout(r, 40));
     }
 
-    // If more dates remain in fetchList after 8500ms or 80 dates, spawn non-blocking background worker
+    // If more dates remain in fetchList, spawn non-blocking background worker
     if (inlineCompletedIdx < fetchList.length) {
       const remainingDates = fetchList.slice(inlineCompletedIdx);
       setImmediate(async () => {
@@ -549,6 +550,7 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
                 bgUpdated = true;
               }
             });
+            await new Promise(r => setTimeout(r, 50));
           }
           if (bgUpdated) {
             vaultObj.updatedAt = new Date().toISOString();
@@ -1895,7 +1897,9 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
     const candidateDirs = [
       path.join(__dirname, 'data'),
       path.join(process.cwd(), 'data'),
-      path.join(process.cwd(), 'proxy', 'data')
+      path.join(process.cwd(), 'proxy', 'data'),
+      path.join(__dirname, '..', 'src', 'data'),
+      path.join(process.cwd(), 'src', 'data')
     ].filter((d, i, arr) => arr.indexOf(d) === i);
 
     for (const dataDir of candidateDirs) {

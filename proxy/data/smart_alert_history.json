@@ -1,5 +1,169 @@
 [
   {
+    "id": "alert_SAHAS_1792139694916",
+    "symbol": "SAHAS",
+    "ltp": 698.9,
+    "triggeredAt": "2026-10-16T08:34:54.916Z",
+    "buyZone": {
+      "low": 692,
+      "high": 711,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 692 - 711"
+    },
+    "dominantBrokersText": "Naasa Securities (#58) & Trishakti Securities (#48)",
+    "concentrationPct": 62,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 15478,
+        "buyAmt": 10771914.4
+      },
+      {
+        "broker": "48",
+        "name": "Trishakti Securities",
+        "buyQty": 13098,
+        "buyAmt": 9129424.3
+      },
+      {
+        "broker": "62",
+        "name": "Capital Max Securities",
+        "buyQty": 7105,
+        "buyAmt": 4954116.7
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
+    "target1": 804,
+    "target2": 874,
+    "stopLoss": 669,
+    "riskRewardRatio": 3.52,
+    "vwap": 696.45,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_SHIVM_1792139163015",
+    "symbol": "SHIVM",
+    "ltp": 679,
+    "triggeredAt": "2026-10-16T08:26:03.015Z",
+    "buyZone": {
+      "low": 678,
+      "high": 696,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 678 - 696"
+    },
+    "dominantBrokersText": "Kalash Stock Market (#74) & Naasa Securities (#58)",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "74",
+        "name": "Kalash Stock Market",
+        "buyQty": 14949,
+        "buyAmt": 10188456.3
+      },
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 13778,
+        "buyAmt": 9404797.6
+      },
+      {
+        "broker": "49",
+        "name": "Online Securities",
+        "buyQty": 11565,
+        "buyAmt": 7876648.2
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.43x of 20-day avg)",
+    "target1": 781,
+    "target2": 849,
+    "stopLoss": 654,
+    "riskRewardRatio": 4.08,
+    "vwap": 681.62,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_AKJCL_1792138385294",
+    "symbol": "AKJCL",
+    "ltp": 350.8,
+    "triggeredAt": "2026-10-16T08:13:05.294Z",
+    "buyZone": {
+      "low": 347,
+      "high": 357,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 347 - 357"
+    },
+    "dominantBrokersText": "Naasa Securities (#58) & Midas Stock Broking (#21)",
+    "concentrationPct": 68,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 40844,
+        "buyAmt": 14292420.8
+      },
+      {
+        "broker": "21",
+        "name": "Midas Stock Broking",
+        "buyQty": 39364,
+        "buyAmt": 13756773.7
+      },
+      {
+        "broker": "97",
+        "name": "R.B.B. Securities",
+        "buyQty": 22873,
+        "buyAmt": 8015453.7
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.84x of 20-day avg)",
+    "target1": 403,
+    "target2": 439,
+    "stopLoss": 336,
+    "riskRewardRatio": 3.53,
+    "vwap": 349.69,
+    "status": "ACTIVE"
+  },
+  {
+    "id": "alert_NRN_1792136175840",
+    "symbol": "NRN",
+    "ltp": 1377.9,
+    "triggeredAt": "2026-10-16T07:36:15.840Z",
+    "buyZone": {
+      "low": 1369,
+      "high": 1404,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 1369 - 1404"
+    },
+    "dominantBrokersText": "Naasa Securities (#58) & Capital Max Securities (#62)",
+    "concentrationPct": 66,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 8906,
+        "buyAmt": 12251803.4
+      },
+      {
+        "broker": "62",
+        "name": "Capital Max Securities",
+        "buyQty": 6180,
+        "buyAmt": 8514901
+      },
+      {
+        "broker": "38",
+        "name": "Dipshikha Dhitopatra Karobar",
+        "buyQty": 2552,
+        "buyAmt": 3509110
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
+    "target1": 1585,
+    "target2": 1722,
+    "stopLoss": 1321,
+    "riskRewardRatio": 3.64,
+    "vwap": 1376.15,
+    "status": "ACTIVE"
+  },
+  {
     "id": "alert_SHIVM_1792133692138",
     "symbol": "SHIVM",
     "ltp": 679,
@@ -1537,171 +1701,5 @@
     "riskRewardRatio": 3.28,
     "vwap": 351.01,
     "status": "ACTIVE"
-  },
-  {
-    "id": "alert_SSHL_1791788854534",
-    "symbol": "SSHL",
-    "ltp": 210,
-    "triggeredAt": "2026-10-12T07:07:34.534Z",
-    "buyZone": {
-      "low": 210,
-      "high": 216,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 210 - 216"
-    },
-    "dominantBrokersText": "Broker 38 & Broker 14",
-    "concentrationPct": 56,
-    "topBuyerBrokers": [
-      {
-        "broker": "38",
-        "name": "Dipshikha Dhitopatra Karobar",
-        "buyQty": 23460,
-        "buyAmt": 4962317.8
-      },
-      {
-        "broker": "14",
-        "name": "Nepal Stock House",
-        "buyQty": 11000,
-        "buyAmt": 2328654
-      },
-      {
-        "broker": "74",
-        "name": "Elite Stock Brokers",
-        "buyQty": 7347,
-        "buyAmt": 1550014
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.84x of 20-day avg)",
-    "target1": 241,
-    "target2": 263,
-    "stopLoss": 201,
-    "riskRewardRatio": 3.44,
-    "vwap": 211.06,
-    "status": "ACTIVE"
-  },
-  {
-    "id": "alert_RSML_1791788743416",
-    "symbol": "RSML",
-    "ltp": 2672,
-    "triggeredAt": "2026-10-12T07:05:43.416Z",
-    "buyZone": {
-      "low": 2650,
-      "high": 2717,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 2650 - 2717"
-    },
-    "dominantBrokersText": "Broker 69 & Broker 28",
-    "concentrationPct": 53,
-    "topBuyerBrokers": [
-      {
-        "broker": "69",
-        "name": "Nabil Stock Dealer",
-        "buyQty": 5737,
-        "buyAmt": 15307945.3
-      },
-      {
-        "broker": "28",
-        "name": "Shree Krishna Securities",
-        "buyQty": 1410,
-        "buyAmt": 3755475
-      },
-      {
-        "broker": "56",
-        "name": "Sri Hari Securities",
-        "buyQty": 887,
-        "buyAmt": 2365655
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.53x of 20-day avg)",
-    "target1": 3073,
-    "target2": 3340,
-    "stopLoss": 2557,
-    "riskRewardRatio": 3.49,
-    "vwap": 2663.53,
-    "status": "ACTIVE"
-  },
-  {
-    "id": "alert_KBL_1791788600680",
-    "symbol": "KBL",
-    "ltp": 231,
-    "triggeredAt": "2026-10-12T07:03:20.680Z",
-    "buyZone": {
-      "low": 228,
-      "high": 234,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 228 - 234"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 49",
-    "concentrationPct": 61,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 39694,
-        "buyAmt": 9128145.1
-      },
-      {
-        "broker": "49",
-        "name": "Online Securities",
-        "buyQty": 17253,
-        "buyAmt": 3951693
-      },
-      {
-        "broker": "34",
-        "name": "Vision Securities",
-        "buyQty": 13512,
-        "buyAmt": 3092455.5999999996
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.68x of 20-day avg)",
-    "target1": 266,
-    "target2": 289,
-    "stopLoss": 220,
-    "riskRewardRatio": 3.18,
-    "vwap": 229.38,
-    "status": "ACTIVE"
-  },
-  {
-    "id": "alert_SOHL_1791788447690",
-    "symbol": "SOHL",
-    "ltp": 630.3,
-    "triggeredAt": "2026-10-12T07:00:47.690Z",
-    "buyZone": {
-      "low": 615,
-      "high": 631,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 615 - 631"
-    },
-    "dominantBrokersText": "Broker 58 & Broker 71",
-    "concentrationPct": 54,
-    "topBuyerBrokers": [
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 2212,
-        "buyAmt": 1370100.5
-      },
-      {
-        "broker": "71",
-        "name": "Purna Securities",
-        "buyQty": 2120,
-        "buyAmt": 1310459.8
-      },
-      {
-        "broker": "67",
-        "name": "Property Wizard",
-        "buyQty": 1790,
-        "buyAmt": 1114996
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.17x of 20-day avg)",
-    "target1": 725,
-    "target2": 788,
-    "stopLoss": 594,
-    "riskRewardRatio": 2.61,
-    "vwap": 618.5,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T07:01:51.085Z",
-    "exitPrice": 42.33
   }
 ]
