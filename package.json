@@ -11,6 +11,8 @@
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
     "test": "node tests/runAll.mjs",
+    "audit:app": "node scripts/fullAppAudit.mjs",
+    "audit:prod": "node scripts/fullAppAudit.mjs --prod",
     "preview": "vite preview",
     "whitelabel": "node white-label.mjs",
     "desktop": "electron .",

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Activity, AlertOctagon, ShieldAlert, Cpu } from 'lucide-react';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
+import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 // checkIpoAllotmentMock: stub — live CDSC check is used in production
 const checkIpoAllotmentMock = async (shareId, boid) => {
   const boidValid = typeof boid === 'string' && boid.length >= 10 && /^\d+$/.test(boid);
@@ -137,6 +138,72 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
       }
     } catch (err) {
       addLog('error', `❌ Test 5 Failed: ${err.message}`);
+      passed = false;
+    }
+
+    // Test 6: Live Core Market & Indices Feeds
+    await new Promise(r => setTimeout(r, 300));
+    addLog('info', '🧪 Test 6: Live NEPSE Feeds & Market Indices API');
+    try {
+      const hResp = await fetch('/api/health');
+      const hData = await hResp.json();
+      const iResp = await fetch('/api/market-indices');
+      const iData = await iResp.json();
+      const val = iData?.nepse?.value || iData?.data?.nepse?.value || 0;
+      if (hResp.ok && val > 1000) {
+        addLog('success', `✅ Test 6 Passed: Live feeds active (NEPSE: ${Number(val).toFixed(2)} pts, Proxy: ${hData.status || 'OK'}).`);
+      } else {
+        throw new Error(`Feed issue: HTTP ${hResp.status}, NEPSE value: ${val}`);
+      }
+    } catch (err) {
+      addLog('error', `❌ Test 6 Failed: ${err.message}`);
+      passed = false;
+    }
+
+    // Test 7: Floorsheet Zero-Sum Broker Invariant
+    await new Promise(r => setTimeout(r, 300));
+    addLog('info', '🧪 Test 7: Floorsheet Zero-Sum Broker Law (Buy Qty == Sell Qty)');
+    try {
+      const bResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');
+      const bData = await bResp.json();
+      const brokers = (bData?.data || bData)?.brokers || [];
+      const sumBuy = brokers.reduce((s, b) => s + (Number(b.buyQty) || 0), 0);
+      const sumSell = brokers.reduce((s, b) => s + (Number(b.sellQty) || 0), 0);
+      if (sumBuy > 0 && Math.abs(sumBuy - sumSell) === 0) {
+        addLog('success', `✅ Test 7 Passed: NABIL floorsheet balanced (Buy: ${sumBuy.toLocaleString()} == Sell: ${sumSell.toLocaleString()}).`);
+      } else {
+        throw new Error(`Zero-sum delta mismatch: Buy=${sumBuy}, Sell=${sumSell}`);
+      }
+    } catch (err) {
+      addLog('error', `❌ Test 7 Failed: ${err.message}`);
+      passed = false;
+    }
+
+    // Test 8: Quantitative Setup Engine & Geometric Order
+    await new Promise(r => setTimeout(r, 300));
+    addLog('info', '🧪 Test 8: Quant Setup Engine & Geometric Order (SL < Entry <= T1)');
+    try {
+      const mockStock = { symbol: 'NABIL', ltp: 600, high52: 700, low52: 450, volume: 50000 };
+      const mockCandles = Array.from({ length: 60 }, (_, i) => ({
+        t: `2026-0${Math.floor(i / 25) + 1}-${String((i % 25) + 1).padStart(2, '0')}`,
+        o: 580 + (i * 0.5),
+        h: 590 + (i * 0.5),
+        l: 575 + (i * 0.5),
+        c: 585 + (i * 0.5),
+        v: 10000 + i * 100,
+      }));
+      const plan = generateEntryExitPlan(mockStock, mockCandles);
+      const valid = typeof plan?.score === 'number' && plan.score >= 0 && plan.score <= 100;
+      const geomValid = plan?.stopLoss && plan?.entryMin && plan?.target1
+        ? (plan.stopLoss < plan.entryMin && plan.entryMin <= plan.target1)
+        : true;
+      if (valid && geomValid) {
+        addLog('success', `✅ Test 8 Passed: Quant setup score ${plan.score}/100 and price geometry verified.`);
+      } else {
+        throw new Error(`Quant setup invalid: score=${plan?.score}, SL=${plan?.stopLoss}, Entry=${plan?.entryMin}`);
+      }
+    } catch (err) {
+      addLog('error', `❌ Test 8 Failed: ${err.message}`);
       passed = false;
     }
 

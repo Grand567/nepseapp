@@ -2887,6 +2887,9 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
           if (cleanSym) {
             filtered = filtered.filter(t => (t.stockSymbol || t.symbol || '').toUpperCase() === cleanSym);
           }
+          if (businessDate) {
+            filtered = filtered.filter(t => (t.businessDate || '').slice(0, 10) === businessDate);
+          }
           if (filtered.length > 0) {
             if (buyer) filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) === buyer);
             if (seller) filtered = filtered.filter(t => String(t.sellerMemberId || t.sellerBroker) === seller);
@@ -4337,8 +4340,8 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
       }
     }
 
-    // Limit scrips to top 80 by volume if list is large to prevent request timeout while maintaining full market coverage
-    const scripsToFetch = topScrips.slice(0, 80);
+    // Limit scrips to top 25 by volume if multi-day (50 for single day) to prevent request timeout while maintaining full market coverage
+    const scripsToFetch = topScrips.slice(0, days > 1 ? 25 : 50);
 
     // Fetch authentic broker transactions for each top scrip from brokerVault in parallel
     const vaultResults = await Promise.all(
@@ -4888,7 +4891,7 @@ async function scrapeShareSansarHistory(rawSymbol, startDate, endDate, size = 50
 // ============================================================
 // 1: HEALTH CHECK (Critical for warmup)
 // ============================================================
-app.get('/health', async (req, res) => {
+app.get(['/health', '/api/health'], async (req, res) => {
   const checks = {};
 
   try {

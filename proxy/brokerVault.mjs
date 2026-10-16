@@ -345,7 +345,7 @@ export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000) {
     let totalRecords = 1;
     let draw = 1;
 
-    while (start < totalRecords && allRows.length < maxRecords) {
+    while (start < totalRecords && allRows.length < maxRecords && draw <= 16) {
       const companyParam = sym ? `&company=${encodeURIComponent(sym)}` : '';
       const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=${draw++}&start=${start}&length=${batchSize}${companyParam}`, {
         headers: {
@@ -438,6 +438,14 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     } catch (_) {}
   }
 
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const nptDate = nowNpt.toISOString().split('T')[0];
+  const candidateDirs = [
+    path.join(__dirname, 'data'),
+    path.join(process.cwd(), 'data'),
+    path.join(process.cwd(), 'proxy', 'data')
+  ];
+
   const allAvailableDates = await fetchSymbolTradingDates(sym);
   const latestTwoDates = allAvailableDates.slice(0, 2);
 
@@ -461,7 +469,12 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   let didUpdate = false;
 
   // 1. Ingest from authentic full session floorsheet (100% NOTS trades)
+  // Strictly skip calling exchange live session API for old historical dates
   for (const dt of Array.from(datesToFetch)) {
+    const isToday = (dt === nptDate || dt === latestTwoDates[0]);
+    const fullFileExists = candidateDirs.some(d => fs.existsSync(path.join(d, `floorsheet-full-${dt}.json`)));
+    if (!isToday && !fullFileExists) continue;
+
     try {
       const fullTrades = await getFullSessionFloorsheet(dt);
       if (Array.isArray(fullTrades) && fullTrades.length > 0) {

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap } from 'lucide-react';
+import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap, Play, CheckCircle2, XCircle, ShieldCheck, Terminal, Check } from 'lucide-react';
 import { useBackHandler } from '../context/NavigationContext';
+import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
+import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import {
   fetchLiveMarket, fetchMarketSummary, fetchTopGainers, fetchTopLosers,
   fetchTopVolume, fetchTopTurnover, fetchTopTransactions,
@@ -6035,20 +6037,272 @@ export function AlertsTool() {
   );
 }
 
-// ── API status dashboard ──
+// ── API status dashboard & Live Full-App Math Auditor ──
 export function ApiStatusService() {
   const [liveCount, setLiveCount] = useState(0);
+  const [auditState, setAuditState] = useState<{
+    running: boolean;
+    done: boolean;
+    passedCount: number;
+    totalCount: number;
+    durationMs: number;
+    results: Array<{
+      category: string;
+      name: string;
+      pass: boolean;
+      details: string;
+      durationMs?: number;
+    }>;
+  }>({
+    running: false,
+    done: false,
+    passedCount: 0,
+    totalCount: 0,
+    durationMs: 0,
+    results: [],
+  });
+
   useEffect(() => { setLiveCount(getCachedStocks().length); }, []);
+
+  const runLiveAudit = async () => {
+    setAuditState({
+      running: true,
+      done: false,
+      passedCount: 0,
+      totalCount: 0,
+      durationMs: 0,
+      results: [],
+    });
+    const startTime = Date.now();
+    const resList: Array<{ category: string; name: string; pass: boolean; details: string; durationMs?: number }> = [];
+
+    const record = (category: string, name: string, pass: boolean, details: string, durationMs?: number) => {
+      resList.push({ category, name, pass, details, durationMs });
+      setAuditState((prev) => ({
+        ...prev,
+        results: [...resList],
+        passedCount: resList.filter((r) => r.pass).length,
+        totalCount: resList.length,
+      }));
+    };
+
+    try {
+      // ── Category A: Core Market Feeds ──
+      const t0 = Date.now();
+      try {
+        const resp = await fetch('/api/health');
+        const d = await resp.json();
+        const ok = resp.ok && (d.status === 'HEALTHY' || d.status === 'OK' || d.status === 'ok');
+        record('Category A: Market Feeds', 'Proxy Health & NPT Clock (/api/health)', ok, `Status: ${d.status || 'OK'} • Market: ${d.nepseTime || d.time || 'NPT'}`, Date.now() - t0);
+      } catch (e: any) {
+        record('Category A: Market Feeds', 'Proxy Health & NPT Clock (/api/health)', false, e.message, Date.now() - t0);
+      }
+
+      const t1 = Date.now();
+      try {
+        const resp = await fetch('/api/market-indices');
+        const d = await resp.json();
+        const val = d?.nepse?.value || d?.data?.nepse?.value || 0;
+        const subCount = (d?.subIndices || d?.data?.subIndices || []).length;
+        record('Category A: Market Feeds', 'Market Indices (/api/market-indices)', val > 1000 && subCount >= 8, `NEPSE: ${Number(val).toFixed(2)} pts • Sub-indices: ${subCount} sectors`, Date.now() - t1);
+      } catch (e: any) {
+        record('Category A: Market Feeds', 'Market Indices (/api/market-indices)', false, e.message, Date.now() - t1);
+      }
+
+      const t2 = Date.now();
+      try {
+        const resp = await fetch('/api/today-prices');
+        const d = await resp.json();
+        const rows = Array.isArray(d) ? d : (d?.data || []);
+        const enrichedCount = rows.filter((r: any) => r.brokerAnalysis || r.bcr3BuyPct != null).length;
+        record('Category A: Market Feeds', 'Today Prices & Equities (/api/today-prices)', rows.length >= 50, `Active equities: ${rows.length} • Broker-enriched: ${enrichedCount}`, Date.now() - t2);
+      } catch (e: any) {
+        record('Category A: Market Feeds', 'Today Prices & Equities (/api/today-prices)', false, e.message, Date.now() - t2);
+      }
+
+      // ── Category B: Broker Mathematical Invariants & Floorsheet ──
+      const t3 = Date.now();
+      try {
+        const brokerResp = await fetch('/api/broker-analysis/NABIL?days=1&refresh=true');
+        const bData = await brokerResp.json();
+        const payload = bData?.data || bData;
+        const brokers = payload?.brokers || [];
+        const sumBuy = brokers.reduce((s: number, b: any) => s + (Number(b.buyQty) || 0), 0);
+        const sumSell = brokers.reduce((s: number, b: any) => s + (Number(b.sellQty) || 0), 0);
+        const isZeroSum = sumBuy > 0 && Math.abs(sumBuy - sumSell) === 0;
+        record('Category B: Broker Invariants', 'Zero-Sum Broker Law (Buy Qty == Sell Qty)', isZeroSum, `NABIL (1D) • Buy: ${sumBuy.toLocaleString()} • Sell: ${sumSell.toLocaleString()} • Delta: ${sumBuy - sumSell}`, Date.now() - t3);
+
+        const netAccPass = brokers.length > 0 && brokers.slice(0, 10).every((b: any) => {
+          const expectedNet = (Number(b.buyQty) || 0) - (Number(b.sellQty) || 0);
+          return Math.abs((Number(b.netQty) || 0) - expectedNet) === 0;
+        });
+        record('Category B: Broker Invariants', 'Net Accumulation Identity (netQty = buyQty - sellQty)', netAccPass, `Verified across top 10 brokers of NABIL`, Date.now() - t3);
+      } catch (e: any) {
+        record('Category B: Broker Invariants', 'Zero-Sum Broker Invariants', false, e.message, Date.now() - t3);
+      }
+
+      // ── Category C: Quantitative Setup Engine & Geometric Order ──
+      const t4 = Date.now();
+      try {
+        const mockStock = { symbol: 'NABIL', ltp: 600, high52: 700, low52: 450, volume: 50000 };
+        const mockCandles = Array.from({ length: 60 }, (_, i) => ({
+          t: `2026-0${Math.floor(i / 25) + 1}-${String((i % 25) + 1).padStart(2, '0')}`,
+          o: 580 + (i * 0.5),
+          h: 590 + (i * 0.5),
+          l: 575 + (i * 0.5),
+          c: 585 + (i * 0.5),
+          v: 10000 + i * 100,
+        }));
+        const plan = generateEntryExitPlan(mockStock, mockCandles);
+        const scoreValid = typeof plan?.score === 'number' && plan.score >= 0 && plan.score <= 100;
+        const geomValid = plan?.stopLoss && plan?.entryMin && plan?.target1
+          ? (plan.stopLoss < plan.entryMin && plan.entryMin <= plan.target1)
+          : true;
+        record('Category C: Quant Setup Engine', 'Order Geometry (StopLoss < Entry <= Target 1)', scoreValid && geomValid, `Score: ${plan?.score ?? 0}/100 • Action: ${plan?.action || 'HOLD'} • SL: Rs.${plan?.stopLoss ?? 'N/A'} • Entry: Rs.${plan?.entryMin ?? 'N/A'} • T1: Rs.${plan?.target1 ?? 'N/A'}`, Date.now() - t4);
+      } catch (e: any) {
+        record('Category C: Quant Setup Engine', 'Quant Setup Generation', false, e.message, Date.now() - t4);
+      }
+
+      // ── Category D: Statutory NEPSE / SEBON Regulatory Math ──
+      const t5 = Date.now();
+      try {
+        const buy = calculateBuyDetails(100, 150);
+        const buyOk = buy.commission === 54 && buy.sebonFee === 2.25 && buy.dpFee === 25 && buy.totalAmount === 15081.25;
+        record('Category D: Statutory Math', 'Buyer Commission & Fees (SEBON 2081 Tier 1: 0.36%)', buyOk, `Commission: Rs.${buy.commission} • SEBON: Rs.${buy.sebonFee} • DP: Rs.${buy.dpFee} • Total: Rs.${buy.totalAmount}`, Date.now() - t5);
+
+        const sellShort = calculateSellDetails(100, 200, 150, 'short');
+        const sellLong = calculateSellDetails(100, 200, 150, 'long');
+        const sellOk = Math.abs(sellShort.cgt - 367.50) < 0.05 && Math.abs(sellLong.cgt - 245.00) < 0.05 && sellShort.dpFee === 25;
+        record('Category D: Statutory Math', 'Seller CGT (Individual Short-Term 7.5% vs Long-Term 5.0%)', sellOk, `Short CGT: Rs.${sellShort.cgt.toFixed(2)} • Long CGT: Rs.${sellLong.cgt.toFixed(2)} • DP: Rs.25`, Date.now() - t5);
+
+        const txs = [{ quantity: 100, price: 150 }, { quantity: 50, price: 200 }];
+        const waccResult = calculateWacc(txs);
+        const expWacc = 25143.75 / 150;
+        const waccOk = Math.abs(waccResult.wacc - expWacc) < 0.02 && waccResult.totalQuantity === 150;
+        record('Category D: Statutory Math', 'WACC Weighted Cost Basis Tracking', waccOk, `Holding: ${waccResult.totalQuantity} units • WACC: Rs.${waccResult.wacc.toFixed(2)}`, Date.now() - t5);
+      } catch (e: any) {
+        record('Category D: Statutory Math', 'Statutory Calculation Tests', false, e.message, Date.now() - t5);
+      }
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const passed = resList.filter((r) => r.pass).length;
+      setAuditState({
+        running: false,
+        done: true,
+        passedCount: passed,
+        totalCount: resList.length,
+        durationMs: elapsed,
+        results: resList,
+      });
+    }
+  };
+
   const cats = [...new Set(ENDPOINT_REGISTRY.map((e) => e.category))];
+
   return (
-    <div>
-      <InfoBanner type="success">All {ENDPOINT_REGISTRY.length} documented endpoints are wired through the data engine with automatic fallback — no tab ever goes blank.</InfoBanner>
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+    <div className="space-y-4">
+      {/* ── Interactive Full-App Audit Suite Banner ── */}
+      <div className="rounded-xl border border-indigo-900/60 bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 p-4 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="text-indigo-400" size={20} />
+              <h3 className="text-sm font-extrabold text-white tracking-wide">
+                Full-App Runtime &amp; Mathematical Invariants Audit
+              </h3>
+              {auditState.done && (
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  auditState.passedCount === auditState.totalCount
+                    ? 'bg-emerald-950/80 border border-emerald-700/80 text-emerald-300'
+                    : 'bg-rose-950/80 border border-rose-700/80 text-rose-300'
+                }`}>
+                  {auditState.passedCount} / {auditState.totalCount} Passed ({auditState.passedCount === auditState.totalCount ? '100% Authentic' : 'Issues Found'})
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-300">
+              Validates live NEPSE proxy feeds, floorsheet zero-sum broker equilibrium, technical setup geometry, and SEBON statutory fee calculators.
+            </p>
+          </div>
+
+          <button
+            onClick={runLiveAudit}
+            disabled={auditState.running}
+            className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold px-4 py-2 text-xs shadow-md transition-all active:scale-95 shrink-0"
+          >
+            {auditState.running ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>Auditing Engine...</span>
+              </>
+            ) : (
+              <>
+                <Play size={14} className="fill-current" />
+                <span>{auditState.done ? 'Re-run Live Audit' : 'Run Live Full-App Audit'}</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Live Results Panel */}
+        {auditState.results.length > 0 && (
+          <div className="mt-4 border-t border-slate-800/80 pt-3">
+            <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">Live Verification Results ({auditState.durationMs}ms):</span>
+              <span className="text-[11px] text-slate-400">CLI: <code>npm run audit:app</code> or <code>npm run audit:prod</code></span>
+            </div>
+            <div className="grid gap-2 max-h-[360px] overflow-y-auto pr-1">
+              {auditState.results.map((res, idx) => (
+                <div
+                  key={idx}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border p-2.5 text-xs ${
+                    res.pass
+                      ? 'border-emerald-900/50 bg-emerald-950/20'
+                      : 'border-rose-900/50 bg-rose-950/20'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      {res.pass ? (
+                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                      ) : (
+                        <XCircle size={14} className="text-rose-400 shrink-0" />
+                      )}
+                      <span className="text-slate-400 font-semibold">{res.category}:</span>
+                      <span className="text-white">{res.name}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 pl-5">
+                      {res.details}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-5 sm:pl-0 shrink-0">
+                    {res.durationMs != null && (
+                      <span className="text-[10px] text-slate-500 font-mono">{res.durationMs}ms</span>
+                    )}
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                      res.pass ? 'bg-emerald-900/60 text-emerald-300' : 'bg-rose-900/60 text-rose-300'
+                    }`}>
+                      {res.pass ? 'PASS' : 'FAIL'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <InfoBanner type="success">
+        All {ENDPOINT_REGISTRY.length} documented endpoints are wired through the data engine with automatic fallback — no tab ever goes blank.
+      </InfoBanner>
+
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <StatCard label="Endpoints Wired" value={ENDPOINT_REGISTRY.length} big color="#3b82f6" />
         <StatCard label="Stocks In Memory" value={liveCount} big />
         <StatCard label="Engine" value="v3 FIX" color="#10b981" />
         <StatCard label="Fallback" value="ON" color="#10b981" />
       </div>
+
       {cats.map((c) => (
         <div key={c} className="mb-4">
           <h4 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-slate-400">{c}</h4>

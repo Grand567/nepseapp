@@ -1,5 +1,46 @@
 [
   {
+    "id": "alert_SHIVM_1792133692138",
+    "symbol": "SHIVM",
+    "ltp": 679,
+    "triggeredAt": "2026-10-16T06:54:52.138Z",
+    "buyZone": {
+      "low": 678,
+      "high": 696,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 678 - 696"
+    },
+    "dominantBrokersText": "Kalash Stock Market (#74) & Naasa Securities (#58)",
+    "concentrationPct": 52,
+    "topBuyerBrokers": [
+      {
+        "broker": "74",
+        "name": "Kalash Stock Market",
+        "buyQty": 14949,
+        "buyAmt": 10188456.3
+      },
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 13778,
+        "buyAmt": 9404797.6
+      },
+      {
+        "broker": "49",
+        "name": "Online Securities",
+        "buyQty": 11565,
+        "buyAmt": 7876648.2
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
+    "target1": 781,
+    "target2": 849,
+    "stopLoss": 654,
+    "riskRewardRatio": 4.08,
+    "vwap": 681.62,
+    "status": "ACTIVE"
+  },
+  {
     "id": "holding_GHL_1792063926224",
     "symbol": "GHL",
     "ltp": 270,
@@ -1662,48 +1703,5 @@
     "status": "STOPPED_OUT",
     "closedAt": "2026-10-12T07:01:51.085Z",
     "exitPrice": 42.33
-  },
-  {
-    "id": "alert_TAMOR_1791788369596",
-    "symbol": "TAMOR",
-    "ltp": 553,
-    "triggeredAt": "2026-10-12T06:59:29.596Z",
-    "buyZone": {
-      "low": 543,
-      "high": 557,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 543 - 557"
-    },
-    "dominantBrokersText": "Broker 98 & Broker 67",
-    "concentrationPct": 62,
-    "topBuyerBrokers": [
-      {
-        "broker": "98",
-        "name": "Broker 98",
-        "buyQty": 17750,
-        "buyAmt": 9706438.2
-      },
-      {
-        "broker": "67",
-        "name": "Property Wizard",
-        "buyQty": 6845,
-        "buyAmt": 3731507
-      },
-      {
-        "broker": "62",
-        "name": "Capital Max Securities",
-        "buyQty": 3700,
-        "buyAmt": 2024480
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.5x of 20-day avg)",
-    "target1": 636,
-    "target2": 691,
-    "stopLoss": 524,
-    "riskRewardRatio": 2.86,
-    "vwap": 545.75,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T07:01:51.091Z",
-    "exitPrice": 33.45
   }
 ]
