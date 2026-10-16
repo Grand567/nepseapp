@@ -17,7 +17,7 @@ import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.m
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap } from './brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
   getSmartAlertHistory, 
@@ -3237,8 +3237,37 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
 
   // Tier 1: Authentic Multi-Date Broker Vault (Chukul Date-Wise + ShareSansar + Persistent File Cache)
   try {
-    const vaultData = await getOrFetchBrokerAnalysis(symbol, days, { date, fromDate, toDate, refresh });
-    if (vaultData && (vaultData.brokers?.length > 0 || vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0)) {
+    let vaultData = null;
+    const isMultiDay = days >= 15 && !date && !fromDate && !toDate;
+
+    if (isMultiDay) {
+      // 3-second ceiling: race full sync against 2800ms timer
+      const fullPromise = getOrFetchBrokerAnalysis(symbol, days, { date, fromDate, toDate, refresh });
+      const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('TIMEOUT'), 2800));
+      const result = await Promise.race([fullPromise, timeoutPromise]);
+
+      if (result !== 'TIMEOUT' && result && (result.brokers?.length > 0 || result.totalVolume > 0)) {
+        vaultData = result;
+      } else {
+        // Return fast on-disk vault snapshot immediately to prevent aborts
+        const fastSnapshot = getFastVaultSnapshot(symbol, days);
+        if (fastSnapshot && (fastSnapshot.brokers?.length > 0 || fastSnapshot.totalVolume > 0)) {
+          vaultData = fastSnapshot;
+          setCache(cacheKey, fastSnapshot, 2 * 60 * 1000);
+          // Let the full sync complete in the background to update cache
+          fullPromise.then(full => {
+            if (full) setCache(cacheKey, full, 10 * 60 * 1000);
+          }).catch(() => {});
+          return res.json({ success: true, data: fastSnapshot, source: 'broker_vault_fast_snapshot', isPartial: true });
+        } else {
+          vaultData = await fullPromise;
+        }
+      }
+    } else {
+      vaultData = await getOrFetchBrokerAnalysis(symbol, days, { date, fromDate, toDate, refresh });
+    }
+
+    if (vaultData && (vaultData.brokers?.length > 0 || vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0 || vaultData.totalVolume > 0)) {
       setCache(cacheKey, vaultData, 10 * 60 * 1000);
       return res.json({ success: true, data: vaultData, source: 'broker_vault_authentic' });
     }
@@ -4356,8 +4385,21 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
     const scripsToFetch = topScrips.slice(0, days > 1 ? 25 : 50);
 
     // Fetch authentic broker transactions for each top scrip from brokerVault in parallel
+    // Multi-day requests: use getFastVaultSnapshot first or race with 2800ms to guarantee response in <3s
+    const heatmapStart = Date.now();
     const vaultResults = await Promise.all(
-      scripsToFetch.map(sym => getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null))
+      scripsToFetch.map(async (sym) => {
+        if (days > 1) {
+          const fast = getFastVaultSnapshot(sym, days);
+          if (fast && (fast.brokers?.length > 0 || fast.topBuyers?.length > 0)) return fast;
+          const remaining = Math.max(500, 2800 - (Date.now() - heatmapStart));
+          return Promise.race([
+            getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null),
+            new Promise((r) => setTimeout(() => r(null), remaining))
+          ]);
+        }
+        return getOrFetchBrokerAnalysis(sym, days, { date: businessDate, fromDate, toDate, refresh }).catch(() => null);
+      })
     );
 
     const brokerTotals = {}, scripTotals = {}, matrix = {}, brokerScripsMap = {};

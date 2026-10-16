@@ -74,6 +74,9 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
       const url = base + path;
       const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
 
+      const isBrokerOrHeatmap = path.includes('/api/broker-analysis') || path.includes('/api/smart-money/broker-heatmap') || path.includes('/api/market/broker-summary') || path.includes('/api/smart-money/broker-desk');
+      const effectiveTimeout = options.timeout || (isBrokerOrHeatmap ? 45000 : 25000);
+
       if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
         const res = await CapacitorHttp.request({
           url,
@@ -84,8 +87,8 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
             ...(options.headers || {})
           },
           data: options.body || undefined,
-          connectTimeout: options.timeout || 15000,
-          readTimeout: options.timeout || 15000
+          connectTimeout: effectiveTimeout,
+          readTimeout: effectiveTimeout
         });
         if (res && res.status >= 200 && res.status < 300) {
           const raw = res.data;
@@ -115,7 +118,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
           ...options.headers
         },
         body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: AbortSignal.timeout(options.timeout || 15000),
+        signal: AbortSignal.timeout(effectiveTimeout),
       });
       if (!resp.ok) continue;
       const ct = resp.headers.get('content-type') || '';
@@ -365,11 +368,11 @@ export const fetchBrokerHeatmap = (arg) => {
   } else if (arg) {
     q = `?date=${arg}`;
   }
-  return _proxyFetch('/api/smart-money/broker-heatmap' + q, {}, 120000, Boolean(arg?.refresh));
+  return _proxyFetch('/api/smart-money/broker-heatmap' + q, { timeout: 45000 }, 120000, Boolean(arg?.refresh));
 };
 export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
-  return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, {}, 120000);
+  return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, { timeout: 45000 }, 120000);
 };
 export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => {
   const sym = String(symbol || '').toUpperCase().trim();
@@ -394,7 +397,7 @@ export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => 
   if (toDate) params.set('toDate', toDate);
   if (refresh) params.set('refresh', 'true');
   const path = `/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`;
-  return _proxyFetch(path, {}, 120000, refresh);
+  return _proxyFetch(path, { timeout: 45000 }, 120000, refresh);
 };
 export const fetchMarketWideBrokerSummary = (days = 1, options = {}) => {
   const p = new URLSearchParams();
@@ -405,9 +408,9 @@ export const fetchMarketWideBrokerSummary = (days = 1, options = {}) => {
     if (options.date) p.set('date', String(options.date));
     if (options.refresh) p.set('refresh', 'true');
   }
-  return _proxyFetch('/api/market/broker-summary?' + p.toString(), {}, 180000, Boolean(options?.refresh));
+  return _proxyFetch('/api/market/broker-summary?' + p.toString(), { timeout: 45000 }, 180000, Boolean(options?.refresh));
 };
-export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), {}, 60000);
+export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), { timeout: 45000 }, 60000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
 export const fetchMarketDepth = (symbol) => _proxyFetch('/api/nepse/market-depth/' + symbol, {}, 15000);
 export const fetchDividendHistory = async (symbol) => {

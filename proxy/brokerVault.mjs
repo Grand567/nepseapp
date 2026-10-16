@@ -1021,6 +1021,43 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
 }
 
 /**
+ * Returns an immediate, pre-cached or partial multi-day aggregation from on-disk vault rows.
+ * Guarantees sub-3-second response time for multi-day requests without HTTP aborts.
+ */
+export function getFastVaultSnapshot(symbol, numDays = 30) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+  const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
+  if (!fs.existsSync(vaultPath)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+    if (parsed?.rowsByDate && Object.keys(parsed.rowsByDate).length > 0) {
+      const dates = Object.keys(parsed.rowsByDate).sort((a, b) => b.localeCompare(a));
+      const sliceDates = dates.slice(0, Math.min(numDays, dates.length));
+      const combined = [];
+      for (const dt of sliceDates) {
+        if (Array.isArray(parsed.rowsByDate[dt]) && parsed.rowsByDate[dt].length > 0) {
+          combined.push(...parsed.rowsByDate[dt]);
+        }
+      }
+      if (combined.length > 0) {
+        const availableDates = parsed.availableDates || dates;
+        const agg = aggregateFloorsheetRows(combined, sym, availableDates);
+        if (agg) {
+          agg.tradingDays = sliceDates.length;
+          return agg;
+        }
+      }
+    }
+    if (parsed?.preAggregated && (parsed.preAggregated.brokers?.length > 0 || parsed.preAggregated.topBuyers?.length > 0)) {
+      return parsed.preAggregated;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
  * Retrieves paginated, filterable floorsheet transactions for a symbol
  * (single date, multi-day horizon, date range, buyer/seller/either broker, bulk, price-vs-volume).
  */
