@@ -1,5 +1,46 @@
 [
   {
+    "id": "alert_NRN_1792141593431",
+    "symbol": "NRN",
+    "ltp": 1377.9,
+    "triggeredAt": "2026-10-16T09:06:33.431Z",
+    "buyZone": {
+      "low": 1369,
+      "high": 1404,
+      "isPriceInBase": true,
+      "statusText": "Inside Buy Zone: 1369 - 1404"
+    },
+    "dominantBrokersText": "Naasa Securities (#58) & Capital Max Securities (#62)",
+    "concentrationPct": 66,
+    "topBuyerBrokers": [
+      {
+        "broker": "58",
+        "name": "Naasa Securities",
+        "buyQty": 8906,
+        "buyAmt": 12251803.4
+      },
+      {
+        "broker": "62",
+        "name": "Capital Max Securities",
+        "buyQty": 6180,
+        "buyAmt": 8514901
+      },
+      {
+        "broker": "38",
+        "name": "Dipshikha Dhitopatra Karobar",
+        "buyQty": 2552,
+        "buyAmt": 3509110
+      }
+    ],
+    "sellerStatus": "Seller volume dry (0.51x of 20-day avg)",
+    "target1": 1585,
+    "target2": 1722,
+    "stopLoss": 1321,
+    "riskRewardRatio": 3.64,
+    "vwap": 1376.15,
+    "status": "ACTIVE"
+  },
+  {
     "id": "alert_SAHAS_1792139694916",
     "symbol": "SAHAS",
     "ltp": 698.9,
@@ -1660,46 +1701,5 @@
     "target2Hit": true,
     "closedAt": "2026-10-13T14:42:14.623Z",
     "exitPrice": 645
-  },
-  {
-    "id": "alert_AKJCL_1791789261364",
-    "symbol": "AKJCL",
-    "ltp": 349.9,
-    "triggeredAt": "2026-10-12T07:14:21.364Z",
-    "buyZone": {
-      "low": 349,
-      "high": 359,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 349 - 359"
-    },
-    "dominantBrokersText": "Broker 80 & Broker 58",
-    "concentrationPct": 73,
-    "topBuyerBrokers": [
-      {
-        "broker": "80",
-        "name": "Machhapuchchhre Securities",
-        "buyQty": 31328,
-        "buyAmt": 10995928
-      },
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 27397,
-        "buyAmt": 9618840.5
-      },
-      {
-        "broker": "39",
-        "name": "Sumeru Securities",
-        "buyQty": 18113,
-        "buyAmt": 6354877.100000001
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.83x of 20-day avg)",
-    "target1": 402,
-    "target2": 437,
-    "stopLoss": 334,
-    "riskRewardRatio": 3.28,
-    "vwap": 351.01,
-    "status": "ACTIVE"
   }
 ]

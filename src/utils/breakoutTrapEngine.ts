@@ -574,26 +574,31 @@ export function calculateTrapProofLevels(
     recommendedEntry = 'Conservative Retest';
   }
 
-  // 3. Structural Stop Loss: Below nearest support cluster or (Entry - 1.75 * ATR)
-  const structuralSL = nearestS * 0.985;
-  const volatilitySL = p - atr * 1.75;
-  const stopLossPrice = Number(Math.max(p * 0.88, Math.min(structuralSL, volatilitySL)).toFixed(1));
-  const stopLossPct = Number((((stopLossPrice - p) / p) * 100).toFixed(2));
-  const riskPerShare = Number((p - stopLossPrice).toFixed(1));
+  // Anchor risk & targets to the active entry reference so Target 1 is strictly above Entry Zone
+  const entryAnchor = breakoutEval.detected && p >= nearestR
+    ? p
+    : Math.max(p, conservativeRetestZone.high);
 
-  // 4. Targets with Asymmetric RRR (Target 1: 1.6x Risk, Target 2: 2.6x Risk)
-  const rawTarget1 = p + riskPerShare * 1.6;
-  const rawTarget2 = p + riskPerShare * 2.6;
+  // 3. Structural Stop Loss: Strictly below both current price and Conservative Retest Zone low
+  const maxAllowedSL = Math.min(p, conservativeRetestZone.low) * 0.985;
+  const structuralSL = Math.min(nearestS * 0.985, maxAllowedSL);
+  const volatilitySL = entryAnchor - atr * 1.75;
+  const stopLossPrice = Number(Math.max(entryAnchor * 0.86, Math.min(structuralSL, volatilitySL)).toFixed(1));
+  const stopLossPct = Number((((stopLossPrice - entryAnchor) / entryAnchor) * 100).toFixed(2));
+  const riskPerShare = Math.max(1, Number((entryAnchor - stopLossPrice).toFixed(1)));
 
-  // If next major resistance is below target 1, use resistance
+  // 4. Targets with Asymmetric RRR (Target 1: 2.0x Risk, Target 2: 3.0x Risk)
+  const rawTarget1 = Math.max(aggressiveEntryZone.high * 1.02, entryAnchor + riskPerShare * 2.0);
+  const rawTarget2 = Math.max(rawTarget1 * 1.03, entryAnchor + riskPerShare * 3.0);
+
   const target1Price = Number(rawTarget1.toFixed(1));
   const target2Price = Number(rawTarget2.toFixed(1));
-  const target1UpsidePct = Number((((target1Price - p) / p) * 100).toFixed(2));
-  const target2UpsidePct = Number((((target2Price - p) / p) * 100).toFixed(2));
+  const target1UpsidePct = Number((((target1Price - entryAnchor) / entryAnchor) * 100).toFixed(2));
+  const target2UpsidePct = Number((((target2Price - entryAnchor) / entryAnchor) * 100).toFixed(2));
 
-  const rrr1 = riskPerShare > 0 ? Number(((target1Price - p) / riskPerShare).toFixed(2)) : 0;
-  const rrr2 = riskPerShare > 0 ? Number(((target2Price - p) / riskPerShare).toFixed(2)) : 0;
-  const isHighExpectancyTrade = rrr1 >= 1.5 && rrr2 >= 2.2 && breakoutEval.bullTrapProbability < 50;
+  const rrr1 = riskPerShare > 0 ? Number(((target1Price - entryAnchor) / riskPerShare).toFixed(2)) : 0;
+  const rrr2 = riskPerShare > 0 ? Number(((target2Price - entryAnchor) / riskPerShare).toFixed(2)) : 0;
+  const isHighExpectancyTrade = rrr1 >= 2.0 && rrr2 >= 2.8 && breakoutEval.bullTrapProbability < 50;
 
   let actionableNepali = 'पुलब्याक कुर्नुहोस्: T+2 डम्पको जोखिम कम गर्न रेसिस्टेन्स पुन: परीक्षण (Retest) भएपछि मात्र खरिद गर्नुहोस्।';
   let actionableEnglish = 'Wait for pullback/retest. Avoid chasing Day 1 moves to stay safe from T+2 lockup drawdowns.';

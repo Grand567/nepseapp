@@ -1957,7 +1957,7 @@ export function calculateMultiSessionBrokerFootprint(
       brokerName: getBrokerName(id),
       volume: vol,
       amount: stats.buyAmt + stats.sellAmt,
-      pct: totalVol > 0 ? +((vol / totalVol) * 100).toFixed(2) : 0,
+      pct: totalVol > 0 ? +((vol / (totalVol * 2)) * 100).toFixed(2) : 0,
       netQty,
       netAmount: netAmt
     };

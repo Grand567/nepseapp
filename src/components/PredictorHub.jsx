@@ -2111,13 +2111,13 @@ export default function PredictorHub({
                 ? primePlan.levels.target1.netReturnPct
                 : (primeDailyPick.levels?.target1?.netReturnPct != null
                   ? primeDailyPick.levels.target1.netReturnPct
-                  : (t1Pct > 0.73 ? +((t1Pct - 0.73) * 0.90).toFixed(1) : t1Pct));
+                  : (t1Pct > 0.73 ? +((t1Pct - 0.73) * 0.925).toFixed(1) : t1Pct));
 
               const t2NetPct = hasPlan && primePlan.levels?.target2?.netReturnPct != null
                 ? primePlan.levels.target2.netReturnPct
                 : (primeDailyPick.levels?.target2?.netReturnPct != null
                   ? primeDailyPick.levels.target2.netReturnPct
-                  : (t2Pct > 0.73 ? +((t2Pct - 0.73) * 0.90).toFixed(1) : t2Pct));
+                  : (t2Pct > 0.73 ? +((t2Pct - 0.73) * 0.925).toFixed(1) : t2Pct));
 
               // ── Data quality guards ─────────────────────────────────────────────
               const dataIsSimulated = Number(primeDailyPick.volume || primeDailyPick.totalTradedQuantity || 0) === 0 &&

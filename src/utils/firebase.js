@@ -441,8 +441,18 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
     normalizedPayload = {};
   }
 
+  const sanitizeProfilesForCloud = (profiles) => {
+    if (!Array.isArray(profiles)) return [];
+    return profiles.map(({ password, crn, pin, transactionPin, ...safeProfile }) => ({
+      ...safeProfile,
+      hasLocalCredentials: Boolean(password || pin || transactionPin)
+    }));
+  };
+
   const dataToSave = {
     ...normalizedPayload,
+    ...(Array.isArray(normalizedPayload.profiles) ? { profiles: sanitizeProfilesForCloud(normalizedPayload.profiles) } : {}),
+    ...(Array.isArray(normalizedPayload.bulkAccounts) ? { bulkAccounts: sanitizeProfilesForCloud(normalizedPayload.bulkAccounts) } : {}),
     lastUpdatedAt: Date.now()
   };
   if (email) dataToSave.email = email;

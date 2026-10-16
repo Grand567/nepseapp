@@ -470,7 +470,13 @@ export class UnifiedNepseClient {
         const fallbackMap = new Map();
         let fallbackId = 100;
         for (const [sym, info] of Object.entries(rawMap)) {
-          fallbackMap.set(sym, { id: fallbackId++, symbol: sym, securityName: info.name, sector: info.sector });
+          fallbackMap.set(sym, {
+            id: fallbackId++,
+            symbol: sym,
+            securityName: info.name,
+            sector: info.sector,
+            isFallback: true
+          });
         }
         if (fallbackMap.size > 0) {
           this.cachedKeymap = fallbackMap;
@@ -701,7 +707,10 @@ export class UnifiedNepseClient {
     const endDate = options.endDate;
 
     const keymap = await this.getSecuritySymbolIdKeymap();
-    const securityId = keymap.get(rawSymbol);
+    const rawKeyEntry = keymap.get(rawSymbol);
+    const securityId = typeof rawKeyEntry === 'object' && rawKeyEntry !== null
+      ? (rawKeyEntry.isFallback ? null : Number(rawKeyEntry.id))
+      : Number(rawKeyEntry) || null;
 
     let rows = [];
 

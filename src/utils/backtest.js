@@ -104,31 +104,31 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
 
   for (let i = WARMUP; i < candles.length; i++) {
     const candle = candles[i];
-    const closesSlice = candles.slice(0, i).map(c => Number(c.close));
-    const candlesSlice = candles.slice(0, i);
+    const closesSlice = candles.slice(0, i + 1).map(c => Number(c.close));
+    const candlesSlice = candles.slice(0, i + 1);
     const prevClose = Number(candles[i - 1]?.close || candle.open);
 
     // ── If in a position: check exit conditions using today's OHLC ──
     if (position) {
-      const { entryPrice, stopPrice, targetPrice, shares, entryDate, entryBrokerage } = position;
+      const { entryPrice, stopPrice, targetPrice, shares, entryDate, entryIdx, entryBrokerage, entrySebon, entryDp } = position;
       let exitPrice = null;
       let exitReason = null;
 
-      // Priority 1: Intraday stop-loss (Low touched stop)
+      // Priority 1: Intraday stop-loss (Low touched stop, gap-down aware)
       if (Number(candle.low) <= stopPrice) {
-        exitPrice = stopPrice; // fill at stop, not day-low
+        exitPrice = Number(candle.open) > 0 ? Math.min(stopPrice, Number(candle.open)) : stopPrice;
         exitReason = 'Stop-Loss';
       }
-      // Priority 2: Take-profit (High touched target)
+      // Priority 2: Take-profit (High touched target, gap-up aware)
       else if (Number(candle.high) >= targetPrice) {
-        exitPrice = targetPrice;
+        exitPrice = Number(candle.open) > targetPrice ? Number(candle.open) : targetPrice;
         exitReason = 'Take-Profit';
       }
-      // Priority 3: Strategy SELL signal
-      else {
+      // Priority 3: Strategy SELL signal (evaluated only after entry bar)
+      else if (i > (entryIdx ?? 0)) {
         const signal = strategyFn(closesSlice, candlesSlice);
         if (signal === 'SELL') {
-          exitPrice = Number(candle.open); // exit at next open
+          exitPrice = Number(candle.close);
           exitReason = 'Signal Exit';
         }
       }
@@ -136,31 +136,31 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
       if (exitPrice !== null) {
         const sellValue    = exitPrice * shares;
         const sellBrok     = calculateBrokerCommission(sellValue);
-        // F1: SEBON fee (0.015%) both legs + DP charge on sell
-        const buySebonFee  = includeSebonFee ? calculateSebonFee(entryPrice * shares) : 0;
+        // F1: SEBON fee (0.015%) both legs + DP charge on both buy and sell legs
+        const buySebonFee  = entrySebon || 0;
         const sellSebonFee = includeSebonFee ? calculateSebonFee(sellValue) : 0;
-        const dpFee        = includeDpCharge ? DP_CHARGE : 0;
-        const totalBuyCost = entryPrice * shares + entryBrokerage + buySebonFee;
+        const buyDpFee     = entryDp || 0;
+        const sellDpFee    = includeDpCharge ? DP_CHARGE : 0;
+        const totalBuyCost = entryPrice * shares + entryBrokerage + buySebonFee + buyDpFee;
 
-        const grossPnl  = sellValue - sellBrok - sellSebonFee - dpFee - totalBuyCost;
+        const grossPnl     = sellValue - sellBrok - sellSebonFee - sellDpFee - totalBuyCost;
 
         // F1: CGT on profitable trades only
-        const entryIdx   = candles.findIndex(c => c.date === entryDate);
-        const holdDays   = entryIdx >= 0 ? Math.max(1, i - entryIdx) : 1;
-        const isLongTerm = holdDays > 365;
-        const cgtRate    = isLongTerm ? cgtRateLong : cgtRateShort;
-        const cgt        = grossPnl > 0 ? +(grossPnl * cgtRate).toFixed(2) : 0;
-        const pnl        = +(grossPnl - cgt).toFixed(2);
-        const pnlPct     = +((pnl / (entryPrice * shares)) * 100).toFixed(2);
+        const holdDays     = entryIdx >= 0 ? Math.max(1, i - entryIdx) : 1;
+        const isLongTerm   = holdDays > 365;
+        const cgtRate      = isLongTerm ? cgtRateLong : cgtRateShort;
+        const cgt          = grossPnl > 0 ? +(grossPnl * cgtRate).toFixed(2) : 0;
+        const pnl          = +(grossPnl - cgt).toFixed(2);
+        const pnlPct       = +((pnl / totalBuyCost) * 100).toFixed(2);
 
-        const totalFeesThisTrade = +(entryBrokerage + buySebonFee + sellBrok + sellSebonFee + dpFee + cgt).toFixed(2);
-        cash += sellValue - sellBrok - sellSebonFee - dpFee - cgt;
+        const totalFeesThisTrade = +(entryBrokerage + buySebonFee + buyDpFee + sellBrok + sellSebonFee + sellDpFee + cgt).toFixed(2);
+        cash += sellValue - sellBrok - sellSebonFee - sellDpFee - cgt;
         trades.push({
           date: candle.date, type: 'SELL', entryPrice, exitPrice,
           shares, pnl, pnlPct, holdingDays: holdDays, exitReason,
           brokerage: +(entryBrokerage + sellBrok).toFixed(2),
           sebonFee: +(buySebonFee + sellSebonFee).toFixed(2),
-          dpFee, cgt, totalFees: totalFeesThisTrade,
+          dpFee: buyDpFee + sellDpFee, cgt, totalFees: totalFeesThisTrade,
           isLongTerm,
         });
         position = null;
@@ -169,16 +169,16 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
     }
 
     // ── No position: check if strategy signals BUY ──
-    if (!position) {
+    if (!position && i + 1 < candles.length) {
       const signal = strategyFn(closesSlice, candlesSlice);
       if (signal === 'BUY' && cash > 1000) {
         // Enter at next day open (T+1); if we're at last candle, skip
-        if (i + 1 >= candles.length) continue;
         const nextCandle = candles[i + 1];
         const entryOpen = Number(nextCandle.open);
+        const signalClose = Number(candle.close);
 
         // Circuit guard: reject near-upper-circuit opens
-        if (prevClose > 0 && entryOpen > prevClose * (1 + CIRCUIT_GUARD)) continue;
+        if (signalClose > 0 && entryOpen > signalClose * (1 + CIRCUIT_GUARD)) continue;
         if (entryOpen <= 0) continue;
 
         // Slippage-adjusted entry
@@ -191,18 +191,18 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
         const lossPerShare = entryPrice - stopPrice;
         const shares = lossPerShare > 0 ? Math.max(1, Math.floor(riskAmount / lossPerShare)) : 1;
         const cost = entryPrice * shares;
-        if (cost > cash) continue; // insufficient capital
 
-        // F1: Tiered broker commission + SEBON fee on buy
+        // F1: Tiered broker commission + SEBON fee + DP fee on buy
         const entryBrokerage = calculateBrokerCommission(cost);
         const entrySebon     = includeSebonFee ? calculateSebonFee(cost) : 0;
-        cash -= cost + entryBrokerage + entrySebon;
+        const entryDp        = includeDpCharge ? DP_CHARGE : 0;
+        if (cost + entryBrokerage + entrySebon + entryDp > cash) continue; // insufficient capital
+        cash -= (cost + entryBrokerage + entrySebon + entryDp);
         position = {
           entryPrice, stopPrice, targetPrice, shares,
-          entryDate: nextCandle.date, entryBrokerage, entrySebon,
+          entryDate: nextCandle.date, entryIdx: i + 1,
+          entryBrokerage, entrySebon, entryDp,
         };
-        i++; // skip next candle since we entered on its open
-
       }
     }
 
@@ -221,21 +221,24 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
     const sellValue = exitPrice * position.shares;
     const sellBrok  = calculateBrokerCommission(sellValue);
     const sellSeb   = includeSebonFee ? calculateSebonFee(sellValue) : 0;
-    const dpFee     = includeDpCharge ? DP_CHARGE : 0;
-    const totalBuyCost = position.entryPrice * position.shares + position.entryBrokerage + (position.entrySebon || 0);
-    const grossPnl  = sellValue - sellBrok - sellSeb - dpFee - totalBuyCost;
+    const buyDpFee  = position.entryDp || 0;
+    const sellDpFee = includeDpCharge ? DP_CHARGE : 0;
+    const totalBuyCost = position.entryPrice * position.shares + position.entryBrokerage + (position.entrySebon || 0) + buyDpFee;
+    const grossPnl  = sellValue - sellBrok - sellSeb - sellDpFee - totalBuyCost;
     const cgt       = grossPnl > 0 ? +(grossPnl * cgtRateShort).toFixed(2) : 0; // assume short-term for forced close
     const pnl       = +(grossPnl - cgt).toFixed(2);
-    cash += sellValue - sellBrok - sellSeb - dpFee - cgt;
+    cash += sellValue - sellBrok - sellSeb - sellDpFee - cgt;
+    const totalFees = +(position.entryBrokerage + (position.entrySebon || 0) + buyDpFee + sellBrok + sellSeb + sellDpFee + cgt).toFixed(2);
     trades.push({
       date: last.date, type: 'SELL', entryPrice: position.entryPrice, exitPrice,
       shares: position.shares, pnl,
-      pnlPct: +((pnl / (position.entryPrice * position.shares)) * 100).toFixed(2),
-      holdingDays: 1, exitReason: 'End of Test',
+      pnlPct: +((pnl / totalBuyCost) * 100).toFixed(2),
+      holdingDays: position.entryIdx >= 0 ? Math.max(1, (candles.length - 1) - position.entryIdx) : 1,
+      exitReason: 'End of Test',
       brokerage: +(position.entryBrokerage + sellBrok).toFixed(2),
       sebonFee: +((position.entrySebon || 0) + sellSeb).toFixed(2),
-      dpFee, cgt,
-      totalFees: +((position.entryBrokerage + (position.entrySebon || 0) + sellBrok + sellSeb + dpFee + cgt)).toFixed(2),
+      dpFee: buyDpFee + sellDpFee, cgt,
+      totalFees,
     });
   }
 
@@ -253,16 +256,17 @@ export function runOHLCVBacktest(candles, strategyFn, options = {}) {
   const expectancy     = trades.length > 0 ? trades.reduce((s, t) => s + t.pnl, 0) / trades.length : 0;
   const strategyReturn = (cash - initialCapital) / initialCapital;
 
-  // ── F2: Sharpe Ratio (annualised) ───────────────────────────────────────────
-  // Use per-trade returns as the return series; annualise assuming 240 NEPSE trading days/yr.
+  // ── F2: Sharpe Ratio (annualised with holding-period awareness) ──────────────
   let sharpeRatio = null;
   if (trades.length >= 3) {
-    const returns = trades.map(t => t.pnlPct / 100);
-    const meanR   = returns.reduce((s, r) => s + r, 0) / returns.length;
-    const variance = returns.reduce((s, r) => s + Math.pow(r - meanR, 2), 0) / returns.length;
-    const stdDev  = Math.sqrt(variance);
-    const rfPerTrade = riskFreeRate / 240; // daily risk-free rate
-    sharpeRatio = stdDev > 0 ? +((meanR - rfPerTrade) / stdDev * Math.sqrt(240)).toFixed(2) : null;
+    const avgHoldDays = Math.max(1, trades.reduce((s, t) => s + (t.holdingDays || 1), 0) / trades.length);
+    const rfPerTrade = (riskFreeRate / 240) * avgHoldDays;
+    const excessReturns = trades.map(t => (t.pnlPct / 100) - rfPerTrade);
+    const meanExcess = excessReturns.reduce((s, r) => s + r, 0) / excessReturns.length;
+    const variance = excessReturns.reduce((s, r) => s + Math.pow(r - meanExcess, 2), 0) / Math.max(1, excessReturns.length - 1);
+    const stdDev = Math.sqrt(variance);
+    const tradesPerYear = Math.min(240, 240 / avgHoldDays);
+    sharpeRatio = stdDev > 0 ? +((meanExcess / stdDev) * Math.sqrt(tradesPerYear)).toFixed(2) : null;
   }
 
   // ── F3: Buy-and-Hold Benchmark ───────────────────────────────────────────────

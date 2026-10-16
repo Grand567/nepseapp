@@ -119,8 +119,31 @@ export function getBrokerName(id) {
   return BROKER_NAMES[cleanId] || `Broker ${cleanId || 'N/A'}`;
 }
 
-const memoryCache = new Map();
-const tradingDatesCache = new Map();
+function createBoundedCache(maxEntries = 150) {
+  const map = new Map();
+  return {
+    get(key) {
+      if (!map.has(key)) return undefined;
+      const val = map.get(key);
+      map.delete(key);
+      map.set(key, val);
+      return val;
+    },
+    set(key, val) {
+      if (map.has(key)) map.delete(key);
+      else if (map.size >= maxEntries) {
+        const oldestKey = map.keys().next().value;
+        map.delete(oldestKey);
+      }
+      map.set(key, val);
+    },
+    delete(key) { map.delete(key); },
+    clear() { map.clear(); }
+  };
+}
+
+const memoryCache = createBoundedCache(120);
+const tradingDatesCache = createBoundedCache(350);
 
 let cachedSession = null;
 let cachedSessionExpires = 0;
@@ -404,6 +427,8 @@ export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000) {
   return null;
 }
 
+const inFlightVaultSyncs = new Map();
+
 /**
  * Loads or updates the persistent date-indexed floorsheet vault for a symbol.
  */
@@ -411,6 +436,12 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return { rowsByDate: {}, availableDates: [] };
 
+  const syncKey = `${sym}:${requestedDates.slice(0, 5).join(',')}`;
+  if (inFlightVaultSyncs.has(syncKey)) {
+    return inFlightVaultSyncs.get(syncKey);
+  }
+
+  const syncPromise = (async () => {
   const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
   let vaultObj = { symbol: sym, vaultVersion: 2, rowsByDate: {}, updatedAt: null, preAggregated: null };
 
@@ -625,12 +656,20 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     })
     .sort((a, b) => b.localeCompare(a));
 
-  return {
-    rowsByDate: vaultObj.rowsByDate,
-    availableDates: combinedDates,
-    updatedAt: vaultObj.updatedAt,
-    preAggregated: vaultObj.preAggregated
-  };
+    return {
+      rowsByDate: vaultObj.rowsByDate,
+      availableDates: combinedDates,
+      updatedAt: vaultObj.updatedAt,
+      preAggregated: vaultObj.preAggregated
+    };
+  })();
+
+  inFlightVaultSyncs.set(syncKey, syncPromise);
+  try {
+    return await syncPromise;
+  } finally {
+    inFlightVaultSyncs.delete(syncKey);
+  }
 }
 
 export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
@@ -654,6 +693,7 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   let totalTradedQty = 0;
   let totalTradedAmt = 0;
   let largeBlockTradedAmt = 0; // Orders with quantity >= 1000 shares (LBAS)
+  let totalTradesCount = 0;
 
   uniqueRows.forEach(r => {
     const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
@@ -664,10 +704,6 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     const d = String(r.businessDate || r.date || r.date_ || '').trim();
 
     if (q <= 0) return;
-
-    if (q >= 1000) {
-      largeBlockTradedAmt += amt;
-    }
 
     if (b) {
       if (!brokerMap[b]) {
@@ -720,8 +756,19 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
       brokerMap[b].matchedAmt += amt;
     }
 
-    totalTradedQty += q;
-    totalTradedAmt += amt;
+    // Zero-Sum Conservation Guard:
+    // Standard two-sided contract rows have both buyer (b) and seller (s) -> count once.
+    // Reconstructed one-sided matrix rows have only buyer OR seller -> count only on the buy side
+    // so totalTradedQty === sumBuyQty === sumSellQty.
+    const isOneSidedSellReconstruction = !b && Boolean(s);
+    if (!isOneSidedSellReconstruction) {
+      totalTradedQty += q;
+      totalTradedAmt += amt;
+      totalTradesCount++;
+      if (q >= 1000) {
+        largeBlockTradedAmt += amt;
+      }
+    }
 
     if (d) {
       if (!dateMap[d]) {
@@ -735,10 +782,12 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
           brokerMap: {}
         };
       }
-      dateMap[d].buyVol += q;
-      dateMap[d].sellVol += q;
-      dateMap[d].turnover += amt;
-      dateMap[d].totalTrades += 1;
+      if (b) dateMap[d].buyVol += q;
+      if (s) dateMap[d].sellVol += q;
+      if (!isOneSidedSellReconstruction) {
+        dateMap[d].turnover += amt;
+        dateMap[d].totalTrades += 1;
+      }
       if (b && s && b === s) dateMap[d].matchedVol += q;
 
       if (b) {
@@ -874,14 +923,18 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     const dayBaseBuyVol = dayTopBuyers.reduce((s, b) => s + b.buyQty, 0) || df.buyVol || 1;
     const dayBaseSellVol = dayTopSellers.reduce((s, b) => s + b.sellQty, 0) || df.sellVol || 1;
 
+    const dayTurnover = df.turnover || 0;
+    const dayVol = Math.max(df.buyVol || 0, df.sellVol || 0);
+    const dayTrades = Math.max(1, Math.round(df.totalTrades || 0));
+
     return {
       date: df.date,
       buyVol: df.buyVol,
       sellVol: df.sellVol,
       matchedVol: df.matchedVol,
-      turnover: +df.turnover.toFixed(2),
-      totalTrades: df.totalTrades,
-      vwap: df.buyVol > 0 ? +(df.turnover / df.buyVol).toFixed(2) : 0,
+      turnover: +dayTurnover.toFixed(2),
+      totalTrades: dayTrades,
+      vwap: dayVol > 0 ? +(dayTurnover / dayVol).toFixed(2) : 0,
       netFlow: top3DayNetBuy - top3DayNetSell,
       bcr3BuyPct: +((dayTop3BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
       bcr5BuyPct: +((dayTop5BuyTotal / dayBaseBuyVol) * 100).toFixed(1),
@@ -914,7 +967,7 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     topNetSellers,
     brokers,
     dailyFlow,
-    totalTrades: uniqueRows.length,
+    totalTrades: totalTradesCount || uniqueRows.length,
     washTradesFiltered,
     totalVolume: totalTradedQty,
     totalAmount: +totalTradedAmt.toFixed(2),
@@ -981,7 +1034,39 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
       targetDates = allTradingDates.slice(0, sessionsToFetch);
     }
 
-    const { rowsByDate, availableDates, preAggregated } = await loadAndSyncSymbolVault(sym, targetDates);
+    let rowsByDate = {};
+    let availableDates = [];
+    let preAggregated = null;
+
+    if (numDays > 1 && !options.refresh) {
+      const fastSnap = getFastVaultSnapshot(sym, numDays);
+      if (fastSnap) {
+        const syncPromise = loadAndSyncSymbolVault(sym, targetDates);
+        let timerId;
+        const timeoutPromise = new Promise(resolve => {
+          timerId = setTimeout(() => resolve({ isTimeout: true }), 2800);
+        });
+
+        const raceResult = await Promise.race([
+          syncPromise.then(res => {
+            clearTimeout(timerId);
+            return { isTimeout: false, res };
+          }),
+          timeoutPromise
+        ]);
+
+        if (raceResult.isTimeout) {
+          memoryCache.set(cacheKey, { timestamp: now, data: fastSnap });
+          return fastSnap;
+        }
+
+        ({ rowsByDate, availableDates, preAggregated } = raceResult.res);
+      } else {
+        ({ rowsByDate, availableDates, preAggregated } = await loadAndSyncSymbolVault(sym, targetDates));
+      }
+    } else {
+      ({ rowsByDate, availableDates, preAggregated } = await loadAndSyncSymbolVault(sym, targetDates));
+    }
 
     // Collect rows for the requested targetDates (capped at numDays when not a custom range)
     let activeDates = targetDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);

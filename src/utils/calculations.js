@@ -150,7 +150,7 @@ export function calculateBrokerCommission(amount) {
   } else {
     commission = amount * 0.0024;
   }
-  return Math.max(10, commission);
+  return +Math.max(10, commission).toFixed(2);
 }
 
 /**
