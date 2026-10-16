@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Target, Zap, Shield, Award, TrendingUp, TrendingDown, Flame, AlertTriangle, CheckCircle2, XCircle, Filter, ChevronRight, RefreshCw, Star } from 'lucide-react';
 import { getAccurateFestivalSeasonality } from '../utils/quantEngine';
 import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
-import { getCachedRealPriceHistory } from '../utils/liveData';
+import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from '../utils/liveData';
 
 interface MultibaggerHunterProps {
   stocks?: any[];
@@ -31,17 +31,23 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
         const gates = (() => {
           const sym = String(s.symbol || '').toUpperCase().trim();
           const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
+          const realBroker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
           const stealthScore = Number(s.stealthAccumulation) || calculateStealthAccumulationScore(
             s,
             Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
-            undefined
+            realBroker
           );
+          const bcr3Buy = Number(s.bcr3BuyPct ?? realBroker?.bcr3BuyPct ?? 0);
+          const bcr3Sell = Number(s.bcr3SellPct ?? realBroker?.bcr3SellPct ?? 0);
+          const nbar = Number(s.nbar ?? realBroker?.nbar ?? 1.0);
+          const brokerGatePassed = (bcr3Buy >= 35 && bcr3Buy > bcr3Sell) || (nbar >= 1.25 && bcr3Buy >= 25) || stealthScore >= 65;
+
           return [
             publicFloatM <= 15,
             (s.promoterHolding || 0) >= 52 || stealthScore >= 55,
             s.bollinger?.squeeze === true || (Math.abs(s.pChange || 0) <= 2.0 && (s.volume || 0) > 5000),
             (s.volumeZScore || 0) >= 1.5 || (s.volumeSurgeRatio || 0) >= 1.8 || s.isVolumeShocker === true,
-            stealthScore >= 60 || ((s.pChange || 0) > 0 && (s.technicalScore || 0) >= 65),
+            brokerGatePassed,
             (s.dpi || 0) >= 65 || (s.technicalScore || 0) >= 65,
             mos !== null ? mos >= 5 : (s.pe > 0 && s.pe < 28),
             seasonOk,

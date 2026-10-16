@@ -17,7 +17,7 @@ import {
 } from '../utils/masterProfitEngine';
 
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
-import { getProxyBase } from '../utils/liveData';
+import { getProxyBase, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 
 interface Master100ProfitWorkstationProps {
   stocks?: any[];
@@ -269,10 +269,23 @@ export function Master100ProfitWorkstation({
     }
   };
 
+  // Hydrate authentic market-wide broker summary map so mobile and PC have identical broker data
+  const [brokerMapLoaded, setBrokerMapLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchMarketWideBrokerSummaryMap(1).then((map: any) => {
+      if (isMounted && map && Object.keys(map).length > 0) {
+        setBrokerMapLoaded(true);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
+
   // Run full master quantitative audit across universe
   const auditReport: MasterAuditReport = useMemo(() => {
     return runMasterGuideAudit(stocks, indices);
-  }, [stocks, indices]);
+  }, [stocks, indices, brokerMapLoaded]);
 
   // Active inspected stock (defaults to crowned winner, or selected runner-up)
   const inspectedStock: MasterStockEvaluation | null = useMemo(() => {

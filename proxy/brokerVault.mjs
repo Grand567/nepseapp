@@ -184,6 +184,105 @@ export async function fetchSymbolTradingDates(symbol) {
   } catch (e) {
     console.warn(`[brokerVault] fetchSymbolTradingDates failed for ${sym}:`, e.message);
   }
+
+  // Fallback 1: Query authentic NEPSE NOTS price history via nepseClient,
+  // plus read dates from local floorsheet-full-*.json files and existing VAULT_DIR files.
+  try {
+    const dateSet = new Set();
+    const historyRows = await nepseClient.getSecurityPriceHistory(sym, { length: 90 }).catch(() => []);
+    if (Array.isArray(historyRows) && historyRows.length > 0) {
+      for (const row of historyRows) {
+        const dt = String(row?.date || '').trim();
+        const vol = Number(row?.volume || row?.tradedQuantity || 0);
+        const close = Number(row?.close || 0);
+        if (dt && (vol > 0 || close > 0)) {
+          dateSet.add(dt);
+        }
+      }
+    }
+
+    // Also read dates from existing floorsheet-full-*.json files
+    const candidateDirs = [
+      path.join(__dirname, 'data'),
+      path.join(process.cwd(), 'data'),
+      path.join(process.cwd(), 'proxy', 'data')
+    ];
+    for (const dDir of candidateDirs) {
+      if (fs.existsSync(dDir)) {
+        try {
+          const files = fs.readdirSync(dDir).filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'));
+          for (const f of files) {
+            const m = f.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+            if (m && m[1]) dateSet.add(m[1]);
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Also read dates from existing symbol vault file
+    const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
+    if (fs.existsSync(vaultPath)) {
+      try {
+        const existingData = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+        if (existingData?.rowsByDate) {
+          for (const [dt, rows] of Object.entries(existingData.rowsByDate)) {
+            if (dt && Array.isArray(rows) && rows.length > 0) {
+              dateSet.add(dt);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (dateSet.size > 0) {
+      const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+      tradingDatesCache.set(sym, { timestamp: now, dates });
+      return dates;
+    }
+  } catch (e1) {
+    console.warn(`[brokerVault] Fallback 1 price history discovery failed for ${sym}:`, e1.message);
+  }
+
+  // Fallback 2: Query MeroLagani's company graph handler to extract last 65 trading dates
+  try {
+    const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(sym)}`;
+    const mlRes = await axios.get(mlUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Accept': 'application/json'
+      },
+      timeout: 9000,
+      validateStatus: () => true
+    });
+    if (mlRes.status === 200 && mlRes.data && Array.isArray(mlRes.data.quotes) && mlRes.data.quotes.length > 0) {
+      const mlDates = new Set();
+      for (const q of mlRes.data.quotes) {
+        if (!q || !q.date) continue;
+        let dateIso = String(q.date).trim();
+        if (dateIso.includes('/')) {
+          const parts = dateIso.split('/');
+          if (parts.length === 3) {
+            dateIso = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+          }
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+          const vol = Number(q.volume || 0);
+          const close = Number(q.close || 0);
+          if (vol > 0 || close > 0) {
+            mlDates.add(dateIso);
+          }
+        }
+      }
+      if (mlDates.size > 0) {
+        const sorted = Array.from(mlDates).sort((a, b) => b.localeCompare(a)).slice(0, 65);
+        tradingDatesCache.set(sym, { timestamp: now, dates: sorted });
+        return sorted;
+      }
+    }
+  } catch (e2) {
+    console.warn(`[brokerVault] Fallback 2 MeroLagani discovery failed for ${sym}:`, e2.message);
+  }
+
   return cached?.dates || [];
 }
 
@@ -412,17 +511,30 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
     }
   }
 
-  // Fallback to ShareSansar if we still have 0 dates in vaultObj.rowsByDate
-  if (Object.keys(vaultObj.rowsByDate).length === 0) {
-    const ssRows = await fetchShareSansarFloorsheet(sym, 6000);
+  // Fallback to ShareSansar:
+  // When datesToFetch.size > 0 and fetchChukulDateFloorsheet(sym, dt) returns empty for historical dates
+  // (or if Object.keys(vaultObj.rowsByDate).length < Math.min(requestedDates.length, 5)),
+  // ALWAYS run fetchShareSansarFloorsheet(sym, 15000) and group the returned rows by r.businessDate
+  // into vaultObj.rowsByDate[dt] so multi-day historical dates are populated even when only 1 date
+  // was previously in vaultObj.rowsByDate!
+  const populatedDatesCount = Object.keys(vaultObj.rowsByDate).filter(d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0).length;
+  const targetThreshold = requestedDates.length > 0 ? Math.min(requestedDates.length, 5) : 2;
+
+  if (datesToFetch.size > 0 || populatedDatesCount < targetThreshold || Object.keys(vaultObj.rowsByDate).length === 0) {
+    const ssRows = await fetchShareSansarFloorsheet(sym, 15000);
     if (Array.isArray(ssRows) && ssRows.length > 0) {
       for (const r of ssRows) {
         const dt = String(r.businessDate || '').trim();
         if (!dt) continue;
         if (!vaultObj.rowsByDate[dt]) vaultObj.rowsByDate[dt] = [];
-        vaultObj.rowsByDate[dt].push(r);
+        const existingCids = new Set(vaultObj.rowsByDate[dt].map(x => String(x.contractId || '')));
+        const cid = String(r.contractId || '');
+        if (!cid || !existingCids.has(cid)) {
+          vaultObj.rowsByDate[dt].push(r);
+          didUpdate = true;
+          datesToFetch.delete(dt);
+        }
       }
-      didUpdate = true;
     }
   }
 
@@ -815,13 +927,14 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
     // Collect rows for the requested targetDates (capped at numDays when not a custom range)
     let activeDates = targetDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);
     if (!specificDate && !fromDate && !toDate) {
-      activeDates = activeDates.slice(0, numDays);
-    }
-    if (activeDates.length === 0 && !specificDate) {
-      const vaultDates = Object.keys(rowsByDate)
-        .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
-        .sort((a, b) => b.localeCompare(a));
-      activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+      if (activeDates.length < numDays) {
+        const vaultDates = Object.keys(rowsByDate)
+          .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+          .sort((a, b) => b.localeCompare(a));
+        activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+      } else {
+        activeDates = activeDates.slice(0, numDays);
+      }
     }
 
     const combinedRows = [];
@@ -838,8 +951,10 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
         return aggregated;
       }
     } else if (preAggregated && (preAggregated.brokers?.length > 0 || preAggregated.topBuyers?.length > 0)) {
-      memoryCache.set(cacheKey, { timestamp: now, data: preAggregated });
-      return preAggregated;
+      if (numDays <= 1 || Number(preAggregated.tradingDays || 1) === numDays) {
+        memoryCache.set(cacheKey, { timestamp: now, data: preAggregated });
+        return preAggregated;
+      }
     }
   } catch (err) {
     console.warn(`[brokerVault] getOrFetchBrokerAnalysis failed for ${sym}:`, err.message);
@@ -910,13 +1025,14 @@ export async function getOrFetchSymbolFloorsheet(symbol, {
   } else if (cleanFrom || cleanTo || numDays > 1) {
     activeDates = candidateDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);
     if (!cleanFrom && !cleanTo) {
-      activeDates = activeDates.slice(0, numDays);
-    }
-    if (activeDates.length === 0) {
-      const vaultDates = Object.keys(rowsByDate)
-        .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
-        .sort((a, b) => b.localeCompare(a));
-      activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+      if (activeDates.length < numDays) {
+        const vaultDates = Object.keys(rowsByDate)
+          .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+          .sort((a, b) => b.localeCompare(a));
+        activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
+      } else {
+        activeDates = activeDates.slice(0, numDays);
+      }
     }
     for (const dt of activeDates) {
       if (Array.isArray(rowsByDate[dt])) {

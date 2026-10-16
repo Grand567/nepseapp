@@ -1,9 +1,33 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, LineStyle } from 'lightweight-charts';
+import {
+  createChart,
+  ColorType,
+  CandlestickSeries,
+  HistogramSeries,
+  LineSeries,
+  AreaSeries,
+  LineStyle,
+} from 'lightweight-charts';
 import { fetchRealPriceHistory } from '../utils/liveData';
 import { fetchNepseIntradayGraph } from '../utils/servicesApi';
-import { Activity, Maximize2, Minimize2, TrendingUp, BarChart2 } from 'lucide-react';
+import {
+  Activity,
+  Maximize2,
+  Minimize2,
+  TrendingUp,
+  BarChart2,
+  Layers,
+  Sparkles,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { aggregateToWeeklyCandles } from '../utils/priceAdjustment';
+import {
+  calculateEMA,
+  calculatePivotPoints,
+  calculateFibonacci,
+} from '../utils/indicators';
+import { detectCandlestickPatternsFromHistory } from '../utils/candlestickPatterns';
 
 const TIMEFRAMES = [
   { id: '1D',     label: '1D',     days: 1    },
@@ -21,10 +45,6 @@ const TIMEFRAMES = [
  */
 export const NPT_OFFSET_SEC = 5 * 3600 + 45 * 60;
 
-/**
- * Helper: dynamically determine the session year, month (0-indexed), and day
- * from dataset records or current Nepal Standard Time.
- */
 function getDatasetSessionDate(points, rawHistory) {
   if (Array.isArray(points) && points.length > 0) {
     for (const pt of points) {
@@ -51,17 +71,13 @@ function getDatasetSessionDate(points, rawHistory) {
   return { year: nowNpt.getUTCFullYear(), month: nowNpt.getUTCMonth(), day: nowNpt.getUTCDate() };
 }
 
-/**
- * Format timestamp or date string to Nepal Timezone (Asia/Kathmandu)
- */
 function formatNptDate(dateObj) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kathmandu',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).format(dateObj); // YYYY-MM-DD
-  return parts;
+  }).format(dateObj);
 }
 
 function formatNptTime(epochSec) {
@@ -88,12 +104,77 @@ function formatNptFullDate(dateStrOrSec) {
   });
 }
 
+// ── Mathematical Helpers for Technical Indicators ─────────────────────────────
+function computeRSIArray(closes, period = 14) {
+  const result = new Array(closes.length).fill(null);
+  if (closes.length <= period) return result;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d; else losses -= d;
+  }
+  let ag = gains / period, al = losses / period;
+  result[period] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + Math.max(0, d)) / period;
+    al = (al * (period - 1) + Math.max(0, -d)) / period;
+    result[i] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);
+  }
+  return result;
+}
+
+function computeMACDArrays(closes, shortP = 12, longP = 26, signalP = 9) {
+  const empty = { macdArr: [], signalArr: [], histArr: [] };
+  if (closes.length < longP) return empty;
+  const shortEMA = calculateEMA(closes, shortP);
+  const longEMA = calculateEMA(closes, longP);
+  const macdArr = closes.map((_, i) =>
+    shortEMA[i] != null && longEMA[i] != null
+      ? +(shortEMA[i] - longEMA[i]).toFixed(3)
+      : null
+  );
+  const validMacd = macdArr.filter(v => v !== null);
+  const signalEMA = calculateEMA(validMacd, signalP);
+  let sigIdx = 0;
+  const signalArr = macdArr.map(v => {
+    if (v == null) return null;
+    const s = signalEMA[sigIdx++];
+    return s != null ? +s.toFixed(3) : null;
+  });
+  const histArr = macdArr.map((m, i) => {
+    const s = signalArr[i];
+    return m != null && s != null ? +(m - s).toFixed(3) : null;
+  });
+  return { macdArr, signalArr, histArr };
+}
+
+function computeVWAP(candles) {
+  let cumPV = 0, cumV = 0;
+  return candles.map(c => {
+    const tp = (Number(c.high ?? c.close) + Number(c.low ?? c.close) + Number(c.close)) / 3;
+    const vol = Number(c.volume) || 0;
+    cumPV += tp * vol;
+    cumV += vol;
+    return cumV > 0 ? +(cumPV / cumV).toFixed(2) : null;
+  });
+}
+
+function computeVolSMA(volumes, period = 20) {
+  const result = new Array(volumes.length).fill(null);
+  for (let i = period - 1; i < volumes.length; i++) {
+    const slice = volumes.slice(i - period + 1, i + 1);
+    result[i] = +(slice.reduce((a, b) => a + b, 0) / period).toFixed(0);
+  }
+  return result;
+}
+
 export default function ShareHubChart({
   history,
   symbol = 'NEPSE',
   mode = 'candle',
   chartTimeframe = '1M',
-  height = 340,
+  height = 360,
   isIntraday = false,
   stock = null,
   showTimeframeBar = true,
@@ -101,7 +182,10 @@ export default function ShareHubChart({
   onTimeframeChange = null,
   onOpenTradingView = null,
   onToggleFullscreen = null,
-  isFullscreen = false
+  isFullscreen = false,
+  entryExitPlan = null,
+  brokerAnalysis = null,
+  floorsheetData = null
 }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -116,6 +200,35 @@ export default function ShareHubChart({
   const [error, setError] = useState(null);
   const [hoverData, setHoverData] = useState(null);
 
+  // ── Technical Indicator Toggles for Analyst Workstation ──
+  const isIndividualStock = symbol && symbol !== 'NEPSE' && symbol !== 'NEPSE Index';
+  const [showEma20, setShowEma20] = useState(isIndividualStock);
+  const [showEma50, setShowEma50] = useState(isIndividualStock);
+  const [showEma200, setShowEma200] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(false);
+  const [showVwap, setShowVwap] = useState(isIndividualStock);
+  const [showPivots, setShowPivots] = useState(false);
+  const [showFib, setShowFib] = useState(false);
+  const [show52W, setShow52W] = useState(false);
+  const [showPatterns, setShowPatterns] = useState(true);
+  const [showRsi, setShowRsi] = useState(false);
+  const [showMacd, setShowMacd] = useState(false);
+  const [showVolSma, setShowVolSma] = useState(isIndividualStock);
+  const [showTradePlan, setShowTradePlan] = useState(isIndividualStock);
+  const [showInstVwap, setShowInstVwap] = useState(isIndividualStock);
+  const [showPoc, setShowPoc] = useState(isIndividualStock);
+
+  useEffect(() => {
+    const isIndiv = symbol && symbol !== 'NEPSE' && symbol !== 'NEPSE Index';
+    setShowEma20(isIndiv);
+    setShowEma50(isIndiv);
+    setShowVwap(isIndiv);
+    setShowVolSma(isIndiv);
+    setShowTradePlan(isIndiv);
+    setShowInstVwap(isIndiv);
+    setShowPoc(isIndiv);
+  }, [symbol]);
+
   // Sync props when chartTimeframe or mode changes from parent
   useEffect(() => {
     if (chartTimeframe) setActiveTf(chartTimeframe);
@@ -125,7 +238,6 @@ export default function ShareHubChart({
     if (mode) setActiveMode(mode);
   }, [mode]);
 
-  // If history prop changes, update internal rawHistory and clear loading
   useEffect(() => {
     if (Array.isArray(history) && history.length > 0) {
       setRawHistory(history);
@@ -134,7 +246,6 @@ export default function ShareHubChart({
     }
   }, [history]);
 
-  // If history prop is not provided, fetch price history from API
   useEffect(() => {
     if (Array.isArray(history) && history.length > 0) {
       setLoading(false);
@@ -168,11 +279,10 @@ export default function ShareHubChart({
     };
   }, [symbol, history]);
 
-  // Autonomous Intraday Fetch: when 1D is selected, guarantee authentic 11:00 AM to 3:00 PM data
+  // Autonomous Intraday Fetch
   useEffect(() => {
     if (activeTf !== '1D') return;
 
-    // Check if rawHistory already contains authentic intraday ticks
     const hasIntradayInHistory = Array.isArray(rawHistory) && rawHistory.length > 1 && rawHistory.some(pt => {
       const timeStr = String(pt.time || pt.date || '');
       if (/\d{1,2}:\d{2}/.test(timeStr)) return true;
@@ -215,7 +325,6 @@ export default function ShareHubChart({
     };
   }, [activeTf, symbol, rawHistory]);
 
-  // Choose the active dataset based on timeframe
   const activeDataset = useMemo(() => {
     if (activeTf === '1D' && intradayData.length > 0) {
       return intradayData;
@@ -223,12 +332,10 @@ export default function ShareHubChart({
     return rawHistory;
   }, [activeTf, intradayData, rawHistory]);
 
-  // Detect whether current view is intraday (1D timeline: 11:00 AM to 3:00 PM)
   const isTrulyIntraday = useMemo(() => {
     return activeTf === '1D';
   }, [activeTf]);
 
-  // Aggregate raw 1-minute tick points into authentic 5-minute OHLC candlesticks for Intraday (11 AM to 3 PM)
   const aggregateToIntradayCandles = useCallback((points, intervalMinutes = 5) => {
     if (!Array.isArray(points) || points.length === 0) return [];
     const intervalSec = intervalMinutes * 60;
@@ -239,7 +346,7 @@ export default function ShareHubChart({
       let ts = null;
       if (pt.timestamp && pt.timestamp > 1e8) {
         const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
-        ts = sec + NPT_OFFSET_SEC; // Shift by Nepal Timezone so UTC hours match Nepal 11:00 AM - 3:00 PM
+        ts = sec + NPT_OFFSET_SEC;
       } else if (typeof pt.time === 'number' && pt.time > 1e8) {
         const sec = pt.time > 1e11 ? Math.floor(pt.time / 1000) : Math.floor(pt.time);
         ts = sec + NPT_OFFSET_SEC;
@@ -287,31 +394,12 @@ export default function ShareHubChart({
     return candles;
   }, [rawHistory]);
 
-  // Format and slice data strictly based on selected timeframe & NEPSE open dates
   const processedChartData = useMemo(() => {
-    // CASE 1: True Intraday (1D) — 11:00 AM to 3:00 PM session
     if (activeTf === '1D') {
-      let intradaySource = null;
-      if (intradayData.length > 0) {
-        intradaySource = intradayData;
-      } else {
-        // Check if rawHistory contains authentic intraday ticks
-        const hasIntradayInRaw = Array.isArray(rawHistory) && rawHistory.length > 1 && rawHistory.some(pt => {
-          const timeStr = String(pt.time || pt.date || '');
-          if (/\d{1,2}:\d{2}/.test(timeStr)) return true;
-          if (pt.timestamp && pt.timestamp > 1e8) {
-            const sec = pt.timestamp > 1e11 ? Math.floor(pt.timestamp / 1000) : Math.floor(pt.timestamp);
-            return (sec % 86400) !== 0;
-          }
-          return false;
-        });
-
-        if (hasIntradayInRaw) {
-          intradaySource = rawHistory;
-        } else {
-          // If no intraday data is available, do not fake it.
-          intradaySource = [];
-        }
+      let intradaySource = intradayData.length > 0 ? intradayData : [];
+      if (intradaySource.length === 0 && Array.isArray(rawHistory) && rawHistory.length > 1) {
+        const hasIntraday = rawHistory.some(pt => /\d{1,2}:\d{2}/.test(String(pt.time || pt.date || '')));
+        if (hasIntraday) intradaySource = rawHistory;
       }
 
       if (activeMode === 'candle') {
@@ -326,7 +414,6 @@ export default function ShareHubChart({
         return aggregated;
       }
 
-      // Line mode: pass each tick with normalized epoch seconds
       const sDate = getDatasetSessionDate(intradaySource, rawHistory);
       const sorted = [];
       for (const pt of intradaySource) {
@@ -384,8 +471,6 @@ export default function ShareHubChart({
       return unique;
     }
 
-    // CASE 2: Daily / Historical Data (1W, 1M, 3M, 6M, 1Y, ALL)
-    // Filter by exact NEPSE open trading dates (ISO date string)
     if (!Array.isArray(rawHistory) || rawHistory.length === 0) return [];
     const map = new Map();
     for (const d of rawHistory) {
@@ -414,7 +499,7 @@ export default function ShareHubChart({
       if (isNaN(close) || close <= 0) continue;
 
       map.set(dateKey, {
-        time: dateKey, // ISO Date String: "YYYY-MM-DD"
+        time: dateKey,
         open: open || close,
         high: Math.max(open, high, close),
         low: Math.min(open, low, close),
@@ -433,58 +518,49 @@ export default function ShareHubChart({
 
     let sliced = allSorted;
     if (tf === '1W' || tf === '7') {
-      // 1W: The open sessions belonging to the current trading week / past 7 calendar days
       const oneWeekAgo = new Date(latestDate.getTime() - 7 * 24 * 3600 * 1000);
       const weekBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneWeekAgo);
       sliced = weekBars.length >= 4 ? weekBars : allSorted.slice(-Math.min(5, allSorted.length));
     } else if (tf === '1M' || tf === '30') {
-      // 1M: Trading sessions within past 30 calendar days
       const oneMonthAgo = new Date(latestDate.getTime() - 30 * 24 * 3600 * 1000);
       const monthBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneMonthAgo);
       sliced = monthBars.length >= 15 ? monthBars : allSorted.slice(-Math.min(22, allSorted.length));
     } else if (tf === '3M' || tf === '90') {
-      // 3M: Trading sessions within past 90 calendar days
       const threeMonthsAgo = new Date(latestDate.getTime() - 90 * 24 * 3600 * 1000);
       const qtrBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= threeMonthsAgo);
       sliced = qtrBars.length >= 45 ? qtrBars : allSorted.slice(-Math.min(66, allSorted.length));
     } else if (tf === '6M' || tf === '180') {
-      // 6M: Trading sessions within past 180 calendar days
       const sixMonthsAgo = new Date(latestDate.getTime() - 180 * 24 * 3600 * 1000);
       const halfYearBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= sixMonthsAgo);
       sliced = halfYearBars.length >= 90 ? halfYearBars : allSorted.slice(-Math.min(132, allSorted.length));
     } else if (tf === '1Y' || tf === '365') {
-      // 1Y: Trading sessions within past 365 calendar days
       const oneYearAgo = new Date(latestDate.getTime() - 365 * 24 * 3600 * 1000);
       const yearBars = allSorted.filter(b => new Date(b.time + 'T00:00:00Z') >= oneYearAgo);
       sliced = yearBars.length >= 180 ? yearBars : allSorted.slice(-Math.min(260, allSorted.length));
     } else if (tf === 'WEEKLY') {
-      // WEEKLY: Aggregate all daily candles into weekly OHLCV bars (C2-batch)
       const weekly = aggregateToWeeklyCandles(allSorted);
       const weeklyFormatted = weekly.map(w => ({
-        time:   w.time,
-        open:   w.open,
-        high:   w.high,
-        low:    w.low,
-        close:  w.close,
-        value:  w.close,
+        time: w.time,
+        open: w.open,
+        high: w.high,
+        low: w.low,
+        close: w.close,
+        value: w.close,
         volume: w.volume,
         dateStr: w.time,
       }));
-      // Patch last bar with live LTP if available
       if (stock?.ltp && Number(stock.ltp) > 0 && weeklyFormatted.length > 0) {
         const last = { ...weeklyFormatted[weeklyFormatted.length - 1] };
         const target = Number(stock.ltp);
         last.close = target; last.value = target;
         last.high = Math.max(Number(last.high || target), target);
-        last.low  = Math.min(Number(last.low  || target), target);
+        last.low = Math.min(Number(last.low || target), target);
         return [...weeklyFormatted.slice(0, -1), last];
       }
       return weeklyFormatted;
     } else {
-      // ALL
       sliced = allSorted;
     }
-
 
     if (stock?.ltp && Number(stock.ltp) > 0 && sliced.length > 0) {
       const last = { ...sliced[sliced.length - 1] };
@@ -499,7 +575,263 @@ export default function ShareHubChart({
     return sliced;
   }, [intradayData, rawHistory, activeTf, activeMode, stock, aggregateToIntradayCandles]);
 
-  // Handle user changing timeframe
+  // ── Compute Technical Indicator Series ──
+  const closes = useMemo(() => processedChartData.map(d => Number(d.close ?? d.value ?? 0)), [processedChartData]);
+  const volumes = useMemo(() => processedChartData.map(d => Number(d.volume || 0)), [processedChartData]);
+
+  const ema20Data = useMemo(() => {
+    if (closes.length < 20) return [];
+    const ema = calculateEMA(closes, 20);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (ema[i] != null && !isNaN(ema[i])) res.push({ time: d.time, value: +Number(ema[i]).toFixed(2) });
+    });
+    return res;
+  }, [closes, processedChartData]);
+
+  const ema50Data = useMemo(() => {
+    if (closes.length < 50) return [];
+    const ema = calculateEMA(closes, 50);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (ema[i] != null && !isNaN(ema[i])) res.push({ time: d.time, value: +Number(ema[i]).toFixed(2) });
+    });
+    return res;
+  }, [closes, processedChartData]);
+
+  const ema200Data = useMemo(() => {
+    if (closes.length < 180) return [];
+    const ema = calculateEMA(closes, 200);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (ema[i] != null && !isNaN(ema[i])) res.push({ time: d.time, value: +Number(ema[i]).toFixed(2) });
+    });
+    return res;
+  }, [closes, processedChartData]);
+
+  const bollingerData = useMemo(() => {
+    if (closes.length < 20) return { upper: [], lower: [], middle: [] };
+    const upper = [], lower = [], middle = [];
+    for (let i = 19; i < closes.length; i++) {
+      const slice = closes.slice(i - 19, i + 1);
+      const sma = slice.reduce((a, b) => a + b, 0) / 20;
+      const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / 20;
+      const stdDev = Math.sqrt(variance);
+      const time = processedChartData[i].time;
+      middle.push({ time, value: +sma.toFixed(2) });
+      upper.push({ time, value: +(sma + 2 * stdDev).toFixed(2) });
+      lower.push({ time, value: +(sma - 2 * stdDev).toFixed(2) });
+    }
+    return { upper, lower, middle };
+  }, [closes, processedChartData]);
+
+  const vwapData = useMemo(() => {
+    const vwapArr = computeVWAP(processedChartData);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (vwapArr[i] != null) res.push({ time: d.time, value: vwapArr[i] });
+    });
+    return res;
+  }, [processedChartData]);
+
+  const volSmaData = useMemo(() => {
+    const smaArr = computeVolSMA(volumes, 20);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (smaArr[i] != null) res.push({ time: d.time, value: smaArr[i] });
+    });
+    return res;
+  }, [volumes, processedChartData]);
+
+  const rsiData = useMemo(() => {
+    const rsiArr = computeRSIArray(closes, 14);
+    const res = [];
+    processedChartData.forEach((d, i) => {
+      if (rsiArr[i] != null) res.push({ time: d.time, value: rsiArr[i] });
+    });
+    return res;
+  }, [closes, processedChartData]);
+
+  const currentRsi = useMemo(() => {
+    const last = [...rsiData].reverse().find(d => d != null);
+    return last?.value ?? null;
+  }, [rsiData]);
+
+  const macdArrays = useMemo(() => {
+    const { macdArr, signalArr, histArr } = computeMACDArrays(closes);
+    const macdLine = [];
+    const signalLine = [];
+    const histogram = [];
+    processedChartData.forEach((d, i) => {
+      const m = macdArr[i], s = signalArr[i], h = histArr[i];
+      if (m != null) macdLine.push({ time: d.time, value: m });
+      if (s != null) signalLine.push({ time: d.time, value: s });
+      if (h != null) histogram.push({
+        time: d.time,
+        value: h,
+        color: h >= 0 ? 'rgba(16, 185, 129, 0.75)' : 'rgba(244, 63, 94, 0.75)'
+      });
+    });
+    return { macdLine, signalLine, histogram };
+  }, [closes, processedChartData]);
+
+  const currentMacdHist = useMemo(() => {
+    const arr = macdArrays.histogram;
+    return arr.length > 0 ? arr[arr.length - 1].value : null;
+  }, [macdArrays]);
+
+  const pivotData = useMemo(() => {
+    if (processedChartData.length === 0) return null;
+    const last = processedChartData[processedChartData.length - 1];
+    const h = Number(last.high || last.close || 0);
+    const l = Number(last.low || last.close || 0);
+    const c = Number(last.close || 0);
+    if (c <= 0) return null;
+    const P = +( (h + l + c) / 3 ).toFixed(2);
+    return {
+      P,
+      pp: P,
+      R1: +(2 * P - l).toFixed(2),
+      R2: +(P + (h - l)).toFixed(2),
+      R3: +(h + 2 * (P - l)).toFixed(2),
+      S1: +(2 * P - h).toFixed(2),
+      S2: +(P - (h - l)).toFixed(2),
+      S3: +(l - 2 * (h - P)).toFixed(2),
+    };
+  }, [processedChartData]);
+
+  const fibData = useMemo(() => {
+    if (processedChartData.length < 5) return null;
+    const highs = processedChartData.map(c => Number(c.high || c.close || 0));
+    const lows = processedChartData.map(c => Number(c.low || c.close || 0)).filter(v => v > 0);
+    const swingHigh = Math.max(...highs);
+    const swingLow = Math.min(...lows);
+    if (swingHigh <= swingLow) return null;
+    const diff = swingHigh - swingLow;
+    return {
+      level_0: +swingHigh.toFixed(2),
+      level_236: +(swingHigh - diff * 0.236).toFixed(2),
+      level_382: +(swingHigh - diff * 0.382).toFixed(2),
+      level_500: +(swingHigh - diff * 0.5).toFixed(2),
+      level_618: +(swingHigh - diff * 0.618).toFixed(2),
+      level_786: +(swingHigh - diff * 0.786).toFixed(2),
+      level_1000: +swingLow.toFixed(2),
+    };
+  }, [processedChartData]);
+
+  // Volume Profile Point of Control (POC)
+  const pocPrice = useMemo(() => {
+    if (floorsheetData && Array.isArray(floorsheetData.priceVolumeBreakdown) && floorsheetData.priceVolumeBreakdown.length > 0) {
+      const sortedByVol = [...floorsheetData.priceVolumeBreakdown].sort((a, b) => Number(b.volume || b.qty || 0) - Number(a.volume || a.qty || 0));
+      const top = sortedByVol[0];
+      const p = Number(top?.price || top?.rate || 0);
+      if (p > 0) return +p.toFixed(2);
+    }
+    if (floorsheetData && Array.isArray(floorsheetData.rows) && floorsheetData.rows.length > 0) {
+      const priceBuckets = new Map();
+      floorsheetData.rows.forEach(r => {
+        const p = Number(r.rate || r.price || 0);
+        const v = Number(r.qty || r.quantity || 0);
+        if (p > 0 && v > 0) {
+          priceBuckets.set(p, (priceBuckets.get(p) || 0) + v);
+        }
+      });
+      let maxV = 0, bestP = null;
+      for (const [p, v] of priceBuckets.entries()) {
+        if (v > maxV) { maxV = v; bestP = p; }
+      }
+      if (bestP) return +bestP.toFixed(2);
+    }
+    if (processedChartData.length > 0) {
+      const priceBuckets = new Map();
+      processedChartData.forEach(c => {
+        const p = +(Number(c.close || 0)).toFixed(1);
+        const v = Number(c.volume || 1);
+        if (p > 0) {
+          priceBuckets.set(p, (priceBuckets.get(p) || 0) + v);
+        }
+      });
+      let maxV = 0, bestP = null;
+      for (const [p, v] of priceBuckets.entries()) {
+        if (v > maxV) { maxV = v; bestP = p; }
+      }
+      if (bestP) return +bestP.toFixed(2);
+    }
+    return null;
+  }, [floorsheetData, processedChartData]);
+
+  // Institutional Broker Cost-Basis (VWAP of top accumulators)
+  const instVwap = useMemo(() => {
+    if (!brokerAnalysis) return null;
+    const buyers = (brokerAnalysis.topNetBuyers || brokerAnalysis.topNetAccumulators || []).filter(b => {
+      const avg = Number(b.avgBuyRate || 0);
+      const qty = Number(b.netQty !== undefined ? b.netQty : b.buyQty);
+      return avg > 0 && qty > 0;
+    });
+    if (buyers.length === 0) return null;
+    const top3 = buyers.slice(0, 3);
+    const totalQty = top3.reduce((s, b) => s + Number(b.netQty !== undefined ? b.netQty : b.buyQty), 0);
+    const totalAmt = top3.reduce((s, b) => s + (Number(b.avgBuyRate) * Number(b.netQty !== undefined ? b.netQty : b.buyQty)), 0);
+    return totalQty > 0 ? +(totalAmt / totalQty).toFixed(2) : null;
+  }, [brokerAnalysis]);
+
+  // Live Trade Plan Corridors
+  const tradePlanCorridor = useMemo(() => {
+    if (!entryExitPlan || !entryExitPlan.levels) return null;
+    const lv = entryExitPlan.levels;
+    const t2 = Number(lv.target2?.price || 0);
+    const t1 = Number(lv.target1?.price || 0);
+    const entry = Number(lv.entryZone?.low || lv.pullbackAnchor || 0);
+    const entryMax = Number(lv.entryZone?.max || lv.entryZone?.high || lv.breakoutPivot || 0);
+    const sl = Number(lv.stopLoss?.price || 0);
+    if (!t1 && !sl && !entry && !entryMax) return null;
+    return {
+      t2: t2 > 0 ? t2 : null,
+      t1: t1 > 0 ? t1 : null,
+      entry: entry > 0 ? entry : null,
+      entryMax: entryMax > 0 ? entryMax : null,
+      sl: sl > 0 ? sl : null,
+      verdict: entryExitPlan.verdict || '',
+      setupScore: Number(entryExitPlan.setupScore || 0),
+      rrRatio: entryExitPlan.rrRatio || entryExitPlan.riskRewardRatio || null
+    };
+  }, [entryExitPlan]);
+
+  const patternMarkers = useMemo(() => {
+    if (processedChartData.length === 0) return [];
+    try {
+      const detections = detectCandlestickPatternsFromHistory(processedChartData, stock);
+      if (!Array.isArray(detections)) return [];
+      const markers = [];
+      const seen = new Set();
+      for (const det of detections) {
+        const time = det.date || det.time;
+        if (!time || seen.has(time + det.id)) continue;
+        seen.add(time + det.id);
+        const isBullish = det.type === 'bullish';
+        markers.push({
+          time,
+          position: isBullish ? 'belowBar' : 'aboveBar',
+          color: isBullish ? '#10b981' : '#f43f5e',
+          shape: isBullish ? 'arrowUp' : 'arrowDown',
+          text: det.name || det.id,
+          size: 1
+        });
+      }
+      return markers.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    } catch {
+      return [];
+    }
+  }, [processedChartData, stock]);
+
+  const high52w = Number(stock?.high52w || 0);
+  const low52w = Number(stock?.low52w || 0);
+  const rvol = Number(stock?.rvol || stock?.volumeSurgeRatio || 0);
+
+  // Sub-pane dynamic layout
+  const subPaneCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
+  const dynamicHeight = Math.max(340, height) + (subPaneCount * 85);
+
   const handleSelectTimeframe = (tfId) => {
     setActiveTf(tfId);
     if (onTimeframeChange) {
@@ -507,12 +839,11 @@ export default function ShareHubChart({
     }
   };
 
-  // Render chart using Lightweight Charts
+  // ── Render Chart ──
   useEffect(() => {
     if (!chartContainerRef.current) return;
     if (processedChartData.length === 0) return;
 
-    // Cleanup previous chart instance
     if (chartRef.current) {
       try { chartRef.current.remove(); } catch (_) {}
       chartRef.current = null;
@@ -521,10 +852,31 @@ export default function ShareHubChart({
     const isCandle = activeMode === 'candle';
     const container = chartContainerRef.current;
 
+    // Dynamic Scale Margins for Sub-Panes
+    let mainBottom = 0.20;
+    let volTop = 0.82, volBottom = 0;
+    let rsiTop = 0, rsiBottom = 0;
+    let macdTop = 0, macdBottom = 0;
+
+    if (subPaneCount === 1 && showRsi) {
+      mainBottom = 0.32;
+      volTop = 0.74; volBottom = 0.14;
+      rsiTop = 0.86; rsiBottom = 0;
+    } else if (subPaneCount === 1 && showMacd) {
+      mainBottom = 0.32;
+      volTop = 0.74; volBottom = 0.14;
+      macdTop = 0.86; macdBottom = 0;
+    } else if (subPaneCount === 2) {
+      mainBottom = 0.44;
+      volTop = 0.76; volBottom = 0.26;
+      rsiTop = 0.74; rsiBottom = 0.14;
+      macdTop = 0.87; macdBottom = 0;
+    }
+
     try {
       const chart = createChart(container, {
         width: container.clientWidth || 600,
-        height: height,
+        height: dynamicHeight,
         layout: {
           background: { type: ColorType.Solid, color: 'transparent' },
           textColor: '#94a3b8',
@@ -543,7 +895,7 @@ export default function ShareHubChart({
         rightPriceScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',
           autoScale: true,
-          scaleMargins: { top: 0.12, bottom: 0.20 },
+          scaleMargins: { top: 0.08, bottom: mainBottom },
         },
         timeScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',
@@ -584,7 +936,7 @@ export default function ShareHubChart({
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true }
       });
 
-      // Main Series (Candlestick or Line)
+      // 1. Main Series (Candlestick or Area)
       let mainSeries;
       if (isCandle) {
         mainSeries = chart.addSeries(CandlestickSeries, {
@@ -606,8 +958,14 @@ export default function ShareHubChart({
           low: d.low,
           close: d.close
         })));
+
+        // Pattern Markers on Candlesticks
+        if (showPatterns && patternMarkers.length > 0) {
+          try {
+            mainSeries.setMarkers(patternMarkers);
+          } catch (_) {}
+        }
       } else {
-        // Professional international standard AreaSeries (TradingView, Webull, Apple Stocks, Robinhood)
         const firstPoint = processedChartData[0];
         const lastPoint = processedChartData[processedChartData.length - 1];
         const firstVal = Number(firstPoint?.close ?? firstPoint?.value ?? 0);
@@ -618,17 +976,9 @@ export default function ShareHubChart({
           ? (stock?.change != null ? (Number(stock.change) >= 0) : (prevCloseVal > 0 ? lastVal >= prevCloseVal : lastVal >= firstVal))
           : (lastVal >= firstVal);
 
-        const bullLine = '#10B981';
-        const bullTop = 'rgba(16, 185, 129, 0.28)';
-        const bullBottom = 'rgba(16, 185, 129, 0.00)';
-
-        const bearLine = '#F43F5E';
-        const bearTop = 'rgba(244, 63, 94, 0.28)';
-        const bearBottom = 'rgba(244, 63, 94, 0.00)';
-
-        const lineColor = isBull ? bullLine : bearLine;
-        const topColor = isBull ? bullTop : bearTop;
-        const bottomColor = isBull ? bullBottom : bearBottom;
+        const lineColor = isBull ? '#10B981' : '#F43F5E';
+        const topColor = isBull ? 'rgba(16, 185, 129, 0.28)' : 'rgba(244, 63, 94, 0.28)';
+        const bottomColor = isBull ? 'rgba(16, 185, 129, 0.00)' : 'rgba(244, 63, 94, 0.00)';
 
         mainSeries = chart.addSeries(AreaSeries, {
           lineColor,
@@ -648,7 +998,180 @@ export default function ShareHubChart({
       }
       mainSeriesRef.current = mainSeries;
 
-      // Add Previous Close Baseline if available (Standard in Apple Stocks, TradingView & Webull)
+      // 2. Volume Series & Vol SMA20
+      const hasVolume = processedChartData.some(d => (Number(d.volume) || 0) > 0);
+      if (hasVolume) {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume_scale',
+        });
+        chart.priceScale('volume_scale').applyOptions({
+          scaleMargins: { top: volTop, bottom: volBottom }
+        });
+        volumeSeries.setData(processedChartData.map(d => ({
+          time: d.time,
+          value: Number(d.volume) || 0,
+          color: d.close >= d.open ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'
+        })));
+        volumeSeriesRef.current = volumeSeries;
+
+        if (showVolSma && volSmaData.length > 0) {
+          const volSmaSeries = chart.addSeries(LineSeries, {
+            color: '#fbbf24',
+            lineWidth: 1.5,
+            priceScaleId: 'volume_scale',
+            lastValueVisible: false,
+            title: 'Vol SMA20'
+          });
+          volSmaSeries.setData(volSmaData);
+        }
+      }
+
+      // 3. EMA Overlays
+      if (showEma20 && ema20Data.length > 0) {
+        const ema20Series = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 1.5, title: 'EMA 20' });
+        ema20Series.setData(ema20Data);
+      }
+      if (showEma50 && ema50Data.length > 0) {
+        const ema50Series = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1.5, title: 'EMA 50' });
+        ema50Series.setData(ema50Data);
+      }
+      if (showEma200 && ema200Data.length > 0) {
+        const ema200Series = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, title: 'EMA 200' });
+        ema200Series.setData(ema200Data);
+      }
+
+      // 4. Bollinger Bands Overlays
+      if (showBollinger && bollingerData.upper.length > 0) {
+        const bbU = chart.addSeries(LineSeries, { color: 'rgba(56, 189, 248, 0.65)', lineWidth: 1, lineStyle: LineStyle.Dotted, title: 'BB Upper' });
+        bbU.setData(bollingerData.upper);
+        const bbL = chart.addSeries(LineSeries, { color: 'rgba(56, 189, 248, 0.65)', lineWidth: 1, lineStyle: LineStyle.Dotted, title: 'BB Lower' });
+        bbL.setData(bollingerData.lower);
+        const bbM = chart.addSeries(LineSeries, { color: 'rgba(148, 163, 184, 0.5)', lineWidth: 1, lineStyle: LineStyle.Dashed, title: 'BB Mid' });
+        bbM.setData(bollingerData.middle);
+      }
+
+      // 5. VWAP Overlay
+      if (showVwap && vwapData.length > 0) {
+        const vwapSeries = chart.addSeries(LineSeries, { color: '#fbbf24', lineWidth: 1.5, lineStyle: LineStyle.Dashed, title: 'VWAP' });
+        vwapSeries.setData(vwapData);
+      }
+
+      // 6. Pivot Points & Support/Resistance Lines
+      if (showPivots && pivotData) {
+        const pivotLines = [
+          { price: pivotData.P, color: '#e2e8f0', title: `PP: ${pivotData.P}` },
+          { price: pivotData.R1, color: '#34d399', title: `R1: ${pivotData.R1}` },
+          { price: pivotData.R2, color: '#6ee7b7', title: `R2: ${pivotData.R2}` },
+          { price: pivotData.S1, color: '#fb7185', title: `S1: ${pivotData.S1}` },
+          { price: pivotData.S2, color: '#fda4af', title: `S2: ${pivotData.S2}` },
+        ];
+        pivotLines.forEach(pl => {
+          if (pl.price > 0) {
+            mainSeries.createPriceLine({
+              price: pl.price,
+              color: pl.color,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: pl.title
+            });
+          }
+        });
+      }
+
+      // 7. Fibonacci Retracements
+      if (showFib && fibData) {
+        const fibLines = [
+          { price: fibData.level_0, color: '#c4b5fd', title: `Fib 0%: ${fibData.level_0}` },
+          { price: fibData.level_236, color: '#a78bfa', title: `Fib 23.6%: ${fibData.level_236}` },
+          { price: fibData.level_382, color: '#8b5cf6', title: `Fib 38.2%: ${fibData.level_382}` },
+          { price: fibData.level_500, color: '#7c3aed', title: `Fib 50%: ${fibData.level_500}` },
+          { price: fibData.level_618, color: '#6d28d9', title: `Fib 61.8%: ${fibData.level_618}` },
+          { price: fibData.level_1000, color: '#4c1d95', title: `Fib 100%: ${fibData.level_1000}` },
+        ];
+        fibLines.forEach(fl => {
+          if (fl.price > 0) {
+            mainSeries.createPriceLine({
+              price: fl.price,
+              color: fl.color,
+              lineWidth: 1,
+              lineStyle: LineStyle.LargeDashed,
+              axisLabelVisible: true,
+              title: fl.title
+            });
+          }
+        });
+      }
+
+      // 8. 52-Week High / Low Markers
+      if (show52W) {
+        if (high52w > 0) {
+          mainSeries.createPriceLine({
+            price: high52w,
+            color: '#34d399',
+            lineWidth: 2,
+            lineStyle: LineStyle.SparseDotted,
+            axisLabelVisible: true,
+            title: `52W High: Rs. ${high52w}`
+          });
+        }
+        if (low52w > 0) {
+          mainSeries.createPriceLine({
+            price: low52w,
+            color: '#fb7185',
+            lineWidth: 2,
+            lineStyle: LineStyle.SparseDotted,
+            axisLabelVisible: true,
+            title: `52W Low: Rs. ${low52w}`
+          });
+        }
+      }
+
+      // 9. RSI Sub-Pane
+      if (showRsi && rsiData.length > 0) {
+        const rsiSeries = chart.addSeries(LineSeries, {
+          color: '#f472b6',
+          lineWidth: 1.5,
+          title: 'RSI(14)',
+          priceScaleId: 'rsi_scale',
+          priceFormat: { type: 'price', precision: 1, minMove: 0.1 }
+        });
+        chart.priceScale('rsi_scale').applyOptions({
+          scaleMargins: { top: rsiTop, bottom: rsiBottom },
+          autoScale: false,
+        });
+        rsiSeries.setData(rsiData);
+        rsiSeries.createPriceLine({ price: 70, color: 'rgba(251, 113, 133, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'OB 70' });
+        rsiSeries.createPriceLine({ price: 30, color: 'rgba(52, 211, 153, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'OS 30' });
+        rsiSeries.createPriceLine({ price: 50, color: 'rgba(148, 163, 184, 0.25)', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: '' });
+      }
+
+      // 10. MACD Sub-Pane
+      if (showMacd) {
+        if (macdArrays.histogram.length > 0) {
+          const macdHist = chart.addSeries(HistogramSeries, {
+            priceFormat: { type: 'price', precision: 3, minMove: 0.001 },
+            priceScaleId: 'macd_scale',
+            title: 'MACD Hist'
+          });
+          chart.priceScale('macd_scale').applyOptions({
+            scaleMargins: { top: macdTop, bottom: macdBottom },
+            autoScale: true,
+          });
+          macdHist.setData(macdArrays.histogram);
+        }
+        if (macdArrays.macdLine.length > 0) {
+          const macdLine = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 1.5, title: 'MACD', priceScaleId: 'macd_scale', lastValueVisible: false });
+          macdLine.setData(macdArrays.macdLine);
+        }
+        if (macdArrays.signalLine.length > 0) {
+          const signalLine = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 1.5, title: 'Signal', priceScaleId: 'macd_scale', lastValueVisible: false });
+          signalLine.setData(macdArrays.signalLine);
+        }
+      }
+
+      // Previous Close Baseline
       const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
       if (prevCloseVal && prevCloseVal > 0 && isTrulyIntraday) {
         try {
@@ -663,20 +1186,88 @@ export default function ShareHubChart({
         } catch (_) {}
       }
 
-      // Volume Series
-      const hasVolume = processedChartData.some(d => (Number(d.volume) || 0) > 0);
-      if (hasVolume) {
-        const volumeSeries = chart.addSeries(HistogramSeries, {
-          priceFormat: { type: 'volume' },
-          priceScaleId: '',
-        });
-        volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-        volumeSeries.setData(processedChartData.map(d => ({
-          time: d.time,
-          value: Number(d.volume) || 0,
-          color: d.close >= d.open ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'
-        })));
-        volumeSeriesRef.current = volumeSeries;
+      // 11. Volume Profile Point of Control (POC)
+      if (showPoc && pocPrice && pocPrice > 0) {
+        try {
+          mainSeries.createPriceLine({
+            price: pocPrice,
+            color: '#f59e0b',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `POC: Rs. ${pocPrice}`
+          });
+        } catch (_) {}
+      }
+
+      // 12. Institutional Broker VWAP (Top Accumulators Cost Basis)
+      if (showInstVwap && instVwap && instVwap > 0) {
+        try {
+          mainSeries.createPriceLine({
+            price: instVwap,
+            color: '#06b6d4',
+            lineWidth: 2,
+            lineStyle: LineStyle.LargeDashed,
+            axisLabelVisible: true,
+            title: `Inst. VWAP: Rs. ${instVwap}`
+          });
+        } catch (_) {}
+      }
+
+      // 13. Live Trade Plan Corridors
+      if (showTradePlan && tradePlanCorridor) {
+        try {
+          if (tradePlanCorridor.t2) {
+            mainSeries.createPriceLine({
+              price: tradePlanCorridor.t2,
+              color: '#10b981',
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: `Target 2: Rs. ${tradePlanCorridor.t2}`
+            });
+          }
+          if (tradePlanCorridor.t1) {
+            mainSeries.createPriceLine({
+              price: tradePlanCorridor.t1,
+              color: '#34d399',
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: `Target 1: Rs. ${tradePlanCorridor.t1}`
+            });
+          }
+          if (tradePlanCorridor.entry) {
+            mainSeries.createPriceLine({
+              price: tradePlanCorridor.entry,
+              color: '#38bdf8',
+              lineWidth: 1.5,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: `Entry: Rs. ${tradePlanCorridor.entry}`
+            });
+          }
+          if (tradePlanCorridor.entryMax) {
+            mainSeries.createPriceLine({
+              price: tradePlanCorridor.entryMax,
+              color: '#60a5fa',
+              lineWidth: 1.5,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `Breakout Pivot: Rs. ${tradePlanCorridor.entryMax}`
+            });
+          }
+          if (tradePlanCorridor.sl) {
+            mainSeries.createPriceLine({
+              price: tradePlanCorridor.sl,
+              color: '#ef4444',
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: `Stop Loss: Rs. ${tradePlanCorridor.sl}`
+            });
+          }
+        } catch (_) {}
       }
 
       // Crosshair HUD Subscriber
@@ -687,18 +1278,23 @@ export default function ShareHubChart({
         }
         const sData = param.seriesData.get(mainSeries);
         if (sData) {
+          const matchingEma20 = ema20Data.find(e => e.time === param.time)?.value ?? null;
+          const matchingRsi = rsiData.find(r => r.time === param.time)?.value ?? null;
+          const matchingVwap = vwapData.find(v => v.time === param.time)?.value ?? null;
           setHoverData({
             time: param.time,
             open: sData.open ?? sData.value,
             high: sData.high ?? sData.value,
             low: sData.low ?? sData.value,
             close: sData.close ?? sData.value,
-            value: sData.value ?? sData.close
+            value: sData.value ?? sData.close,
+            ema20: matchingEma20,
+            rsi: matchingRsi,
+            vwap: matchingVwap
           });
         }
       });
 
-      // Fit content unconditionally: guarantees the first bar on the left is displayed
       chart.timeScale().fitContent();
       requestAnimationFrame(() => {
         if (chartRef.current) {
@@ -707,12 +1303,11 @@ export default function ShareHubChart({
       });
       chartRef.current = chart;
 
-      // Window Resize Observer: re-fits content when container expands into view
       const observer = new ResizeObserver(entries => {
         if (!entries || entries.length === 0) return;
         const { width } = entries[0].contentRect;
         if (chartRef.current && width > 0) {
-          chartRef.current.applyOptions({ width, height });
+          chartRef.current.applyOptions({ width, height: dynamicHeight });
           chartRef.current.timeScale().fitContent();
         }
       });
@@ -729,7 +1324,44 @@ export default function ShareHubChart({
       console.warn('[ShareHubChart] Render failed:', err);
       setError('Unable to render chart: ' + (err.message || 'unknown error'));
     }
-  }, [processedChartData, activeMode, isTrulyIntraday, height]);
+  }, [
+    processedChartData,
+    activeMode,
+    isTrulyIntraday,
+    dynamicHeight,
+    showEma20,
+    showEma50,
+    showEma200,
+    showBollinger,
+    showVwap,
+    showPivots,
+    showFib,
+    show52W,
+    showPatterns,
+    showRsi,
+    showMacd,
+    showVolSma,
+    showPoc,
+    pocPrice,
+    showInstVwap,
+    instVwap,
+    showTradePlan,
+    tradePlanCorridor,
+    ema20Data,
+    ema50Data,
+    ema200Data,
+    bollingerData,
+    vwapData,
+    volSmaData,
+    rsiData,
+    macdArrays,
+    pivotData,
+    fibData,
+    high52w,
+    low52w,
+    patternMarkers,
+    subPaneCount
+  ]);
 
   // Active HUD Price & Metadata
   const latestBar = processedChartData[processedChartData.length - 1];
@@ -746,17 +1378,13 @@ export default function ShareHubChart({
     value: authoritativeLtp
   } : null);
 
-  // Compute authentic session change and percentage for the HUD
   const hudMetrics = useMemo(() => {
     if (!activeHud) return { change: 0, pChange: 0, isBull: true };
-
-    // When not actively hovering over historical candles, strictly match authoritative parent telemetry
     if (!hoverData && stock && stock.change != null && stock.pChange != null && !isNaN(Number(stock.change))) {
       const c = Number(stock.change);
       const pc = Number(stock.pChange);
       return { change: c, pChange: pc, isBull: c >= 0 };
     }
-
     const currentVal = Number(activeHud.close ?? activeHud.value ?? authoritativeLtp ?? 0);
     const prevCloseVal = Number(stock?.prevClose || stock?.previousClose || (stock?.ltp != null && stock?.change != null ? stock.ltp - stock.change : null));
     const firstPointVal = Number(processedChartData[0]?.close ?? processedChartData[0]?.value ?? 0);
@@ -770,7 +1398,6 @@ export default function ShareHubChart({
       const pct = +((diff / baseline) * 100).toFixed(2);
       return { change: diff, pChange: pct, isBull: diff >= 0 };
     }
-
     const fallbackChange = Number(stock?.change ?? 0);
     const fallbackPct = Number(stock?.pChange ?? 0);
     return { change: fallbackChange, pChange: fallbackPct, isBull: fallbackChange >= 0 };
@@ -778,7 +1405,6 @@ export default function ShareHubChart({
 
   const isUp = hudMetrics.isBull;
 
-  // Format time/date label for the HUD bar
   const hudTimeLabel = useMemo(() => {
     if (!activeHud || !activeHud.time) return '';
     if (typeof activeHud.time === 'string') return activeHud.time;
@@ -787,6 +1413,47 @@ export default function ShareHubChart({
     }
     return formatNptFullDate(activeHud.time);
   }, [activeHud, isTrulyIntraday]);
+
+  // ── Analyst Predictive Verdict & Telemetry ──
+  const trendVerdict = useMemo(() => {
+    const lastEma20 = ema20Data[ema20Data.length - 1]?.value;
+    const lastEma50 = ema50Data[ema50Data.length - 1]?.value;
+    const lastEma200 = ema200Data[ema200Data.length - 1]?.value;
+    const ltp = authoritativeLtp;
+
+    if (lastEma20 && lastEma50 && lastEma200) {
+      if (lastEma20 > lastEma50 && lastEma50 > lastEma200 && ltp >= lastEma20) {
+        return { label: 'Strong Bullish (Golden Alignment)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
+      }
+      if (lastEma20 < lastEma50 && lastEma50 < lastEma200 && ltp <= lastEma20) {
+        return { label: 'Strong Bearish (Death Alignment)', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)' };
+      }
+    }
+    if (lastEma20 && lastEma50) {
+      if (lastEma20 > lastEma50) return { label: 'Bullish Bias (EMA20 > 50)', color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' };
+      if (lastEma20 < lastEma50) return { label: 'Bearish Bias (EMA20 < 50)', color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' };
+    }
+    return { label: 'Consolidation / Neutral', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' };
+  }, [ema20Data, ema50Data, ema200Data, authoritativeLtp]);
+
+  const rvolBadge = useMemo(() => {
+    if (rvol > 0) {
+      if (rvol >= 1.5) return { text: `🔥 RVOL ${rvol.toFixed(2)}x (Institutional Surge)`, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+      if (rvol <= 0.6) return { text: `💤 RVOL ${rvol.toFixed(2)}x (Dry-up)`, color: '#64748b', bg: 'rgba(100, 116, 139, 0.15)' };
+      return { text: `RVOL ${rvol.toFixed(2)}x`, color: '#94a3b8', bg: 'rgba(255, 255, 255, 0.05)' };
+    }
+    return null;
+  }, [rvol]);
+
+  const rsiBadge = useMemo(() => {
+    if (currentRsi == null) return null;
+    if (currentRsi >= 70) return { text: `RSI ${currentRsi} (Overbought ⚠️)`, color: '#fb7185', bg: 'rgba(251, 113, 133, 0.15)' };
+    if (currentRsi <= 30) return { text: `RSI ${currentRsi} (Oversold 🟢)`, color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)' };
+    if (currentRsi >= 50) return { text: `RSI ${currentRsi} (Bullish Momentum)`, color: '#60a5fa', bg: 'rgba(96, 165, 250, 0.15)' };
+    return { text: `RSI ${currentRsi} (Bearish Flow)`, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)' };
+  }, [currentRsi]);
+
+  const latestPattern = patternMarkers.length > 0 ? patternMarkers[patternMarkers.length - 1] : null;
 
   return (
     <div style={{
@@ -848,28 +1515,22 @@ export default function ShareHubChart({
             {hudTimeLabel && (
               <span style={{ fontSize: 12, color: '#64748b' }}>({hudTimeLabel})</span>
             )}
-            {/* C1: Adjusted prices indicator */}
-            {Array.isArray(rawHistory) && rawHistory.some(c => c.isAdjusted) && (
-              <span style={{
-                fontSize: 12, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
-                color: '#818cf8'
-              }} title="Prices back-adjusted for bonus shares, rights issues, and cash dividends">
-                Adj. prices
-              </span>
+            {activeHud.ema20 != null && (
+              <span style={{ color: '#38bdf8', fontSize: 11 }}>EMA20: {activeHud.ema20}</span>
             )}
-            {/* Weekly view indicator */}
-            {activeTf === 'WEEKLY' && (
-              <span style={{
-                fontSize: 12, fontWeight: 700, padding: '1px 6px', borderRadius: 8,
-                background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)',
-                color: '#38bdf8'
-              }}>
-                Weekly candles
-              </span>
+            {activeHud.vwap != null && (
+              <span style={{ color: '#fbbf24', fontSize: 11 }}>VWAP: {activeHud.vwap}</span>
+            )}
+            {instVwap != null && (
+              <span style={{ color: '#06b6d4', fontSize: 11, fontWeight: 700 }}>Inst. VWAP: Rs. {instVwap}</span>
+            )}
+            {pocPrice != null && (
+              <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>POC: Rs. {pocPrice}</span>
+            )}
+            {activeHud.rsi != null && (
+              <span style={{ color: '#f472b6', fontSize: 11 }}>RSI: {activeHud.rsi}</span>
             )}
           </div>
-
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#94a3b8' }}>
             {activeHud.open != null && (
@@ -888,7 +1549,429 @@ export default function ShareHubChart({
         </div>
       )}
 
-      {/* ── Loading Overlay: only shown when no data is rendered yet ── */}
+      {/* ── At-A-Glance Predictive Analyst Telemetry Bar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 6,
+        padding: '6px 8px',
+        background: '#0d131f',
+        borderRadius: 8,
+        border: '1px solid rgba(255, 255, 255, 0.06)',
+        marginBottom: 8,
+        fontSize: 11.5
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {/* Trend verdict */}
+          <span style={{
+            padding: '2px 8px',
+            borderRadius: 6,
+            fontWeight: 800,
+            color: trendVerdict.color,
+            background: trendVerdict.bg,
+            border: `1px solid ${trendVerdict.color}44`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4
+          }}>
+            <Sparkles size={11} />
+            {trendVerdict.label}
+          </span>
+
+          {/* Trade Plan Setup Score & Verdict Badge */}
+          {tradePlanCorridor && (
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: 6,
+              fontWeight: 800,
+              color: tradePlanCorridor.setupScore >= 70 ? '#10b981' : tradePlanCorridor.setupScore >= 50 ? '#38bdf8' : '#fb923c',
+              background: tradePlanCorridor.setupScore >= 70 ? 'rgba(16, 185, 129, 0.15)' : tradePlanCorridor.setupScore >= 50 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(251, 146, 60, 0.15)',
+              border: `1px solid ${tradePlanCorridor.setupScore >= 70 ? '#10b98144' : tradePlanCorridor.setupScore >= 50 ? '#38bdf844' : '#fb923c44'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              <span>🎯 Setup: {tradePlanCorridor.setupScore}/100</span>
+              {tradePlanCorridor.verdict && <span style={{ opacity: 0.85 }}>• {tradePlanCorridor.verdict}</span>}
+            </span>
+          )}
+
+          {/* Broker Accumulation / Distribution Status */}
+          {brokerAnalysis && (brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias) && (() => {
+            const sig = brokerAnalysis.adSignal || brokerAnalysis.smartMoneyBias;
+            const isAcc = String(sig).includes('Accum') || String(sig).includes('Cornering');
+            const isDist = String(sig).includes('Dist') || String(sig).includes('Offloading');
+            const col = isAcc ? '#10b981' : isDist ? '#f43f5e' : '#94a3b8';
+            return (
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: 6,
+                fontWeight: 800,
+                color: col,
+                background: col + '18',
+                border: `1px solid ${col}44`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <span>🏦 Broker: {sig}</span>
+                {Number(brokerAnalysis.bcr3BuyPct) > 0 && <span style={{ fontSize: 10.5, opacity: 0.85 }}>({Number(brokerAnalysis.bcr3BuyPct).toFixed(0)}% BCR3)</span>}
+              </span>
+            );
+          })()}
+
+          {/* RSI Badge */}
+          {rsiBadge && (
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: 6,
+              fontWeight: 800,
+              color: rsiBadge.color,
+              background: rsiBadge.bg,
+              border: `1px solid ${rsiBadge.color}44`,
+              fontFamily: 'var(--font-mono, monospace)'
+            }}>
+              {rsiBadge.text}
+            </span>
+          )}
+
+          {/* MACD Hist Badge */}
+          {currentMacdHist != null && (
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: 6,
+              fontWeight: 800,
+              color: currentMacdHist >= 0 ? '#34d399' : '#fb7185',
+              background: currentMacdHist >= 0 ? 'rgba(52, 211, 153, 0.12)' : 'rgba(251, 113, 133, 0.12)',
+              border: `1px solid ${currentMacdHist >= 0 ? '#34d399' : '#fb7185'}44`,
+              fontFamily: 'var(--font-mono, monospace)'
+            }}>
+              MACD {currentMacdHist >= 0 ? '▲ +' : '▼ '}{currentMacdHist.toFixed(2)}
+            </span>
+          )}
+
+          {/* RVOL Badge */}
+          {rvolBadge && (
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: 6,
+              fontWeight: 800,
+              color: rvolBadge.color,
+              background: rvolBadge.bg,
+              border: `1px solid ${rvolBadge.color}44`
+            }}>
+              {rvolBadge.text}
+            </span>
+          )}
+
+          {/* Latest Pattern Alert */}
+          {latestPattern && (
+            <span style={{
+              padding: '2px 8px',
+              borderRadius: 6,
+              fontWeight: 800,
+              color: latestPattern.color,
+              background: latestPattern.color + '18',
+              border: `1px solid ${latestPattern.color}44`
+            }}>
+              🕯 {latestPattern.text}
+            </span>
+          )}
+        </div>
+
+        {/* Trade Plan / Pivot Support & Resistance Corridors */}
+        {tradePlanCorridor ? (
+          <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8', flexWrap: 'wrap' }}>
+            {tradePlanCorridor.t1 && <span>T1: <strong style={{ color: '#34d399' }}>Rs. {tradePlanCorridor.t1}</strong></span>}
+            {tradePlanCorridor.t2 && <span>T2: <strong style={{ color: '#10b981' }}>Rs. {tradePlanCorridor.t2}</strong></span>}
+            {tradePlanCorridor.sl && <span>SL: <strong style={{ color: '#ef4444' }}>Rs. {tradePlanCorridor.sl}</strong></span>}
+            {tradePlanCorridor.rrRatio && <span>R:R: <strong style={{ color: '#38bdf8' }}>1:{Number(tradePlanCorridor.rrRatio).toFixed(1)}</strong></span>}
+          </div>
+        ) : pivotData ? (
+          <div style={{ display: 'flex', gap: 8, fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8' }}>
+            <span>Target (R1): <strong style={{ color: '#34d399' }}>Rs. {pivotData.R1}</strong></span>
+            <span>Stop (S1): <strong style={{ color: '#fb7185' }}>Rs. {pivotData.S1}</strong></span>
+          </div>
+        ) : null}
+      </div>
+
+      {/* ── Interactive Indicator Toolbar ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 5,
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
+        padding: '2px 0 6px 0',
+        marginBottom: 4,
+        flexWrap: 'wrap'
+      }}>
+        {/* Candle / Line toggle */}
+        <button
+          type="button"
+          onClick={() => setActiveMode(activeMode === 'candle' ? 'line' : 'candle')}
+          style={{
+            padding: '3px 8px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: '1px solid rgba(255,255,255,0.1)',
+            background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.25)' : 'rgba(255,255,255,0.04)',
+            color: activeMode === 'candle' ? '#60a5fa' : '#94a3b8',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4
+          }}
+        >
+          {activeMode === 'candle' ? <BarChart2 size={12} /> : <TrendingUp size={12} />}
+          {activeMode === 'candle' ? 'Candles' : 'Line'}
+        </button>
+
+        {/* Trade Plan Corridor Toggle */}
+        {tradePlanCorridor && (
+          <button
+            type="button"
+            onClick={() => setShowTradePlan(v => !v)}
+            style={{
+              padding: '3px 8px',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: showTradePlan ? 800 : 600,
+              cursor: 'pointer',
+              border: showTradePlan ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+              background: showTradePlan ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: showTradePlan ? '#10b981' : '#64748b'
+            }}
+          >
+            🎯 Trade Plan
+          </button>
+        )}
+
+        {/* Whale Cost & POC Combined Pill */}
+        {(instVwap != null || pocPrice != null) && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !(showInstVwap || showPoc);
+              setShowInstVwap(next);
+              setShowPoc(next);
+            }}
+            style={{
+              padding: '3px 8px',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: (showInstVwap || showPoc) ? 800 : 600,
+              cursor: 'pointer',
+              border: (showInstVwap || showPoc) ? '1px solid #06b6d4' : '1px solid rgba(255,255,255,0.06)',
+              background: (showInstVwap || showPoc) ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255,255,255,0.03)',
+              color: (showInstVwap || showPoc) ? '#06b6d4' : '#64748b'
+            }}
+          >
+            🐋 Whale Cost & POC
+          </button>
+        )}
+
+        {/* EMA Toggles */}
+        <button
+          type="button"
+          onClick={() => setShowEma20(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showEma20 ? 800 : 600,
+            cursor: 'pointer',
+            border: showEma20 ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+            background: showEma20 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showEma20 ? '#38bdf8' : '#64748b'
+          }}
+        >
+          EMA 20
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowEma50(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showEma50 ? 800 : 600,
+            cursor: 'pointer',
+            border: showEma50 ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.06)',
+            background: showEma50 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showEma50 ? '#f59e0b' : '#64748b'
+          }}
+        >
+          EMA 50
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowEma200(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showEma200 ? 800 : 600,
+            cursor: 'pointer',
+            border: showEma200 ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.06)',
+            background: showEma200 ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showEma200 ? '#a855f7' : '#64748b'
+          }}
+        >
+          EMA 200
+        </button>
+
+        {/* VWAP Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowVwap(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showVwap ? 800 : 600,
+            cursor: 'pointer',
+            border: showVwap ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.06)',
+            background: showVwap ? 'rgba(251, 191, 36, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showVwap ? '#fbbf24' : '#64748b'
+          }}
+        >
+          VWAP
+        </button>
+
+        {/* Bollinger Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowBollinger(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showBollinger ? 800 : 600,
+            cursor: 'pointer',
+            border: showBollinger ? '1px solid #22d3ee' : '1px solid rgba(255,255,255,0.06)',
+            background: showBollinger ? 'rgba(34, 211, 238, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showBollinger ? '#22d3ee' : '#64748b'
+          }}
+        >
+          Bollinger
+        </button>
+
+        {/* Pivots Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowPivots(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showPivots ? 800 : 600,
+            cursor: 'pointer',
+            border: showPivots ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.06)',
+            background: showPivots ? 'rgba(203, 213, 225, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showPivots ? '#ffffff' : '#64748b'
+          }}
+        >
+          Pivots
+        </button>
+
+        {/* Fib Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowFib(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showFib ? 800 : 600,
+            cursor: 'pointer',
+            border: showFib ? '1px solid #c084fc' : '1px solid rgba(255,255,255,0.06)',
+            background: showFib ? 'rgba(192, 132, 252, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showFib ? '#c084fc' : '#64748b'
+          }}
+        >
+          Fibonacci
+        </button>
+
+        {/* 52W Toggle */}
+        <button
+          type="button"
+          onClick={() => setShow52W(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: show52W ? 800 : 600,
+            cursor: 'pointer',
+            border: show52W ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.06)',
+            background: show52W ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: show52W ? '#10b981' : '#64748b'
+          }}
+        >
+          52W H/L
+        </button>
+
+        {/* Patterns Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowPatterns(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showPatterns ? 800 : 600,
+            cursor: 'pointer',
+            border: showPatterns ? '1px solid #fb923c' : '1px solid rgba(255,255,255,0.06)',
+            background: showPatterns ? 'rgba(251, 146, 60, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showPatterns ? '#fb923c' : '#64748b'
+          }}
+        >
+          🕯 Patterns
+        </button>
+
+        {/* RSI Sub-pane Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowRsi(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showRsi ? 800 : 600,
+            cursor: 'pointer',
+            border: showRsi ? '1px solid #f472b6' : '1px solid rgba(255,255,255,0.06)',
+            background: showRsi ? 'rgba(244, 114, 182, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showRsi ? '#f472b6' : '#64748b'
+          }}
+        >
+          RSI Sub-Pane
+        </button>
+
+        {/* MACD Sub-pane Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowMacd(v => !v)}
+          style={{
+            padding: '3px 7px',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: showMacd ? 800 : 600,
+            cursor: 'pointer',
+            border: showMacd ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+            background: showMacd ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+            color: showMacd ? '#38bdf8' : '#64748b'
+          }}
+        >
+          MACD Sub-Pane
+        </button>
+      </div>
+
+      {/* ── Loading Overlay ── */}
       {loading && activeDataset.length === 0 && (
         <div style={{
           position: 'absolute',
@@ -931,12 +2014,12 @@ export default function ShareHubChart({
         ref={chartContainerRef}
         style={{
           width: '100%',
-          height: String(height) + 'px',
+          height: String(dynamicHeight) + 'px',
           position: 'relative'
         }}
       />
 
-      {/* ── Interactive Timeframe & Mode Control Bar ── */}
+      {/* ── Interactive Timeframe Bar & Mode Switcher ── */}
       {showTimeframeBar && (
         <div style={{
           display: 'flex',
@@ -950,7 +2033,7 @@ export default function ShareHubChart({
           flexWrap: 'wrap',
           gap: 6
         }}>
-          {/* Timeframe Pills: 1D | 1W | 1M | 3M | 6M | 1Y | ALL */}
+          {/* Timeframe Pills */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {TIMEFRAMES.map(tf => {
               const isActive = activeTf === tf.id;
@@ -978,52 +2061,8 @@ export default function ShareHubChart({
             })}
           </div>
 
-          {/* Mode & Action Controls: Line | Candle | Fullscreen */}
+          {/* Mode & Action Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* Mode Switcher */}
-            <div style={{
-              display: 'flex',
-              background: 'rgba(255, 255, 255, 0.04)',
-              borderRadius: 6,
-              padding: 2,
-              border: '1px solid rgba(255, 255, 255, 0.05)'
-            }}>
-              <button
-                type="button"
-                onClick={() => setActiveMode('line')}
-                title="Line Chart"
-                style={{
-                  background: activeMode === 'line' ? 'rgba(56, 117, 246, 0.25)' : 'transparent',
-                  color: activeMode === 'line' ? '#60a5fa' : '#64748b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '3px 6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <TrendingUp style={{ width: 12, height: 12 }} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveMode('candle')}
-                title="Candlestick Chart"
-                style={{
-                  background: activeMode === 'candle' ? 'rgba(56, 117, 246, 0.25)' : 'transparent',
-                  color: activeMode === 'candle' ? '#60a5fa' : '#64748b',
-                  border: 'none',
-                  borderRadius: 4,
-                  padding: '3px 6px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-              >
-                <BarChart2 style={{ width: 12, height: 12 }} />
-              </button>
-            </div>
-
             {/* Fullscreen Toggle */}
             {onToggleFullscreen && (
               <button
@@ -1045,6 +2084,39 @@ export default function ShareHubChart({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Pattern Detected Footer Strip ── */}
+      {showPatterns && patternMarkers.length > 0 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginTop: 6,
+          padding: '4px 8px',
+          background: 'rgba(255,255,255,0.02)',
+          borderRadius: 8,
+          fontSize: 11,
+          flexWrap: 'wrap'
+        }}>
+          <span style={{ color: '#64748b', fontWeight: 700 }}>Signals:</span>
+          {patternMarkers.slice(-5).map((m, i) => (
+            <span
+              key={i}
+              style={{
+                padding: '1px 6px',
+                borderRadius: 4,
+                color: m.color,
+                background: m.color + '15',
+                border: `1px solid ${m.color}33`,
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: 10.5
+              }}
+            >
+              {m.shape === 'arrowUp' ? '▲' : '▼'} {m.text} ({String(m.time).slice(5)})
+            </span>
+          ))}
         </div>
       )}
 
@@ -1070,7 +2142,7 @@ export default function ShareHubChart({
             }}
           >
             <span>📊</span>
-            <span>View Advanced Chart &gt;</span>
+            <span>Open Advanced Fullscreen TradingView Terminal &gt;</span>
           </button>
         </div>
       )}

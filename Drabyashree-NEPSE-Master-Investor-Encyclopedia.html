@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Drabyashree NEPSE — Master Investor Encyclopedia</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 15mm 18mm 15mm;
+      @bottom-right {
+        content: "Page " counter(page);
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 8.5pt;
+        color: #64748b;
+      }
+      @bottom-left {
+        content: "Drabyashree NEPSE — Master Investor Encyclopedia";
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 8.5pt;
+        color: #64748b;
+      }
+    }
+    
+    *, *:before, *:after {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Nirmala UI', 'Mangal', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.55;
+      color: #1e293b;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Cover Page */
+    .cover-page {
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 90vh;
+      background: linear-gradient(145deg, #090d16 0%, #111827 50%, #1e293b 100%);
+      color: #ffffff;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    }
+
+    .cover-badge {
+      display: inline-block;
+      align-self: flex-start;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      font-size: 9pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 5px 14px;
+      border-radius: 20px;
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 28pt;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.5px;
+      margin: 0 0 12px 0;
+      background: linear-gradient(90deg, #f8fafc, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .cover-subtitle {
+      font-size: 15pt;
+      font-weight: 500;
+      color: #94a3b8;
+      margin: 0 0 28px 0;
+      border-left: 3px solid #f59e0b;
+      padding-left: 14px;
+    }
+
+    .cover-desc {
+      font-size: 10pt;
+      line-height: 1.6;
+      color: #cbd5e1;
+      max-width: 640px;
+      margin-bottom: 35px;
+    }
+
+    .cover-meta {
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      padding-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 8.5pt;
+      color: #94a3b8;
+    }
+
+    .cover-meta b {
+      color: #f1f5f9;
+    }
+
+    /* Typography & Headings */
+    h1 {
+      font-size: 20pt;
+      font-weight: 800;
+      color: #0f172a;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 8px;
+      margin-top: 30px;
+      margin-bottom: 14px;
+    }
+
+    h2 {
+      font-size: 14pt;
+      font-weight: 700;
+      color: #0f172a;
+      border-left: 4px solid #2563eb;
+      padding-left: 10px;
+      margin-top: 26px;
+      margin-bottom: 12px;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      font-size: 11.5pt;
+      font-weight: 600;
+      color: #1e293b;
+      margin-top: 18px;
+      margin-bottom: 8px;
+      page-break-after: avoid;
+    }
+
+    h4 {
+      font-size: 10pt;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 14px;
+      margin-bottom: 6px;
+      page-break-after: avoid;
+    }
+
+    p {
+      margin: 0 0 10px 0;
+    }
+
+    ul, ol {
+      margin: 0 0 12px 0;
+      padding-left: 22px;
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid #e2e8f0;
+      margin: 22px 0;
+    }
+
+    /* Table of Contents */
+    .toc {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 25px;
+    }
+
+    .toc ul {
+      list-style-type: none;
+      padding-left: 0;
+    }
+
+    .toc li {
+      margin-bottom: 6px;
+    }
+
+    .toc a {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 9.5pt;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 20px 0;
+      font-size: 8.5pt;
+      page-break-inside: auto;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    tr {
+      page-break-inside: avoid;
+      page-break-after: auto;
+    }
+
+    thead {
+      display: table-header-group;
+    }
+
+    th {
+      background-color: #0f172a;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: left;
+      padding: 7px 10px;
+      border: 1px solid #1e293b;
+      font-size: 8.5pt;
+      letter-spacing: 0.3px;
+    }
+
+    td {
+      padding: 6px 10px;
+      border: 1px solid #e2e8f0;
+      vertical-align: middle;
+      line-height: 1.45;
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+
+    tbody tr:hover {
+      background-color: #f1f5f9;
+    }
+
+    /* Callout Alert Boxes */
+    .callout {
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin: 14px 0;
+      page-break-inside: avoid;
+    }
+
+    .callout-header {
+      font-size: 9.5pt;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .callout-body {
+      font-size: 9pt;
+      line-height: 1.5;
+    }
+
+    .alert-note {
+      background-color: #eff6ff;
+      border-left: 4px solid #2563eb;
+      color: #1e3a8a;
+    }
+    .alert-note .callout-header { color: #1d4ed8; }
+
+    .alert-tip {
+      background-color: #ecfdf5;
+      border-left: 4px solid #059669;
+      color: #064e3b;
+    }
+    .alert-tip .callout-header { color: #047857; }
+
+    .alert-important {
+      background-color: #f5f3ff;
+      border-left: 4px solid #7c3aed;
+      color: #4c1d95;
+    }
+    .alert-important .callout-header { color: #6d28d9; }
+
+    .alert-warning {
+      background-color: #fffbeb;
+      border-left: 4px solid #d97706;
+      color: #78350f;
+    }
+    .alert-warning .callout-header { color: #b45309; }
+
+    .alert-caution {
+      background-color: #fff1f2;
+      border-left: 4px solid #e11d48;
+      color: #881337;
+    }
+    .alert-caution .callout-header { color: #be123c; }
+
+    /* Code Blocks & ASCII */
+    pre {
+      background-color: #090d16;
+      color: #f8fafc;
+      padding: 12px 14px;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 8pt;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 12px 0;
+      border: 1px solid #1e293b;
+      page-break-inside: avoid;
+    }
+
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 8.5pt;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    pre code {
+      background-color: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    /* Mathematical Notation */
+    .math-block {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      margin: 10px 0;
+      text-align: center;
+      font-family: 'Cambria Math', 'Times New Roman', serif;
+      font-size: 11pt;
+      color: #0f172a;
+      page-break-inside: avoid;
+    }
+
+    .math-inline {
+      font-family: 'Cambria Math', 'Times New Roman', serif;
+      font-style: italic;
+      color: #0f172a;
+      padding: 0 2px;
+    }
+
+    .frac {
+      display: inline-flex;
+      flex-direction: column;
+      vertical-align: middle;
+      text-align: center;
+      padding: 0 4px;
+    }
+    .num {
+      border-bottom: 1px solid #334155;
+      padding-bottom: 1px;
+    }
+    .den {
+      padding-top: 1px;
+    }
+
+    /* Diagrams */
+    .diagram-wrapper {
+      margin: 18px 0;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+
+    .diagram-title {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .flow-svg {
+      width: 100%;
+      max-height: 380px;
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.08));
+    }
+
+    /* Page Breaks */
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Cover Page -->
+  <div class="cover-page">
+    <div class="cover-badge">Official Technical Release • Version 2.4</div>
+    <div class="cover-title">DRABYASHREE NEPSE</div>
+    <div class="cover-subtitle">Master Investor Encyclopedia & Quantitative Almanac</div>
+    <div class="cover-desc">
+      A comprehensive, mathematically verified compendium of the Nepal Stock Exchange (NEPSE) market microstructure: order flow mechanics, broker concentration metrics (BCR₃/BCR₅), 28 Japanese candlestick pattern recognition algorithms, interactive chart geometry, volatility frameworks, banking solvency directives (CAR/NPL), and capital preservation rules.
+    </div>
+    <div class="cover-meta">
+      <div><b>System:</b> Drabyashree NEPSE Platform</div>
+      <div><b>Exchange:</b> NEPSE NOTS Matching Engine</div>
+      <div><b>Architecture:</b> Zero-Fabrication Verification</div>
+      <div><b>Date:</b> October 2026</div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <h1 id="drabyashree-nepse-master-investor-encyclopedia-quantitative-almanac">Drabyashree NEPSE — Master Investor Encyclopedia &amp; Quantitative Almanac</h1>
+<p><em>The definitive guide to technical indicators, candlestick patterns, chart overlays, order flow microstructure, valuation models, regulatory directives, and execution frameworks for the Nepal Stock Exchange (NEPSE).</em></p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#0-executive-glossary-entry--exit-analyzer-verdicts--decision-taxonomy">Executive Glossary: Entry / Exit Analyzer Verdicts &amp; Decision Taxonomy</a></li>
+<li><a href="#1-core-invariant-principles--decision-hierarchy">Core Invariant Principles &amp; Decision Hierarchy</a></li>
+<li><a href="#2-services-hub--flagship-decision-engines">Services Hub &amp; Flagship Decision Engines</a></li>
+<li><a href="#3-smart-money-floorsheet--order-flow-microstructure">Smart Money, Floorsheet &amp; Order Flow Microstructure</a></li>
+<li><a href="#4-entry--exit-radar-execution-architecture--risk-limits">Entry / Exit Radar, Execution Architecture &amp; Risk Limits</a></li>
+<li><a href="#5-floor-pivots--fibonacci-geometric-analysis">Floor Pivots &amp; Fibonacci Geometric Analysis</a></li>
+<li><a href="#6-candlestick-anatomy--the-28-japanese-candlestick-patterns">Candlestick Anatomy &amp; The 28 Japanese Candlestick Patterns</a></li>
+<li><a href="#7-interactive-chart-lines-overlays--technical-geometry">Interactive Chart Lines, Overlays &amp; Technical Geometry</a></li>
+<li><a href="#8-volatility--statistical-momentum-indicators">Volatility &amp; Statistical Momentum Indicators</a></li>
+<li><a href="#9-fundamentals-solvency--valuation-frameworks">Fundamentals, Solvency &amp; Valuation Frameworks</a></li>
+<li><a href="#10-capital-structure-public-float--corporate-actions">Capital Structure, Public Float &amp; Corporate Actions</a></li>
+<li><a href="#11-statutory-regulations-taxes-fees--settlement-operations">Statutory Regulations, Taxes, Fees &amp; Settlement Operations</a></li>
+<li><a href="#12-calendar-cycles-corporate-timing--seasonality">Calendar Cycles, Corporate Timing &amp; Seasonality</a></li>
+<li><a href="#13-master-investor-decision-flowchart--pre-trade-checklist">Master Investor Decision Flowchart &amp; Pre-Trade Checklist</a></li>
+<li><a href="#14-empirical-discoveries-edge-case-audits--real-case-studies">Empirical Discoveries, Edge-Case Audits &amp; Real Case Studies</a></li>
+</ol>
+<hr />
+<h2 id="0-executive-glossary-entry-exit-analyzer-verdicts-decision-taxonomy">0. Executive Glossary: Entry / Exit Analyzer Verdicts &amp; Decision Taxonomy</h2>
+<p>The <strong>Drabyashree Entry / Exit Analyzer</strong> synthesizes price action, volume dry-up, broker accumulation metrics, historical analogs, and NEPSE-specific statutory constraints (circuit limits, T+2 lockups, and CGT friction) into actionable quantitative verdicts.</p>
+<p>Verdicts operate within a strict <strong>three-tier safety architecture</strong>:
+1. <strong>Tier 1 — Hard Safety Vetoes</strong>: Non-negotiable structural circuit, delivery, and institutional dumping halts that abort trades regardless of technical score.
+2. <strong>Tier 2 — Cautionary Overrides</strong>: Secondary risk warnings (unfavorable RRR, transaction fee drag, festival liquidity drain, earnings lag) that require high conviction (<span class="math-inline">Score &ge; 78</span>) to clear.
+3. <strong>Tier 3 — Score-Based Conviction Verdicts</strong>: Mathematical ratings (<span class="math-inline">0–100</span>) evaluating setup strength once all safety gates pass.</p>
+<hr />
+<h3 id="01-complete-verdict-reference-directory">0.1 Complete Verdict Reference Directory</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Verdict Name</th>
+<th style="text-align: left;">Category</th>
+<th style="text-align: left;">Trigger Conditions</th>
+<th style="text-align: left;">Tactical Action for Investor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (CIRCUIT CEILING TRAP)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">Price is within <span class="math-inline">2.5\%</span> of the <span class="math-inline">+10\%</span> or <span class="math-inline">+15\%</span> upper circuit ceiling.</td>
+<td style="text-align: left;"><strong>STRICTLY ABORT BUY.</strong> Buying near upper circuit exposes trader to severe slippage and immediate T+2 reversal lock-in risk.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (T+2 DELIVERY EXHAUSTION TRAP)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">Day 3 or Day 4 of an unbacked vertical run where earlier buyers receive Demat delivery.</td>
+<td style="text-align: left;"><strong>AVOID BUYING.</strong> T+2 settlement supply is hitting the market; institutional operators use retail momentum to exit.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (CRITICAL T+2 SETTLEMENT RISK)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">T+2 volatility score <span class="math-inline">&gt; 70</span>; historical 2-day drawdown exceeds stop-loss room.</td>
+<td style="text-align: left;"><strong>STAY OUT.</strong> Because NEPSE forbids selling on Day 0 and Day 1, expected drawdown will trigger loss before sale is legally permitted.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">Top seller brokers (#58, #45, etc.) heavily offload while retail buys (<span class="math-inline">BCR<sub>3</sub> Sell &gt; BCR<sub>3</sub> Buy</span>).</td>
+<td style="text-align: left;"><strong>EXIT / AVOID.</strong> Smart money is liquidating holdings into retail euphoria; distribution pattern confirmed.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">Lower highs and lower lows beneath declining 50-EMA and 200-SMA.</td>
+<td style="text-align: left;"><strong>DO NOT AVERAGE DOWN.</strong> Structure is in active Stage 4 decline. Preserve capital.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>REDUCE / AVOID ENTRY (HYDRO DRY SEASON OVERHANG)</strong></td>
+<td style="text-align: left;">Hard Veto</td>
+<td style="text-align: left;">RoR Hydropower scrip in dry season (Chaitra/Baisakh) with <span class="math-inline">60–70\%</span> river discharge drop.</td>
+<td style="text-align: left;"><strong>WAIT FOR MONSOON.</strong> Quarterly generation revenue collapse creates severe fundamental drag on price.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (UPSIDE &lt; TRANSACTION FRICTION)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">Distance to Target 1 is smaller than total round-trip fee (<span class="math-inline">0.73\%</span>) + CGT (<span class="math-inline">7.5\%</span>).</td>
+<td style="text-align: left;"><strong>PASS.</strong> Even if target is hit, net realized return is zero or negative after statutory expenses.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (UNFAVORABLE RISK/REWARD)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">Reward-to-Risk Ratio (<span class="math-inline">RRR<sub>1</sub></span>) is below <span class="math-inline">1.5 : 1.0</span>.</td>
+<td style="text-align: left;"><strong>WAIT FOR PULLBACK.</strong> Risk taken outweighs potential upside. Wait for price to enter designated Pullback Zone.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NO TRADE (FESTIVE CASH DRAIN / LOW RVOL)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">Pre-Dashain/Tihar festival liquidity drain; Relative Volume (<span class="math-inline">RVOL</span>) <span class="math-inline">&lt; 0.70&times;</span>.</td>
+<td style="text-align: left;"><strong>PRESERVE CASH.</strong> Retail cash withdrawals drain market liquidity; breakout attempts have an <span class="math-inline">80\%</span> failure rate.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>HOLD / AVOID NEW ENTRY (OPERATING LOSS)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">Scrip reports negative EPS or operating losses in consecutive quarters.</td>
+<td style="text-align: left;"><strong>AVOID NEW POSITION.</strong> Cannot distribute cash or bonus dividends under regulatory statutes.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">Major 200-session EMA sits directly overhead (<span class="math-inline">&lt; 2.0\%</span> away) as a thick supply shelf.</td>
+<td style="text-align: left;"><strong>WAIT FOR BREAKOUT.</strong> Institutional supply overhang is heavy. Wait for decisive volume clearance above 200-EMA.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>HOLD / AVOID CHASING (EXTREME VALUATION)</strong></td>
+<td style="text-align: left;">Caution</td>
+<td style="text-align: left;">P/E or P/B multiple exceeds <span class="math-inline">2.5&times;</span> sector median without matching ROE growth.</td>
+<td style="text-align: left;"><strong>DO NOT CHASE.</strong> Speculative multiple expansion leaves no margin of safety if sentiment cools.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>HIGH-CONVICTION COIL (AWAITING TRIGGER)</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score &ge; 82</span>, Pre-breakout consolidation under 20-day high with Volume Dry-Up.</td>
+<td style="text-align: left;"><strong>PRIME WATCHLIST.</strong> Place buy stop at Breakout Trigger. Prepare for explosive markup impulse.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>VERY STRONG SETUP</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score &ge; 82</span>, active confluence of trend, broker accumulation, and <span class="math-inline">RRR &ge; 2.0</span>.</td>
+<td style="text-align: left;"><strong>CONFIRMED BUY.</strong> Full position allocation. Favorable risk/reward with structural stop protection.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>COILED BASE (PRE-BREAKOUT RADAR)</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score  70–81</span>, base consolidating near 20-EMA / 20-day pivot.</td>
+<td style="text-align: left;"><strong>ACCUMULATE ON PULLBACK.</strong> Accumulate in Dip Zone or enter on confirmed pivot break.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>STRONG ENTRY ZONE</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score  70–81</span>, price is currently inside the validated low-risk Entry Zone.</td>
+<td style="text-align: left;"><strong>BUY IN ENTRY ZONE.</strong> Clean swing setup with solid downside support floor.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>BUY / ACCUMULATE</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score  58–69</span>, positive bias, healthy balance sheet, steady broker accumulation.</td>
+<td style="text-align: left;"><strong>GRADUAL ACCUMULATION.</strong> Scale in with <span class="math-inline">50\%</span> initial tranche; add on confirmation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>HOLD / WAIT FOR CONFIRMATION</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score  45–57</span>, neutral technical posture; lacks volume conviction or trigger.</td>
+<td style="text-align: left;"><strong>HOLD EXISTING.</strong> Do not initiate new position until volume conviction or breakout appears.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>REDUCE / AVOID NEW ENTRY</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score  32–44</span>, deteriorating momentum, distribution signals, or breaking support.</td>
+<td style="text-align: left;"><strong>TIGHTEN STOPS.</strong> Trim exposure on intraday bounces; do not initiate fresh longs.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>EXIT / STAY OUT</strong></td>
+<td style="text-align: left;">Quantitative</td>
+<td style="text-align: left;"><span class="math-inline">Setup Score &lt; 32</span>, confirmed support breakdown, heavy institutional dumping.</td>
+<td style="text-align: left;"><strong>LIQUIDATE / EXIT.</strong> Capital preservation mandatory. Sell into available market bids.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="02-mathematical-price-geometry-why-entry-and-breakout-prices-dynamic-change">0.2 Mathematical Price Geometry: Why Entry and Breakout Prices Dynamic Change</h3>
+<p>Investors often ask: <em>Why does the Entry Price or Breakout Price recalculate between sessions?</em></p>
+<p>The system computes <strong>Dynamic Execution Geometry</strong>, not static price lines:
+1. <strong>LTP Anchoring &amp; Volatility Calibration</strong>: Entry zones are calibrated to the <strong>Last Traded Price (LTP)</strong> and the <strong>14-day Average True Range (ATR)</strong>. As market volatility expands or contracts, the clearance buffer dynamically adjusts:
+ <br />
+<div class="math-block">Clearance Buffer = \max\Big(SafeHigh_{20 &times; 0.0035,\; ATR_{14 &times; 0.22\Big)</div></p>
+<ol>
+<li><strong>Rolling 20-Session Swing High Pivot (<span class="math-inline">SafeHigh_{20</span>)</strong>: The breakout level is anchored to the highest high of the prior 20 trading sessions. As each trading day closes, older sessions roll out of the 20-day lookback window, shifting the pivot level.</li>
+<li>
+<p><strong>Pullback / Dip Zone Anchoring</strong>: The optimal dip-buying zone is anchored to the <strong>20-session Exponential Moving Average (EMA-20)</strong> and recent 5-day base support, bounded securely above the structural stop loss:
+ <br />
+<div class="math-block">Pullback Anchor = EMA_{20  &nbsp;  or  &nbsp;  \max\Big(Structural Stop &times; 1.015,\; LTP &times; 0.98\Big)</div></p>
+</li>
+<li>
+<p><strong>Breakout Chase Cap</strong>: To prevent retail traders from falling into the NEPSE T+2 delivery lockup trap, the engine enforces an invariant <strong>Chase Cap</strong> (<span class="math-inline">+2.5\%</span> above the pivot). Buying above this cap is mathematically prohibited by the analyzer.</p>
+</li>
+</ol>
+<hr />
+<h2 id="1-core-invariant-principles-decision-hierarchy">1. Core Invariant Principles &amp; Decision Hierarchy</h2>
+<p>Before deploying capital on NEPSE, every investor must understand that quantitative indicators do not exist in isolation. They operate within a strict <strong>Precedence Hierarchy</strong>:</p>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 1.1 — The 6-Gate Decision Precedence Hierarchy</div>
+  <svg viewBox="0 0 850 420" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <defs>
+      <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e293b"/>
+        <stop offset="100%" stop-color="#0f172a"/>
+      </linearGradient>
+      <linearGradient id="gGold" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#f59e0b"/>
+        <stop offset="100%" stop-color="#d97706"/>
+      </linearGradient>
+      <linearGradient id="gGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#10b981"/>
+        <stop offset="100%" stop-color="#059669"/>
+      </linearGradient>
+      <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+        <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.25"/>
+      </filter>
+      <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+      </marker>
+    </defs>
+    <!-- Pipeline Nodes -->
+    <!-- Node 1 -->
+    <rect x="50" y="20" width="750" height="48" rx="8" fill="url(#g1)" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <text x="70" y="50" fill="#60a5fa" font-size="14" font-weight="bold">GATE 1</text>
+    <text x="140" y="50" fill="#f8fafc" font-size="13" font-weight="600">Regulatory & Solvency Gate</text>
+    <text x="420" y="50" fill="#94a3b8" font-size="12">CAR ≥ 11.5% • NPL ≤ 3.5% • No Promoter Lock-in Expiry Dump</text>
+
+    <line x1="425" y1="68" x2="425" y2="86" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Node 2 -->
+    <rect x="50" y="88" width="750" height="48" rx="8" fill="url(#g1)" stroke="#06b6d4" stroke-width="2" filter="url(#shadow)"/>
+    <text x="70" y="118" fill="#22d3ee" font-size="14" font-weight="bold">GATE 2</text>
+    <text x="140" y="118" fill="#f8fafc" font-size="13" font-weight="600">Order Flow & Floorsheet Gate</text>
+    <text x="420" y="118" fill="#94a3b8" font-size="12">No Distribution Trap • BCR₃ Buy > BCR₃ Sell • Stealth Accumulation</text>
+
+    <line x1="425" y1="136" x2="425" y2="154" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Node 3 -->
+    <rect x="50" y="156" width="750" height="48" rx="8" fill="url(#g1)" stroke="#8b5cf6" stroke-width="2" filter="url(#shadow)"/>
+    <text x="70" y="186" fill="#a78bfa" font-size="14" font-weight="bold">GATE 3</text>
+    <text x="140" y="186" fill="#f8fafc" font-size="13" font-weight="600">Market Structure Gate</text>
+    <text x="420" y="186" fill="#94a3b8" font-size="12">Minervini Stage 2 Uptrend (SMA 200 Rising) • Wyckoff Phase C/D</text>
+
+    <line x1="425" y1="204" x2="425" y2="222" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Node 4 -->
+    <rect x="50" y="224" width="750" height="48" rx="8" fill="url(#g1)" stroke="#ec4899" stroke-width="2" filter="url(#shadow)"/>
+    <text x="70" y="254" fill="#f472b6" font-size="14" font-weight="bold">GATE 4</text>
+    <text x="140" y="254" fill="#f8fafc" font-size="13" font-weight="600">Candlestick & Pivot Gate</text>
+    <text x="420" y="254" fill="#94a3b8" font-size="12">Reversal Candlestick Confirmation • LTP ≤ Chase Cap (+2.5% max limit)</text>
+
+    <line x1="425" y1="272" x2="425" y2="290" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Node 5 -->
+    <rect x="50" y="292" width="750" height="48" rx="8" fill="url(#g1)" stroke="#f59e0b" stroke-width="2" filter="url(#shadow)"/>
+    <text x="70" y="322" fill="#fbbf24" font-size="14" font-weight="bold">GATE 5</text>
+    <text x="140" y="322" fill="#f8fafc" font-size="13" font-weight="600">Execution Risk & Stop Gate</text>
+    <text x="420" y="322" fill="#94a3b8" font-size="12">Risk/Reward Ratio ≥ 1:2.0 • Predetermined Hard Invalidation Stop Placed</text>
+
+    <line x1="425" y1="340" x2="425" y2="358" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <!-- Final Execution Node -->
+    <rect x="50" y="360" width="750" height="48" rx="8" fill="url(#gGreen)" stroke="#34d399" stroke-width="2" filter="url(#shadow)"/>
+    <text x="425" y="390" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle">✓ FINAL STAGE: ORDER EXECUTION & STRICT POSITION SIZING</text>
+  </svg>
+</div>
+
+<div class="callout alert-important">
+<div class="callout-header">⭐ IMPORTANT</div>
+<div class="callout-body">
+
+**Hierarchy Rule**: An earlier gate always overrules a later gate. 
+* If a stock displays a textbook Bullish Engulfing pattern on its chart (Gate 4), but the Floorsheet reveals active institutional dumping (Gate 2), the trade is **strictly aborted**.
+* If a stock looks fundamentally cheap with a high Margin of Safety (Gate 1), but has a non-performing loan ratio exceeding <span class="math-inline">5.0\%</span>, it cannot legally distribute dividends under NRB regulations and must be avoided.
+
+</div>
+</div>
+
+<hr />
+<h2 id="2-services-hub-flagship-decision-engines">2. Services Hub &amp; Flagship Decision Engines</h2>
+<h3 id="21-decision-probability-index-dpi-0-to-100">2.1 Decision Probability Index (DPI: 0 to 100)</h3>
+<ul>
+<li><strong>Definition</strong>: A multi-factor Bayesian probability composite measuring the statistical likelihood of a stock generating positive net returns over the next 10 trading sessions.</li>
+<li><strong>Component Weights</strong>:</li>
+<li>Volume &amp; Microstructure Flow: <span class="math-inline">30\%</span></li>
+<li>Trend &amp; Momentum Alignment: <span class="math-inline">25\%</span></li>
+<li>Value &amp; Margin of Safety: <span class="math-inline">20\%</span></li>
+<li>Macro Liquidity &amp; Benchmark Trend: <span class="math-inline">25\%</span></li>
+<li><strong>Interpretation</strong>:</li>
+<li><strong><span class="math-inline">DPI &ge; 75</span></strong>: High mathematical conviction for swing capital.</li>
+<li><strong><span class="math-inline">DPI  50–74</span></strong>: Neutral / Developing setup; requires secondary confirmation.</li>
+<li><strong><span class="math-inline">DPI &lt; 45</span></strong>: Negative statistical edge. Avoid opening long positions.</li>
+</ul>
+<h3 id="22-minervini-stage-2-trend-template-oami">2.2 Minervini Stage 2 Trend Template + OAMI</h3>
+<ul>
+<li><strong>Definition</strong>: A systematic trend filter designed by US Investing Champion Mark Minervini, filtering for equities in confirmed institutional uptrends.</li>
+<li><strong>The 5 Invariant Stage 2 Filters</strong>:</li>
+<li>Price <span class="math-inline">&gt; 150-Day SMA</span> and <span class="math-inline">&gt; 200-Day SMA</span>.</li>
+<li><span class="math-inline">150-Day SMA &gt; 200-Day SMA</span>.</li>
+<li><span class="math-inline">200-Day SMA</span> sloping upward for at least 30 consecutive trading days.</li>
+<li><span class="math-inline">50-Day SMA &gt; 150-Day SMA</span> and <span class="math-inline">&gt; 200-Day SMA</span>.</li>
+<li>Current price must be at least <span class="math-inline">+30\%</span> above its 52-week low and within <span class="math-inline">25\%</span> of its 52-week high.</li>
+<li><strong>OAMI (Order Flow &amp; Momentum Index)</strong>: Confirms whether institutional accumulation volume is accelerating alongside price.</li>
+</ul>
+<div class="callout alert-caution">
+<div class="callout-header">🛑 CAUTION</div>
+<div class="callout-body">
+
+**Stage 4 Trap Warning**: Never attempt to "bottom fish" stocks trading below a declining 200-day moving average. In NEPSE, equities in Stage 4 (Markdown) frequently drift downward or consolidate without returns for 2 to 3 years.
+
+</div>
+</div>
+
+<h3 id="23-vcp-volatility-contraction-pattern">2.3 VCP (Volatility Contraction Pattern)</h3>
+<ul>
+<li><strong>Definition</strong>: A chart geometry where a stock experiences progressively tighter price swings (e.g., Contraction 1: <span class="math-inline">-16\% \rightarrow</span> Contraction 2: <span class="math-inline">-8\% \rightarrow</span> Contraction 3: <span class="math-inline">-3\%</span>) right beneath overhead resistance while daily turnover drops to multi-month lows.</li>
+<li><strong>Usage</strong>: Proves that institutional supply has been absorbed. When buyers step in, price breaks out rapidly because no floating sellers remain.</li>
+</ul>
+<h3 id="24-8-gate-multibagger-screener">2.4 8-Gate Multibagger Screener</h3>
+<ul>
+<li><strong>Definition</strong>: An institutional screening matrix requiring a stock to pass 8 simultaneous tests:</li>
+<li><strong>Clean Float</strong>: Public float <span class="math-inline">&le; 40\%</span> of total shares.</li>
+<li><strong>Capital Efficiency</strong>: Return on Equity (<span class="math-inline">ROE</span>) <span class="math-inline">&gt; 15\%</span>.</li>
+<li><strong>Earnings Velocity</strong>: Positive EPS growth for 3 consecutive quarters.</li>
+<li><strong>Smart Money Footprint</strong>: Top 3 brokers absorbing <span class="math-inline">&ge; 40\%</span> of buy flow (<span class="math-inline">BCR<sub>3</sub></span>).</li>
+<li><strong>Prudent Leverage</strong>: Debt-to-Equity ratio <span class="math-inline">&lt; 1.5x</span>.</li>
+<li><strong>Trend Confirmation</strong>: Price trading above 200-day SMA.</li>
+<li><strong>Lock-in Safety</strong>: No promoter share lock-in expiration within the next 6 months.</li>
+<li><strong>Reasonable Valuation</strong>: <span class="math-inline">PEG Ratio &lt; 1.5x</span>.</li>
+</ul>
+<hr />
+<h2 id="3-smart-money-floorsheet-order-flow-microstructure">3. Smart Money, Floorsheet &amp; Order Flow Microstructure</h2>
+<h3 id="31-broker-concentration-ratios-bcr3-bcr5">3.1 Broker Concentration Ratios (<span class="math-inline">BCR<sub>3</sub></span> &amp; <span class="math-inline">BCR<sub>5</sub></span>)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>: The percentage share of total session volume bought or sold by the top 3 or top 5 brokerages:
+<br />
+<div class="math-block">BCR<sub>3</sub> = \frac{Volume of Top 3 Brokers{Total Session Traded Volume &times; 100\%</div></p>
+</li>
+<li>
+<p><strong>Thresholds</strong>:</p>
+</li>
+<li><strong><span class="math-inline">BCR<sub>3</sub>  Buy &ge; 40.0\%</span></strong>: Institutional cornering confirmed.</li>
+<li><strong><span class="math-inline">BCR<sub>3</sub>  Sell &ge; 45.0\%</span></strong>: Institutional dumping warning.</li>
+</ul>
+<div class="callout alert-warning">
+<div class="callout-header">⚠️ WARNING</div>
+<div class="callout-body">
+
+**The Asymmetry Principle**: A high <span class="math-inline">BCR<sub>3</sub>  Buy</span> is **meaningless** if <span class="math-inline">BCR<sub>3</sub>  Sell</span> is higher. If Broker #58 buys <span class="math-inline">40\%</span> of a stock, but Brokers #45, #34, and #28 collectively sell <span class="math-inline">55\%</span>, the stock is experiencing **net institutional distribution**.
+
+</div>
+</div>
+
+<h3 id="32-distribution-trap-pump-dump-architecture">3.2 Distribution Trap (Pump &amp; Dump Architecture)</h3>
+<ul>
+<li><strong>Definition</strong>: A deceptive condition where a stock's price is green (<span class="math-inline">+1\%</span> to <span class="math-inline">+6\%</span>), but the floorsheet reveals that top brokers are dumping massive block quantities into retail market orders.</li>
+<li><strong>Identification Rules</strong>:</li>
+<li><span class="math-inline">BCR<sub>3</sub>  Sell &ge; 45.0\%</span>.</li>
+<li><span class="math-inline">BCR<sub>3</sub>  Sell - BCR<sub>3</sub>  Buy &ge; 10.0\%</span>.</li>
+<li>Top 3 selling brokers are liquidating <span class="math-inline">&gt; 20\%</span> of total session sell turnover.</li>
+<li><strong>Action</strong>: When flagged <strong>🚨 DISTRIBUTION TRAP: DO NOT BUY</strong>, fresh capital must be completely withheld.</li>
+</ul>
+<h3 id="33-stealth-quiet-accumulation">3.3 Stealth / Quiet Accumulation</h3>
+<ul>
+<li><strong>Definition</strong>: Systematic institutional buying executed without causing rapid price spikes.</li>
+<li><strong>Markers</strong>:</li>
+<li>Compressed daily price range (<span class="math-inline">&le; 1.5\%</span>).</li>
+<li>Steady positive On-Balance Volume (OBV).</li>
+<li>High buy ticket size compared to sell ticket size.</li>
+</ul>
+<h3 id="34-ticket-ratio-trade-size-asymmetry">3.4 Ticket Ratio (Trade Size Asymmetry)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>:
+<br />
+<div class="math-block">Ticket Ratio = \frac{Average Shares per Buy Contract{Average Shares per Sell Contract</div></p>
+</li>
+<li>
+<p><strong>Interpretation</strong>:</p>
+</li>
+<li><strong><span class="math-inline">&gt; 1.50x</span></strong>: Institutional accumulation (Whales buying large 2,000–5,000 kitta blocks from retail selling 50–100 kitta lots).</li>
+<li><strong><span class="math-inline">&lt; 0.70x</span></strong>: Institutional offloading (Whales dumping large blocks into small retail bids).</li>
+</ul>
+<h3 id="35-bilateral-cross-trade-neutralization">3.5 Bilateral Cross-Trade Neutralization</h3>
+<ul>
+<li><strong>Definition</strong>: Matched transactions where the same broker ID is on both the buy and sell side of a contract (e.g., Broker #58 selling 50,000 kitta to Broker #58).</li>
+<li><strong>Usage</strong>: The app neutralizes self-matched trades to prevent artificial inflation of accumulation scores. These represent promoter transfers or internal rebalancing, not open-market demand.</li>
+</ul>
+<h3 id="36-5-depth-order-book-obir-order-book-imbalance-ratio">3.6 5-Depth Order Book &amp; OBIR (Order Book Imbalance Ratio)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>: Real-time aggregation of top 5 buy bids and top 5 sell asks:
+<br />
+<div class="math-block">OBIR = \frac{Total Bid Quantity (Levels 1–5){Total Ask Quantity (Levels 1–5)</div></p>
+</li>
+<li>
+<p><strong>Interpretation</strong>:</p>
+</li>
+<li><strong><span class="math-inline">OBIR &gt; 2.0x</span></strong>: Strong immediate buy-side liquidity cushion.</li>
+<li><strong><span class="math-inline">OBIR &lt; 0.5x</span></strong>: Overhead sell resistance dominating the book.</li>
+</ul>
+<hr />
+<h2 id="4-entry-exit-radar-execution-architecture-risk-limits">4. Entry / Exit Radar, Execution Architecture &amp; Risk Limits</h2>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 4.1 — Entry / Exit Radar Execution Architecture</div>
+  <svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <defs>
+      <linearGradient id="bgBox" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e293b"/>
+        <stop offset="100%" stop-color="#0f172a"/>
+      </linearGradient>
+      <marker id="arr2" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+      </marker>
+    </defs>
+    <!-- Step 1 -->
+    <rect x="20" y="40" width="160" height="70" rx="8" fill="url(#bgBox)" stroke="#38bdf8" stroke-width="1.5"/>
+    <text x="100" y="68" fill="#38bdf8" font-size="12" font-weight="bold" text-anchor="middle">STEP 1: BREAKOUT</text>
+    <text x="100" y="88" fill="#f8fafc" font-size="11" text-anchor="middle">Floor Pivot / Base</text>
+    <text x="100" y="102" fill="#94a3b8" font-size="10" text-anchor="middle">Clearance Confirmed</text>
+
+    <line x1="180" y1="75" x2="225" y2="75" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr2)"/>
+
+    <!-- Step 2 Decision -->
+    <polygon points="300,35 375,75 300,115 225,75" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+    <text x="300" y="70" fill="#fbbf24" font-size="11" font-weight="bold" text-anchor="middle">LTP ≤ Chase Cap?</text>
+    <text x="300" y="85" fill="#e2e8f0" font-size="10" text-anchor="middle">(Within +2.5%)</text>
+
+    <!-- Branch No -->
+    <line x1="300" y1="115" x2="300" y2="175" stroke="#f43f5e" stroke-width="2" marker-end="url(#arr2)"/>
+    <rect x="220" y="175" width="160" height="50" rx="6" fill="#881337" stroke="#f43f5e" stroke-width="1.5"/>
+    <text x="300" y="196" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">ABORT ORDER</text>
+    <text x="300" y="212" fill="#fecdd3" font-size="10" text-anchor="middle">Do Not Chase Extension</text>
+
+    <!-- Branch Yes -->
+    <line x1="375" y1="75" x2="430" y2="75" stroke="#10b981" stroke-width="2" marker-end="url(#arr2)"/>
+    <rect x="430" y="40" width="150" height="70" rx="8" fill="url(#bgBox)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="505" y="68" fill="#34d399" font-size="12" font-weight="bold" text-anchor="middle">STEP 2: BUY EXECUTION</text>
+    <text x="505" y="86" fill="#f8fafc" font-size="11" text-anchor="middle">Entry Zone Filled</text>
+    <text x="505" y="100" fill="#fb7185" font-size="10" text-anchor="middle">Stop Placed (-5% to -8%)</text>
+
+    <line x1="580" y1="75" x2="635" y2="75" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr2)"/>
+
+    <!-- Step 3 Target 1 -->
+    <rect x="635" y="40" width="240" height="70" rx="8" fill="url(#bgBox)" stroke="#06b6d4" stroke-width="1.5"/>
+    <text x="755" y="65" fill="#22d3ee" font-size="12" font-weight="bold" text-anchor="middle">STEP 3: TARGET 1 (+8% to +12%)</text>
+    <text x="755" y="83" fill="#34d399" font-size="11" font-weight="bold" text-anchor="middle">SELL 50% POSITION</text>
+    <text x="755" y="99" fill="#fcd34d" font-size="10" text-anchor="middle">Raise Stop to Breakeven (0% Risk)</text>
+
+    <!-- Down to Step 4 -->
+    <line x1="755" y1="110" x2="755" y2="175" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr2)"/>
+
+    <rect x="635" y="175" width="240" height="60" rx="8" fill="url(#bgBox)" stroke="#a855f7" stroke-width="2"/>
+    <text x="755" y="200" fill="#c084fc" font-size="12" font-weight="bold" text-anchor="middle">STEP 4: TARGET 2 (+18% to +25%)</text>
+    <text x="755" y="218" fill="#e2e8f0" font-size="10" text-anchor="middle">Ride Runner Position with Trailing 20-EMA</text>
+  </svg>
+</div>
+
+<h3 id="41-breakout-pivot-chase-cap">4.1 Breakout Pivot &amp; Chase Cap</h3>
+<ul>
+<li><strong>Breakout Pivot</strong>: The exact horizontal price level that must be cleared on above-average volume (<span class="math-inline">RVOL &ge; 1.4x</span>) to confirm an entry.</li>
+<li><strong>Chase Cap</strong>: Strictly set at <strong><span class="math-inline">Pivot + 2.5\%</span></strong>.</li>
+<li>If a pivot is Rs. 400, the Chase Cap is Rs. 410.</li>
+<li>If price opens at Rs. 418 (+4.5%), entry is <strong>gated</strong>. Do not buy extended stocks.</li>
+</ul>
+<h3 id="42-invalidation-floor-hard-stop-loss">4.2 Invalidation Floor (Hard Stop-Loss)</h3>
+<ul>
+<li><strong>Definition</strong>: The predetermined price level where the trade setup is mathematically broken (typically placed below the prior swing low or support shelf, <span class="math-inline">-5\%</span> to <span class="math-inline">-8\%</span>).</li>
+<li><strong>Mandatory Rule</strong>: If LTP touches your hard stop, exit unconditionally. Never cancel or widen a stop-loss.</li>
+</ul>
+<h3 id="43-multi-horizon-targets-breakeven-defense">4.3 Multi-Horizon Targets &amp; Breakeven Defense</h3>
+<ul>
+<li><strong>Target 1 (T1: <span class="math-inline">+8\%</span> to <span class="math-inline">+12\%</span>)</strong>:</li>
+<li><strong>Mandatory Action</strong>: Sell <strong>50% of your shares</strong> to bank cash profit.</li>
+<li>Immediately raise the stop-loss on the remaining 50% shares to your <strong>exact purchase entry price (Breakeven)</strong>.</li>
+<li><em>Result</em>: The trade can never turn into a financial loss.</li>
+<li><strong>Target 2 (T2: <span class="math-inline">+18\%</span> to <span class="math-inline">+25\%</span>)</strong>: Ride the runner position to major Fibonacci extension levels.</li>
+</ul>
+<h3 id="44-risk-to-reward-ratio-rrr">4.4 Risk-to-Reward Ratio (RRR)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>:
+<br />
+<div class="math-block">RRR = \frac{Target 1 Price - Entry Price{Entry Price - Stop-Loss Price</div></p>
+</li>
+<li>
+<p><strong>Rule</strong>: Minimum permissible RRR is <strong><span class="math-inline">1:2.0</span></strong> (ideally <span class="math-inline">1:2.5</span> or <span class="math-inline">1:3.0</span>). Never enter trades offering less than Rs. 2 of reward per Rs. 1 of risk.</p>
+</li>
+</ul>
+<hr />
+<h2 id="5-floor-pivots-fibonacci-geometric-analysis">5. Floor Pivots &amp; Fibonacci Geometric Analysis</h2>
+<h3 id="51-classic-floor-pivots-p-r1r3-s1s3">5.1 Classic Floor Pivots (<span class="math-inline">P, R<sub>1</sub>–R<sub>3</sub>, S<sub>1</sub>–S<sub>3</sub></span>)</h3>
+<p>Calculated from the previous session's High (<span class="math-inline">H</span>), Low (<span class="math-inline">L</span>), and Close (<span class="math-inline">C</span>):</p>
+<div class="math-block">Central Pivot  (P) = \frac{H + L + C{3</div>
+
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Formula</th>
+<th>Trading Function</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><span class="math-inline">R<sub>3</sub></span></strong></td>
+<td><span class="math-inline">H + 2(P - L)</span></td>
+<td>Extreme intraday overbought extension.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">R<sub>2</sub></span></strong></td>
+<td><span class="math-inline">P + (H - L)</span></td>
+<td>Secondary profit target / heavy institutional supply.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">R<sub>1</sub></span></strong></td>
+<td><span class="math-inline">(2 &times; P) - L</span></td>
+<td>First upward resistance barrier.</td>
+</tr>
+<tr>
+<td><strong>Pivot (<span class="math-inline">P</span>)</strong></td>
+<td><span class="math-inline">(H + L + C) / 3</span></td>
+<td>Intraday equilibrium. Above = Bullish; Below = Bearish.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">S<sub>1</sub></span></strong></td>
+<td><span class="math-inline">(2 &times; P) - H</span></td>
+<td>First downward support shelf.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">S<sub>2</sub></span></strong></td>
+<td><span class="math-inline">P - (H - L)</span></td>
+<td>Secondary institutional buying zone.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">S<sub>3</sub></span></strong></td>
+<td><span class="math-inline">L - 2(H - P)</span></td>
+<td>Extreme oversold intraday liquidity floor.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-fibonacci-retracement-extension-geometry">5.2 Fibonacci Retracement &amp; Extension Geometry</h3>
+<table>
+<thead>
+<tr>
+<th>Fibonacci Level</th>
+<th>Technical Designation</th>
+<th>Market Behavior &amp; Execution Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><span class="math-inline">23.6\%</span></strong></td>
+<td>Shallow Retracement</td>
+<td>Observed only in runaway, aggressive institutional trends.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">38.2\%</span></strong></td>
+<td>Moderate Retracement</td>
+<td>Standard healthy first pullback in a primary bull market.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">50.0\%</span></strong></td>
+<td>Equilibrium (Halfway)</td>
+<td>Crucial Dow Theory psychological balance point.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">61.8\%</span></strong></td>
+<td><strong>Golden Ratio (<span class="math-inline">&Phi;</span>)</strong></td>
+<td><strong>Highest probability institutional reversal zone.</strong> Primary entry zone upon reversal candlestick confirmation.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">78.6\%</span></strong></td>
+<td>Deep Retracement</td>
+<td>Final defense line before base failure.</td>
+</tr>
+<tr>
+<td><strong><span class="math-inline">161.8\%</span></strong></td>
+<td><strong>Golden Extension</strong></td>
+<td>Target projection for stocks breaking out into all-time highs.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-candlestick-anatomy-the-28-japanese-candlestick-patterns">6. Candlestick Anatomy &amp; The 28 Japanese Candlestick Patterns</h2>
+<h3 id="61-anatomical-structure-the-physics-of-a-candlestick">6.1 Anatomical Structure &amp; The Physics of a Candlestick</h3>
+<p>Every Japanese candlestick contains 4 fundamental price points (OHLC) that convey the battle between buying demand and selling supply:</p>
+<pre><code class="language-text">       High ─────────── ┬  Upper Shadow / Wick (Supply Overhead / Intraday Rejection)
+                        │  • Upper Wick = High - max(Open, Close)
+      Close ┌─────────┐ │
+            │         │ ┼  Real Body (True Directional Institutional Conviction)
+            │  GREEN  │ │  • Real Body = |Close - Open|
+            │         │ │  • Green (Bullish): Close &gt; Open
+       Open └─────────┘ │  • Red (Bearish): Close &lt; Open
+                        │
+        Low ─────────── ┴  Lower Shadow / Tail (Dip Absorption / Demand Floor)
+                           • Lower Wick = min(Open, Close) - Low
+</code></pre>
+<h4 id="the-5-primary-candlestick-metrics-calculated-in-code">The 5 Primary Candlestick Metrics Calculated in Code:</h4>
+<ol>
+<li>
+<p><strong>Total Candle Range (Spread)</strong>:
+ <br />
+<div class="math-block">Range = High - Low</div></p>
+</li>
+<li>
+<p><strong>Real Body Ratio (<span class="math-inline">R_{body</span>)</strong>:
+ <br />
+<div class="math-block">R_{body = \frac{|Close - Open|{High - Low</div></p>
+</li>
+<li>
+<p><span class="math-inline">R_{body &ge; 0.82</span>: Marubozu (one-way institutional momentum).</p>
+</li>
+<li><span class="math-inline">0.25 &le; R_{body &le; 0.55</span>: Standard balanced trading.</li>
+<li><span class="math-inline">R_{body &le; 0.14</span>: Doji (equilibrium, supply/demand standoff).</li>
+<li>
+<p><strong>Upper Wick Ratio (<span class="math-inline">R_{upper</span>)</strong>:
+ <br />
+<div class="math-block">R_{upper = \frac{High - \max(Open, Close){High - Low</div></p>
+</li>
+<li>
+<p><span class="math-inline">R_{upper &ge; 0.62</span>: Massive overhead selling rejection (Shooting Star / Gravestone Doji).</p>
+</li>
+<li>
+<p><strong>Lower Tail Ratio (<span class="math-inline">R_{lower</span>)</strong>:
+ <br />
+<div class="math-block">R_{lower = \frac{\min(Open, Close) - Low{High - Low</div></p>
+</li>
+<li>
+<p><span class="math-inline">R_{lower &ge; 0.62</span>: Strong institutional buying absorption (Hammer / Dragonfly Doji).</p>
+</li>
+<li>
+<p><strong>Gap Distance (<span class="math-inline">\Delta_{gap</span>)</strong>:
+ <br />
+<div class="math-block">&Delta;_{gap = \frac{Open - Close_{prev{Close_{prev &times; 100\%</div></p>
+</li>
+<li>
+<p><span class="math-inline">\Delta_{gap &ge; +1.5\%</span>: Rising Window or Bullish Kicker impulse.</p>
+</li>
+<li><span class="math-inline">\Delta_{gap &le; -1.5\%</span>: Falling Window or Bearish Kicker shock.</li>
+</ol>
+<hr />
+<h3 id="62-the-apps-3-candlestick-recognition-engines">6.2 The App's 3 Candlestick Recognition Engines</h3>
+<p>Drabyashree NEPSE utilizes 3 complementary, deterministic recognition engines (<code>candlestickPatterns.js</code> and <code>priceActionEngine.js</code>):
+1. <strong>Live Feed Single-Candle Scanner (<code>detectSingleStockPatterns</code>)</strong>: Evaluates real-time NEPSE live trading ticks instantly against geometric body/wick ratios.
+2. <strong>Historical Chronological Scanner (<code>detectCandlestickPatternsFromHistory</code>)</strong>: Iterates through the stock's last 45 daily sessions, evaluating 3-candle, 2-candle, and 1-candle sequences chronologically (highest specificity first).
+3. <strong>Price Action Structural Engine (<code>analyzeCandlestickPattern</code>)</strong>: Evaluates candle shapes in direct relation to swing highs/lows, support/resistance shelves, and relative volume (RVOL).</p>
+<hr />
+<h3 id="63-complete-master-catalog-of-all-28-japanese-candlestick-patterns">6.3 Complete Master Catalog of All 28 Japanese Candlestick Patterns</h3>
+<h4 id="group-a-bullish-reversal-patterns-bottom-accumulation-rebound">Group A: Bullish Reversal Patterns (Bottom Accumulation &amp; Rebound)</h4>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pattern Name &amp; Nepali Name</th>
+<th style="text-align: center;">ID &amp; Candles</th>
+<th>Mathematical Detection Algorithm in Code</th>
+<th>Market Psychology &amp; Who is Winning</th>
+<th>Actionable Rule &amp; Invalidation Level</th>
+<th style="text-align: center;">Reliability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td><strong>Bullish Engulfing</strong><br><em>(बुलिश एन्गल्फिङ)</em></td>
+<td style="text-align: center;"><code>bullish_engulfing</code><br>(2 Candles)</td>
+<td><code>prevIsBear &amp;&amp; isBull &amp;&amp; open &lt;= prevClose * 0.995 &amp;&amp; close &gt;= prevOpen * 1.018 &amp;&amp; body &gt; prevBody * 1.05</code></td>
+<td>Bears controlled session 1, but session 2 opens lower and unleashes massive institutional buying that swallows previous day's supply.</td>
+<td>Buy above green candle high. Place stop-loss 1 tick below green candle low.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td><strong>Hammer</strong><br><em>(ह्यामर - तल्लो रिभर्सल)</em></td>
+<td style="text-align: center;"><code>hammer</code><br>(1 Candle)</td>
+<td><code>lowerWick &gt;= body * 1.9 &amp;&amp; upperWick &lt;= body * 0.55 &amp;&amp; (pChange &gt;= -0.8 || isBull)</code></td>
+<td>Intraday panic dumping pushed prices to session lows, where whales stepped in and absorbed all floating supply before close.</td>
+<td>Buy on next-day follow-through above Hammer high. Stop-loss anchored below Hammer tail.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td><strong>Inverted Hammer</strong><br><em>(इन्भर्टेड ह्यामर)</em></td>
+<td style="text-align: center;"><code>inverted_hammer</code><br>(1 Candle)</td>
+<td><code>upperWick &gt;= body * 1.9 &amp;&amp; lowerWick &lt;= body * 0.55 &amp;&amp; isBull &amp;&amp; pChange &gt;= 0</code></td>
+<td>Formed after a downtrend. Bulls launched an aggressive upward reconnaissance test. Price settled off highs but held green.</td>
+<td>Await next-day confirmation candle closing above Inverted Hammer body before entering.</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td><strong>Morning Star</strong><br><em>(मर्निङ स्टार - ३-क्यान्डल)</em></td>
+<td style="text-align: center;"><code>morning_star</code><br>(3 Candles)</td>
+<td><code>!p2Bull &amp;&amp; p2Body &gt; p1Body * 1.8 &amp;&amp; isBull &amp;&amp; close &gt;= (p2.open + p2.close) / 2</code></td>
+<td>Large red candle (bear dominance) <span class="math-inline">\rightarrow</span> small star candle (selling exhaustion) <span class="math-inline">\rightarrow</span> strong green candle (buyers regain dominance).</td>
+<td>High-conviction swing entry. Stop-loss placed strictly below the middle star candle low.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td><strong>Piercing Pattern</strong><br><em>(पियर्सिङ प्याटर्न)</em></td>
+<td style="text-align: center;"><code>piercing_pattern</code><br>(2 Candles)</td>
+<td><code>!p1Bull &amp;&amp; isBull &amp;&amp; open &lt; p1.low &amp;&amp; close &gt; (p1.open + p1.close) / 2 &amp;&amp; close &lt; p1.open</code></td>
+<td>Day 2 gaps down below Day 1 low, triggering retail stop-losses. Institutions buy the panic, driving price above 50% of Day 1 body.</td>
+<td>Buy on confirmation. Stop-loss placed 1 tick below the two-candle low.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>6</strong></td>
+<td><strong>Tweezer Bottom</strong><br><em>(ट्विजर्स बटम - डबल सपोर्ट)</em></td>
+<td style="text-align: center;"><code>tweezer_bottom</code><br>(2 Candles)</td>
+<td><code>!p1Bull &amp;&amp; isBull &amp;&amp; Math.abs(low - p1.low) / low &lt;= 0.004 &amp;&amp; pChange &gt; 0.5</code></td>
+<td>Two consecutive sessions test the exact same price floor and bounce. Confirms institutional bid wall defense.</td>
+<td>Enter immediately with tight stop-loss 1.5% below the dual-session support floor.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>7</strong></td>
+<td><strong>Three White Soldiers</strong><br><em>(थ्री ह्वाइट सोल्जर्स)</em></td>
+<td style="text-align: center;"><code>three_white_soldiers</code><br>(3 Candles)</td>
+<td><code>p2Bull &amp;&amp; p1Bull &amp;&amp; isBull &amp;&amp; close &gt; p1.close &amp;&amp; p1.close &gt; p2.close &amp;&amp; bodyRatio &gt;= 0.55</code></td>
+<td>Relentless, sustained institutional buying across 3 sessions with progressive higher opens and closes.</td>
+<td>Ride the primary trend. Do not chase if extended <span class="math-inline">&gt;3x ATR</span>; buy first shallow 1-2 day pullback to 20-EMA.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>8</strong></td>
+<td><strong>Bullish Harami</strong><br><em>(बुलिश हरामी - इनसाइड बार)</em></td>
+<td style="text-align: center;"><code>bullish_harami</code><br>(2 Candles)</td>
+<td><code>!p1Bull &amp;&amp; isBull &amp;&amp; high &lt;= p1.open &amp;&amp; low &gt;= p1.close &amp;&amp; body &lt; p1Body * 0.6</code></td>
+<td>Small green body sits entirely inside prior large red body. Downside momentum abruptly halts into tight equilibrium.</td>
+<td>Enter on breakout above mother candle high. Place stop-loss beneath the inside bar low.</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+<tr>
+<td><strong>9</strong></td>
+<td><strong>Dragonfly Doji</strong><br><em>(ड्र्यागनफ्लाई डोजी)</em></td>
+<td style="text-align: center;"><code>dragonfly_doji</code><br>(1 Candle)</td>
+<td><code>bodyRatio &lt;= 0.14 &amp;&amp; lowerRatio &gt;= 0.62 &amp;&amp; upperRatio &lt;= 0.18</code></td>
+<td>Open, High, and Close converge at the top of the candle with a deep lower shadow. Bears completely failed to hold lows.</td>
+<td>Bullish reversal anchor when formed at support or 50-EMA. Stop-loss below lower shadow.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>10</strong></td>
+<td><strong>Abandoned Baby Bull</strong><br><em>(एबान्डन्ड बेबी)</em></td>
+<td style="text-align: center;"><code>abandoned_baby</code><br>(3 Candles)</td>
+<td><code>!p2Bull &amp;&amp; p1Body &lt; p2Body * 0.3 &amp;&amp; isBull &amp;&amp; p1.high &lt; p2.low &amp;&amp; p1.high &lt; close.low</code></td>
+<td>Rare island reversal: Red candle <span class="math-inline">\rightarrow</span> gapped down isolated Doji <span class="math-inline">\rightarrow</span> sharp gapped-up green candle.</td>
+<td>Immediate high-probability swing entry. Place stop-loss just beneath the isolated Doji low.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>11</strong></td>
+<td><strong>Bullish Kicker</strong><br><em>(बुलिश किकर)</em></td>
+<td style="text-align: center;"><code>bullish_kickers</code><br>(2 Candles)</td>
+<td><code>!p1Bull &amp;&amp; isBull &amp;&amp; open &gt;= p1.open &amp;&amp; pChange &gt;= 3.0 &amp;&amp; bodyRatio &gt;= 0.6</code></td>
+<td>Dramatic positive catalyst. Price gaps open above prior red candle open and drives upward with heavy volume.</td>
+<td>Aggressive trend continuation entry. Buy breakout or first intraday dip toward gap level.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>12</strong></td>
+<td><strong>Rising Window (Gap Up)</strong><br><em>(राइजिङ विन्डो)</em></td>
+<td style="text-align: center;"><code>rising_window</code><br>(2 Candles)</td>
+<td><code>low &gt; p1.high * 1.003 &amp;&amp; isBull &amp;&amp; pChange &gt;= 2.2</code></td>
+<td>Void between prior day high and current low. Overwhelming buying demand outstripping circulating float.</td>
+<td>Gap window functions as strong magnetic support on any future retracements.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="group-b-bearish-reversal-patterns-top-distribution-exhaustion">Group B: Bearish Reversal Patterns (Top Distribution &amp; Exhaustion)</h4>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pattern Name &amp; Nepali Name</th>
+<th style="text-align: center;">ID &amp; Candles</th>
+<th>Mathematical Detection Algorithm in Code</th>
+<th>Market Psychology &amp; Who is Winning</th>
+<th>Actionable Rule &amp; Invalidation Level</th>
+<th style="text-align: center;">Reliability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>13</strong></td>
+<td><strong>Bearish Engulfing</strong><br><em>(बियरिश एन्गल्फिङ)</em></td>
+<td style="text-align: center;"><code>bearish_engulfing</code><br>(2 Candles)</td>
+<td><code>p1Bull &amp;&amp; !isBull &amp;&amp; open &gt;= p1.close &amp;&amp; close &lt;= p1.open &amp;&amp; body &gt; p1Body * 1.05</code></td>
+<td>Session opens above prior green close, but aggressive institutional selling overwhelms all retail bids, closing below prior open.</td>
+<td>Exit swing trades or tighten stops to breakeven. Major top reversal warning.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>14</strong></td>
+<td><strong>Shooting Star</strong><br><em>(शुटिङ स्टार - माथिल्लो रिजेक्सन)</em></td>
+<td style="text-align: center;"><code>shooting_star</code><br>(1 Candle)</td>
+<td><code>upperWick &gt;= body * 1.9 &amp;&amp; lowerWick &lt;= body * 0.55 &amp;&amp; (pChange &lt; 0 || !isBull)</code></td>
+<td>Price surged intraday to test resistance, but whales dumped heavy supply, knocking price back down to session lows.</td>
+<td>Strict profit-taking alert. If holding, place stop-loss at low of Shooting Star bar.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>15</strong></td>
+<td><strong>Hanging Man</strong><br><em>(ह्याङ्गिङ म्यान)</em></td>
+<td style="text-align: center;"><code>hanging_man</code><br>(1 Candle)</td>
+<td><code>lowerWick &gt;= body * 1.9 &amp;&amp; upperWick &lt;= body * 0.55 &amp;&amp; !isBull &amp;&amp; p1 &amp;&amp; close &lt; p1.close</code></td>
+<td>Appears at top of an uptrend. Long lower tail proves sellers are breaking through the trend's foundation.</td>
+<td>Warning of trend rollover. Avoid fresh buying; trim exposure if next candle breaks low.</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+<tr>
+<td><strong>16</strong></td>
+<td><strong>Evening Star</strong><br><em>(इभिनिङ स्टार)</em></td>
+<td style="text-align: center;"><code>evening_star</code><br>(3 Candles)</td>
+<td><code>p2Bull &amp;&amp; p2Body &gt; p1Body * 1.8 &amp;&amp; !isBull &amp;&amp; close &lt;= (p2.open + p2.close) / 2</code></td>
+<td>Large green candle <span class="math-inline">\rightarrow</span> exhausted star candle at high <span class="math-inline">\rightarrow</span> deep red breakdown candle penetrating prior advance.</td>
+<td>Classic institutional distribution top. Sell immediately or hedge long exposure.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>17</strong></td>
+<td><strong>Dark Cloud Cover</strong><br><em>(डार्क क्लाउड कभर)</em></td>
+<td style="text-align: center;"><code>dark_cloud_cover</code><br>(2 Candles)</td>
+<td><code>p1Bull &amp;&amp; !isBull &amp;&amp; open &gt; p1.high &amp;&amp; close &lt; (p1.open + p1.close) / 2 &amp;&amp; close &gt; p1.open</code></td>
+<td>Whales sell into an opening gap up, forcing price deep into previous day's green body (closing below 50% midpoint).</td>
+<td>Trim swing positions. Stiff overhead resistance confirmed.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>18</strong></td>
+<td><strong>Tweezer Top</strong><br><em>(ट्विजर्स टप)</em></td>
+<td style="text-align: center;"><code>tweezer_top</code><br>(2 Candles)</td>
+<td><code>p1Bull &amp;&amp; !isBull &amp;&amp; Math.abs(high - p1.high) / high &lt;= 0.004 &amp;&amp; pChange &lt; -0.5</code></td>
+<td>Two consecutive sessions rejected at the exact same ceiling. Whales defending an institutional sell wall.</td>
+<td>Take profits at resistance unless price breaks ceiling on <span class="math-inline">&gt;2x</span> volume.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>19</strong></td>
+<td><strong>Three Black Crows</strong><br><em>(थ्री ब्ल्याक क्रोज)</em></td>
+<td style="text-align: center;"><code>three_black_crows</code><br>(3 Candles)</td>
+<td><code>!p2Bull &amp;&amp; !p1Bull &amp;&amp; !isBull &amp;&amp; close &lt; p1.close &amp;&amp; p1.close &lt; p2.close &amp;&amp; bodyRatio &gt;= 0.55</code></td>
+<td>Severe, systematic institutional dumping across 3 sessions closing near absolute daily lows.</td>
+<td>Do not catch falling knives. Stay in cash until base formation completes.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>20</strong></td>
+<td><strong>Bearish Harami</strong><br><em>(बियरिश हरामी)</em></td>
+<td style="text-align: center;"><code>bearish_harami</code><br>(2 Candles)</td>
+<td><code>p1Bull &amp;&amp; !isBull &amp;&amp; high &lt;= p1.close &amp;&amp; low &gt;= p1.open &amp;&amp; body &lt; p1Body * 0.6</code></td>
+<td>Small red candle trapped inside prior large green body. Buying volume dried up completely at the peak.</td>
+<td>Tighten trailing stops to mother candle low; prepare for downward break.</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+<tr>
+<td><strong>21</strong></td>
+<td><strong>Gravestone Doji</strong><br><em>(ग्रेभस्टोन डोजी)</em></td>
+<td style="text-align: center;"><code>gravestone_doji</code><br>(1 Candle)</td>
+<td><code>bodyRatio &lt;= 0.14 &amp;&amp; upperRatio &gt;= 0.62 &amp;&amp; lowerRatio &lt;= 0.18</code></td>
+<td>Open, Low, and Close sit at bottom of range with massive upper shadow. Bulls lost 100% of intraday gains.</td>
+<td>Extreme overhead rejection warning. Liquidate speculative momentum positions.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>22</strong></td>
+<td><strong>Abandoned Baby Bear</strong><br><em>(एबान्डन्ड बेबी - टप)</em></td>
+<td style="text-align: center;"><code>abandoned_baby_bear</code><br>(3 Candles)</td>
+<td><code>p2Bull &amp;&amp; p1Body &lt; p2Body * 0.3 &amp;&amp; !isBull &amp;&amp; p1.low &gt; p2.high &amp;&amp; p1.low &gt; close.high</code></td>
+<td>Rare island top: Green advance <span class="math-inline">\rightarrow</span> gapped-up Doji <span class="math-inline">\rightarrow</span> gapped-down red candle leaving Doji trapped.</td>
+<td>High-risk bull trap. Exit all swing positions unconditionally.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>23</strong></td>
+<td><strong>Bearish Kicker</strong><br><em>(बियरिश किकर)</em></td>
+<td style="text-align: center;"><code>bearish_kickers</code><br>(2 Candles)</td>
+<td><code>p1Bull &amp;&amp; !isBull &amp;&amp; open &lt;= p1.open &amp;&amp; pChange &lt;= -3.0 &amp;&amp; bodyRatio &gt;= 0.6</code></td>
+<td>Sudden negative shock. Price gaps down below prior green open and sells off with high volume.</td>
+<td>Emergency exit signal. Respect the gap-down resistance zone.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>24</strong></td>
+<td><strong>Falling Window (Gap Down)</strong><br><em>(फलिङ विन्डो)</em></td>
+<td style="text-align: center;"><code>falling_window</code><br>(2 Candles)</td>
+<td><code>high &lt; p1.low * 0.997 &amp;&amp; !isBull &amp;&amp; pChange &lt;= -2.2</code></td>
+<td>Void between prior day low and current high. Aggressive supply overwhelm and liquidity vacuum.</td>
+<td>Falling window gap becomes impenetrable overhead resistance on any bounce.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="group-c-institutional-momentum-expansion-patterns">Group C: Institutional Momentum Expansion Patterns</h4>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pattern Name &amp; Nepali Name</th>
+<th style="text-align: center;">ID &amp; Candles</th>
+<th>Mathematical Detection Algorithm in Code</th>
+<th>Market Psychology &amp; Who is Winning</th>
+<th>Actionable Rule &amp; Invalidation Level</th>
+<th style="text-align: center;">Reliability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>25</strong></td>
+<td><strong>Bullish Marubozu</strong><br><em>(बुलिश मारुबोजु)</em></td>
+<td style="text-align: center;"><code>bullish_marubozu</code><br>(1 Candle)</td>
+<td><code>bodyRatio &gt;= 0.82 &amp;&amp; pChange &gt;= 2.0 &amp;&amp; isBull</code></td>
+<td>Complete, relentless buyer control from the opening bell to the close with negligible wicks (<span class="math-inline">&le; 18\%</span>).</td>
+<td>Strong breakout confirmation. Candle midpoint (<span class="math-inline">50\%</span>) becomes prime support on dips.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+<tr>
+<td><strong>26</strong></td>
+<td><strong>Bearish Marubozu</strong><br><em>(बियरिश मारुबोजु)</em></td>
+<td style="text-align: center;"><code>bearish_marubozu</code><br>(1 Candle)</td>
+<td><code>bodyRatio &gt;= 0.82 &amp;&amp; pChange &lt;= -2.0 &amp;&amp; !isBull</code></td>
+<td>Complete panic selling and institutional liquidation from open to close without buyer pushback.</td>
+<td>Never buy after a Bearish Marubozu. Expect further downward drift.</td>
+<td style="text-align: center;">⭐⭐⭐ (High)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h4 id="group-d-indecision-equilibrium-consolidation-patterns">Group D: Indecision, Equilibrium &amp; Consolidation Patterns</h4>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pattern Name &amp; Nepali Name</th>
+<th style="text-align: center;">ID &amp; Candles</th>
+<th>Mathematical Detection Algorithm in Code</th>
+<th>Market Psychology &amp; Who is Winning</th>
+<th>Actionable Rule &amp; Invalidation Level</th>
+<th style="text-align: center;">Reliability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>27</strong></td>
+<td><strong>Classic Doji</strong><br><em>(क्लासिक डोजी)</em></td>
+<td style="text-align: center;"><code>doji</code><br>(1 Candle)</td>
+<td><code>bodyRatio &lt;= 0.14 &amp;&amp; (range / close) &gt;= 0.01 &amp;&amp; upperRatio &lt; 0.62 &amp;&amp; lowerRatio &lt; 0.62</code></td>
+<td>Open and Close are virtually identical. Perfect equilibrium and standoff between bulls and bears.</td>
+<td>Neutral alone. Await next candle breakout above Doji high (buy) or below Doji low (sell).</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+<tr>
+<td><strong>28</strong></td>
+<td><strong>Long-Legged Doji &amp; Spinning Top</strong><br><em>(लङ-लेग्ड डोजी र स्पिनिङ टप)</em></td>
+<td style="text-align: center;"><code>long_legged_doji</code><br>/ <code>spinning_top</code><br>(1 Candle)</td>
+<td><code>(bodyRatio &lt;= 0.14 &amp;&amp; range / close &gt;= 0.035)</code> or <code>(bodyRatio between 0.14 and 0.34 &amp;&amp; upperRatio &gt;= 0.26 &amp;&amp; lowerRatio &gt;= 0.26)</code></td>
+<td>High volatility with rapid swings in both directions, but market closes with no net directional progress.</td>
+<td>Signals imminent volatility expansion. Enter in direction of next session's volume breakout.</td>
+<td style="text-align: center;">⭐⭐ (Medium)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-interactive-chart-lines-overlays-technical-geometry">7. Interactive Chart Lines, Overlays &amp; Technical Geometry</h2>
+<p>In Drabyashree NEPSE, chart screens (<code>ShareHubChart.jsx</code>, <code>StockCandlestickChart.tsx</code>, and <code>AdvancedChartModal.jsx</code>) render technical geometry using high-performance Canvas and SVG pipelines. Every line has a strict quantitative meaning:</p>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 7.1 — Interactive Chart Overlay Lines & Geometry</div>
+  <svg viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <rect x="10" y="10" width="880" height="260" rx="10" fill="#090d16" stroke="#1e293b" stroke-width="2"/>
+
+    <!-- Legend Items Box -->
+    <g transform="translate(30, 25)">
+      <!-- Target 2 -->
+      <line x1="10" y1="15" x2="60" y2="15" stroke="#34d399" stroke-width="3"/>
+      <text x="75" y="19" fill="#34d399" font-size="12" font-weight="bold">Target 2 Line (Rs. T2)</text>
+      <text x="240" y="19" fill="#94a3b8" font-size="11">Solid #34d399 (2px) — Major Fibonacci Extension Runner Exit (+18% to +25%)</text>
+
+      <!-- Target 1 -->
+      <line x1="10" y1="45" x2="60" y2="45" stroke="#10b981" stroke-width="3"/>
+      <text x="75" y="49" fill="#10b981" font-size="12" font-weight="bold">Target 1 Line (Rs. T1)</text>
+      <text x="240" y="49" fill="#94a3b8" font-size="11">Solid #10b981 (2px) — 50% Profit Realization & Breakeven Trigger (+8% to +12%)</text>
+
+      <!-- Chase Cap -->
+      <line x1="10" y1="75" x2="60" y2="75" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4"/>
+      <text x="75" y="79" fill="#fbbf24" font-size="12" font-weight="bold">Chase Cap Line</text>
+      <text x="240" y="79" fill="#94a3b8" font-size="11">Dashed #f59e0b (1.5px) — Invariant Maximum Entry Ceiling (Breakout Pivot +2.5%)</text>
+
+      <!-- Breakout Pivot -->
+      <line x1="10" y1="105" x2="60" y2="105" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4"/>
+      <text x="75" y="109" fill="#6ee7b7" font-size="12" font-weight="bold">Breakout Pivot Line</text>
+      <text x="240" y="109" fill="#94a3b8" font-size="11">Dashed #10b981 (1.5px) — Key Base Hurdle / Resistance Trigger Point</text>
+
+      <!-- Entry Zone Low -->
+      <line x1="10" y1="135" x2="60" y2="135" stroke="#60a5fa" stroke-width="2" stroke-dasharray="2,3"/>
+      <text x="75" y="139" fill="#60a5fa" font-size="12" font-weight="bold">Entry Zone Low</text>
+      <text x="240" y="139" fill="#94a3b8" font-size="11">Dotted #60a5fa (1px) — Lower Accumulation Shelf Limit</text>
+
+      <!-- Hard Stop -->
+      <line x1="10" y1="165" x2="60" y2="165" stroke="#f43f5e" stroke-width="3"/>
+      <text x="75" y="169" fill="#f43f5e" font-size="12" font-weight="bold">Invalidation Stop Line</text>
+      <text x="240" y="169" fill="#94a3b8" font-size="11">Solid #f43f5e (2px) — Hard Capital Protection Floor (Unconditional Exit)</text>
+
+      <!-- Moving Averages -->
+      <line x1="10" y1="195" x2="60" y2="195" stroke="#38bdf8" stroke-width="2"/>
+      <text x="75" y="199" fill="#38bdf8" font-size="12" font-weight="bold">EMA 20 / EMA 50 / 200</text>
+      <text x="240" y="199" fill="#94a3b8" font-size="11">Cyan (#38bdf8 20d) • Amber (#f59e0b 50d) • Purple (#a855f7 200d Macro Trend)</text>
+
+      <!-- Bollinger -->
+      <line x1="10" y1="225" x2="60" y2="225" stroke="rgba(56, 189, 248, 0.7)" stroke-width="2" stroke-dasharray="3,3"/>
+      <text x="75" y="229" fill="#93c5fd" font-size="12" font-weight="bold">Bollinger Bands (20, 2σ)</text>
+      <text x="240" y="229" fill="#94a3b8" font-size="11">Upper/Lower Dotted Lines • Dashed Middle 20-SMA Baseline • Squeeze Alert &lt;5%</text>
+    </g>
+  </svg>
+</div>
+
+<h3 id="71-complete-guide-to-chart-lines-colors">7.1 Complete Guide to Chart Lines &amp; Colors</h3>
+<table>
+<thead>
+<tr>
+<th>Visual Element</th>
+<th>Color Code &amp; Style</th>
+<th>Technical Formula</th>
+<th>Quantitative Purpose &amp; Investor Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Candlestick (Bull)</strong></td>
+<td><code>#10b981</code> (Emerald Green)</td>
+<td><span class="math-inline">Close &ge; Open</span></td>
+<td>Session closed higher than it opened. Buying pressure dominated.</td>
+</tr>
+<tr>
+<td><strong>Candlestick (Bear)</strong></td>
+<td><code>#f43f5e</code> (Rose Red)</td>
+<td><span class="math-inline">Close &lt; Open</span></td>
+<td>Session closed lower than it opened. Selling pressure dominated.</td>
+</tr>
+<tr>
+<td><strong>EMA 20 Line</strong></td>
+<td><code>#38bdf8</code> (Cyan), 1.5px Solid</td>
+<td><span class="math-inline">EMA_{20 = (Close - EMA_{t-1) &times; \frac{2{21 + EMA_{t-1</span></td>
+<td><strong>Short-Term Momentum Guide</strong>. In strong trends, price remains above EMA-20. Pullbacks touching EMA-20 are prime add-on opportunities.</td>
+</tr>
+<tr>
+<td><strong>EMA 50 Line</strong></td>
+<td><code>#f59e0b</code> (Amber), 1.5px Solid</td>
+<td><span class="math-inline">EMA_{50 = (Close - EMA_{t-1) &times; \frac{2{51 + EMA_{t-1</span></td>
+<td><strong>Institutional Defense Line</strong>. Mutual funds systematically accumulate around the rising 50-EMA. If price closes below 50-EMA for 2+ days, exit swing trades.</td>
+</tr>
+<tr>
+<td><strong>EMA 200 Line</strong></td>
+<td><code>#a855f7</code> (Purple), 2.0px Solid</td>
+<td><span class="math-inline">EMA_{200 = (Close - EMA_{t-1) &times; \frac{2{201 + EMA_{t-1</span></td>
+<td><strong>Macro Regime Filter</strong>. Stocks above EMA-200 are in structural bull markets. Stocks below EMA-200 are in bear cycles. Never hold swing positions below EMA-200.</td>
+</tr>
+<tr>
+<td><strong>Bollinger Upper Band</strong></td>
+<td><code>rgba(56, 189, 248, 0.65)</code> Dotted</td>
+<td><span class="math-inline">SMA_{20 + (2 &times; &sigma;)</span></td>
+<td>Extreme statistical overbought barrier (<span class="math-inline">+2&sigma;</span>). When tagged during low volume, expect pullback to middle band.</td>
+</tr>
+<tr>
+<td><strong>Bollinger Middle Band</strong></td>
+<td><code>rgba(148, 163, 184, 0.5)</code> Dashed</td>
+<td><span class="math-inline">SMA_{20 = \frac{1{20 \sum_{i=1^{20 C<sub>i</sub></span></td>
+<td>Dynamic trend equilibrium. Acts as support in bull trends and resistance in bear trends.</td>
+</tr>
+<tr>
+<td><strong>Bollinger Lower Band</strong></td>
+<td><code>rgba(56, 189, 248, 0.65)</code> Dotted</td>
+<td><span class="math-inline">SMA_{20 - (2 &times; &sigma;)</span></td>
+<td>Extreme statistical oversold barrier (<span class="math-inline">-2&sigma;</span>). Confluence with Hammer indicates institutional buying absorption.</td>
+</tr>
+<tr>
+<td><strong>Support PriceLine</strong></td>
+<td><code>rgba(52, 211, 153, 0.75)</code> Dashed</td>
+<td>Confluence Cluster (<span class="math-inline">&lt; LTP</span>)</td>
+<td>Key demand floor with multiple historical touches. Place buy limits slightly above this line.</td>
+</tr>
+<tr>
+<td><strong>Resistance PriceLine</strong></td>
+<td><code>rgba(251, 113, 133, 0.75)</code> Dashed</td>
+<td>Confluence Cluster (<span class="math-inline">&gt; LTP</span>)</td>
+<td>Heavy overhead supply shelf. Book profits or await high-volume breakout clearance.</td>
+</tr>
+<tr>
+<td><strong>Breakout Pivot Line</strong></td>
+<td><code>#10b981</code> Dashed</td>
+<td>Prior Base Ceiling</td>
+<td>The trigger line. A decisive close above this line activates a trade entry.</td>
+</tr>
+<tr>
+<td><strong>Chase Cap Line</strong></td>
+<td><code>#f59e0b</code> Dashed</td>
+<td><span class="math-inline">Breakout Pivot &times; 1.025</span></td>
+<td><strong>Strict execution ceiling</strong>. Never buy above this line (<span class="math-inline">+2.5\%</span> limit). Protects against mean-reversion drawdowns.</td>
+</tr>
+<tr>
+<td><strong>Invalidation Stop Line</strong></td>
+<td><code>#f43f5e</code> Solid 2px</td>
+<td>Prior Swing Low / Support Shelf</td>
+<td><strong>Hard capital preservation line</strong>. If touched, exit 100% unconditionally.</td>
+</tr>
+<tr>
+<td><strong>Target 1 Line (T1)</strong></td>
+<td><code>#10b981</code> Solid 2px</td>
+<td>Entry <span class="math-inline">+8\%</span> to <span class="math-inline">+12\%</span></td>
+<td>First profit milestone. Sell 50% shares and raise remaining stop to entry price.</td>
+</tr>
+<tr>
+<td><strong>Target 2 Line (T2)</strong></td>
+<td><code>#34d399</code> Solid 2px</td>
+<td>Entry <span class="math-inline">+18\%</span> to <span class="math-inline">+25\%</span></td>
+<td>Secondary runner milestone. Ride until trailing 20-EMA breaks.</td>
+</tr>
+<tr>
+<td><strong>Volume Up Bar</strong></td>
+<td><code>rgba(16, 185, 129, 0.25)</code></td>
+<td><span class="math-inline">Close &ge; Open</span></td>
+<td>Institutional accumulation bar. Height indicates trade volume.</td>
+</tr>
+<tr>
+<td><strong>Volume Down Bar</strong></td>
+<td><code>rgba(244, 63, 94, 0.25)</code></td>
+<td><span class="math-inline">Close &lt; Open</span></td>
+<td>Liquidation bar. If tall (<span class="math-inline">&gt;2x</span> average), indicates distribution.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="72-intraday-1-minute-to-5-minute-aggregation-engine">7.2 Intraday 1-Minute to 5-Minute Aggregation Engine</h3>
+<p>When selecting the <strong>1D Timeframe</strong> in <code>ShareHubChart.jsx</code>:
+* The app automatically aligns to <strong>Nepal Standard Time (NPT: UTC+5:45, offset +20,700s)</strong>.
+* Aggregates raw 1-minute exchange ticks into authentic <strong>5-minute OHLC candlesticks</strong> across the official 11:00 AM to 3:00 PM NEPSE trading session.
+* Pinned volume scale occupies the lower <span class="math-inline">20\%</span> of the canvas (<code>top: 0.8, bottom: 0</code>) to prevent volume spikes from obscuring price action.</p>
+<hr />
+<h3 id="73-interactive-crosshair-inspection-tooltip-readout">7.3 Interactive Crosshair &amp; Inspection Tooltip Readout</h3>
+<p>Hovering or tapping anywhere on the chart activates the dashed crosshair coordinates and displays an instantaneous technical audit:
+* <strong>Date</strong>: ISO formatted Nepal trading date.
+* <strong>Open, High, Low, Close (OHLC)</strong>: Exact Rupee prices.
+* <strong>Change %</strong>: Intraday price movement (<span class="math-inline">\frac{Close - Open{Open &times; 100\%</span>).
+* <strong>Volume</strong>: Total kitta traded in the active period.
+* <strong>Matching EMA-20 &amp; EMA-50</strong>: Precise moving average values at the hovered timestamp, allowing instant verification of whether price is above or below institutional trendlines.</p>
+<hr />
+<h3 id="74-market-structure-swings-breakout-validation-geometry">7.4 Market Structure Swings &amp; Breakout Validation Geometry</h3>
+<p>In <code>src/utils/priceActionEngine.js</code>, market structure is classified using fractal swing identification:</p>
+<ol>
+<li><strong>Fractal Swing Highs &amp; Lows</strong>:</li>
+<li>Evaluated across a 2-bar left and right lookback window.</li>
+<li><code>Swing High</code>: Bar high is strictly higher than 2 bars before and 2 bars after.</li>
+<li><code>Swing Low</code>: Bar low is strictly lower than 2 bars before and 2 bars after.</li>
+<li><strong>The 5 Structural Regimes</strong>:</li>
+<li><strong>Higher Highs &amp; Higher Lows (Strength: 82)</strong>: Confirmed Bullish Market Structure.</li>
+<li><strong>Lower Highs &amp; Lower Lows (Strength: 20)</strong>: Confirmed Bearish Downtrend.</li>
+<li><strong>Tight Consolidation Range (Strength: 60)</strong>: Price oscillating inside a <span class="math-inline">&le; 4.2\%</span> band across 15 sessions. Precursor to explosive breakout.</li>
+<li><strong>Contracting Triangle Compression (Strength: 65)</strong>: Converging lower highs and higher lows. Volatility coiling.</li>
+<li><strong>Broadening Expansion (Strength: 45)</strong>: Expanding highs and expanding lows. Unstable two-way distribution.</li>
+<li><strong>Confluence Support &amp; Resistance Clustering</strong>:</li>
+<li>Gathers candidates from 5 sources: Swing pivots, 52-week High/Low, 20-day range extremes, Classic Floor Pivots (<span class="math-inline">P, R<sub>1</sub>, S<sub>1</sub>, R<sub>2</sub>, S<sub>2</sub></span>), and Fibonacci Retracements (<span class="math-inline">38.2\%, 50\%, 61.8\%</span>).</li>
+<li>Clusters candidates within a strict <strong><span class="math-inline">1.2\%</span> price tolerance</strong>. Multi-source clusters receive the highest strength scores (<span class="math-inline">45</span> to <span class="math-inline">95</span>).</li>
+<li><strong>Breakout Clearance Buffer &amp; Bull Trap Detection</strong>:</li>
+<li><strong>Clearance Buffer</strong>: To prevent 10-paisa noise from triggering false breakouts, price must clear resistance by:
+     <div class="math-block">Clearance Buffer = \max(LTP &times; 0.35\%,\, 0.20 &times; ATR)</div></li>
+<li><strong>Bull Trap (Exhaustion Breakout)</strong>: If a candle breaches resistance but its <strong>upper wick constitutes <span class="math-inline">&ge; 40\%</span> of its total range</strong>, whales sold into retail breakout buyers. High risk of immediate reversal.</li>
+<li><strong>Breakout Retest</strong>: Price breaks resistance, pulls back within <span class="math-inline">1.5\%</span> of the broken level, and bounces with green follow-through <span class="math-inline">\rightarrow</span> Highest-conviction entry point (Strength: 88).</li>
+</ol>
+<hr />
+<h2 id="8-volatility-statistical-momentum-technical-speedometer">8. Volatility, Statistical Momentum &amp; Technical Speedometer</h2>
+<h3 id="81-the-12-indicator-technical-rating-speedometer-engine">8.1 The 12-Indicator Technical Rating Speedometer Engine</h3>
+<p>Located in <code>StockTechnicalGaugeCard.jsx</code> and <code>candlestickPatterns.js</code>, the app synthesizes <strong>6 Moving Averages + 6 Oscillators</strong> into an institutional speedometer needle (<span class="math-inline">-88^\circ</span> to <span class="math-inline">+88^\circ</span>) and consensus rating:</p>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 8.1 — Technical Speedometer Consensus Architecture</div>
+  <svg viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <rect x="10" y="10" width="880" height="220" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+
+    <!-- Moving Averages Column -->
+    <rect x="30" y="30" width="220" height="180" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="140" y="55" fill="#60a5fa" font-size="13" font-weight="bold" text-anchor="middle">6 Moving Averages</text>
+    <text x="50" y="85" fill="#e2e8f0" font-size="11">• EMA (10) &amp; EMA (20)</text>
+    <text x="50" y="110" fill="#e2e8f0" font-size="11">• SMA (50) &amp; EMA (50)</text>
+    <text x="50" y="135" fill="#e2e8f0" font-size="11">• SMA (100)</text>
+    <text x="50" y="160" fill="#e2e8f0" font-size="11">• SMA (200 Macro)</text>
+    <text x="140" y="192" fill="#94a3b8" font-size="10" text-anchor="middle">Threshold: ±0.35% from LTP</text>
+
+    <!-- Plus Sign -->
+    <text x="280" y="128" fill="#38bdf8" font-size="28" font-weight="bold" text-anchor="middle">+</text>
+
+    <!-- Oscillators Column -->
+    <rect x="310" y="30" width="220" height="180" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5"/>
+    <text x="420" y="55" fill="#22d3ee" font-size="13" font-weight="bold" text-anchor="middle">6 Technical Oscillators</text>
+    <text x="330" y="85" fill="#e2e8f0" font-size="11">• RSI 14 (Wilder's)</text>
+    <text x="330" y="110" fill="#e2e8f0" font-size="11">• MACD Histogram (12,26,9)</text>
+    <text x="330" y="135" fill="#e2e8f0" font-size="11">• Stochastic %K (52W Range)</text>
+    <text x="330" y="160" fill="#e2e8f0" font-size="11">• RVOL 20D • ADX • CCI</text>
+    <text x="420" y="192" fill="#94a3b8" font-size="10" text-anchor="middle">Dynamic Multi-Timeframe Range</text>
+
+    <!-- Arrow to Consensus -->
+    <path d="M 540 120 L 590 120" stroke="#38bdf8" stroke-width="3" fill="none"/>
+    <polygon points="590,115 600,120 590,125" fill="#38bdf8"/>
+
+    <!-- Consensus & Speedometer -->
+    <rect x="610" y="30" width="260" height="180" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="2"/>
+    <text x="740" y="55" fill="#34d399" font-size="13" font-weight="bold" text-anchor="middle">Speedometer Output</text>
+    <text x="740" y="85" fill="#f8fafc" font-size="12" font-weight="bold" text-anchor="middle">Needle: -88° to +88°</text>
+    <text x="740" y="110" fill="#cbd5e1" font-size="11" text-anchor="middle">Net Consensus: -12 to +12</text>
+    <text x="740" y="145" fill="#34d399" font-size="12" font-weight="bold" text-anchor="middle">STRONG BUY (≥ +0.50)</text>
+    <text x="740" y="165" fill="#fbbf24" font-size="11" text-anchor="middle">BUY • NEUTRAL • SELL</text>
+    <text x="740" y="185" fill="#f43f5e" font-size="12" font-weight="bold" text-anchor="middle">STRONG SELL (≤ -0.50)</text>
+  </svg>
+</div>
+
+<h4 id="speedometer-signal-evaluation-matrix">Speedometer Signal Evaluation Matrix:</h4>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Indicator</th>
+<th>Buy Signal Trigger</th>
+<th>Neutral Zone</th>
+<th>Sell Signal Trigger</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>EMA 10</strong></td>
+<td><span class="math-inline">LTP &gt; EMA_{10 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; EMA_{10 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>EMA 20</strong></td>
+<td><span class="math-inline">LTP &gt; EMA_{20 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; EMA_{20 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>SMA 50</strong></td>
+<td><span class="math-inline">LTP &gt; SMA_{50 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; SMA_{50 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>EMA 50</strong></td>
+<td><span class="math-inline">LTP &gt; EMA_{50 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; EMA_{50 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>SMA 100</strong></td>
+<td><span class="math-inline">LTP &gt; SMA_{100 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; SMA_{100 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Moving Average</strong></td>
+<td><strong>SMA 200</strong></td>
+<td><span class="math-inline">LTP &gt; SMA_{200 + 0.35\%</span></td>
+<td>Within <span class="math-inline">\pm 0.35\%</span></td>
+<td><span class="math-inline">LTP &lt; SMA_{200 - 0.35\%</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>RSI (14)</strong></td>
+<td><span class="math-inline">52 &le; RSI &le; 72</span> or <span class="math-inline">RSI &lt; 32</span></td>
+<td><span class="math-inline">44 &le; RSI &lt; 52</span></td>
+<td><span class="math-inline">RSI &gt; 75</span> or <span class="math-inline">RSI &lt; 44</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>MACD Histogram</strong></td>
+<td><span class="math-inline">Histogram &gt; +0.05</span></td>
+<td><span class="math-inline">-0.05 &le; Histo &le; +0.05</span></td>
+<td><span class="math-inline">Histogram &lt; -0.05</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>Stochastic %K</strong></td>
+<td><span class="math-inline">50\% &le; \%K &le; 82\%</span> or <span class="math-inline">\%K &lt; 22\%</span></td>
+<td><span class="math-inline">40\% &le; \%K &lt; 50\%</span></td>
+<td><span class="math-inline">\%K &gt; 88\%</span> or <span class="math-inline">\%K &lt; 40\%</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>Volume RVOL (20D)</strong></td>
+<td><span class="math-inline">RVOL &ge; 1.25x</span> with <span class="math-inline">\Delta P &ge; 0</span></td>
+<td><span class="math-inline">0.80x &le; RVOL &lt; 1.25x</span></td>
+<td><span class="math-inline">RVOL &ge; 1.25x</span> with <span class="math-inline">\Delta P &lt; -1\%</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>ADX Trend</strong></td>
+<td><span class="math-inline">ADX &ge; 22</span> with <span class="math-inline">\Delta P &gt; 0</span></td>
+<td><span class="math-inline">ADX &lt; 22</span> (No Trend)</td>
+<td><span class="math-inline">ADX &ge; 22</span> with <span class="math-inline">\Delta P &lt; 0</span></td>
+</tr>
+<tr>
+<td><strong>Oscillator</strong></td>
+<td><strong>CCI (20)</strong></td>
+<td><span class="math-inline">CCI &gt; +25</span></td>
+<td><span class="math-inline">-25 &le; CCI &le; +25</span></td>
+<td><span class="math-inline">CCI &lt; -25</span></td>
+</tr>
+</tbody>
+</table>
+<h4 id="consensus-rating-output">Consensus Rating Output:</h4>
+<div class="math-block">Consensus Ratio = \frac{Total Buys - Total Sells{Total Evaluated Indicators  &nbsp;  (-1.0  to  +1.0)</div>
+
+<ul>
+<li><strong>Strong Buy</strong>: <span class="math-inline">Consensus Ratio &ge; +0.50</span> (Needle angle <span class="math-inline">+44^\circ</span> to <span class="math-inline">+88^\circ</span>).</li>
+<li><strong>Buy</strong>: <span class="math-inline">+0.16 &le; Consensus Ratio &lt; +0.50</span> (Needle angle <span class="math-inline">+14^\circ</span> to <span class="math-inline">+44^\circ</span>).</li>
+<li><strong>Neutral</strong>: <span class="math-inline">-0.16 &lt; Consensus Ratio &lt; +0.16</span> (Needle centered around <span class="math-inline">0^\circ</span>).</li>
+<li><strong>Sell</strong>: <span class="math-inline">-0.50 &lt; Consensus Ratio &le; -0.16</span> (Needle angle <span class="math-inline">-14^\circ</span> to <span class="math-inline">-44^\circ</span>).</li>
+<li><strong>Strong Sell</strong>: <span class="math-inline">Consensus Ratio &le; -0.50</span> (Needle angle <span class="math-inline">-44^\circ</span> to <span class="math-inline">-88^\circ</span>).</li>
+</ul>
+<hr />
+<h3 id="82-bollinger-bands-20-2-bollinger-squeeze">8.2 Bollinger Bands (<span class="math-inline">20, 2&sigma;</span>) &amp; Bollinger Squeeze</h3>
+<ul>
+<li><strong>Middle Band</strong>: 20-period Simple Moving Average (<span class="math-inline">SMA_{20</span>).</li>
+<li><strong>Upper / Lower Bands</strong>: <span class="math-inline">Middle Band \pm (2 &times; Standard Deviation)</span>.</li>
+<li>
+<p><strong>Bandwidth (<span class="math-inline">\%BW</span>)</strong>:
+<br />
+<div class="math-block">\%BW = \frac{Upper Band - Lower Band{Middle Band &times; 100\%</div></p>
+</li>
+<li>
+<p><strong>Bollinger Squeeze</strong>: Occurs when <span class="math-inline">\%BW &lt; 5.0\%</span>. Signals extreme volatility compression; an explosive <span class="math-inline">+15\%</span> to <span class="math-inline">+30\%</span> move is imminent.</p>
+</li>
+<li>
+<p><strong><span class="math-inline">\%B</span> Indicator</strong>:
+<br />
+<div class="math-block">\%B = \frac{LTP - Lower Band{Upper Band - Lower Band &times; 100\%</div></p>
+</li>
+<li>
+<p><span class="math-inline">\%B &gt; 100\%</span>: Price closed above upper band (strong momentum, but elevated pullback risk).</p>
+</li>
+<li><span class="math-inline">\%B &lt; 0\%</span>: Price closed below lower band (panic liquidation).</li>
+</ul>
+<hr />
+<h3 id="83-atr-average-true-range-14-periods">8.3 ATR (Average True Range — 14 Periods)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>: Measures absolute price volatility in Nepalese Rupees using Wilder's smoothed method:
+<br />
+<div class="math-block">TR = \max\big((H - L),\, |H - C_{prev|,\, |L - C_{prev|\big)</div></p>
+</li>
+<li>
+<p><strong>Usage</strong>: Set dynamic stop-losses at <strong><span class="math-inline">1.5x to  2.0x ATR</span></strong> below purchase price to prevent being shaken out by normal daily market noise.</p>
+</li>
+</ul>
+<hr />
+<h3 id="84-volume-z-score-z_vol">8.4 Volume Z-Score (<span class="math-inline">Z_{vol</span>)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>: Measures how many standard deviations today's volume deviates from its 20-day rolling mean:
+<br />
+<div class="math-block">Z_{vol = \frac{Volume - &mu;_{20{&sigma;_{20</div></p>
+</li>
+<li>
+<p><strong>Interpretation</strong>:</p>
+</li>
+<li><strong><span class="math-inline">Z_{vol &gt; +2.0</span></strong>: Statistically significant institutional volume footprint (<span class="math-inline">97.7th</span> percentile).</li>
+<li><strong><span class="math-inline">Z_{vol &lt; -1.0</span></strong>: Extreme volume dry-up (VDU).</li>
+</ul>
+<hr />
+<h3 id="85-mansfield-relative-strength-mrs">8.5 Mansfield Relative Strength (MRS)</h3>
+<ul>
+<li><strong>Definition</strong>: Measures a stock's outperformance relative to the benchmark NEPSE Index:</li>
+<li><strong><span class="math-inline">MRS &gt; 0</span></strong>: <strong>Market Leader</strong>. Outperforming NEPSE; leads the market upward during bull phases.</li>
+<li><strong><span class="math-inline">MRS &lt; 0</span></strong>: <strong>Laggard</strong>. Underperforming the index; avoid deploying swing capital here.</li>
+</ul>
+<hr />
+<h2 id="9-fundamentals-solvency-valuation-frameworks">9. Fundamentals, Solvency &amp; Valuation Frameworks</h2>
+<h3 id="91-eps-pe-pbv-multiples">9.1 EPS, P/E &amp; PBV Multiples</h3>
+<ul>
+<li><strong>EPS (Earnings Per Share)</strong>: <span class="math-inline">Net Profit After Tax / Total Outstanding Shares</span>.</li>
+<li><strong>P/E (Price-to-Earnings)</strong>: <span class="math-inline">LTP / EPS</span>. Compare against Sector P/E.</li>
+<li><strong>PBV (Price-to-Book Value)</strong>: <span class="math-inline">LTP / Book Value Per Share (BVPS)</span>. Measures asset backing.</li>
+</ul>
+<h3 id="92-banking-solvency-npl-car-nrb-regulatory-directives">9.2 Banking Solvency: NPL &amp; CAR (NRB Regulatory Directives)</h3>
+<ul>
+<li><strong>NPL (Non-Performing Loan Ratio)</strong>: Percentage of loans overdue <span class="math-inline">&gt; 90</span> days.</li>
+<li><strong>NPL <span class="math-inline">&le; 3.5\%</span></strong>: Healthy bank.</li>
+<li><strong>NPL <span class="math-inline">&gt; 5.0\%</span></strong>: <strong>Severe Red Flag.</strong> Nepal Rastra Bank <strong>prohibits banks with <span class="math-inline">NPL &gt; 5.0\%</span> from distributing any cash dividends or bonus shares</strong>.</li>
+<li><strong>CAR (Capital Adequacy Ratio — Basel III)</strong>:</li>
+<li>Must be maintained at <strong><span class="math-inline">&ge; 11.5\%</span></strong>.</li>
+<li>If CAR drops below <span class="math-inline">11.5\%</span>, NRB imposes Prompt Corrective Action (PCA) and halts all dividend declarations.</li>
+</ul>
+<h3 id="93-graham-intrinsic-valuation-margin-of-safety">9.3 Graham Intrinsic Valuation &amp; Margin of Safety</h3>
+<ul>
+<li><strong>Classical Formula</strong>:
+<br />
+<div class="math-block">Intrinsic Value = \sqrt{22.5 &times; EPS &times; BVPS</div></li>
+</ul>
+<div class="math-block">Margin of Safety (MoS) = \frac{Intrinsic Value - LTP{Intrinsic Value &times; 100\%</div>
+<ul>
+<li><strong>Thresholds</strong>:</li>
+<li><strong><span class="math-inline">MoS &ge; +20\%</span></strong>: Deeply undervalued with tangible asset protection.</li>
+<li><strong><span class="math-inline">MoS &lt; -20\%</span></strong>: Premium multiple; trade purely on momentum, not value.</li>
+</ul>
+<h3 id="94-equity-risk-premium-erp-vs-bank-fixed-deposit">9.4 Equity Risk Premium (ERP vs. Bank Fixed Deposit)</h3>
+<ul>
+<li>
+<p><strong>Definition</strong>:
+<br />
+<div class="math-block">Earnings Yield = \frac{EPS{LTP &times; 100\%  &nbsp; | &nbsp;  ERP = Earnings Yield - Bank FD Rate (7.5\%)</div></p>
+</li>
+<li>
+<p><strong>Warning</strong>: If a stock has an earnings yield of <span class="math-inline">3.5\%</span> and commercial banks pay <span class="math-inline">7.5\%</span> on Fixed Deposits, <span class="math-inline">ERP = -4.0\%</span>. You are accepting stock market volatility for less return than a risk-free bank deposit.</p>
+</li>
+</ul>
+<h3 id="95-buffett-indicator-nepse-capitalization-to-gdp">9.5 Buffett Indicator (NEPSE Capitalization to GDP)</h3>
+<ul>
+<li><strong>Formula</strong>: <span class="math-inline">\frac{Total NEPSE Market Cap{Nepal GDP &times; 100\%</span>.</li>
+<li><strong><span class="math-inline">&lt; 60\%</span></strong>: Macro undervaluation (generational buying zone).</li>
+<li><strong><span class="math-inline">70\%–100\%</span></strong>: Fair macro valuation.</li>
+<li><strong><span class="math-inline">&gt; 120\%</span></strong>: Macro bubble territory (seen at NEPSE 3,200 in 2021). Expect severe systemic correction.</li>
+</ul>
+<hr />
+<h2 id="10-capital-structure-public-float-corporate-actions">10. Capital Structure, Public Float &amp; Corporate Actions</h2>
+<h3 id="101-public-float-vs-float-market-cap">10.1 Public Float vs. Float Market Cap</h3>
+<ul>
+<li><strong>Public Float</strong>: The actual percentage of shares tradable on the exchange floor (typically <span class="math-inline">30\%</span> to <span class="math-inline">49\%</span>, with promoters holding <span class="math-inline">51\%</span> to <span class="math-inline">70\%</span>).</li>
+<li><strong>Float Market Cap</strong>: <span class="math-inline">Public Float Shares &times; LTP</span>.</li>
+<li><strong>Market Dynamics</strong>: Low float stocks (<span class="math-inline">&lt; Rs.  50 Crores</span>) can be easily cornered by syndicates, causing rapid price movements, but carry severe liquidity exit risk.</li>
+</ul>
+<h3 id="102-promoter-lock-in-expiry-the-3-year-liquidity-shock">10.2 Promoter Lock-in Expiry (The 3-Year Liquidity Shock)</h3>
+<ul>
+<li><strong>Statutory Rule</strong>: SEBON mandates that promoter shares of listed companies (especially Hydropower and Manufacturing) are legally <strong>locked for 3 years</strong> following IPO allotment.</li>
+<li><strong>The Hazard</strong>: When the 3-year lock-in date arrives, <strong>millions of promoter shares unlock simultaneously</strong>. Promoters who acquired shares at Rs. 100 often dump them onto the open market at Rs. 300–400, causing a severe supply shock and steep price collapse. Always check the <strong>Promoter Lock-in Tool</strong> before entering hydropower positions.</li>
+</ul>
+<h3 id="103-bonus-share-right-share-adjustment-formulas">10.3 Bonus Share &amp; Right Share Adjustment Formulas</h3>
+<ul>
+<li>
+<p><strong>Bonus Adjustment</strong>:
+<br />
+<div class="math-block">Adjusted Price = \frac{Previous Close{1 + \frac{Bonus  \%{100</div></p>
+</li>
+<li>
+<p><strong>Right Share Adjustment</strong>:
+<br />
+<div class="math-block">Adjusted Price = \frac{Previous Close + (Right Ratio &times; 100){1 + Right Ratio</div>
+</p>
+</li>
+</ul>
+<hr />
+<h2 id="11-statutory-regulations-taxes-fees-settlement-operations">11. Statutory Regulations, Taxes, Fees &amp; Settlement Operations</h2>
+<h3 id="111-t2-rolling-settlement-cycle">11.1 T+2 Rolling Settlement Cycle</h3>
+<ul>
+<li><strong>Mechanics</strong>:</li>
+<li><strong>Day <span class="math-inline">T</span></strong>: Trade executed.</li>
+<li><strong>Day <span class="math-inline">T+1</span></strong>: Clearing &amp; broker transfer.</li>
+<li><strong>Day <span class="math-inline">T+2</span></strong>: Shares credited to Demat; funds settled.</li>
+<li><strong>Strict Constraint</strong>: You <strong>cannot sell your shares on Day <span class="math-inline">T</span> or Day <span class="math-inline">T+1</span></strong>. If a stock drops after you buy, you are legally locked into holding the position for 2 business days.</li>
+</ul>
+<h3 id="112-capital-gains-tax-cgt-slabs">11.2 Capital Gains Tax (CGT) Slabs</h3>
+<ul>
+<li><strong>Individual Short-Term (<span class="math-inline">&lt; 365</span> days)</strong>: <strong><span class="math-inline">7.5\%</span></strong> on net gain.</li>
+<li><strong>Individual Long-Term (<span class="math-inline">&ge; 365</span> days)</strong>: <strong><span class="math-inline">5.0\%</span></strong> on net gain.</li>
+<li><strong>Institutional / Corporate</strong>: <strong><span class="math-inline">10.0\%</span></strong>.</li>
+</ul>
+<h3 id="113-sebon-brokerage-slabs-statutory-costs">11.3 SEBON Brokerage Slabs &amp; Statutory Costs</h3>
+<p>Every trade on NEPSE incurs statutory fees:
+* <strong>SEBON Regulatory Fee</strong>: <span class="math-inline">0.015\%</span> of turnover.
+* <strong>DP (Depository Participant) Fee</strong>: Flat <strong>Rs. 25</strong> per scrip per day (on sale).
+* <strong>Brokerage Commission Rates</strong>:
+  * Up to Rs. 50,000: <strong><span class="math-inline">0.40\%</span></strong>
+  * Rs. 50,000 to Rs. 500,000: <strong><span class="math-inline">0.37\%</span></strong>
+  * Rs. 500,000 to Rs. 2,000,000: <strong><span class="math-inline">0.34\%</span></strong>
+  * Rs. 2,000,000 to Rs. 1 Crore: <strong><span class="math-inline">0.30\%</span></strong>
+  * Above Rs. 1 Crore: <strong><span class="math-inline">0.27\%</span></strong>
+* <strong>Statutory Breakeven</strong>: A stock must rise by at least <strong><span class="math-inline">+0.80\%</span> to <span class="math-inline">+0.90\%</span></strong> just to cover round-trip transaction costs.</p>
+<h3 id="114-nrb-margin-lending-70-ltv-maintenance-rules">11.4 NRB Margin Lending (70% LTV &amp; Maintenance Rules)</h3>
+<ul>
+<li><strong>Loan Ceiling</strong>: Bank share loans are capped at <strong><span class="math-inline">70\%</span></strong> of the 180-day average price or current LTP (whichever is lower).</li>
+<li><strong>Individual Borrower Cap</strong>: Rs. 15 Crores.</li>
+<li><strong>Margin Calls</strong>: If the market drops and collateral coverage falls below 150%, banks issue a margin call. If not topped up within the deadline, the bank will force-sell your shares at market price.</li>
+</ul>
+<h3 id="115-15-daily-circuit-band">11.5 15% Daily Circuit Band</h3>
+<ul>
+<li>Under SEBON Fourth Amendment 2082, the maximum daily price fluctuation on individual equities is <strong><span class="math-inline">\pm 15\%</span></strong>.</li>
+<li>An upper circuit lock (<span class="math-inline">+15\%</span>) means there are zero sellers; a lower circuit lock (<span class="math-inline">-15\%</span>) means there are zero buyers.</li>
+</ul>
+<hr />
+<h2 id="12-calendar-cycles-corporate-timing-seasonality">12. Calendar Cycles, Corporate Timing &amp; Seasonality</h2>
+<h3 id="121-book-closure-date-vs-record-date">12.1 Book Closure Date vs. Record Date</h3>
+<ul>
+<li><strong>Rule</strong>: You must buy and hold the stock <strong>at least 1 trading day before the Book Closure Date</strong> to be eligible for dividends, bonus shares, or rights. Buying on the Book Closure Date itself disqualifies you.</li>
+</ul>
+<h3 id="122-quarter-end-window-dressing">12.2 Quarter-End Window Dressing</h3>
+<ul>
+<li>Occurs in <strong>Ashoj, Poush, Chaitra, and Ashadh</strong>.</li>
+<li>BFIs and mutual funds frequently purchase select benchmark stocks during the final 5 trading days of the quarter to artificially inflate their balance sheet asset valuations before publishing quarterly reports.</li>
+</ul>
+<hr />
+<h2 id="13-master-investor-decision-flowchart-pre-trade-checklist">13. Master Investor Decision Flowchart &amp; Pre-Trade Checklist</h2>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 13.1 — Master Investor Decision Matrix & Trade Gatekeeper</div>
+  <svg viewBox="0 0 880 430" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <defs>
+      <marker id="arr5" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+      </marker>
+    </defs>
+    <!-- Start -->
+    <rect x="30" y="20" width="560" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+    <text x="310" y="45" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">CANDIDATE STOCK IDENTIFIED</text>
+
+    <!-- Reject Box -->
+    <rect x="660" y="90" width="180" height="240" rx="8" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
+    <text x="750" y="195" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle">ABORT TRADE</text>
+    <text x="750" y="225" fill="#fecdd3" font-size="12" text-anchor="middle">Capital Protected</text>
+    <text x="750" y="245" fill="#fecdd3" font-size="11" text-anchor="middle">Zero Execution</text>
+
+    <!-- Gate 1 -->
+    <line x1="310" y1="60" x2="310" y2="85" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr5)"/>
+    <rect x="30" y="85" width="560" height="45" rx="6" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="50" y="112" fill="#60a5fa" font-size="12" font-weight="bold">GATE 1:</text>
+    <text x="120" y="112" fill="#f8fafc" font-size="12">NRB Solvency Directives (CAR ≥ 11.5% &amp; NPL ≤ 3.5%)?</text>
+    <line x1="590" y1="107" x2="660" y2="107" stroke="#f43f5e" stroke-width="2" marker-end="url(#arr5)"/>
+    <text x="625" y="100" fill="#f43f5e" font-size="10" font-weight="bold">NO</text>
+
+    <!-- Gate 2 -->
+    <line x1="310" y1="130" x2="310" y2="155" stroke="#10b981" stroke-width="2" marker-end="url(#arr5)"/>
+    <rect x="30" y="155" width="560" height="45" rx="6" fill="#0f172a" stroke="#06b6d4" stroke-width="1.5"/>
+    <text x="50" y="182" fill="#22d3ee" font-size="12" font-weight="bold">GATE 2:</text>
+    <text x="120" y="182" fill="#f8fafc" font-size="12">Floorsheet Order Flow (No Distribution Trap &amp; BCR₃ Buy > Sell)?</text>
+    <line x1="590" y1="177" x2="660" y2="177" stroke="#f43f5e" stroke-width="2" marker-end="url(#arr5)"/>
+    <text x="625" y="170" fill="#f43f5e" font-size="10" font-weight="bold">NO</text>
+
+    <!-- Gate 3 -->
+    <line x1="310" y1="200" x2="310" y2="225" stroke="#10b981" stroke-width="2" marker-end="url(#arr5)"/>
+    <rect x="30" y="225" width="560" height="45" rx="6" fill="#0f172a" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="50" y="252" fill="#a78bfa" font-size="12" font-weight="bold">GATE 3:</text>
+    <text x="120" y="252" fill="#f8fafc" font-size="12">Market Structure (Minervini Stage 2 or Wyckoff Accumulation)?</text>
+    <line x1="590" y1="247" x2="660" y2="247" stroke="#f43f5e" stroke-width="2" marker-end="url(#arr5)"/>
+    <text x="625" y="240" fill="#f43f5e" font-size="10" font-weight="bold">NO</text>
+
+    <!-- Gate 4 -->
+    <line x1="310" y1="270" x2="310" y2="295" stroke="#10b981" stroke-width="2" marker-end="url(#arr5)"/>
+    <rect x="30" y="295" width="560" height="45" rx="6" fill="#0f172a" stroke="#ec4899" stroke-width="1.5"/>
+    <text x="50" y="322" fill="#f472b6" font-size="12" font-weight="bold">GATE 4:</text>
+    <text x="120" y="322" fill="#f8fafc" font-size="12">Price Action &amp; Chase Cap (Reversal Candle &amp; LTP ≤ Pivot +2.5%)?</text>
+    <line x1="590" y1="317" x2="660" y2="317" stroke="#f43f5e" stroke-width="2" marker-end="url(#arr5)"/>
+    <text x="625" y="310" fill="#f43f5e" font-size="10" font-weight="bold">NO</text>
+
+    <!-- Gate 5 & Execution -->
+    <line x1="310" y1="340" x2="310" y2="365" stroke="#10b981" stroke-width="2" marker-end="url(#arr5)"/>
+    <rect x="30" y="365" width="810" height="48" rx="8" fill="#065f46" stroke="#34d399" stroke-width="2"/>
+    <text x="435" y="395" fill="#ffffff" font-size="13" font-weight="bold" text-anchor="middle">✓ GATE 5 PASSED (RRR ≥ 1:2.0) — EXECUTE ORDER WITH HARD STOP-LOSS</text>
+  </svg>
+</div>
+
+<h3 id="the-5-point-mandatory-pre-trade-checklist">The 5-Point Mandatory Pre-Trade Checklist:</h3>
+<ol>
+<li><strong>Fundamental Solvency</strong>: Is EPS positive and NPL <span class="math-inline">&le; 3.5\%</span>?</li>
+<li><strong>Promoter Supply Safety</strong>: Is the stock clear of 3-year lock-in dump risk?</li>
+<li><strong>Smart Money Clearance</strong>: Is the Distribution Trap flag <strong>FALSE</strong> and <span class="math-inline">BCR<sub>3</sub>  Buy &gt; Sell</span>?</li>
+<li><strong>Discipline at Pivot</strong>: Is price strictly below the <strong>Chase Cap (<span class="math-inline">Pivot + 2.5\%</span>)</strong>?</li>
+<li><strong>Execution Math</strong>: Is the Risk-to-Reward Ratio at least <strong><span class="math-inline">1:2.0</span></strong>, with Target 1 defined and a non-negotiable Hard Stop-Loss placed?</li>
+</ol>
+<hr />
+<h2 id="14-empirical-discoveries-edge-case-audits-real-case-studies">14. Empirical Discoveries, Edge-Case Audits &amp; Real Case Studies</h2>
+<p>This section documents the specific empirical findings, mathematical edge-cases, and live exchange investigations audited directly from the Drabyashree NEPSE engine.</p>
+<h3 id="141-the-bcr3-40-paradox-the-joshi-bedc-investigation">14.1 The <span class="math-inline">BCR<sub>3</sub> &gt; 40\%</span> Paradox (The JOSHI / BEDC Investigation)</h3>
+<ul>
+<li><strong>The Confusion</strong>: Why does a stock with high buying concentration (<span class="math-inline">BCR<sub>3</sub>  Buy &ge; 45\%</span>) get flagged by the radar as a <strong>🚨 DISTRIBUTION TRAP</strong>?</li>
+<li><strong>The Mathematical Reality</strong>:</li>
+<li>In classic retail technical analysis, people only look at the buyer side: <em>"Broker #58 bought 45% of the shares today, so institutions are buying!"</em></li>
+<li><strong>The Hidden Half of the Tape</strong>: What did the selling side look like?<ul>
+<li>If top brokers bought <span class="math-inline">45\%</span> of the buy volume, but the top 3 selling brokers dumped <strong><span class="math-inline">58\%</span> of the sell volume</strong>, the net balance of smart money is <strong>negative</strong>.</li>
+<li>If the top seller is executing large block orders (<span class="math-inline">&gt;20\%</span> of session turnover) into small 10–50 kitta retail bids on a green day (+2% to +5%), smart money is using <strong>retail excitement as exit liquidity</strong>.</li>
+</ul>
+</li>
+<li><strong>The Invariant Rule</strong>: A high <span class="math-inline">BCR<sub>3</sub>  Buy</span> is <strong>invalidated</strong> if <span class="math-inline">BCR<sub>3</sub>  Sell &ge; 45\%</span> and exceeds buy concentration by <span class="math-inline">&ge; 10\%</span>.</li>
+</ul>
+<hr />
+<h3 id="142-real-world-case-study-ghl-genuine-institutional-cornering">14.2 Real-World Case Study: GHL (Genuine Institutional Cornering)</h3>
+<ul>
+<li><strong>Session Date</strong>: October 13, 2026</li>
+<li><strong>Exchange Tape Metrics</strong>:</li>
+<li><strong>Total Trades</strong>: 1,743 trades</li>
+<li><strong>Traded Volume</strong>: 1,216,448 kitta</li>
+<li><strong>Session Turnover</strong>: Rs. 36.48 Crores (Rs. 364,778,570.80)</li>
+<li><strong>Block Trades (<span class="math-inline">&ge; 1,000</span> kitta or <span class="math-inline">&ge; 3 Lakhs</span>)</strong>: 374 trades</li>
+<li><strong>Broker Concentration</strong>:</li>
+<li><strong><span class="math-inline">BCR<sub>3</sub>  Buy = 41.0\%</span></strong> (Broker #58: 21.9%, Broker #62: 9.9%, Broker #35: 9.1%)</li>
+<li><strong><span class="math-inline">BCR<sub>3</sub>  Sell = 25.5\%</span></strong> (Broker #58: 14.1%, Broker #49: 6.0%, Broker #62: 5.3%)</li>
+<li><strong>Net Smart Money Flow</strong>:</li>
+<li><strong>Broker #58</strong>: Bought 266,668 kitta | Sold 171,477 kitta <span class="math-inline">\rightarrow</span> <strong>Net <span class="math-inline">+95,191</span> kitta (+Rs. 2.85 Cr)</strong></li>
+<li><strong>Broker #62</strong>: Net <span class="math-inline">+56,113</span> kitta</li>
+<li><strong>Broker #35</strong>: Net <span class="math-inline">+54,649</span> kitta</li>
+<li><strong>Audit Verdict</strong>:</li>
+<li>Buy concentration (<span class="math-inline">41.0\%</span>) heavily dominates sell concentration (<span class="math-inline">25.5\%</span>) by <span class="math-inline">+15.5\%</span>.</li>
+<li>Top sellers are fragmented retail accounts (highest net seller was Broker #49 with only <span class="math-inline">-41k</span> kitta).</li>
+<li>Verdict: <strong>🟢 INSTITUTIONAL ACCUMULATION CONFIRMED (Zero Trap)</strong>.</li>
+</ul>
+<hr />
+<h3 id="143-real-world-case-study-sadbl-the-complete-session-audit">14.3 Real-World Case Study: SADBL (The Complete Session Audit)</h3>
+<ul>
+<li><strong>Session Date</strong>: October 13, 2026</li>
+<li><strong>Exchange Tape Metrics</strong>:</li>
+<li><strong>Total Trades</strong>: Exactly <strong>87 trades</strong> (100% matched to NEPSE NOTS and Chukul feeds)</li>
+<li><strong>Traded Volume</strong>: Exactly <strong>35,119 kitta</strong></li>
+<li><strong>Session Turnover</strong>: Exactly <strong>Rs. 1,41,46,784.40</strong> (accurate to the exact paisa)</li>
+<li><strong>First Trade</strong>: Contract <code>2026101303000186</code> (Buyer #29, Seller #32, 50 kitta @ Rs. 404.00)</li>
+<li><strong>Last Trade</strong>: Contract <code>2026101303010699</code> (Buyer #32, Seller #60, 40 kitta @ Rs. 405.00)</li>
+<li><strong>Key Investor Takeaways</strong>:</li>
+<li><strong>Trade Counts Vary by Turnover</strong>: Highly active momentum stocks (like GHL) have <span class="math-inline">&gt;1,500</span> trades, while moderate-cap development banks (like SADBL) have 50–150 trades. 87 trades is the <strong>100% complete session</strong> for SADBL.</li>
+<li><strong>Zero Truncation</strong>: When selecting <code>[ 100 ]</code> or <code>[ All ]</code>, all 87 trades fit cleanly on Page 1 without pagination truncation.</li>
+</ul>
+<hr />
+<h3 id="144-micro-sample-distortion-anti-skew-guards">14.4 Micro-Sample Distortion &amp; Anti-Skew Guards</h3>
+<ul>
+<li><strong>The Vulnerability</strong>: In thinly traded or pre-open sessions with fewer than 15 trades (e.g. 18 trades on a micro-cap), a single retail order of 500 shares can make one broker appear to have <span class="math-inline">100\%</span> buy concentration.</li>
+<li><strong>The Engine Guard</strong>:</li>
+<li>The app enforces strict sample sufficiency gates:
+    <div class="math-block">Sample Valid = Trades &ge; 5  &nbsp; and &nbsp;  Buy Volume &ge; 200–500 kitta  &nbsp; or &nbsp;  Turnover &ge; Rs.  15 Lakhs</div></li>
+<li>If a stock fails this threshold, concentration is forced to <span class="math-inline">0\%</span> and classified as <strong>"Micro-Sample Dispersed Flow"</strong> to prevent false institutional rankings.</li>
+</ul>
+<hr />
+<h3 id="145-the-t2-settlement-trap-timeline">14.5 The T+2 Settlement Trap Timeline</h3>
+<p>Understanding how an offloading trap destroys retail capital step-by-step:</p>
+<div class="diagram-wrapper">
+  <div class="diagram-title">Figure 14.1 — The NEPSE T+2 Settlement Trap Sequence</div>
+  <svg viewBox="0 0 880 280" xmlns="http://www.w3.org/2000/svg" class="flow-svg">
+    <rect x="10" y="10" width="860" height="260" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+
+    <!-- 4 Swimlanes -->
+    <rect x="30" y="25" width="180" height="40" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+    <text x="120" y="50" fill="#60a5fa" font-size="12" font-weight="bold" text-anchor="middle">Retail Buyer</text>
+
+    <rect x="245" y="25" width="180" height="40" rx="6" fill="#1e293b" stroke="#06b6d4" stroke-width="1"/>
+    <text x="335" y="50" fill="#22d3ee" font-size="12" font-weight="bold" text-anchor="middle">NEPSE Matching Engine</text>
+
+    <rect x="460" y="25" width="180" height="40" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1"/>
+    <text x="550" y="50" fill="#fbbf24" font-size="12" font-weight="bold" text-anchor="middle">Institutional Whale</text>
+
+    <rect x="675" y="25" width="180" height="40" rx="6" fill="#1e293b" stroke="#a855f7" stroke-width="1"/>
+    <text x="765" y="50" fill="#c084fc" font-size="12" font-weight="bold" text-anchor="middle">CDSC Clearing (T+2)</text>
+
+    <!-- Timeline steps -->
+    <!-- Step 1 -->
+    <line x1="550" y1="85" x2="335" y2="85" stroke="#f43f5e" stroke-width="2"/>
+    <polygon points="335,80 325,85 335,90" fill="#f43f5e"/>
+    <text x="442" y="80" fill="#f87171" font-size="11" text-anchor="middle">1. Dumps large sell blocks at +10% Circuit</text>
+
+    <!-- Step 2 -->
+    <line x1="120" y1="120" x2="335" y2="120" stroke="#10b981" stroke-width="2"/>
+    <polygon points="335,115 345,120 335,125" fill="#10b981"/>
+    <text x="227" y="115" fill="#34d399" font-size="11" text-anchor="middle">2. Retail FOMO orders match at top</text>
+
+    <!-- Step 3 Day T+1 -->
+    <rect x="80" y="145" width="720" height="35" rx="6" fill="#881337" stroke="#f43f5e" stroke-width="1"/>
+    <text x="440" y="167" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">DAY T+1: Stock drops -6.0% • Retail CANNOT sell (Shares uncredited)</text>
+
+    <!-- Step 4 Day T+2 -->
+    <line x1="765" y1="210" x2="120" y2="210" stroke="#f59e0b" stroke-width="2"/>
+    <polygon points="120,205 110,210 120,215" fill="#f59e0b"/>
+    <text x="440" y="205" fill="#fbbf24" font-size="11" text-anchor="middle">3. CDSC credits shares to Demat (Day T+2 afternoon: Down -14%)</text>
+
+    <text x="440" y="240" fill="#fecdd3" font-size="11" font-weight="bold" text-anchor="middle">RESULT: Retail trapped with immediate -14% capital drawdown.</text>
+  </svg>
+</div>
+
+<hr />
+<h3 id="146-dual-floorsheet-zero-sum-architecture">14.6 Dual Floorsheet Zero-Sum Architecture</h3>
+<p>Every transaction executed on the Nepal Stock Exchange is a matched contract obeying the <strong>Conservation of Volume Invariant</strong>:</p>
+<div class="math-block">&sum; Buy Quantity = &sum; Sell Quantity = Total Traded Quantity</div>
+
+<ul>
+<li>In the app's Floorsheet table:</li>
+<li><strong>SYM</strong>: Traded scrip ticker.</li>
+<li><strong>BB (Buyer Broker)</strong>: Rendered in <strong>Emerald Green</strong> (e.g., <code>#58</code>).</li>
+<li><strong>SB (Seller Broker)</strong>: Rendered in <strong>Rose Red</strong> (e.g., <code>#45</code>).</li>
+<li><strong>QTY &amp; RATE</strong>: Exact executed volume and rate in NPR.</li>
+<li><strong>AMOUNT</strong>: Total rupee value of the contract.</li>
+<li><strong>CSV Export</strong>: The <code>📥 CSV</code> button exports 100% of the session's records with genuine numeric types, allowing investors to verify broker accumulation directly in Microsoft Excel.</li>
+</ul>
+
+</body>
+</html>

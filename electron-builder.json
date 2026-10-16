@@ -1,0 +1,28 @@
+{
+  "appId": "com.smartwealth.nepse",
+  "productName": "Drabyashree NEPSE",
+  "directories": {
+    "output": "dist-electron"
+  },
+  "electronVersion": "31.7.7",
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "public/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      "portable",
+      "nsis"
+    ],
+    "icon": "public/logo.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Drabyashree NEPSE"
+  }
+}

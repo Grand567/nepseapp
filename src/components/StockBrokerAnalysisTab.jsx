@@ -105,7 +105,7 @@ export default function StockBrokerAnalysisTab({
     if (onDateChange) onDateChange('');
     if (onDaysChange) onDaysChange(d);
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, d, { date: '' })
+    fetchRealBrokerAnalysis(symbol, d, { date: '', refresh: true })
       .then(res => { if (res) setInternalBrokerData(res); })
       .catch(() => {})
       .finally(() => setInternalLoading(false));
@@ -115,7 +115,7 @@ export default function StockBrokerAnalysisTab({
     setLocalDate(dt);
     if (onDateChange) onDateChange(dt);
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: dt })
+    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: dt, refresh: true })
       .then(res => { if (res) setInternalBrokerData(res); })
       .catch(() => {})
       .finally(() => setInternalLoading(false));
@@ -591,11 +591,11 @@ export default function StockBrokerAnalysisTab({
         {/* Multi-Day Session Pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {[
-            { days: 1, label: '1 Day' },
-            { days: 3, label: '3 Days' },
-            { days: 7, label: '7 Days' },
-            { days: 15, label: '15 Days' },
-            { days: 30, label: '30 Days' }
+            { days: 1, label: '1D' },
+            { days: 5, label: '5D' },
+            { days: 15, label: '15D' },
+            { days: 30, label: '30D' },
+            { days: 60, label: '60D' }
           ].map(item => {
             const isActive = !effectiveDate && Number(effectiveDays) === item.days;
             return (
@@ -618,6 +618,22 @@ export default function StockBrokerAnalysisTab({
               </button>
             );
           })}
+        </div>
+
+        {/* Sessions Analyzed & Volume Badge */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 11px',
+          borderRadius: 8,
+          background: 'rgba(56, 189, 248, 0.1)',
+          border: '1px solid rgba(56, 189, 248, 0.25)',
+          color: '#38bdf8',
+          fontSize: 11.5,
+          fontWeight: 700
+        }}>
+          <span>Sessions Analyzed: {activeBrokerData?.tradingDays || effectiveDays || 1} Trading Days ({activeBrokerData?.fromDate || 'Latest'} → {activeBrokerData?.toDate || 'Latest'}) • Total Volume: {(activeBrokerData?.totalVolume || 0).toLocaleString()} Shares</span>
         </div>
 
         {/* Date-Wise Picker & Trading Session Selector */}

@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "version": "1.0.6",
+  "description": "Drabyashree NEPSE App",
   "author": "Rexsh K Suwal (+977 9841576936)",
+  "main": "electron/main.cjs",
   "scripts": {
     "start": "node proxy/server.mjs",
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
@@ -11,6 +13,9 @@
     "test": "node tests/runAll.mjs",
     "preview": "vite preview",
     "whitelabel": "node white-label.mjs",
+    "desktop": "electron .",
+    "build:pc": "npm run build && electron-builder --win",
+    "build:pc:portable": "npm run build && electron-builder --win portable",
     "mobile:sync": "npm run build && npx cap sync android",
     "mobile:build-debug": "npm run mobile:sync && cd android && .\\gradlew.bat assembleDebug && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE-debug.apk');fs.copyFileSync('./app/build/outputs/apk/debug/Drabyashree-NEPSE-debug.apk','../Drabyashree-NEPSE.apk');\"",
     "mobile:build-release": "npm run mobile:sync && cd android && .\\gradlew.bat assembleRelease && node -e \"const fs=require('fs');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE-release.apk');fs.copyFileSync('./app/build/outputs/apk/release/Drabyashree-NEPSE-release.apk','../Drabyashree-NEPSE.apk');\"",
@@ -47,6 +52,8 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.6.1",
     "concurrently": "^9.2.1",
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.29",
     "tailwindcss": "^3.4.19",
     "vite": "^5.3.1"

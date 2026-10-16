@@ -1,5 +1,129 @@
 [
   {
+    "id": "holding_GHL_1792063926224",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-15T11:32:06.224Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-15T11:32:06.226Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1792063921927",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-15T11:32:01.927Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-15T11:32:01.953Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-15T11:32:04.951Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1792063123270",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-15T11:18:43.270Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-15T11:18:43.273Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1792063118617",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-15T11:18:38.617Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-15T11:18:38.641Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-15T11:18:41.936Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1792061723113",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-15T10:55:23.113Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-15T10:55:23.120Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1792061717021",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-15T10:55:17.021Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-15T10:55:17.048Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-15T10:55:21.554Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_GHL_1792061431566",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-15T10:50:31.566Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-15T10:50:31.569Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1792061427184",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-15T10:50:27.184Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-15T10:50:27.218Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-15T10:50:30.271Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1792055385794",
     "symbol": "GHL",
     "ltp": 270,
@@ -1581,148 +1705,5 @@
     "status": "STOPPED_OUT",
     "closedAt": "2026-10-12T07:01:51.091Z",
     "exitPrice": 33.45
-  },
-  {
-    "id": "alert_SBL_1791788294713",
-    "symbol": "SBL",
-    "ltp": 415,
-    "triggeredAt": "2026-10-12T06:58:14.713Z",
-    "buyZone": {
-      "low": 405,
-      "high": 416,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 405 - 416"
-    },
-    "dominantBrokersText": "Broker 4 & Broker 45",
-    "concentrationPct": 60,
-    "topBuyerBrokers": [
-      {
-        "broker": "4",
-        "name": "Opal Securities",
-        "buyQty": 34356,
-        "buyAmt": 14032052.5
-      },
-      {
-        "broker": "45",
-        "name": "Imperial Securities",
-        "buyQty": 6326,
-        "buyAmt": 2584865.3
-      },
-      {
-        "broker": "50",
-        "name": "Crystal Kanchenjunga Securities",
-        "buyQty": 5670,
-        "buyAmt": 2306574.9
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.71x of 20-day avg)",
-    "target1": 477,
-    "target2": 519,
-    "stopLoss": 391,
-    "riskRewardRatio": 2.58,
-    "vwap": 407.79,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T07:01:51.101Z",
-    "exitPrice": 36.46
-  },
-  {
-    "id": "alert_API_1791788233612",
-    "symbol": "API",
-    "ltp": 337.7,
-    "triggeredAt": "2026-10-12T06:57:13.612Z",
-    "buyZone": {
-      "low": 335,
-      "high": 345,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 335 - 345"
-    },
-    "dominantBrokersText": "Broker 44 & Broker 43",
-    "concentrationPct": 57,
-    "topBuyerBrokers": [
-      {
-        "broker": "44",
-        "name": "Dynamic Money Market",
-        "buyQty": 25206,
-        "buyAmt": 8504834.100000001
-      },
-      {
-        "broker": "43",
-        "name": "South Asian Bulls",
-        "buyQty": 10342,
-        "buyAmt": 3499085.2
-      },
-      {
-        "broker": "58",
-        "name": "Naasa Securities",
-        "buyQty": 5578,
-        "buyAmt": 1880077
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.62x of 20-day avg)",
-    "target1": 388,
-    "target2": 422,
-    "stopLoss": 324,
-    "riskRewardRatio": 3.67,
-    "vwap": 337.51,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T07:01:51.106Z",
-    "exitPrice": 28.36
-  },
-  {
-    "id": "alert_GBIME_1791788170030",
-    "symbol": "GBIME",
-    "ltp": 247,
-    "triggeredAt": "2026-10-12T06:56:10.030Z",
-    "buyZone": {
-      "low": 242,
-      "high": 249,
-      "isPriceInBase": true,
-      "statusText": "Inside Buy Zone: 242 - 249"
-    },
-    "dominantBrokersText": "Broker 28 & Broker 38",
-    "concentrationPct": 92,
-    "topBuyerBrokers": [
-      {
-        "broker": "28",
-        "name": "Shree Krishna Securities",
-        "buyQty": 59635,
-        "buyAmt": 14563967.2
-      },
-      {
-        "broker": "38",
-        "name": "Dipshikha Dhitopatra Karobar",
-        "buyQty": 1600,
-        "buyAmt": 390464
-      },
-      {
-        "broker": "29",
-        "name": "Trisul Securities",
-        "buyQty": 1000,
-        "buyAmt": 243000
-      }
-    ],
-    "sellerStatus": "Seller volume dry (0.72x of 20-day avg)",
-    "target1": 284,
-    "target2": 309,
-    "stopLoss": 234,
-    "riskRewardRatio": 2.85,
-    "vwap": 243.91,
-    "status": "STOPPED_OUT",
-    "closedAt": "2026-10-12T07:01:51.116Z",
-    "exitPrice": 40.51
-  },
-  {
-    "id": "holding_GLBSL_1791770047537",
-    "symbol": "GLBSL",
-    "ltp": 1620,
-    "triggeredAt": "2026-10-12T01:54:07.537Z",
-    "stopLoss": 1539,
-    "target1": 1863,
-    "target2": 2025,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-12T06:53:51.979Z",
-    "exitPrice": 29.46
   }
 ]

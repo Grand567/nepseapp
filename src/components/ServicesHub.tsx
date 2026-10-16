@@ -368,9 +368,15 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'technical-ratings': TechnicalRatingsGaugeService as ComponentType,
   'players-choices': () => (
-    <UniversalScreener filterFn={(s) => s.turnover > 5000000 && s.pChange > 0} sortFn={(a, b) => b.turnover - a.turnover}
-      banner={{ type: 'success', text: 'Institutional favorites by turnover. Wired to /turnover + /floorsheet.' }}
-      insight="Follow smart-money turnover for consistent outperformance." />
+    <UniversalScreener
+      filterFn={(s) => s.turnover > 5000000 && s.pChange > 0 && (s.nbar || 1) >= 1.05 && (s.adRatio ?? 0) >= 0}
+      sortFn={(a, b) => b.turnover - a.turnover}
+      customCols={[
+        { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
+        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
+      ]}
+      banner={{ type: 'success', text: 'Institutional favorites with positive net broker accumulation. Wired to /turnover + 100% floorsheet telemetry.' }}
+      insight="Follow smart-money turnover with positive broker accumulation for consistent outperformance." />
   ),
   'circuit-setup': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => Math.abs(s.pChange) >= 12} sortFn={(a, b) => Math.abs(b.pChange) - Math.abs(a.pChange)}
@@ -1007,9 +1013,15 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'comparable-stock': CompareStocks,
   'strategy-lab': StrategyLabService,
   'smart-money': () => (
-    <UniversalScreener sortFn={(a, b) => b.turnover - a.turnover} filterFn={(s) => s.turnover > 10000000}
-      banner={{ text: 'Where smart money flowed today — Rs. 1 Cr+ turnover names.' }}
-      insight="High turnover + rising price = institutional sponsorship." />
+    <UniversalScreener
+      filterFn={(s) => s.turnover > 10000000 && (s.nbar || 1) >= 1.05 && (s.adRatio ?? 0) >= 0}
+      sortFn={(a, b) => b.turnover - a.turnover}
+      customCols={[
+        { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
+        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
+      ]}
+      banner={{ text: 'Where smart money flowed today — Rs. 1 Cr+ turnover names with confirmed broker accumulation.' }}
+      insight="High turnover + positive broker net flow = verified institutional sponsorship." />
   ),
 
   // Desk
@@ -1030,43 +1042,56 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
     <UniversalScreener
       filterFn={(s) => (
         !s.isChurnDistribution &&
-        s.volumeSurgeRatio >= 1.5 &&
-        s.stealthAccumulation >= 50 &&
-        s.pChange >= -2.0 &&
-        s.pChange <= 8.0
+        ((s.bcr3BuyPct >= 35 && s.bcr3BuyPct > (s.bcr3SellPct || 0)) ||
+         (s.nbar >= 1.25 && s.bcr3BuyPct >= 28) ||
+         (s.volumeSurgeRatio >= 1.5 && s.adRatio > 0.05)) &&
+        Number(s.turnover || 0) >= 500000
       )}
-      sortFn={(a, b) => (b.volumeSurgeRatio || 1) - (a.volumeSurgeRatio || 1)}
-      customCols={[{ key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => (v >= 2.5 ? '#10b981' : '#38bdf8') }]}
-      banner={{ type: 'success', text: 'Aggressive institutional buying: positive price thrust supported by strong volume surge without distribution churn.' }}
-      insight="Follow strong hands accumulating with size before momentum peaks." />
+      sortFn={(a, b) => ((b.bcr3BuyPct || 0) * (b.nbar || 1)) - ((a.bcr3BuyPct || 0) * (a.nbar || 1))}
+      customCols={[
+        { key: 'bcr3BuyPct', label: 'Top 3 Buy (BCR3 %)', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 40 ? '#10b981' : '#38bdf8') },
+        { key: 'nbar', label: 'Buy/Sell Ratio (NBAR)', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(2)}×` : '1.00×'), colorFn: (v) => (Number(v) >= 1.3 ? '#10b981' : '#94a3b8') },
+        { key: 'topAccumulator', label: 'Top Net Buyer', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
+      ]}
+      banner={{ type: 'success', text: 'Aggressive institutional buying: 100% floorsheet validated broker concentration without distribution churn.' }}
+      insight="Follow strong hands cornering and accumulating inventory with size before momentum peaks." />
   ),
   'distribution-leaders': (props: any) => <AccumulationDistributionRadar {...props} initialStage="DISTRIBUTION" />,
   'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
   'broker-top10': () => <BrokerFlowDominanceService mode="top10" />,
   'aggressive-holdings': () => (
     <UniversalScreener
-      filterFn={(s) => !s.isChurnDistribution && s.pChange > 1.5 && s.volumeSurgeRatio >= 1.3}
-      sortFn={(a, b) => (b.turnover || 0) - (a.turnover || 0)}
+      filterFn={(s) => (
+        !s.isChurnDistribution &&
+        ((s.topAccumulator && Number(s.topAccumulator.netQty || 0) > 0 && Number(s.topAccumulator.holdPctOfBuy || 0) >= 60) ||
+         (s.bcr3BuyPct >= 38 && s.nbar >= 1.3)) &&
+        Number(s.volume || 0) >= 1000
+      )}
+      sortFn={(a, b) => (Number(b.topAccumulator?.holdPctOfBuy || b.bcr3BuyPct || 0)) - (Number(a.topAccumulator?.holdPctOfBuy || a.bcr3BuyPct || 0))}
       customCols={[
-        { key: 'volumeSurgeRatio', label: 'Vol ×', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×` },
-        { key: 'technicalScore', label: 'Tech Score', align: 'right', format: (v) => `${v || 50}/100` }
+        { key: 'topAccumulator', label: 'Lead Accumulator Desk', align: 'left', bold: true, format: (v) => (v ? `#${v.broker || v.brokerId}` : '—') },
+        { key: 'topAccumulator', label: 'Net Held Qty', align: 'right', format: (v) => (v ? Number(v.netQty || 0).toLocaleString() : '—') },
+        { key: 'topAccumulator', label: 'Hold Retention %', align: 'right', bold: true, format: (v, s) => (v?.holdPctOfBuy ? `${v.holdPctOfBuy}%` : (s?.bcr3BuyPct ? `${s.bcr3BuyPct}%` : '—')), colorFn: (v) => (v?.holdPctOfBuy >= 70 ? '#10b981' : '#38bdf8') }
       ]}
-      banner={{ type: 'success', text: 'High-conviction institutional holding pattern across leading turnover names.' }}
-      insight="Strong closing price + volume surge = institutions willing to hold inventory overnight." />
+      banner={{ type: 'success', text: 'High-conviction institutional holding pattern across leading accumulation names.' }}
+      insight="Overnight inventory lockup + strong retention = institutions unwilling to surrender scrips into the close." />
   ),
   'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
   'slow-accumulation': () => (
     <UniversalScreener
       filterFn={(s) => (
         !s.isChurnDistribution &&
-        s.stealthAccumulation >= 58 &&
-        s.pChange <= 3.5 &&
-        s.pChange >= -4.0 &&
-        s.volumeSurgeRatio >= 1.05
+        Math.abs(Number(s.pChange || 0)) <= 3.0 &&
+        ((s.bcr3BuyPct >= 32 && s.nbar >= 1.15) || s.stealthAccumulation >= 58) &&
+        (s.bcr3SellPct || 0) < (s.bcr3BuyPct || 50)
       )}
-      sortFn={(a, b) => (b.stealthAccumulation || 50) - (a.stealthAccumulation || 50)}
-      customCols={[{ key: 'stealthAccumulation', label: 'Stealth Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => (v >= 65 ? '#10b981' : '#38bdf8') }]}
-      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base. Filter: Stealth Score ≥58, Price Quiet (-4% to +3.5%), Moderate Volume Interest, Zero Churn.' }}
+      sortFn={(a, b) => ((b.bcr3BuyPct || 30) * (b.nbar || 1)) - ((a.bcr3BuyPct || 30) * (a.nbar || 1))}
+      customCols={[
+        { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
+        { key: 'nbar', label: 'NBAR', align: 'right', bold: true, format: (v) => (v ? Number(v).toFixed(2) : '1.00') },
+        { key: 'stealthAccumulation', label: 'Stealth Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => (v >= 65 ? '#10b981' : '#38bdf8') }
+      ]}
+      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base. Filter: Stealth Score ≥58 or BCR3 ≥32%, Price Quiet (-3% to +3%), BCR3 Sell < Buy.' }}
       insight="Low-volatility consolidation on steady quiet absorption precedes major structural markups." />
   ),
 };

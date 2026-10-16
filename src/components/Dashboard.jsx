@@ -1303,21 +1303,8 @@ const TopSearchBar = React.memo(function TopSearchBar({
     }
     if (match) {
       handleStockClick(match);
+      handleClear();
       setIsSearching(false);
-      setActiveHeroIndex({
-        name: match.name || match.companyName || match.symbol,
-        symbol: match.symbol,
-        key: match.symbol,
-        val: {
-          value: match.ltp,
-          change: match.change,
-          pChange: match.pChange,
-          prevClose: match.prevClose,
-          turnover: match.turnover,
-          volume: match.volume
-        },
-        isStock: true
-      });
     }
   };
 
@@ -1398,7 +1385,11 @@ const TopSearchBar = React.memo(function TopSearchBar({
             return (
               <div
                 key={s.symbol}
-                onClick={() => { handleStockClick(s); setIsSearching(false); }}
+                onClick={() => {
+                  handleStockClick(s);
+                  handleClear();
+                  setIsSearching(false);
+                }}
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.03)',
@@ -1456,6 +1447,7 @@ const TopSearchBar = React.memo(function TopSearchBar({
                         },
                         isStock: true
                       });
+                      handleClear();
                       setIsSearching(false);
                     }}
                     style={{
@@ -2931,13 +2923,37 @@ function Dashboard({
                 </div>
               </div>
 
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 19, fontWeight: 900, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
-                  Rs. {fmt(topStock.ltp)}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 19, fontWeight: 900, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                    Rs. {fmt(topStock.ltp)}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: isBull ? 'var(--bull)' : '#f43f5e' }}>
+                    {isBull ? '▲ +' : '▼ '}{fmt(topStock.change)} ({isBull ? '+' : ''}{(topStock.pChange || 0).toFixed(2)}%)
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 800, color: isBull ? 'var(--bull)' : '#f43f5e' }}>
-                  {isBull ? '▲ +' : '▼ '}{fmt(topStock.change)} ({isBull ? '+' : ''}{(topStock.pChange || 0).toFixed(2)}%)
-                </div>
+                <button
+                  type="button"
+                  onClick={clearTopSearch}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#94a3b8',
+                    borderRadius: '50%',
+                    width: 26,
+                    height: 26,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 13,
+                    flexShrink: 0
+                  }}
+                  title="Dismiss spotlight card"
+                  aria-label="Dismiss spotlight card"
+                >
+                  ✕
+                </button>
               </div>
             </div>
 
@@ -2969,7 +2985,10 @@ function Dashboard({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
                 type="button"
-                onClick={() => handleStockClick(topStock)}
+                onClick={() => {
+                  handleStockClick(topStock);
+                  clearTopSearch();
+                }}
                 style={{
                   flex: 2,
                   background: 'linear-gradient(135deg, #0284c7, #2563eb)',
@@ -3005,6 +3024,7 @@ function Dashboard({
                     },
                     isStock: true
                   });
+                  clearTopSearch();
                 }}
                 style={{
                   flex: 1.2,
@@ -3269,36 +3289,58 @@ function Dashboard({
         
         {/* Top Header Row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div
-            onClick={() => {
-              if (activeHeroIndex?.isStock) {
-                setActiveHeroIndex({
-                  name: "NEPSE Index",
-                  val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
-                });
-              } else {
-                setShowSubIndicesModal(true);
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-          >
-            <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-primary)' }}>
-              {activeHeroIndex.name}
-            </span>
-            {activeHeroIndex?.isStock ? (
-              <span style={{
-                background: 'rgba(56, 189, 248, 0.15)',
-                border: '1px solid rgba(56, 189, 248, 0.35)',
-                borderRadius: 6,
-                padding: '2px 8px',
-                fontSize: 12,
-                color: '#38bdf8',
-                fontWeight: 800
-              }}>
-                ← Back to NEPSE
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              onClick={() => {
+                if (activeHeroIndex?.isStock) {
+                  setActiveHeroIndex({
+                    name: "NEPSE Index",
+                    key: "nepse",
+                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
+                  });
+                } else {
+                  setShowSubIndicesModal(true);
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-primary)' }}>
+                {activeHeroIndex.name}
               </span>
-            ) : (
-              <ChevronDown style={{ width: 15, height: 15, color: 'var(--text-muted)' }} />
+              {!activeHeroIndex?.isStock && (
+                <ChevronDown style={{ width: 15, height: 15, color: 'var(--text-muted)' }} />
+              )}
+            </div>
+
+            {activeHeroIndex?.isStock && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveHeroIndex({
+                    name: "NEPSE Index",
+                    key: "nepse",
+                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
+                  });
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(37, 99, 235, 0.25))',
+                  border: '1.5px solid rgba(56, 189, 248, 0.6)',
+                  borderRadius: 8,
+                  padding: '3px 10px',
+                  fontSize: 12,
+                  color: '#38bdf8',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  boxShadow: '0 2px 8px rgba(56, 189, 248, 0.2)'
+                }}
+                title="Return Hero Chart to NEPSE Index"
+              >
+                ← Return to NEPSE Index
+              </button>
             )}
           </div>
 

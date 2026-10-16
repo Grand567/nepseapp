@@ -238,12 +238,17 @@ export function setCachedStockFundamentals(sym, data) {
  * Fast-path: checks in-memory Map first (<0.01ms).
  * Miss-path: reads localStorage once, hydrates in-memory Map, and returns.
  * @param {string} sym - Stock ticker symbol
+ * @param {number} [days=1] - Trading days horizon (1, 5, 15, 30, 60)
+ * @param {Object} [options={}] - Additional options { date }
  * @returns {Object|null}
  */
-export function getCachedRealBrokerAnalysis(sym) {
+export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   if (!sym || typeof window === 'undefined') return null;
-  const key = String(sym).toUpperCase().trim();
-  if (!key) return null;
+  const rawSym = String(sym).toUpperCase().trim();
+  if (!rawSym) return null;
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const dateKey = options?.date ? String(options.date).trim() : 'latest';
+  const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}`;
 
   if (memBrokerCache.has(key)) {
     return memBrokerCache.get(key);
@@ -251,10 +256,14 @@ export function getCachedRealBrokerAnalysis(sym) {
 
   try {
     if (typeof localStorage !== 'undefined') {
-      const raw = localStorage.getItem(BROKER_LS_PREFIX + key);
+      const raw = localStorage.getItem(key) || (numDays === 1 && !options?.date ? localStorage.getItem(BROKER_LS_PREFIX + rawSym) : null);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && (parsed.topBuyers?.length > 0 || parsed.buyers?.length > 0 || parsed.adRatio !== undefined)) {
+          // Guard: Never return a cached 1D result when multi-day horizon is requested
+          if (numDays > 1 && Number(parsed.tradingDays || 1) <= 1) {
+            return null;
+          }
           memBrokerCache.set(key, parsed);
           return parsed;
         }
@@ -262,7 +271,6 @@ export function getCachedRealBrokerAnalysis(sym) {
     }
   } catch (_) {}
 
-  memBrokerCache.set(key, null);
   return null;
 }
 
@@ -270,15 +278,26 @@ export function getCachedRealBrokerAnalysis(sym) {
  * Stores broker analysis in memory and localStorage.
  * @param {string} sym - Stock ticker symbol
  * @param {Object} data - Broker analysis data
+ * @param {number} [days=1] - Trading days horizon (1, 5, 15, 30, 60)
+ * @param {Object} [options={}] - Additional options { date }
  */
-export function setCachedRealBrokerAnalysis(sym, data) {
+export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   if (!sym || !data || typeof window === 'undefined') return;
-  const key = String(sym).toUpperCase().trim();
-  if (!key) return;
+  const rawSym = String(sym).toUpperCase().trim();
+  if (!rawSym) return;
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const dateKey = options?.date ? String(options.date).trim() : 'latest';
+  const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}`;
 
   memBrokerCache.set(key, data);
+  if (numDays === 1 && !options?.date) {
+    memBrokerCache.set(rawSym, data);
+  }
   try {
-    localStorage.setItem(BROKER_LS_PREFIX + key, JSON.stringify(data));
+    localStorage.setItem(key, JSON.stringify(data));
+    if (numDays === 1 && !options?.date) {
+      localStorage.setItem(BROKER_LS_PREFIX + rawSym, JSON.stringify(data));
+    }
   } catch (_) {}
 }
 

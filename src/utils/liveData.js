@@ -2431,14 +2431,15 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
   return marketWideBrokerSummaryMapCache.data || {};
 }
 
-export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
+export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
   const date = String(options?.date || '').trim();
   const fromDate = String(options?.fromDate || '').trim();
   const toDate = String(options?.toDate || '').trim();
   const refresh = Boolean(options?.refresh);
-  const cached = getCachedRealBrokerAnalysis(sym);
+  const cached = !refresh ? getCachedRealBrokerAnalysis(sym, numDays, options) : null;
 
   const normalizeBrokerItem = (b) => {
     if (!b) return null;
@@ -2484,13 +2485,13 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
 
   try {
     const params = new URLSearchParams();
-    params.set('days', String(days));
+    params.set('days', String(numDays));
     if (date) params.set('date', date);
     if (fromDate) params.set('fromDate', fromDate);
     if (toDate) params.set('toDate', toDate);
     if (refresh) params.set('refresh', 'true');
 
-    const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 15000);
+    const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 20000);
     const d = res?.data || res;
     const isSyntheticFallback = res?.source === 'trading-profile-fallback' || d?.source === 'trading-profile-fallback' || res?.source === 'empty_no_floorsheet_records';
     if (!isSyntheticFallback && d && (d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0)) {
@@ -2513,15 +2514,18 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
         isReal: true
       };
       if (!date && !fromDate) {
-        setCachedRealBrokerAnalysis(sym, enriched);
+        setCachedRealBrokerAnalysis(sym, enriched, numDays, options);
       }
       return enriched;
     }
   } catch (_) {}
 
-  // If cached real broker analysis exists and no custom date was requested, return it
+  // If cached real broker analysis exists matching the requested timeframe, return it
   if (cached && !date && !fromDate) {
-    return cached;
+    const cachedDays = Number(cached.tradingDays || 1);
+    if (numDays === 1 || cachedDays >= Math.min(numDays, 3)) {
+      return cached;
+    }
   }
 
   // If backend broker aggregation timed out but we have real floorsheet records,
@@ -2621,22 +2625,27 @@ export async function fetchRealBrokerAnalysis(symbol, days = 30, options = {}) {
         source: 'nepse_real_floorsheet_aggregation'
       };
 
-      setCachedRealBrokerAnalysis(sym, computedFromRealFloorsheet);
+      if (numDays === 1) {
+        setCachedRealBrokerAnalysis(sym, computedFromRealFloorsheet, 1, options);
+      }
       return computedFromRealFloorsheet;
     }
   } catch (_) {}
 
-  // If any previous cached broker analysis exists for this symbol, return it
-  if (cached) {
-    return cached;
+  // If any previous cached broker analysis exists matching the requested timeframe, return it
+  if (cached && !refresh) {
+    const cachedDays = Number(cached.tradingDays || 1);
+    if (numDays === 1 || cachedDays >= Math.min(numDays, 3)) {
+      return cached;
+    }
   }
 
   // Tier 4: Check or fetch market-wide summary map
   try {
-    const marketMap = await fetchMarketWideBrokerSummaryMap(days);
+    const marketMap = await fetchMarketWideBrokerSummaryMap(numDays);
     if (marketMap && marketMap[sym]) {
       const item = marketMap[sym];
-      setCachedRealBrokerAnalysis(sym, item);
+      setCachedRealBrokerAnalysis(sym, item, numDays, options);
       return item;
     }
   } catch (_) {}

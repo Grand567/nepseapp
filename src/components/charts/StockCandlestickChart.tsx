@@ -9,7 +9,8 @@ import {
   type IChartApi,
   type ISeriesApi,
 } from 'lightweight-charts';
-import { calculateEMA } from '../../utils/indicators';
+import { calculateEMA, calculatePivotPoints, calculateFibonacci } from '../../utils/indicators';
+import { detectCandlestickPatternsFromHistory } from '../../utils/candlestickPatterns';
 import { Layers, Eye, EyeOff, Calendar, Maximize2 } from 'lucide-react';
 
 export interface CandleData {
@@ -36,6 +37,7 @@ interface StockCandlestickChartProps {
   symbol: string;
   ltp?: number;
   onFetchMore?: (days: number) => void;
+  stock?: any; // for 52W high/low, rvol, etc.
 }
 
 const TIMEFRAMES = [
@@ -47,12 +49,81 @@ const TIMEFRAMES = [
   { id: 'MAX', label: 'MAX', days: 9999 },
 ];
 
+// ── Inline RSI (Wilder Smoothed, array version for charting) ──────────────────
+function computeRSIArray(closes: number[], period = 14): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null);
+  if (closes.length <= period) return result;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gains += d; else losses -= d;
+  }
+  let ag = gains / period, al = losses / period;
+  result[period] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + Math.max(0, d)) / period;
+    al = (al * (period - 1) + Math.max(0, -d)) / period;
+    result[i] = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2);
+  }
+  return result;
+}
+
+// ── Inline MACD for charting (arrays aligned with candle index) ───────────────
+function computeMACDArrays(closes: number[], shortP = 12, longP = 26, signalP = 9) {
+  const empty = { macdArr: [] as (number | null)[], signalArr: [] as (number | null)[], histArr: [] as (number | null)[] };
+  if (closes.length < longP) return empty;
+  const shortEMA = calculateEMA(closes, shortP) as (number | null)[];
+  const longEMA = calculateEMA(closes, longP) as (number | null)[];
+  const macdArr: (number | null)[] = closes.map((_, i) =>
+    shortEMA[i] != null && longEMA[i] != null
+      ? +(shortEMA[i]! - longEMA[i]!).toFixed(3)
+      : null
+  );
+  // Build signal EMA on the valid MACD sub-array
+  const validMacd = macdArr.filter((v): v is number => v !== null);
+  const signalEMA = calculateEMA(validMacd, signalP) as (number | null)[];
+  let sigIdx = 0;
+  const signalArr: (number | null)[] = macdArr.map(v => {
+    if (v == null) return null;
+    const s = signalEMA[sigIdx++];
+    return s != null ? +s.toFixed(3) : null;
+  });
+  const histArr: (number | null)[] = macdArr.map((m, i) => {
+    const s = signalArr[i];
+    return m != null && s != null ? +(m - s).toFixed(3) : null;
+  });
+  return { macdArr, signalArr, histArr };
+}
+
+// ── VWAP (cumulative session VWAP over visible window) ───────────────────────
+function computeVWAP(candles: CandleData[]): (number | null)[] {
+  let cumPV = 0, cumV = 0;
+  return candles.map(c => {
+    const tp = (c.high + c.low + c.close) / 3;
+    cumPV += tp * (Number(c.volume) || 0);
+    cumV += Number(c.volume) || 0;
+    return cumV > 0 ? +(cumPV / cumV).toFixed(2) : null;
+  });
+}
+
+// ── Volume SMA (20 period) ────────────────────────────────────────────────────
+function computeVolSMA(volumes: number[], period = 20): (number | null)[] {
+  const result: (number | null)[] = new Array(volumes.length).fill(null);
+  for (let i = period - 1; i < volumes.length; i++) {
+    const slice = volumes.slice(i - period + 1, i + 1);
+    result[i] = +(slice.reduce((a, b) => a + b, 0) / period).toFixed(0);
+  }
+  return result;
+}
+
 export function StockCandlestickChart({
   candles = [],
   levels,
   symbol,
   ltp,
   onFetchMore,
+  stock,
 }: StockCandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -60,7 +131,7 @@ export function StockCandlestickChart({
 
   const [timeframe, setTimeframe] = useState('6M');
 
-  // Indicator Toggles
+  // ── Indicator Toggles ──
   const [showCandles, setShowCandles] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
   const [showEma20, setShowEma20] = useState(false);
@@ -69,8 +140,17 @@ export function StockCandlestickChart({
   const [showBollinger, setShowBollinger] = useState(false);
   const [showSRLevels, setShowSRLevels] = useState(true);
   const [showTradeLevels, setShowTradeLevels] = useState(true);
+  // ── New toggles ──
+  const [showRsi, setShowRsi] = useState(false);
+  const [showMacd, setShowMacd] = useState(false);
+  const [showVwap, setShowVwap] = useState(false);
+  const [showPivots, setShowPivots] = useState(false);
+  const [showFib, setShowFib] = useState(false);
+  const [show52W, setShow52W] = useState(false);
+  const [showPatterns, setShowPatterns] = useState(true);
+  const [showVolSma, setShowVolSma] = useState(false);
 
-  // Active hover crosshair tooltip data
+  // Crosshair tooltip
   const [tooltipData, setTooltipData] = useState<{
     date: string;
     open: number;
@@ -81,9 +161,12 @@ export function StockCandlestickChart({
     volume: number;
     ema20?: number | null;
     ema50?: number | null;
+    rsi?: number | null;
+    macdHist?: number | null;
+    vwap?: number | null;
   } | null>(null);
 
-  // Normalize, clean, sort ascending, and de-duplicate candles to satisfy lightweight-charts invariant
+  // ── Normalize, clean, sort ascending, de-duplicate candles ──────────────────
   const ascendingCandles = useMemo(() => {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
@@ -125,21 +208,13 @@ export function StockCandlestickChart({
       const low = Math.min(open, close, Number(c.low ?? (c as any).l ?? close));
       const volume = Number(c.volume ?? (c as any).v ?? 0);
 
-      // Save / overwrite same-date row
-      map.set(dateStr, {
-        date: dateStr,
-        open,
-        high,
-        low,
-        close,
-        volume,
-      });
+      map.set(dateStr, { date: dateStr, open, high, low, close, volume });
     }
 
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [candles]);
 
-  // Filter candles based on timeframe
+  // ── Filter candles based on timeframe ────────────────────────────────────────
   const filteredCandles = useMemo(() => {
     if (ascendingCandles.length === 0) return [];
     const tf = TIMEFRAMES.find((t) => t.id === timeframe);
@@ -148,8 +223,10 @@ export function StockCandlestickChart({
     return ascendingCandles.slice(-days);
   }, [ascendingCandles, timeframe]);
 
-  // Compute Moving Averages for filtered dataset
   const closes = useMemo(() => filteredCandles.map((c) => Number(c.close)), [filteredCandles]);
+  const volumes = useMemo(() => filteredCandles.map((c) => Number(c.volume) || 0), [filteredCandles]);
+
+  // ── EMA overlays ──────────────────────────────────────────────────────────────
   const ema20Data = useMemo(() => {
     if (closes.length < 20) return [];
     const ema = calculateEMA(closes, 20);
@@ -186,7 +263,7 @@ export function StockCandlestickChart({
     return result;
   }, [closes, filteredCandles]);
 
-  // Bollinger Bands (20 period, 2 std dev)
+  // ── Bollinger Bands ───────────────────────────────────────────────────────────
   const bollingerData = useMemo(() => {
     if (closes.length < 20) return { upper: [], lower: [], middle: [] };
     const upper: Array<{ time: string; value: number }> = [];
@@ -206,11 +283,175 @@ export function StockCandlestickChart({
     return { upper, lower, middle };
   }, [closes, filteredCandles]);
 
-  // Render Chart
+  // ── RSI array ─────────────────────────────────────────────────────────────────
+  const rsiData = useMemo(() => {
+    const rsiArr = computeRSIArray(closes, 14);
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      const v = rsiArr[i];
+      if (v != null) result.push({ time: c.date, value: v as number });
+    });
+    return result;
+  }, [closes, filteredCandles]);
+
+  // Current RSI value (last in array)
+  const currentRsi = useMemo(() => {
+    const last = [...rsiData].reverse().find(d => d != null);
+    return last?.value ?? null;
+  }, [rsiData]);
+
+  // ── MACD arrays ───────────────────────────────────────────────────────────────
+  const macdArrays = useMemo(() => {
+    const { macdArr, signalArr, histArr } = computeMACDArrays(closes);
+    const macdLine: Array<{ time: string; value: number }> = [];
+    const signalLine: Array<{ time: string; value: number }> = [];
+    const histogram: Array<{ time: string; value: number; color: string }> = [];
+
+    filteredCandles.forEach((c, i) => {
+      const m = macdArr[i], s = signalArr[i], h = histArr[i];
+      if (m != null) macdLine.push({ time: c.date, value: m });
+      if (s != null) signalLine.push({ time: c.date, value: s });
+      if (h != null) histogram.push({
+        time: c.date,
+        value: h,
+        color: h >= 0 ? 'rgba(16, 185, 129, 0.75)' : 'rgba(244, 63, 94, 0.75)',
+      });
+    });
+    return { macdLine, signalLine, histogram };
+  }, [closes, filteredCandles]);
+
+  // Current MACD histogram value
+  const currentMacdHist = useMemo(() => {
+    const arr = macdArrays.histogram;
+    return arr.length > 0 ? arr[arr.length - 1].value : null;
+  }, [macdArrays]);
+
+  // ── VWAP ──────────────────────────────────────────────────────────────────────
+  const vwapData = useMemo(() => {
+    const vwapArr = computeVWAP(filteredCandles);
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      const v = vwapArr[i];
+      if (v != null) result.push({ time: c.date, value: v });
+    });
+    return result;
+  }, [filteredCandles]);
+
+  // ── Volume SMA 20 ─────────────────────────────────────────────────────────────
+  const volSmaData = useMemo(() => {
+    const smaArr = computeVolSMA(volumes, 20);
+    const result: Array<{ time: string; value: number }> = [];
+    filteredCandles.forEach((c, i) => {
+      const v = smaArr[i];
+      if (v != null) result.push({ time: c.date, value: v });
+    });
+    return result;
+  }, [volumes, filteredCandles]);
+
+  // ── Pivot Points (from last candle) ──────────────────────────────────────────
+  const pivotData = useMemo(() => {
+    if (filteredCandles.length === 0) return null;
+    const last = filteredCandles[filteredCandles.length - 1];
+    const h = Number(last.high || last.close || 0);
+    const l = Number(last.low || last.close || 0);
+    const c = Number(last.close || 0);
+    if (c <= 0) return null;
+    const P = +( (h + l + c) / 3 ).toFixed(2);
+    return {
+      P,
+      pp: P,
+      R1: +(2 * P - l).toFixed(2),
+      R2: +(P + (h - l)).toFixed(2),
+      R3: +(h + 2 * (P - l)).toFixed(2),
+      S1: +(2 * P - h).toFixed(2),
+      S2: +(P - (h - l)).toFixed(2),
+      S3: +(l - 2 * (h - P)).toFixed(2),
+    };
+  }, [filteredCandles]);
+
+  // ── Fibonacci retracement (from visible swing high/low) ───────────────────────
+  const fibData = useMemo(() => {
+    if (filteredCandles.length < 5) return null;
+    const highs = filteredCandles.map(c => Number(c.high || c.close || 0));
+    const lows = filteredCandles.map(c => Number(c.low || c.close || 0)).filter(v => v > 0);
+    const swingHigh = Math.max(...highs);
+    const swingLow = Math.min(...lows);
+    if (swingHigh <= swingLow) return null;
+    const diff = swingHigh - swingLow;
+    return {
+      level_0: +swingHigh.toFixed(2),
+      level_236: +(swingHigh - diff * 0.236).toFixed(2),
+      level_382: +(swingHigh - diff * 0.382).toFixed(2),
+      level_500: +(swingHigh - diff * 0.5).toFixed(2),
+      level_618: +(swingHigh - diff * 0.618).toFixed(2),
+      level_786: +(swingHigh - diff * 0.786).toFixed(2),
+      level_1000: +swingLow.toFixed(2),
+    };
+  }, [filteredCandles]);
+
+  // ── Candlestick pattern markers ───────────────────────────────────────────────
+  const patternMarkers = useMemo(() => {
+    if (filteredCandles.length === 0) return [];
+    try {
+      const detections: any[] = detectCandlestickPatternsFromHistory(filteredCandles, null);
+      if (!Array.isArray(detections)) return [];
+
+      // Map to lightweight-charts marker format
+      const markers: Array<{
+        time: string;
+        position: 'aboveBar' | 'belowBar';
+        color: string;
+        shape: 'arrowUp' | 'arrowDown' | 'circle';
+        text: string;
+        size: number;
+      }> = [];
+
+      const datesSeen = new Set<string>();
+      for (const det of detections) {
+        const time = String(det.date || '').slice(0, 10);
+        if (!time || datesSeen.has(time + det.id)) continue;
+        datesSeen.add(time + det.id);
+        const isBullish = det.type === 'bullish';
+        markers.push({
+          time,
+          position: isBullish ? 'belowBar' : 'aboveBar',
+          color: isBullish ? '#10b981' : '#f43f5e',
+          shape: isBullish ? 'arrowUp' : 'arrowDown',
+          text: det.name || det.id || '',
+          size: 1,
+        });
+      }
+      // Must be sorted ascending by time for lightweight-charts
+      return markers.sort((a, b) => a.time.localeCompare(b.time));
+    } catch {
+      return [];
+    }
+  }, [filteredCandles]);
+
+  // ── 52W levels from stock prop ────────────────────────────────────────────────
+  const high52w = useMemo(() => {
+    const v = Number(stock?.high52w || 0);
+    return v > 0 ? v : null;
+  }, [stock]);
+
+  const low52w = useMemo(() => {
+    const v = Number(stock?.low52w || 0);
+    return v > 0 ? v : null;
+  }, [stock]);
+
+  // ── RVOL from stock prop ──────────────────────────────────────────────────────
+  const rvol = useMemo(() => {
+    const v = Number(stock?.rvol || stock?.volumeSurgeRatio || 0);
+    return v > 0 ? v : null;
+  }, [stock]);
+
+  // ── Sub-pane count for dynamic layout ────────────────────────────────────────
+  const subPaneCount = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
+
+  // ── Render Chart ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartContainerRef.current || filteredCandles.length === 0) return;
 
-    // Clean previous chart instance
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
@@ -218,7 +459,10 @@ export function StockCandlestickChart({
 
     const container = chartContainerRef.current;
     const width = container.clientWidth;
-    const height = Math.max(380, Math.min(520, window.innerHeight * 0.55));
+
+    // Dynamic height: base + 90px per sub-pane
+    const baseHeight = Math.max(400, Math.min(520, window.innerHeight * 0.55));
+    const height = baseHeight + subPaneCount * 90;
 
     const chart = createChart(container, {
       width,
@@ -249,6 +493,31 @@ export function StockCandlestickChart({
 
     chartRef.current = chart;
 
+    // ── Dynamic main price pane bottom margin to leave room for sub-panes ──
+    let mainBottom = 0.20; // default: volume only
+    let volTop = 0.82, volBottom = 0;
+    let rsiTop = 0, rsiBottom = 0;
+    let macdTop = 0, macdBottom = 0;
+
+    if (subPaneCount === 1 && showRsi) {
+      mainBottom = 0.30;
+      volTop = 0.74; volBottom = 0.13;
+      rsiTop = 0.87; rsiBottom = 0;
+    } else if (subPaneCount === 1 && showMacd) {
+      mainBottom = 0.30;
+      volTop = 0.74; volBottom = 0.13;
+      macdTop = 0.87; macdBottom = 0;
+    } else if (subPaneCount === 2) {
+      mainBottom = 0.42;
+      volTop = 0.76; volBottom = 0.24;
+      rsiTop = 0.74; rsiBottom = 0.13;
+      macdTop = 0.87; macdBottom = 0;
+    }
+
+    chart.priceScale('right').applyOptions({
+      scaleMargins: { top: 0.05, bottom: mainBottom },
+    });
+
     // 1. Candlestick Series
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#10b981',
@@ -273,14 +542,22 @@ export function StockCandlestickChart({
     );
     mainSeriesRef.current = candleSeries;
 
+    // Pattern markers
+    if (showPatterns && patternMarkers.length > 0) {
+      try {
+        candleSeries.setMarkers(patternMarkers as any);
+      } catch { /* ignore */ }
+    }
+
     // 2. Volume Series
+    let volumeSeries: ISeriesApi<'Histogram'> | null = null;
     if (showVolume) {
-      const volumeSeries = chart.addSeries(HistogramSeries, {
+      volumeSeries = chart.addSeries(HistogramSeries, {
         priceFormat: { type: 'volume' },
         priceScaleId: 'volume_scale',
       });
       chart.priceScale('volume_scale').applyOptions({
-        scaleMargins: { top: 0.8, bottom: 0 },
+        scaleMargins: { top: volTop, bottom: volBottom },
       });
 
       volumeSeries.setData(
@@ -290,6 +567,18 @@ export function StockCandlestickChart({
           color: Number(c.close) >= Number(c.open) ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)',
         }))
       );
+
+      // Volume SMA 20 overlay on volume pane
+      if (showVolSma && volSmaData.length > 0) {
+        const volSmaSeries = chart.addSeries(LineSeries, {
+          color: 'rgba(251, 191, 36, 0.85)',
+          lineWidth: 1.5,
+          title: 'Vol SMA20',
+          priceScaleId: 'volume_scale',
+          lastValueVisible: false,
+        });
+        volSmaSeries.setData(volSmaData);
+      }
     }
 
     // 3. EMA Overlays
@@ -320,7 +609,7 @@ export function StockCandlestickChart({
       ema200Series.setData(ema200Data);
     }
 
-    // 4. Bollinger Bands Overlays
+    // 4. Bollinger Bands
     if (showBollinger && bollingerData.upper.length > 0) {
       const bbUpper = chart.addSeries(LineSeries, {
         color: 'rgba(56, 189, 248, 0.65)',
@@ -347,7 +636,18 @@ export function StockCandlestickChart({
       bbMid.setData(bollingerData.middle);
     }
 
-    // 5. Support & Resistance Lines
+    // 5. VWAP (main pane overlay)
+    if (showVwap && vwapData.length > 0) {
+      const vwapSeries = chart.addSeries(LineSeries, {
+        color: '#fbbf24',
+        lineWidth: 1.5,
+        lineStyle: LineStyle.Dashed,
+        title: 'VWAP',
+      });
+      vwapSeries.setData(vwapData);
+    }
+
+    // 6. Support & Resistance Lines
     if (showSRLevels && levels) {
       if (Array.isArray(levels.resistance)) {
         levels.resistance.slice(0, 2).forEach((r) => {
@@ -375,7 +675,7 @@ export function StockCandlestickChart({
       }
     }
 
-    // 6. Trade Plan Lines (Entry Zone, Stop Loss, Target 1, Target 2)
+    // 7. Trade Plan Lines
     if (showTradeLevels && levels) {
       if (levels.target2?.price) {
         candleSeries.createPriceLine({
@@ -419,7 +719,140 @@ export function StockCandlestickChart({
       }
     }
 
-    // 7. Interactive Crosshair Hover Tooltip
+    // 8. Pivot Points price lines on main pane
+    if (showPivots && pivotData) {
+      const pivotLines = [
+        { price: pivotData.P, color: '#e2e8f0', label: `PP: ${pivotData.P}` },
+        { price: pivotData.R1, color: '#34d399', label: `R1: ${pivotData.R1}` },
+        { price: pivotData.R2, color: '#6ee7b7', label: `R2: ${pivotData.R2}` },
+        { price: pivotData.R3, color: '#a7f3d0', label: `R3: ${pivotData.R3}` },
+        { price: pivotData.S1, color: '#fb7185', label: `S1: ${pivotData.S1}` },
+        { price: pivotData.S2, color: '#fda4af', label: `S2: ${pivotData.S2}` },
+        { price: pivotData.S3, color: '#fecdd3', label: `S3: ${pivotData.S3}` },
+      ];
+      for (const pl of pivotLines) {
+        if (pl.price > 0) {
+          candleSeries.createPriceLine({
+            price: pl.price,
+            color: pl.color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: pl.label,
+          });
+        }
+      }
+    }
+
+    // 9. Fibonacci Retracement levels
+    if (showFib && fibData) {
+      const fibLevels = [
+        { price: fibData.level_0, color: '#c4b5fd', label: `Fib 0%: ${fibData.level_0}` },
+        { price: fibData.level_236, color: '#a78bfa', label: `Fib 23.6%: ${fibData.level_236}` },
+        { price: fibData.level_382, color: '#8b5cf6', label: `Fib 38.2%: ${fibData.level_382}` },
+        { price: fibData.level_500, color: '#7c3aed', label: `Fib 50%: ${fibData.level_500}` },
+        { price: fibData.level_618, color: '#6d28d9', label: `Fib 61.8%: ${fibData.level_618}` },
+        { price: fibData.level_786, color: '#5b21b6', label: `Fib 78.6%: ${fibData.level_786}` },
+        { price: fibData.level_1000, color: '#4c1d95', label: `Fib 100%: ${fibData.level_1000}` },
+      ];
+      for (const fl of fibLevels) {
+        if (fl.price > 0) {
+          candleSeries.createPriceLine({
+            price: fl.price,
+            color: fl.color,
+            lineWidth: 1,
+            lineStyle: LineStyle.LargeDashed,
+            axisLabelVisible: true,
+            title: fl.label,
+          });
+        }
+      }
+    }
+
+    // 10. 52W High / Low price lines
+    if (show52W) {
+      if (high52w != null && high52w > 0) {
+        candleSeries.createPriceLine({
+          price: high52w,
+          color: '#34d399',
+          lineWidth: 2,
+          lineStyle: LineStyle.SparseDotted,
+          axisLabelVisible: true,
+          title: `52W High: Rs. ${high52w}`,
+        });
+      }
+      if (low52w != null && low52w > 0) {
+        candleSeries.createPriceLine({
+          price: low52w,
+          color: '#fb7185',
+          lineWidth: 2,
+          lineStyle: LineStyle.SparseDotted,
+          axisLabelVisible: true,
+          title: `52W Low: Rs. ${low52w}`,
+        });
+      }
+    }
+
+    // 11. RSI sub-pane
+    let rsiSeriesRef: ISeriesApi<'Line'> | null = null;
+    if (showRsi && rsiData.length > 0) {
+      rsiSeriesRef = chart.addSeries(LineSeries, {
+        color: '#f472b6',
+        lineWidth: 1.5,
+        title: 'RSI(14)',
+        priceScaleId: 'rsi_scale',
+        priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+      });
+      chart.priceScale('rsi_scale').applyOptions({
+        scaleMargins: { top: rsiTop, bottom: rsiBottom },
+        autoScale: false,
+        entireTextOnly: true,
+      });
+      rsiSeriesRef.setData(rsiData);
+      // 70 / 30 reference lines
+      rsiSeriesRef.createPriceLine({ price: 70, color: 'rgba(251, 113, 133, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'OB' });
+      rsiSeriesRef.createPriceLine({ price: 30, color: 'rgba(52, 211, 153, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'OS' });
+      rsiSeriesRef.createPriceLine({ price: 50, color: 'rgba(148, 163, 184, 0.3)', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: '' });
+    }
+
+    // 12. MACD sub-pane
+    if (showMacd) {
+      if (macdArrays.histogram.length > 0) {
+        const macdHistSeries = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'price', precision: 3, minMove: 0.001 },
+          priceScaleId: 'macd_scale',
+          title: 'MACD Hist',
+        });
+        chart.priceScale('macd_scale').applyOptions({
+          scaleMargins: { top: macdTop, bottom: macdBottom },
+          autoScale: true,
+          entireTextOnly: true,
+        });
+        macdHistSeries.setData(macdArrays.histogram as any);
+      }
+      if (macdArrays.macdLine.length > 0) {
+        const macdLineSeries = chart.addSeries(LineSeries, {
+          color: '#38bdf8',
+          lineWidth: 1.5,
+          title: 'MACD',
+          priceScaleId: 'macd_scale',
+          lastValueVisible: false,
+        });
+        macdLineSeries.setData(macdArrays.macdLine);
+      }
+      if (macdArrays.signalLine.length > 0) {
+        const signalLineSeries = chart.addSeries(LineSeries, {
+          color: '#fb923c',
+          lineWidth: 1.5,
+          title: 'Signal',
+          priceScaleId: 'macd_scale',
+          lastValueVisible: false,
+        });
+        signalLineSeries.setData(macdArrays.signalLine);
+      }
+    }
+
+    // 13. Interactive Crosshair Tooltip
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.seriesData.get(candleSeries)) {
         setTooltipData(null);
@@ -432,6 +865,9 @@ export function StockCandlestickChart({
 
       const matchingEma20 = ema20Data.find((d) => d.time === param.time)?.value ?? null;
       const matchingEma50 = ema50Data.find((d) => d.time === param.time)?.value ?? null;
+      const matchingRsi = rsiData.find((d) => d.time === param.time)?.value ?? null;
+      const matchingHist = macdArrays.histogram.find((d) => d.time === param.time)?.value ?? null;
+      const matchingVwap = vwapData.find((d) => d.time === param.time)?.value ?? null;
 
       setTooltipData({
         date: String(param.time),
@@ -443,12 +879,14 @@ export function StockCandlestickChart({
         volume: Number(prevBar?.volume) || 0,
         ema20: matchingEma20,
         ema50: matchingEma50,
+        rsi: matchingRsi,
+        macdHist: matchingHist,
+        vwap: matchingVwap,
       });
     });
 
     chart.timeScale().fitContent();
 
-    // Resize Observer for auto-fitting
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
@@ -474,12 +912,42 @@ export function StockCandlestickChart({
     showBollinger,
     showSRLevels,
     showTradeLevels,
+    showRsi,
+    showMacd,
+    showVwap,
+    showPivots,
+    showFib,
+    show52W,
+    showPatterns,
+    showVolSma,
     levels,
     ema20Data,
     ema50Data,
     ema200Data,
     bollingerData,
+    rsiData,
+    macdArrays,
+    vwapData,
+    volSmaData,
+    pivotData,
+    fibData,
+    high52w,
+    low52w,
+    patternMarkers,
+    subPaneCount,
   ]);
+
+  // ── RVOL badge helper ─────────────────────────────────────────────────────────
+  const rvolBadge = useMemo(() => {
+    if (rvol == null) return null;
+    if (rvol >= 1.5) return { emoji: '🔥', color: '#f59e0b', label: `RVOL ${rvol.toFixed(2)}x` };
+    if (rvol <= 0.5) return { emoji: '💤', color: '#64748b', label: `RVOL ${rvol.toFixed(2)}x` };
+    return { emoji: '', color: '#94a3b8', label: `RVOL ${rvol.toFixed(2)}x` };
+  }, [rvol]);
+
+  const rsiColor = currentRsi != null
+    ? currentRsi >= 70 ? '#fb7185' : currentRsi <= 30 ? '#34d399' : '#f472b6'
+    : '#94a3b8';
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#090d16] p-3 sm:p-4 text-slate-200 shadow-xl space-y-3">
@@ -492,6 +960,26 @@ export function StockCandlestickChart({
           {ltp && (
             <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-800 text-white">
               Rs. {ltp.toFixed(1)}
+            </span>
+          )}
+          {rvolBadge && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded border" style={{ color: rvolBadge.color, borderColor: rvolBadge.color + '55', background: rvolBadge.color + '18' }}>
+              {rvolBadge.emoji} {rvolBadge.label}
+            </span>
+          )}
+          {currentRsi != null && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded border" style={{ color: rsiColor, borderColor: rsiColor + '55', background: rsiColor + '18' }}>
+              RSI {currentRsi}
+            </span>
+          )}
+          {currentMacdHist != null && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded border"
+              style={{
+                color: currentMacdHist >= 0 ? '#34d399' : '#fb7185',
+                borderColor: (currentMacdHist >= 0 ? '#34d399' : '#fb7185') + '55',
+                background: (currentMacdHist >= 0 ? '#34d399' : '#fb7185') + '18'
+              }}>
+              MACD Hist {currentMacdHist >= 0 ? '▲' : '▼'} {Math.abs(currentMacdHist).toFixed(2)}
             </span>
           )}
         </div>
@@ -521,6 +1009,7 @@ export function StockCandlestickChart({
 
       {/* ── Indicator Toggles Bar ── */}
       <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-300">
+        {/* Existing toggles */}
         <button
           onClick={() => setShowCandles((v) => !v)}
           className={`flex items-center gap-1 px-2.5 py-1 rounded-md border transition ${
@@ -541,6 +1030,17 @@ export function StockCandlestickChart({
           }`}
         >
           {showVolume ? <Eye size={12} /> : <EyeOff size={12} />} Volume
+        </button>
+
+        <button
+          onClick={() => setShowVolSma((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showVolSma
+              ? 'bg-yellow-950/80 border-yellow-600 text-yellow-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          Vol SMA20
         </button>
 
         <button
@@ -587,6 +1087,84 @@ export function StockCandlestickChart({
           Bollinger
         </button>
 
+        {/* New toggles */}
+        <button
+          onClick={() => setShowVwap((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showVwap
+              ? 'bg-yellow-950/80 border-yellow-500 text-yellow-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          VWAP
+        </button>
+
+        <button
+          onClick={() => setShowRsi((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showRsi
+              ? 'bg-pink-950/80 border-pink-600 text-pink-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          RSI
+        </button>
+
+        <button
+          onClick={() => setShowMacd((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showMacd
+              ? 'bg-sky-950/80 border-sky-500 text-sky-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          MACD
+        </button>
+
+        <button
+          onClick={() => setShowPivots((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showPivots
+              ? 'bg-slate-700/80 border-slate-400 text-slate-200 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          Pivots
+        </button>
+
+        <button
+          onClick={() => setShowFib((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showFib
+              ? 'bg-violet-950/80 border-violet-500 text-violet-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          Fibonacci
+        </button>
+
+        <button
+          onClick={() => setShow52W((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            show52W
+              ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          52W H/L
+        </button>
+
+        <button
+          onClick={() => setShowPatterns((v) => !v)}
+          className={`px-2.5 py-1 rounded-md border transition ${
+            showPatterns
+              ? 'bg-orange-950/80 border-orange-600 text-orange-300 font-bold'
+              : 'bg-slate-900 border-slate-800 text-slate-500'
+          }`}
+        >
+          🕯 Patterns
+        </button>
+
         <button
           onClick={() => setShowSRLevels((v) => !v)}
           className={`px-2.5 py-1 rounded-md border transition ${
@@ -609,6 +1187,25 @@ export function StockCandlestickChart({
           🎯 Entry / Targets
         </button>
       </div>
+
+      {/* ── Pivot & Fib quick-reference chips (when enabled) ── */}
+      {(showPivots && pivotData) && (
+        <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
+          {[
+            { label: 'PP', value: pivotData.P, color: '#e2e8f0' },
+            { label: 'R1', value: pivotData.R1, color: '#34d399' },
+            { label: 'R2', value: pivotData.R2, color: '#6ee7b7' },
+            { label: 'S1', value: pivotData.S1, color: '#fb7185' },
+            { label: 'S2', value: pivotData.S2, color: '#fda4af' },
+          ].map(p => (
+            <span key={p.label} className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800" style={{ color: p.color }}>
+              {p.label}: {p.value}
+            </span>
+          ))}
+          {high52w && <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-300">52W H: {high52w}</span>}
+          {low52w && <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-rose-300">52W L: {low52w}</span>}
+        </div>
+      )}
 
       {/* ── Active Bar Hover Stats Bar ── */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800/60 text-xs font-mono">
@@ -640,10 +1237,21 @@ export function StockCandlestickChart({
             {tooltipData.ema50 && (
               <span className="text-amber-400">EMA50: {tooltipData.ema50}</span>
             )}
+            {tooltipData.vwap != null && (
+              <span className="text-yellow-400">VWAP: {tooltipData.vwap}</span>
+            )}
+            {tooltipData.rsi != null && (
+              <span style={{ color: rsiColor }}>RSI: {tooltipData.rsi}</span>
+            )}
+            {tooltipData.macdHist != null && (
+              <span style={{ color: tooltipData.macdHist >= 0 ? '#34d399' : '#fb7185' }}>
+                MACD Hist: {tooltipData.macdHist >= 0 ? '+' : ''}{tooltipData.macdHist}
+              </span>
+            )}
           </>
         ) : (
           <span className="text-slate-500 text-[11px] italic font-sans">
-            Hover over any candle to inspect historical OHLCV, moving averages, and changes.
+            Hover over any candle to inspect OHLCV, EMAs, VWAP, RSI, MACD, and pattern signals.
           </span>
         )}
       </div>
@@ -652,8 +1260,25 @@ export function StockCandlestickChart({
       <div
         ref={chartContainerRef}
         className="w-full relative rounded-xl overflow-hidden border border-slate-800/80"
-        style={{ minHeight: '380px' }}
+        style={{ minHeight: '400px' }}
       />
+
+      {/* ── Legend / Pattern summary ── */}
+      {showPatterns && patternMarkers.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 text-[10px] pt-0.5">
+          <span className="text-slate-500 font-medium">Detected:</span>
+          {patternMarkers.slice(-6).map((m, i) => (
+            <span key={i} className="px-2 py-0.5 rounded border"
+              style={{
+                color: m.color,
+                borderColor: m.color + '55',
+                background: m.color + '18',
+              }}>
+              {m.text}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import syncRouter from '../proxy/syncRouter.mjs';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet } from '../proxy/brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap } from '../proxy/brokerVault.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { 
   adToBs, 
@@ -737,9 +737,6 @@ app.get('/api/market-indices', async (req, res) => {
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 const MEROSHARE_BASE = 'https://backend.cdsc.com.np/api/meroShare';
-
-// Share a single global cookie jar across warm-started instances to cache WAF cookies
-const sharedJar = new CookieJar();
 
 // Create a session-aware axios instance with cookie jar for WAF bypass
 const createMeroShareSession = async () => {
@@ -2370,6 +2367,22 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       success: true,
       data: { rows: [], page, size, totalPages: 0, totalElements: 0, totalAmount: 0, totalQty: 0, symbol, businessDate, error: 'Floorsheet data temporarily unavailable.' }
     });
+  }
+});
+
+app.get(['/api/market/broker-summary', '/api/broker-analysis/summary-map'], async (req, res) => {
+  try {
+    const days = parseInt(req.query.days || '1', 10) || 1;
+    const brokerMap = await getMarketWideBrokerSummaryMap(days);
+    res.json({
+      success: true,
+      count: Object.keys(brokerMap || {}).length,
+      data: brokerMap || {},
+      asOf: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[api] GET broker summary map error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

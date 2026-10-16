@@ -398,10 +398,21 @@ export function evaluateMasterStock(
 
   const promoterHoldingRaw = (stock?.promoterHolding !== undefined && stock?.promoterHolding !== null)
     ? Number(stock.promoterHolding)
-    : null;
+    : (cachedFund?.promoterHolding !== undefined && cachedFund?.promoterHolding !== null)
+      ? Number(cachedFund.promoterHolding)
+      : null;
   const promoterHoldingKnown = promoterHoldingRaw !== null;
   const promoterHolding = promoterHoldingKnown ? promoterHoldingRaw! : 55.0; // 55% used only for display/sizing fallback when real data absent
-  const sharesOutM = Number(stock?.sharesOut || stock?.totalShares || 10.0);
+
+  const universeStock = Array.isArray(NEPSE_UNIVERSE) ? NEPSE_UNIVERSE.find(u => u && u.symbol === sym) : null;
+  const sharesOutM = Number(
+    stock?.sharesOut ||
+    stock?.totalShares ||
+    cachedFund?.sharesOut ||
+    cachedFund?.totalShares ||
+    universeStock?.sharesOut ||
+    10.0
+  );
   const publicFloatM = Number(((1 - promoterHolding / 100) * sharesOutM).toFixed(2));
 
   // Dual-Track Archetype: High-Growth Low-Float vs Institutional Blue-Chip Compounder
@@ -433,7 +444,7 @@ export function evaluateMasterStock(
   const dynamicAtr = calculateATR(cachedHistory, 14) || Math.max(2, ltp * 0.035);
 
   // Volume & Broker Analysis (With Verification Check)
-  const cachedBroker = getCachedRealBrokerAnalysis(sym) || stock?.brokerAnalysis || {};
+  const cachedBroker = stock?.brokerAnalysis || stock?.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym) || {};
   const brokerConc = calculateBrokerConcentration(
     cachedBroker?.transactions || cachedBroker?.floorsheet || [],
     sym,  // ← FIXED: was `vol` (number), must be stock symbol string for trade matching
@@ -868,7 +879,12 @@ export function runMasterGuideAudit(
   const validStocks = stocks.filter(isTradableCommonEquity);
 
   for (const s of validStocks) {
-    const res = evaluateMasterStock(s, !breadthCheck.cashDefenseActive, season?.scoreBonus || 0);
+    const sym = String(s?.symbol || s?.scrip || '').toUpperCase().trim();
+    const cachedBroker = getCachedRealBrokerAnalysis(sym);
+    const enrichedStock = (cachedBroker && !s.brokerAnalysis)
+      ? { ...s, brokerAnalysis: cachedBroker, realBrokerAnalysis: cachedBroker }
+      : s;
+    const res = evaluateMasterStock(enrichedStock, !breadthCheck.cashDefenseActive, season?.scoreBonus || 0);
     if (res.disqualificationReason) {
       disqualified.push({ symbol: res.symbol, reason: res.disqualificationReason });
     }
@@ -877,11 +893,13 @@ export function runMasterGuideAudit(
 
   // Sort candidates:
   // 1. Fully cleared (0 hard rejects & gates >= 6) first
-  // 2. Setup Score descending
-  // 3. Net R:R descending
-  // 4. BCR3 descending
+  // 2. Verified broker institutional data first (prioritize verified order flow over unverified)
+  // 3. Setup Score descending
+  // 4. Net R:R descending
+  // 5. BCR3 descending
   evaluated.sort((a, b) => {
     if (a.isFullyCleared !== b.isFullyCleared) return a.isFullyCleared ? -1 : 1;
+    if (a.isBrokerVerified !== b.isBrokerVerified) return a.isBrokerVerified ? -1 : 1;
     if (b.matrixPassedCount !== a.matrixPassedCount) return b.matrixPassedCount - a.matrixPassedCount;
     if (b.setupScore !== a.setupScore) return b.setupScore - a.setupScore;
     if (b.netRRR !== a.netRRR) return b.netRRR - a.netRRR;

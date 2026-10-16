@@ -8,6 +8,7 @@ import {
   fetchAllSecurities, fetchPriceHistory,
   loadNepseData, fetchIndices, fetchFloorSheet, ENDPOINT_REGISTRY, getCachedStocks, getCachedIndices,
   getCachedRealPriceHistory, getCachedRealBrokerAnalysis, setCachedRealBrokerAnalysis,
+  fetchRealBrokerAnalysis,
   type EnrichedStock,
 } from '../utils/liveData';
 import {
@@ -18,7 +19,7 @@ import {
   fetchNewsArticle, fetchBrokerHeatmap, fetchMarketDepth,
 } from '../utils/servicesApi';
 import { getHydroSeasonality, calculateMultiHorizonTargets, resolveDynamicStockRSI, calculateCompositeTechnicalScore, calculateDecisionProbabilityIndex } from '../utils/quantEngine';
-import { calculateStealthAccumulationScore, detectSyndicateCluster, type SyndicateClusterAnalysis } from '../utils/accumulationDistributionEngine';
+import { calculateStealthAccumulationScore, detectSyndicateCluster, getBrokerName, type SyndicateClusterAnalysis } from '../utils/accumulationDistributionEngine';
 import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsImpactScorer';
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
@@ -117,11 +118,12 @@ function computeStockTimeframeMetrics(stock: any) {
 
   const sym = String(stock.symbol || '').toUpperCase().trim();
   const cachedHist = stock.history || stock.candles || stock.priceHistory || (sym ? getCachedRealPriceHistory(sym) : null);
+  const realBroker = stock.brokerAnalysis || stock.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
 
   const baseStealth = Number(stock.stealthAccumulation) || calculateStealthAccumulationScore(
     stock,
     Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
-    undefined // no broker flow at this level
+    realBroker
   );
   const baseRsi = Number(stock.rsi) || resolveDynamicStockRSI(stock);
   const baseTech = Number(stock.technicalScore) || calculateCompositeTechnicalScore(stock).normalizedScore;
@@ -174,7 +176,7 @@ function computeStockTimeframeMetrics(stock: any) {
       const stealth = calculateStealthAccumulationScore(
         sliceProxy,
         slice.length >= 5 ? slice : candles.slice(-25),
-        undefined
+        realBroker
       );
       const tech = Math.max(10, Math.min(95, Math.round(baseTech + (rsi - 50) * 0.5 + pChange * 0.3)));
 
@@ -219,84 +221,48 @@ function computeStockTimeframeMetrics(stock: any) {
     return result;
   }
 
-  // Pure deterministic exchange-calibrated calculation when candles are pending fetch (ZERO random noise)
-  // Helper: stealth decreases as price moves up sharply (distribution),
-  //         stealth is highest during flat/slight down consolidation
-  const computeFallbackStealth = (base: number, ret: number) => {
-    if (ret > 10) return Math.max(10, Math.round(base - (ret - 10) * 1.5));  // markup phase, reduce stealth
-    if (ret > 5)  return Math.max(15, Math.round(base - (ret - 5) * 0.8));   // slight markup
-    if (ret >= -2 && ret <= 5) return Math.min(92, Math.round(base + 5));    // consolidation = stealth sweet spot
-    if (ret < -5) return Math.max(10, Math.round(base - (Math.abs(ret) - 5) * 1.0)); // dump, reduce stealth
-    return base;
-  };
-
-  // 1W (5 trading days)
-  const wRet = +((dailyP * 2.2) + (pos52 - 0.5) * 4.0).toFixed(2);
-  const wVol = Math.round(dailyVol * 5);
-  const wTurnover = Math.round(dailyTurnover * 5);
-  const wHigh = +(ltp * (1 + Math.max(0.015, wRet > 0 ? (wRet * 0.01) : 0.02))).toFixed(1);
-  const wLow = +(ltp * (1 - Math.max(0.015, wRet < 0 ? (Math.abs(wRet) * 0.01) : 0.02))).toFixed(1);
-  const wBreakout = wRet > 4.5 && pos52 > 0.65;
-  const wStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, wRet)));
-  const wRsi = +(Math.max(15, Math.min(88, baseRsi + (wRet * 0.6))).toFixed(1));
-  const wTech = Math.max(15, Math.min(95, Math.round(baseTech + (wRet * 0.5))));
-
-  // 1M (22 trading days)
-  const mRet = +((dailyP * 3.0) + (pos52 - 0.5) * 16.0).toFixed(2);
-  const mVol = Math.round(dailyVol * 22);
-  const mTurnover = Math.round(dailyTurnover * 22);
-  const mHigh = +(ltp * (1 + Math.max(0.03, mRet > 0 ? (mRet * 0.015) : 0.04))).toFixed(1);
-  const mLow = +(ltp * (1 - Math.max(0.03, mRet < 0 ? (Math.abs(mRet) * 0.015) : 0.04))).toFixed(1);
-  const mBreakout = mRet > 10 && pos52 > 0.72;
-  const mStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, mRet)));
-  const mRsi = +(Math.max(15, Math.min(88, baseRsi + (mRet * 0.5))).toFixed(1));
-  const mTech = Math.max(15, Math.min(95, Math.round(baseTech + (mRet * 0.4))));
-
-  // 3M (66 trading days)
-  const qRet = +((dailyP * 3.5) + (pos52 - 0.5) * 32.0).toFixed(2);
-  const qVol = Math.round(dailyVol * 66);
-  const qTurnover = Math.round(dailyTurnover * 66);
-  const qHigh = +(ltp * (1 + Math.max(0.06, qRet > 0 ? (qRet * 0.018) : 0.07))).toFixed(1);
-  const qLow = +(ltp * (1 - Math.max(0.06, qRet < 0 ? (Math.abs(qRet) * 0.018) : 0.07))).toFixed(1);
-  const qBreakout = qRet > 18 && pos52 > 0.8;
-  const qStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, qRet)));
-  const qRsi = +(Math.max(15, Math.min(88, baseRsi + (qRet * 0.4))).toFixed(1));
-  const qTech = Math.max(15, Math.min(95, Math.round(baseTech + (qRet * 0.3))));
-
-  // 6M (132 trading days)
-  const sRet = +((pos52 - 0.5) * 55.0).toFixed(2);
-  const sVol = Math.round(dailyVol * 132);
-  const sTurnover = Math.round(dailyTurnover * 132);
-  const sHigh = +(ltp * (1 + Math.max(0.10, sRet > 0 ? (sRet * 0.02) : 0.12))).toFixed(1);
-  const sLow = +(ltp * (1 - Math.max(0.10, sRet < 0 ? (Math.abs(sRet) * 0.02) : 0.12))).toFixed(1);
-  const sBreakout = sRet > 25 && pos52 > 0.85;
-  const sStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, sRet)));
-  const sRsi = +(Math.max(15, Math.min(88, baseRsi + (sRet * 0.3))).toFixed(1));
-  const sTech = Math.max(15, Math.min(95, Math.round(baseTech + (sRet * 0.25))));
-
-  // 1Y (250 trading days) - Bound to authentic 52-week exchange range
-  const baseline1y = (lo52 + range * 0.50);
-  const yRet = +(((ltp - baseline1y) / baseline1y) * 100).toFixed(2);
-  const yVol = Math.round(dailyVol * 250);
-  const yTurnover = Math.round(dailyTurnover * 250);
-  const yHigh = hi52;
-  const yLow = lo52;
-  const yBreakout = yRet > 35 && pos52 > 0.9;
-  const yStealth = Math.max(10, Math.min(95, computeFallbackStealth(baseStealth, yRet)));
-  const yRsi = +(Math.max(15, Math.min(88, 35 + pos52 * 40)).toFixed(1));
-  const yTech = Math.max(15, Math.min(95, Math.round(40 + pos52 * 40)));
-
+  // Exchange-calibrated metrics when candles are pending fetch (ZERO synthetic noise or fabricated returns)
   const fallbackSurge = Number(stock.volumeSurgeRatio) || 1.0;
   const fallbackZScore = Number(stock.volumeZScore) || (fallbackSurge >= 1.4 ? Number(((fallbackSurge - 1.0) * 2.0).toFixed(2)) : 0);
   const fallbackShocker = fallbackZScore >= 1.5 || fallbackSurge >= 1.8;
 
+  const makePendingTf = (mult: number) => ({
+    pChange: dailyP,
+    volume: Math.round(dailyVol * mult),
+    turnover: Math.round(dailyTurnover * mult),
+    volumeSurgeRatio: fallbackSurge,
+    volumeZScore: fallbackZScore,
+    isVolumeShocker: fallbackShocker,
+    high: Number(stock.high) || ltp,
+    low: Number(stock.low) || ltp,
+    isBreakout: false,
+    stealthAccumulation: baseStealth,
+    rsi: baseRsi,
+    technicalScore: baseTech,
+    isHistoryPending: true,
+  });
+
   const result = {
-    '1D': { pChange: dailyP, volume: dailyVol, turnover: dailyTurnover, volumeSurgeRatio: fallbackSurge, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(stock.high) || ltp, low: Number(stock.low) || ltp, isBreakout: Boolean(stock.isBreakout), stealthAccumulation: baseStealth, rsi: baseRsi, technicalScore: baseTech },
-    '1W': { pChange: wRet, volume: wVol, turnover: wTurnover, volumeSurgeRatio: fallbackSurge >= 1.2 ? fallbackSurge : 1.1, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(wHigh), low: Number(wLow), isBreakout: wBreakout, stealthAccumulation: wStealth, rsi: wRsi, technicalScore: wTech },
-    '1M': { pChange: mRet, volume: mVol, turnover: mTurnover, volumeSurgeRatio: fallbackSurge >= 1.2 ? fallbackSurge : 1.1, volumeZScore: fallbackZScore, isVolumeShocker: fallbackShocker, high: Number(mHigh), low: Number(mLow), isBreakout: mBreakout, stealthAccumulation: mStealth, rsi: mRsi, technicalScore: mTech },
-    '3M': { pChange: qRet, volume: qVol, turnover: qTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(qHigh), low: Number(qLow), isBreakout: qBreakout, stealthAccumulation: qStealth, rsi: qRsi, technicalScore: qTech },
-    '6M': { pChange: sRet, volume: sVol, turnover: sTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(sHigh), low: Number(sLow), isBreakout: sBreakout, stealthAccumulation: sStealth, rsi: sRsi, technicalScore: sTech },
-    '1Y': { pChange: yRet, volume: yVol, turnover: yTurnover, volumeSurgeRatio: 1.0, volumeZScore: 0, isVolumeShocker: false, high: Number(yHigh), low: Number(yLow), isBreakout: yBreakout, stealthAccumulation: yStealth, rsi: yRsi, technicalScore: yTech },
+    '1D': {
+      pChange: dailyP,
+      volume: dailyVol,
+      turnover: dailyTurnover,
+      volumeSurgeRatio: fallbackSurge,
+      volumeZScore: fallbackZScore,
+      isVolumeShocker: fallbackShocker,
+      high: Number(stock.high) || ltp,
+      low: Number(stock.low) || ltp,
+      isBreakout: Boolean(stock.isBreakout),
+      stealthAccumulation: baseStealth,
+      rsi: baseRsi,
+      technicalScore: baseTech,
+      isHistoryPending: false,
+    },
+    '1W': makePendingTf(5),
+    '1M': makePendingTf(22),
+    '3M': makePendingTf(66),
+    '6M': makePendingTf(132),
+    '1Y': makePendingTf(250),
   };
   tfMetricsCache.set(stock, result);
   return result;
@@ -398,6 +364,16 @@ export function UniversalScreener({
         const week52HighDist = hi52 > 0 ? Number((((c - hi52) / hi52) * 100).toFixed(2)) : null;
         const week52LowDist = lo52 > 0 ? Number((((c - lo52) / lo52) * 100).toFixed(2)) : null;
 
+        const bcr3BuyPct = Number(stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? 0);
+        const bcr5BuyPct = Number(stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? 0);
+        const bcr3SellPct = Number(stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? 0);
+        const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? 1.0);
+        const lbas = Number(stock.lbas ?? stock.brokerAnalysis?.lbas ?? 0);
+        const adSignal = stock.adSignal || stock.brokerAnalysis?.adSignal || 'Neutral';
+        const adRatio = Number(stock.adRatio ?? stock.brokerAnalysis?.adRatio ?? 0);
+        const topAccumulator = stock.topAccumulator || stock.brokerAnalysis?.topAccumulator || stock.brokerAnalysis?.topNetBuyers?.[0] || null;
+        const topDistributor = stock.topDistributor || stock.brokerAnalysis?.topDistributor || stock.brokerAnalysis?.topNetSellers?.[0] || null;
+
         // Distribution / churn flag: high price + high volume = operator offloading into retail
         const _stealthScore = Number(tfMetrics.stealthAccumulation) || 50;
         const _vSurge = Number(tfMetrics.volumeSurgeRatio) || 1;
@@ -408,7 +384,9 @@ export function UniversalScreener({
           (_vSurge >= 1.6 && (_body / Math.max(_range, 0.01) <= 0.35 || _upperShadow >= 0.42)) ||
           (tfMetrics.isVolumeShocker && currentPChange <= 1.0) ||
           (currentPChange > 6 && _vSurge > 2.2) ||
-          (_stealthScore < 35 && _vSurge >= 1.5)
+          (_stealthScore < 35 && _vSurge >= 1.5) ||
+          (bcr3SellPct >= 42 && bcr3SellPct > bcr3BuyPct * 1.2) ||
+          (adRatio <= -0.10)
         );
 
         return {
@@ -428,6 +406,15 @@ export function UniversalScreener({
           low: tfMetrics.low,
           isBreakout: tfMetrics.isBreakout,
           stealthAccumulation: tfMetrics.stealthAccumulation,
+          bcr3BuyPct,
+          bcr5BuyPct,
+          bcr3SellPct,
+          nbar,
+          lbas,
+          adSignal,
+          adRatio,
+          topAccumulator,
+          topDistributor,
           isChurnDistribution,
           rsi: tfMetrics.rsi,
           technicalScore: currentScore,
@@ -2635,7 +2622,7 @@ export function LiveFloorsheetService() {
     try {
       // Parallel fetch: Real floorsheet raw contracts + multi-horizon broker aggregation heatmap
       const [fsRes, hmRes] = await Promise.allSettled([
-        fetchServicesFloorsheet(null, 1, 100),
+        fetchServicesFloorsheet(null, 1, 2500),
         fetchBrokerHeatmap({ days })
       ]);
 
@@ -2650,7 +2637,7 @@ export function LiveFloorsheetService() {
 
       if (!rawRows.length) {
         try {
-          const fallback = await fetchFloorSheet(100);
+          const fallback = await fetchFloorSheet(2500);
           rawRows = fallback?.data || [];
         } catch (_) {}
       }
@@ -2700,10 +2687,12 @@ export function LiveFloorsheetService() {
           );
           const topScrip = sortedScrips[0]?.symbol || '';
 
-          // Use verified share count from matrix if available, otherwise project
-          const buyQty = m.totalBuyQty != null ? Number(m.totalBuyQty) : (m.buyQty != null ? Number(m.buyQty) : Math.round(buyAmt / 450));
-          const sellQty = m.totalSellQty != null ? Number(m.totalSellQty) : (m.sellQty != null ? Number(m.sellQty) : Math.round(sellAmt / 450));
-          const netQty = m.netQty != null ? Number(m.netQty) : Math.round(netAmt / 450);
+          // Use verified share count from matrix if available, otherwise sum scrips or fallback
+          const scripsBuyQty = Array.isArray(m.scrips) ? m.scrips.reduce((acc: number, sc: any) => acc + Number(sc.buyQty || sc.buyUnits || 0), 0) : 0;
+          const scripsSellQty = Array.isArray(m.scrips) ? m.scrips.reduce((acc: number, sc: any) => acc + Number(sc.sellQty || sc.sellUnits || 0), 0) : 0;
+          const buyQty = m.totalBuyQty != null ? Number(m.totalBuyQty) : (m.buyQty != null ? Number(m.buyQty) : (scripsBuyQty > 0 ? scripsBuyQty : Math.round(buyAmt / 450)));
+          const sellQty = m.totalSellQty != null ? Number(m.totalSellQty) : (m.sellQty != null ? Number(m.sellQty) : (scripsSellQty > 0 ? scripsSellQty : Math.round(sellAmt / 450)));
+          const netQty = m.netQty != null ? Number(m.netQty) : (buyQty - sellQty);
 
           return {
             broker: bId,
@@ -2802,14 +2791,9 @@ export function LiveFloorsheetService() {
     }).sort((a, b) => b.netAmt - a.netAmt);
   }, [filtered]);
 
-  // Determine active ledger based on timeframe and data availability
+  // Determine active ledger based on timeframe and data availability (prefer complete multiDayLedger over partial raw floorsheet slice)
   const activeLedger = useMemo(() => {
-    let source: any[] = [];
-    if (timeframe === '1D') {
-      source = live1dLedger.length > 0 ? live1dLedger : multiDayLedger;
-    } else {
-      source = multiDayLedger.length > 0 ? multiDayLedger : live1dLedger;
-    }
+    const source: any[] = multiDayLedger.length > 0 ? multiDayLedger : live1dLedger;
 
     if (!query.trim()) return source;
     const q = query.toLowerCase();
@@ -2818,7 +2802,7 @@ export function LiveFloorsheetService() {
       String(b.name || '').toLowerCase().includes(q) ||
       String(b.topScrip || '').toLowerCase().includes(q)
     );
-  }, [timeframe, live1dLedger, multiDayLedger, query]);
+  }, [multiDayLedger, live1dLedger, query]);
 
   const rawQty = useMemo(() => Math.round(filtered.reduce((s, r) => s + Number(r.quantity ?? r.qty ?? 0), 0)), [filtered]);
   const rawAmt = useMemo(() => Math.round(filtered.reduce((s, r) => s + Number(r.amount ?? 0), 0)), [filtered]);
@@ -3061,7 +3045,7 @@ export function BrokerHeatmapService() {
     try {
       const res = await fetchBrokerHeatmap({ days });
       const d = res?.data || res;
-      if (d?.matrix && d.matrix.some((m: any) => m.broker === '58' && m.topAccumulation)) {
+      if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
         setData(d);
       } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setData(latestBrokerMatrix);
@@ -3591,7 +3575,7 @@ export function BrokerFavouritesService({
       const tfDays = daysMap[tf] || 1;
       const heatmapRes = await fetchBrokerHeatmap(tfDays).catch(() => null);
       let heatmapData = heatmapRes?.data || heatmapRes;
-      if (!heatmapData?.matrix || !heatmapData.matrix.some((m: any) => m.broker === '58' && m.topAccumulation)) {
+      if (!Array.isArray(heatmapData?.matrix) || heatmapData.matrix.length === 0) {
         if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
           heatmapData = latestBrokerMatrix;
         }
@@ -3614,29 +3598,43 @@ export function BrokerFavouritesService({
       const brokerFavored = stockList.map((stock) => {
         const metricsMap = computeStockTimeframeMetrics(stock);
         const tfMetrics = metricsMap?.[tf as keyof typeof metricsMap] || metricsMap?.['1D'] || {};
-        const sym = stock.symbol;
+        const sym = String(stock.symbol || '').toUpperCase().trim();
+        const realBroker = stock.brokerAnalysis || stock.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null);
 
         let totalBuy = 0;
+        let totalSell = 0;
         let topBuyerBroker = '';
         let maxBuy = 0;
 
         matrix.forEach((b: any) => {
-          const scripCell = (b.scrips || []).find((s: any) => s.symbol === sym);
+          const scripCell = (b.scrips || []).find((s: any) => String(s.symbol || '').toUpperCase().trim() === sym);
           if (scripCell) {
-            totalBuy += Number(scripCell.buy || 0);
-            if (scripCell.buy > maxBuy) {
-              maxBuy = scripCell.buy;
+            const bAmt = Number(scripCell.buy || 0);
+            const sAmt = Number(scripCell.sell || 0);
+            totalBuy += bAmt;
+            totalSell += sAmt;
+            if (bAmt > maxBuy) {
+              maxBuy = bAmt;
               topBuyerBroker = b.brokerName || `Broker #${b.broker}`;
             }
           }
         });
 
-        const realBroker = getCachedRealBrokerAnalysis(sym);
         if (realBroker?.topBuyers?.length > 0 && !topBuyerBroker) {
-          topBuyerBroker = realBroker.topBuyers[0].brokerName || `Broker #${realBroker.topBuyers[0].brokerId}`;
+          topBuyerBroker = realBroker.topBuyers[0].brokerName || `Broker #${realBroker.topBuyers[0].brokerId || realBroker.topBuyers[0].broker}`;
+        }
+        if (!totalBuy && realBroker?.totalBuyAmount) {
+          totalBuy = Number(realBroker.totalBuyAmount || 0);
+        }
+        if (!totalSell && realBroker?.totalSellAmount) {
+          totalSell = Number(realBroker.totalSellAmount || 0);
         }
 
-        // Horizon-differentiated institutional scores driven purely by verified volume, stealth and returns
+        const bcr3Buy = Number(realBroker?.bcr3BuyPct || realBroker?.concentrationPct || (totalBuy > 0 && maxBuy > 0 ? (maxBuy / totalBuy) * 100 : 0));
+        const nbarVal = Number(realBroker?.nbar || (totalSell > 0 ? totalBuy / totalSell : (totalBuy > 0 ? 1.5 : 1.0)));
+        const adRatioVal = Number(realBroker?.adRatio || (totalBuy + totalSell > 0 ? (totalBuy - totalSell) / (totalBuy + totalSell) : 0));
+
+        // Horizon-differentiated institutional scores driven purely by verified volume, stealth, broker accumulation and returns
         let horizonFavScore = 0;
         const pChg = Number(tfMetrics?.pChange || stock.pChange || 0);
         const vSurge = Number(tfMetrics?.volumeSurgeRatio || stock.volumeSurgeRatio || 1.1);
@@ -3648,41 +3646,43 @@ export function BrokerFavouritesService({
         const normPChg = Math.min(100, Math.max(0, (pChg + 15) / 30 * 100));   // -15%→0, +15%→100
         const normStealth = Math.min(100, Math.max(0, stealth));                // already 0–100
         const normTech = Math.min(100, Math.max(0, tech));                      // already 0–100
-        const hasBrokerBuy = totalBuy > 0;
+        const normBcr3 = Math.min(100, Math.max(0, bcr3Buy * 1.5));             // 66%+ gives 100
+        const normNbar = Math.min(100, Math.max(0, (nbarVal - 0.5) * 50));     // 1.5 -> 50, 2.5 -> 100
+        const normAd = Math.min(100, Math.max(0, (adRatioVal + 0.5) * 100));
 
         if (tf === '1D') {
-          horizonFavScore = (normVSurge * 0.45) + (normPChg * 0.25) + (hasBrokerBuy ? 30 : 0);
+          horizonFavScore = (normBcr3 * 0.35) + (normNbar * 0.25) + (normVSurge * 0.25) + (normPChg * 0.15);
         } else if (tf === '1W') {
-          horizonFavScore = (normPChg * 0.35) + (normStealth * 0.35) + (normVSurge * 0.20) + (hasBrokerBuy ? 10 : 0);
+          horizonFavScore = (normBcr3 * 0.30) + (normStealth * 0.30) + (normNbar * 0.20) + (normVSurge * 0.20);
         } else if (tf === '1M') {
-          horizonFavScore = (normStealth * 0.50) + (normTech * 0.30) + (normPChg * 0.20);
+          horizonFavScore = (normStealth * 0.40) + (normBcr3 * 0.25) + (normTech * 0.20) + (normPChg * 0.15);
         } else {
           // 3M and beyond: fundamentals + stealth dominate
-          horizonFavScore = (normStealth * 0.55) + (normTech * 0.35) + (normPChg * 0.10);
+          horizonFavScore = (normStealth * 0.45) + (normTech * 0.30) + (normBcr3 * 0.15) + (normPChg * 0.10);
         }
 
         const isStockChurn = Boolean(
           stock.isChurnDistribution ||
           (pChg > 6 && vSurge > 2.2) ||
           pChg > 12 ||
-          (stealth < 35 && vSurge >= 1.5)
+          (stealth < 35 && vSurge >= 1.5) ||
+          (Number(realBroker?.bcr3SellPct || 0) >= 42 && Number(realBroker?.bcr3SellPct || 0) > bcr3Buy * 1.2) ||
+          (adRatioVal <= -0.10)
         );
 
         if (isStockChurn) {
           horizonFavScore = Math.max(10, Math.round(horizonFavScore * 0.4));
         }
 
-        let netDominancePct = 50;
-        if (realBroker?.concentrationPct) {
+        let netDominancePct = 0;
+        if (realBroker?.bcr3BuyPct != null && Number(realBroker.bcr3BuyPct) > 0) {
+          netDominancePct = Math.round(Number(realBroker.bcr3BuyPct));
+        } else if (realBroker?.concentrationPct != null && Number(realBroker.concentrationPct) > 0) {
           netDominancePct = Math.round(Number(realBroker.concentrationPct));
         } else if (totalBuy > 0 && maxBuy > 0) {
-          netDominancePct = Math.min(95, Math.max(35, Math.round((maxBuy / totalBuy) * 100)));
+          netDominancePct = Math.min(95, Math.max(20, Math.round((maxBuy / totalBuy) * 100)));
         } else {
-          const ltpVal = Number(stock.ltp || 100);
-          const lo52Val = Number(stock.low52w || 50);
-          const hi52Val = Number(stock.high52w || 150);
-          const pos = Math.max(0, Math.min(1, (ltpVal - lo52Val) / Math.max(1, hi52Val - lo52Val)));
-          netDominancePct = Math.round(45 + pos * 40);
+          netDominancePct = 0;
         }
 
         const favBroker = topBuyerBroker || realBroker?.topBuyers?.[0]?.brokerName || 'Exchange Floor';
@@ -3882,22 +3882,24 @@ export function BrokerAnalysisService({
           brokerName: b.name || b.brokerName,
           buyQty: Number(b.buyQty || 0),
           buyAmount: Number(b.buyAmt || b.buyAmount || 0),
-          avgRate: Number(b.avgBuyRate || b.avgRate || 0)
+          avgRate: Number(b.avgBuyRate || b.avgRate || 0),
+          netQty: Number(b.netQty ?? (Number(b.buyQty || 0) - Number(b.sellQty || 0)))
         }));
         const sellers = (d.sellers || d.topSellers || []).map((b: any) => ({
           brokerId: parseInt(b.broker || b.brokerId, 10) || b.broker || b.brokerId,
           brokerName: b.name || b.brokerName,
           sellQty: Number(b.sellQty || 0),
           sellAmount: Number(b.sellAmt || b.sellAmount || 0),
-          avgRate: Number(b.avgSellRate || b.avgRate || 0)
+          avgRate: Number(b.avgSellRate || b.avgRate || 0),
+          netQty: Number(b.netQty ?? (Number(b.sellQty || 0) - Number(b.buyQty || 0)))
         }));
         const formatted = {
           ...d,
           timeframe,
           buyers,
           sellers,
-          topAccumulator: d.topAccumulator || buyers[0],
-          topDistributor: d.topDistributor || sellers[0],
+          topAccumulator: d.topAccumulator || d.topNetBuyers?.[0] || buyers[0] || null,
+          topDistributor: d.topDistributor || d.topNetSellers?.[0] || sellers[0] || null,
           concentrationPct: Number(d.concentrationPct ?? d.bcr3BuyPct ?? 0) || 0,
           smartMoneyPhase: d.smartMoneyPhase || deriveSmartMoneyPhase(d.adSignal || '', Number(d.adStrength || 0), Number(d.adRatio || 0), Number(d.stealthAccumulation || 50))
         };
@@ -3917,22 +3919,24 @@ export function BrokerAnalysisService({
           brokerName: b.name || b.brokerName,
           buyQty: Number(b.buyQty || 0),
           buyAmount: Number(b.buyAmt || b.buyAmount || 0),
-          avgRate: Number(b.avgBuyRate || b.avgRate || 0)
+          avgRate: Number(b.avgBuyRate || b.avgRate || 0),
+          netQty: Number(b.netQty ?? (Number(b.buyQty || 0) - Number(b.sellQty || 0)))
         }));
         const sellers = (cached.sellers || cached.topSellers || []).map((b: any) => ({
           brokerId: parseInt(b.broker || b.brokerId, 10) || b.broker || b.brokerId,
           brokerName: b.name || b.brokerName,
           sellQty: Number(b.sellQty || 0),
           sellAmount: Number(b.sellAmt || b.sellAmount || 0),
-          avgRate: Number(b.avgSellRate || b.avgRate || 0)
+          avgRate: Number(b.avgSellRate || b.avgRate || 0),
+          netQty: Number(b.netQty ?? (Number(b.sellQty || 0) - Number(b.buyQty || 0)))
         }));
         setBrokerData({
           ...cached,
           timeframe,
           buyers,
           sellers,
-          topAccumulator: cached.topAccumulator || buyers[0],
-          topDistributor: cached.topDistributor || sellers[0],
+          topAccumulator: cached.topAccumulator || cached.topNetBuyers?.[0] || buyers[0] || null,
+          topDistributor: cached.topDistributor || cached.topNetSellers?.[0] || sellers[0] || null,
           concentrationPct: Number(cached.concentrationPct ?? cached.bcr3BuyPct ?? 0) || 0,
           smartMoneyPhase: cached.smartMoneyPhase || deriveSmartMoneyPhase(cached.adSignal || '', Number(cached.adStrength || 0), Number(cached.adRatio || 0), Number(cached.stealthAccumulation || 50))
         });
@@ -4624,6 +4628,7 @@ export function MutualFundsService() {
     setLoading(true);
     try {
       const res = await fetchMutualFunds();
+      const list = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
       setFunds(list);
     } catch (_) {}
     setLoading(false);
@@ -5165,12 +5170,18 @@ export function WatchlistTool() {
   );
 }
 
-// ── Level 2 NEPSE Market Depth Service (Top 5 Bids and Asks) ──
+// ── Level 2 NEPSE Market Depth Service (Top 5 Bids and Asks & Cumulative Broker Flow) ──
 export function MarketDepthService() {
   const [symbol, setSymbol] = useState('NABIL');
   const [depthData, setDepthData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Broker Accumulation State across horizons (1D, 5D, 15D, 30D, 60D)
+  const [brokerDays, setBrokerDays] = useState<number>(5);
+  const [brokerAccumPeriod, setBrokerAccumPeriod] = useState<'1D' | '5D' | '15D' | '30D' | '60D'>('5D');
+  const [brokerAccumData, setBrokerAccumData] = useState<any>(null);
+  const [brokerAccumLoading, setBrokerAccumLoading] = useState(false);
 
   const loadDepth = async (sym: string) => {
     if (!sym) return;
@@ -5187,9 +5198,80 @@ export function MarketDepthService() {
     loadDepth(symbol);
   }, [symbol]);
 
+  const handleHorizonClick = async (hId: '1D' | '5D' | '15D' | '30D' | '60D') => {
+    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
+    const newDays = daysMap[hId] || 5;
+    setBrokerAccumPeriod(hId);
+    setBrokerDays(newDays);
+    setBrokerAccumLoading(true);
+    try {
+      const res = await fetchBrokerAnalysis(symbol, newDays, true);
+      const data = res?.data || res;
+      if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
+        setBrokerAccumData(data);
+      } else {
+        const realData = await fetchRealBrokerAnalysis(symbol, newDays, { refresh: true });
+        if (realData) setBrokerAccumData(realData);
+      }
+    } catch (_) {
+      try {
+        const realData = await fetchRealBrokerAnalysis(symbol, newDays, { refresh: true });
+        if (realData) setBrokerAccumData(realData);
+      } catch (_) {}
+    } finally {
+      setBrokerAccumLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!symbol) return;
+    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
+    const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
+    setBrokerAccumLoading(true);
+    fetchBrokerAnalysis(symbol, days, true)
+      .then((res: any) => {
+        const data = res?.data || res;
+        if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
+          setBrokerAccumData(data);
+        } else {
+          return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+            if (rData) setBrokerAccumData(rData);
+          });
+        }
+      })
+      .catch(() => {
+        fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+          if (rData) setBrokerAccumData(rData);
+        }).catch(() => {});
+      })
+      .finally(() => setBrokerAccumLoading(false));
+  }, [symbol, brokerAccumPeriod]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadDepth(symbol);
+    setBrokerAccumLoading(true);
+    const daysMap: Record<string, number> = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60 };
+    const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
+    await Promise.all([
+      loadDepth(symbol),
+      fetchBrokerAnalysis(symbol, days, true)
+        .then((res: any) => {
+          const data = res?.data || res;
+          if (data && (data.brokers?.length > 0 || data.topBuyers?.length > 0 || data.dailyFlow?.length > 0)) {
+            setBrokerAccumData(data);
+          } else {
+            return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+              if (rData) setBrokerAccumData(rData);
+            });
+          }
+        })
+        .catch(() => {
+          return fetchRealBrokerAnalysis(symbol, days, { refresh: true }).then(rData => {
+            if (rData) setBrokerAccumData(rData);
+          }).catch(() => {});
+        })
+    ]);
+    setBrokerAccumLoading(false);
     setRefreshing(false);
   };
 
@@ -5222,12 +5304,121 @@ export function MarketDepthService() {
   const spread = hasOrders && topAsk > 0 && topBid > 0 ? Math.max(0, +(topAsk - topBid).toFixed(2)) : 0;
   const spreadPct = topBid > 0 && spread > 0 ? +((spread / topBid) * 100).toFixed(2) : 0;
 
+  // Broker Accumulation vs Distribution parsing
+  const netAccums: any[] = useMemo(() => {
+    if (!brokerAccumData) return [];
+    if (Array.isArray(brokerAccumData.topNetBuyers) && brokerAccumData.topNetBuyers.length > 0) {
+      return brokerAccumData.topNetBuyers;
+    }
+    if (Array.isArray(brokerAccumData.topNetAccumulators) && brokerAccumData.topNetAccumulators.length > 0) {
+      return brokerAccumData.topNetAccumulators;
+    }
+    if (Array.isArray(brokerAccumData.brokers) && brokerAccumData.brokers.length > 0) {
+      return brokerAccumData.brokers
+        .filter((b: any) => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) > 0)
+        .sort((a: any, b: any) => (b.netQty || (b.buyQty - b.sellQty)) - (a.netQty || (a.buyQty - a.sellQty)));
+    }
+    return brokerAccumData.topBuyers || [];
+  }, [brokerAccumData]);
+
+  const netDists: any[] = useMemo(() => {
+    if (!brokerAccumData) return [];
+    if (Array.isArray(brokerAccumData.topNetSellers) && brokerAccumData.topNetSellers.length > 0) {
+      return brokerAccumData.topNetSellers;
+    }
+    if (Array.isArray(brokerAccumData.topNetDistributors) && brokerAccumData.topNetDistributors.length > 0) {
+      return brokerAccumData.topNetDistributors;
+    }
+    if (Array.isArray(brokerAccumData.brokers) && brokerAccumData.brokers.length > 0) {
+      return brokerAccumData.brokers
+        .filter((b: any) => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0)
+        .sort((a: any, b: any) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty)));
+    }
+    return brokerAccumData.topSellers || [];
+  }, [brokerAccumData]);
+
+  const totalBrokerBuyVol = Number(brokerAccumData?.totalBuyVolume || brokerAccumData?.totalVolume || 0);
+  const totalBrokerSellVol = Number(brokerAccumData?.totalSellVolume || brokerAccumData?.totalVolume || 0);
+  const brokerFlowTot = totalBrokerBuyVol + totalBrokerSellVol;
+  const brokerFlowBuyPct = brokerFlowTot > 0 ? Math.round((totalBrokerBuyVol / brokerFlowTot) * 100) : 50;
+
+  const maxAccumQty = netAccums.length > 0
+    ? Math.max(...netAccums.map((b: any) => Math.abs(Number(b.netQty !== undefined ? b.netQty : (b.buyQty !== undefined ? (b.buyQty - (b.sellQty || 0)) : (b.volume || 0))))))
+    : 1;
+  const maxDistQty = netDists.length > 0
+    ? Math.max(...netDists.map((s: any) => Math.abs(Number(s.netQty !== undefined ? s.netQty : (s.sellQty !== undefined ? (s.sellQty - (s.buyQty || 0)) : (s.volume || 0))))))
+    : 1;
+
+  const adSignal = brokerAccumData?.adSignal || (brokerFlowBuyPct >= 55 ? 'Accumulation' : brokerFlowBuyPct <= 45 ? 'Distribution' : 'Neutral');
+  const bcr3Buy = Number(brokerAccumData?.bcr3BuyPct || 0);
+  const bcr3Sell = Number(brokerAccumData?.bcr3SellPct || 0);
+
+  // Divergence Detection
+  const isFlowAccum = adSignal === 'Accumulation' || brokerFlowBuyPct >= 55;
+  const isFlowDist = adSignal === 'Distribution' || brokerFlowBuyPct <= 45;
+
+  // Whale VWAP computation (weighted avg rate of top accumulators)
+  const whaleVwap = useMemo(() => {
+    const topB = netAccums.slice(0, 5);
+    const totAmt = topB.reduce((s: number, b: any) => s + (Number(b.avgBuyRate || (b.buyAmt && b.buyQty ? b.buyAmt / b.buyQty : 0)) * Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0)), 0);
+    const totQty = topB.reduce((s: number, b: any) => s + Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0), 0);
+    return totQty > 0 ? +(totAmt / totQty).toFixed(1) : null;
+  }, [netAccums]);
+
+  const diffFromWhale = (whaleVwap && ltp > 0) ? +(((ltp - whaleVwap) / whaleVwap) * 100).toFixed(1) : null;
+  const nbarVal = (totalBrokerBuyVol > 0 && totalBrokerSellVol > 0) ? +(totalBrokerBuyVol / totalBrokerSellVol).toFixed(2) : (bcr3Sell > 0 ? +(bcr3Buy / bcr3Sell).toFixed(2) : 1.0);
+
+  let divergenceAlert: { badge: string; desc: string; color: string; bg: string; border: string } | null = null;
+  if (hasOrders && brokerFlowTot > 0) {
+    if (buyPct >= 58 && (isFlowAccum || bcr3Buy > bcr3Sell)) {
+      divergenceAlert = {
+        badge: '🟢 Confirmed Institutional Demand',
+        desc: `Both pending book demand (${buyPct}% Bids) and executed broker flow (${brokerFlowBuyPct}% Buy flow) indicate sustained institutional accumulation. Big desks are actively absorbing supply.`,
+        color: '#10b981',
+        bg: 'rgba(16, 185, 129, 0.08)',
+        border: 'rgba(16, 185, 129, 0.3)'
+      };
+    } else if (buyPct >= 60 && (isFlowDist || bcr3Sell > bcr3Buy)) {
+      divergenceAlert = {
+        badge: '🚨 Spoof Bid / Trap Warning',
+        desc: `Order book displays heavy retail pending buy demand (${buyPct}% Bids), yet executed broker flow reveals net distribution (${100 - brokerFlowBuyPct}% selling). Smart money may be offloading inventory into passive limit orders.`,
+        color: '#f43f5e',
+        bg: 'rgba(244, 63, 94, 0.08)',
+        border: 'rgba(244, 63, 94, 0.3)'
+      };
+    } else if (buyPct <= 42 && (isFlowAccum || bcr3Buy > bcr3Sell)) {
+      divergenceAlert = {
+        badge: '🔵 Stealth Institutional Absorption',
+        desc: `Order book shows heavy sell pressure (${sellPct}% Asks), but executed broker flow confirms aggressive net accumulation (${brokerFlowBuyPct}% buying). Large accumulators are quietly absorbing sell orders without raising bids.`,
+        color: '#38bdf8',
+        bg: 'rgba(56, 189, 248, 0.08)',
+        border: 'rgba(56, 189, 248, 0.3)'
+      };
+    } else if (buyPct <= 42 && (isFlowDist || bcr3Sell > bcr3Buy)) {
+      divergenceAlert = {
+        badge: '🔴 Sustained Institutional Offloading',
+        desc: `Both pending asks (${sellPct}% Sell supply) and executed broker flow (${100 - brokerFlowBuyPct}% Sell flow) reflect active institutional liquidation.`,
+        color: '#ef4444',
+        bg: 'rgba(239, 68, 68, 0.08)',
+        border: 'rgba(239, 68, 68, 0.3)'
+      };
+    }
+  }
+
+  const HORIZONS: Array<{ id: '1D' | '5D' | '15D' | '30D' | '60D'; label: string }> = [
+    { id: '1D', label: 'Today (1D)' },
+    { id: '5D', label: '5D' },
+    { id: '15D', label: '15D' },
+    { id: '30D', label: '30D' },
+    { id: '60D', label: '60D (Vault)' },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-3.5 rounded-2xl border border-slate-800">
         <div>
-          <h3 className="text-base font-bold text-white tracking-wide">Level 2 NEPSE Market Depth (5-Depth Order Book)</h3>
-          <p className="text-xs text-slate-400">Live order queue showing top 5 pending bids (buyers) and asks (sellers).</p>
+          <h3 className="text-base font-bold text-white tracking-wide">Level 2 NEPSE Market Depth & Broker Flow</h3>
+          <p className="text-xs text-slate-400">Live order queue with multi-horizon cumulative broker accumulation vs distribution.</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -5283,60 +5474,328 @@ export function MarketDepthService() {
           Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Mon–Fri 11:00 AM – 3:00 PM NPT).
         </InfoBanner>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Bid (Buy) Side */}
-          <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 overflow-hidden">
-            <div className="bg-emerald-900/40 px-3.5 py-2 text-xs font-bold text-emerald-300 uppercase tracking-wider flex justify-between">
-              <span>Buy Orders (Bids)</span>
-              <span>Total: {totalBuyQty.toLocaleString()}</span>
-            </div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-emerald-900/30 text-slate-400">
-                  <th className="py-2 px-3 text-left font-medium">Orders</th>
-                  <th className="py-2 px-3 text-right font-medium">Quantity</th>
-                  <th className="py-2 px-3 text-right font-bold text-emerald-400">Bid Price (Rs.)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-emerald-900/20">
-                {bids.map((b: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-emerald-900/20 transition-colors">
-                    <td className="py-2 px-3 text-slate-400">{b.orders}</td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-white">{b.qty.toLocaleString()}</td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">Rs. {Number(b.price).toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-sky-950/30 border border-sky-500/25 text-xs text-sky-400 font-bold">
+            <span className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+              Live Point-in-Time Order Queue (Unfilled Limit Orders)
+            </span>
+            <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">Active pending limit orders in exchange match engine</span>
           </div>
-
-          {/* Ask (Sell) Side */}
-          <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 overflow-hidden">
-            <div className="bg-rose-900/40 px-3.5 py-2 text-xs font-bold text-rose-300 uppercase tracking-wider flex justify-between">
-              <span>Sell Orders (Asks)</span>
-              <span>Total: {totalSellQty.toLocaleString()}</span>
-            </div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-rose-900/30 text-slate-400">
-                  <th className="py-2 px-3 text-left font-bold text-rose-400">Ask Price (Rs.)</th>
-                  <th className="py-2 px-3 text-right font-medium">Quantity</th>
-                  <th className="py-2 px-3 text-right font-medium">Orders</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-rose-900/20">
-                {asks.map((a: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-rose-900/20 transition-colors">
-                    <td className="py-2 px-3 font-mono font-bold text-rose-400">Rs. {Number(a.price).toFixed(1)}</td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-white">{a.qty.toLocaleString()}</td>
-                    <td className="py-2 px-3 text-right text-slate-400">{a.orders}</td>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Bid (Buy) Side */}
+            <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 overflow-hidden">
+              <div className="bg-emerald-900/40 px-3.5 py-2 text-xs font-bold text-emerald-300 uppercase tracking-wider flex justify-between">
+                <span>Buy Orders (Bids)</span>
+                <span>Total: {totalBuyQty.toLocaleString()}</span>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-emerald-900/30 text-slate-400">
+                    <th className="py-2 px-3 text-left font-medium">Orders</th>
+                    <th className="py-2 px-3 text-right font-medium">Quantity</th>
+                    <th className="py-2 px-3 text-right font-bold text-emerald-400">Bid Price (Rs.)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-emerald-900/20">
+                  {bids.map((b: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-emerald-900/20 transition-colors">
+                      <td className="py-2 px-3 text-slate-400">{b.orders}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-white">{b.qty.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">Rs. {Number(b.price).toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Ask (Sell) Side */}
+            <div className="rounded-xl border border-rose-900/40 bg-rose-950/20 overflow-hidden">
+              <div className="bg-rose-900/40 px-3.5 py-2 text-xs font-bold text-rose-300 uppercase tracking-wider flex justify-between">
+                <span>Sell Orders (Asks)</span>
+                <span>Total: {totalSellQty.toLocaleString()}</span>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-rose-900/30 text-slate-400">
+                    <th className="py-2 px-3 text-left font-bold text-rose-400">Ask Price (Rs.)</th>
+                    <th className="py-2 px-3 text-right font-medium">Quantity</th>
+                    <th className="py-2 px-3 text-right font-medium">Orders</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-900/20">
+                  {asks.map((a: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-rose-900/20 transition-colors">
+                      <td className="py-2 px-3 font-mono font-bold text-rose-400">Rs. {Number(a.price).toFixed(1)}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-white">{a.qty.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right text-slate-400">{a.orders}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
+
+      {/* ══ Cumulative Broker Accumulation vs Distribution ("Till Now") ══ */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3.5 shadow-lg">
+        {/* Header & Horizon Selector */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h4 className="text-sm font-black text-white tracking-wide">
+                📊 Cumulative Broker Accumulation vs Distribution
+              </h4>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                Cumulative Executed Broker Inventory ({brokerDays}D Horizon)
+              </span>
+              {brokerAccumLoading && <span className="text-[11px] text-sky-400 animate-pulse font-bold">Fetching {brokerDays}D flow…</span>}
+              {adSignal && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${
+                  adSignal === 'Accumulation' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
+                  adSignal === 'Distribution' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' :
+                  'bg-slate-700/30 text-slate-300 border-slate-700'
+                }`}>
+                  {adSignal} Flow
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Authentic multi-day broker vault accumulation, distribution & cost basis across NEPSE
+            </p>
+            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-500/10 border border-sky-500/25 text-[11.5px] font-bold text-sky-400">
+              <span>Sessions Analyzed: {brokerAccumData?.tradingDays || brokerDays || 1} Trading Days ({brokerAccumData?.fromDate || 'Latest'} → {brokerAccumData?.toDate || 'Latest'}) • Total Volume: {(brokerAccumData?.totalVolume || 0).toLocaleString()} Shares</span>
+            </div>
+          </div>
+
+          {/* Horizons: 1D, 5D, 15D, 30D, 60D */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            {HORIZONS.map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => handleHorizonClick(h.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                  brokerAccumPeriod === h.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                {h.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {brokerAccumLoading && (
+          <div className="flex items-center justify-center p-3 rounded-xl bg-sky-950/20 border border-sky-500/20 text-xs text-sky-400 font-medium">
+            <RefreshCw size={14} className="animate-spin mr-2 text-sky-400" />
+            <span>Updating {brokerDays}D Cumulative Broker Accumulation for {symbol}…</span>
+          </div>
+        )}
+
+        {/* Plain-English Guide Banner */}
+        <div className="p-3 rounded-xl border border-sky-500/25 bg-sky-950/20 flex items-start gap-2.5 text-xs text-slate-300">
+          <span className="text-base">💡</span>
+          <div className="leading-relaxed">
+            <strong className="text-sky-400">Pending Order Book vs Real Executed Shares:</strong> The 5-depth order book above displays pending, unfilled limit orders waiting in the queue. Below is authentic cumulative institutional flow across NEPSE: which brokers actually bought and kept shares in their vaults vs who dumped shares.
+          </div>
+        </div>
+
+        {/* Reality Check Banner */}
+        {divergenceAlert && (
+          <div
+            className="p-3 rounded-xl border flex flex-col gap-1 transition"
+            style={{
+              backgroundColor: divergenceAlert.bg,
+              borderColor: divergenceAlert.border,
+            }}
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="text-xs font-black tracking-wide" style={{ color: divergenceAlert.color }}>
+                {divergenceAlert.badge}
+              </span>
+              <span className="text-[11px] font-mono text-slate-300">
+                Book: <strong className="text-emerald-400">{buyPct}% Bids</strong> vs Executed Flow: <strong style={{ color: brokerFlowBuyPct >= 50 ? '#34d399' : '#fb7185' }}>{brokerFlowBuyPct}% Buy</strong>
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {divergenceAlert.desc}
+            </p>
+          </div>
+        )}
+
+        {/* 4-Card Summary Strip */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {/* Card 1: Total Accumulated */}
+          <div className="p-2.5 rounded-xl border border-emerald-900/40 bg-emerald-950/20">
+            <div className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+              Total Accumulated
+            </div>
+            <div className="text-sm font-black font-mono text-white mt-0.5">
+              {totalBrokerBuyVol.toLocaleString()} sh
+            </div>
+            <div className="text-[10px] text-emerald-300 font-mono mt-0.5">
+              BCR3 Buy: <strong>{bcr3Buy.toFixed(1)}%</strong>
+            </div>
+          </div>
+
+          {/* Card 2: Total Distributed */}
+          <div className="p-2.5 rounded-xl border border-rose-900/40 bg-rose-950/20">
+            <div className="text-[10px] font-extrabold text-rose-400 uppercase tracking-wider">
+              Total Distributed
+            </div>
+            <div className="text-sm font-black font-mono text-white mt-0.5">
+              {totalBrokerSellVol.toLocaleString()} sh
+            </div>
+            <div className="text-[10px] text-rose-300 font-mono mt-0.5">
+              BCR3 Sell: <strong>{bcr3Sell.toFixed(1)}%</strong>
+            </div>
+          </div>
+
+          {/* Card 3: Whale Cost VWAP */}
+          <div className="p-2.5 rounded-xl border border-cyan-900/40 bg-cyan-950/20">
+            <div className="text-[10px] font-extrabold text-cyan-400 uppercase tracking-wider">
+              Whale Cost (VWAP)
+            </div>
+            <div className="text-sm font-black font-mono text-white mt-0.5">
+              {whaleVwap ? `Rs. ${whaleVwap}` : '—'}
+            </div>
+            <div className={`text-[10px] font-mono mt-0.5 ${diffFromWhale != null && diffFromWhale >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {diffFromWhale != null ? (diffFromWhale >= 0 ? `+${diffFromWhale}% above cost` : `${diffFromWhale}% below cost`) : 'Top 5 cost basis'}
+            </div>
+          </div>
+
+          {/* Card 4: NBAR & Activity Ratio */}
+          <div className="p-2.5 rounded-xl border border-amber-900/40 bg-amber-950/20">
+            <div className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">
+              NBAR & Demand
+            </div>
+            <div className="text-sm font-black font-mono text-white mt-0.5">
+              {nbarVal}x Ratio
+            </div>
+            <div className={`text-[10px] mt-0.5 ${nbarVal >= 1.15 ? 'text-emerald-400' : nbarVal <= 0.85 ? 'text-rose-400' : 'text-slate-400'}`}>
+              {nbarVal >= 1.15 ? 'Institutional Edge' : nbarVal <= 0.85 ? 'Selling Pressure' : 'Balanced Flow'}
+            </div>
+          </div>
+        </div>
+
+        {/* Cumulative Volume Bar */}
+        {(totalBrokerBuyVol > 0 || totalBrokerSellVol > 0) && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs font-semibold">
+              <span className="text-emerald-400 font-mono">
+                Total Buy: {totalBrokerBuyVol.toLocaleString()} sh ({brokerFlowBuyPct}%)
+              </span>
+              <span className="text-rose-400 font-mono">
+                Total Sell: {totalBrokerSellVol.toLocaleString()} sh ({100 - brokerFlowBuyPct}%)
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800 flex">
+              <div className="bg-emerald-500 transition-all duration-300" style={{ width: `${brokerFlowBuyPct}%` }} />
+              <div className="bg-rose-500 transition-all duration-300" style={{ width: `${100 - brokerFlowBuyPct}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* Net Buyers vs Net Sellers Grid */}
+        {netAccums.length === 0 && netDists.length === 0 && !brokerAccumLoading ? (
+          <div className="text-center py-6 text-xs text-slate-500">
+            No cumulative broker transactions recorded for {symbol} across {brokerAccumPeriod}.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {/* Top Net Buyers (Accumulators) */}
+            <div className="p-3 rounded-xl border border-emerald-900/40 bg-emerald-950/15 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-400 border-b border-emerald-900/30 pb-1.5">
+                <span>🟢 TOP CUMULATIVE ACCUMULATORS</span>
+                <span className="text-[11px] text-emerald-300/80 font-mono">VAULT HELD</span>
+              </div>
+              {netAccums.slice(0, 5).length === 0 ? (
+                <div className="text-center py-4 text-xs text-slate-500">No net accumulator records</div>
+              ) : (
+                netAccums.slice(0, 5).map((b: any, idx: number) => {
+                  const id = b.broker || b.brokerId || b.id || (idx + 1);
+                  const brokerName = b.brokerName || b.name || getBrokerName(id);
+                  const buyQty = Number(b.buyQty || b.volume || 0);
+                  const sellQty = Number(b.sellQty || 0);
+                  const qty = Math.abs(Number(b.netQty !== undefined ? b.netQty : (buyQty - sellQty)));
+                  const amt = Math.abs(Number(b.netAmt !== undefined ? b.netAmt : (b.buyAmt !== undefined ? (b.buyAmt - (b.sellAmt || 0)) : (b.amount || (qty * ltp)))));
+                  const avgRate = Number(b.avgBuyRate || (b.buyAmt && b.buyQty ? (b.buyAmt / b.buyQty) : ltp));
+                  const barW = maxAccumQty > 0 ? Math.min(100, Math.round((qty / maxAccumQty) * 100)) : 0;
+                  const retentionPct = buyQty > 0 ? Math.max(0, Math.min(100, Math.round((qty / buyQty) * 100))) : 100;
+
+                  return (
+                    <div key={idx} className="space-y-1 pb-1.5 border-b border-slate-800/50 last:border-b-0">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-white truncate max-w-[65%]" title={`#${id} ${brokerName}`}>
+                          <strong className="text-emerald-400 mr-1.5">#{id}</strong> {brokerName}
+                        </span>
+                        <span className="font-mono font-bold text-emerald-400">
+                          +{qty.toLocaleString()} sh
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800/60 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${barW}%` }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Gross: {buyQty > 0 ? `${buyQty.toLocaleString()} B` : `Rs. ${(amt / 1e5).toFixed(1)}L`}</span>
+                        {avgRate > 0 && <span className="text-slate-300">Avg: Rs. {avgRate.toFixed(1)}</span>}
+                        <span className="text-emerald-400">{retentionPct}% kept</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Top Net Sellers (Distributors) */}
+            <div className="p-3 rounded-xl border border-rose-900/40 bg-rose-950/15 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-rose-400 border-b border-rose-900/30 pb-1.5">
+                <span>🔴 TOP CUMULATIVE DISTRIBUTORS</span>
+                <span className="text-[11px] text-rose-300/80 font-mono">OFFLOADED</span>
+              </div>
+              {netDists.slice(0, 5).length === 0 ? (
+                <div className="text-center py-4 text-xs text-slate-500">No net distributor records</div>
+              ) : (
+                netDists.slice(0, 5).map((s: any, idx: number) => {
+                  const id = s.broker || s.brokerId || s.id || (idx + 1);
+                  const brokerName = s.brokerName || s.name || getBrokerName(id);
+                  const sellQty = Number(s.sellQty || s.volume || 0);
+                  const buyQty = Number(s.buyQty || 0);
+                  const qty = Math.abs(Number(s.netQty !== undefined ? s.netQty : (sellQty - buyQty)));
+                  const amt = Math.abs(Number(s.netAmt !== undefined ? s.netAmt : (s.sellAmt !== undefined ? (s.sellAmt - (s.buyAmt || 0)) : (s.amount || (qty * ltp)))));
+                  const avgRate = Number(s.avgSellRate || (s.sellAmt && s.sellQty ? (s.sellAmt / s.sellQty) : ltp));
+                  const barW = maxDistQty > 0 ? Math.min(100, Math.round((qty / maxDistQty) * 100)) : 0;
+                  const sellShare = totalBrokerSellVol > 0 ? Math.round((sellQty / totalBrokerSellVol) * 100) : Number(s.sellMktShare || s.pct || 0);
+
+                  return (
+                    <div key={idx} className="space-y-1 pb-1.5 border-b border-slate-800/50 last:border-b-0">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-white truncate max-w-[65%]" title={`#${id} ${brokerName}`}>
+                          <strong className="text-rose-400 mr-1.5">#{id}</strong> {brokerName}
+                        </span>
+                        <span className="font-mono font-bold text-rose-400">
+                          -{qty.toLocaleString()} sh
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800/60 rounded-full overflow-hidden">
+                        <div className="h-full bg-rose-500 rounded-full" style={{ width: `${barW}%` }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Gross: {sellQty > 0 ? `${sellQty.toLocaleString()} S` : `Rs. ${(amt / 1e5).toFixed(1)}L`}</span>
+                        {avgRate > 0 && <span className="text-slate-300">Avg: Rs. {avgRate.toFixed(1)}</span>}
+                        <span className="text-rose-400">{sellShare > 0 ? `${sellShare}% share` : 'Offloaded'}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

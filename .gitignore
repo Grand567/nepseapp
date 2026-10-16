@@ -36,3 +36,6 @@ scratch/
 temp_frames_v3/
 data/
 *.mp4
+dist-electron/
+*.exe
+drabyashree_*.txt

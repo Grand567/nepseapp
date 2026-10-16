@@ -353,8 +353,19 @@ export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
   return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, {}, 120000);
 };
-export const fetchStealthAccumulation = (symbol, days) => _proxyFetch('/api/smart-money/stealth/' + symbol + '?days=' + (days || 15), {}, 300000);
-export const fetchBrokerAnalysis = (symbol, days) => _proxyFetch('/api/broker-analysis/' + symbol + '?days=' + (days || 30), {}, 1800000);
+export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => {
+  const sym = String(symbol || '').toUpperCase().trim();
+  let numDays = 30;
+  let refresh = Boolean(forceRefresh);
+  if (typeof days === 'object' && days !== null) {
+    numDays = Math.max(1, parseInt(days.days || 30, 10) || 30);
+    if (days.refresh) refresh = true;
+  } else {
+    numDays = Math.max(1, parseInt(days || 30, 10) || 30);
+  }
+  const path = `/api/broker-analysis/${encodeURIComponent(sym)}?days=${numDays}${refresh ? '&refresh=true' : ''}`;
+  return _proxyFetch(path, {}, 120000, refresh);
+};
 export const fetchMarketWideBrokerSummary = (days = 1) => _proxyFetch('/api/market/broker-summary?days=' + (days || 1), {}, 180000);
 export const fetchBrokerAuditVerify = (symbol) => _proxyFetch('/api/audit/broker-verify/' + encodeURIComponent(symbol), {}, 60000);
 export const fetchStockDetail = (symbol) => _proxyFetch('/api/stock-detail/' + symbol, {}, 7200000);
