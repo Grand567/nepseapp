@@ -14,10 +14,10 @@
  *   Rolling proxy = stealthAccumulation score trend + volumeZScore + pChange momentum
  *   OAMI = 0.40 × stealthScore + 0.35 × normZVol + 0.25 × normMomentum (0–100)
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, Award, Zap, Filter, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react';
 import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
-import { getCachedRealPriceHistory } from '../utils/liveData';
+import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 
 interface Props {
   stocks?: any[];
@@ -87,13 +87,20 @@ function evaluateMinervini(s: any, nepseChange: number): { checks: boolean[]; sc
 }
 
 function computeOAMI(s: any, rsScore: number): number {
-  // Use real engine with any cached history instead of null fallback
+  // Use real engine with any cached history and verified real broker flow
   const sym = String(s.symbol || '').toUpperCase().trim();
   const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
+  const realBroker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
+  const effectiveBroker = realBroker ? {
+    ...realBroker,
+    tradeSizeRatio: Number(realBroker.tradeSizeRatio ?? realBroker.nbar ?? 1.0),
+    netAbsorptionRatio: Number(realBroker.netAbsorptionRatio ?? (realBroker.bcr3BuyPct && (realBroker.bcr3BuyPct + (realBroker.bcr3SellPct || 0)) > 0 ? realBroker.bcr3BuyPct / (realBroker.bcr3BuyPct + realBroker.bcr3SellPct) : 0.5))
+  } : undefined;
+
   const stealth = calculateStealthAccumulationScore(
     s,
     Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
-    undefined
+    effectiveBroker
   );
   const rawZ    = Number(s.volumeZScore || 0);
   const normZ   = Math.min(100, Math.max(0, (rawZ + 2) * 25)); // map -2..+2 → 0..100
@@ -107,6 +114,17 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
   const [minScore,     setMinScore]     = useState(4);
   const [sortBy,       setSortBy]       = useState<'score' | 'oami' | 'turnover'>('score');
   const [sectorFilter, setSectorFilter] = useState('ALL');
+  const [brokerLoaded, setBrokerLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchMarketWideBrokerSummaryMap(1).then((map: any) => {
+      if (isMounted && map && Object.keys(map).length > 0) {
+        setBrokerLoaded(true);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   const nepseChange = Number(indices?.nepse?.pChange || indices?.changePercent || 0);
 
@@ -118,7 +136,20 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
         const { rsScore } = computeMultiPeriodRS(s, nepseChange);  // P5
         const oami = computeOAMI(s, rsScore);
         const isEstimated = (s.rsi == null || s.volumeZScore == null || s.ema50 == null);
-        return { ...s, mChecks: checks, mScore: score, oami, rsScore, isEstimated };
+        const sym = String(s.symbol || '').toUpperCase().trim();
+        const broker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null);
+        return {
+          ...s,
+          realBrokerAnalysis: broker || s.realBrokerAnalysis,
+          bcr3BuyPct: s.bcr3BuyPct ?? broker?.bcr3BuyPct,
+          nbar: s.nbar ?? broker?.nbar,
+          adSignal: s.adSignal || broker?.adSignal,
+          mChecks: checks,
+          mScore: score,
+          oami,
+          rsScore,
+          isEstimated
+        };
       })
       .filter(s => s.mScore >= minScore)
       .filter(s => {
@@ -137,7 +168,7 @@ export function MinerviniLeaderboard({ stocks = [], indices, onSelectStock }: Pr
         return 0;
       })
       .slice(0, 60);
-  }, [stocks, minScore, sectorFilter, sortBy, nepseChange]);
+  }, [stocks, minScore, sectorFilter, sortBy, nepseChange, brokerLoaded]);
 
   const oamiLeaders = useMemo(() =>
     [...evaluated].sort((a, b) => b.oami - a.oami).slice(0, 5),

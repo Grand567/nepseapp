@@ -14,6 +14,7 @@ const memHistCache = new Map();
 const memFundCache = new Map();
 const memBrokerCache = new Map();
 const memFloorsheetCache = new Map();
+export const brokerDataCache = new Map();
 
 // Storage key prefixes
 const HIST_LS_PREFIX_PRIMARY  = 'nepse_hist_prices_';
@@ -72,6 +73,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } else if (e.key.startsWith(BROKER_LS_PREFIX)) {
       const sym = e.key.slice(BROKER_LS_PREFIX.length);
       memBrokerCache.delete(sym);
+      brokerDataCache.delete(sym);
     } else if (e.key.startsWith(FLOORSHEET_LS_PREFIX)) {
       const sym = e.key.slice(FLOORSHEET_LS_PREFIX.length);
       memFloorsheetCache.delete(sym);
@@ -252,8 +254,16 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const toKey = options?.toDate ? String(options.toDate).trim() : '';
   const key = `nepse_real_broker_${rawSym}_d${numDays}_${dateKey}_${fromKey}_${toKey}`;
 
+  if (brokerDataCache.has(rawSym) && numDays === 1 && !options?.date && !fromKey && !toKey) {
+    return brokerDataCache.get(rawSym);
+  }
+
   if (memBrokerCache.has(key)) {
     return memBrokerCache.get(key);
+  }
+
+  if (memBrokerCache.has(rawSym) && numDays === 1 && !options?.date && !fromKey && !toKey) {
+    return memBrokerCache.get(rawSym);
   }
 
   try {
@@ -267,6 +277,9 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
             return null;
           }
           memBrokerCache.set(key, parsed);
+          if (numDays === 1 && !options?.date && !fromKey && !toKey) {
+            brokerDataCache.set(rawSym, parsed);
+          }
           return parsed;
         }
       }
@@ -296,6 +309,7 @@ export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   memBrokerCache.set(key, data);
   if (numDays === 1 && !options?.date && !fromKey && !toKey) {
     memBrokerCache.set(rawSym, data);
+    brokerDataCache.set(rawSym, data);
   }
   try {
     localStorage.setItem(key, JSON.stringify(data));
@@ -305,8 +319,72 @@ export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   } catch (_) {}
 }
 
-export const getCachedBrokerData = getCachedRealBrokerAnalysis;
-export const setCachedBrokerData = setCachedRealBrokerAnalysis;
+/**
+ * Synchronously retrieves cached broker analysis for a given symbol.
+ * Fast-path: checks brokerDataCache first (<0.01ms).
+ * Miss-path: checks memBrokerCache and fallback.
+ * @param {string} symbol - Stock ticker symbol
+ * @returns {Object|null} Cached broker analysis or null if not found
+ */
+export function getCachedBrokerData(symbol) {
+  if (!symbol) return null;
+  const key = String(symbol).toUpperCase().trim();
+  if (!key) return null;
+
+  if (brokerDataCache.has(key)) {
+    return brokerDataCache.get(key) || null;
+  }
+  if (memBrokerCache.has(key)) {
+    return memBrokerCache.get(key) || null;
+  }
+
+  const fallback = getCachedRealBrokerAnalysis(key, 1);
+  if (fallback) {
+    brokerDataCache.set(key, fallback);
+    return fallback;
+  }
+
+  return null;
+}
+
+/**
+ * Stores normalized uppercase symbol -> broker data in brokerDataCache and memBrokerCache.
+ * @param {string} symbol - Stock ticker symbol
+ * @param {Object} data - Broker analysis data
+ */
+export function setCachedBrokerData(symbol, data) {
+  if (!symbol || !data) return;
+  const key = String(symbol).toUpperCase().trim();
+  if (!key) return;
+
+  brokerDataCache.set(key, data);
+  memBrokerCache.set(key, data);
+  const defaultKey = `nepse_real_broker_${key}_d1_latest__`;
+  memBrokerCache.set(defaultKey, data);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(BROKER_LS_PREFIX + key, JSON.stringify(data));
+      localStorage.setItem(defaultKey, JSON.stringify(data));
+    }
+  } catch (_) {}
+}
+
+/**
+ * Iterates over Object.entries(brokerMap || {}) and stores each symbol's broker summary into brokerDataCache.
+ * @param {Object} brokerMap - Map of symbol -> broker summary
+ */
+export function bulkSetCachedBrokerData(brokerMap) {
+  if (!brokerMap || typeof brokerMap !== 'object') return;
+  for (const [symbol, data] of Object.entries(brokerMap || {})) {
+    if (symbol && data && typeof data === 'object') {
+      const key = String(symbol).toUpperCase().trim();
+      brokerDataCache.set(key, data);
+      memBrokerCache.set(key, data);
+      const defaultKey = `nepse_real_broker_${key}_d1_latest__`;
+      memBrokerCache.set(defaultKey, data);
+    }
+  }
+}
 
 /**
  * Synchronously retrieves cached floorsheet data for a given symbol.
@@ -370,6 +448,7 @@ export function invalidateSymbolCache(sym) {
   memHistCache.delete(key);
   memFundCache.delete(key);
   memBrokerCache.delete(key);
+  brokerDataCache.delete(key);
   memFloorsheetCache.delete(key);
   if (typeof localStorage !== 'undefined') {
     try {
@@ -389,5 +468,6 @@ export function clearHistoryCache() {
   memHistCache.clear();
   memFundCache.clear();
   memBrokerCache.clear();
+  brokerDataCache.clear();
   memFloorsheetCache.clear();
 }

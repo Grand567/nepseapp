@@ -400,6 +400,31 @@ export function parseBrokerTradeBook(rawText) {
     return { success: false, count: 0, holdings: {}, error: 'No trade book text provided.' };
   }
 
+  const splitLineSmart = (line, delim) => {
+    if (delim === ',') {
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur.trim().replace(/^["']|["']$/g, ''));
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur.trim().replace(/^["']|["']$/g, ''));
+      return out;
+    }
+    if (delim instanceof RegExp) {
+      return line.split(delim).map(c => c.trim().replace(/^["']|["']$/g, ''));
+    }
+    return line.split(delim).map(c => c.trim().replace(/^["']|["']$/g, ''));
+  };
+
   const lines = rawText
     .split(/\r?\n/)
     .map(l => l.trim())
@@ -409,51 +434,59 @@ export function parseBrokerTradeBook(rawText) {
     return { success: false, count: 0, holdings: {}, error: 'Empty content.' };
   }
 
-  // Detect delimiter (tab, comma, semicolon, or pipe)
-  const firstLine = lines[0];
-  let delimiter = '\t';
-  if (firstLine.includes('\t')) delimiter = '\t';
-  else if (firstLine.includes(',')) delimiter = ',';
-  else if (firstLine.includes(';')) delimiter = ';';
-  else if (firstLine.includes('|')) delimiter = '|';
-  else delimiter = /\s+/;
+  // Detect delimiter across the first 10 lines
+  const sampleText = lines.slice(0, 10).join('\n');
+  let delimiter = /\s+/;
+  if (sampleText.includes('\t')) delimiter = '\t';
+  else if (lines.some(l => (l.match(/,/g) || []).length >= 2)) delimiter = ',';
+  else if (sampleText.includes('|')) delimiter = '|';
+  else if (sampleText.includes(';')) delimiter = ';';
 
-  const parsedRows = lines.map(line => {
-    if (delimiter instanceof RegExp) {
-      return line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
-    }
-    return line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
-  });
+  const parsedRows = lines.map(line => splitLineSmart(line, delimiter));
 
-  // Find header line if any
+  // Require BOTH symbol AND (qty OR rate) on the same line to qualify as a header row
   let headerIndex = -1;
   let colSymbol = -1;
   let colQty = -1;
   let colRate = -1;
   let colType = -1;
 
-  for (let i = 0; i < Math.min(parsedRows.length, 5); i++) {
+  for (let i = 0; i < Math.min(parsedRows.length, 15); i++) {
     const row = parsedRows[i];
+    let symIdx = -1, qtyIdx = -1, rateIdx = -1, typeIdx = -1;
+
     row.forEach((cell, idx) => {
-      const c = String(cell || '').toLowerCase().trim();
-      if (colSymbol === -1 && (c.includes('symbol') || c.includes('scrip') || c.includes('script') || c === 'stock' || c === 'company')) {
-        colSymbol = idx;
+      const c = String(cell || '').toLowerCase().replace(/[^a-z0-9/ ]/g, '').trim();
+      if (!c) return;
+      if (symIdx === -1 && (c === 'symbol' || c === 'scrip' || c === 'script' || c === 'stock symbol' || c === 'security' || c.includes('symbol') || c.includes('scrip'))) {
+        symIdx = idx;
       }
-      if (colQty === -1 && (c.includes('qty') || c.includes('quantity') || c.includes('units') || c.includes('kitta') || c.includes('vol') || c === 'shares')) {
-        colQty = idx;
+      if (qtyIdx === -1 && (c === 'trade qty' || c === 'traded qty' || c === 'qty' || c === 'quantity' || c === 'units' || c === 'kitta' || c === 'shares' || c.includes('qty') || c.includes('quantity'))) {
+        qtyIdx = idx;
       }
-      if (colRate === -1 && (c.includes('rate') || c.includes('price') || c.includes('cost') || c.includes('trade price') || c.includes('unit price'))) {
-        colRate = idx;
+      if (rateIdx === -1 && !c.includes('amount') && !c.includes('value') && (c === 'trade price' || c === 'price' || c === 'rate' || c === 'order price' || c === 'unit price' || c === 'wacc' || c === 'buy price' || c.includes('price') || c.includes('rate'))) {
+        rateIdx = idx;
       }
-      if (colType === -1 && (c.includes('side') || c.includes('type') || c.includes('action') || c.includes('buy/sell') || c.includes('b/s') || c.includes('order type'))) {
-        colType = idx;
+      if (typeIdx === -1 && (c === 'transaction type' || c === 'type' || c === 'side' || c === 'buy/sell' || c === 'bs' || c === 'action' || c === 'order type')) {
+        typeIdx = idx;
       }
     });
-    if (colSymbol !== -1 || (colQty !== -1 && colRate !== -1)) {
+
+    if (symIdx !== -1 && (qtyIdx !== -1 || rateIdx !== -1)) {
       headerIndex = i;
+      colSymbol = symIdx;
+      colQty = qtyIdx;
+      colRate = rateIdx;
+      colType = typeIdx;
       break;
     }
   }
+
+  const IGNORE_WORDS = new Set([
+    'BUY', 'SELL', 'TOTAL', 'DATE', 'PRICE', 'QTY', 'RATE', 'CASH', 'NRB', 'NEPSE',
+    'OPEN', 'CLOSE', 'HIGH', 'LOW', 'COMPLETED', 'FILLED', 'PARTIAL', 'CANCELLED',
+    'EQ', 'EQUITY', 'NORMAL', 'CONTINUOUS', 'ODD', 'LOT', 'TMS', 'NRS', 'NPR'
+  ]);
 
   const startRow = headerIndex >= 0 ? headerIndex + 1 : 0;
   const buyTransactionsByScrip = {};
@@ -467,42 +500,67 @@ export function parseBrokerTradeBook(rawText) {
     let rate = 0;
     let isBuy = true;
 
-    if (colSymbol !== -1 && colQty !== -1 && colRate !== -1) {
-      symbol = String(row[colSymbol] || '').toUpperCase().trim();
+    if (colSymbol !== -1 && colQty !== -1 && colRate !== -1 && row.length > Math.max(colSymbol, colQty, colRate)) {
+      symbol = String(row[colSymbol] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
       qty = parseFloat(String(row[colQty] || '').replace(/,/g, '')) || 0;
       rate = parseFloat(String(row[colRate] || '').replace(/,/g, '')) || 0;
-      if (colType !== -1) {
-        const typeStr = String(row[colType] || '').toUpperCase();
-        if (typeStr.includes('SELL') || typeStr === 'S') isBuy = false;
+      if (colType !== -1 && row[colType] !== undefined) {
+        const typeStr = String(row[colType] || '').toUpperCase().trim();
+        if (typeStr.includes('SELL') || typeStr === 'S' || typeStr === '2') isBuy = false;
       }
     } else {
-      // Heuristic fallback for unstructured lines:
-      for (const token of row) {
-        const clean = token.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        if (/^[A-Z]{2,8}$/.test(clean) && !['BUY', 'SELL', 'TOTAL', 'DATE', 'PRICE', 'QTY', 'RATE', 'CASH', 'NRB', 'NEPSE'].includes(clean)) {
-          if (!symbol) symbol = clean;
-        }
-        if (token.toUpperCase().includes('SELL')) isBuy = false;
+      const upperRowText = row.join(' ').toUpperCase();
+      if (/\bSELL\b/.test(upperRowText) && !/\bBUY\b/.test(upperRowText)) {
+        isBuy = false;
       }
-      const nums = row
-        .map(t => parseFloat(String(t).replace(/,/g, '')))
-        .filter(n => !isNaN(n) && n > 0);
 
-      if (nums.length >= 2) {
-        if (nums[0] % 1 === 0 && nums[0] >= 10 && nums[1] > 10) {
-          qty = nums[0];
-          rate = nums[1];
-        } else if (nums[1] % 1 === 0 && nums[1] >= 10 && nums[0] > 10) {
-          qty = nums[1];
-          rate = nums[0];
-        } else {
-          qty = nums[0];
-          rate = nums[1];
+      for (const token of row) {
+        const clean = String(token || '').trim().toUpperCase();
+        if (/^[A-Z]{3,8}$/.test(clean) && !IGNORE_WORDS.has(clean)) {
+          symbol = clean;
+          break;
+        }
+      }
+
+      // Filter out dates, times, 10-16 digit TMS Contract IDs, and leading S.N. indices
+      const candidateNums = [];
+      row.forEach((token, idx) => {
+        const raw = String(token || '').trim();
+        if (!raw) return;
+        if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(raw) || /^\d{1,2}:\d{2}/.test(raw)) return;
+        const cleanNumStr = raw.replace(/,/g, '');
+        if (!/^-?\d+(\.\d+)?$/.test(cleanNumStr)) return;
+        const n = parseFloat(cleanNumStr);
+        if (isNaN(n) || n <= 0) return;
+        if (n > 1000000000) return; // skip 10-16 digit TMS Contract numbers / BOIDs
+        if (idx === 0 && row.length >= 4 && Number.isInteger(n) && n <= 500) return; // skip S.N.
+        candidateNums.push(n);
+      });
+
+      if (candidateNums.length >= 2) {
+        for (let a = 0; a < candidateNums.length; a++) {
+          for (let b = a + 1; b < candidateNums.length; b++) {
+            const n1 = candidateNums[a];
+            const n2 = candidateNums[b];
+            const product = n1 * n2;
+            const hasAmountMatch = candidateNums.some((c, cIdx) => cIdx !== a && cIdx !== b && Math.abs(c - product) / Math.max(1, product) < 0.02);
+            if (hasAmountMatch) {
+              qty = n1;
+              rate = n2;
+              break;
+            }
+          }
+          if (qty > 0 && rate > 0) break;
+        }
+
+        if (qty <= 0 || rate <= 0) {
+          qty = candidateNums[0];
+          rate = candidateNums[1];
         }
       }
     }
 
-    if (symbol && isBuy && qty > 0 && rate > 0) {
+    if (symbol && symbol.length >= 2 && !IGNORE_WORDS.has(symbol) && isBuy && qty > 0 && rate >= 10 && rate <= 50000) {
       if (!buyTransactionsByScrip[symbol]) {
         buyTransactionsByScrip[symbol] = [];
       }
@@ -533,7 +591,7 @@ export function parseBrokerTradeBook(rawText) {
       success: false,
       count: 0,
       holdings: {},
-      error: 'Could not detect valid stock buy transactions. Ensure columns include Symbol, Quantity, and Rate/Price.'
+      error: 'Could not detect valid stock buy transactions. Paste your TMS Trade Book rows or simple "SYMBOL QTY PRICE" lines (e.g., NABIL 50 540).'
     };
   }
 

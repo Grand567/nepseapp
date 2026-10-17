@@ -22,16 +22,18 @@ import {
   getCachedRealPriceHistory,
   getCachedRealPriceHistoryAsync,
   setCachedRealPriceHistory,
-  getCachedRealBrokerAnalysis,
-  setCachedRealBrokerAnalysis,
+  getCachedRealBrokerAnalysis as getCachedRealBrokerAnalysisHistory,
+  setCachedRealBrokerAnalysis as setCachedRealBrokerAnalysisHistory,
   getCachedBrokerData,
   setCachedBrokerData,
+  bulkSetCachedBrokerData,
+  brokerDataCache,
   getCachedRealFloorsheet,
   setCachedRealFloorsheet,
   getCachedStockFundamentals,
   setCachedStockFundamentals,
-  invalidateSymbolCache,
-  clearHistoryCache
+  invalidateSymbolCache as invalidateSymbolCacheHistory,
+  clearHistoryCache as clearHistoryCacheHistory
 } from './historyCache.js';
 import { calculateStealthAccumulationScore, getBrokerName } from './accumulationDistributionEngine.ts';
 
@@ -534,21 +536,67 @@ export function parseShareSansarHistoryHtml(html) {
   return candles;
 }
 
+// ── Universal Broker Analysis Cache & Fast Accessors ──────────────────────────
+export const realBrokerAnalysisCache = new Map();
+
+/**
+ * Synchronously retrieves cached real broker analysis for a given symbol.
+ * Fast-path: checks in-memory realBrokerAnalysisCache (<0.01ms).
+ * Secondary: checks historyCache's brokerDataCache and memBrokerCache.
+ * Miss-path: falls back to disk/localStorage.
+ */
+export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
+  const normSym = String(sym || '').toUpperCase().trim();
+  if (!normSym) return null;
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
+    if (realBrokerAnalysisCache.has(normSym)) {
+      return realBrokerAnalysisCache.get(normSym);
+    }
+    const fromHistory = getCachedBrokerData(normSym);
+    if (fromHistory) {
+      realBrokerAnalysisCache.set(normSym, fromHistory);
+      return fromHistory;
+    }
+  }
+  return getCachedRealBrokerAnalysisHistory(sym, days, options);
+}
+
+export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
+  if (!sym || !data) return;
+  const normSym = String(sym || '').toUpperCase().trim();
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
+    realBrokerAnalysisCache.set(normSym, data);
+  }
+  setCachedRealBrokerAnalysisHistory(sym, data, days, options);
+}
+
+export function invalidateSymbolCache(sym) {
+  if (sym) {
+    realBrokerAnalysisCache.delete(String(sym).toUpperCase().trim());
+  }
+  invalidateSymbolCacheHistory(sym);
+}
+
+export function clearHistoryCache() {
+  realBrokerAnalysisCache.clear();
+  clearHistoryCacheHistory();
+}
+
 // ── Price History & Metrics Cache (Delegated to high-performance historyCache.js) ──
 export {
   getCachedRealPriceHistory,
   getCachedRealPriceHistoryAsync,
   setCachedRealPriceHistory,
-  getCachedRealBrokerAnalysis,
-  setCachedRealBrokerAnalysis,
   getCachedBrokerData,
   setCachedBrokerData,
+  bulkSetCachedBrokerData,
+  brokerDataCache,
   getCachedRealFloorsheet,
   setCachedRealFloorsheet,
   getCachedStockFundamentals,
-  setCachedStockFundamentals,
-  invalidateSymbolCache,
-  clearHistoryCache
+  setCachedStockFundamentals
 };
 
 export async function fetchStockFundamentals(symbol, forceRefresh = false) {
@@ -1685,18 +1733,66 @@ export async function fetchNepseIndex() {
   return { data: { value: MEM_SUMMARY.nepseIndex, change: MEM_SUMMARY.change, percentageChange: MEM_SUMMARY.changePercent } };
 }
 
+function mergeBrokerDataOntoStocks(stocks) {
+  if (!Array.isArray(stocks) || stocks.length === 0) return stocks;
+  for (const stock of stocks) {
+    if (!stock || !stock.symbol) continue;
+    const sym = String(stock.symbol).toUpperCase().trim();
+    const bData = realBrokerAnalysisCache.get(sym) || getCachedBrokerData(sym) || getCachedRealBrokerAnalysis(sym);
+    if (!bData) continue;
+    if (bData.bcr3BuyPct !== undefined) stock.bcr3BuyPct = bData.bcr3BuyPct;
+    if (bData.bcr5BuyPct !== undefined) stock.bcr5BuyPct = bData.bcr5BuyPct;
+    if (bData.bcr3SellPct !== undefined) stock.bcr3SellPct = bData.bcr3SellPct;
+    if (bData.nbar !== undefined) stock.nbar = bData.nbar;
+    if (bData.lbas !== undefined) stock.lbas = bData.lbas;
+    if (bData.adSignal !== undefined) stock.adSignal = bData.adSignal;
+    stock.realBrokerAnalysis = bData;
+  }
+  return stocks;
+}
+
 export async function loadNepseData() {
+  const isBrokerCacheEmpty = realBrokerAnalysisCache.size === 0 && (!brokerDataCache || brokerDataCache.size === 0) && (!marketWideBrokerSummaryMapCache.data || Object.keys(marketWideBrokerSummaryMapCache.data).length === 0);
+  if (isBrokerCacheEmpty) {
+    fetchMarketWideBrokerSummaryMap(1).then((map) => {
+      if (map && MEM_STOCKS && Array.isArray(MEM_STOCKS)) {
+        mergeBrokerDataOntoStocks(MEM_STOCKS);
+      }
+    }).catch(() => {});
+  }
+
+  let result;
   try {
     const r = await fetchLiveMarket();
-    if (r.data.length > 50) return { stocks: r.data, source: r.source };
-    const cached = getCachedStocks();
-    if (cached.length > 50) return { stocks: cached, source: 'cached' };
-    ensureSnapshot();
-    return { stocks: MEM_STOCKS, source: 'simulated' };
+    if (r.data.length > 50) {
+      result = { stocks: r.data, source: r.source };
+    } else {
+      const cached = getCachedStocks();
+      if (cached.length > 50) {
+        result = { stocks: cached, source: 'cached' };
+      } else {
+        ensureSnapshot();
+        result = { stocks: MEM_STOCKS, source: 'simulated' };
+      }
+    }
   } catch {
     const cached = getCachedStocks();
-    return { stocks: cached.length ? cached : (MEM_STOCKS || []), source: cached.length ? 'cached-fallback' : 'none' };
+    result = { stocks: cached.length ? cached : (MEM_STOCKS || []), source: cached.length ? 'cached-fallback' : 'none' };
   }
+
+  if (result && Array.isArray(result.stocks)) {
+    mergeBrokerDataOntoStocks(result.stocks);
+    if (isBrokerCacheEmpty) {
+      const targetStocks = result.stocks;
+      fetchMarketWideBrokerSummaryMap(1).then((map) => {
+        if (map && Array.isArray(targetStocks)) {
+          mergeBrokerDataOntoStocks(targetStocks);
+        }
+      }).catch(() => {});
+    }
+  }
+
+  return result;
 }
 
 export const ENDPOINT_REGISTRY = [
@@ -2396,6 +2492,7 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
 }
 
 let marketWideBrokerSummaryMapCache = { timestamp: 0, data: null };
+let _brokerSummaryMapPromise = null;
 
 export function getCachedMarketWideBrokerSummaryMap() {
   return marketWideBrokerSummaryMapCache.data || null;
@@ -2412,23 +2509,44 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
     return marketWideBrokerSummaryMapCache.data;
   }
 
-  try {
-    const res = await fetchFromBackend(`/api/broker-analysis/summary-map?days=${numDays}`, 20000);
-    const map = res?.data || res;
-    if (map && typeof map === 'object' && Object.keys(map).length > 0) {
-      marketWideBrokerSummaryMapCache = { timestamp: now, data: map };
-      for (const [symKey, dataObj] of Object.entries(map)) {
-        if (dataObj && typeof dataObj === 'object') {
-          setCachedRealBrokerAnalysis(symKey, dataObj);
-        }
-      }
-      return map;
-    }
-  } catch (err) {
-    console.warn('[liveData] fetchMarketWideBrokerSummaryMap error:', err.message);
+  if (!options?.refresh && _brokerSummaryMapPromise) {
+    return _brokerSummaryMapPromise;
   }
 
-  return marketWideBrokerSummaryMapCache.data || {};
+  _brokerSummaryMapPromise = (async () => {
+    try {
+      const params = new URLSearchParams();
+      if (numDays > 1) params.set('days', String(numDays));
+      if (options?.date) params.set('date', String(options.date));
+      const qs = params.toString() ? `?${params.toString()}` : '';
+
+      let res = await fetchFromBackend(`/api/market/broker-summary${qs}`, 20000);
+      if (!res || (res.success === false && !res.data)) {
+        res = await fetchFromBackend(`/api/broker-analysis/summary-map${qs}`, 20000);
+      }
+      const map = res?.data || res;
+      if (map && typeof map === 'object' && Object.keys(map).length > 0) {
+        marketWideBrokerSummaryMapCache = { timestamp: Date.now(), data: map };
+        bulkSetCachedBrokerData(map);
+        for (const [symKey, dataObj] of Object.entries(map)) {
+          if (dataObj && typeof dataObj === 'object') {
+            const normKey = String(symKey).toUpperCase().trim();
+            realBrokerAnalysisCache.set(normKey, dataObj);
+            setCachedRealBrokerAnalysis(normKey, dataObj, numDays, options);
+          }
+        }
+        return map;
+      }
+    } catch (err) {
+      console.warn('[liveData] fetchMarketWideBrokerSummaryMap error:', err.message);
+    } finally {
+      _brokerSummaryMapPromise = null;
+    }
+
+    return marketWideBrokerSummaryMapCache.data || {};
+  })();
+
+  return _brokerSummaryMapPromise;
 }
 
 export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {

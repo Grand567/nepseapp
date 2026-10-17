@@ -377,13 +377,6 @@
     "lastEvaluatedAt": 1791789130542,
     "historyCount": 0
   },
-  "GHL": {
-    "state": "PENDING",
-    "pendingScans": 24,
-    "lastTriggeredAt": 1792063918432,
-    "lastEvaluatedAt": 1792141149231,
-    "historyCount": 1
-  },
   "GVL": {
     "state": "PENDING",
     "pendingScans": 24,
@@ -425,5 +418,12 @@
     "lastTriggeredAt": null,
     "lastEvaluatedAt": 1792141560699,
     "historyCount": 0
+  },
+  "GHL": {
+    "state": "COOLDOWN",
+    "pendingScans": 1,
+    "lastTriggeredAt": 1792242749379,
+    "lastEvaluatedAt": 1792242749379,
+    "historyCount": 1
   }
 }

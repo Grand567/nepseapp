@@ -134,6 +134,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const [importRawText, setImportRawText] = useState('');
   const [importParsedItems, setImportParsedItems] = useState(null);
   const [importStatusMsg, setImportStatusMsg] = useState(null);
+  const [importFormatTab, setImportFormatTab] = useState('tms'); // 'tms' | 'meroshare' | 'csv'
+  const [selectedImportProfileIndex, setSelectedImportProfileIndex] = useState(0);
   const [activeView, setActiveView] = useState('consolidated'); // 'consolidated', 'meroshare', 'manual'
   const [valuationMode, setValuationMode] = useState('prevClose'); // 'prevClose' (MeroShare Official default), 'ltp', 'live'
   const [allocationView, setAllocationView] = useState('stock'); // 'stock', 'sector'
@@ -780,41 +782,49 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
           symbol: h.symbol.toUpperCase(),
           units: h.totalQuantity,
           rate: h.wacc,
-          totalAmount: Math.round(h.totalQuantity * h.wacc)
+          totalAmount: Number((h.totalCost || (h.totalQuantity * h.wacc)).toFixed(2)),
+          source: 'BROKER_TMS',
+          transactionsCount: h.transactionsCount || 1
         });
       });
-    } else {
-      lines.forEach(line => {
-        if (line.toLowerCase().includes('scrip') && line.toLowerCase().includes('balance')) return;
-        if (line.toLowerCase().includes('symbol') && line.toLowerCase().includes('qty')) return;
+      setImportParsedItems(detected);
+      setImportStatusMsg(`✓ Successfully parsed ${detected.length} scrips with authentic multi-lot WACC from Broker TMS!`);
+      return;
+    }
 
-        const tokens = line.split(/[,\t|]|\s{2,}/).map(t => t.trim().replace(/['"]/g, '')).filter(Boolean);
-        if (tokens.length >= 2) {
-          const symIdx = tokens.findIndex(t => /^[A-Z]{2,6}$/i.test(t));
-          if (symIdx !== -1) {
-            const sym = tokens[symIdx].toUpperCase();
-            const numbers = tokens.slice(symIdx + 1).map(t => parseFloat(t.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
-            if (numbers.length >= 1) {
-              const units = Math.round(numbers[0]);
-              const rate = numbers.length >= 2 ? numbers[1] : (typeof guessScripBasePrice === 'function' ? guessScripBasePrice(sym, 100) : 100);
-              detected.push({
-                symbol: sym,
-                units,
-                rate: Number(rate.toFixed(2)),
-                totalAmount: Math.round(units * rate)
-              });
-            }
+    // Fallback: MeroShare My Holdings tabular or space/comma delimited rows
+    lines.forEach(line => {
+      if (line.toLowerCase().includes('scrip') && line.toLowerCase().includes('balance')) return;
+      if (line.toLowerCase().includes('symbol') && line.toLowerCase().includes('qty')) return;
+
+      const tokens = line.split(/[,\t|]|\s{2,}/).map(t => t.trim().replace(/['"]/g, '')).filter(Boolean);
+      if (tokens.length >= 2) {
+        const symIdx = tokens.findIndex(t => /^[A-Z]{2,6}$/i.test(t));
+        if (symIdx !== -1) {
+          const sym = tokens[symIdx].toUpperCase();
+          const numbers = tokens.slice(symIdx + 1).map(t => parseFloat(t.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
+          if (numbers.length >= 1) {
+            const units = Math.round(numbers[0]);
+            const rate = numbers.length >= 2 ? numbers[1] : (typeof guessScripBasePrice === 'function' ? guessScripBasePrice(sym, 100) : 100);
+            detected.push({
+              symbol: sym,
+              units,
+              rate: Number(rate.toFixed(2)),
+              totalAmount: Math.round(units * rate),
+              source: 'MEROSHARE',
+              transactionsCount: 1
+            });
           }
         }
-      });
-    }
+      }
+    });
 
     if (detected.length > 0) {
       setImportParsedItems(detected);
-      setImportStatusMsg(`✓ Successfully detected ${detected.length} scrips! Review below and click "Import to Portfolio".`);
+      setImportStatusMsg(`✓ Successfully detected ${detected.length} scrips from tabular rows! Review below and click "Import All".`);
     } else {
       setImportParsedItems(null);
-      setImportStatusMsg('⚠️ Could not extract valid holdings. Make sure lines contain Symbol, Units, and Rate.');
+      setImportStatusMsg('⚠️ Could not extract valid holdings. Paste your TMS Trade Book table, MeroShare My Holdings, or CSV lines (e.g. NABIL 100 540).');
     }
   };
 
@@ -845,7 +855,8 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     saveTransactions([...newTransactions, ...transactions]);
 
     if (meroshareProfiles.length > 0) {
-      const activeProf = meroshareProfiles[0];
+      const targetIndex = selectedImportProfileIndex >= 0 && selectedImportProfileIndex < meroshareProfiles.length ? selectedImportProfileIndex : 0;
+      const activeProf = meroshareProfiles[targetIndex];
       const existingHoldings = [...(activeProf.holdings || [])];
 
       importParsedItems.forEach(item => {
@@ -854,19 +865,23 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
           existingHoldings[idx] = {
             ...existingHoldings[idx],
             units: existingHoldings[idx].units + item.units,
-            wacc: item.rate
+            wacc: item.rate,
+            waccSource: item.source || 'BROKER_TMS',
+            isCustomWacc: true
           };
         } else {
           existingHoldings.push({
             symbol: item.symbol,
             name: item.symbol,
             units: item.units,
-            wacc: item.rate
+            wacc: item.rate,
+            waccSource: item.source || 'BROKER_TMS',
+            isCustomWacc: true
           });
         }
       });
 
-      const updatedProfiles = meroshareProfiles.map((p, i) => i === 0 ? { ...p, holdings: existingHoldings, lastSyncedAt: Date.now() } : p);
+      const updatedProfiles = meroshareProfiles.map((p, i) => i === targetIndex ? { ...p, holdings: existingHoldings, lastSyncedAt: Date.now() } : p);
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
     }
@@ -3891,10 +3906,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span>📋</span> Import MeroShare / TMS / CSV Portfolio
+                  <span style={{ fontSize: 18 }}>📋</span> Import MeroShare / TMS Trade Book / CSV
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Paste copied tabular text from MeroShare (My Holdings), TMS Trade Book, or drop a CSV file.
+                  Import holdings with automatic multi-lot WACC calculation (including SEBON commission & DP fees)
                 </div>
               </div>
               <button 
@@ -3906,12 +3921,140 @@ Based on this data, provide a robust analysis using this exact markdown structur
               </button>
             </div>
 
-            {/* Quick Helper Banner */}
-            <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: '#93c5fd', lineHeight: 1.5 }}>
-              💡 <strong>Quick Instructions:</strong><br />
-              • <strong>MeroShare</strong>: Go to <em>My Holdings</em>, highlight &amp; copy the scrip table, then paste below.<br />
-              • <strong>TMS</strong>: Go to <em>Trade Management → Trade Book</em>, copy rows or CSV, then paste below.
+            {/* Format Selection Tabs */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setImportFormatTab('tms')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  background: importFormatTab === 'tms' ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${importFormatTab === 'tms' ? '#6366f1' : 'rgba(255,255,255,0.08)'}`,
+                  color: importFormatTab === 'tms' ? '#818cf8' : '#94a3b8',
+                  cursor: 'pointer'
+                }}
+              >
+                ⚡ Broker TMS Trade Book
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportFormatTab('meroshare')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  background: importFormatTab === 'meroshare' ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${importFormatTab === 'meroshare' ? '#10b981' : 'rgba(255,255,255,0.08)'}`,
+                  color: importFormatTab === 'meroshare' ? '#34d399' : '#94a3b8',
+                  cursor: 'pointer'
+                }}
+              >
+                📋 MeroShare My Holdings
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportFormatTab('csv')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  background: importFormatTab === 'csv' ? 'rgba(56,189,248,0.25)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${importFormatTab === 'csv' ? '#38bdf8' : 'rgba(255,255,255,0.08)'}`,
+                  color: importFormatTab === 'csv' ? '#38bdf8' : '#94a3b8',
+                  cursor: 'pointer'
+                }}
+              >
+                📄 CSV / Plain Text
+              </button>
             </div>
+
+            {/* Quick Helper Banner & Sample Fillers */}
+            <div style={{ background: importFormatTab === 'tms' ? 'rgba(99,102,241,0.08)' : (importFormatTab === 'meroshare' ? 'rgba(16,185,129,0.08)' : 'rgba(59,130,246,0.08)'), border: `1px solid ${importFormatTab === 'tms' ? 'rgba(99,102,241,0.25)' : (importFormatTab === 'meroshare' ? 'rgba(16,185,129,0.25)' : 'rgba(59,130,246,0.25)')}`, borderRadius: 10, padding: '10px 12px', fontSize: 12, color: '#e2e8f0', lineHeight: 1.5 }}>
+              {importFormatTab === 'tms' && (
+                <div>
+                  💡 <strong>NEPSE Broker TMS Trade Book:</strong><br />
+                  Open your broker's TMS (e.g. <code>tms58.nepsetms.com.np</code>) → <strong>Trade Management → Trade Book</strong>. Copy table rows or export CSV. Multiple partial buys of the same stock across different dates are automatically aggregated into authentic WACC with broker commission &amp; DP fees included!
+                </div>
+              )}
+              {importFormatTab === 'meroshare' && (
+                <div>
+                  💡 <strong>CDSC MeroShare My Holdings:</strong><br />
+                  Login to <strong>MeroShare</strong> → Go to <strong>My Holdings</strong> → Highlight and copy the portfolio table rows, then paste below.
+                </div>
+              )}
+              {importFormatTab === 'csv' && (
+                <div>
+                  💡 <strong>Custom CSV / Plain Rows:</strong><br />
+                  Paste any tabular lines with <code>Symbol</code>, <code>Quantity</code>, and <code>Price</code> (e.g. <code>NABIL, 100, 540</code> or <code>SHIVM 200 480</code>).
+                </div>
+              )}
+
+              {/* Quick Sample Action Pills */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Try Demo:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sample = `S.N.\tContract No\tStock Symbol\tTrade Qty\tTrade Price\tAmount\tTransaction Type\n1\t2026101700123456\tNABIL\t50\t520.00\t26000.00\tBUY\n2\t2026101700123457\tNABIL\t50\t540.00\t27000.00\tBUY\n3\t2026101700123458\tSHIVM\t100\t480.00\t48000.00\tBUY\n4\t2026101700123459\tHATHY\t200\t960.00\t192000.00\tBUY\n5\t2026101700123460\tNABIL\t20\t535.00\t10700.00\tSELL`;
+                    setImportRawText(sample);
+                    handleParseImportText(sample);
+                  }}
+                  className="btn-xs"
+                  style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.4)', cursor: 'pointer' }}
+                >
+                  ⚡ Sample TMS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sample = `S.N.\tScrip\tCurrent Balance\tPrevious Closing Price\tValue as of Prev. Close\n1\tNABIL\t100\t550.00\t55,000.00\n2\tGBIME\t250\t210.00\t52,500.00\n3\tCHCL\t150\t420.00\t63,000.00`;
+                    setImportRawText(sample);
+                    handleParseImportText(sample);
+                  }}
+                  className="btn-xs"
+                  style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, background: 'rgba(16,185,129,0.2)', color: '#6ee7b7', border: '1px solid rgba(16,185,129,0.4)', cursor: 'pointer' }}
+                >
+                  📋 Sample MeroShare
+                </button>
+                {importRawText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportRawText('');
+                      setImportParsedItems(null);
+                      setImportStatusMsg(null);
+                    }}
+                    className="btn-xs"
+                    style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10.5, color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer' }}
+                  >
+                    ✕ Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Destination Profile Selection */}
+            {meroshareProfiles.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#0b1120', padding: '8px 12px', borderRadius: 8, border: '1px solid #1e293b' }}>
+                <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>Destination Profile:</span>
+                <select
+                  value={selectedImportProfileIndex}
+                  onChange={e => setSelectedImportProfileIndex(Number(e.target.value))}
+                  style={{ background: '#111827', color: '#fff', border: '1px solid #334155', borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
+                >
+                  {meroshareProfiles.map((p, idx) => (
+                    <option key={p.id || idx} value={idx}>
+                      {p.name || `Profile ${idx + 1}`} ({p.boid || 'No BOID'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Textarea Input */}
             <div>
@@ -3926,7 +4069,9 @@ Based on this data, provide a robust analysis using this exact markdown structur
               </div>
               <textarea
                 rows={6}
-                placeholder="Example:&#10;1  NABIL  100  385.50&#10;2  SHIVM  200  490.00&#10;(or paste CSV: NABIL,100,385.50)"
+                placeholder={importFormatTab === 'tms'
+                  ? "Paste TMS Trade Book rows (Symbol, Trade Qty, Trade Price, Type)..."
+                  : "Example:\n1  NABIL  100  385.50\n2  SHIVM  200  490.00\n(or paste CSV: NABIL,100,385.50)"}
                 value={importRawText}
                 onChange={e => {
                   setImportRawText(e.target.value);
@@ -3964,27 +4109,50 @@ Based on this data, provide a robust analysis using this exact markdown structur
             {/* Parsed Preview Table */}
             {importParsedItems && importParsedItems.length > 0 && (
               <div style={{ border: '1px solid #1e293b', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ padding: '8px 12px', background: '#111827', fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ padding: '8px 12px', background: '#111827', fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Detected Scrips ({importParsedItems.length})</span>
-                  <span>Total Est. Cost: Rs. {importParsedItems.reduce((acc, it) => acc + it.totalAmount, 0).toLocaleString()}</span>
+                  <span>Total Est. Cost: Rs. {importParsedItems.reduce((acc, it) => acc + (it.totalAmount || 0), 0).toLocaleString()}</span>
                 </div>
-                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
                     <thead>
                       <tr style={{ background: '#090d16', borderBottom: '1px solid #1e293b', color: '#64748b' }}>
                         <th style={{ padding: '6px 10px' }}>Scrip</th>
+                        <th style={{ padding: '6px 10px' }}>Source / Lots</th>
                         <th style={{ padding: '6px 10px', textAlign: 'right' }}>Kitta</th>
-                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Rate (Rs.)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>WACC (Rs.)</th>
                         <th style={{ padding: '6px 10px', textAlign: 'right' }}>Total (Rs.)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {importParsedItems.map((item, idx) => (
                         <tr key={`${item.symbol}_${idx}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                           <td style={{ padding: '6px 10px', fontWeight: 800, color: '#fff' }}>{item.symbol}</td>
+                          <td style={{ padding: '6px 10px' }}>
+                            {item.source === 'BROKER_TMS' ? (
+                              <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800, background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.4)' }}>
+                                TMS ({item.transactionsCount || 1} lot{item.transactionsCount > 1 ? 's' : ''})
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800, background: 'rgba(16,185,129,0.2)', color: '#6ee7b7', border: '1px solid rgba(16,185,129,0.4)' }}>
+                                MeroShare
+                              </span>
+                            )}
+                          </td>
                           <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{item.units.toLocaleString()}</td>
                           <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>{item.rate.toFixed(2)}</td>
-                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#10b981' }}>{item.totalAmount.toLocaleString()}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#10b981' }}>{(item.totalAmount || 0).toLocaleString()}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => setImportParsedItems(prev => prev.filter((_, i) => i !== idx))}
+                              title="Remove from import"
+                              style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}
+                            >
+                              ✕
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

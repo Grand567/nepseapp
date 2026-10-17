@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Target, Zap, Shield, Award, TrendingUp, TrendingDown, Flame, AlertTriangle, CheckCircle2, XCircle, Filter, ChevronRight, RefreshCw, Star } from 'lucide-react';
 import { getAccurateFestivalSeasonality } from '../utils/quantEngine';
 import { calculateStealthAccumulationScore } from '../utils/accumulationDistributionEngine';
-import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from '../utils/liveData';
+import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 
 interface MultibaggerHunterProps {
   stocks?: any[];
@@ -15,6 +15,17 @@ const GATE_LABELS = ['Float', 'Supply', 'Squeeze', 'Volume', 'Broker', 'DPI', 'G
 export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }: MultibaggerHunterProps) {
   const [filterScore, setFilterScore] = useState<number | null>(null);
   const [filterSector, setFilterSector] = useState<string | null>(null);
+  const [brokerMapLoaded, setBrokerMapLoaded] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchMarketWideBrokerSummaryMap(1).then((map: any) => {
+      if (isMounted && map && Object.keys(map).length > 0) {
+        setBrokerMapLoaded(true);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   const season = useMemo(() => getAccurateFestivalSeasonality(), []);
   const seasonOk = (season?.scoreBonus || 0) >= 0;
@@ -32,15 +43,47 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
           const sym = String(s.symbol || '').toUpperCase().trim();
           const cachedHist = sym ? getCachedRealPriceHistory(sym) : null;
           const realBroker = s.brokerAnalysis || s.realBrokerAnalysis || (sym ? getCachedRealBrokerAnalysis(sym) : null) || undefined;
-          const stealthScore = Number(s.stealthAccumulation) || calculateStealthAccumulationScore(
-            s,
-            Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
-            realBroker
-          );
+          
+          const volume = Number(s.volume ?? s.totalTradedQuantity ?? realBroker?.totalVolume ?? realBroker?.totalTradedQty ?? 0);
+          const isMicroSample = volume < 200;
+
           const bcr3Buy = Number(s.bcr3BuyPct ?? realBroker?.bcr3BuyPct ?? 0);
           const bcr3Sell = Number(s.bcr3SellPct ?? realBroker?.bcr3SellPct ?? 0);
           const nbar = Number(s.nbar ?? realBroker?.nbar ?? 1.0);
-          const brokerGatePassed = (bcr3Buy >= 35 && bcr3Buy > bcr3Sell) || (nbar >= 1.25 && bcr3Buy >= 25) || stealthScore >= 65;
+
+          const topBuyer = realBroker?.topBuyers?.[0] || realBroker?.buyers?.[0];
+          const topSeller = realBroker?.topSellers?.[0] || realBroker?.sellers?.[0];
+          const buyerId = String(topBuyer?.broker || topBuyer?.id || topBuyer?.brokerId || '').trim();
+          const sellerId = String(topSeller?.broker || topSeller?.id || topSeller?.brokerId || '').trim();
+          const topBuyerPct = Number(topBuyer?.pct ?? topBuyer?.buyPct ?? bcr3Buy);
+          const topSellerPct = Number(topSeller?.pct ?? topSeller?.sellPct ?? bcr3Sell);
+
+          const isCrossTrade = Boolean(
+            realBroker?.isCrossTrade ||
+            (buyerId && sellerId && buyerId === sellerId && (
+              (topBuyerPct >= 95 && topSellerPct >= 95) ||
+              (bcr3Buy >= 95 && bcr3Sell >= 95)
+            ))
+          );
+
+          const effectiveBroker = realBroker ? {
+            ...realBroker,
+            tradeSizeRatio: Number(realBroker.tradeSizeRatio ?? realBroker.nbar ?? 1.0),
+            netAbsorptionRatio: Number(realBroker.netAbsorptionRatio ?? (realBroker.bcr3BuyPct && (realBroker.bcr3BuyPct + (realBroker.bcr3SellPct || 0)) > 0 ? realBroker.bcr3BuyPct / (realBroker.bcr3BuyPct + realBroker.bcr3SellPct) : 0.5))
+          } : undefined;
+
+          const stealthScore = Number(s.stealthAccumulation && !isCrossTrade ? s.stealthAccumulation : 0) || calculateStealthAccumulationScore(
+            s,
+            Array.isArray(cachedHist) && cachedHist.length >= 5 ? cachedHist : [],
+            isCrossTrade ? undefined : effectiveBroker
+          );
+
+          // Gate 5: Rejects illiquid micro-samples (< 200 kitta) and bilateral cross-trades (buyer === seller >= 95%)
+          const brokerGatePassed = !isMicroSample && !isCrossTrade && (
+            (bcr3Buy >= 35 && bcr3Buy > bcr3Sell) ||
+            (nbar >= 1.25 && bcr3Buy >= 25) ||
+            stealthScore >= 65
+          );
 
           return [
             publicFloatM <= 15,
@@ -60,7 +103,7 @@ export function MultibaggerHunterService({ stocks = [], indices, onSelectStock }
         return { ...s, gates, gatesPass, isEstimated, mos, publicFloatM };
       })
       .sort((a, b) => b.gatesPass - a.gatesPass || (b.turnover || 0) - (a.turnover || 0));
-  }, [stocks, seasonOk]);
+  }, [stocks, seasonOk, brokerMapLoaded]);
 
   const filtered = useMemo(() => {
     let res = evaluated;

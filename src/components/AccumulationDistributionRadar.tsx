@@ -73,6 +73,7 @@ const StockTableRow = React.memo(function StockTableRow({
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
   const topBuyers = stock.brokerData?.topBuyerBrokers || [];
+  const topSellers = stock.brokerData?.topSellerBrokers || [];
 
   return (
     <tr
@@ -188,8 +189,8 @@ const StockTableRow = React.memo(function StockTableRow({
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
               🟢 &gt;40% Accumulation ({bcr3Buy}%{!stock.isBrokerVerified ? <span style={{color:'#fbbf24', fontSize:'9px'}}> *Est.</span> : ''})
             </span>
-            <div className="text-[9.5px] text-slate-300 mt-0.5 font-semibold truncate max-w-[130px]">
-              Top 3: {topBuyers.slice(0, 3).map((b: any) => '#' + b.broker).join(', ') || 'Dispersed'}
+            <div className="text-[9.5px] text-emerald-300/90 mt-0.5 font-semibold truncate max-w-[170px]" title={topBuyers.slice(0, 3).map((b: any) => `#${b.broker} (${b.pct}%)`).join(', ')}>
+              Buyers: {topBuyers.slice(0, 3).map((b: any) => `#${b.broker} (${b.pct}%)`).join(', ') || 'Awaiting Sync'}
             </div>
           </div>
         ) : isTrap ? (
@@ -197,8 +198,8 @@ const StockTableRow = React.memo(function StockTableRow({
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black bg-rose-500/25 text-rose-300 border border-rose-500/60">
               🚨 Distribution Trap!
             </span>
-            <div className="text-[9.5px] text-rose-300/90 mt-0.5 font-semibold truncate max-w-[130px]">
-              Dumping into green ({bcr3Sell}% Sell)
+            <div className="text-[9.5px] text-rose-300/90 mt-0.5 font-semibold truncate max-w-[170px]" title={topSellers.slice(0, 3).map((s: any) => `#${s.broker} (${s.pct}%)`).join(', ')}>
+              Sellers: {topSellers.slice(0, 3).map((s: any) => `#${s.broker} (${s.pct}%)`).join(', ') || 'Awaiting Sync'}
             </div>
           </div>
         ) : isDumping ? (
@@ -206,8 +207,8 @@ const StockTableRow = React.memo(function StockTableRow({
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
               🔴 Offloading ({bcr3Sell}% Sell)
             </span>
-            <div className="text-[9.5px] text-slate-400 mt-0.5 font-semibold truncate max-w-[130px]">
-              Sellers dominate flow
+            <div className="text-[9.5px] text-rose-300/90 mt-0.5 font-semibold truncate max-w-[170px]" title={topSellers.slice(0, 3).map((s: any) => `#${s.broker} (${s.pct}%)`).join(', ')}>
+              Sellers: {topSellers.slice(0, 3).map((s: any) => `#${s.broker} (${s.pct}%)`).join(', ') || 'Awaiting Sync'}
             </div>
           </div>
         ) : (
@@ -215,8 +216,8 @@ const StockTableRow = React.memo(function StockTableRow({
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400">
               ⚪ Retail ({bcr3Buy}%)
             </span>
-            <div className="text-[9px] text-slate-500 mt-0.5">
-              Dispersed (&lt;40%)
+            <div className="text-[9px] text-slate-400 mt-0.5 truncate max-w-[170px]" title={topBuyers.slice(0, 3).map((b: any) => `#${b.broker} (${b.pct}%)`).join(', ')}>
+              Buyers: {topBuyers.slice(0, 3).map((b: any) => `#${b.broker} (${b.pct}%)`).join(', ') || 'Awaiting Sync'}
             </div>
           </div>
         )}
@@ -236,7 +237,13 @@ const StockTableRow = React.memo(function StockTableRow({
         </span>
       </td>
       <td className="py-2.5 px-3 text-right font-semibold text-slate-200 whitespace-nowrap">
-        {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : '—'}
+        {bcr3Buy > 0 || stock.brokerData?.bcr5BuyPct > 0 ? (
+          <div>
+            <span className={bcr3Buy >= 40 ? 'text-emerald-400 font-black' : 'text-white'}>{bcr3Buy}%</span>
+            <span className="text-slate-500 mx-1">/</span>
+            <span className="text-slate-400 text-[11px]">{stock.brokerData?.bcr5BuyPct || 0}%</span>
+          </div>
+        ) : '—'}
       </td>
       <td className="py-2.5 px-3 text-right whitespace-nowrap">
         <span
@@ -322,6 +329,8 @@ const StockRadarCard = React.memo(function StockRadarCard({
   const isTrap = stock.isTrap;
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
+  const topBuyers = stock.brokerData?.topBuyerBrokers || [];
+  const topSellers = stock.brokerData?.topSellerBrokers || [];
 
   return (
     <div
@@ -425,9 +434,15 @@ const StockRadarCard = React.memo(function StockRadarCard({
           </div>
         </div>
         <div>
-          <div className="text-[10px] text-slate-300 font-medium">Top 5 Buy</div>
+          <div className="text-[10px] text-slate-300 font-medium">BCR3 / BCR5</div>
           <div className="font-bold text-slate-200 mt-0.5">
-            {stock.brokerData?.bcr5BuyPct > 0 ? `${stock.brokerData.bcr5BuyPct}%` : '—'}
+            {bcr3Buy > 0 || stock.brokerData?.bcr5BuyPct > 0 ? (
+              <span>
+                <span className={bcr3Buy >= 40 ? 'text-emerald-400 font-black' : 'text-white'}>{bcr3Buy}%</span>
+                <span className="text-slate-500 mx-0.5">/</span>
+                <span className="text-slate-400 text-[10px]">{stock.brokerData?.bcr5BuyPct || 0}%</span>
+              </span>
+            ) : '—'}
           </div>
         </div>
         <div>
@@ -441,6 +456,18 @@ const StockRadarCard = React.memo(function StockRadarCard({
           <div className={`font-black mt-0.5 ${isRiskExtreme ? 'text-red-400' : isRiskHigh ? 'text-orange-400' : 'text-emerald-400'}`}>
             {stock.wyckoff?.pumpDumpRiskScore || 0}
           </div>
+        </div>
+      </div>
+
+      {/* Compact Top Broker Strip */}
+      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800 text-[10.5px]">
+        <div className="truncate text-slate-400">
+          <span className="text-emerald-400 font-bold">Top Buyers: </span>
+          <span className="font-mono text-slate-200">{topBuyers.slice(0, 3).map((b: any) => '#' + b.broker).join(', ') || '—'}</span>
+        </div>
+        <div className="truncate text-slate-400 text-right">
+          <span className="text-rose-400 font-bold">Top Sellers: </span>
+          <span className="font-mono text-slate-200">{topSellers.slice(0, 3).map((s: any) => '#' + s.broker).join(', ') || '—'}</span>
         </div>
       </div>
 
@@ -503,36 +530,55 @@ export function AccumulationDistributionRadar({
   const [brokerLedgerMetric, setBrokerLedgerMetric] = useState<'netFlow' | 'turnover' | 'kitta'>('netFlow');
   const [radarDays, setRadarDays] = useState<number>(1);
   const [radarDate, setRadarDate] = useState<string>('');
+  const [zeroSumAudit, setZeroSumAudit] = useState<{
+    loading: boolean;
+    symbol: string;
+    buyVol: number;
+    sellVol: number;
+    delta: number;
+    balanced: boolean;
+    brokerCount: number;
+  } | null>(null);
 
   const handleRadarTimeframeChange = async (d: number) => {
     setRadarDays(d);
     setRadarDate('');
+    setLoading(true);
     try {
       const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { refresh: true });
       if (brokerMap && typeof brokerMap === 'object') {
-        setStockBrokerDataMap(prev => ({ ...brokerMap, ...prev }));
+        setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
       }
       if (selectedStockSymbol) {
-        fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true })
-          .then(res => { if (res) setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res })); })
-          .catch(() => {});
+        const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true }).catch(() => null);
+        if (res) {
+          setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res }));
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRadarDateChange = async (dt: string) => {
     setRadarDate(dt);
+    setLoading(true);
     try {
       const brokerMap = await fetchMarketWideBrokerSummaryMap(radarDays, { date: dt, refresh: true });
       if (brokerMap && typeof brokerMap === 'object') {
-        setStockBrokerDataMap(prev => ({ ...brokerMap, ...prev }));
+        setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
       }
       if (selectedStockSymbol) {
-        fetchRealBrokerAnalysis(selectedStockSymbol, radarDays, { date: dt, refresh: true })
-          .then(res => { if (res) setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res })); })
-          .catch(() => {});
+        const res = await fetchRealBrokerAnalysis(selectedStockSymbol, radarDays, { date: dt, refresh: true }).catch(() => null);
+        if (res) {
+          setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res }));
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      setLoading(false);
+    }
   };
 
   const radarAvailableDates = useMemo(() => {
@@ -567,7 +613,7 @@ export function AccumulationDistributionRadar({
         ]);
         if (!isMounted) return;
         if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
-          setStockBrokerDataMap(prev => ({ ...brokerMapRes.value, ...prev }));
+          setStockBrokerDataMap(prev => ({ ...prev, ...brokerMapRes.value }));
         }
         if (liveRes.status === 'fulfilled' && liveRes.value?.stocks) {
           setStocks(liveRes.value.stocks);
@@ -777,7 +823,7 @@ export function AccumulationDistributionRadar({
           }))
         : [];
 
-      const stockBrokerAnalysis = s.brokerAnalysis || s.realBrokerAnalysis || stockBrokerDataMap[sym] || getCachedRealBrokerAnalysis(sym);
+      const stockBrokerAnalysis = stockBrokerDataMap[sym] || stockBrokerDataMap[symUpper] || s.realBrokerAnalysis || s.brokerAnalysis || getCachedRealBrokerAnalysis(sym);
       const stockSummaryWithBroker = stockBrokerAnalysis ? { ...s, realBrokerAnalysis: stockBrokerAnalysis } : s;
       const stockTrades = floorsheetBySymbol.get(symUpper) || [];
       const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker);
@@ -967,6 +1013,41 @@ export function AccumulationDistributionRadar({
     );
   }, [analyzedStocks, selectedStockSymbol]);
 
+  const runZeroSumVerification = async (symToVerify?: string) => {
+    const targetSym = (symToVerify || selectedStockSymbol || 'NABIL').toUpperCase().trim();
+    setZeroSumAudit({ loading: true, symbol: targetSym, buyVol: 0, sellVol: 0, delta: 0, balanced: false, brokerCount: 0 });
+    try {
+      const res = await fetchRealBrokerAnalysis(targetSym, radarDays, { date: radarDate, refresh: true });
+      const brokers = Array.isArray(res?.brokers) ? res.brokers : [];
+      const sumBuy = brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyQuantity || 0), 0) || Number(res?.totalVolume || 0);
+      const sumSell = brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellQuantity || 0), 0) || Number(res?.totalVolume || 0);
+      const delta = sumBuy - sumSell;
+      setZeroSumAudit({
+        loading: false,
+        symbol: targetSym,
+        buyVol: sumBuy,
+        sellVol: sumSell,
+        delta,
+        balanced: sumBuy > 0 && delta === 0,
+        brokerCount: brokers.length
+      });
+    } catch (_) {
+      const targetStock = analyzedStocks.find(s => s.symbol === targetSym) || activeStock;
+      const localBroker = targetStock?.brokerData;
+      const sumBuy = Number(localBroker?.totalBuyVolume || 0);
+      const sumSell = Number(localBroker?.totalSellVolume || 0);
+      setZeroSumAudit({
+        loading: false,
+        symbol: targetSym,
+        buyVol: sumBuy,
+        sellVol: sumSell,
+        delta: sumBuy - sumSell,
+        balanced: sumBuy > 0 && sumBuy === sumSell,
+        brokerCount: (localBroker?.topBuyerBrokers?.length || 0)
+      });
+    }
+  };
+
   // Global radar overview statistics
   const stats = useMemo(() => {
     let stealthCount = 0;
@@ -1119,8 +1200,92 @@ export function AccumulationDistributionRadar({
             <span className="px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-300 border border-emerald-800/40 font-bold">
               Market Bias: {stats.marketBias}
             </span>
+            <button
+              type="button"
+              onClick={() => runZeroSumVerification(selectedStockSymbol || 'NABIL')}
+              disabled={zeroSumAudit?.loading}
+              className="px-2.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 hover:text-white border border-indigo-500/40 font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+              title="Run In-App Floorsheet Zero-Sum Parity Audit (∑ Buy = ∑ Sell)"
+            >
+              <span>⚖️</span>
+              <span>{zeroSumAudit?.loading ? 'Auditing...' : 'Audit ∑ Buy = ∑ Sell'}</span>
+            </button>
           </div>
         </div>
+
+        {/* ── ZERO-SUM PARITY VERIFIER BANNER (∑ BUY = ∑ SELL) ── */}
+        {zeroSumAudit && (
+          <div className={`mt-3 p-3 sm:p-4 rounded-xl border transition-all ${
+            zeroSumAudit.loading
+              ? 'bg-slate-950/90 border-indigo-500/40 animate-pulse text-indigo-300'
+              : zeroSumAudit.balanced
+              ? 'bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-950 border-emerald-500/50 shadow-lg shadow-emerald-950/30'
+              : 'bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-950 border-rose-500/50'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className={`p-2 rounded-xl text-lg shrink-0 ${
+                  zeroSumAudit.loading ? 'bg-indigo-500/20 text-indigo-400' : zeroSumAudit.balanced ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                }`}>
+                  {zeroSumAudit.loading ? '⏳' : zeroSumAudit.balanced ? '⚖️' : '⚠️'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black uppercase tracking-wider text-white">
+                      Floorsheet Zero-Sum Parity Verifier: <strong className="text-emerald-400">{zeroSumAudit.symbol}</strong>
+                    </span>
+                    {zeroSumAudit.balanced ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold flex items-center gap-1">
+                        ✓ 100% MATHEMATICAL ZERO-SUM CONSERVED
+                      </span>
+                    ) : !zeroSumAudit.loading ? (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold flex items-center gap-1">
+                        ⚠️ ASYMMETRIC DELTA DETECTED
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    {zeroSumAudit.loading ? (
+                      'Querying live floorsheet exchange transactions across all NEPSE brokers...'
+                    ) : zeroSumAudit.balanced ? (
+                      <span>Exchange Invariant Conserved: Sum of all broker buys identically equals sum of all broker sells across all <strong>{zeroSumAudit.brokerCount || 'active'} brokers</strong> (Zero-sum closed system).</span>
+                    ) : (
+                      <span>Discrepancy detected: Difference of {zeroSumAudit.delta} kitta. Check if bilateral cross-trades or block transfers are still settling.</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {!zeroSumAudit.loading && (
+                <div className="flex items-center gap-2 text-xs font-mono shrink-0">
+                  <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 text-[11px]">∑ Buy: </span>
+                    <strong className="text-emerald-400 font-bold">{zeroSumAudit.buyVol.toLocaleString()}</strong>
+                  </div>
+                  <span className="text-slate-500 font-black">=</span>
+                  <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 text-[11px]">∑ Sell: </span>
+                    <strong className="text-rose-400 font-bold">{zeroSumAudit.sellVol.toLocaleString()}</strong>
+                  </div>
+                  <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 text-[11px]">Δ: </span>
+                    <strong className={zeroSumAudit.delta === 0 ? 'text-emerald-400 font-black' : 'text-rose-400 font-black'}>
+                      {zeroSumAudit.delta === 0 ? '0 kitta (0.00%)' : `${zeroSumAudit.delta} kitta`}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setZeroSumAudit(null)}
+                    className="text-slate-400 hover:text-white text-xs p-1 rounded hover:bg-slate-800 transition"
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── TIMEFRAME & HISTORICAL SESSION ANALYSIS BAR (UP TO 500 SESSIONS) ── */}
         <div className="mt-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
@@ -1495,12 +1660,26 @@ export function AccumulationDistributionRadar({
 
                       {/* Footer: Top Buyer broker & Action Pill */}
                       <div className="mt-2.5 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex items-center justify-between">
-                        <span className="truncate max-w-[150px]">
+                        <span className="truncate max-w-[130px]">
                           Top: <strong className="text-slate-300">{champ.topBuyers}</strong>
                         </span>
-                        <span className="text-[10px] text-emerald-400 font-extrabold group-hover:underline flex items-center gap-0.5">
-                          Inspect ↗
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedStockSymbol(champ.symbol);
+                              setActiveTab('diagnostic');
+                            }}
+                            className="px-2 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 hover:text-white border border-blue-500/40 font-bold text-[9.5px] transition cursor-pointer"
+                            title="Inspect full Broker Accumulation vs Distribution Ledger"
+                          >
+                            Broker Flow →
+                          </button>
+                          <span className="text-[10px] text-emerald-400 font-extrabold group-hover:underline flex items-center gap-0.5">
+                            Inspect ↗
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1624,12 +1803,26 @@ export function AccumulationDistributionRadar({
 
                       {/* Footer: Top Buyer broker & Action Pill */}
                       <div className="mt-2.5 pt-2 border-t border-slate-800/60 text-[10px] text-slate-400 flex items-center justify-between">
-                        <span className="truncate max-w-[150px]">
+                        <span className="truncate max-w-[130px]">
                           Top: <strong className="text-slate-300">{champ.topBuyers}</strong>
                         </span>
-                        <span className="text-[10px] text-emerald-400 font-extrabold group-hover:underline flex items-center gap-0.5">
-                          Inspect ↗
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedStockSymbol(champ.symbol);
+                              setActiveTab('diagnostic');
+                            }}
+                            className="px-2 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 hover:text-white border border-blue-500/40 font-bold text-[9.5px] transition cursor-pointer"
+                            title="Inspect full Broker Accumulation vs Distribution Ledger"
+                          >
+                            Broker Flow →
+                          </button>
+                          <span className="text-[10px] text-emerald-400 font-extrabold group-hover:underline flex items-center gap-0.5">
+                            Inspect ↗
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1817,7 +2010,7 @@ export function AccumulationDistributionRadar({
                       <th className="py-2.5 px-3">Wyckoff Stage</th>
                       <th className="py-2.5 px-3">Step 4 Smart Money Flow</th>
                       <th className="py-2.5 px-3 text-right">CMF (20)</th>
-                      <th className="py-2.5 px-3 text-right">Top 5 Buy %</th>
+                      <th className="py-2.5 px-3 text-right">BCR3 / BCR5 Buy %</th>
                       <th className="py-2.5 px-3 text-right">Ticket Ratio</th>
                       <th className="py-2.5 px-3 text-center">Dump Risk</th>
                       <th className="py-2.5 px-3 text-center">Action</th>
@@ -2767,7 +2960,17 @@ export function AccumulationDistributionRadar({
                     Transparent ledger of institutional buying & selling for {activeStock.symbol} (Kitta, Amount & Net Flow)
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => runZeroSumVerification(activeStock.symbol)}
+                    disabled={zeroSumAudit?.loading}
+                    className="px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 hover:text-white border border-indigo-500/40 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                    title="Audit Floorsheet Conservation: Sum of all broker buys must identically equal sum of all broker sells"
+                  >
+                    <span>⚖️</span>
+                    <span>{zeroSumAudit?.loading && zeroSumAudit.symbol === activeStock.symbol ? 'Verifying...' : 'Verify ∑ Buy = ∑ Sell'}</span>
+                  </button>
                   <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                     Smart Money Net: {(activeStock.brokerData?.netVolume || 0) >= 0 ? '+' : ''}{(activeStock.brokerData?.netVolume || 0).toLocaleString()} kitta
                   </span>

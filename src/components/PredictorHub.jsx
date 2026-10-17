@@ -39,7 +39,7 @@ import {
   Crown,
   Lock
 } from 'lucide-react';
-import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
+import { getProxyBase, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchPriceHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
 import { calculateEMA } from '../utils/indicators';
 import { fetchNewsArticle, fetchDividendHistory } from '../utils/servicesApi';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
@@ -251,6 +251,10 @@ export default function PredictorHub({
       const ltp = Number(s.ltp || s.closePrice || 100);
       const vsr = Number(s.volumeSurgeRatio || (vol > 15000 ? 1.55 : 0.95));
 
+      const brokerInfo = s.realBrokerAnalysis || s.brokerAnalysis || getCachedRealBrokerAnalysis(sym);
+      const bcr3Buy = Number(brokerInfo?.bcr3BuyPct || s.bcr3BuyPct || 0);
+      const bcr3Sell = Number(brokerInfo?.bcr3SellPct || s.bcr3SellPct || 0);
+
       // ── Authentic Dynamic RSI & EMAs ─────────────────────────────────────
       const cachedHist = getCachedRealPriceHistory(sym);
       const hasEnoughCandles = Array.isArray(cachedHist) && cachedHist.length >= 15;
@@ -322,6 +326,14 @@ export default function PredictorHub({
       if (isAbove50EMA === false) score -= 12;
       if (isAbove200EMA === true) score += 5;
       if (isAbove200EMA === false) score -= 8;
+
+      // ── Institutional Broker Flow (Cornering vs Offloading) ─────────────
+      if (vol >= 200 && bcr3Buy >= 40 && bcr3Buy > bcr3Sell) {
+        score += 6; // Institutional Cornering bonus
+      }
+      if (vol >= 200 && bcr3Sell >= 42 && bcr3Sell > bcr3Buy) {
+        score -= 10; // Operator Offloading penalty
+      }
 
       // ── Hydro Dry Season Seasonality ─────────────────────────────────────
       const hydroSeason = getHydroSeasonality(s.sector || uInfo?.sector || s.sectorName || '');
@@ -432,6 +444,9 @@ export default function PredictorHub({
         corporate_action_flag: hasCatalyst ? 'corporate_catalyst' : null,
         catalystLabel: hasCatalyst ? catalystLabel : null,
         composite_score: compositeScore,
+        bcr3BuyPct: bcr3Buy,
+        bcr3SellPct: bcr3Sell,
+        adSignal: brokerInfo?.adSignal || 'Neutral',
         reasoning
       };
     });
@@ -444,6 +459,9 @@ export default function PredictorHub({
   const fetchPredictionData = React.useCallback(async () => {
     setLoading(true);
     const proxyBase = getProxyBase();
+
+    // Trigger parallel market-wide broker summary map hydration
+    fetchMarketWideBrokerSummaryMap(1).catch(() => null);
 
     try {
       // 1. Fetch Index Prediction
