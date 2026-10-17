@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 import { MEROSHARE_DP_LIST, pullMeroShareLivePortfolio } from '../services/meroShareService';
-import { sanitizeMeroShareHoldings, stripHoldingForStorage } from '../utils/calculations';
+import { sanitizeMeroShareHoldings, stripHoldingForStorage, safeStorageSetItem } from '../utils/calculations';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
@@ -39,7 +39,7 @@ function loadLocalAccounts(userId = null) {
 }
 
 function saveLocalAccounts(accounts) {
-  localStorage.setItem(BULK_ACCOUNTS_KEY, JSON.stringify(accounts));
+  safeStorageSetItem(BULK_ACCOUNTS_KEY, accounts);
 }
 
 export default function AccountManager({ userId = 'guest_local' }) {
@@ -164,7 +164,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
         const saved = localStorage.getItem(profileKey) || '[]';
         const existingProfiles = JSON.parse(saved);
         updatedProfiles = [...existingProfiles.filter(p => p.boid !== boid), newAccount];
-        localStorage.setItem(profileKey, JSON.stringify(updatedProfiles));
+        safeStorageSetItem(profileKey, JSON.stringify(updatedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
       } catch (localErr) {
@@ -252,7 +252,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
         const saved = localStorage.getItem(profileKey) || '[]';
         const existingProfiles = JSON.parse(saved);
         const updatedProfiles = existingProfiles.map(p => p.boid === acc.boid || p.id === acc.id ? updatedAccount : p);
-        localStorage.setItem(profileKey, JSON.stringify(updatedProfiles));
+        safeStorageSetItem(profileKey, JSON.stringify(updatedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
 
@@ -294,7 +294,7 @@ export default function AccountManager({ userId = 'guest_local' }) {
         if (acc) {
           const existing = JSON.parse(saved);
           filteredProfiles = existing.filter(p => p.boid !== acc.boid);
-          localStorage.setItem(profileKey, JSON.stringify(filteredProfiles));
+          safeStorageSetItem(profileKey, JSON.stringify(filteredProfiles));
           window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(filteredProfiles) }));
           window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: filteredProfiles } }));
         }

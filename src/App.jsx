@@ -34,6 +34,10 @@ import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIn
 import { getDetailedMarketStatus, clearDynamicMarketHalt } from './utils/nepseCalendar';
 // MOCK_DATA_DISABLED — mock data is permanently disabled; import removed.
 import { onAuthChange, signOut, checkRedirectResult, fetchUserDataFromCloud, syncUserDataToCloud, getLocalSession } from './utils/firebase';
+import { safeStorageSetItem, purgeDispensableStorageCaches } from './utils/calculations';
+
+// Automatically purge stale transient caches if localStorage is congested to prevent QuotaExceededError
+try { purgeDispensableStorageCaches(); } catch (_) {}
 
 // Real data only - No mock fallback
 const _cachedStocks = getCachedStocks() || [];
@@ -197,7 +201,7 @@ function AppInner() {
 
   useEffect(() => {
     document.body.className = `font-scale-${fontScale}`;
-    localStorage.setItem('nepse_font_scale', fontScale);
+    safeStorageSetItem('nepse_font_scale', fontScale);
   }, [fontScale]);
 
   // Safety timeout: if auth state hasn't resolved within 1.5s, unblock immediately so screen is never stuck
@@ -297,7 +301,7 @@ function AppInner() {
             }
           });
         }
-        localStorage.setItem(bulkAccountsKey, JSON.stringify(mergedBulk));
+        safeStorageSetItem(bulkAccountsKey, JSON.stringify(mergedBulk));
 
         // 3. Sync MeroShare Profiles for this specific user ID
         const existingProfilesRaw = localStorage.getItem(userProfileKey);
@@ -351,8 +355,8 @@ function AppInner() {
         });
 
         // Save merged profiles locally
-        localStorage.setItem(userProfileKey, JSON.stringify(mergedProfiles));
-        localStorage.setItem(bulkAccountsKey, JSON.stringify(mergedProfiles));
+        safeStorageSetItem(userProfileKey, JSON.stringify(mergedProfiles));
+        safeStorageSetItem(bulkAccountsKey, JSON.stringify(mergedProfiles));
         window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(mergedProfiles) }));
         window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles: mergedProfiles } }));
 
@@ -369,39 +373,39 @@ function AppInner() {
             }
           });
         }
-        localStorage.setItem(userTxKey, JSON.stringify(mergedTxs));
+        safeStorageSetItem(userTxKey, JSON.stringify(mergedTxs));
         window.dispatchEvent(new StorageEvent('storage', { key: userTxKey, newValue: JSON.stringify(mergedTxs) }));
 
         // 5. Restore Watchlist
         if (cloudWatchlist && Array.isArray(cloudWatchlist)) {
-          localStorage.setItem('nepse_user_watchlist', JSON.stringify(cloudWatchlist));
+          safeStorageSetItem('nepse_user_watchlist', JSON.stringify(cloudWatchlist));
         }
 
         // 6. Restore Trade Notes
         if (cloudTradeNotes && Array.isArray(cloudTradeNotes)) {
-          localStorage.setItem('nepse_trade_notes', JSON.stringify(cloudTradeNotes));
+          safeStorageSetItem('nepse_trade_notes', JSON.stringify(cloudTradeNotes));
         }
 
         // 7. Restore Stock Alerts
         if (cloudStockAlerts && Array.isArray(cloudStockAlerts)) {
-          localStorage.setItem('nepse_stock_alerts', JSON.stringify(cloudStockAlerts));
+          safeStorageSetItem('nepse_stock_alerts', JSON.stringify(cloudStockAlerts));
         }
 
         // 8. Restore Trade Journal
         if (cloudTradeJournal && Array.isArray(cloudTradeJournal)) {
-          localStorage.setItem('nepse_trade_journal', JSON.stringify(cloudTradeJournal));
+          safeStorageSetItem('nepse_trade_journal', JSON.stringify(cloudTradeJournal));
         }
 
         // 9. Restore Paper Trading Simulator State
         if (cloudPaperTrading) {
-          if (cloudPaperTrading.balance !== undefined) localStorage.setItem('nepse_paper_balance', cloudPaperTrading.balance.toString());
-          if (cloudPaperTrading.positions) localStorage.setItem('nepse_paper_positions', JSON.stringify(cloudPaperTrading.positions));
-          if (cloudPaperTrading.orders) localStorage.setItem('nepse_paper_orders', JSON.stringify(cloudPaperTrading.orders));
+          if (cloudPaperTrading.balance !== undefined) safeStorageSetItem('nepse_paper_balance', cloudPaperTrading.balance.toString());
+          if (cloudPaperTrading.positions) safeStorageSetItem('nepse_paper_positions', JSON.stringify(cloudPaperTrading.positions));
+          if (cloudPaperTrading.orders) safeStorageSetItem('nepse_paper_orders', JSON.stringify(cloudPaperTrading.orders));
         }
 
         // 10. Restore Credentials Vault
         if (cloudCredentials && Array.isArray(cloudCredentials)) {
-          localStorage.setItem('nepse_credentials_vault', JSON.stringify(cloudCredentials));
+          safeStorageSetItem('nepse_credentials_vault', JSON.stringify(cloudCredentials));
         }
 
         // Broadcast dedicated custom event so active tabs (Portfolio, MeroShareHub) immediately refresh state
@@ -1237,9 +1241,9 @@ function AppInner() {
                         const mergedWatchlist = [...new Set([...currentWatchlist, ...pulledWatchlist])];
 
                         // 3. Save locally
-                        localStorage.setItem(userProfileKey, JSON.stringify(mergedProfs));
-                        localStorage.setItem(userTxKey, JSON.stringify(mergedTxs));
-                        localStorage.setItem('nepse_user_watchlist', JSON.stringify(mergedWatchlist));
+                        safeStorageSetItem(userProfileKey, JSON.stringify(mergedProfs));
+                        safeStorageSetItem(userTxKey, JSON.stringify(mergedTxs));
+                        safeStorageSetItem('nepse_user_watchlist', JSON.stringify(mergedWatchlist));
 
                         // 4. Push combined snapshot to cloud
                         await syncUserDataToCloud(uid, {

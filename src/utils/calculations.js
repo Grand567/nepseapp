@@ -636,10 +636,51 @@ export function getCustomWaccMap(userId = 'local', accountId = '') {
 }
 
 /**
+ * Purges dispensable transient caches (chart histories, floorsheets, fundamentals, news)
+ * to reclaim megabytes of browser storage space without losing critical user profiles/transactions.
+ */
+export function purgeDispensableStorageCaches() {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 0;
+  let purgedCount = 0;
+  try {
+    const expendable = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (
+        k.includes('cache') ||
+        k.includes('chart') ||
+        k.includes('history') ||
+        k.includes('hist_') ||
+        k.includes('floorsheet') ||
+        k.includes('broker') ||
+        k.includes('fundamentals') ||
+        k.includes('news') ||
+        k.includes('smart_alert') ||
+        k.includes('lru_ring') ||
+        k.startsWith('temp_') ||
+        k === 'prime_pick_plan_cache' ||
+        k === 'nepse_paper_orders'
+      ) {
+        expendable.push(k);
+      }
+    }
+    expendable.forEach(k => {
+      try {
+        localStorage.removeItem(k);
+        purgedCount++;
+      } catch (_) {}
+    });
+  } catch (_) {}
+  return purgedCount;
+}
+
+/**
  * Safely saves data to localStorage, catching QuotaExceededError and automatically
  * purging non-critical caches (chart history, news, prime pick cache) to prevent crashes.
  */
 export function safeStorageSetItem(key, value) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
   const str = typeof value === 'string' ? value : JSON.stringify(value);
   try {
     localStorage.setItem(key, str);
@@ -647,25 +688,7 @@ export function safeStorageSetItem(key, value) {
   } catch (err) {
     console.warn(`[SafeStorage] Quota exceeded for '${key}'. Purging dispensable caches...`);
     try {
-      const expendable = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k) continue;
-        if (
-          k.includes('cache') ||
-          k.includes('chart') ||
-          k.includes('history') ||
-          k.includes('news') ||
-          k.startsWith('temp_') ||
-          k === 'prime_pick_plan_cache' ||
-          k === 'nepse_paper_orders'
-        ) {
-          expendable.push(k);
-        }
-      }
-      expendable.forEach(k => {
-        try { localStorage.removeItem(k); } catch (_) {}
-      });
+      purgeDispensableStorageCaches();
       localStorage.setItem(key, str);
       return true;
     } catch (innerErr) {

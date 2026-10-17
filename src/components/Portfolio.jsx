@@ -398,7 +398,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
           }
         });
         if (changed) {
-          localStorage.setItem(profileKey, JSON.stringify(merged));
+          safeStorageSetItem(profileKey, JSON.stringify(merged));
           setMeroshareProfiles(merged);
         }
       } catch (_) {}
@@ -569,7 +569,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
             holdings: parsedHoldings,
             lastSyncedAt: Date.now()
           } : a);
-          localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedBulk));
+          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', updatedBulk);
         }
       } catch (_) {}
 
@@ -753,7 +753,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
 
   const saveTransactions = (newTxs) => {
     setTransactions(newTxs);
-    localStorage.setItem(txKey, JSON.stringify(newTxs));
+    safeStorageSetItem(txKey, JSON.stringify(newTxs));
     // Cloud Sync
     try {
       syncUserDataToCloud(userId, { transactions: newTxs }, userEmail);

@@ -17,7 +17,7 @@ import {
   applyIpoDirect
 } from '../services/meroShareService';
 import { getProxyBase } from '../utils/liveData';
-import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap, calculateIpoAllotmentProbability } from '../utils/calculations';
+import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap, calculateIpoAllotmentProbability, safeStorageSetItem, purgeDispensableStorageCaches } from '../utils/calculations';
 import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
 
@@ -274,6 +274,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
     const syncKey    = `nepse_hub_${userId}_synced_ids`;
 
     const loadAndMerge = () => {
+      try { purgeDispensableStorageCaches(); } catch (_) {}
       const saved = localStorage.getItem(profileKey);
       let parsed = [];
       try { 
@@ -340,8 +341,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
 
       if (changed || (parsed.length > 0 && !saved)) {
         try {
-          localStorage.setItem(profileKey, JSON.stringify(parsed));
-          localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(parsed));
+          safeStorageSetItem(profileKey, parsed);
+          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', parsed);
         } catch (_) {}
       }
 
@@ -361,8 +362,8 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
               const cloudAccs = cloudData.profiles || cloudData.bulkAccounts || [];
               if (cloudAccs.length > 0) {
                 const sanitized = cloudAccs.map(p => ({ ...p, holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid) }));
-                localStorage.setItem(profileKey, JSON.stringify(sanitized));
-                localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(sanitized));
+                safeStorageSetItem(profileKey, sanitized);
+                safeStorageSetItem('nepse_hub_bulk_ipo_accounts', sanitized);
                 setProfiles(sanitized);
                 setSelectedProfileId(sanitized[0].id);
               }
@@ -524,11 +525,13 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   const saveProfilesToStorage = (newProfiles) => {
     setProfiles(newProfiles);
     const profileKey = `nepse_hub_${userId}_profiles`;
-    localStorage.setItem(profileKey, JSON.stringify(newProfiles));
-    localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(newProfiles));
+    safeStorageSetItem(profileKey, newProfiles);
+    safeStorageSetItem('nepse_hub_bulk_ipo_accounts', newProfiles);
     // Dispatch storage event so Portfolio tab and other components pick up the change immediately
-    window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
-    window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
+      window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
+    } catch (_) {}
     // Cloud Sync
     try {
       syncUserDataToCloud(userId, { profiles: newProfiles, bulkAccounts: newProfiles }, userEmail);
@@ -539,7 +542,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   useEffect(() => {
     if (!userId) return;
     const syncKey = `nepse_hub_${userId}_synced_ids`;
-    localStorage.setItem(syncKey, JSON.stringify(syncedProfileIds));
+    safeStorageSetItem(syncKey, syncedProfileIds);
   }, [syncedProfileIds, userId]);
 
   const validateAccountFields = (fields) => {
@@ -1264,7 +1267,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
             holdings: storedHoldings,
             lastSyncedAt: Date.now()
           } : a);
-          localStorage.setItem('nepse_hub_bulk_ipo_accounts', JSON.stringify(updatedBulk));
+          safeStorageSetItem('nepse_hub_bulk_ipo_accounts', updatedBulk);
         }
       } catch (_) {}
 
@@ -1984,7 +1987,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
                     const val = e.target.value.trim();
                     if (typeof localStorage !== 'undefined') {
                       if (val) {
-                        localStorage.setItem('custom_proxy_base', val);
+                        safeStorageSetItem('custom_proxy_base', val);
                       } else {
                         localStorage.removeItem('custom_proxy_base');
                       }
