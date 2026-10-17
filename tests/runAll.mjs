@@ -20,11 +20,13 @@ const testFiles = [
   'testTelegramExitAndTracking.mjs',
   'auditCrossModuleConsistency.test.mjs',
   'lBatchShareHubParity.test.mjs',
-  'stockyanAndFundamentalsParity.test.mjs'
+  'stockyanAndFundamentalsParity.test.mjs',
+  'testInstitutionalConfluencePipeline.mjs',
+  'testDynamicCapitalEngine.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (16 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (18 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

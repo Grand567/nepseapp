@@ -43,6 +43,7 @@ import {
   deleteWatchlistAlertConfig
 } from '../utils/watchlistAlerts';
 import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A2
+import { CapitalRiskSimulatorBar } from './CapitalRiskSimulatorBar';
 import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
 import { classifySector } from '../utils/fundamentals';
 import { evaluateOpenSignals, getSignalStats } from '../services/signalTracker';
@@ -2832,7 +2833,10 @@ function Dashboard({
         );
       })()}
 
-
+      {/* Dynamic Capital & Risk Simulator Bar */}
+      <div className="mb-4">
+        <CapitalRiskSimulatorBar />
+      </div>
 
       {/* ── 1. PROMINENT TOP SEARCH BAR (Decoupled 0ms Latency Component) ── */}
       <TopSearchBar

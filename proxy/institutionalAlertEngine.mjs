@@ -20,6 +20,14 @@ import { fileURLToPath } from 'url';
 import { getBrokerName } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { adToBs } from '../src/utils/bikramSambat.js';
+import {
+  calculateDynamicPositionSizing,
+  getCapitalTierConfig,
+  formatDualModeExecutionTicket,
+  getNepseBrokerCommissionRate,
+  DEFAULT_USER_CAPITAL,
+  NEPSE_FRICTION_FY2083
+} from '../src/utils/dynamicCapitalEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +46,8 @@ export const DEFAULT_FRICTION_CONSTANTS = {
   brokerCommissionRate: 0.0033, // 0.33% average tiered schedule
   sebonFeeRate: 0.00015,        // 0.015% per leg
   dpCharge: 25,                 // NPR 25 per leg
-  cgtRate: 0.075,               // 7.5% individual short-term capital gains tax (< 365 days)
+  cgtRate: 0.100,               // 10.0% FY 2083 short-term capital gains tax (<= 365 days)
+  cgtLongTermRate: 0.075,       // 7.5% FY 2083 long-term capital gains tax (> 365 days)
   slippageBufferRate: 0.0045    // 0.45% on entry/exit (2082 Bylaws ±15% volatility adjusted)
 };
 
@@ -92,7 +101,9 @@ export function saveMacroConfig(partial) {
 
 /**
  * Determines current Macro Regime and Seasonal Hydrology Adjustments.
- * - IBOR > 6.5% or CD Ratio > 86% -> DEFENSIVE (Net RRR >= 3.0, defensive sectors only)
+ * - NRB Liquidity Gauges:
+ *   - CD Ratio: < 82% bullish expansion, > 87% defensive halt (> 86% tight)
+ *   - Interbank Rate (IBOR): 2.75%–3.0% lower bound expansion vs > 6.5% tight
  * - Dry-season (Mid-March to Mid-June / Chaitra–Jestha) for Hydros or pre-festive crunch:
  *   tighten vduRatio <= 0.45 and 5D retention >= 0.80.
  */
@@ -101,8 +112,10 @@ export function getMacroRegime(options = {}) {
   const ibor = Number(cfg.ibor ?? 5.4);
   const cdRatio = Number(cfg.cdRatio ?? 81.5);
   const isLiquidityTight = ibor > 6.5 || cdRatio > 86.0;
+  const isLiquidityBullish = cdRatio < 82.0 && (ibor >= 2.75 && ibor <= 4.5);
+  const isDefensiveHalt = cdRatio > 87.0 || ibor > 7.5;
 
-  let regime = cfg.regimeOverride || (isLiquidityTight ? 'DEFENSIVE' : (cfg.isBullishMarket ? 'BULLISH' : 'NEUTRAL'));
+  let regime = cfg.regimeOverride || (isDefensiveHalt || isLiquidityTight ? 'DEFENSIVE' : (isLiquidityBullish || cfg.isBullishMarket ? 'BULLISH' : 'NEUTRAL'));
 
   // Seasonal & Hydrology check
   const now = options.date ? new Date(options.date) : new Date();
@@ -122,15 +135,173 @@ export function getMacroRegime(options = {}) {
   return {
     regime,
     isDefensive: regime === 'DEFENSIVE',
+    isBullish: regime === 'BULLISH',
+    isDefensiveHalt,
     ibor,
     cdRatio,
     isLiquidityTight,
+    isLiquidityBullish,
     isHydroDrySeason,
     isPreFestiveCrunch,
     isSeasonalTightened,
     requiredNetRRR: regime === 'DEFENSIVE' ? 3.0 : 2.5,
     vduThreshold: isSeasonalTightened ? 0.45 : 0.55,
     rolling5DRetentionThreshold: isSeasonalTightened ? 0.80 : 0.75
+  };
+}
+
+/**
+ * Layer 1: Turnover-to-Float Sector Rotation Evaluator
+ * - Moderate Market Turnover (Rs. 4–7 Arba): Prioritizes Low-Paid-Up / Low-Float sectors (Finance, Microfinance, Small Hydropower, Trading)
+ * - High Market Turnover (Rs. 10–15+ Arba): Unlocks High-Float Heavyweights (Commercial Banks, Large Infrastructure, Life/Non-Life Insurance)
+ */
+export function evaluateTurnoverToFloatRotation({ marketTurnoverArba = 5.5, sector = 'Hydro Power' }) {
+  const arba = Number(marketTurnoverArba || 5.5);
+  const sec = String(sector || '').toLowerCase();
+
+  const isLowFloat = sec.includes('finance') || sec.includes('microfinance') || sec.includes('trading') || (sec.includes('hydro') && !sec.includes('mega'));
+  const isHighFloatHeavyweight = sec.includes('commercial') || sec.includes('life insurance') || sec.includes('non-life') || sec.includes('manufacturing') || sec.includes('investment');
+
+  if (arba >= 10.0) {
+    return {
+      passed: true,
+      turnoverTier: 'HIGH_TURNOVER_10_PLUS_ARBA',
+      prioritizedCategory: 'High-Float Heavyweights & Broad Sector Participation',
+      detail: `Exchange turnover (Rs. ${arba.toFixed(1)} Arba >= 10 Arba) unlocks high-float institutional heavyweights.`
+    };
+  } else if (arba >= 4.0 && arba < 10.0) {
+    const isFavored = isLowFloat || !isHighFloatHeavyweight;
+    return {
+      passed: isFavored,
+      turnoverTier: 'MODERATE_TURNOVER_4_TO_7_ARBA',
+      prioritizedCategory: 'Low-Paid-Up / Low-Float Momentum',
+      detail: isFavored
+        ? `Exchange turnover (Rs. ${arba.toFixed(1)} Arba) aligns with focused Low-Float / Low-Paid-Up momentum.`
+        : `Moderate turnover (Rs. ${arba.toFixed(1)} Arba) insufficient to sustain large-cap high-float heavyweights without liquidity drag.`
+    };
+  } else {
+    return {
+      passed: isLowFloat,
+      turnoverTier: 'LOW_TURNOVER_SUB_4_ARBA',
+      prioritizedCategory: 'Defensive Micro-Cap Cash Preservation',
+      detail: `Low market turnover (Rs. ${arba.toFixed(1)} Arba). Only compact low-float setups permitted.`
+    };
+  }
+}
+
+/**
+ * Layer 2: Sector-Specific Fundamental & Lock-In Trap Agent
+ * Vetoes setups failing sector fundamentals or entering 90-180 day promoter/MF lock-in supply cliffs.
+ */
+export function evaluateSectorFundamentalAndLockinTraps({
+  symbol = '',
+  sector = '',
+  fundamentals = {},
+  daysToLockInExpiry = null,
+  lockinType = 'promoter' // 'promoter' | 'mutual_fund'
+}) {
+  const traps = [];
+  const sec = String(sector || '').toLowerCase();
+  const f = fundamentals || {};
+
+  // 1. Promoter & Mutual Fund Lock-In Expiry Guard (90 to 180 Days)
+  if (daysToLockInExpiry !== null && daysToLockInExpiry !== undefined) {
+    const days = Number(daysToLockInExpiry);
+    if (days >= 0 && days <= 180) {
+      traps.push({
+        code: 'VETO_LOCKIN_EXPIRY_CLIFF',
+        reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in expires in ${days} days (Blackout: 90-180 days to prevent pre-unlock institutional front-running)`
+      });
+    }
+  }
+
+  // 2. Commercial & Development Banks:
+  if (sec.includes('bank')) {
+    const npl = Number(f.npl ?? f.nonPerformingLoan ?? 0);
+    const distEps = Number(f.distributableEps ?? f.distributableProfit ?? 16);
+    if (npl > 4.5) {
+      traps.push({
+        code: 'VETO_BANK_HIGH_NPL',
+        reason: `Asset Quality Stress: Bank NPL is ${npl.toFixed(2)}% (Max regulatory threshold: 4.5%)`
+      });
+    }
+    if (distEps < 0) {
+      traps.push({
+        code: 'VETO_BANK_NEGATIVE_DISTRIBUTABLE',
+        reason: `Capital Impairment: Bank distributable EPS is negative (Rs. ${distEps.toFixed(2)})`
+      });
+    }
+  }
+
+  // 3. Microfinance (Laghubitta):
+  if (sec.includes('microfinance')) {
+    const npl = Number(f.npl ?? 0);
+    const epsGrowth = Number(f.epsYoYGrowth ?? f.epsGrowth ?? 26);
+    if (npl > 5.0) {
+      traps.push({
+        code: 'VETO_MICROFINANCE_ASSET_QUALITY',
+        reason: `Microfinance NPL Stress: NPL is ${npl.toFixed(2)}% (> 5.0% NRB supervisory watchlist)`
+      });
+    }
+    if (epsGrowth <= 0) {
+      traps.push({
+        code: 'VETO_MICROFINANCE_DECLINING_GROWTH',
+        reason: `Microfinance Contraction: EPS YoY growth is ${epsGrowth.toFixed(1)}% (<= 0%)`
+      });
+    }
+  }
+
+  // 4. Hydropower:
+  if (sec.includes('hydro')) {
+    const codCompleted = f.codCompleted !== undefined ? Boolean(f.codCompleted) : true;
+    const costPerMW = Number(f.costPerMW ?? f.perMwCost ?? 18);
+    const bv = Number(f.bookValue ?? f.nav ?? 115);
+
+    if (!codCompleted) {
+      traps.push({
+        code: 'VETO_HYDRO_COD_INCOMPLETE',
+        reason: 'Hydropower Execution Risk: COD (Commercial Operation Date) not completed or under prolonged delay'
+      });
+    }
+    if (costPerMW > 22.0) {
+      traps.push({
+        code: 'VETO_HYDRO_EXCESSIVE_CAPEX',
+        reason: `Hydropower Capex Inflation: Cost per MW is Rs. ${costPerMW.toFixed(1)} Cr (> Rs. 22 Cr/MW ceiling)`
+      });
+    }
+    if (bv < 100.0) {
+      traps.push({
+        code: 'VETO_HYDRO_SUB_PAR_BOOK_VALUE',
+        reason: `Eroded Equity Base: Book Value is Rs. ${bv.toFixed(1)} (< Rs. 100 par value)`
+      });
+    }
+  }
+
+  // 5. Insurance (Life & Non-Life):
+  if (sec.includes('insurance')) {
+    const pe = Number(f.pe ?? f.peRatio ?? 22);
+    const invGrowth = Number(f.investmentBookGrowthQoQ ?? f.investmentGrowth ?? 5);
+
+    if (pe > 45.0) {
+      traps.push({
+        code: 'VETO_INSURANCE_OVERVALUATION',
+        reason: `Insurance Multiples Euphoria: P/E ratio is ${pe.toFixed(1)}x (> 45.0x ceiling)`
+      });
+    }
+    if (invGrowth < 0) {
+      traps.push({
+        code: 'VETO_INSURANCE_CONTRACTING_BOOK',
+        reason: `Insurance Book Contraction: Investment portfolio shrank ${invGrowth.toFixed(1)}% QoQ`
+      });
+    }
+  }
+
+  const passed = traps.length === 0;
+  return {
+    passed,
+    trapCount: traps.length,
+    traps,
+    detail: passed ? 'Sector fundamentals and lock-in schedule verified' : traps.map(t => t.reason).join(' | ')
   };
 }
 
@@ -148,14 +319,15 @@ export function calculateNetExpectancyAndSizing({
   atr14 = null,
   medianDailyTurnover20D = 7500000,
   friction = DEFAULT_FRICTION_CONSTANTS,
-  requiredNetRRR = 2.5
+  requiredNetRRR = 2.5,
+  userCapital = null,
+  isLongTerm = false
 }) {
   const entry = Number(entryPrice || 0);
   if (entry <= 0) return null;
 
   // 1. Stop-Loss Calibration:
   // Stop_Loss = max(Nearest_Structural_Support, Entry_Price - (1.75 * ATR_14))
-  // Capped at maximum -7.5% raw distance from entry
   const atr = Number(atr14 || entry * 0.035);
   const atrStop = entry - (1.75 * atr);
   const supportStop = nearestSupport ? Number(nearestSupport) : atrStop;
@@ -172,58 +344,58 @@ export function calculateNetExpectancyAndSizing({
   const t1 = Number(target1 || entry * 1.12);
   const t2 = Number(target2 || entry * 1.20);
 
-  // 2. NEPSE Friction Constants
+  const activeCapital = Number(userCapital || DEFAULT_USER_CAPITAL);
+
+  // 2. Pure DynamicCapitalEngine Call
+  const dynSizing = calculateDynamicPositionSizing({
+    userCapital: activeCapital,
+    entryPrice: entry,
+    stopLoss: finalStopLoss,
+    target1: t1,
+    target2: t2,
+    median20DayTurnover: medianDailyTurnover20D,
+    isLongTerm,
+    requiredNetRRR
+  });
+
+  // Calculate baseline per-share friction for legacy reporting
   const brokerRate = friction.brokerCommissionRate ?? 0.0033;
   const sebonRate = friction.sebonFeeRate ?? 0.00015;
   const dpCharge = friction.dpCharge ?? 25;
-  const cgtRate = friction.cgtRate ?? 0.075;
+  const cgtRate = isLongTerm ? 0.075 : (friction.cgtRate ?? 0.100);
   const slipRate = friction.slippageBufferRate ?? 0.0045;
 
-  // Round trip fees per share (broker + sebon + slippage on buy & sell + amortized DP fee on 100 shares)
   const buyCostFriction = entry * (brokerRate + sebonRate + slipRate);
   const sellProceedsFriction = t1 * (brokerRate + sebonRate + slipRate);
-  const dpPerShare = (dpCharge * 2) / 100; // NPR 50 roundtrip amortized over standard 100 shares lot
+  const dpPerShare = (dpCharge * 2) / 100;
   const roundTripFeesPerShare = +(buyCostFriction + sellProceedsFriction + dpPerShare).toFixed(2);
 
-  // Net Profit & Net Loss per share
   const grossProfitPerShare = t1 - entry;
   const netProfitPerShare = +(((grossProfitPerShare * (1 - cgtRate))) - roundTripFeesPerShare).toFixed(2);
   const grossLossPerShare = entry - finalStopLoss;
   const netLossPerShare = +(grossLossPerShare + roundTripFeesPerShare).toFixed(2);
 
-  const netRRR = netLossPerShare > 0 ? +(netProfitPerShare / netLossPerShare).toFixed(2) : 0;
-  const isRrrAcceptable = netRRR >= requiredNetRRR;
-
-  // 3. Dynamic Position Sizing (1% Portfolio Risk Rule per 1 Lakh Capital)
-  // Max loss allowed on 1 Lakh = NPR 1,000
-  const qtyPer1Lakh = Math.max(0, Math.floor(1000 / Math.max(1, netLossPerShare)));
-  const capitalDeployed = Math.round(qtyPer1Lakh * entry);
-
-  // 5% Median Turnover Participation Cap
-  const maxSafeOrderValue = Math.round(0.05 * Math.max(0, Number(medianDailyTurnover20D || 0)));
-  const turnoverLakhs = +((medianDailyTurnover20D / 100000).toFixed(1));
-  const safeOrderLakhs = +((maxSafeOrderValue / 100000).toFixed(1));
-
   return {
+    ...dynSizing,
     entryPrice: entry,
     stopLoss: finalStopLoss,
     target1: t1,
     target2: t2,
-    slPct: +(((entry - finalStopLoss) / entry) * 100).toFixed(1),
-    t1Pct: +(((t1 - entry) / entry) * 100).toFixed(1),
-    t2Pct: +(((t2 - entry) / entry) * 100).toFixed(1),
+    slPct: dynSizing?.slPct ?? +(((entry - finalStopLoss) / entry) * 100).toFixed(1),
+    t1Pct: dynSizing?.t1Pct ?? +(((t1 - entry) / entry) * 100).toFixed(1),
+    t2Pct: dynSizing?.t2Pct ?? +(((t2 - entry) / entry) * 100).toFixed(1),
     roundTripFeesPerShare,
     netProfitPerShare,
     netLossPerShare,
-    netRRR,
+    netRRR: dynSizing?.netRRR ?? (netLossPerShare > 0 ? +(netProfitPerShare / netLossPerShare).toFixed(2) : 0),
     requiredNetRRR,
-    isRrrAcceptable,
-    qtyPer1Lakh,
-    capitalDeployed,
+    isRrrAcceptable: dynSizing?.isRrrAcceptable ?? true,
+    qtyPer1Lakh: dynSizing?.kittaPer1Lakh ?? Math.max(10, Math.floor(1000 / Math.max(1, netLossPerShare))),
+    capitalDeployed: dynSizing?.deployedCapital ?? 0,
     medianDailyTurnover20D,
-    turnoverLakhs,
-    maxSafeOrderValue,
-    safeOrderLakhs
+    turnoverLakhs: +((medianDailyTurnover20D / 100000).toFixed(1)),
+    maxSafeOrderValue: dynSizing?.maxLiquiditySafeOrder ?? Math.round(0.05 * medianDailyTurnover20D),
+    safeOrderLakhs: dynSizing?.safeOrderLakhs ?? +((0.05 * medianDailyTurnover20D / 100000).toFixed(1))
   };
 }
 
@@ -531,7 +703,12 @@ export function evaluateVetoFilters({
   nepseIndexChangePct = 0,
   nptMinutes = null,
   isLiveMarket = true,
-  bypassTimingGate = false // allows EOD testing
+  bypassTimingGate = false, // allows EOD testing
+  symbol = '',
+  sector = '',
+  fundamentals = null,
+  daysToLockInExpiry = null,
+  lockinType = 'promoter'
 }) {
   const currentLtp = Number(ltp || 0);
   const prevClose = Number(previousClose || (currentLtp > 0 ? currentLtp : 0));
@@ -620,6 +797,20 @@ export function evaluateVetoFilters({
     }
   }
 
+  // VETO 7: Sector-Specific Fundamental & Lock-In Trap Agent (Layer 2)
+  if (sector || fundamentals || daysToLockInExpiry !== null) {
+    const secEval = evaluateSectorFundamentalAndLockinTraps({
+      symbol,
+      sector,
+      fundamentals: fundamentals || {},
+      daysToLockInExpiry,
+      lockinType
+    });
+    if (!secEval.passed) {
+      secEval.traps.forEach(t => vetoTriggers.push(t));
+    }
+  }
+
   const isVetoed = vetoTriggers.length > 0;
 
   return {
@@ -677,7 +868,13 @@ export function evaluateInstitutionalAlert({
   macroOptions = {},
   nptMinutes = null,
   isLiveMarket = true,
-  bypassTimingGate = false
+  bypassTimingGate = false,
+  userCapital = null,
+  isLongTerm = false,
+  marketTurnoverArba = 5.5,
+  fundamentals = null,
+  daysToLockInExpiry = null,
+  lockinType = 'promoter'
 }) {
   const sym = String(symbol || 'STOCK').toUpperCase().trim();
   const currentPrice = Number(ltp || 0);
@@ -690,6 +887,9 @@ export function evaluateInstitutionalAlert({
   if (macro.isDefensive) {
     isDefensiveSectorAllowed = DEFENSIVE_SECTORS.some(ds => sector.toLowerCase().includes(ds.toLowerCase()));
   }
+
+  // Layer 1: Turnover-to-Float Sector Rotation check
+  const rotation = evaluateTurnoverToFloatRotation({ marketTurnoverArba, sector });
 
   // 2. Evaluate Pillar 1
   const pillar1 = evaluatePillar1_WyckoffVduVcp({
@@ -740,7 +940,7 @@ export function evaluateInstitutionalAlert({
   const passedPillarsCount = [pillar1.passed, pillar2.passed, pillar3.passed, pillar4.passed].filter(Boolean).length;
   const confluenceScore = Math.round((passedPillarsCount / 4) * 100);
 
-  // 6. Evaluate Veto Filters
+  // 6. Evaluate Veto Filters (including Layer 2 Sector Fundamental & Lock-in Traps)
   const veto = evaluateVetoFilters({
     ltp: currentPrice,
     previousClose,
@@ -755,17 +955,24 @@ export function evaluateInstitutionalAlert({
     nepseIndexChangePct,
     nptMinutes,
     isLiveMarket,
-    bypassTimingGate
+    bypassTimingGate,
+    symbol: sym,
+    sector,
+    fundamentals,
+    daysToLockInExpiry,
+    lockinType
   });
 
-  // 7. Calculate Friction-Adjusted RRR & Position Sizing
+  // 7. Calculate Friction-Adjusted RRR & Dynamic Position Sizing (Layer 5)
   const sizing = calculateNetExpectancyAndSizing({
     entryPrice: currentPrice,
     target1,
     target2,
     nearestSupport,
     medianDailyTurnover20D,
-    requiredNetRRR: macro.requiredNetRRR
+    requiredNetRRR: macro.requiredNetRRR,
+    userCapital: userCapital || DEFAULT_USER_CAPITAL,
+    isLongTerm
   });
 
   // Final Qualification Decision:
@@ -784,34 +991,21 @@ export function evaluateInstitutionalAlert({
     disqualificationReason = `Net Post-Tax RRR ${sizing?.netRRR}:1 is below required threshold ${macro.requiredNetRRR}:1`;
   }
 
-  // 8. Generate Telegram Execution Ticket Payload
+  // 8. Generate Telegram Execution Ticket Payload (Dual-Mode: Personal Portfolio + Broadcast Multiplier)
   const ticketPayload = isQualified ? formatInstitutionalExecutionTicket({
     symbol: sym,
     sector,
     sectorRank: pillar4.sectorRank10D,
     regime: macro.regime,
-    entryPrice: currentPrice,
-    entryLow: Math.floor(currentPrice * 0.995),
-    entryHigh: Math.ceil(currentPrice * 1.015),
-    maxChasePrice: +(currentPrice * 1.025).toFixed(1),
-    stopLoss: sizing.stopLoss,
-    slPct: sizing.slPct,
-    target1: sizing.target1,
-    t1Pct: sizing.t1Pct,
-    target2: sizing.target2,
-    t2Pct: sizing.t2Pct,
-    netRRR: sizing.netRRR,
-    qtyPer1Lakh: sizing.qtyPer1Lakh,
-    capitalDeployed: sizing.capitalDeployed,
-    turnoverLakhs: sizing.turnoverLakhs,
-    safeOrderLakhs: sizing.safeOrderLakhs,
+    sizing,
     score: confluenceScore,
     vduRatio: pillar1.vduRatio,
     retentionPct: pillar2.rolling5DRetentionPct,
     atsr: pillar2.atsr,
     t3VolRatio: veto.t3VolRatio,
     dayGainPct: veto.pChange,
-    circuitBufferPct: veto.distanceToCircuitPct
+    circuitBufferPct: veto.distanceToCircuitPct,
+    userCapital: sizing?.userCapital || DEFAULT_USER_CAPITAL
   }) : null;
 
   return {
@@ -827,6 +1021,7 @@ export function evaluateInstitutionalAlert({
     veto,
     sizing,
     macro,
+    rotation,
     ticketPayload
   };
 }
@@ -835,12 +1030,30 @@ export function evaluateInstitutionalAlert({
 
 /**
  * Formats the exact Module 5 Institutional Execution Ticket Payload for Telegram
+ * Employs Dual-Mode Formatting (Personal Portfolio + Universal Multiplier)
  */
 export function formatInstitutionalExecutionTicket(d) {
   const sym = d.symbol;
   const sector = d.sector || 'Hydropower';
   const rank = d.sectorRank ?? 2;
   const regime = d.regime ? (d.regime.charAt(0).toUpperCase() + d.regime.slice(1).toLowerCase()) : 'Neutral';
+
+  // If sizing object is present, format via pure dual-mode engine
+  if (d.sizing && d.sizing.userCapital) {
+    return formatDualModeExecutionTicket({
+      symbol: sym,
+      sector,
+      sectorRank: rank,
+      regime,
+      sizing: d.sizing,
+      vduRatio: d.vduRatio ?? 0.44,
+      rolling5DRetentionPct: d.retentionPct ?? d.rolling5DRetentionPct ?? 84,
+      atsr: d.atsr ?? 3.76,
+      dayGainPct: d.dayGainPct ?? 0,
+      circuitBufferPct: d.circuitBufferPct ?? 13.04,
+      t3VolRatio: d.t3VolRatio ?? 0.8
+    });
+  }
 
   const eLow = d.entryLow || Math.floor(d.entryPrice * 0.995);
   const eHigh = d.entryHigh || Math.ceil(d.entryPrice * 1.015);

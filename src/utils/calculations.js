@@ -136,20 +136,19 @@ export function calculateDividendYield(cashDivPerShare, ltp) {
   return Number(((cashDivPerShare / ltp) * 100).toFixed(2));
 }
 
+export function getNepseBrokerCommissionRate(orderAmount) {
+  const amt = Number(orderAmount || 0);
+  if (amt <= 50000) return 0.0036;       // 0.36% (<= Rs 50,000)
+  if (amt <= 500000) return 0.0033;      // 0.33% (Rs 50,001 - Rs 500,000)
+  if (amt <= 2000000) return 0.0031;     // 0.31% (Rs 500,001 - Rs 2,000,000)
+  if (amt <= 10000000) return 0.0027;    // 0.27% (Rs 2,000,001 - Rs 10,000,000)
+  return 0.0024;                         // 0.24% (> Rs 10,000,000)
+}
+
 export function calculateBrokerCommission(amount) {
   if (amount <= 0) return 0;
-  let commission = 0;
-  if (amount <= 50000) {
-    commission = amount * 0.0036;
-  } else if (amount <= 500000) {
-    commission = amount * 0.0033;
-  } else if (amount <= 2000000) {
-    commission = amount * 0.0031;
-  } else if (amount <= 10000000) {
-    commission = amount * 0.0027;
-  } else {
-    commission = amount * 0.0024;
-  }
+  const rate = getNepseBrokerCommissionRate(amount);
+  const commission = amount * rate;
   return +Math.max(10, commission).toFixed(2);
 }
 
@@ -194,7 +193,7 @@ export function calculateBuyDetails(quantity, price) {
  * @param {number} buyPriceWacc - Purchase price per share (WACC)
  * @param {string} holdingType - 'short' (<=365 days), 'long' (>365 days), or 'institutional'
  */
-export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingTypeOrPurchaseDate = 'short', sellDate = new Date()) {
+export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingTypeOrPurchaseDate = 'short', sellDate = new Date(), options = {}) {
   const sellValue = quantity * sellPrice;
   const commission = calculateBrokerCommission(sellValue);
   const sebonFee = calculateSebonFee(sellValue);
@@ -229,12 +228,19 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
   }
 
   // Capital Gains Tax (CGT) per SEBON & Nepal Income Tax Act (Section 95Ka):
-  // Individual Short-Term (<= 365 days): 7.5% (Final Withholding Tax)
-  // Individual Long-Term (> 365 days): 5.0% (Final Withholding Tax)
-  // Institutional / Corporate: 10.0%
+  // Finance Act 2083: Short-Term 10.0%, Long-Term 7.5%
+  // Legacy / Baseline: Short-Term 7.5%, Long-Term 5.0%, Corporate 10.0%
   let cgtRate = 0.075; // Default short-term individual (7.5%)
-  if (isInstitutional) cgtRate = 0.10;
-  else if (isLongTerm) cgtRate = 0.05;
+  if (options && options.financeAct2083) {
+    cgtRate = isLongTerm ? 0.075 : 0.100;
+  } else if (isInstitutional) {
+    cgtRate = 0.10;
+  } else if (isLongTerm) {
+    cgtRate = 0.05;
+  }
+  if (options && options.cgtRate !== undefined) {
+    cgtRate = Number(options.cgtRate);
+  }
 
   const taxableProfit = Math.max(0, netProfitBase);
   const cgt = taxableProfit * cgtRate;

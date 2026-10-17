@@ -3,6 +3,7 @@ import {
   Bell, CheckCircle2, Shield, TrendingUp, AlertTriangle, X,
   ArrowUpRight, Share2, Copy, ExternalLink, Activity, Target, Lock, Zap
 } from 'lucide-react';
+import { getUserConfiguredCapital, calculateDynamicPositionSizing } from '../utils/dynamicCapitalEngine';
 
 export interface SmartAlertData {
   id?: string;
@@ -209,6 +210,64 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
             <span className="text-slate-300 font-medium">Asymmetric Risk-Reward</span>
             <span className="text-emerald-400 font-bold font-mono">1 : {rr}</span>
           </div>
+
+          {/* Dynamic Capital & Position Sizing Section */}
+          {(() => {
+            const userCap = getUserConfiguredCapital();
+            const dynSizing = calculateDynamicPositionSizing({
+              userCapital: userCap,
+              entryPrice: ltp,
+              stopLoss,
+              target1,
+              target2
+            });
+            if (!dynSizing) return null;
+            return (
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-indigo-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 text-indigo-300 font-bold">
+                    <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Dynamic Capital Allocation ({dynSizing.tierName})</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                    Rs. {userCap.toLocaleString()} Portfolio
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Recommended Order</span>
+                    <span className="text-sm font-black font-mono text-white">
+                      {dynSizing.finalKitta} Kitta
+                    </span>
+                    <span className="text-[10px] text-slate-500 block">
+                      Deploy: Rs. {dynSizing.deployedCapital.toLocaleString()} ({dynSizing.capitalAllocationPct}%)
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Max Risk &amp; Fee Tier</span>
+                    <span className="text-sm font-black font-mono text-rose-400">
+                      Rs. {dynSizing.actualRiskRupees.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-cyan-400 font-mono block">
+                      Fee: {dynSizing.commissionTierText} | CGT: {dynSizing.cgtRateText}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-300 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80 flex items-center justify-between">
+                  <span>🎯 <b>Scale-Out:</b> Sell {dynSizing.scaleOutKitta} Kitta at T1</span>
+                  <span className="text-amber-300 font-mono">Move SL ➔ Rs. {dynSizing.breakevenStopLoss}</span>
+                </div>
+
+                <div className="text-[10px] text-slate-500 flex items-center justify-between font-mono pt-1">
+                  <span>🌐 Universal Multiplier:</span>
+                  <span className="text-slate-300 font-bold">{dynSizing.kittaPer1Lakh} Kitta per Rs. 1 Lakh</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Action Buttons */}

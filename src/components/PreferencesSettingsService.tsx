@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Settings, Trash2, Download, Upload, RefreshCw, CheckCircle2, Shield, Bell, 
-  Database, Smartphone, Lock, Plus, Key, Eye, EyeOff, AlertCircle, Clock
+  Database, Smartphone, Lock, Plus, Key, Eye, EyeOff, AlertCircle, Clock, Sliders, Coins
 } from 'lucide-react';
 import { clearAllCache } from '../utils/servicesApi';
 import { getWatchlist } from '../utils/watchlist';
 import { getCachedStocks, getProxyBase } from '../utils/liveData';
 import { StatCard, InfoBanner, Insight } from './ui';
+import { 
+  getUserConfiguredCapital, 
+  setUserConfiguredCapital, 
+  getCapitalTierConfig 
+} from '../utils/dynamicCapitalEngine';
 
 interface Props {
   initialTab?: 'credentials' | 'preferences' | 'system-health';
@@ -16,6 +21,7 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
   const [activeTab, setActiveTab] = useState<'credentials' | 'preferences' | 'system-health'>(initialTab);
   
   // App Preferences State
+  const [userCapital, setUserCapitalState] = useState(() => getUserConfiguredCapital());
   const [defaultTf, setDefaultTf] = useState(() => localStorage.getItem('nepse_default_tf') || '1M');
   const [dataSaver, setDataSaver] = useState(() => localStorage.getItem('nepse_data_saver') === 'true');
   const [audioAlerts, setAudioAlerts] = useState(() => localStorage.getItem('nepse_audio_alerts') === 'true');
@@ -397,6 +403,62 @@ export function PreferencesSettingsService({ initialTab = 'preferences' }: Props
       {/* ────────────────── 2. DESK PREFERENCES ────────────────── */}
       {activeTab === 'preferences' && (
         <div className="space-y-3">
+          {/* Active Portfolio Capital Configuration */}
+          <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                <Coins size={14} className="text-indigo-400" /> Active Portfolio Capital &amp; Risk Sizing
+              </h4>
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                {getCapitalTierConfig(userCapital).tierName}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Live updates all alert execution tickets, recommended kitta position sizing, broker commission brackets, and 1% portfolio risk caps.
+            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+              <div className="flex-1 flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-400">Rs.</span>
+                <input
+                  type="number"
+                  min="10000"
+                  step="5000"
+                  value={userCapital}
+                  onChange={(e) => {
+                    const next = Math.max(10000, Number(e.target.value) || 10000);
+                    setUserCapitalState(next);
+                    setUserConfiguredCapital(next);
+                  }}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-black font-mono text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                {[50000, 100000, 500000, 1000000].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => {
+                      setUserCapitalState(amt);
+                      setUserConfiguredCapital(amt);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold font-mono transition cursor-pointer ${
+                      userCapital === amt
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                    }`}
+                  >
+                    Rs. {amt >= 100000 ? `${amt / 100000}L` : `${amt / 1000}k`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] font-mono text-slate-400 border-t border-slate-800/80">
+              <div>Slots: <b className="text-white">{getCapitalTierConfig(userCapital).maxSlots}</b></div>
+              <div>Risk: <b className="text-rose-400">{(getCapitalTierConfig(userCapital).riskPerTradePct * 100).toFixed(2)}%</b></div>
+              <div>Slot Max: <b className="text-emerald-400">{(getCapitalTierConfig(userCapital).maxSlotAllocationPct * 100).toFixed(0)}%</b></div>
+            </div>
+          </div>
+
           {/* Default Timeframe */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 space-y-2">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">

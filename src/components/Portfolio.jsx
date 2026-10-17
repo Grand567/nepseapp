@@ -12,6 +12,7 @@ import { syncUserDataToCloud } from '../utils/firebase';
 import { pullMeroShareLivePortfolio, authenticateMeroShare, MEROSHARE_DP_LIST, pullMeroShareWaccBatch } from '../services/meroShareService';
 import { Capacitor } from '@capacitor/core';
 import { DEFAULT_AI_KEY, callGlmAi, generateNepseAiContent } from '../services/aiService';
+import { syncCapitalWithPortfolio } from '../utils/dynamicCapitalEngine';
 
 /**
  * Safe markdown renderer — only handles **bold** and newlines.
@@ -2368,9 +2369,33 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
               {formatRs(totalValue)}
             </div>
-            <div style={{ fontSize: 12, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)', fontWeight: 800, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 12, color: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)', fontWeight: 800, marginTop: 4, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: valuationMode === 'prevClose' ? 'var(--bull)' : valuationMode === 'ltp' ? '#38bdf8' : 'var(--primary-light)' }} />
               Active Feed: {valuationMode === 'prevClose' ? 'MeroShare Official (Previous Close)' : valuationMode === 'ltp' ? 'MeroShare Official (LTP)' : 'Live NEPSE Market'}
+              {totalValue > 10000 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    syncCapitalWithPortfolio(totalValue);
+                    setTelegramSyncMsg(`✅ Synced Rs. ${Math.round(totalValue).toLocaleString()} as Active Sizing Capital for Signals!`);
+                    setTimeout(() => setTelegramSyncMsg(''), 4000);
+                  }}
+                  style={{
+                    marginLeft: 6,
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    color: '#818cf8',
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                  title="Scale all smart alerts & execution tickets to your authentic portfolio value"
+                >
+                  ⚡ Sync Capital to Signals
+                </button>
+              )}
             </div>
           </div>
           
