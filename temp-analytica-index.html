@@ -370,7 +370,7 @@
       overflow-y: auto;
     }
 
-    /* Service Hub Grid & Tiles (StockYan Style) */
+    /* Service Hub Grid & Tiles (Drabyashree Style) */
     .service-section-header {
       display: flex;
       align-items: center;
@@ -462,7 +462,7 @@
       opacity: 0.85;
     }
 
-    /* Mobile Bottom Navigation Bar (StockYan DashboardScreen Parity) */
+    /* Mobile Bottom Navigation Bar (Drabyashree DashboardScreen Parity) */
     .mobile-bottom-nav {
       display: none;
       position: fixed;
@@ -571,7 +571,7 @@
         flex-direction: column-reverse !important;
         gap: 16px !important;
       }
-      /* 3-Column Services Hub Grid like StockYan.apk */
+      /* 3-Column Services Hub Grid like Drabyashree.apk */
       .service-tiles-grid {
         grid-template-columns: repeat(3, 1fr);
         gap: 8px;
@@ -669,7 +669,7 @@
       <button class="btn btn-outline" title="Quick Stock Search (All 351 Scrips)" style="padding:6px 10px; font-size:0.85rem; border-color:#374151;" onclick="openGlobalSearchModal()">🔍</button>
       <button class="btn btn-outline" title="Watchlist" style="padding:6px 10px; font-size:0.85rem; border-color:#374151;" onclick="openWatchlistModal()">👁️</button>
       <button class="btn btn-outline" title="Price & Volume Alerts" style="padding:6px 10px; font-size:0.85rem; border-color:#374151;" onclick="openStockAlertModal()">🔔</button>
-      <button class="btn" id="navTierBadgeBtn" title="All Stockyan Premium Features Unlocked" style="padding:5px 11px; font-size:0.75rem; font-weight:700; border-radius:14px; background:linear-gradient(135deg, #10b981, #059669); color:#ffffff; border:none; cursor:pointer; display:flex; align-items:center; gap:5px;" onclick="openPaywallModal()">
+      <button class="btn" id="navTierBadgeBtn" title="All Drabyashree Premium Features Unlocked" style="padding:5px 11px; font-size:0.75rem; font-weight:700; border-radius:14px; background:linear-gradient(135deg, #10b981, #059669); color:#ffffff; border:none; cursor:pointer; display:flex; align-items:center; gap:5px;" onclick="openPaywallModal()">
         <span>⭐</span> <span id="navTierBadgeText">VIP UNLOCKED</span>
       </button>
       <button class="btn btn-outline" id="userAuthBtn" style="padding:6px 12px; font-size:0.8rem; display:flex; align-items:center; gap:5px; border-color:#374151; color:#f3f4f6; cursor:pointer;" onclick="openAuthModal()">
@@ -705,7 +705,7 @@
         </div>
       </div>
 
-      <!-- StockYan Home Parity: Interactive NEPSE Index Chart + Portfolio Summary Quick Card -->
+      <!-- Drabyashree Home Parity: Interactive NEPSE Index Chart + Portfolio Summary Quick Card -->
       <div class="grid-2" style="margin-bottom: 24px;">
         <!-- Live NEPSE Index Chart Card (nepse_chart_widget.dart parity) -->
         <div class="card">
@@ -929,7 +929,7 @@
             <div id="chartTooltip" style="position:absolute; top:8px; left:12px; font-size:0.75rem; color:#9ca3af; pointer-events:none;"></div>
           </div>
 
-          <!-- Multi-Tab Navigation for Stock Deep Dive (8 Tabs - StockYan Parity) -->
+          <!-- Multi-Tab Navigation for Stock Deep Dive (8 Tabs - Drabyashree Parity) -->
           <div style="display:flex; border-bottom:1px solid var(--border); margin-bottom:12px; gap:4px; overflow-x:auto; padding-bottom:4px;">
             <button class="nav-tab-btn active" style="padding:6px 10px; font-size:0.76rem;" id="subtab-btn-fund" onclick="switchStockSubtab('fund')">🏛️ Fundamentals</button>
             <button class="nav-tab-btn" style="padding:6px 10px; font-size:0.76rem;" id="subtab-btn-depth" onclick="switchStockSubtab('depth')">📊 Market Depth</button>
@@ -1030,7 +1030,7 @@
             </div>
           </div>
 
-          <!-- Subtab 3: Stock-Specific Broker Analysis (StockYan Parity) -->
+          <!-- Subtab 3: Stock-Specific Broker Analysis (Drabyashree Parity) -->
           <div id="subtab-content-brokers" style="display:none;">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.75rem; margin-bottom:10px;">
               <div style="background:#111827; border:1px solid #1f2937; border-radius:6px; padding:8px;">
@@ -1093,7 +1093,7 @@
             </div>
           </div>
 
-          <!-- Subtab 6: 30-Day Price History (StockYan Parity) -->
+          <!-- Subtab 6: 30-Day Price History (Drabyashree Parity) -->
           <div id="subtab-content-history" style="display:none;">
             <div class="table-container" style="max-height:220px; overflow-y:auto; font-size:0.75rem;">
               <table>
@@ -1117,7 +1117,7 @@
             </div>
           </div>
 
-          <!-- Subtab 8: Company News & Filings (StockYan Parity) -->
+          <!-- Subtab 8: Company News & Filings (Drabyashree Parity) -->
           <div id="subtab-content-news" style="display:none;">
             <div id="detailStockNewsContainer" style="display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; font-size:0.78rem;"></div>
           </div>
@@ -1594,7 +1594,7 @@
       </div>
     </section>
 
-    <!-- 10. SERVICES HUB VIEW (Mirrors StockYan Services Tab 1:1) -->
+    <!-- 10. SERVICES HUB VIEW (Mirrors Drabyashree Services Tab 1:1) -->
     <section id="view-services" class="view-content">
       <!-- Search & Upgrade Banner -->
       <div style="margin-bottom:20px;">
@@ -1610,13 +1610,13 @@
           </div>
         </div>
 
-        <!-- All Stockyan Premium Features Unlocked Banner -->
+        <!-- All Drabyashree Premium Features Unlocked Banner -->
         <div style="background: linear-gradient(90deg, #064e3b, #0f172a); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 12px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="openPaywallModal()">
           <div style="display:flex; align-items:center; gap:14px;">
             <div style="background:rgba(16, 185, 129, 0.2); border:1px solid #10b981; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.4rem;">⭐</div>
             <div>
               <div style="font-weight:700; font-size:1rem; color:#f3f4f6; display:flex; align-items:center; gap:6px;">
-                <span>Stockyan Premium Suite</span>
+                <span>Drabyashree Premium Suite</span>
                 <span class="badge" id="premiumBannerBadge" style="background:#10b981; color:#fff; font-size:0.65rem; font-weight:800;">ALL UNLOCKED (LIFETIME VIP)</span>
               </div>
               <div class="text-muted" style="font-size:0.8rem; margin-top:2px;">All 14 locked features, 26 scanners, Trade Lab setups, AI Assistant &amp; promoter lock-in are completely unlocked.</div>
@@ -1880,7 +1880,7 @@
         </div>
       </div>
 
-      <!-- Section 5: Trade Lab & Premium Setups (Stockyan Parity) -->
+      <!-- Section 5: Trade Lab & Premium Setups (Drabyashree Parity) -->
       <div class="service-section-box">
         <div class="service-section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div>
@@ -1959,11 +1959,11 @@
         </div>
       </div>
 
-      <!-- Section 5B: Traders Zone (Share Hub Parity) -->
+      <!-- Section 5B: Traders Zone (Drabyashree Parity) -->
       <div class="service-section-box">
         <div class="service-section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div>
-            <span class="service-badge-gold">⚡ Traders Zone (Share Hub Parity)</span>
+            <span class="service-badge-gold">⚡ Traders Zone (Drabyashree Parity)</span>
             <span class="text-muted" style="font-size:0.8rem; margin-left:8px;">Quantitative Relative Strength, Technical Ratings, Volume Shockers, Breakdown Danger, GDP vs NEPSE &amp; Backtesting Simulator.</span>
           </div>
           <span class="badge badge-green" style="font-size:0.75rem; cursor:pointer;" onclick="openPaywallModal()">⭐ All Traders Zone Unlocked</span>
@@ -2443,14 +2443,14 @@
     </div>
   </div>
 
-  <!-- Stockyan Subscription & Premium Paywall Modal -->
+  <!-- Drabyashree Subscription & Premium Paywall Modal -->
   <div class="modal-overlay" id="paywallModal">
     <div class="modal-box" style="max-width: 620px; border: 1px solid rgba(245, 158, 11, 0.4); background: #0f172a; max-height: 90vh; overflow-y: auto;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:1.6rem;">👑</span>
           <div>
-            <h3 style="color:#f3f4f6; font-size:1.25rem; margin:0;" id="paywallModalHeading">Stockyan Premium & Subscription</h3>
+            <h3 style="color:#f3f4f6; font-size:1.25rem; margin:0;" id="paywallModalHeading">Drabyashree Premium & Subscription</h3>
             <div id="paywallSubtitle" class="text-muted" style="font-size:0.8rem; margin-top:2px;">Unlock institutional market scanners, breakout setups, promoter lock-in schedules & AI analytics.</div>
           </div>
         </div>
@@ -2466,7 +2466,7 @@
         <span id="paywallExpiryDisplay" class="badge badge-green" style="font-size:0.7rem;">Active (Auto-Renew)</span>
       </div>
 
-      <!-- Stockyan Dual Tier Toggle (tier_toggle.dart) -->
+      <!-- Drabyashree Dual Tier Toggle (tier_toggle.dart) -->
       <div style="display:flex; gap:6px; background:#1e293b; padding:4px; border-radius:8px; margin-bottom:14px;">
         <button id="btnSubTier_pro" class="btn btn-primary" style="flex:1; font-size:0.85rem; padding:8px;" onclick="setSubscriptionTier('pro')">
           ⚡ Pro Trader
@@ -2481,7 +2481,7 @@
         <!-- Rendered dynamically by renderSubscriptionPlans() -->
       </div>
 
-      <!-- Features Checklist (Matching Stockyan Binary) -->
+      <!-- Features Checklist (Matching Drabyashree Binary) -->
       <div style="background:#111827; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
         <div style="font-weight:700; color:#f3f4f6; font-size:0.85rem; margin-bottom:8px; display:flex; justify-content:space-between;">
           <span id="lblTierFeatureTitle">Included in Pro Trader:</span>
@@ -2492,11 +2492,11 @@
         </div>
       </div>
 
-      <!-- Stockyan Promo Code Box (validate_promo_code) -->
+      <!-- Drabyashree Promo Code Box (validate_promo_code) -->
       <div style="background:#1e293b; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="font-size:0.8rem; font-weight:600; color:#e2e8f0;">🎟️ Have a Promo Code?</span>
-          <span class="text-muted" style="font-size:0.75rem;">Try: <code>STOCKYAN50</code>, <code>VIPFREE</code></span>
+          <span class="text-muted" style="font-size:0.75rem;">Try: <code>Drabyashree50</code>, <code>VIPFREE</code></span>
         </div>
         <div style="display:flex; gap:8px;">
           <input type="text" id="subPromoCodeInput" class="input" placeholder="Enter discount code" style="flex:1; text-transform:uppercase; font-size:0.85rem; padding:6px 10px;">
@@ -2551,14 +2551,14 @@
     </div>
   </div>
 
-  <!-- Lock-in Tracker Modal (Stockyan PromoterUnlockModel Parity) -->
+  <!-- Lock-in Tracker Modal (Drabyashree PromoterUnlockModel Parity) -->
   <div class="modal-overlay" id="lockinModal">
     <div class="modal-box" style="max-width: 720px; max-height: 85vh; overflow-y: auto;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
         <div>
           <div style="display:flex; align-items:center; gap:8px;">
             <h3 style="color:#fff; font-size:1.25rem; margin:0;">🔒 Promoter Share Lock-in Expiry</h3>
-            <span class="badge badge-amber" style="font-size:0.65rem;">Stockyan Feature</span>
+            <span class="badge badge-amber" style="font-size:0.65rem;">Drabyashree Feature</span>
           </div>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Track upcoming 3-year promoter share unlock dates, volume released, and supply pressure impact on the secondary market.
@@ -3089,7 +3089,7 @@
     </div>
   </div>
 
-  <!-- Trading Desk Edit BottomSheet Modal (StockYan Parity) -->
+  <!-- Trading Desk Edit BottomSheet Modal (Drabyashree Parity) -->
   <div class="modal-overlay" id="tradingDeskEditModal">
     <div class="modal-box" style="max-width: 580px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
@@ -3557,7 +3557,7 @@
         <button class="btn btn-outline" style="padding:2px 8px; font-size:0.75rem;" onclick="closeTradeLabModal()">✕</button>
       </div>
 
-      <!-- 10 Setup Navigation Pills (Stockyan & Share Hub Parity) -->
+      <!-- 10 Setup Navigation Pills (Drabyashree & Drabyashree Parity) -->
       <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; margin-bottom:14px; border-bottom:1px solid var(--border);">
         <button class="btn btn-primary" id="btnLabTab_support" style="padding:5px 12px; font-size:0.75rem; white-space:nowrap;" onclick="loadTradeLabSetup('support')">📊 Stocks Near Support</button>
         <button class="btn btn-outline" id="btnLabTab_resistance" style="padding:5px 12px; font-size:0.75rem; white-space:nowrap;" onclick="loadTradeLabSetup('resistance')">⚡ Breakable Resistance</button>
@@ -3580,14 +3580,14 @@
     </div>
   </div>
 
-  <!-- Breakout Stocks Modal (Full Stockyan Parity: Tradable Breakout & Next Breakouts) -->
+  <!-- Breakout Stocks Modal (Full Drabyashree Parity: Tradable Breakout & Next Breakouts) -->
   <div class="modal-overlay" id="breakoutStocksModal">
     <div class="modal-box" style="max-width: 900px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
         <div>
           <div style="display:flex; align-items:center; gap:8px;">
             <h3 style="color:#fff; font-size:1.25rem; margin:0;">🎯 Breakout Stocks</h3>
-            <span class="badge badge-green" style="font-size:0.7rem;">Stockyan Parity</span>
+            <span class="badge badge-green" style="font-size:0.7rem;">Drabyashree Parity</span>
           </div>
           <p id="breakoutModalSubtitle" class="text-muted" style="font-size:0.8rem; margin-top:4px;">
             Tradable Breakout: Stocks showing breakout structure and strong momentum.
@@ -4092,7 +4092,7 @@
   </div>
 
   <!-- ======================================================== -->
-  <!-- SHARE HUB TRADERS ZONE MODALS (100% UNLOCKED LIFETIME VIP) -->
+  <!-- Drabyashree TRADERS ZONE MODALS (100% UNLOCKED LIFETIME VIP) -->
   <!-- ======================================================== -->
 
   <!-- 1. Technical Ratings Modal -->
@@ -4101,7 +4101,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>📊</span> Technical Ratings &amp; Gauge (Share Hub Parity)
+            <span>📊</span> Technical Ratings &amp; Gauge (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Composite scoring aggregating RSI (14), MACD cross, 20/50/200-day EMAs &amp; Classical Pivot Points (S1/R1).
@@ -4132,7 +4132,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>💪</span> Relative Strength (RS) vs NEPSE (Share Hub Parity)
+            <span>💪</span> Relative Strength (RS) vs NEPSE (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Mansfield Relative Strength ranking alpha outperformance against the NEPSE benchmark index.
@@ -4162,7 +4162,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>💥</span> Volume Shocker Scanner (Share Hub Parity)
+            <span>💥</span> Volume Shocker Scanner (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Stocks experiencing explosive trading volume surges ≥ 2.0x their 20-day average trading volume.
@@ -4183,7 +4183,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#ef4444; display:flex; align-items:center; gap:8px;">
-            <span>⚠️</span> Breakdown Stocks Danger Scanner (Share Hub Parity)
+            <span>⚠️</span> Breakdown Stocks Danger Scanner (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Equities cracking major horizontal support floors or slicing through 50/200-day EMAs on elevated volume.
@@ -4204,7 +4204,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>⚡</span> High Volatility &amp; Beta Screener (Share Hub Parity)
+            <span>⚡</span> High Volatility &amp; Beta Screener (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Top volatility scrips ranked by Beta and 14-day Average True Range (ATR) with suggested stop losses and profit targets.
@@ -4246,7 +4246,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>☀️</span> NEPSE Seasonal &amp; Festive Cycles (Share Hub Deep Parity)
+            <span>☀️</span> NEPSE Seasonal &amp; Festive Cycles (Drabyashree Deep Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             10-year monthly cyclical performance matrix (Baisakh–Chaitra), festive rally cycles &amp; smart money seasonal playbook.
@@ -4272,7 +4272,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>🧪</span> Quantitative Strategy Backtester (Share Hub Parity)
+            <span>🧪</span> Quantitative Strategy Backtester (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Simulate quantitative technical strategies over historical NEPSE price bars with automated performance metrics.
@@ -4308,7 +4308,7 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
         <div>
           <h3 style="font-size:1.25rem; color:#fff; display:flex; align-items:center; gap:8px;">
-            <span>🕯️</span> Candlestick Pattern AI Recognition (Share Hub Parity)
+            <span>🕯️</span> Candlestick Pattern AI Recognition (Drabyashree Parity)
           </h3>
           <p class="text-muted" style="font-size:0.8rem; margin-top:2px;">
             Automated scan across 22+ Japanese candlestick price action patterns with directional bias and reliability.
@@ -4323,7 +4323,7 @@
     </div>
   </div>
 
-  <!-- Global Quick Stock Search Modal (StockYan Parity: Instant 351-Stock Lookup) -->
+  <!-- Global Quick Stock Search Modal (Drabyashree Parity: Instant 351-Stock Lookup) -->
   <div class="modal-overlay" id="globalSearchModal">
     <div class="modal-box" style="max-width: 620px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -4335,7 +4335,7 @@
     </div>
   </div>
 
-  <!-- Fixed 5-Tab Mobile Bottom Navigation Bar (StockYan DashboardScreen Parity) -->
+  <!-- Fixed 5-Tab Mobile Bottom Navigation Bar (Drabyashree DashboardScreen Parity) -->
   <nav class="mobile-bottom-nav" id="mobileBottomNav">
     <button class="mobile-nav-item active" data-mob-tab="dashboard" onclick="switchTab('dashboard')">
       <span class="nav-icon">🏠</span>
@@ -4367,7 +4367,7 @@
     let currentMoversType = 'gainers';
     let currentOrderType = 'BUY';
     let currentProviderMode = 'LIVE';
-    // Stockyan Subscription & Entitlements State Store
+    // Drabyashree Subscription & Entitlements State Store
     let currentUserTier = 'vip'; // 'free' | 'pro' | 'vip'
     let selectedSubTier = 'pro';  // 'pro' | 'vip'
     let selectedSubPlan = '1_year'; // '1_month' | '3_months' | '6_months' | '1_year'
@@ -4486,12 +4486,12 @@
       if (featureName) {
         const heading = document.getElementById('paywallModalHeading');
         const sub = document.getElementById('paywallSubtitle');
-        if (heading) heading.innerText = `Stockyan Premium • ${featureName}`;
+        if (heading) heading.innerText = `Drabyashree Premium • ${featureName}`;
         if (sub) sub.innerText = `This feature requires an active Pro or VIP membership to access.`;
       } else {
         const heading = document.getElementById('paywallModalHeading');
         const sub = document.getElementById('paywallSubtitle');
-        if (heading) heading.innerText = `Stockyan Premium & Subscription`;
+        if (heading) heading.innerText = `Drabyashree Premium & Subscription`;
         if (sub) sub.innerText = `Unlock institutional market scanners, breakout setups, promoter lock-in schedules & AI analytics.`;
       }
       renderSubscriptionModal();
@@ -4647,7 +4647,7 @@
     }
 
     function checkEntitlement(featureName, requiredTier = 'pro') {
-      // Clean-room Unlocked: All Stockyan premium features, scanners, Trade Lab setups, AI, and lock-in calendar are 100% unlocked with zero paywall barriers.
+      // Clean-room Unlocked: All Drabyashree premium features, scanners, Trade Lab setups, AI, and lock-in calendar are 100% unlocked with zero paywall barriers.
       return true;
     }
 
@@ -4914,7 +4914,7 @@
     }
 
     // ==========================================
-    // STOCKYAN SERVICES HUB 1:1 IMPLEMENTATION
+    // Drabyashree SERVICES HUB 1:1 IMPLEMENTATION
     // ==========================================
 
     // 1. YOUR TRADING DESK
@@ -5598,7 +5598,7 @@
       document.getElementById('slowAccumulationModal').classList.remove('active');
     }
 
-    // 9. TRADE LAB & PREMIUM SETUPS SUITE (10 SETUPS - STOCKYAN & SHARE HUB PARITY)
+    // 9. TRADE LAB & PREMIUM SETUPS SUITE (10 SETUPS - Drabyashree & Drabyashree PARITY)
     const TRADE_LAB_SETUPS = ['support', 'resistance', 'consolidating', 'tradable', 'breakout', 'circuit', 'weekly', 'summary', 'investment', 'sip'];
 
     async function openTradeLabModal(setupKey = 'support') {
@@ -6108,7 +6108,7 @@
       }
     }
 
-    // 9b. BREAKOUT STOCKS SUITE (FULL STOCKYAN PARITY)
+    // 9b. BREAKOUT STOCKS SUITE (FULL Drabyashree PARITY)
     let currentBreakoutTab = 'tradable';
     let currentLtpMode = 'PRICE'; // 'PRICE' or 'DISTANCE'
     let currentBreakoutTradables = [];
@@ -6940,7 +6940,7 @@
       document.getElementById('sipResMaturity').innerText = 'NPR ' + maturity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // Lock-in Tracker Modal Functions (Stockyan PromoterUnlockModel Parity)
+    // Lock-in Tracker Modal Functions (Drabyashree PromoterUnlockModel Parity)
     async function openLockinTrackerModal() {
       if (!checkEntitlement('Promoter Lock-in Tracker', 'vip')) return;
       const modal = document.getElementById('lockinModal');
@@ -7126,7 +7126,7 @@
     }
 
     // ========================================================
-    // SHARE HUB TRADERS ZONE MODAL HANDLERS (100% UNLOCKED VIP)
+    // Drabyashree TRADERS ZONE MODAL HANDLERS (100% UNLOCKED VIP)
     // ========================================================
 
     // 1. Technical Ratings & Composite Gauge
@@ -8972,7 +8972,7 @@
       }
     }
 
-    // Home Interactive NEPSE Index Chart (StockYan nepse_chart_widget.dart parity)
+    // Home Interactive NEPSE Index Chart (Drabyashree nepse_chart_widget.dart parity)
     let currentHomeTimeframe = '1D';
     let latestMarketIndex = 2684.32;
     let latestMarketChange = 22.45;

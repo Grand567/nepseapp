@@ -211,7 +211,7 @@ function TradingChart({
     return 12 + (1 - (price - minPrice) / priceRng) * (PLOT_H - 22);
   };
 
-  // Generate 6 neat price levels on the left matching StockYan
+  // Generate neat price levels on the left
   const gridLevels = [];
   const steps = isFullscreen ? 7 : 5;
   for (let s = 0; s <= steps; s++) {
@@ -222,7 +222,7 @@ function TradingChart({
     });
   }
 
-  // Smooth line path (Matching StockYan fine resolution)
+  // Smooth line path (Fine institutional resolution)
   let lineD = '';
   history.forEach((h, i) => {
     const x = getX(i);

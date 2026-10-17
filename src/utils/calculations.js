@@ -749,13 +749,13 @@ export function saveCustomWaccMap(waccMap, userId = 'local', accountId = '') {
 }
 
 /**
- * Updates or sets WACC for a specific symbol, optionally scoped to a specific Demat account
+ * Updates or sets WACC for a specific symbol, optionally scoped to a specific Demat account and source tag
  */
-export function setScripCustomWacc(symbol, wacc, userId = 'local', accountId = '') {
+export function setScripCustomWacc(symbol, wacc, userId = 'local', accountId = '', source = 'CUSTOM_USER_SET') {
   const map = getCustomWaccMap(userId, accountId);
   const sym = String(symbol || '').trim().toUpperCase();
   if (sym && Number(wacc) > 0) {
-    map[sym] = Number(Number(wacc).toFixed(2));
+    map[sym] = { wacc: Number(Number(wacc).toFixed(2)), source };
     saveCustomWaccMap(map, userId, accountId);
   }
   return map;
@@ -985,12 +985,12 @@ export function sanitizeMeroShareHoldings(holdings = [], userId = 'local', accou
     } else if (h.waccSource === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED' || h.source === 'CDSC_PURCHASE_SOURCE_UNCONFIRMED') {
       wacc = Number(h.wacc || h.purchasePrice || base);
       waccSource = 'CDSC_PURCHASE_SOURCE_UNCONFIRMED';
+    } else if (h.waccSource === 'IPO_ALLOTMENT' || h.source === 'IPO_ALLOTMENT' || h.isIPO || h.isAllotted) {
+      wacc = Number(h.wacc || base);
+      waccSource = 'IPO_ALLOTMENT';
     } else if (h.isCustomWacc && Number(h.wacc) > 0) {
       wacc = Number(h.wacc);
-      waccSource = 'CUSTOM_USER_SET';
-    } else if (h.isIPO || h.isAllotted || h.waccSource === 'IPO_ALLOTMENT') {
-      wacc = base;
-      waccSource = 'IPO_ALLOTMENT';
+      waccSource = h.waccSource || 'CUSTOM_USER_SET';
     } else if (h.wacc && Number(h.wacc) > 0 && Number(h.wacc) !== 100) {
       wacc = Number(h.wacc);
       waccSource = 'CUSTOM_USER_SET';

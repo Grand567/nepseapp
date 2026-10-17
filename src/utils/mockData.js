@@ -277,7 +277,7 @@ export function runStockScanners(stocks = [], filterKey) {
     case 'selling_zone_stocks':
       return stocks.filter(s => s.zone === 'Selling Zone' || (s.actionZone && s.actionZone.zone === 'Selling Zone')).slice(0, 20);
 
-    // ── StockYan Smart Money & Predictive Engine Screeners ──
+    // ── Drabyashree Smart Money & Predictive Engine Screeners ──
     case 'stealth_accumulation':
       return stocks.filter(s => s.isStealthAccumulation || (s.bcr3 && s.bcr3 >= 0.35)).sort((a, b) => (b.sai || 0) - (a.sai || 0)).slice(0, 25);
 

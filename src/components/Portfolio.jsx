@@ -1035,11 +1035,11 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     Object.keys(updated).forEach(sym => {
       const base = guessScripBasePrice(sym, 100);
       updated[sym] = base;
-      updatedSources[sym] = base === 10 ? 'NAV_PAR_FUND' : (base === 1000 ? 'PAR_VALUE_DEB' : 'FALLBACK_BASE_PRICE');
+      updatedSources[sym] = base === 10 ? 'NAV_PAR_FUND' : (base === 1000 ? 'PAR_VALUE_DEB' : 'IPO_ALLOTMENT');
     });
     setWaccEditValues(updated);
     setWaccSourcesMap(updatedSources);
-    setWaccSaveSuccess('Reset all rates to face value / par (Rs. 100 for equity, Rs. 10 for funds, Rs. 1,000 for debentures).');
+    setWaccSaveSuccess('Set all rates to IPO par value (Rs. 100 for equity, Rs. 10 for funds, Rs. 1,000 for debentures). Click "Save All" to confirm.');
   };
 
   const handleParseTms = () => {
@@ -1057,7 +1057,7 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
 
     Object.entries(tmsParseResult.holdings).forEach(([sym, data]) => {
       const cleanSym = sym.toUpperCase();
-      newCustomMap[cleanSym] = data.wacc;
+      newCustomMap[cleanSym] = { wacc: data.wacc, source: 'BROKER_TMS' };
       updatedValues[cleanSym] = data.wacc;
       updatedSources[cleanSym] = 'BROKER_TMS';
       appliedCount++;
@@ -1096,7 +1096,9 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       Object.entries(waccEditValues).forEach(([sym, val]) => {
         const num = parseFloat(val);
         if (!isNaN(num) && num > 0) {
-          customMap[sym.toUpperCase()] = Number(num.toFixed(2));
+          const upperSym = sym.toUpperCase();
+          const src = waccSourcesMap[upperSym] || 'CUSTOM_USER_SET';
+          customMap[upperSym] = { wacc: Number(num.toFixed(2)), source: src };
         }
       });
       saveCustomWaccMap(customMap, userId);
@@ -1106,8 +1108,9 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
         holdings: sanitizeMeroShareHoldings(
           (p.holdings || []).map(h => {
             const sym = (h.symbol || '').toUpperCase();
-            const customVal = customMap[sym];
-            const src = waccSourcesMap[sym] || (customVal > 0 ? 'CUSTOM_USER_SET' : h.waccSource);
+            const customEntry = customMap[sym];
+            const customVal = (customEntry && typeof customEntry === 'object') ? customEntry.wacc : Number(customEntry);
+            const src = (customEntry && typeof customEntry === 'object') ? customEntry.source : (waccSourcesMap[sym] || (customVal > 0 ? 'CUSTOM_USER_SET' : h.waccSource));
             if (customVal > 0) {
               return { ...h, wacc: customVal, waccSource: src, isCustomWacc: true };
             }
@@ -1128,12 +1131,12 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     }
   };
 
-  const handleQuickSaveWacc = (symbol, newRate, targetAccountId = '') => {
+  const handleQuickSaveWacc = (symbol, newRate, targetAccountId = '', source = 'CUSTOM_USER_SET') => {
     try {
       const num = parseFloat(newRate);
       if (isNaN(num) || num <= 0) return;
       const sym = symbol.toUpperCase().trim();
-      setScripCustomWacc(sym, num, userId, targetAccountId);
+      setScripCustomWacc(sym, num, userId, targetAccountId, source);
 
       if (targetAccountId === 'manual') {
         const updatedTxs = transactions.map(t => {
@@ -1153,17 +1156,17 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
         }
         return {
           ...p,
-          holdings: (p.holdings || []).map(h => {
+          holdings: sanitizeMeroShareHoldings((p.holdings || []).map(h => {
             if ((h.symbol || '').toUpperCase().trim() === sym) {
               return { 
                 ...h, 
                 wacc: Number(num.toFixed(2)), 
                 isCustomWacc: true,
-                waccSource: 'CUSTOM_USER_SET'
+                waccSource: source
               };
             }
             return h;
-          })
+          }), userId, p.id || p.boid)
         };
       });
 
@@ -1174,6 +1177,16 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     } finally {
       // Always immediately close the inline edit popup
       setEditingScrip(null);
+    }
+  };
+
+  const handleConfirmHoldingAsIpo = (symbol, targetAccountId = '') => {
+    try {
+      const sym = (symbol || '').toUpperCase().trim();
+      const base = guessScripBasePrice(sym, 100);
+      handleQuickSaveWacc(sym, base, targetAccountId, 'IPO_ALLOTMENT');
+    } catch (err) {
+      console.warn('[ConfirmHoldingAsIpo Warning]', err);
     }
   };
 
@@ -1292,6 +1305,22 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       const newHoldings = (targetAcc.holdings || []).map(h => {
         const sym = (h.symbol || '').toUpperCase().trim();
         const base = guessScripBasePrice(sym, 100);
+
+        if (method === 'ipo') {
+          // Confirm all unconfirmed fallback holdings as IPO allotment at par value (Rs. 100 equity, 10 mf, 1000 deb)
+          if (!h.isCustomWacc || h.waccSource === 'FALLBACK_BASE_PRICE') {
+            currentMap[sym] = { wacc: base, source: 'IPO_ALLOTMENT' };
+            updatedCount++;
+            return {
+              ...h,
+              wacc: base,
+              waccSource: 'IPO_ALLOTMENT',
+              isCustomWacc: true
+            };
+          }
+          return h;
+        }
+
         // Only update if it's currently at unconfirmed fallback (100) and equity share
         if (base === 100 && (!h.isCustomWacc || h.waccSource === 'FALLBACK_BASE_PRICE' || h.wacc === 100)) {
           const mStock = marketStocks.find(s => (s.symbol || '').toUpperCase() === sym);
@@ -1300,12 +1329,13 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
             : Number(h.currentLtp || mStock?.ltp || h.prevClose || 100);
 
           if (targetPrice > 0) {
-            currentMap[sym] = Number(targetPrice.toFixed(2));
+            const source = method === 'prevClose' ? 'ESTIMATED_PREV_CLOSE' : 'ESTIMATED_LTP';
+            currentMap[sym] = { wacc: Number(targetPrice.toFixed(2)), source };
             updatedCount++;
             return {
               ...h,
               wacc: Number(targetPrice.toFixed(2)),
-              waccSource: 'CUSTOM_USER_SET',
+              waccSource: source,
               isCustomWacc: true
             };
           }
@@ -1328,9 +1358,15 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
       setMeroshareProfiles(updatedProfiles);
       saveProfilesToStorage(updatedProfiles);
 
+      const methodLabel = method === 'ipo' 
+        ? 'IPO Allotment (Rs. 100 Par)' 
+        : method === 'prevClose' 
+          ? 'Previous Close' 
+          : 'Live Market LTP';
+
       setWaccSyncResult({
         type: 'success',
-        msg: `Auto-populated ${updatedCount} secondary stocks with ${method === 'prevClose' ? 'Previous Close' : 'Live Market LTP'}. You can fine-tune rates anytime!`,
+        msg: `Auto-populated ${updatedCount} stocks with ${methodLabel}. You can fine-tune rates anytime!`,
         accountId: targetAccountId
       });
       setTimeout(() => setWaccSyncResult(null), 6000);
@@ -2011,6 +2047,31 @@ Based on this data, provide a robust analysis using this exact markdown structur
             <strong style={{ color: (h.waccSource === 'FALLBACK_BASE_PRICE') ? '#fbbf24' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
               {formatRs(h.wacc)}
             </strong>
+            {h.waccSource === 'FALLBACK_BASE_PRICE' && (
+              <button 
+                type="button"
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  handleConfirmHoldingAsIpo(h.symbol, accountId);
+                }}
+                style={{ 
+                  background: 'rgba(16,185,129,0.18)', 
+                  border: '1px solid rgba(16,185,129,0.45)', 
+                  color: '#34d399', 
+                  borderRadius: 5, 
+                  padding: '2px 7px', 
+                  fontSize: 12, 
+                  cursor: 'pointer', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: 3, 
+                  fontWeight: 800 
+                }}
+                title="Confirm this holding as IPO allotment at par (Rs. 100)"
+              >
+                🎯 Confirm IPO
+              </button>
+            )}
             <button 
               type="button"
               onClick={(e) => { 
@@ -2045,7 +2106,7 @@ Based on this data, provide a robust analysis using this exact markdown structur
             style={{
               marginBottom: 8,
               display: 'flex',
-              alignItems: 'center',
+              flexDirection: 'column',
               gap: 6,
               background: '#0d131f',
               padding: '8px 12px',
@@ -2054,32 +2115,77 @@ Based on this data, provide a robust analysis using this exact markdown structur
               boxShadow: '0 4px 20px rgba(0,0,0,0.6)'
             }}
           >
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
-            <input 
-              type="number" 
-              step="0.01" 
-              autoFocus 
-              value={quickWaccInput} 
-              onChange={e => setQuickWaccInput(e.target.value)} 
-              placeholder="e.g. 350"
-              style={{ flex: 1, height: 28, fontSize: 12, padding: '0 8px', background: '#080c14', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
-            />
-            <button 
-              type="button" 
-              onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput, accountId)} 
-              className="btn-primary btn-xs" 
-              style={{ padding: '4px 10px', fontSize: 12, height: 28, borderRadius: 4, fontWeight: 800 }}
-            >
-              Save
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setEditingScrip(null)} 
-              className="btn-secondary btn-xs" 
-              style={{ padding: '4px 8px', fontSize: 12, height: 28, borderRadius: 4 }}
-            >
-              ✕
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Buy Rate: Rs.</span>
+              <input 
+                type="number" 
+                step="0.01" 
+                autoFocus 
+                value={quickWaccInput} 
+                onChange={e => setQuickWaccInput(e.target.value)} 
+                placeholder="e.g. 350"
+                style={{ flex: 1, height: 28, fontSize: 12, padding: '0 8px', background: '#080c14', border: '1px solid var(--border)', borderRadius: 4, color: '#fff', fontFamily: 'var(--font-mono)' }} 
+              />
+              <button 
+                type="button" 
+                onClick={() => handleQuickSaveWacc(h.symbol, quickWaccInput, accountId)} 
+                className="btn-primary btn-xs" 
+                style={{ padding: '4px 10px', fontSize: 12, height: 28, borderRadius: 4, fontWeight: 800 }}
+              >
+                Save
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setEditingScrip(null)} 
+                className="btn-secondary btn-xs" 
+                style={{ padding: '4px 8px', fontSize: 12, height: 28, borderRadius: 4 }}
+              >
+                ✕
+              </button>
+            </div>
+            {/* Quick 1-tap Presets */}
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Quick Fill:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickWaccInput('100');
+                  handleQuickSaveWacc(h.symbol, '100', accountId, 'IPO_ALLOTMENT');
+                }}
+                className="btn-secondary btn-xs"
+                style={{ fontSize: 11, padding: '2px 7px', background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 4, fontWeight: 700 }}
+              >
+                🎯 IPO (Rs. 100)
+              </button>
+              {Number(h.currentPrice || h.currentLtp || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ltp = String(Number(h.currentPrice || h.currentLtp).toFixed(2));
+                    setQuickWaccInput(ltp);
+                    handleQuickSaveWacc(h.symbol, ltp, accountId, 'ESTIMATED_LTP');
+                  }}
+                  className="btn-secondary btn-xs"
+                  style={{ fontSize: 11, padding: '2px 7px', background: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 4, fontWeight: 700 }}
+                >
+                  ⚡ LTP (Rs. {Number(h.currentPrice || h.currentLtp).toFixed(1)})
+                </button>
+              )}
+              {Number(h.prevClose || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prev = String(Number(h.prevClose).toFixed(2));
+                    setQuickWaccInput(prev);
+                    handleQuickSaveWacc(h.symbol, prev, accountId, 'ESTIMATED_PREV_CLOSE');
+                  }}
+                  className="btn-secondary btn-xs"
+                  style={{ fontSize: 11, padding: '2px 7px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, fontWeight: 700 }}
+                >
+                  📊 Prev Close (Rs. {Number(h.prevClose).toFixed(1)})
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -3196,7 +3302,13 @@ Based on this data, provide a robust analysis using this exact markdown structur
                           {(typeof waccSyncResult === 'object' && waccSyncResult.type === 'unconfirmed_secondary') && (
                             <strong style={{ color: '#fff', display: 'block', marginBottom: 2 }}>CDSC Has No Unsold Purchase Records</strong>
                           )}
-                          <span>{typeof waccSyncResult === 'string' ? waccSyncResult : waccSyncResult.msg}</span>
+                          <span>
+                            {typeof waccSyncResult === 'string' 
+                              ? waccSyncResult 
+                              : (waccSyncResult.type === 'unconfirmed_secondary' 
+                                  ? 'CDSC MeroShare stores WACC records only after an EDIS transfer (sale). Unsold secondary holdings and IPOs do not have buy rates in CDSC. Choose a 1-tap option below to verify:'
+                                  : waccSyncResult.msg)}
+                          </span>
                         </div>
                       </div>
                       <button 
@@ -3214,9 +3326,17 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px solid rgba(234,179,8,0.2)' }}>
                         <button
                           type="button"
-                          onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'ltp')}
+                          onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'ipo')}
                           className="btn-primary btn-xs"
-                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800 }}
+                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: '#10b981', borderColor: '#059669', color: '#fff' }}
+                        >
+                          🎯 Confirm All as IPO (Rs. 100)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAutoPopulateSecondaryWacc(accountId, 'ltp')}
+                          className="btn-secondary btn-xs"
+                          style={{ fontSize: 12, padding: '5px 11px', borderRadius: 6, fontWeight: 800, background: 'rgba(56,189,248,0.18)', borderColor: 'rgba(56,189,248,0.4)', color: '#38bdf8' }}
                         >
                           ⚡ Fill with Market LTP
                         </button>
@@ -3600,10 +3720,10 @@ Based on this data, provide a robust analysis using this exact markdown structur
                       type="button"
                       onClick={handleResetAllPar}
                       className="btn-secondary btn-xs"
-                      style={{ flex: 1, minWidth: 110, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(255,255,255,0.06)' }}
-                      title="Reset all to nominal face value (Rs. 100)"
+                      style={{ flex: 1, minWidth: 120, padding: '6px 8px', fontSize: 12, fontWeight: 800, background: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.35)', color: '#34d399' }}
+                      title="Set all buy prices to IPO par value (Rs. 100 for equity, Rs. 10 for funds, Rs. 1,000 for debentures)"
                     >
-                      🎯 Reset to Par
+                      🎯 Confirm All as IPO (Par)
                     </button>
                   </div>
                 </div>

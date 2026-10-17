@@ -305,7 +305,7 @@ export default function StockYanAnalyticsCard({
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
-              StockYan Pro Analytics Suite
+              Drabyashree Pro Analytics Suite
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>
               Institutional Dominance, Magnetic Nodes & Parallel Channel

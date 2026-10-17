@@ -3371,7 +3371,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               {/* Algorithmic Signal Track Record for this stock */}
               <SignalTrackRecord symbol={d.symbol} livePrice={d.ltp || d.close} allStocks={allStocks || []} />
 
-              {/* ── StockYan Pro Analytics Suite: Aggressive Holding, Dominance & Parallel Channel ── */}
+              {/* ── Drabyashree Pro Analytics Suite: Aggressive Holding, Dominance & Parallel Channel ── */}
               <StockYanAnalyticsCard
                 stock={d}
                 history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
@@ -5487,7 +5487,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               />
             </div>
 
-            {/* ── StockYan Pro Analytics: Aggressive Holding & Broker Dominance Suite ── */}
+            {/* ── Drabyashree Pro Analytics: Aggressive Holding & Broker Dominance Suite ── */}
             <StockYanAnalyticsCard
               stock={d}
               history={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}

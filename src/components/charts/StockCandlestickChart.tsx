@@ -641,29 +641,41 @@ export function StockCandlestickChart({
 
     chartRef.current = chart;
 
+    // Safe scaleMargins helper: strictly ensures top >= 0, bottom >= 0, and (top + bottom) <= 0.88 (< 1.0)
+    const safeScaleMargins = (top: number, bottom: number) => {
+      let t = Math.max(0, Math.min(0.95, Number(top) || 0));
+      let b = Math.max(0, Math.min(0.95, Number(bottom) || 0));
+      if (t + b >= 0.95) {
+        const factor = 0.88 / (t + b);
+        t = Number((t * factor).toFixed(3));
+        b = Number((b * factor).toFixed(3));
+      }
+      return { top: t, bottom: b };
+    };
+
     // ── Dynamic main price pane bottom margin to leave room for sub-panes ──
     let mainBottom = 0.20; // default: volume only
-    let volTop = 0.82, volBottom = 0;
+    let volTop = 0.80, volBottom = 0.02;
     let rsiTop = 0, rsiBottom = 0;
     let macdTop = 0, macdBottom = 0;
 
     if (subPaneCount === 1 && showRsi) {
       mainBottom = 0.30;
-      volTop = 0.74; volBottom = 0.13;
-      rsiTop = 0.87; rsiBottom = 0;
+      volTop = 0.55; volBottom = 0.30;
+      rsiTop = 0.73; rsiBottom = 0.02;
     } else if (subPaneCount === 1 && showMacd) {
       mainBottom = 0.30;
-      volTop = 0.74; volBottom = 0.13;
-      macdTop = 0.87; macdBottom = 0;
+      volTop = 0.55; volBottom = 0.30;
+      macdTop = 0.73; macdBottom = 0.02;
     } else if (subPaneCount === 2) {
-      mainBottom = 0.42;
-      volTop = 0.76; volBottom = 0.24;
-      rsiTop = 0.74; rsiBottom = 0.13;
-      macdTop = 0.87; macdBottom = 0;
+      mainBottom = 0.46;
+      volTop = 0.40; volBottom = 0.46;
+      rsiTop = 0.56; rsiBottom = 0.24;
+      macdTop = 0.78; macdBottom = 0.02;
     }
 
     chart.priceScale('right').applyOptions({
-      scaleMargins: { top: 0.05, bottom: mainBottom },
+      scaleMargins: safeScaleMargins(0.05, mainBottom),
     });
 
     // 1. Candlestick Series
@@ -705,7 +717,7 @@ export function StockCandlestickChart({
         priceScaleId: 'volume_scale',
       });
       chart.priceScale('volume_scale').applyOptions({
-        scaleMargins: { top: volTop, bottom: volBottom },
+        scaleMargins: safeScaleMargins(volTop, volBottom),
       });
 
       volumeSeries.setData(
@@ -952,7 +964,7 @@ export function StockCandlestickChart({
         priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
       });
       chart.priceScale('rsi_scale').applyOptions({
-        scaleMargins: { top: rsiTop, bottom: rsiBottom },
+        scaleMargins: safeScaleMargins(rsiTop, rsiBottom),
         autoScale: false,
         entireTextOnly: true,
       });
@@ -972,7 +984,7 @@ export function StockCandlestickChart({
           title: 'MACD Hist',
         });
         chart.priceScale('macd_scale').applyOptions({
-          scaleMargins: { top: macdTop, bottom: macdBottom },
+          scaleMargins: safeScaleMargins(macdTop, macdBottom),
           autoScale: true,
           entireTextOnly: true,
         });

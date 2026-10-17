@@ -226,11 +226,11 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'fresh-indicators',           name: 'Fresh RSI / MACD Inflection Signals',          icon: Activity,           color: 'cyan',    cat: 'trading', star: true },
   { id: 'support-resistance',         name: '52W Support & Resistance Radar',               icon: Crosshair,          color: 'rose',    cat: 'trading', star: true },
   { id: 'support-setups',             name: 'Basing Near Support (Swing Setups)',           icon: Shield,             color: 'emerald', cat: 'trading', star: true },
-  { id: 'magnetic-support',           name: 'StockYan Magnetic Support Anchors',            icon: Target,             color: 'emerald', cat: 'trading', star: true },
-  { id: 'breakable-resistance',       name: 'StockYan Breakable Resistance Radar',          icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
-  { id: 'breakdown-stocks',           name: 'Share Hub Breakdown & Selloff Radar',          icon: TrendingDown,       color: 'rose',    cat: 'trading', star: true },
-  { id: 'volatile-stocks',            name: 'Share Hub High Volatility & ATR Movers',       icon: Activity,           color: 'purple',  cat: 'trading', star: true },
-  { id: 'hot-trending-stock',         name: 'StockYan Hot Trending Velocity Screener',      icon: Flame,              color: 'orange',  cat: 'trading', star: true },
+  { id: 'magnetic-support',           name: 'Drabyashree Magnetic Support Anchors',         icon: Target,             color: 'emerald', cat: 'trading', star: true },
+  { id: 'breakable-resistance',       name: 'Drabyashree Breakable Resistance Radar',       icon: Zap,                color: 'yellow',  cat: 'trading', star: true },
+  { id: 'breakdown-stocks',           name: 'Drabyashree Breakdown & Selloff Radar',       icon: TrendingDown,       color: 'rose',    cat: 'trading', star: true },
+  { id: 'volatile-stocks',            name: 'Drabyashree High Volatility & ATR Movers',    icon: Activity,           color: 'purple',  cat: 'trading', star: true },
+  { id: 'hot-trending-stock',         name: 'Drabyashree Hot Trending Velocity Screener',   icon: Flame,              color: 'orange',  cat: 'trading', star: true },
   { id: 'ai-momentum',                name: 'AI Momentum with Volume Confirmation',         icon: Zap,                color: 'emerald', cat: 'trading', star: true },
   { id: 'hot-stocks',                 name: 'Hot Stocks Today (Turnover + Surge)',          icon: Flame,              color: 'yellow',  cat: 'trading', star: true },
   { id: 'price-vs-volume',            name: 'Price Rise Confirmed by Volume (PVA)',         icon: TrendingUp,         color: 'teal',    cat: 'trading', star: true },
@@ -314,7 +314,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'portfolio',                  name: 'Portfolio Tracker & Real P&L',                 icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
   { id: 'watchlist',                  name: 'Watchlist & Telemetry Alerts',                 icon: Eye,                color: 'purple',  cat: 'desk', star: true },
   { id: 'trade-notes',                name: 'Trader\'s Journal & Setup Thesis Notes',        icon: FileText,           color: 'orange',  cat: 'desk', star: true },
-  { id: 'smart-trade-journal',        name: 'StockYan Smart Trade Journal & P&L Log',       icon: BookOpen,           color: 'emerald', cat: 'desk', star: true },
+  { id: 'smart-trade-journal',        name: 'Drabyashree Smart Trade Journal & P&L Log',    icon: BookOpen,           color: 'emerald', cat: 'desk', star: true },
   { id: 'stock-alerts',               name: 'Real-Time Price Target & Stop Alerts',         icon: Bell,               color: 'yellow',  cat: 'desk', star: true },
   { id: 'credentials',                name: 'Credentials & Local Vault Storage',            icon: Lock,               color: 'rose',    cat: 'desk', star: true },
   { id: 'edit',                       name: 'Preferences, Themes & Settings',               icon: Settings,           color: 'teal',    cat: 'desk', star: true },
@@ -542,7 +542,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         },
         { key: 'rsi', label: 'RSI', align: 'right', format: (v) => v != null ? Number(v).toFixed(1) : '—' }
       ]}
-      banner={{ type: 'success', text: 'StockYan Pro Magnetic Support — Identifies resilient scrips coiling right above major demand floors with institutional volume absorption.' }}
+      banner={{ type: 'success', text: 'Drabyashree Pro Magnetic Support — Identifies resilient scrips coiling right above major demand floors with institutional volume absorption.' }}
       insight="Buying within 3–6% of verified magnetic support provides asymmetric 3:1+ reward-to-risk setups."
     />
   ),
@@ -572,7 +572,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         },
         { key: 'volumeSurgeRatio', label: 'Vol Pressure', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => v >= 1.5 ? '#10b981' : '#38bdf8' }
       ]}
-      banner={{ type: 'warning', text: 'StockYan Pro Breakable Resistance — Detects scrips actively chewing through heavy supply barriers with elevated volume momentum.' }}
+      banner={{ type: 'warning', text: 'Drabyashree Pro Breakable Resistance — Detects scrips actively chewing through heavy supply barriers with elevated volume momentum.' }}
       insight="Repeated tests of resistance with higher lows indicate supply exhaustion. Watch for explosive volume follow-through."
     />
   ),
@@ -585,7 +585,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         { key: 'rsi', label: 'RSI (14)', align: 'right', format: (v) => v != null ? Number(v).toFixed(1) : '—', colorFn: (v) => v < 30 ? '#10b981' : '#f43f5e' },
         { key: 'turnover', label: 'Panic Turnover', align: 'right', format: (v) => v ? `Rs. ${(Number(v) / 1e5).toFixed(1)} L` : '—' }
       ]}
-      banner={{ type: 'warning', text: 'Share Hub Breakdown Radar — Alerts on scrips cracking below support or undergoing aggressive distribution selloffs.' }}
+      banner={{ type: 'warning', text: 'Drabyashree Breakdown Radar — Alerts on scrips cracking below support or undergoing aggressive distribution selloffs.' }}
       insight="Avoid catching falling knives during early breakdown stages. Wait for climactic washouts and RSI bullish divergence."
     />
   ),
@@ -613,7 +613,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         { key: 'low', label: 'Day Low', align: 'right', format: (v) => `Rs. ${v}` },
         { key: 'volume', label: 'Volume', align: 'right', format: (v) => Number(v || 0).toLocaleString() }
       ]}
-      banner={{ type: 'info', text: 'Share Hub Volatility Radar — High ATR and wide intraday range scrips offering maximum intraday and swing profit opportunities.' }}
+      banner={{ type: 'info', text: 'Drabyashree Volatility Radar — High ATR and wide intraday range scrips offering maximum intraday and swing profit opportunities.' }}
       insight="High volatility scrips require tight stop-loss discipline and scaling out at predetermined resistance levels."
     />
   ),
@@ -626,7 +626,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
         { key: 'volumeSurgeRatio', label: 'Vol Surge', align: 'right', bold: true, format: (v) => `${Number(v || 1).toFixed(1)}×`, colorFn: (v) => v >= 1.5 ? '#10b981' : '#38bdf8' },
         { key: 'technicalScore', label: 'Tech Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => v >= 70 ? '#10b981' : '#f59e0b' }
       ]}
-      banner={{ type: 'success', text: 'StockYan Pro Hot Trending — Fast-moving momentum scrips surging with institutional volume and high technical velocity.' }}
+      banner={{ type: 'success', text: 'Drabyashree Pro Hot Trending — Fast-moving momentum scrips surging with institutional volume and high technical velocity.' }}
       insight="Trend velocity leaders often lead sector rallies for 3–5 consecutive trading sessions. Ride with trailing stops."
     />
   ),

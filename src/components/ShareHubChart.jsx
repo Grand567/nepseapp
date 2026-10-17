@@ -862,25 +862,37 @@ export default function ShareHubChart({
     const isCandle = activeMode === 'candle';
     const container = chartContainerRef.current;
 
-    // Dynamic Scale Margins for Sub-Panes
+    // Safe scaleMargins helper: strictly ensures top >= 0, bottom >= 0, and (top + bottom) <= 0.88 (< 1.0)
+    const safeScaleMargins = (top, bottom) => {
+      let t = Math.max(0, Math.min(0.95, Number(top) || 0));
+      let b = Math.max(0, Math.min(0.95, Number(bottom) || 0));
+      if (t + b >= 0.95) {
+        const factor = 0.88 / (t + b);
+        t = Number((t * factor).toFixed(3));
+        b = Number((b * factor).toFixed(3));
+      }
+      return { top: t, bottom: b };
+    };
+
+    // Dynamic Scale Margins for Sub-Panes (Strict invariant: top + bottom <= 0.88 < 1.0)
     let mainBottom = 0.20;
-    let volTop = 0.82, volBottom = 0;
+    let volTop = 0.80, volBottom = 0.02;
     let rsiTop = 0, rsiBottom = 0;
     let macdTop = 0, macdBottom = 0;
 
     if (effectiveSubPaneCount === 1 && effectiveShowRsi) {
-      mainBottom = 0.32;
-      volTop = 0.74; volBottom = 0.14;
-      rsiTop = 0.86; rsiBottom = 0;
+      mainBottom = 0.30;
+      volTop = 0.55; volBottom = 0.30;
+      rsiTop = 0.73; rsiBottom = 0.02;
     } else if (effectiveSubPaneCount === 1 && effectiveShowMacd) {
-      mainBottom = 0.32;
-      volTop = 0.74; volBottom = 0.14;
-      macdTop = 0.86; macdBottom = 0;
+      mainBottom = 0.30;
+      volTop = 0.55; volBottom = 0.30;
+      macdTop = 0.73; macdBottom = 0.02;
     } else if (effectiveSubPaneCount === 2) {
-      mainBottom = 0.44;
-      volTop = 0.76; volBottom = 0.26;
-      rsiTop = 0.74; rsiBottom = 0.14;
-      macdTop = 0.87; macdBottom = 0;
+      mainBottom = 0.46;
+      volTop = 0.40; volBottom = 0.46;
+      rsiTop = 0.56; rsiBottom = 0.24;
+      macdTop = 0.78; macdBottom = 0.02;
     }
 
     try {
@@ -905,7 +917,7 @@ export default function ShareHubChart({
         rightPriceScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',
           autoScale: true,
-          scaleMargins: { top: 0.08, bottom: mainBottom },
+          scaleMargins: safeScaleMargins(0.08, mainBottom),
         },
         timeScale: {
           borderColor: 'rgba(255, 255, 255, 0.07)',
@@ -1016,7 +1028,7 @@ export default function ShareHubChart({
           priceScaleId: 'volume_scale',
         });
         chart.priceScale('volume_scale').applyOptions({
-          scaleMargins: { top: volTop, bottom: volBottom }
+          scaleMargins: safeScaleMargins(volTop, volBottom)
         });
         volumeSeries.setData(processedChartData.map(d => ({
           time: d.time,
@@ -1148,7 +1160,7 @@ export default function ShareHubChart({
           priceFormat: { type: 'price', precision: 1, minMove: 0.1 }
         });
         chart.priceScale('rsi_scale').applyOptions({
-          scaleMargins: { top: rsiTop, bottom: rsiBottom },
+          scaleMargins: safeScaleMargins(rsiTop, rsiBottom),
           autoScale: false,
         });
         rsiSeries.setData(rsiData);
@@ -1166,7 +1178,7 @@ export default function ShareHubChart({
             title: 'MACD Hist'
           });
           chart.priceScale('macd_scale').applyOptions({
-            scaleMargins: { top: macdTop, bottom: macdBottom },
+            scaleMargins: safeScaleMargins(macdTop, macdBottom),
             autoScale: true,
           });
           macdHist.setData(macdArrays.histogram);

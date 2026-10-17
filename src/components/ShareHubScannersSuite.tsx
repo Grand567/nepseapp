@@ -110,7 +110,7 @@ export function CandlestickPatternScannerService({ stocks = [] }: { stocks?: any
           <div>
             <h2 className="text-base font-black">28 Candlestick Pattern Scanner</h2>
             <p className="text-xs text-slate-400">
-              Authentic Share Hub 28-Pattern SVG recognition across all {stocks.length || 346} NEPSE scrips
+              Drabyashree Institutional 28-Pattern SVG recognition across all {stocks.length || 346} NEPSE scrips
             </p>
           </div>
         </div>

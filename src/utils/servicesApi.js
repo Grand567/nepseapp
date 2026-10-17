@@ -546,7 +546,7 @@ export const fetchSebonCirculars = () => _proxyFetch('/api/regulatory/sebon-circ
 export const fetchPromoterShares = () => _proxyFetch('/api/market/promoter-shares', {}, 3600000);
 export const fetchSeasonalityAnalytics = () => _proxyFetch('/api/market/seasonality', {}, 86400000);
 
-// Share Hub & StockYan Signature Endpoints
+// Drabyashree Quantitative & Valuation Endpoints
 export const fetchGdpVsNepse = () => _proxyFetch('/api/macro/gdp-vs-nepse', {}, 60000);
 export const fetchCandlestickScanner = (type = 'all') => _proxyFetch('/api/scanner/candlesticks?type=' + encodeURIComponent(type), {}, 30000);
 export const fetchTechnicalRatingsScanner = () => _proxyFetch('/api/scanner/technical-ratings', {}, 30000);
