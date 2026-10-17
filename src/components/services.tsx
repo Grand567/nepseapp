@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap, Play, CheckCircle2, XCircle, ShieldCheck, Terminal, Check } from 'lucide-react';
+import { Activity, Bell, Briefcase, ExternalLink, MapPin, Phone, RefreshCw, Search, Trash2, X, ChevronLeft, Flame, Target, Award, ArrowUpRight, TrendingUp, Clock, Shield, AlertTriangle, Users, Zap, Play, CheckCircle2, XCircle, ShieldCheck, Terminal, Check, LayoutGrid } from 'lucide-react';
 import { useBackHandler } from '../context/NavigationContext';
 import { calculateBuyDetails, calculateSellDetails, calculateWacc } from '../utils/calculations';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -3036,6 +3036,11 @@ export function BrokerHeatmapService() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedSector, setSelectedSector] = useState<string>('ALL');
+  const [pinnedScrips, setPinnedScrips] = useState<string[]>([]);
+  const [scripInput, setScripInput] = useState<string>('');
+  const [scripSort, setScripSort] = useState<'turnover' | 'accumulation' | 'distribution' | 'alpha'>('turnover');
+  const [brokerFilter, setBrokerFilter] = useState<'all' | 'buyers' | 'sellers' | 'top10'>('all');
   const [viewTab, setViewTab] = useState<'matrix' | 'top10_rankings'>('matrix');
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
@@ -3055,13 +3060,45 @@ export function BrokerHeatmapService() {
     'ALL': 500,
   };
 
-  const loadData = async (activeTf = timeframe, activeDate = selectedDate) => {
+  const sectorsList = [
+    { id: 'ALL', label: 'All Sectors' },
+    { id: 'Commercial Banks', label: 'Commercial Banks' },
+    { id: 'Development Banks', label: 'Dev Banks' },
+    { id: 'Finance', label: 'Finance' },
+    { id: 'Hydropower', label: 'Hydropower' },
+    { id: 'Life Insurance', label: 'Life Insurance' },
+    { id: 'Non-Life Insurance', label: 'Non-Life Ins.' },
+    { id: 'Microfinance', label: 'Microfinance' },
+    { id: 'Manufacturing and Processing', label: 'Manufacturing' },
+    { id: 'Hotels And Tourism', label: 'Hotels & Tourism' },
+    { id: 'Investment', label: 'Investment' },
+    { id: 'Others', label: 'Others' }
+  ];
+
+  const loadData = async (activeTf = timeframe, activeDate = selectedDate, activeSector = selectedSector) => {
     setLoading(true);
     const days = daysMap[activeTf] || 1;
     try {
-      const res = await fetchBrokerHeatmap({ days, date: activeDate, refresh: refreshing });
+      const res = await fetchBrokerHeatmap({
+        days,
+        date: activeDate,
+        sector: activeSector !== 'ALL' ? activeSector : undefined,
+        refresh: refreshing
+      });
       const d = res?.data || res;
-      if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
+      const isAlphabeticalBug = Array.isArray(d?.topScrips) &&
+        d.topScrips.length > 5 &&
+        d.topScrips.every((s: string) => typeof s === 'string' && (s.startsWith('A') || s.startsWith('B')));
+
+      if (isAlphabeticalBug) {
+        // Stale or un-deployed A-B alphabetical response detected from remote server/cache.
+        // Fallback to latestBrokerMatrix which contains all 91 brokers and 247+ stocks across the entire market!
+        if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix) && (latestBrokerMatrix as any).matrix.length > 0) {
+          setData(latestBrokerMatrix);
+        } else if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
+          setData(d);
+        }
+      } else if (Array.isArray(d?.matrix) && d.matrix.length > 0) {
         setData(d);
       } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setData(latestBrokerMatrix);
@@ -3076,26 +3113,109 @@ export function BrokerHeatmapService() {
     setLoading(false);
   };
 
-  useEffect(() => { loadData(timeframe, selectedDate); }, [timeframe, selectedDate]);
+  useEffect(() => { loadData(timeframe, selectedDate, selectedSector); }, [timeframe, selectedDate, selectedSector]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData(timeframe);
+    await loadData(timeframe, selectedDate, selectedSector);
     setRefreshing(false);
+  };
+
+  const handleAddPinnedScrip = () => {
+    const sym = scripInput.trim().toUpperCase();
+    if (sym && !pinnedScrips.includes(sym)) {
+      setPinnedScrips([...pinnedScrips, sym]);
+      setScripInput('');
+    }
+  };
+
+  const handleRemovePinnedScrip = (sym: string) => {
+    setPinnedScrips(pinnedScrips.filter(s => s !== sym));
   };
 
   const matrix = useMemo(() => {
     if (!data?.matrix) return [];
-    if (!search.trim()) return data.matrix;
+    let list = data.matrix;
+
+    if (brokerFilter === 'buyers') {
+      list = list.filter((r: any) => Number(r.netFlow || 0) > 0);
+    } else if (brokerFilter === 'sellers') {
+      list = list.filter((r: any) => Number(r.netFlow || 0) < 0);
+    } else if (brokerFilter === 'top10') {
+      list = [...list].sort((a: any, b: any) => Math.abs(Number(b.netFlow || 0)) - Math.abs(Number(a.netFlow || 0))).slice(0, 10);
+    }
+
+    if (!search.trim()) return list;
     const q = search.trim().toLowerCase();
-    return data.matrix.filter((row: any) =>
+    return list.filter((row: any) =>
       String(row.broker).includes(q) ||
       String(row.brokerName || '').toLowerCase().includes(q) ||
       (row.scrips || []).some((s: any) => String(s.symbol).toLowerCase().includes(q))
     );
-  }, [data, search]);
+  }, [data, search, brokerFilter]);
 
-  const topScrips = data?.topScrips || ['NABIL', 'SHIVM', 'CHCL', 'GBIME', 'HDL', 'CIT', 'NRIC', 'NICA', 'UPPER', 'API'];
+  // Aggregate turnover and net accumulation per scrip across the matrix
+  const scripMetrics = useMemo(() => {
+    const map: Record<string, { symbol: string; totalBuy: number; totalSell: number; netFlow: number; turnover: number }> = {};
+    (data?.matrix || []).forEach((row: any) => {
+      (row.scrips || []).forEach((s: any) => {
+        const sym = s.symbol;
+        if (!sym) return;
+        if (!map[sym]) map[sym] = { symbol: sym, totalBuy: 0, totalSell: 0, netFlow: 0, turnover: 0 };
+        const buy = Number(s.buy || s.buyAmount || 0);
+        const sell = Number(s.sell || s.sellAmount || 0);
+        map[sym].totalBuy += buy;
+        map[sym].totalSell += sell;
+        map[sym].turnover += (buy + sell);
+        map[sym].netFlow += (buy - sell);
+      });
+    });
+    return map;
+  }, [data]);
+
+  const topScrips = useMemo(() => {
+    const rawScrips = new Set<string>();
+
+    pinnedScrips.forEach(sym => sym && rawScrips.add(sym.toUpperCase()));
+
+    let serverScrips = data?.topScrips || [];
+    if (!serverScrips.length || (serverScrips.length > 5 && serverScrips.every((s: string) => typeof s === 'string' && (s.startsWith('A') || s.startsWith('B'))))) {
+      const activeFromMatrix = Object.keys(scripMetrics);
+      if (activeFromMatrix.length > 0 && !activeFromMatrix.every(s => s.startsWith('A') || s.startsWith('B'))) {
+        serverScrips = activeFromMatrix;
+      } else {
+        serverScrips = [
+          'GHL', 'NIMB', 'GVL', 'KBL', 'API', 'HDL', 'TAMOR', 'BHL', 'MEN', 'PHCL',
+          'NICA', 'SHIVM', 'GBIME', 'HRL', 'NRIC', 'NABIL', 'CIT', 'UPPER', 'SONA', 'HIDCL',
+          'UNL', 'NTC', 'SCB', 'EBL', 'PRVU', 'RADHI', 'AHPC', 'CBBL', 'RSML', 'SOHL'
+        ];
+      }
+    }
+    serverScrips.forEach((s: string) => rawScrips.add(s));
+
+    let list = Array.from(rawScrips);
+
+    if (scripSort === 'accumulation') {
+      list.sort((a, b) => (scripMetrics[b]?.netFlow || 0) - (scripMetrics[a]?.netFlow || 0));
+    } else if (scripSort === 'distribution') {
+      list.sort((a, b) => (scripMetrics[a]?.netFlow || 0) - (scripMetrics[b]?.netFlow || 0));
+    } else if (scripSort === 'alpha') {
+      list.sort((a, b) => a.localeCompare(b));
+    } else {
+      // Turnover sort default: prioritize highest trade turnover
+      list.sort((a, b) => (scripMetrics[b]?.turnover || 0) - (scripMetrics[a]?.turnover || 0));
+    }
+
+    if (pinnedScrips.length > 0) {
+      const pinnedSet = new Set(pinnedScrips.map(s => s.toUpperCase()));
+      const pinnedList = list.filter(s => pinnedSet.has(s));
+      const rest = list.filter(s => !pinnedSet.has(s));
+      return [...pinnedList, ...rest];
+    }
+
+    return list;
+  }, [data, pinnedScrips, scripSort, scripMetrics]);
+
   const topBuyerBroker = useMemo(() => {
     if (!matrix.length) return null;
     return [...matrix].sort((a: any, b: any) => (b.netFlow || 0) - (a.netFlow || 0))[0];
@@ -3118,31 +3238,48 @@ export function BrokerHeatmapService() {
         isRefreshing={refreshing}
       />
 
-      {Array.isArray(data?.availableDates) && data.availableDates.length > 0 && (
-        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Historical Session:</span>
+      {/* Historical Session Selector & Sector Filter */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Sector:</span>
             <select
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              value={selectedSector}
+              onChange={(e) => setSelectedSector(e.target.value)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
             >
-              <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
-              {data.availableDates.slice(0, 500).map((dt: string) => (
-                <option key={dt} value={dt}>{dt}</option>
+              {sectorsList.map(sec => (
+                <option key={sec.id} value={sec.id}>{sec.label}</option>
               ))}
             </select>
           </div>
-          {selectedDate && (
-            <button
-              onClick={() => setSelectedDate('')}
-              className="px-2.5 py-1 text-xs font-semibold text-amber-400 hover:text-white bg-amber-500/10 border border-amber-500/30 rounded-lg transition"
-            >
-              Reset to Latest
-            </button>
+
+          {Array.isArray(data?.availableDates) && data.availableDates.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Historical Session:</span>
+              <select
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
+                {data.availableDates.slice(0, 500).map((dt: string) => (
+                  <option key={dt} value={dt}>{dt}</option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
-      )}
+
+        {(selectedDate || selectedSector !== 'ALL') && (
+          <button
+            onClick={() => { setSelectedDate(''); setSelectedSector('ALL'); }}
+            className="px-2.5 py-1 text-xs font-semibold text-amber-400 hover:text-white bg-amber-500/10 border border-amber-500/30 rounded-lg transition"
+          >
+            Reset Filters
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <div
@@ -3204,33 +3341,156 @@ export function BrokerHeatmapService() {
         </button>
       </div>
 
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter heatmap by broker # or name…"
-          className="w-full rounded-xl border border-slate-800 bg-slate-900/90 py-2.5 pl-9 pr-8 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
-        />
-        {search && (
+      {/* Controls Bar: Broker Search + Pin Any Stock + Column Sorting */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        {/* Search Broker */}
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search broker #, name, or symbol…"
+            className="w-full rounded-xl border border-slate-800 bg-slate-900/90 py-2 pl-9 pr-8 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[11px] font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-400 cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Pin Any Specific Stock Symbol */}
+        <div className="flex items-center gap-1.5">
+          <input
+            value={scripInput}
+            onChange={(e) => setScripInput(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddPinnedScrip()}
+            placeholder="Inspect scrip (e.g. NABIL)…"
+            className="w-36 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs font-mono font-bold text-white placeholder:text-slate-500 placeholder:font-sans outline-none focus:border-purple-500"
+          />
           <button
             type="button"
-            onClick={() => setSearch('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-400 cursor-pointer"
+            onClick={handleAddPinnedScrip}
+            className="rounded-xl bg-purple-600/80 hover:bg-purple-600 px-3 py-2 text-xs font-bold text-white transition cursor-pointer"
           >
-            ✕
+            + Pin
           </button>
-        )}
+        </div>
+
+        {/* Broker Filter Pill Buttons */}
+        <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
+          <button
+            type="button"
+            onClick={() => setBrokerFilter('all')}
+            className={`px-2 py-1 rounded-lg font-bold text-[11px] transition ${brokerFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            All ({data?.matrix?.length || 0})
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrokerFilter('buyers')}
+            className={`px-2 py-1 rounded-lg font-bold text-[11px] transition ${brokerFilter === 'buyers' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            Buyers
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrokerFilter('sellers')}
+            className={`px-2 py-1 rounded-lg font-bold text-[11px] transition ${brokerFilter === 'sellers' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            Sellers
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrokerFilter('top10')}
+            className={`px-2 py-1 rounded-lg font-bold text-[11px] transition ${brokerFilter === 'top10' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            Top 10
+          </button>
+        </div>
       </div>
+
+      {/* Pinned Scrips Tags */}
+      {pinnedScrips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-[11px] font-bold text-purple-400">Pinned Scrips:</span>
+          {pinnedScrips.map(sym => (
+            <span
+              key={sym}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/20 border border-purple-500/40 text-purple-200 text-xs font-mono font-bold"
+            >
+              {sym}
+              <button
+                type="button"
+                onClick={() => handleRemovePinnedScrip(sym)}
+                className="hover:text-red-400 text-purple-300 ml-0.5 cursor-pointer"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPinnedScrips([])}
+            className="text-[10px] text-slate-500 hover:text-slate-300 underline ml-1 cursor-pointer"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {viewTab === 'matrix' ? (
         <>
-          {/* Heatmap Legend */}
-          <div className="flex items-center gap-4 text-[11px] text-slate-400 px-1">
-            <span className="font-semibold text-white">Flow Legend:</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-700/80 border border-emerald-500" /> Net Buying</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-700/80 border border-rose-500" /> Net Selling</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-800 border border-slate-700" /> Neutral</span>
+          {/* Heatmap Legend & Column Sorting Toggles */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 px-1">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-white">Flow:</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-700/80 border border-emerald-500" /> Net Buying</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-rose-700/80 border border-rose-500" /> Net Selling</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-800 border border-slate-700" /> Neutral</span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-semibold">Columns:</span>
+              <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setScripSort('turnover')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${scripSort === 'turnover' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  title="Sort columns by authentic turnover volume"
+                >
+                  Turnover
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScripSort('accumulation')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${scripSort === 'accumulation' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  title="Sort columns by highest smart money net buying"
+                >
+                  +Accumulation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScripSort('distribution')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${scripSort === 'distribution' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  title="Sort columns by highest net selling distribution"
+                >
+                  -Distribution
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScripSort('alpha')}
+                  className={`px-1.5 py-0.5 rounded font-bold transition ${scripSort === 'alpha' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                  title="Sort columns alphabetically (A-Z)"
+                >
+                  A-Z
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Heatmap Matrix Table */}
@@ -3246,7 +3506,7 @@ export function BrokerHeatmapService() {
                   </th>
                   {topScrips.map((sym: string) => (
                     <th key={sym} className="px-3 py-2.5 text-center text-[11px] font-bold font-mono uppercase text-slate-300 min-w-[80px]">
-                      {sym}
+                      {pinnedScrips.includes(sym) ? `⭐ ${sym}` : sym}
                     </th>
                   ))}
                 </tr>

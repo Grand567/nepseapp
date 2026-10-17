@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { InfoBanner, StatCard, StockSearchSelect } from './ui';
 import { getCachedStockFundamentals, fetchStockFundamentals } from '../utils/liveData';
 import { getSectorBenchmark } from '../utils/fundamentals';
+import { calculateBuyDetails } from '../utils/calculations';
 
 const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base sm:text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 box-border';
 const btnCls = 'w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 text-base sm:text-sm font-bold text-white hover:bg-blue-700 active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500';
@@ -1164,3 +1165,244 @@ export function MarginLoanCalculator() {
     </div>
   );
 }
+
+// ── NEPSE Stock Split & Face Value Adjustment Calculator ──
+export function StockSplitCalculator() {
+  const [form, setForm] = useState({ currentPrice: '800', shares: '100', splitRatio: '2', faceValue: '100' });
+  const [result, setResult] = useState<any>(null);
+
+  const calc = (f = form) => {
+    const p = parseFloat(f.currentPrice);
+    const s = parseFloat(f.shares) || 100;
+    const r = parseFloat(f.splitRatio);
+    const fv = parseFloat(f.faceValue) || 100;
+
+    if (!p || p <= 0 || !r || r <= 1) return;
+
+    const adjustedPrice = p / r;
+    const newShares = Math.round(s * r);
+    const newFaceValue = fv / r;
+    const totalValPre = p * s;
+    const totalValPost = adjustedPrice * newShares;
+
+    setResult({
+      adjustedPrice,
+      newShares,
+      newFaceValue,
+      splitRatio: r,
+      totalValPre,
+      totalValPost
+    });
+  };
+
+  useEffect(() => {
+    calc(form);
+  }, []);
+
+  return (
+    <div className="w-full max-w-2xl mx-auto space-y-4">
+      <InfoBanner
+        type="info"
+        title="NEPSE Stock Split Calculator"
+        text="A stock split divides existing shares into multiple new shares without changing total company valuation. Post-split price drops proportionally while share units multiply."
+      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="text-xs font-semibold text-slate-400 block mb-1">Current Market Price (LTP Rs.)</label>
+          <input
+            type="number"
+            placeholder="LTP (e.g. 800)"
+            value={form.currentPrice}
+            onChange={(e) => setForm(f => ({ ...f, currentPrice: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-400 block mb-1">Units Held Currently</label>
+          <input
+            type="number"
+            placeholder="Units (e.g. 100)"
+            value={form.shares}
+            onChange={(e) => setForm(f => ({ ...f, shares: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-400 block mb-1">Split Ratio (e.g. 2 for 2:1, 5 for 5:1)</label>
+          <input
+            type="number"
+            step="0.5"
+            min="1.1"
+            placeholder="Split Factor (e.g. 2)"
+            value={form.splitRatio}
+            onChange={(e) => setForm(f => ({ ...f, splitRatio: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-slate-400 block mb-1">Current Face Value (Rs.)</label>
+          <input
+            type="number"
+            placeholder="Par Value (Rs. 100)"
+            value={form.faceValue}
+            onChange={(e) => setForm(f => ({ ...f, faceValue: e.target.value }))}
+            className={inputCls}
+          />
+        </div>
+      </div>
+      <button onClick={() => calc(form)} className={btnCls}>Calculate Stock Split Effect</button>
+
+      {result && (
+        <div className="mt-5 space-y-3">
+          <div className="rounded-xl border border-blue-800/60 bg-blue-950/40 p-5 text-center">
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Post-Split Adjusted Price</div>
+            <div className="text-4xl font-black font-mono text-blue-400">Rs. {result.adjustedPrice.toFixed(2)}</div>
+            <div className="mt-1 text-xs text-slate-400">
+              Each 1 share splits into {result.splitRatio} shares • Face value drops from Rs. {form.faceValue || 100} to Rs. {result.newFaceValue.toFixed(1)}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <StatCard label="Post-Split Units" value={`${result.newShares} Kitta`} color="#10b981" big />
+            <StatCard label="New Par / Face Value" value={`Rs. ${result.newFaceValue.toFixed(1)}`} color="#60a5fa" big />
+            <StatCard label="Pre-Split Value" value={`Rs. ${Math.round(result.totalValPre).toLocaleString()}`} />
+            <StatCard label="Post-Split Value" value={`Rs. ${Math.round(result.totalValPost).toLocaleString()}`} color="#34d399" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Multi-Lot Buy Averaging & Blended WACC Calculator ──
+export function WaccAveragingCalculator() {
+  const [lots, setLots] = useState([
+    { id: 1, qty: '100', price: '450' },
+    { id: 2, qty: '100', price: '500' }
+  ]);
+  const [result, setResult] = useState<any>(null);
+
+  const addLot = () => {
+    setLots(prev => [...prev, { id: Date.now(), qty: '100', price: '400' }]);
+  };
+
+  const removeLot = (id: number) => {
+    if (lots.length <= 1) return;
+    setLots(prev => prev.filter(l => l.id !== id));
+  };
+
+  const updateLot = (id: number, field: 'qty' | 'price', val: string) => {
+    setLots(prev => prev.map(l => l.id === id ? { ...l, [field]: val } : l));
+  };
+
+  const calc = () => {
+    let totalQty = 0;
+    let totalRawCost = 0;
+
+    lots.forEach(lot => {
+      const q = parseFloat(lot.qty) || 0;
+      const p = parseFloat(lot.price) || 0;
+      if (q > 0 && p > 0) {
+        totalQty += q;
+        totalRawCost += (q * p);
+      }
+    });
+
+    if (totalQty <= 0) return;
+
+    const blendedWacc = totalRawCost / totalQty;
+    const buyDetails = calculateBuyDetails(totalQty, blendedWacc);
+    const breakEven = (buyDetails.totalAmount + 25) / (totalQty * (1 - 0.0036 - 0.00015));
+
+    setResult({
+      totalQty,
+      totalRawCost,
+      blendedWacc,
+      totalCostWithFees: buyDetails.totalAmount,
+      totalFees: buyDetails.commission + buyDetails.sebonFee + buyDetails.dpFee,
+      breakEvenPrice: breakEven
+    });
+  };
+
+  useEffect(() => {
+    calc();
+  }, [lots]);
+
+  return (
+    <div className="w-full max-w-2xl mx-auto space-y-4">
+      <InfoBanner
+        type="info"
+        title="Multi-Lot Averaging & Blended WACC"
+        text="Calculate your combined Weighted Average Cost per share (WACC) across multiple staggered buy orders, and determine your exact statutory break-even exit price."
+      />
+
+      <div className="space-y-2.5">
+        <div className="flex justify-between items-center text-xs font-semibold text-slate-400 px-1">
+          <span>Staggered Purchase Tranches</span>
+          <button
+            type="button"
+            onClick={addLot}
+            className="text-blue-400 hover:text-blue-300 font-bold cursor-pointer"
+          >
+            + Add Another Lot
+          </button>
+        </div>
+
+        {lots.map((lot, idx) => (
+          <div key={lot.id} className="flex items-center gap-2 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+            <span className="text-xs font-mono font-bold text-slate-400 w-12">Lot {idx + 1}</span>
+            <div className="flex-1">
+              <input
+                type="number"
+                placeholder="Qty (Kitta)"
+                value={lot.qty}
+                onChange={(e) => updateLot(lot.id, 'qty', e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+              />
+            </div>
+            <span className="text-xs text-slate-500">@ Rs.</span>
+            <div className="flex-1">
+              <input
+                type="number"
+                placeholder="Buy Price (Rs.)"
+                value={lot.price}
+                onChange={(e) => updateLot(lot.id, 'price', e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+              />
+            </div>
+            {lots.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeLot(lot.id)}
+                className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg cursor-pointer transition"
+                title="Remove Lot"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button onClick={calc} className={btnCls}>Calculate Blended WACC</button>
+
+      {result && (
+        <div className="mt-5 space-y-3">
+          <div className="rounded-xl border border-indigo-800/60 bg-indigo-950/40 p-5 text-center">
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">Blended Weighted Average Cost (WACC)</div>
+            <div className="text-4xl font-black font-mono text-indigo-400">Rs. {result.blendedWacc.toFixed(2)}</div>
+            <div className="mt-1 text-xs text-slate-400">
+              Total Outlay: Rs. {Math.round(result.totalRawCost).toLocaleString()} across {result.totalQty.toLocaleString()} units
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <StatCard label="Total Shares" value={`${result.totalQty} Kitta`} color="#60a5fa" big />
+            <StatCard label="Capital Invested" value={`Rs. ${Math.round(result.totalRawCost).toLocaleString()}`} big />
+            <StatCard label="Total SEBON / Broker Fees" value={`Rs. ${result.totalFees.toFixed(1)}`} color="#f59e0b" />
+            <StatCard label="Break-Even Exit Price" value={`Rs. ${result.breakEvenPrice.toFixed(2)}`} color="#10b981" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

@@ -883,6 +883,15 @@ function AppInner() {
               <span className="text-[10px] font-mono text-slate-400">
                 {marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : ''}
               </span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowCalendarModal(true); }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-all cursor-pointer ml-1"
+                title="View official NEPSE trading holidays and calendar (वि.सं.)"
+              >
+                <span>📅</span>
+                <span>Holidays</span>
+              </button>
             </div>
           </div>
         </div>

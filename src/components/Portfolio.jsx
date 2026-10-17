@@ -130,6 +130,10 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
   const [transactions, setTransactions] = useState([]);
   const [meroshareProfiles, setMeroshareProfiles] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRawText, setImportRawText] = useState('');
+  const [importParsedItems, setImportParsedItems] = useState(null);
+  const [importStatusMsg, setImportStatusMsg] = useState(null);
   const [activeView, setActiveView] = useState('consolidated'); // 'consolidated', 'meroshare', 'manual'
   const [valuationMode, setValuationMode] = useState('prevClose'); // 'prevClose' (MeroShare Official default), 'ltp', 'live'
   const [allocationView, setAllocationView] = useState('stock'); // 'stock', 'sector'
@@ -752,6 +756,128 @@ export default function Portfolio({ marketStocks, userId = 'local', userEmail = 
     try {
       syncUserDataToCloud(userId, { transactions: newTxs }, userEmail);
     } catch (_) {}
+  };
+
+  const handleParseImportText = (raw) => {
+    const textToParse = (raw !== undefined ? raw : importRawText).trim();
+    if (!textToParse) {
+      setImportParsedItems(null);
+      setImportStatusMsg('Please paste tabular text or select a CSV file.');
+      return;
+    }
+
+    const lines = textToParse.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      setImportParsedItems(null);
+      return;
+    }
+
+    const detected = [];
+    const tmsRes = parseBrokerTradeBook(textToParse);
+    if (tmsRes.success && tmsRes.holdings && Object.keys(tmsRes.holdings).length > 0) {
+      Object.values(tmsRes.holdings).forEach(h => {
+        detected.push({
+          symbol: h.symbol.toUpperCase(),
+          units: h.totalQuantity,
+          rate: h.wacc,
+          totalAmount: Math.round(h.totalQuantity * h.wacc)
+        });
+      });
+    } else {
+      lines.forEach(line => {
+        if (line.toLowerCase().includes('scrip') && line.toLowerCase().includes('balance')) return;
+        if (line.toLowerCase().includes('symbol') && line.toLowerCase().includes('qty')) return;
+
+        const tokens = line.split(/[,\t|]|\s{2,}/).map(t => t.trim().replace(/['"]/g, '')).filter(Boolean);
+        if (tokens.length >= 2) {
+          const symIdx = tokens.findIndex(t => /^[A-Z]{2,6}$/i.test(t));
+          if (symIdx !== -1) {
+            const sym = tokens[symIdx].toUpperCase();
+            const numbers = tokens.slice(symIdx + 1).map(t => parseFloat(t.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
+            if (numbers.length >= 1) {
+              const units = Math.round(numbers[0]);
+              const rate = numbers.length >= 2 ? numbers[1] : (typeof guessScripBasePrice === 'function' ? guessScripBasePrice(sym, 100) : 100);
+              detected.push({
+                symbol: sym,
+                units,
+                rate: Number(rate.toFixed(2)),
+                totalAmount: Math.round(units * rate)
+              });
+            }
+          }
+        }
+      });
+    }
+
+    if (detected.length > 0) {
+      setImportParsedItems(detected);
+      setImportStatusMsg(`✓ Successfully detected ${detected.length} scrips! Review below and click "Import to Portfolio".`);
+    } else {
+      setImportParsedItems(null);
+      setImportStatusMsg('⚠️ Could not extract valid holdings. Make sure lines contain Symbol, Units, and Rate.');
+    }
+  };
+
+  const handleImportFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      setImportRawText(text);
+      handleParseImportText(text);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleApplyImportedHoldings = () => {
+    if (!importParsedItems || importParsedItems.length === 0) return;
+
+    const newTransactions = importParsedItems.map(item => ({
+      id: `${Date.now()}_${item.symbol}_${Math.random().toString(36).substr(2, 4)}`,
+      type: 'buy',
+      symbol: item.symbol,
+      quantity: item.units,
+      price: item.rate,
+      date: new Date().toISOString().split('T')[0]
+    }));
+
+    saveTransactions([...newTransactions, ...transactions]);
+
+    if (meroshareProfiles.length > 0) {
+      const activeProf = meroshareProfiles[0];
+      const existingHoldings = [...(activeProf.holdings || [])];
+
+      importParsedItems.forEach(item => {
+        const idx = existingHoldings.findIndex(h => (h.symbol || '').toUpperCase() === item.symbol);
+        if (idx !== -1) {
+          existingHoldings[idx] = {
+            ...existingHoldings[idx],
+            units: existingHoldings[idx].units + item.units,
+            wacc: item.rate
+          };
+        } else {
+          existingHoldings.push({
+            symbol: item.symbol,
+            name: item.symbol,
+            units: item.units,
+            wacc: item.rate
+          });
+        }
+      });
+
+      const updatedProfiles = meroshareProfiles.map((p, i) => i === 0 ? { ...p, holdings: existingHoldings, lastSyncedAt: Date.now() } : p);
+      setMeroshareProfiles(updatedProfiles);
+      saveProfilesToStorage(updatedProfiles);
+    }
+
+    setImportStatusMsg(`🎉 Successfully imported ${importParsedItems.length} holdings into your active portfolio!`);
+    setTimeout(() => {
+      setShowImportModal(false);
+      setImportParsedItems(null);
+      setImportRawText('');
+      setImportStatusMsg(null);
+    }, 1200);
   };
 
   const handleAddTransaction = (e) => {
@@ -2182,6 +2308,14 @@ Based on this data, provide a robust analysis using this exact markdown structur
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe', borderRadius: 8, padding: '5px 10px', fontWeight: 800 }}
             >
               <Sparkles style={{ width: 13, height: 13 }} /> Guru AI
+            </button>
+            <button 
+              onClick={() => setShowImportModal(true)}
+              className="btn-secondary btn-xs"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.35)', color: '#60a5fa', borderRadius: 8, padding: '5px 10px', fontWeight: 800 }}
+              title="Import portfolio from MeroShare My Holdings table, TMS Trade Book, or CSV"
+            >
+              <FileText style={{ width: 13, height: 13 }} /> 📋 Import MeroShare / CSV
             </button>
             {activeView !== 'meroshare' && (
               <button 
@@ -3715,6 +3849,183 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   Save All WACCs Permanently
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MeroShare Tabular / CSV Paste Importer Modal ── */}
+      {showImportModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+          onClick={() => setShowImportModal(false)}
+        >
+          <div 
+            style={{
+              background: '#0f172a',
+              border: '1px solid #1e293b',
+              borderRadius: 16,
+              maxWidth: 620,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 20,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span>📋</span> Import MeroShare / TMS / CSV Portfolio
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Paste copied tabular text from MeroShare (My Holdings), TMS Trade Book, or drop a CSV file.
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowImportModal(false)}
+                className="btn-secondary btn-xs"
+                style={{ padding: '2px 8px', fontSize: 12 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Helper Banner */}
+            <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: '#93c5fd', lineHeight: 1.5 }}>
+              💡 <strong>Quick Instructions:</strong><br />
+              • <strong>MeroShare</strong>: Go to <em>My Holdings</em>, highlight &amp; copy the scrip table, then paste below.<br />
+              • <strong>TMS</strong>: Go to <em>Trade Management → Trade Book</em>, copy rows or CSV, then paste below.
+            </div>
+
+            {/* Textarea Input */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>
+                  Paste Table Rows or CSV:
+                </label>
+                <label style={{ fontSize: 11, color: '#38bdf8', cursor: 'pointer', fontWeight: 700 }}>
+                  📁 Upload CSV File
+                  <input type="file" accept=".csv,.txt" onChange={handleImportFileUpload} style={{ display: 'none' }} />
+                </label>
+              </div>
+              <textarea
+                rows={6}
+                placeholder="Example:&#10;1  NABIL  100  385.50&#10;2  SHIVM  200  490.00&#10;(or paste CSV: NABIL,100,385.50)"
+                value={importRawText}
+                onChange={e => {
+                  setImportRawText(e.target.value);
+                  handleParseImportText(e.target.value);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: 12,
+                  fontFamily: 'var(--font-mono)',
+                  background: '#090d16',
+                  border: '1px solid #1e293b',
+                  borderRadius: 10,
+                  color: '#fff',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+
+            {/* Status Message */}
+            {importStatusMsg && (
+              <div style={{
+                fontSize: 12,
+                fontWeight: 600,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: importStatusMsg.includes('✓') || importStatusMsg.includes('🎉') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                border: `1px solid ${importStatusMsg.includes('✓') || importStatusMsg.includes('🎉') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                color: importStatusMsg.includes('✓') || importStatusMsg.includes('🎉') ? '#34d399' : '#f87171'
+              }}>
+                {importStatusMsg}
+              </div>
+            )}
+
+            {/* Parsed Preview Table */}
+            {importParsedItems && importParsedItems.length > 0 && (
+              <div style={{ border: '1px solid #1e293b', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', background: '#111827', fontSize: 12, fontWeight: 700, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Detected Scrips ({importParsedItems.length})</span>
+                  <span>Total Est. Cost: Rs. {importParsedItems.reduce((acc, it) => acc + it.totalAmount, 0).toLocaleString()}</span>
+                </div>
+                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: '#090d16', borderBottom: '1px solid #1e293b', color: '#64748b' }}>
+                        <th style={{ padding: '6px 10px' }}>Scrip</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Kitta</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Rate (Rs.)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'right' }}>Total (Rs.)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importParsedItems.map((item, idx) => (
+                        <tr key={`${item.symbol}_${idx}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '6px 10px', fontWeight: 800, color: '#fff' }}>{item.symbol}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{item.units.toLocaleString()}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>{item.rate.toFixed(2)}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#10b981' }}>{item.totalAmount.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportParsedItems(null);
+                  setImportRawText('');
+                  setImportStatusMsg(null);
+                }}
+                className="btn-secondary"
+                style={{ flex: 1, padding: '9px 0', fontSize: 12 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyImportedHoldings}
+                disabled={!importParsedItems || importParsedItems.length === 0}
+                className="btn-primary"
+                style={{
+                  flex: 2,
+                  padding: '9px 0',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  background: (!importParsedItems || importParsedItems.length === 0) ? '#334155' : 'linear-gradient(90deg, #10b981, #059669)',
+                  border: 'none',
+                  color: (!importParsedItems || importParsedItems.length === 0) ? '#64748b' : '#042f2e',
+                  cursor: (!importParsedItems || importParsedItems.length === 0) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                ✓ Import All {importParsedItems?.length ? `(${importParsedItems.length} Scrips)` : ''}
+              </button>
             </div>
           </div>
         </div>

@@ -4313,9 +4313,11 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   const businessDate = req.query.date || '';
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
+  const sector = String(req.query.sector || '').trim();
   const days = Math.min(500, Math.max(1, parseInt(req.query.days || (businessDate ? '1' : '1'), 10) || 1));
   const refresh = req.query.refresh === 'true';
-  const cacheKey = `broker-heatmap-${businessDate || 'today'}-${days}-${fromDate}-${toDate}`;
+  const symbolsParam = String(req.query.symbols || req.query.symbol || '').trim();
+  const cacheKey = `broker-heatmap-${businessDate || 'today'}-${days}-${fromDate}-${toDate}-${sector}-${symbolsParam}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
     if (cached) return res.json({ success: true, data: cached, cached: true });
@@ -4323,7 +4325,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 
   try {
     // 1. Primary for 1D Session: Aggregate from 100% authentic market floorsheet transactions
-    if (days === 1 && !fromDate && !toDate) {
+    if (days === 1 && !fromDate && !toDate && !symbolsParam && (!sector || sector.toUpperCase() === 'ALL')) {
       try {
         const fullTrades = await getFullSessionFloorsheet(businessDate);
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
@@ -4370,23 +4372,56 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
 
     // 2. Multi-day horizon or fallback: Build authentic broker-by-scrip heatmap from genuine brokerVault records
     let topScrips = [];
-    if (req.query.symbols) {
-      topScrips = String(req.query.symbols).split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-    } else if (req.query.symbol) {
-      topScrips = [String(req.query.symbol).trim().toUpperCase()];
+    if (symbolsParam) {
+      topScrips = symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
     }
 
     if (!topScrips.length) {
       const meroSummary = await fetchInternalMeroMarketSummary().catch(() => ({ stocks: [] }));
-      const activeStocks = (meroSummary?.stocks || []).filter(s => Number(s.turnover || s.volume || 0) > 0);
+      let activeStocks = (meroSummary?.stocks || []).filter(s => Number(s.turnover || s.volume || 0) > 0);
+
+      if (sector && sector.toUpperCase() !== 'ALL') {
+        const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
+        activeStocks = activeStocks.filter(s => {
+          const sec = (stockMap[s.symbol]?.sector || s.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
+          return sec.includes(cleanSector) || cleanSector.includes(sec);
+        });
+      }
+
+      // CRITICAL FIX: Sort activeStocks by turnover descending across the ENTIRE market!
+      // Previously, activeStocks was left in raw alphabetical order, which truncated only A & B stocks.
+      activeStocks.sort((a, b) => {
+        const tA = Number(a.turnover || 0) || (Number(a.volume || 0) * Number(a.ltp || 0));
+        const tB = Number(b.turnover || 0) || (Number(b.volume || 0) * Number(b.ltp || 0));
+        return tB - tA;
+      });
+
       topScrips = activeStocks.map(s => s.symbol).filter(Boolean);
-      if (!topScrips.length) {
-        topScrips = ['NABIL', 'SHIVM', 'CHCL', 'GBIME', 'HDL', 'CIT', 'NRIC', 'NICA', 'UPPER', 'API', 'SONA', 'HRL', 'HIDCL', 'UNL', 'NTC', 'SCB', 'EBL', 'PRVU', 'RADHI', 'AHPC', 'GHL', 'KBL', 'CBBL', 'RSML', 'SOHL', 'AKJCL', 'ALBSL', 'KKHC'];
+
+      // Supplement with diversified cross-sector market leaders to guarantee wide coverage from A-Z
+      const coreMarketLeaders = [
+        'GHL', 'NIMB', 'GVL', 'KBL', 'API', 'HDL', 'TAMOR', 'BHL', 'MEN', 'PHCL',
+        'NICA', 'SHIVM', 'GBIME', 'HRL', 'NRIC', 'NABIL', 'CIT', 'UPPER', 'SONA', 'HIDCL',
+        'UNL', 'NTC', 'SCB', 'EBL', 'PRVU', 'RADHI', 'AHPC', 'CBBL', 'RSML', 'SOHL',
+        'AKJCL', 'ALBSL', 'KKHC', 'LSL', 'SAHAS', 'PCBL', 'NMB', 'CZBIL', 'SBI', 'HATHY'
+      ];
+      for (const sym of coreMarketLeaders) {
+        if (!topScrips.includes(sym)) {
+          if (!sector || sector.toUpperCase() === 'ALL') {
+            topScrips.push(sym);
+          } else {
+            const cleanSector = sector.replace(/[\s\-_]/g, '').toLowerCase();
+            const sec = (stockMap[sym]?.sector || '').replace(/[\s\-_]/g, '').toLowerCase();
+            if (sec.includes(cleanSector) || cleanSector.includes(sec)) {
+              topScrips.push(sym);
+            }
+          }
+        }
       }
     }
 
-    // Limit scrips to top 25 by volume if multi-day (50 for single day) to prevent request timeout while maintaining full market coverage
-    const scripsToFetch = topScrips.slice(0, days > 1 ? 25 : 50);
+    // Fetch top 35 scrips for multi-day (50 for single day) to maintain fast response while delivering complete market coverage
+    const scripsToFetch = topScrips.slice(0, days > 1 ? 35 : 50);
 
     // Fetch authentic broker transactions for each top scrip from brokerVault in parallel
     // Multi-day requests: use getFastVaultSnapshot first or race with 2800ms to guarantee response in <3s
@@ -4464,9 +4499,10 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
       totalTradesCount += Number(vaultData.totalTrades || 0);
     });
 
+    // Expand broker coverage to all active broker desks (up to 100, encompassing all 90+ operating brokers)
     const topBrokers = Object.values(brokerTotals)
       .sort((a, b) => (b.totalBuy + b.totalSell) - (a.totalBuy + a.totalSell))
-      .slice(0, 30);
+      .slice(0, 100);
 
     const heatmapMatrix = topBrokers.map(broker => {
       const bScripsMap = brokerScripsMap[broker.id] || {};
@@ -4526,7 +4562,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
     const data = {
       topBrokers: topBrokers.map(b => b.id),
       topBrokerNames: topBrokers.map(b => b.name),
-      topScrips: scripsToFetch.slice(0, 30),
+      topScrips: scripsToFetch,
       matrix: heatmapMatrix,
       totalTrades: totalTradesCount || 1200,
       timeframeDays: days,

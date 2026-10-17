@@ -34,7 +34,7 @@ import {
 } from './services';
 import IPOList from './IPOList';
 import { useBackHandler } from '../context/NavigationContext';
-import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator } from './calculators';
+import { GrahamValuation, BrokerageCalculator, DividendCalculator, SIPCalculator, RiskRewardCalculator, BonusAdjustmentCalculator, RightAdjustmentCalculator, MarginLoanCalculator, StockSplitCalculator, WaccAveragingCalculator } from './calculators';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse';
 import { EntryExitAnalyzer } from './EntryExitAnalyzer';
 import ShortTermProfitPlan from './ShortTermProfitPlan';
@@ -60,6 +60,7 @@ import {
   GdpVsNepseMacroService
 } from './ShareHubScannersSuite';
 import ProGate from './ProGate';
+import { fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 
 export const PRO_SERVICE_IDS = new Set<string>([
   'master-100-profit',
@@ -135,7 +136,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   if (['broker-analysis', 'broker-favourites', 'zero-sum-floorsheet', 'broker-flow', 'broker-heatmap', 'broker-dominance', 'broker-top10', 'aggressive-accumulators', 'aggressive-holdings', 'distribution-leaders', 'matching-buy-sell', 'slow-accumulation', 'unusual-trades', 'sector-wise-ad', 'smart-money', 'players-choices', 'whale-daily-archive', 'daily-whale-tracker'].includes(s.id)) {
     return 'smart-money';
   }
-  if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
+  if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'stock-split' || s.id === 'wacc-averaging' || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
     return 'calculators';
   }
   if (['portfolio', 'watchlist', 'trade-notes', 'smart-trade-journal', 'stock-alerts', 'smart-portfolio', 'target-alert', 'credentials', 'apply-history', 'edit', 'preferences', 'system-health'].includes(s.id)) {
@@ -257,7 +258,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'pe-ranking',                 name: 'P/E & PBV Sector Valuation Ranking',           icon: Percent,            color: 'blue',    cat: 'valuation', star: true },
   { id: 'lynch-garp',                 name: 'Peter Lynch Growth-At-A-Reasonable-Price',     icon: Target,             color: 'purple',  cat: 'valuation', star: true },
   { id: 'equity-risk-premium',        name: 'Equity Risk Premium vs Bank FD (> 7.5%)',      icon: Scale,              color: 'cyan',    cat: 'valuation', star: true },
-  { id: 'promoter-shares',            name: 'Promoter vs Public Share Distribution',        icon: Layers,             color: 'orange',  cat: 'valuation', star: true },
+  { id: 'promoter-shares',            name: '🔒 Promoter Share Lock-in Expiry Countdown', icon: Lock,               color: 'rose',    cat: 'valuation', star: true },
   { id: 'mutual-funds-unlock',        name: 'Mutual Funds Portfolio & NAV Analysis',        icon: PieChart,           color: 'cyan',    cat: 'valuation', star: true },
   { id: 'float-analytics',            name: 'Public Float & Free-Float Turnover Analysis',  icon: PieChart,           color: 'teal',    cat: 'valuation', star: true },
   { id: 'stocks-by-market-cap',       name: 'Total Market Capitalization Ladder',           icon: Layers,             color: 'blue',    cat: 'valuation', star: true },
@@ -298,11 +299,13 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'beginners-guide',            name: 'NEPSE Beginner\'s Glossary & Trading Guide',   icon: BookOpen,           color: 'yellow',  cat: 'market', star: true },
   { id: 'api-status',                 name: 'Core API & Proxy Telemetry Health Status',     icon: ShieldCheck,        color: 'teal',    cat: 'market', star: true },
 
-  // ── 7. Trading Calculators (7 Tools) ──
+  // ── 7. Trading Calculators (9 Tools) ──
   { id: 'calculator',                 name: 'SEBON Brokerage & Net P&L Calculator',         icon: Calculator,         color: 'orange',  cat: 'calculators', star: true },
   { id: 'margin-loan',                name: 'Margin Loan (NRB 70% LTV Valuation)',          icon: Scale,              color: 'rose',    cat: 'calculators', star: true },
   { id: 'bonus-adjustment',           name: 'Bonus Share Book-Closure Price Adjustment',    icon: Percent,            color: 'emerald', cat: 'calculators', star: true },
   { id: 'right-adjustment',           name: 'Right Share Book-Closure Price Adjustment',    icon: Percent,            color: 'teal',    cat: 'calculators', star: true },
+  { id: 'stock-split',                name: '✂️ Stock Split & Par Value Adjustment',          icon: Percent,            color: 'blue',    cat: 'calculators', star: true },
+  { id: 'wacc-averaging',             name: '⚖️ Multi-Lot Buy Averaging & Blended WACC',    icon: Scale,              color: 'indigo',  cat: 'calculators', star: true },
   { id: 'dividend-calculator',        name: 'Cash & Stock Dividend Yield Calculator',       icon: Coins,              color: 'yellow',  cat: 'calculators', star: true },
   { id: 'sip-calculator',             name: 'SIP Wealth & Compounding Simulator',           icon: PieChart,           color: 'cyan',    cat: 'calculators', star: true },
   { id: 'risk-reward',                name: 'Position Sizing & Risk/Reward Calculator',     icon: Target,             color: 'purple',  cat: 'calculators', star: true },
@@ -674,6 +677,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       insight="Allocate core to large caps, satellite to vetted small caps." />
   ),
   'promoter-shares': PromoterSharesService,
+  'lockin-tracker': PromoterSharesService,
   'dividend-kings': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => ((s.eps && s.eps >= 14) || (s.dividendYield && s.dividendYield > 3) || (s.bonusShare && s.bonusShare > 0))} sortFn={(a, b) => (b.eps || b.dividendYield || 0) - (a.eps || a.dividendYield || 0)}
       customCols={[
@@ -827,6 +831,8 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'margin-loan': MarginLoanCalculator,
   'bonus-adjustment': BonusAdjustmentCalculator,
   'right-adjustment': RightAdjustmentCalculator,
+  'stock-split': StockSplitCalculator,
+  'wacc-averaging': WaccAveragingCalculator,
   'dividend-calculator': DividendCalculator,
   'sip-calculator': SIPCalculator,
   'risk-reward': RiskRewardCalculator,
@@ -1155,6 +1161,11 @@ export default function ServicesHub({
       return '';
     }
   });
+
+  // Pre-warm the verified market-wide broker summary map so all child services have fresh broker data
+  useEffect(() => {
+    fetchMarketWideBrokerSummaryMap(1).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleOpenService = (e: any) => {

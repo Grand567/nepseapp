@@ -46,9 +46,20 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
       try {
         const idbCached = await idbGet(cacheKey, false);
         if (idbCached !== null) {
-          // Invalidate legacy cached matrix that lacks authentic topAccumulation arrays
-          if (path.includes('broker-heatmap') && Array.isArray(idbCached?.matrix) && idbCached.matrix.some((m) => m?.broker === '58' && !m?.topAccumulation)) {
-            // Outdated schema — refetch fresh authentic floorsheet
+          // Invalidate legacy cached matrix that lacks authentic topAccumulation arrays or contains buggy A-B alphabetical slice
+          if (path.includes('broker-heatmap')) {
+            const isAbBug = Array.isArray(idbCached?.topScrips) &&
+              idbCached.topScrips.length > 5 &&
+              idbCached.topScrips.every((s) => s.startsWith('A') || s.startsWith('B'));
+            const lacksTopAcc = Array.isArray(idbCached?.matrix) &&
+              idbCached.matrix.some((m) => m?.broker === '58' && !m?.topAccumulation);
+            if (isAbBug || lacksTopAcc) {
+              // Stale/buggy alphabetical cache — force delete from IndexedDB and refetch fresh authentic data
+              idbDel(cacheKey).catch(() => {});
+            } else {
+              _setCache(cacheKey, idbCached, ttlMs);
+              return idbCached;
+            }
           } else {
             _setCache(cacheKey, idbCached, ttlMs);
             return idbCached;
@@ -364,6 +375,9 @@ export const fetchBrokerHeatmap = (arg) => {
     if (arg.fromDate) p.set('fromDate', String(arg.fromDate));
     if (arg.toDate) p.set('toDate', String(arg.toDate));
     if (arg.refresh) p.set('refresh', 'true');
+    if (arg.symbols) p.set('symbols', String(arg.symbols));
+    if (arg.symbol) p.set('symbol', String(arg.symbol));
+    if (arg.sector) p.set('sector', String(arg.sector));
     q = p.toString() ? `?${p.toString()}` : '';
   } else if (arg) {
     q = `?date=${arg}`;
