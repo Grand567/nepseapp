@@ -3086,12 +3086,14 @@ export function BrokerHeatmapService() {
         refresh: refreshing
       });
       const d = res?.data || res;
-      const isAlphabeticalBug = Array.isArray(d?.topScrips) &&
-        d.topScrips.length > 5 &&
-        d.topScrips.every((s: string) => typeof s === 'string' && (s.startsWith('A') || s.startsWith('B')));
+      const isAlphabeticalBug = (
+        (Array.isArray(d?.topScrips) && d.topScrips.length > 5 && d.topScrips.every((s: string) => typeof s === 'string' && (s.startsWith('A') || s.startsWith('B')))) ||
+        (Array.isArray(d?.matrix) && d.matrix.length > 0 && d.matrix[0]?.scrips?.length > 5 && d.matrix[0].scrips.every((s: any) => typeof s.symbol === 'string' && (s.symbol.startsWith('A') || s.symbol.startsWith('B')))) ||
+        (!Array.isArray(d?.matrix) || d.matrix.length === 0)
+      );
 
       if (isAlphabeticalBug) {
-        // Stale or un-deployed A-B alphabetical response detected from remote server/cache.
+        // Stale or un-deployed A-B alphabetical or empty response detected.
         // Fallback to latestBrokerMatrix which contains all 91 brokers and 247+ stocks across the entire market!
         if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix) && (latestBrokerMatrix as any).matrix.length > 0) {
           setData(latestBrokerMatrix);
@@ -3712,6 +3714,21 @@ export function BrokerHeatmapService() {
                   modalScrips = selectedBroker.topDistribution || [];
                 }
               }
+
+              // Guard: If modalScrips only contains A & B symbols, dynamically re-derive top accumulation / distribution from selectedBroker.scrips
+              const isAbStale = Array.isArray(modalScrips) &&
+                modalScrips.length > 4 &&
+                modalScrips.every((s: any) => typeof s?.symbol === 'string' && (s.symbol.startsWith('A') || s.symbol.startsWith('B')));
+              if (isAbStale && Array.isArray(selectedBroker.scrips) && selectedBroker.scrips.length > 0) {
+                const nonAbScrips = selectedBroker.scrips.filter((s: any) => s?.symbol && !s.symbol.startsWith('A') && !s.symbol.startsWith('B'));
+                if (nonAbScrips.length > 0) {
+                  const sorted = modalTab === 'accumulation'
+                    ? [...selectedBroker.scrips].filter((s: any) => (Number(s.net || 0) > 0) || (Number(s.buy || 0) > Number(s.sell || 0))).sort((a: any, b: any) => (Number(b.net || b.buy || 0)) - (Number(a.net || a.buy || 0)))
+                    : [...selectedBroker.scrips].filter((s: any) => (Number(s.net || 0) < 0) || (Number(s.sell || 0) > Number(s.buy || 0))).sort((a: any, b: any) => (Number(a.net || a.sell || 0)) - (Number(b.net || b.sell || 0)));
+                  if (sorted.length > 0) modalScrips = sorted.slice(0, 10);
+                }
+              }
+
               const isAcc = modalTab === 'accumulation';
 
               return (

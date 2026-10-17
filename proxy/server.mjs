@@ -4500,9 +4500,32 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
     });
 
     // Expand broker coverage to all active broker desks (up to 100, encompassing all 90+ operating brokers)
-    const topBrokers = Object.values(brokerTotals)
+    let topBrokers = Object.values(brokerTotals)
       .sort((a, b) => (b.totalBuy + b.totalSell) - (a.totalBuy + a.totalSell))
       .slice(0, 100);
+
+    if (topBrokers.length === 0) {
+      const matrixDirs = [
+        path.join(__dirname, 'data'),
+        path.join(process.cwd(), 'data'),
+        path.join(process.cwd(), 'proxy', 'data'),
+        path.join(process.cwd(), 'src', 'data')
+      ];
+      for (const mDir of matrixDirs) {
+        const mFile = path.join(mDir, 'broker_matrix_latest.json');
+        if (fs.existsSync(mFile)) {
+          try {
+            const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
+            if (parsed?.matrix?.length > 0) {
+              parsed.timeframeDays = days;
+              parsed.businessDate = businessDate || parsed.businessDate || new Date().toISOString().split('T')[0];
+              setCache(cacheKey, parsed, 5 * 60 * 1000);
+              return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot_fallback' });
+            }
+          } catch (_) {}
+        }
+      }
+    }
 
     const heatmapMatrix = topBrokers.map(broker => {
       const bScripsMap = brokerScripsMap[broker.id] || {};

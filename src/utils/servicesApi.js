@@ -53,8 +53,9 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
               idbCached.topScrips.every((s) => s.startsWith('A') || s.startsWith('B'));
             const lacksTopAcc = Array.isArray(idbCached?.matrix) &&
               idbCached.matrix.some((m) => m?.broker === '58' && !m?.topAccumulation);
-            if (isAbBug || lacksTopAcc) {
-              // Stale/buggy alphabetical cache — force delete from IndexedDB and refetch fresh authentic data
+            const isEmpty = !idbCached?.matrix?.length || !idbCached?.topScrips?.length;
+            if (isAbBug || lacksTopAcc || isEmpty) {
+              // Stale/buggy alphabetical or empty cache — force delete from IndexedDB and refetch fresh authentic data
               idbDel(cacheKey).catch(() => {});
             } else {
               _setCache(cacheKey, idbCached, ttlMs);
