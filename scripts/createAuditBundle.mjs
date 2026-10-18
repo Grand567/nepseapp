@@ -429,12 +429,66 @@ for (const relPath of bundle5Paths) {
   if (item) bundle5Files.push(item);
 }
 
+// Bundle 6: Portfolio, WACC & Corporate Actions
+const bundle6Paths = new Set([
+  'src/components/PortfolioHub.jsx',
+  'src/components/Portfolio.jsx',
+  'src/utils/priceAdjustment.js',
+  'src/utils/dividendHistory.js',
+  'src/views/WaccTaxCalculator.jsx',
+  'src/components/calculators.tsx',
+  'src/utils/paperTrading.js',
+  'src/utils/calculations.js'
+]);
+const bundle6Files = [];
+for (const relPath of bundle6Paths) {
+  const item = fileMap.get(relPath);
+  if (item) bundle6Files.push(item);
+}
+
+// Bundle 7: AI Predictor, ML Feature Store & Macro Engine
+const bundle7Paths = new Set([
+  'src/components/PredictorHub.jsx',
+  'proxy/quant/predictorEngine.mjs',
+  'proxy/quant/featureEngine.mjs',
+  'proxy/quant/macroCache.mjs',
+  'proxy/quant/newsCache.mjs',
+  'src/utils/newsImpactScorer.js',
+  'src/components/NRBMacroWidget.jsx',
+  'src/services/aiService.js',
+  'src/components/AiAnalyst.jsx'
+]);
+const bundle7Files = [];
+for (const relPath of bundle7Paths) {
+  const item = fileMap.get(relPath);
+  if (item) bundle7Files.push(item);
+}
+
+// Bundle 8: MeroShare Automation, ASBA & IPO Execution Hub
+const bundle8Paths = new Set([
+  'src/components/MeroShareHub.jsx',
+  'src/components/IPOList.jsx',
+  'src/services/meroShareService.js',
+  'proxy/meroshare.js',
+  'proxy/scrapeIpo.js',
+  'proxy/ipoHelper.js',
+  'src/utils/credentialCrypto.js'
+]);
+const bundle8Files = [];
+for (const relPath of bundle8Paths) {
+  const item = fileMap.get(relPath);
+  if (item) bundle8Files.push(item);
+}
+
 // Sort for consistency
 bundle1Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle2Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle3Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle4Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle5Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
+bundle6Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
+bundle7Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
+bundle8Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 
 console.log(`Categorized Files:`);
 console.log(`  Bundle 1 (Architecture & Backend) : ${bundle1Files.length} files`);
@@ -442,6 +496,9 @@ console.log(`  Bundle 2 (Quant Engine & Gates)   : ${bundle2Files.length} files`
 console.log(`  Bundle 3 (Frontend Radar & UI)    : ${bundle3Files.length} files`);
 console.log(`  Bundle 4 (Diagnostics & Charts)   : ${bundle4Files.length} files`);
 console.log(`  Bundle 5 (Alpha & Stock Selection): ${bundle5Files.length} files`);
+console.log(`  Bundle 6 (Portfolio & WACC)       : ${bundle6Files.length} files`);
+console.log(`  Bundle 7 (AI Predictor & Macro)   : ${bundle7Files.length} files`);
+console.log(`  Bundle 8 (MeroShare & IPO Hub)    : ${bundle8Files.length} files`);
 
 // Helper to write a bundle
 function createBundleText(bundleName, bundleTitle, description, files, extraText = '') {
@@ -572,6 +629,30 @@ const b5Meta = createBundleText(
   bundle5Files
 );
 
+console.log('Generating Bundle 6: Portfolio, WACC & Corporate Actions...');
+const b6Meta = createBundleText(
+  'BUNDLE_6_PORTFOLIO_WACC_AND_CORPORATE_ACTIONS.txt',
+  'Part 6: Portfolio Tracking, WACC Taxation, Corporate Action Dilutions & Paper Trading',
+  'Contains PortfolioHub.jsx, Portfolio.jsx, priceAdjustment.js, dividendHistory.js, WaccTaxCalculator.jsx, calculators.tsx, paperTrading.js, and calculations.js.',
+  bundle6Files
+);
+
+console.log('Generating Bundle 7: AI Predictor, ML Feature Store & Macro Engine...');
+const b7Meta = createBundleText(
+  'BUNDLE_7_AI_PREDICTOR_AND_MACRO.txt',
+  'Part 7: Machine Learning Predictor, Quantitative Feature Engine, Macro Indicators & AI Analyst',
+  'Contains PredictorHub.jsx, predictorEngine.mjs, featureEngine.mjs, macroCache.mjs, newsCache.mjs, newsImpactScorer.js, NRBMacroWidget.jsx, aiService.js, and AiAnalyst.jsx.',
+  bundle7Files
+);
+
+console.log('Generating Bundle 8: MeroShare Automation, ASBA & IPO Execution Hub...');
+const b8Meta = createBundleText(
+  'BUNDLE_8_MEROSHARE_AND_IPO_HUB.txt',
+  'Part 8: CDSC MeroShare C-ASBA Automation, IPO Application Center, Credential Security & Allotment Scraper',
+  'Contains MeroShareHub.jsx, IPOList.jsx, meroShareService.js, proxy/meroshare.js, proxy/scrapeIpo.js, proxy/ipoHelper.js, and credentialCrypto.js.',
+  bundle8Files
+);
+
 // 6. Generate Master Argon Stock Selection Audit Prompt on Desktop
 const argonPromptPath = path.join(desktopDir, 'ARGON_STOCK_SELECTION_AUDIT_PROMPT.md');
 const argonPromptContent = `# 🚀 Argon Deep Quantitative Audit: Stock Selection, Alpha Optimization & Capital Preservation Engine
@@ -595,33 +676,33 @@ You are auditing **\`BUNDLE_5_STOCK_SELECTION_AND_ALPHA.txt\`** from **Drabyashr
 ### 1. Setup Score (0–100) & Win-Rate Formula Calibration (\`src/utils/setupAnalyzer.js\`)
 - **Objective:** Ensure the setup score rewards genuine accumulation and penalizes overextended rallies.
 - **Audit Checks:**
-  1. Does the score reward Wyckoff Volume Dry-Up ($VDU \le 0.5\times$ 20D vol) sufficiently?
+  1. Does the score reward Wyckoff Volume Dry-Up ($VDU \\le 0.5\\times$ 20D vol) sufficiently?
   2. Is the sector leadership bonus ($+15$ pts) applied only to stocks in the Top 3 strongest sectors over the past 10 sessions?
-  3. Is the \`chaseCap\` strictly enforced so users never buy when price exceeds $\text{Entry}_{\max} \times 1.025$?
-  4. Are the 5 Quality Gates (Circuit Trap Gate, Negative EPS / Loss-Maker Gate, Excessive Upper Wick $\ge 40\%$ Gate, Downtrend Under 50 EMA Gate, Low Liquidity Gate) rigorous?
+  3. Is the \`chaseCap\` strictly enforced so users never buy when price exceeds $\\text{Entry}_{\\max} \\times 1.025$?
+  4. Are the 5 Quality Gates (Circuit Trap Gate, Negative EPS / Loss-Maker Gate, Excessive Upper Wick $\\ge 40\%$ Gate, Downtrend Under 50 EMA Gate, Low Liquidity Gate) rigorous?
 
 ### 2. The 7 Hard Veto Gates Against Operator Traps (\`proxy/institutionalAlertEngine.mjs\`)
 - **Objective:** Eliminate operator pump-and-dump losses in NEPSE.
 - **Audit Checks:**
   1. **±15% Circuit Ceiling Chase:** Are stocks within $2\%$ of the circuit ceiling vetoed?
-  2. **Operator Offloading ($\text{BCR3}_{\text{sell}} \ge 38\%$):** Are stocks where top 3 selling brokers dominate vetoed?
+  2. **Operator Offloading ($\text{BCR3}_{\\text{sell}} \\ge 38\%$):** Are stocks where top 3 selling brokers dominate vetoed?
   3. **T+3 Settlement Dump Risk:** Does the engine check if shares bought 3 sessions ago ($t-3$) are up $>10\%$ and ready for delivery sale dump?
-  4. **Micro-Cap Illiquidity:** Are stocks with $< \text{Rs. } 60\text{ Lakhs}$ 20D median turnover vetoed?
+  4. **Micro-Cap Illiquidity:** Are stocks with $< \\text{Rs. } 60\\text{ Lakhs}$ 20D median turnover vetoed?
   5. **Pre-Open Gap Trap:** Are stocks with $>4.5\%$ pre-open gap-up vetoed from morning buy recommendations?
   6. **Opening Noise:** Are signals triggered between 11:00 AM and 11:15 AM filtered or delayed until 11:16 AM price stabilization?
 
-### 3. Net Post-Tax & Fee Risk-to-Reward Ratio ($\text{R:R} \ge 3:1$) (\`src/utils/calculations.js\`)
+### 3. Net Post-Tax & Fee Risk-to-Reward Ratio ($\text{R:R} \\ge 3:1$) (\`src/utils/calculations.js\`)
 - **Objective:** Ensure no user ever buys a stock with unfavorable mathematical expectancy.
 - **Audit Checks:**
   1. Does \`calculateBuyDetails\` and \`calculateSellDetails\` calculate statutory SEBON ($0.015\%$), tiered broker fees ($0.27\% - 0.40\%$), Rs. 25 DP fee, and $7.5\%$ Short-Term CGT accurately?
-  2. Is a "BUY" signal blocked unless the net take-home profit at Target 1 divided by the net loss at Stop-Loss is $\ge 3.0 : 1$?
+  2. Is a "BUY" signal blocked unless the net take-home profit at Target 1 divided by the net loss at Stop-Loss is $\\ge 3.0 : 1$?
   3. Does the plan trigger a Stop-to-Breakeven rule at Target 1 to make the remaining runner position risk-free?
 
 ### 4. Friction-Adjusted Half-Kelly Position Sizing (\`src/utils/dynamicCapitalEngine.js\`)
 - **Objective:** Capital preservation tailored to exact investor account sizes.
 - **Audit Checks:**
   1. For Starter Portfolios (Rs. 50k / Rs. 1 Lakh), does the sizer prevent over-allocation while respecting minimum commission floors?
-  2. Is maximum portfolio loss capped at $\le 1.5\% - 2.0\%$ of total capital across all tiers?
+  2. Is maximum portfolio loss capped at $\\le 1.5\% - 2.0\%$ of total capital across all tiers?
   3. Does the liquidity cap prevent single orders exceeding $5\%$ of the 20-day median turnover?
 
 ### 5. False Breakout Scanners & Prime Pick Selection (\`src/utils/scanners.js\` & \`src/components/Dashboard.jsx\`)
@@ -637,13 +718,68 @@ You are auditing **\`BUNDLE_5_STOCK_SELECTION_AND_ALPHA.txt\`** from **Drabyashr
 2. **Technical & Quantitative Analysis:** For each defect, explain the exact mathematical flaw and why it leads to suboptimal trades or unexpected losses.
 3. **Master Remediation Patch Block for Antigravity:** Provide clear, copy-pasteable code patches with exact file paths, line references, and instructions for Antigravity to apply.
 `;
-
 fs.writeFileSync(argonPromptPath, argonPromptContent, 'utf8');
 
-console.log('\n✓ Step 2 Complete: Ready-to-Paste Text Bundles and Master Argon Prompt created.\n');
+// 7. Generate Master Argon Prompt for Remaining Bundles (6, 7, 8)
+const remainingPromptPath = path.join(desktopDir, 'ARGON_REMAINING_MODULES_AUDIT_PROMPT.md');
+const remainingPromptContent = `# 🚀 Argon Deep Quantitative & Architectural Audit: Bundles 6, 7 & 8
 
-// 7. Summary Table
-const results = [b1Meta, b2Meta, b3Meta, b3AMeta, b3BMeta, b4Meta, b5Meta];
+## 🎯 AUDIT MISSION
+You are **Argon**, an elite Principal Quantitative Finance & Systems Auditor specializing in NEPSE.
+
+You are auditing the remaining specialized modules of **Drabyashree NEPSE**:
+1. **BUNDLE_6_PORTFOLIO_WACC_AND_CORPORATE_ACTIONS.txt**:
+   - \`PortfolioHub.jsx\` & \`Portfolio.jsx\`: Multi-portfolio management, FIFO execution ledger, unrealized vs realized P&L.
+   - \`priceAdjustment.js\` & \`dividendHistory.js\`: Mathematical accuracy of bonus share price adjustments, right share dilution, and cash dividend tax treatment under NEPSE/SEBON rules.
+   - \`WaccTaxCalculator.jsx\`: Inland Revenue Department (IRD) WACC calculation fidelity and 7.5% Short-Term CGT / 5% Long-Term CGT segregation.
+   - \`paperTrading.js\`: Paper trading order fill simulation and realistic transaction fee modeling.
+
+2. **BUNDLE_7_AI_PREDICTOR_AND_MACRO.txt**:
+   - \`PredictorHub.jsx\` & \`proxy/quant/predictorEngine.mjs\`: Multi-session (1D, 3D, 5D) forward directional probability models.
+   - \`proxy/quant/featureEngine.mjs\`: Technical and statistical feature normalization, division-by-zero guards, and regime stability.
+   - \`NRBMacroWidget.jsx\`: Nepal Rastra Bank monetary macro metrics (repo rates, 91-day T-bills, CD ratio, inflation).
+   - \`newsImpactScorer.js\` & \`aiService.js\`: News sentiment extraction, headline weighting, and decay half-life.
+
+3. **BUNDLE_8_MEROSHARE_AND_IPO_HUB.txt**:
+   - \`MeroShareHub.jsx\` & \`IPOList.jsx\`: Automated C-ASBA IPO application desk, portfolio valuation from CDSC, and multi-family profile switcher.
+   - \`meroShareService.js\` & \`proxy/meroshare.js\`: CDSC API reverse-engineering resilience, session token rotation, and rate-limiting immunity.
+   - \`credentialCrypto.js\`: Client-side encryption of MeroShare credentials (passwords, PINs, CRN) to ensure zero plaintext credential exposure.
+
+---
+
+## 🔍 CORE AUDIT OBJECTIVES
+
+### Area 1: Portfolio, Corporate Actions & WACC Math (Bundle 6)
+1. **Bonus Share Adjustment:** Does the equation strictly match NEPSE bylaws:
+   $$\\text{Adjusted Price} = \\frac{\\text{Market Price}}{1 + \\frac{\\text{Bonus \\%}}{100}}$$
+2. **Right Share Adjustment:** Does the equation strictly account for subscription cost (Rs. 100/share par):
+   $$\\text{Adjusted Price} = \\frac{\\text{Market Price} + (\\text{Right Ratio} \\times \\text{Subscription Price})}{1 + \\text{Right Ratio}}$$
+3. **WACC Calculation:** Does WACC properly incorporate total purchase costs (purchase amount + broker commission + SEBON fee + DP charge) divided by total quantity, and correctly account for zero-cost bonus shares diluting average cost?
+4. **CGT Segregation:** Does the portfolio engine strictly separate $\\le 365$ days ($7.5\\%$ CGT) from $> 365$ days ($5.0\\%$ CGT)?
+
+### Area 2: ML Feature Engine & Predictor Stability (Bundle 7)
+1. **Feature Engineering Guardrails:** Are features protected against NaN, infinite values, or null history lookbacks in illiquid or newly-listed scrips?
+2. **Forward Lookahead Bias:** Does the training and evaluation pipeline strictly ensure zero lookahead bias ($T+1$ open fill, features calculated strictly up to $T$ close)?
+3. **Macro Multipliers:** Do high interest rates (tight liquidity) appropriately discount equity valuations and tighten breakout conviction thresholds?
+
+### Area 3: MeroShare Automation & Security (Bundle 8)
+1. **Security & Cryptography:** Are all stored credentials encrypted via \`credentialCrypto.js\` before local storage persistence or cloud synchronization?
+2. **C-ASBA Application Safety:** Does the automation perform account number, CRN, and DP ID validation to prevent failed bank requests or bank penalty rejections?
+3. **Session Robustness:** Are expired CDSC authentication tokens gracefully renewed without breaking the UI?
+
+---
+
+## 📋 OUTPUT FORMAT REQUIRED
+1. **Executive Scorecard Table:** List all defects found across the bundles (Audit ID, File, Severity, Root Cause, Financial/Operational Impact).
+2. **Technical & Quantitative Analysis:** For each defect, explain the exact mathematical flaw or security vulnerability.
+3. **Master Remediation Patch Block for Antigravity:** Provide clear, copy-pasteable code patches with exact file paths, line references, and instructions for Antigravity to apply.
+`;
+fs.writeFileSync(remainingPromptPath, remainingPromptContent, 'utf8');
+
+console.log('\n✓ Step 2 Complete: Ready-to-Paste Text Bundles and Master Argon Prompts created.\n');
+
+// 8. Summary Table
+const results = [b1Meta, b2Meta, b3Meta, b3AMeta, b3BMeta, b4Meta, b5Meta, b6Meta, b7Meta, b8Meta];
 console.log('═══════════════════════════════════════════════════════════════════════════════');
 console.log('           DRABYASHREE NEPSE — EXTERNAL AUDIT BUNDLE MANIFEST                 ');
 console.log('═══════════════════════════════════════════════════════════════════════════════');
@@ -652,5 +788,6 @@ console.log(`Target Folder: ${desktopDir}\n`);
 for (const r of results) {
   console.log(`📄 ${r.name.padEnd(42)} | ${String(r.fileCount).padStart(3)} files | ${r.kb.padStart(8)} KB (${r.mb} MB)`);
 }
-console.log(`📝 ${'ARGON_STOCK_SELECTION_AUDIT_PROMPT.md'.padEnd(42)} | Master Audit Prompt for Argon`);
+console.log(`📝 ${'ARGON_STOCK_SELECTION_AUDIT_PROMPT.md'.padEnd(42)} | Master Stock Selection Prompt`);
+console.log(`📝 ${'ARGON_REMAINING_MODULES_AUDIT_PROMPT.md'.padEnd(42)} | Master Bundles 6, 7 & 8 Audit Prompt`);
 console.log('═══════════════════════════════════════════════════════════════════════════════\n');
