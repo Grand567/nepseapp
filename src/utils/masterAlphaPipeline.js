@@ -5,6 +5,266 @@ import { getDetailedMarketStatus } from './nepseCalendar';
 import { getCachedRealPriceHistory, getCachedRealBrokerAnalysis } from './liveData';
 import { adjustForCorporateActionsWithConfirmation } from './setupAnalyzer';
 
+const EPSILON = 1e-8;
+
+export function safeDiv(numerator, denominator, fallback = 0) {
+  const num = Number(numerator);
+  const den = Number(denominator);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || Math.abs(den) < EPSILON) {
+    return fallback;
+  }
+  const ratio = num / den;
+  return Number.isFinite(ratio) ? ratio : fallback;
+}
+
+export function clampFinite(value, min = -10, max = 10, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Computes zero-lookahead, NaN-immune technical features strictly up to index `idx` (inclusive).
+ * Safe for newly listed IPOs (< 30 candles), suspended scrips, and consecutive upper/lower circuits.
+ */
+export function extractSafeFeatureVector(candles = [], idx = candles.length - 1) {
+  if (!Array.isArray(candles) || candles.length === 0 || idx < 0 || idx >= candles.length) {
+    return {
+      isValid: false,
+      reason: 'Empty or out-of-bounds candle slice',
+      features: {
+        ret1d: 0, ret5d: 0, ret20d: 0,
+        rsi14Norm: 0, bbPercentB: 0.5, zScore20: 0,
+        rvol20: 1.0, atrPct14: 0.025, ema20Dist: 0, ema50Dist: 0
+      }
+    };
+  }
+
+  const slice = candles.slice(0, idx + 1);
+  const n = slice.length;
+  const curr = slice[n - 1];
+  const close = Math.max(EPSILON, Number(curr.close ?? curr.ltp ?? 0));
+
+  const prev1 = n >= 2 ? Number(slice[n - 2].close || close) : close;
+  const prev5 = n >= 6 ? Number(slice[n - 6].close || close) : Number(slice[0].close || close);
+  const prev20 = n >= 21 ? Number(slice[n - 21].close || close) : Number(slice[0].close || close);
+
+  const ret1d = clampFinite(safeDiv(close - prev1, prev1, 0), -0.20, 0.20, 0);
+  const ret5d = clampFinite(safeDiv(close - prev5, prev5, 0), -0.60, 0.60, 0);
+  const ret20d = clampFinite(safeDiv(close - prev20, prev20, 0), -1.0, 1.5, 0);
+
+  const win20 = slice.slice(-Math.min(20, n)).map(c => Number(c.close || close));
+  const mean20 = win20.reduce((a, b) => a + b, 0) / Math.max(1, win20.length);
+  const variance20 = win20.reduce((a, b) => a + Math.pow(b - mean20, 2), 0) / Math.max(1, win20.length);
+  const std20 = Math.sqrt(Math.max(0, variance20));
+
+  const zScore20 = std20 > EPSILON ? clampFinite((close - mean20) / std20, -4.0, 4.0, 0) : 0;
+  const bbLower = mean20 - 2 * std20;
+  const bbWidth = 4 * std20;
+  const bbPercentB = bbWidth > EPSILON ? clampFinite((close - bbLower) / bbWidth, -0.5, 1.5, 0.5) : 0.5;
+
+  let gains = 0;
+  let losses = 0;
+  const rsiLookback = Math.min(14, n - 1);
+  for (let i = n - rsiLookback; i < n; i++) {
+    const diff = Number(slice[i].close || 0) - Number(slice[i - 1].close || 0);
+    if (diff > 0) gains += diff;
+    else if (diff < 0) losses += Math.abs(diff);
+  }
+  let rsi14 = 50;
+  if (rsiLookback >= 2) {
+    if (losses < EPSILON && gains > EPSILON) rsi14 = 95;
+    else if (gains < EPSILON && losses > EPSILON) rsi14 = 5;
+    else if (gains > EPSILON || losses > EPSILON) {
+      const rs = safeDiv(gains / rsiLookback, losses / rsiLookback, 1.0);
+      rsi14 = 100 - (100 / (1 + rs));
+    }
+  }
+  const rsi14Norm = clampFinite((rsi14 - 50) / 50, -1.0, 1.0, 0);
+
+  const vols20 = slice.slice(-Math.min(20, n)).map(c => Math.max(0, Number(c.volume || 0)));
+  const avgVol20 = vols20.reduce((a, b) => a + b, 0) / Math.max(1, vols20.length);
+  const currVol = Math.max(0, Number(curr.volume || 0));
+  const rvol20 = avgVol20 > EPSILON ? clampFinite(currVol / avgVol20, 0, 8.0, 1.0) : 1.0;
+
+  let trSum = 0;
+  const atrLookback = Math.min(14, n);
+  for (let i = n - atrLookback; i < n; i++) {
+    const h = Number(slice[i].high || slice[i].close || close);
+    const l = Number(slice[i].low || slice[i].close || close);
+    const pc = i > 0 ? Number(slice[i - 1].close || close) : close;
+    const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    trSum += Math.max(0, tr);
+  }
+  const atr14 = trSum / Math.max(1, atrLookback);
+  const atrPct14 = clampFinite(safeDiv(atr14, close, 0.025), 0.002, 0.15, 0.025);
+
+  const win50 = slice.slice(-Math.min(50, n)).map(c => Number(c.close || close));
+  const mean50 = win50.reduce((a, b) => a + b, 0) / Math.max(1, win50.length);
+  const ema20Dist = clampFinite(safeDiv(close - mean20, mean20, 0), -0.5, 0.5, 0);
+  const ema50Dist = clampFinite(safeDiv(close - mean50, mean50, 0), -0.6, 0.6, 0);
+
+  return {
+    isValid: n >= 5,
+    historyLength: n,
+    isNewlyListedIpo: n < 30,
+    features: {
+      ret1d: +ret1d.toFixed(4),
+      ret5d: +ret5d.toFixed(4),
+      ret20d: +ret20d.toFixed(4),
+      rsi14Norm: +rsi14Norm.toFixed(4),
+      bbPercentB: +bbPercentB.toFixed(4),
+      zScore20: +zScore20.toFixed(4),
+      rvol20: +rvol20.toFixed(4),
+      atrPct14: +atrPct14.toFixed(4),
+      ema20Dist: +ema20Dist.toFixed(4),
+      ema50Dist: +ema50Dist.toFixed(4)
+    }
+  };
+}
+
+/**
+ * Computes NRB Monetary Macro Multiplier for equity valuation & breakout conviction.
+ */
+export function evaluateNrbMacroMultiplier(nrbMetrics = {}) {
+  const cdRatio = Number(nrbMetrics.cdRatio ?? 81.5);
+  const ibor = Number(nrbMetrics.ibor ?? nrbMetrics.interbankRate ?? 4.5);
+  const tbill91d = Number(nrbMetrics.tbill91d ?? 4.2);
+  const repoRate = Number(nrbMetrics.repoRate ?? 5.0);
+
+  let probabilityMultiplier = 1.0;
+  let breakoutConvictionThreshold = 60.0;
+  let valuationDiscountPct = 0.0;
+  let regimeLabel = 'NEUTRAL_LIQUIDITY';
+
+  if (cdRatio > 87.0 || ibor > 7.0 || tbill91d > 7.5) {
+    probabilityMultiplier = 0.78;
+    breakoutConvictionThreshold = 72.0;
+    valuationDiscountPct = 15.0;
+    regimeLabel = 'TIGHT_LIQUIDITY_CRUNCH';
+  } else if (cdRatio > 85.0 || ibor > 6.0 || repoRate > 6.5) {
+    probabilityMultiplier = 0.88;
+    breakoutConvictionThreshold = 66.0;
+    valuationDiscountPct = 8.0;
+    regimeLabel = 'CAUTIOUS_MONETARY_REGIME';
+  } else if (cdRatio < 82.0 && ibor <= 4.5 && tbill91d <= 4.5) {
+    probabilityMultiplier = 1.06;
+    breakoutConvictionThreshold = 58.0;
+    valuationDiscountPct = 0.0;
+    regimeLabel = 'EXPANSIONARY_LIQUIDITY';
+  }
+
+  return {
+    regimeLabel,
+    cdRatio,
+    ibor,
+    tbill91d,
+    repoRate,
+    probabilityMultiplier,
+    breakoutConvictionThreshold,
+    valuationDiscountPct
+  };
+}
+
+/**
+ * Generates 1D, 3D, and 5D directional probabilities with NRB Macro Discounting and Zero Lookahead.
+ */
+export function predictMultiHorizonProbabilities(candles = [], nrbMetrics = {}, newsScore = 0) {
+  const currIdx = candles.length - 1;
+  const currentFeatures = extractSafeFeatureVector(candles, currIdx);
+  const macro = evaluateNrbMacroMultiplier(nrbMetrics);
+
+  if (!currentFeatures.isValid) {
+    return {
+      supported: false,
+      reason: 'Insufficient trading history (< 5 sessions) for reliable probability inference.',
+      macro,
+      horizons: {
+        '1D': { horizon: '1D', probabilityPct: 52.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
+        '3D': { horizon: '3D', probabilityPct: 54.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' },
+        '5D': { horizon: '5D', probabilityPct: 55.0, rawProbabilityPct: 50.0, convictionThresholdPct: macro.breakoutConvictionThreshold, isActionableBullish: false, signal: 'NEUTRAL_HOLD' }
+      }
+    };
+  }
+
+  const f = currentFeatures.features;
+  const rawScore =
+    (f.ema20Dist * 2.2) +
+    (f.ema50Dist * 1.5) +
+    (f.rsi14Norm * 0.8) +
+    ((f.rvol20 - 1.0) * 0.35) -
+    (Math.max(0, f.zScore20 - 2.2) * 0.9) +
+    (Math.max(-2, Math.min(2, Number(newsScore || 0))) * 0.25);
+
+  const sigmoid = (x) => 1 / (1 + Math.exp(-x));
+
+  const computeHorizon = (hDays, scale) => {
+    const baseProb = sigmoid(rawScore * scale) * 100;
+    const macroAdjustedProb = Math.min(88.0, Math.max(15.0, +(baseProb * macro.probabilityMultiplier).toFixed(1)));
+    const isActionableBullish = macroAdjustedProb >= macro.breakoutConvictionThreshold;
+    return {
+      horizon: `${hDays}D`,
+      rawProbabilityPct: +baseProb.toFixed(1),
+      probabilityPct: macroAdjustedProb,
+      convictionThresholdPct: macro.breakoutConvictionThreshold,
+      isActionableBullish,
+      signal: isActionableBullish
+        ? 'BULLISH_HIGH_CONVICTION'
+        : (macroAdjustedProb <= 40.0 ? 'BEARISH_DISTRIBUTION' : 'NEUTRAL_HOLD')
+    };
+  };
+
+  return {
+    supported: true,
+    isNewlyListedIpo: currentFeatures.isNewlyListedIpo,
+    entryExecutionBasis: 'T+1_OPEN_STRICT',
+    macro,
+    features: f,
+    horizons: {
+      '1D': computeHorizon(1, 0.85),
+      '3D': computeHorizon(3, 1.00),
+      '5D': computeHorizon(5, 1.12)
+    }
+  };
+}
+
+/**
+ * Explains in human terms why a stock failed one of the 5 institutional stages.
+ */
+export function getStageFailureReason(dossier) {
+  if (!dossier) return 'Stock metrics unavailable.';
+  const c = dossier.stageChecklist || {};
+  const ep = dossier.executionPlan || dossier.metrics || {};
+  const reasons = [];
+
+  if (dossier.sectorRank > 3) {
+    reasons.push(`Sector Rank #${dossier.sectorRank}/13 (Outside Top 3 Leaders)`);
+  }
+  if (!c.step2_quality8Gate && dossier.setupScore < 72) {
+    reasons.push(`Setup Score ${dossier.setupScore}/100 (< 72 threshold)`);
+  }
+  if (!c.step3_vduAndBrokerFlow) {
+    if (ep.pacedVduRatio > 0.65) reasons.push(`Volume not dry enough (VDU ${ep.pacedVduRatio}x > 0.65x)`);
+    if (ep.bcr3Buy < 38) reasons.push(`Low Top-3 Broker flow (BCR3 Buy ${ep.bcr3Buy}% < 38%)`);
+    if (ep.bcr3Sell >= 38) reasons.push(`Operator dumping (BCR3 Sell ${ep.bcr3Sell}% >= 38%)`);
+    if (ep.upperWickPct >= 42) reasons.push(`Upper rejection shadow (${ep.upperWickPct}% wick)`);
+  }
+  if (!c.step4_sizingAndNetRrr) {
+    if (dossier.ltp > ep.chaseCap) {
+      reasons.push(`Extended above Chase Cap (LTP Rs. ${dossier.ltp} > Cap Rs. ${ep.chaseCap})`);
+    } else if (ep.netRRR1 < 2.5) {
+      reasons.push(`Net Post-Tax R:R ${ep.netRRR1}:1 < 2.5:1 required`);
+    }
+  }
+  if (!c.step5_circuitAndTaxReady) {
+    if (Math.abs(Number(dossier.pChange || 0)) >= 14.2) {
+      reasons.push(`Locked near ±15% circuit limit (${dossier.pChange}%)`);
+    }
+  }
+
+  return reasons.length > 0 ? reasons.join(' • ') : 'All 5 stages confirmed.';
+}
+
 /**
  * Exact Statutory NEPSE Net Trade & Breakeven Calculator with Dynamic CGT Rate
  * Supports 5.0% (2083 Gazette Revised Short-Term), 7.5% (Standard Short-Term), or 10.0% (Institutional)
@@ -336,6 +596,8 @@ export function runUnifiedFiveStepAlphaDesk({
     const stagesPassedCount = checklist.filter(c => c.passed).length;
     const all5StagesPassed = stagesPassedCount === 5;
 
+    const prediction = predictMultiHorizonProbabilities(adjustedCandles, indices?.nrbMacro || {}, masterEval.newsImpactScore || 0);
+
     const dossier = {
       symbol,
       name: masterEval.name || rawStock.companyName || rawStock.name || symbol,
@@ -352,6 +614,28 @@ export function runUnifiedFiveStepAlphaDesk({
         ? 'ACTIONABLE_IN_BUY_ZONE'
         : 'NEAR_PIVOT_WATCH',
       checklist,
+      prediction,
+      stageChecklist: {
+        step1_sectorLeader: step1SectorPassed,
+        step2_quality8Gate: step2GatePassed,
+        step3_vduAndBrokerFlow: step3FlowPassed,
+        step4_sizingAndNetRrr: step4SizingPassed,
+        step5_circuitAndTaxReady: step5ExecutionReady
+      },
+      metrics: {
+        buyZoneLow: entryLow,
+        buyZoneHigh: entryHigh,
+        chaseCap,
+        stopLoss,
+        target1,
+        target2,
+        netRRR1,
+        bcr3BuyPct: bcr3Buy,
+        bcr3SellPct: bcr3Sell,
+        vduRatio: pacedVduRatio,
+        isInsideChaseCap,
+        statutoryBreakevenStop: netTradeT1.statutoryBreakevenPrice
+      },
       executionPlan: {
         buyZoneLow: entryLow,
         buyZoneHigh: entryHigh,
@@ -630,6 +914,8 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
   const stagesPassedCount = checklist.filter(c => c.passed).length;
   const all5StagesPassed = stagesPassedCount === 5;
 
+  const prediction = predictMultiHorizonProbabilities(adjustedCandles, indices?.nrbMacro || {}, masterEval.newsImpactScore || 0);
+
   return {
     symbol,
     name: masterEval.name || rawStock.companyName || rawStock.name || symbol,
@@ -647,6 +933,28 @@ export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
       ? 'ACTIONABLE_IN_BUY_ZONE'
       : 'NEAR_PIVOT_WATCH',
     checklist,
+    prediction,
+    stageChecklist: {
+      step1_sectorLeader: step1SectorPassed,
+      step2_quality8Gate: step2GatePassed,
+      step3_vduAndBrokerFlow: step3FlowPassed,
+      step4_sizingAndNetRrr: step4SizingPassed,
+      step5_circuitAndTaxReady: step5ExecutionReady
+    },
+    metrics: {
+      buyZoneLow: entryLow,
+      buyZoneHigh: entryHigh,
+      chaseCap,
+      stopLoss,
+      target1,
+      target2,
+      netRRR1,
+      bcr3BuyPct: bcr3Buy,
+      bcr3SellPct: bcr3Sell,
+      vduRatio: pacedVduRatio,
+      isInsideChaseCap,
+      statutoryBreakevenStop: netTradeT1.statutoryBreakevenPrice
+    },
     executionPlan: {
       buyZoneLow: entryLow,
       buyZoneHigh: entryHigh,

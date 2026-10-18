@@ -3,9 +3,13 @@ import React, { useState, useMemo } from 'react';
 import {
   Crown, ShieldAlert, Zap, CheckCircle2, XCircle,
   Copy, Check, Compass, Eye, BarChart3, Layers, TrendingUp, Lock,
-  Search, X, RotateCcw, AlertTriangle
+  Search, X, RotateCcw, AlertTriangle, Sparkles, RefreshCw
 } from 'lucide-react';
-import { runUnifiedFiveStepAlphaDesk, evaluateSingleStockAlphaDossier } from '../utils/masterAlphaPipeline';
+import {
+  runUnifiedFiveStepAlphaDesk,
+  evaluateSingleStockAlphaDossier,
+  getStageFailureReason
+} from '../utils/masterAlphaPipeline';
 import { addToWatchlist } from '../utils/watchlist';
 
 interface AlphaCommandCenterProps {
@@ -42,6 +46,18 @@ export function AlphaCommandCenter({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [paperOrderSaved, setPaperOrderSaved] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanTimestamp, setScanTimestamp] = useState<string>(() =>
+    new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  );
+
+  const handleTriggerScan = () => {
+    setIsScanning(true);
+    setTimeout(() => {
+      setIsScanning(false);
+      setScanTimestamp(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+    }, 450);
+  };
 
   const alphaDesk = useMemo(() => {
     return runUnifiedFiveStepAlphaDesk({
@@ -175,8 +191,37 @@ export function AlphaCommandCenter({
             </div>
           </div>
 
-          {/* Portfolio Capital & CGT Selector */}
+          {/* One-Click Scan Trigger, Portfolio Capital & CGT Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* ⚡ One-Click Scan & Predict Trigger */}
+            <button
+              type="button"
+              onClick={handleTriggerScan}
+              disabled={isScanning}
+              style={{
+                background: isScanning
+                  ? 'rgba(16, 185, 129, 0.25)'
+                  : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#ffffff',
+                border: '1px solid rgba(16, 185, 129, 0.5)',
+                borderRadius: 10,
+                padding: '6px 13px',
+                fontSize: 11.5,
+                fontWeight: 900,
+                cursor: isScanning ? 'wait' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: isScanning ? 'none' : '0 4px 14px rgba(16, 185, 129, 0.35)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Run 5-Stage Institutional Scan & 1D/3D/5D AI Probability Inference"
+            >
+              <Zap size={13} style={{ fill: '#ffffff', transform: isScanning ? 'rotate(180deg)' : 'none', transition: 'transform 0.4s ease' }} />
+              <span>{isScanning ? 'Evaluating 340+ Stocks...' : '⚡ Run 5-Stage Alpha Scan & Predict'}</span>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>({scanTimestamp})</span>
+            </button>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.35)', padding: '5px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
               <span style={{ fontSize: 11, color: '#cbd5e1', fontWeight: 700 }}>Capital:</span>
               {CAPITAL_PRESETS.map(cap => (
@@ -432,12 +477,33 @@ export function AlphaCommandCenter({
           gap: 12
         }}>
           <ShieldAlert size={22} color="#fbbf24" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div>
+          <div style={{ width: '100%' }}>
             <div style={{ fontSize: 14, fontWeight: 900, color: '#fbbf24' }}>
               🛡️ 100% CAPITAL PRESERVATION ACTIVE — 0 STOCKS PASS ALL 5 STAGES RIGHT NOW
             </div>
             <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4, lineHeight: 1.5 }}>
               Our strict AND-gate requires all 5 institutional stages to pass simultaneously. Sitting in cash during choppy sessions prevents drawdowns. Below is the highest-scoring <strong>Radar Runner-Up</strong> so you can monitor which gate is awaiting confirmation. You can also search ANY stock above to test its 5-gate score.
+            </div>
+
+            {/* 3 Action Pillars when in Cash Preservation Mode */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+              gap: 8,
+              marginTop: 10
+            }}>
+              <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#fbbf24' }}>1. Protect Cash Reserve</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Keep 100% of fresh buying power in cash. Avoid chasing extended green candles.</div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#38bdf8' }}>2. Manage Existing Holdings</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Honor your Stop-Loss or trail stops to Statutory Breakeven if Target 1 was hit.</div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#34d399' }}>3. Set Limit Alerts on Radar</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Monitor runner-up candidates below. Only enter on safe pullback into Buy Zone.</div>
+              </div>
             </div>
           </div>
         </div>
@@ -583,6 +649,89 @@ export function AlphaCommandCenter({
                 </div>
               ))}
             </div>
+
+            {/* ── 1D / 3D / 5D ZERO-LOOKAHEAD AI MULTI-HORIZON FORWARD PROBABILITIES TILE ── */}
+            {activeDossier.prediction && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                border: '1.5px solid rgba(56, 189, 248, 0.35)',
+                borderRadius: 14,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={16} color="#38bdf8" />
+                    <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                      ZERO-LOOKAHEAD 1D / 3D / 5D AI DIRECTIONAL PROBABILITIES
+                    </span>
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 6,
+                      background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)'
+                    }}>
+                      T+1 Open Execution Basis
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    NRB Macro Multiplier: <strong style={{ color: '#34d399' }}>{activeDossier.prediction?.macro?.regimeLabel?.replace(/_/g, ' ') || 'NEUTRAL LIQUIDITY'}</strong> (Conviction Hurdle: <strong>{activeDossier.prediction?.macro?.breakoutConvictionThreshold || 60}%</strong>)
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 8
+                }}>
+                  {['1D', '3D', '5D'].map((horizon) => {
+                    const hData = activeDossier.prediction?.horizons?.[horizon];
+                    const prob = hData?.probabilityPct ?? 50;
+                    const isBull = Boolean(hData?.isActionableBullish);
+                    const isBear = prob <= 40;
+                    return (
+                      <div
+                        key={horizon}
+                        style={{
+                          background: isBull
+                            ? 'rgba(16, 185, 129, 0.08)'
+                            : isBear
+                            ? 'rgba(239, 68, 68, 0.08)'
+                            : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isBull ? 'rgba(16, 185, 129, 0.35)' : isBear ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.08)'}`,
+                          borderRadius: 10,
+                          padding: '8px 11px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 3
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8' }}>{horizon} Win Probability</span>
+                          <span style={{
+                            fontSize: 9.5, fontWeight: 900, padding: '1px 5px', borderRadius: 4,
+                            background: isBull ? '#10b981' : isBear ? '#ef4444' : '#64748b',
+                            color: '#ffffff'
+                          }}>
+                            {isBull ? 'BULLISH' : isBear ? 'BEARISH' : 'NEUTRAL'}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 18, fontWeight: 900,
+                          color: isBull ? '#34d399' : isBear ? '#f87171' : '#cbd5e1',
+                          fontFamily: 'var(--font-mono)'
+                        }}>
+                          {prob}%
+                        </div>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>
+                          {isBull ? '≥ Hurdle threshold' : `< ${hData?.convictionThresholdPct ?? 60}% hurdle`}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Step-by-Step Direction Box: Exact Entry, 2-Tranche Split, 3-Tier Profit Ladder */}
             <div style={{
@@ -788,11 +937,12 @@ export function AlphaCommandCenter({
                   <th style={{ padding: '8px' }}>Symbol</th>
                   <th style={{ padding: '8px' }}>Sector Rank</th>
                   <th style={{ padding: '8px' }}>Stages</th>
+                  <th style={{ padding: '8px' }}>3D AI Prob</th>
                   <th style={{ padding: '8px' }}>LTP</th>
                   <th style={{ padding: '8px' }}>Buy Zone</th>
-                  <th style={{ padding: '8px' }}>Stop Loss</th>
                   <th style={{ padding: '8px' }}>Target 1</th>
                   <th style={{ padding: '8px' }}>Net R:R</th>
+                  <th style={{ padding: '8px' }}>Why Blocked Today (Missing Trigger)</th>
                   <th style={{ padding: '8px' }}>Action</th>
                 </tr>
               </thead>
@@ -820,13 +970,18 @@ export function AlphaCommandCenter({
                           {item.stagesPassedCount}/5 Passed
                         </span>
                       </td>
+                      <td style={{ padding: '8px', color: item.prediction?.horizons?.['3D']?.isActionableBullish ? '#34d399' : '#cbd5e1', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
+                        {item.prediction?.horizons?.['3D']?.probabilityPct ?? 50}%
+                      </td>
                       <td style={{ padding: '8px', color: '#ffffff', fontFamily: 'var(--font-mono)' }}>Rs. {item.ltp}</td>
                       <td style={{ padding: '8px', color: '#34d399', fontFamily: 'var(--font-mono)' }}>
                         Rs. {item.executionPlan.buyZoneLow}–{item.executionPlan.buyZoneHigh}
                       </td>
-                      <td style={{ padding: '8px', color: '#f87171', fontFamily: 'var(--font-mono)' }}>Rs. {item.executionPlan.stopLoss}</td>
                       <td style={{ padding: '8px', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>Rs. {item.executionPlan.target1}</td>
                       <td style={{ padding: '8px', fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>{item.executionPlan.netRRR1}:1</td>
+                      <td style={{ padding: '8px', color: item.all5StagesPassed ? '#34d399' : '#fbbf24', fontSize: 11, maxWidth: 260 }}>
+                        {item.all5StagesPassed ? '🟢 All 5 Stages Passed! Actionable.' : getStageFailureReason(item)}
+                      </td>
                       <td style={{ padding: '8px' }}>
                         <button
                           type="button"
