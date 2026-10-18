@@ -126,7 +126,7 @@ const getRealClientId = async (boid, dpCode) => {
   return 101;
 };
 
-export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts }) {
+export default function Portfolio({ marketStocks, userId = 'local', userEmail = '', onSelectStock, onSwitchToAccounts, onSwitchToSimulator }) {
 
   const [transactions, setTransactions] = useState([]);
   const [meroshareProfiles, setMeroshareProfiles] = useState([]);
@@ -2500,6 +2500,26 @@ Based on this data, provide a robust analysis using this exact markdown structur
                   title="Scale all smart alerts & execution tickets to your authentic portfolio value"
                 >
                   ⚡ Sync Capital to Signals
+                </button>
+              )}
+              {onSwitchToSimulator && (
+                <button
+                  type="button"
+                  onClick={onSwitchToSimulator}
+                  style={{
+                    marginLeft: 6,
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    color: '#a5b4fc',
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                  title="Open Dynamic Capital & Risk Simulator"
+                >
+                  🛡️ Risk Simulator
                 </button>
               )}
             </div>

@@ -43,3 +43,7 @@ drabyashree_*.txt
 audit_*.txt
 audit_exports/
 src/data/broker_matrix_latest.json
+*.db
+*.db-shm
+*.db-wal
+proxy/data/*.db

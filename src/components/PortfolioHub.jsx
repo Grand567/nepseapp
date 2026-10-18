@@ -3,9 +3,10 @@
 // Merges Portfolio management and Bulk MeroShare IPO operations into a single tab.
 
 import React, { useState, useEffect } from 'react';
-import { Wallet, Layers, Sparkles, TrendingUp } from 'lucide-react';
+import { Wallet, Layers, Sparkles, TrendingUp, Sliders } from 'lucide-react';
 import Portfolio from './Portfolio';
 import MeroShareHub from './MeroShareHub';
+import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
 
 export default function PortfolioHub({
   marketStocks = [],
@@ -18,11 +19,12 @@ export default function PortfolioHub({
   const [subTab, setSubTab] = useState(() => {
     if (initialSubTab === 'bulk_ipo') return 'bulk_ipo';
     if (initialSubTab === 'accounts') return 'accounts';
+    if (initialSubTab === 'simulator') return 'simulator';
     return 'portfolio';
   });
 
   useEffect(() => {
-    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio' || initialSubTab === 'accounts') {
+    if (initialSubTab === 'bulk_ipo' || initialSubTab === 'portfolio' || initialSubTab === 'accounts' || initialSubTab === 'simulator') {
       setSubTab(initialSubTab);
     }
   }, [initialSubTab]);
@@ -69,6 +71,15 @@ export default function PortfolioHub({
             <Layers style={{ width: 15, height: 15 }} />
             <span>Demat Accounts</span>
           </button>
+
+          <button
+            onClick={() => setSubTab('simulator')}
+            className={`segmented-pill ${subTab === 'simulator' ? 'active' : ''}`}
+            title="Dynamic Capital & Risk Simulator"
+          >
+            <Sliders style={{ width: 15, height: 15 }} />
+            <span>Risk Simulator</span>
+          </button>
         </div>
       </div>
 
@@ -81,6 +92,11 @@ export default function PortfolioHub({
             userEmail={userEmail}
             onSelectStock={onSelectStock}
             onSwitchToAccounts={() => setSubTab('accounts')}
+            onSwitchToSimulator={() => setSubTab('simulator')}
+          />
+        ) : subTab === 'simulator' ? (
+          <CapitalRiskSimulatorView
+            onNavigateToPortfolio={() => setSubTab('portfolio')}
           />
         ) : (
           <MeroShareHub

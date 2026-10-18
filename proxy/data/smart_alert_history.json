@@ -1,5 +1,36 @@
 [
   {
+    "id": "holding_GHL_1792250586148",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-17T15:23:06.148Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-17T15:23:06.161Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1792250582093",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-17T15:23:02.093Z",
+    "stopLoss": 512,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-17T15:23:02.116Z",
+    "target2Hit": true,
+    "closedAt": "2026-10-17T15:23:05.069Z",
+    "exitPrice": 645
+  },
+  {
     "id": "holding_GHL_1792243866156",
     "symbol": "GHL",
     "ltp": 270,
@@ -1618,37 +1649,6 @@
     "target1HitAt": "2026-10-14T02:58:17.481Z",
     "target2Hit": true,
     "closedAt": "2026-10-14T02:58:21.949Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1791944245179",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-14T02:17:25.179Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-14T02:17:25.186Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1791944234687",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-14T02:17:14.687Z",
-    "stopLoss": 512,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-14T02:17:14.726Z",
-    "target2Hit": true,
-    "closedAt": "2026-10-14T02:17:23.010Z",
     "exitPrice": 645
   }
 ]

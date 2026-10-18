@@ -61,6 +61,7 @@ import {
 } from './ShareHubScannersSuite';
 import ProGate from './ProGate';
 import { fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
 
 export const PRO_SERVICE_IDS = new Set<string>([
   'master-100-profit',
@@ -136,7 +137,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   if (['broker-analysis', 'broker-favourites', 'zero-sum-floorsheet', 'broker-flow', 'broker-heatmap', 'broker-dominance', 'broker-top10', 'aggressive-accumulators', 'aggressive-holdings', 'distribution-leaders', 'matching-buy-sell', 'slow-accumulation', 'unusual-trades', 'sector-wise-ad', 'smart-money', 'players-choices', 'whale-daily-archive', 'daily-whale-tracker'].includes(s.id)) {
     return 'smart-money';
   }
-  if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'stock-split' || s.id === 'wacc-averaging' || s.id === 'risk-reward' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
+  if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'stock-split' || s.id === 'wacc-averaging' || s.id === 'risk-reward' || s.id === 'capital-simulator' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
     return 'calculators';
   }
   if (['portfolio', 'watchlist', 'trade-notes', 'smart-trade-journal', 'stock-alerts', 'smart-portfolio', 'target-alert', 'credentials', 'apply-history', 'edit', 'preferences', 'system-health'].includes(s.id)) {
@@ -309,6 +310,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'dividend-calculator',        name: 'Cash & Stock Dividend Yield Calculator',       icon: Coins,              color: 'yellow',  cat: 'calculators', star: true },
   { id: 'sip-calculator',             name: 'SIP Wealth & Compounding Simulator',           icon: PieChart,           color: 'cyan',    cat: 'calculators', star: true },
   { id: 'risk-reward',                name: 'Position Sizing & Risk/Reward Calculator',     icon: Target,             color: 'purple',  cat: 'calculators', star: true },
+  { id: 'capital-simulator',          name: 'Dynamic Capital & Risk Simulator',             icon: SlidersHorizontal,  color: 'indigo',  cat: 'calculators', star: true },
 
   // ── 8. Your Personal Desk (7 Tools) ──
   { id: 'portfolio',                  name: 'Portfolio Tracker & Real P&L',                 icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
@@ -836,6 +838,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'dividend-calculator': DividendCalculator,
   'sip-calculator': SIPCalculator,
   'risk-reward': RiskRewardCalculator,
+  'capital-simulator': CapitalRiskSimulatorView,
 
   // Regulatory Telemetry Hub & Macro
   'regulatory-hub': RegulatoryHub,

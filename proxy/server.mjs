@@ -17,6 +17,8 @@ import { getMacroFeatures, getPoliticalEventFlag } from './quant/featureEngine.m
 import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
+import radarRouter from './routes/radarRoutes.js';
+import { seedFromDiskVault, rebuildHotCache } from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -153,6 +155,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
+app.use('/api', radarRouter);
+app.use('/admin', radarRouter);
 
 // ── A7: Rate limiting — prevents API abuse and protects upstream data sources ──
 // General API: 200 req/min per IP (generous for legitimate use)
@@ -10216,6 +10220,12 @@ app.get('/api/company/:symbol/industry-comparison', async (req, res) => {
 app.listen(PORT, async () => {
     try {
         await initDB();
+        try {
+          seedFromDiskVault();
+          rebuildHotCache();
+        } catch (cacheErr) {
+          console.warn('[ledgerStore] Initial hot cache build error:', cacheErr.message);
+        }
         // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan
         initWorkerDependencies({
           getPriceHistoryInternal,

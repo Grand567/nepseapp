@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { calculateBuyDetails, calculateSellDetails, adjustForBonusShare, adjustForRightShare, adjustSimultaneousBonusAndRight, auditBonusDilution } from '../utils/calculations';
 import { HelpCircle, Copy, Check, Calculator as CalcIcon, Percent, TrendingUp, Sparkles, RefreshCw, AlertTriangle, ShieldCheck, Shield } from 'lucide-react';
 import { calculatePositionSize, calculateStopLossTargets, calculateNetProfit, formatRiskReward } from '../utils/riskManagement';
+import CapitalRiskSimulatorBar from './CapitalRiskSimulatorBar';
+import { getUserConfiguredCapital, setUserConfiguredCapital } from '../utils/dynamicCapitalEngine';
 
 export default function Calculator() {
   const [activeTab, setActiveTab] = useState('buy');
@@ -41,12 +43,22 @@ export default function Calculator() {
   const [borrowerType, setBorrowerType] = useState('individual');
 
   // ── 6. Position Sizing & Risk Management State ──
-  const [riskCapital, setRiskCapital] = useState(300000);
+  const [riskCapital, setRiskCapital] = useState(() => getUserConfiguredCapital());
   const [riskPercent, setRiskPercent] = useState(2);
   const [riskEntryPrice, setRiskEntryPrice] = useState(480);
   const [riskStopLoss, setRiskStopLoss] = useState(455);
   const [riskTargetPrice, setRiskTargetPrice] = useState(530);
   const [riskInvestorType, setRiskInvestorType] = useState('individual');
+
+  useEffect(() => {
+    const handleCap = (e) => {
+      if (e.detail?.userCapital) {
+        setRiskCapital(e.detail.userCapital);
+      }
+    };
+    window.addEventListener('nepse_capital_updated', handleCap);
+    return () => window.removeEventListener('nepse_capital_updated', handleCap);
+  }, []);
 
   // Update Buy/Sell calculations
   useEffect(() => {
@@ -973,6 +985,9 @@ export default function Calculator() {
       {/* ── 7. Position Sizing & Risk Management Tab ── */}
       {activeTab === 'risk_pos' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Dynamic Capital & Risk Simulator Bar */}
+          <CapitalRiskSimulatorBar />
+
           <div style={{
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.05) 100%)',
             border: '1px solid rgba(16, 185, 129, 0.25)',
@@ -1008,7 +1023,11 @@ export default function Calculator() {
                 <input
                   type="number"
                   value={riskCapital}
-                  onChange={(e) => setRiskCapital(Math.max(1000, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = Math.max(1000, Number(e.target.value));
+                    setRiskCapital(val);
+                    setUserConfiguredCapital(val);
+                  }}
                   style={{
                     width: '100%',
                     padding: '8px 10px',

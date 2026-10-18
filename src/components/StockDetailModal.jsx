@@ -67,6 +67,7 @@ import {
   getBrokerName,
   formatBrokerAmount
 } from '../utils/accumulationDistributionEngine';
+import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData } from '../utils/microstructureEngine';
 import { calculateStockSignals } from '../utils/stockSignals';
 import { calculateStockMetrics, formatNprMoney } from '../utils/stockMetrics';
 import StockSignalsCard from './StockSignalsCard';
@@ -690,7 +691,15 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
 }
 
 // ── 1B. Beginner Confidence & Rupee Profit Simulator Card ──
-function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerConcentration }) {
+function BeginnerConfidenceCard({
+  d,
+  entryExitPlan,
+  realBrokerAnalysis,
+  brokerConcentration,
+  brokerDays = 1,
+  onSelectBrokerDays,
+  brokerLoading = false
+}) {
   const [selectedCapital, setSelectedCapital] = useState(25000);
 
   // Check 1: Financial Health
@@ -719,47 +728,52 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
     check1Border = 'rgba(245, 158, 11, 0.25)';
   }
 
-  // Check 2: Big Broker / Smart Money Activity
+  const dailyHistory = useMemo(() => {
+    return buildDailyHistoryFromStockData(d, realBrokerAnalysis, d?.history || d?.candles || []);
+  }, [d, realBrokerAnalysis]);
+
+  const multiDayDiag = useMemo(() => {
+    return calculateMultiDayDiagnostics(dailyHistory, brokerDays);
+  }, [dailyHistory, brokerDays]);
+
+  // Check 2: Big Broker / Smart Money Activity (Dynamically bound to brokerDays via rolling-window microstructure)
   const bcr3Buy = Number(realBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(realBrokerAnalysis?.bcr3SellPct ?? brokerConcentration?.bcr3SellPct ?? 0);
-  const nbar = Number(realBrokerAnalysis?.nbar ?? (bcr3Sell > 0 ? bcr3Buy / bcr3Sell : 1.0));
-
-  const buyers = (realBrokerAnalysis?.topNetBuyers || realBrokerAnalysis?.topNetAccumulators || []).slice(0, 5);
-  const totalWhaleAmt = buyers.reduce((sum, b) => sum + (Number(b.avgBuyRate || (b.buyAmt && b.buyQty ? b.buyAmt / b.buyQty : 0)) * Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0)), 0);
-  const totalWhaleQty = buyers.reduce((sum, b) => sum + Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0), 0);
-  const whaleVwap = totalWhaleQty > 0 ? +(totalWhaleAmt / totalWhaleQty).toFixed(1) : null;
+  const grossBuyPct = multiDayDiag ? multiDayDiag.grossBuyConcentrationPct : bcr3Buy;
+  const grossSellPct = multiDayDiag ? multiDayDiag.grossSellConcentrationPct : bcr3Sell;
+  const nbar = Number(realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : 1.0));
+  const whaleVwap = multiDayDiag?.bigBrokerVWAP ?? null;
 
   let check2Badge = '⚪ Normal Retail Flow';
-  let check2Desc = `Buying (${bcr3Buy.toFixed(1)}%) and selling (${bcr3Sell.toFixed(1)}%) are evenly spread across retail brokers.`;
+  let check2Desc = `Buying (${grossBuyPct.toFixed(1)}%) and selling (${grossSellPct.toFixed(1)}%) are evenly spread across retail brokers.`;
   let check2Color = '#94a3b8';
   let check2Bg = 'rgba(148, 163, 184, 0.06)';
   let check2Border = 'rgba(148, 163, 184, 0.2)';
 
-  if (bcr3Buy >= 38 && bcr3Buy > bcr3Sell && nbar >= 1.15) {
+  if ((multiDayDiag?.phase === 'STEALTH_ACCUMULATION' || multiDayDiag?.phase === 'ACTIVE_MARKUP') || (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)) {
     check2Badge = '🟢 Big Players Accumulating';
-    check2Desc = `Top 3 brokers absorbed ${bcr3Buy.toFixed(1)}% of all shares bought${whaleVwap ? ` at an average cost of Rs. ${whaleVwap}` : ''}.`;
+    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${multiDayDiag?.bcr5NetPct ?? grossBuyPct}%).`;
     check2Color = '#10b981';
     check2Bg = 'rgba(16, 185, 129, 0.08)';
     check2Border = 'rgba(16, 185, 129, 0.25)';
-  } else if ((bcr3Sell >= 38 && bcr3Sell > bcr3Buy) || nbar <= 0.80) {
+  } else if ((multiDayDiag?.phase === 'DISTRIBUTION_DANGER' || multiDayDiag?.phase === 'BULL_TRAP') || (grossSellPct >= 38 && grossSellPct > grossBuyPct) || nbar <= 0.80) {
     check2Badge = '🚨 Big Players Selling (Trap Warning)';
-    check2Desc = `Caution: Top 3 selling brokers account for ${bcr3Sell.toFixed(1)}% of volume. Big players are offloading shares.`;
+    check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading shares.`;
     check2Color = '#f43f5e';
     check2Bg = 'rgba(244, 63, 94, 0.08)';
     check2Border = 'rgba(244, 63, 94, 0.25)';
   }
 
-  // Check 3: Entry Price Timing & Safety
+  // Check 3: Entry Price Timing & Safety (Fixed Math Logic & Anchored to Big Broker VWAP)
   const ltp = Number(d?.ltp || 100);
   const pChange = Number(d?.pChange || 0);
   const lv = entryExitPlan?.levels;
-  const entryLow = Number(lv?.entryZone?.low || lv?.pullbackAnchor || +(ltp * 0.98).toFixed(1));
-  const entryHigh = Number(lv?.entryZone?.high || lv?.entryZone?.max || lv?.breakoutPivot || +(ltp * 1.02).toFixed(1));
-  const chaseCap = Number(entryExitPlan?.riskGate?.chaseCap || lv?.entryZone?.max || +(entryHigh * 1.03).toFixed(1));
+  const entryLow = Number(multiDayDiag?.buyZoneMin || lv?.entryZone?.low || lv?.pullbackAnchor || +(ltp * 0.98).toFixed(1));
+  const entryHigh = Number(multiDayDiag?.buyZoneMax || lv?.entryZone?.high || lv?.entryZone?.max || lv?.breakoutPivot || +(ltp * 1.02).toFixed(1));
   const isCircuitTrap = Boolean(entryExitPlan?.riskGate?.isCircuitTrap || pChange >= 10);
 
-  let check3Badge = '🟡 Slightly Extended — Wait for Dip';
-  let check3Desc = `Price is above the ideal Buy Zone. Wait for a pullback toward Rs. ${entryHigh} instead of chasing.`;
+  let check3Badge = '🟡 Extended Above Buy Zone';
+  let check3Desc = multiDayDiag?.entryDescription || `Price (Rs. ${ltp}) is extended above the ideal Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${entryHigh} instead of chasing.`;
   let check3Color = '#f59e0b';
   let check3Bg = 'rgba(245, 158, 11, 0.08)';
   let check3Border = 'rgba(245, 158, 11, 0.25)';
@@ -770,12 +784,24 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
     check3Color = '#f43f5e';
     check3Bg = 'rgba(244, 63, 94, 0.08)';
     check3Border = 'rgba(244, 63, 94, 0.25)';
-  } else if (ltp <= chaseCap && pChange < 8) {
-    check3Badge = '🟢 Safe Entry Price';
-    check3Desc = `Current price (Rs. ${ltp}) is within the safe Buy Zone (Rs. ${entryLow}–${entryHigh})${whaleVwap ? ` and close to the big brokers' average buy price (Rs. ${whaleVwap})` : ''}.`;
+  } else if (ltp < entryLow) {
+    check3Badge = '🔵 Discounted / Below Buy Zone';
+    check3Desc = `Current price (Rs. ${ltp}) is trading below the Safe Buy Zone (Rs. ${entryLow}–${entryHigh})${whaleVwap ? `, near/below Big Broker VWAP of Rs. ${whaleVwap}` : ` (Support at Rs. ${entryLow})`}.`;
+    check3Color = '#38bdf8';
+    check3Bg = 'rgba(56, 189, 248, 0.08)';
+    check3Border = 'rgba(56, 189, 248, 0.25)';
+  } else if (ltp >= entryLow && ltp <= entryHigh) {
+    check3Badge = '🟢 Within Safe Buy Zone';
+    check3Desc = `Current price (Rs. ${ltp}) is strictly inside the Safe Buy Zone (Rs. ${entryLow}–${entryHigh})${whaleVwap ? ` anchored by Big Broker VWAP of Rs. ${whaleVwap}` : ''}.`;
     check3Color = '#10b981';
     check3Bg = 'rgba(16, 185, 129, 0.08)';
     check3Border = 'rgba(16, 185, 129, 0.25)';
+  } else {
+    check3Badge = '🟡 Extended Above Buy Zone';
+    check3Desc = `Current price (Rs. ${ltp}) is extended above the Safe Buy Zone (Rs. ${entryLow}–${entryHigh}). Wait for a pullback toward Rs. ${whaleVwap || entryHigh} instead of chasing.`;
+    check3Color = '#f59e0b';
+    check3Bg = 'rgba(245, 158, 11, 0.08)';
+    check3Border = 'rgba(245, 158, 11, 0.25)';
   }
 
   // Check 4: Historical Win Rate & Setup Score
@@ -870,12 +896,17 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
         </div>
       </div>
 
-      {/* 4-Point Safety & Conviction Checklist */}
+      {/* 4-Point Safety & Conviction Checklist with Explicit Timeframe Badges */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
         {/* Check 1 */}
         <div style={{ background: check1Bg, border: `1px solid ${check1Border}`, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-            1. Financial Health
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
+              1. Financial Health
+            </span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#cbd5e1', border: '1px solid rgba(255, 255, 255, 0.1)', whiteSpace: 'nowrap' }}>
+              Quarterly / TTM Fundamentals
+            </span>
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: check1Color, marginBottom: 4 }}>
             {check1Badge}
@@ -887,11 +918,46 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
 
         {/* Check 2 */}
         <div style={{ background: check2Bg, border: `1px solid ${check2Border}`, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-            2. Big Broker / Smart Money
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
+              2. Big Broker / Smart Money
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', whiteSpace: 'nowrap' }}>
+                {brokerDays === 1 
+                  ? 'Last 1 Day Floorsheet' 
+                  : diag?.timeframeDays && diag.timeframeDays < brokerDays
+                  ? `Showing ${diag.timeframeDays} Real Trading Days Loaded (${diag.timeframeDays}/${brokerDays}d)`
+                  : `Last ${brokerDays} Trading Days Cumulative`}
+              </span>
+              {/* Quick Timeframe Pills */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {[1, 5, 15, 30].map(days => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => onSelectBrokerDays && onSelectBrokerDays(days)}
+                    style={{
+                      padding: '1px 5px',
+                      borderRadius: 4,
+                      fontSize: 9,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      border: brokerDays === days ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+                      background: brokerDays === days ? 'rgba(56, 189, 248, 0.3)' : 'rgba(255, 255, 255, 0.04)',
+                      color: brokerDays === days ? '#ffffff' : '#94a3b8'
+                    }}
+                    title={`Calculate over last ${days} trading days`}
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: check2Color, marginBottom: 4 }}>
-            {check2Badge}
+          <div style={{ fontSize: 12, fontWeight: 800, color: check2Color, marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>{check2Badge}</span>
+            {brokerLoading && <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>Updating...</span>}
           </div>
           <div style={{ fontSize: 11.5, color: '#cbd5e1', lineHeight: 1.4 }}>
             {check2Desc}
@@ -900,8 +966,13 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
 
         {/* Check 3 */}
         <div style={{ background: check3Bg, border: `1px solid ${check3Border}`, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-            3. Entry Timing & Price
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
+              3. Entry Timing & Price
+            </span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#cbd5e1', border: '1px solid rgba(255, 255, 255, 0.1)', whiteSpace: 'nowrap' }}>
+              20-Day Institutional VWAP & Support Zone
+            </span>
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: check3Color, marginBottom: 4 }}>
             {check3Badge}
@@ -913,8 +984,13 @@ function BeginnerConfidenceCard({ d, entryExitPlan, realBrokerAnalysis, brokerCo
 
         {/* Check 4 */}
         <div style={{ background: check4Bg, border: `1px solid ${check4Border}`, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-            4. Setup Score & Win Rate
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', color: '#94a3b8' }}>
+              4. Setup Score & Win Rate
+            </span>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.06)', color: '#cbd5e1', border: '1px solid rgba(255, 255, 255, 0.1)', whiteSpace: 'nowrap' }}>
+              Composite: Multi-Day Trend + Latest Session Microstructure
+            </span>
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: check4Color, marginBottom: 4 }}>
             {check4Badge}
@@ -2935,6 +3011,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
                 entryExitPlan={entryExitPlan}
                 realBrokerAnalysis={realBrokerAnalysis}
                 brokerConcentration={brokerConcentration}
+                brokerDays={brokerDays}
+                onSelectBrokerDays={handleBrokerDaysChange}
+                brokerLoading={brokerAnalysisLoading}
               />
 
               {/* ── 3. Performance & Today's Range (Groww / Kite Range Slider) ── */}

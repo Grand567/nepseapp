@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
+import { ingestDailyFloorsheetTransaction, rebuildHotCache } from './db/ledgerStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -354,8 +355,9 @@ export async function fetchChukulDateFloorsheet(symbol, dateStr) {
   return [];
 }
 
-export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000) {
+export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000, dateStr = '') {
   const sym = String(symbol || '').toUpperCase().trim();
+  const dt = String(dateStr || '').trim();
 
   try {
     const session = await getShareSansarSession();
@@ -370,7 +372,8 @@ export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000) {
 
     while (start < totalRecords && allRows.length < maxRecords && draw <= 16) {
       const companyParam = sym ? `&company=${encodeURIComponent(sym)}` : '';
-      const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=${draw++}&start=${start}&length=${batchSize}${companyParam}`, {
+      const dateParam = dt ? `&date=${encodeURIComponent(dt)}` : '';
+      const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=${draw++}&start=${start}&length=${batchSize}${companyParam}${dateParam}`, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'X-Requested-With': 'XMLHttpRequest',
@@ -1636,7 +1639,9 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     const session = nepseClient?.nepseman?.session;
     if (session) {
       const endpoint = "/api/nots/nepse-data/floorsheet";
-      const firstRes = await session.post(endpoint, "floor", { size: "500", page: "0" });
+      const firstPayload = { size: "500", page: "0" };
+      if (cleanDate) firstPayload.businessDate = cleanDate;
+      const firstRes = await session.post(endpoint, "floor", firstPayload);
       const totalElements = Number(firstRes?.floorsheets?.totalElements || 0);
       const firstList = firstRes?.floorsheets?.content || firstRes?.content || (Array.isArray(firstRes) ? firstRes : []);
       if (totalElements > 0 && firstList.length > 0) {
@@ -1646,7 +1651,9 @@ export async function getFullSessionFloorsheet(dateStr = '') {
           let list = null;
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              const res = await session.post(endpoint, "floor", { size: "500", page: String(p) });
+              const pagePayload = { size: "500", page: String(p) };
+              if (cleanDate) pagePayload.businessDate = cleanDate;
+              const res = await session.post(endpoint, "floor", pagePayload);
               list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
               break;
             } catch (_) {
@@ -1676,10 +1683,14 @@ export async function getFullSessionFloorsheet(dateStr = '') {
 
         const hasBrokerIds = deduplicatedTrades.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller));
         if (hasBrokerIds) {
-          const recDate = deduplicatedTrades[0]?.businessDate || nptDate;
+          const recDate = deduplicatedTrades[0]?.businessDate || cleanDate || nptDate;
           if ((!cleanDate || recDate === cleanDate) && deduplicatedTrades.length >= totalElements * 0.98) {
             const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
-            try { fs.writeFileSync(saveFile, JSON.stringify(deduplicatedTrades)); } catch (_) {}
+            try { 
+              fs.writeFileSync(saveFile, JSON.stringify(deduplicatedTrades)); 
+              ingestDailyFloorsheetTransaction(recDate, deduplicatedTrades);
+              rebuildHotCache();
+            } catch (_) {}
           }
           if (!cleanDate || recDate === cleanDate) {
             return deduplicatedTrades;
@@ -1692,10 +1703,8 @@ export async function getFullSessionFloorsheet(dateStr = '') {
   }
 
   // Tier 2: ShareSansar / Chukul Market-Wide Floorsheet Fallback
-  // If NOTS fails or returns 0 rows (and !cleanDate || cleanDate === nptDate)
-  if (!cleanDate || cleanDate === nptDate) {
-    try {
-      const ssRows = await fetchShareSansarFloorsheet('', 25000);
+  try {
+    const ssRows = await fetchShareSansarFloorsheet('', 25000, cleanDate);
       if (Array.isArray(ssRows) && ssRows.length > 0) {
         const seenContracts = new Set();
         const deduplicated = [];
@@ -1727,14 +1736,17 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         if (deduplicated.length > 0) {
           const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
           const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
-          try { fs.writeFileSync(saveFile, JSON.stringify(deduplicated)); } catch (_) {}
+          try { 
+            fs.writeFileSync(saveFile, JSON.stringify(deduplicated)); 
+            ingestDailyFloorsheetTransaction(recDate, deduplicated);
+            rebuildHotCache();
+          } catch (_) {}
           return deduplicated;
         }
       }
     } catch (e2) {
       console.warn('[brokerVault] Tier 2 ShareSansar fallback error:', e2.message);
     }
-  }
 
   // Tier 3: Vault Reconstruction Fallback
   // If live scraping fails (e.g. off-market hours or upstream outage) and no exact floorsheet-full-${cleanDate}.json matches:

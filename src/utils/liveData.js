@@ -2491,34 +2491,89 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   };
 }
 
+const marketWideBrokerSummaryMapCaches = new Map();
 let marketWideBrokerSummaryMapCache = { timestamp: 0, data: null };
-let _brokerSummaryMapPromise = null;
+const _brokerSummaryMapPromises = new Map();
 
-export function getCachedMarketWideBrokerSummaryMap() {
-  return marketWideBrokerSummaryMapCache.data || null;
+export function getCachedMarketWideBrokerSummaryMap(days = 1) {
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const cacheKey = `${numDays}_latest`;
+  const cached = marketWideBrokerSummaryMapCaches.get(cacheKey);
+  return cached?.data || marketWideBrokerSummaryMapCache.data || null;
 }
 
 export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
   const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const cacheKey = `${numDays}_${options?.date || 'latest'}`;
   const now = Date.now();
+  const existing = marketWideBrokerSummaryMapCaches.get(cacheKey);
+
   if (
     !options?.refresh &&
-    marketWideBrokerSummaryMapCache.data &&
-    now - marketWideBrokerSummaryMapCache.timestamp < 3 * 60 * 1000
+    existing?.data &&
+    now - existing.timestamp < 3 * 60 * 1000
   ) {
-    return marketWideBrokerSummaryMapCache.data;
+    return existing.data;
   }
 
-  if (!options?.refresh && _brokerSummaryMapPromise) {
-    return _brokerSummaryMapPromise;
+  if (!options?.refresh && _brokerSummaryMapPromises.has(cacheKey)) {
+    return _brokerSummaryMapPromises.get(cacheKey);
   }
 
-  _brokerSummaryMapPromise = (async () => {
+  const p = (async () => {
     try {
       const params = new URLSearchParams();
       if (numDays > 1) params.set('days', String(numDays));
       if (options?.date) params.set('date', String(options.date));
       const qs = params.toString() ? `?${params.toString()}` : '';
+
+      // Tier 1 Fast Path: Query in-memory hot cache (< 5ms response)
+      if (!options?.date) {
+        try {
+          const fastRadar = await fetchFromBackend(`/api/radar?days=${numDays}`, 5000);
+          if (fastRadar?.success && Array.isArray(fastRadar.stocks) && fastRadar.stocks.length > 0) {
+            const map = {};
+            for (const st of fastRadar.stocks) {
+              const symUpper = String(st.symbol).toUpperCase().trim();
+              map[symUpper] = {
+                symbol: symUpper,
+                bcr3BuyPct: st.grossBuyConcentrationPct || 0,
+                bcr3SellPct: st.grossSellConcentrationPct || 0,
+                bcr5BuyPct: st.bcr5NetPct || 0,
+                bcr5NetPct: st.bcr5NetPct || 0,
+                scr3NetPct: st.scr3NetPct || 0,
+                grossBuyConcentrationPct: st.grossBuyConcentrationPct,
+                grossSellConcentrationPct: st.grossSellConcentrationPct,
+                smartMoneyNetFlowPct: st.smartMoneyNetFlowPct,
+                phase: st.phase,
+                phaseLabel: st.phaseLabel,
+                bigBrokerVWAP: st.bigBrokerVWAP,
+                buyZoneMin: st.buyZoneMin,
+                buyZoneMax: st.buyZoneMax,
+                entryStatus: st.entryStatus,
+                totalVolume: st.totalVolume,
+                totalTurnover: st.totalTurnover,
+                timeframeDays: st.timeframeDays,
+                scopeLabel: st.scopeLabel,
+                topBuyers: st.topBuyers || [],
+                topSellers: st.topSellers || [],
+                topBuyerBrokers: st.topBuyers || [],
+                topSellerBrokers: st.topSellers || [],
+                source: 'hot_cache_precomputed'
+              };
+            }
+            const cacheEntry = { timestamp: Date.now(), data: map };
+            marketWideBrokerSummaryMapCache = cacheEntry;
+            marketWideBrokerSummaryMapCaches.set(cacheKey, cacheEntry);
+            bulkSetCachedBrokerData(map);
+            for (const [symKey, dataObj] of Object.entries(map)) {
+              realBrokerAnalysisCache.set(symKey, dataObj);
+              setCachedRealBrokerAnalysis(symKey, dataObj, numDays, options);
+            }
+            return map;
+          }
+        } catch (_) {}
+      }
 
       let res = await fetchFromBackend(`/api/market/broker-summary${qs}`, 20000);
       if (!res || (res.success === false && !res.data)) {
@@ -2526,7 +2581,9 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
       }
       const map = res?.data || res;
       if (map && typeof map === 'object' && Object.keys(map).length > 0) {
-        marketWideBrokerSummaryMapCache = { timestamp: Date.now(), data: map };
+        const cacheEntry = { timestamp: Date.now(), data: map };
+        marketWideBrokerSummaryMapCache = cacheEntry;
+        marketWideBrokerSummaryMapCaches.set(cacheKey, cacheEntry);
         bulkSetCachedBrokerData(map);
         for (const [symKey, dataObj] of Object.entries(map)) {
           if (dataObj && typeof dataObj === 'object') {
@@ -2540,13 +2597,14 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
     } catch (err) {
       console.warn('[liveData] fetchMarketWideBrokerSummaryMap error:', err.message);
     } finally {
-      _brokerSummaryMapPromise = null;
+      _brokerSummaryMapPromises.delete(cacheKey);
     }
 
-    return marketWideBrokerSummaryMapCache.data || {};
+    return existing?.data || marketWideBrokerSummaryMapCache.data || {};
   })();
 
-  return _brokerSummaryMapPromise;
+  _brokerSummaryMapPromises.set(cacheKey, p);
+  return p;
 }
 
 export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
@@ -2600,6 +2658,49 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       trades: Number(b.trades ?? b.totalTrades ?? 0)
     };
   };
+
+  // Tier 1 Fast Path: Query in-memory hot cache for single stock diagnostic (< 5ms response)
+  if (!date && !fromDate && !toDate) {
+    try {
+      const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 5000);
+      if (fastDiag?.success && fastDiag.data) {
+        const fd = fastDiag.data;
+        const normalized = {
+          symbol: sym,
+          totalBuyVolume: fd.totalVolume,
+          totalSellVolume: fd.totalVolume,
+          totalVolume: fd.totalVolume,
+          totalTurnover: fd.totalTurnover,
+          bcr3BuyPct: fd.grossBuyConcentrationPct || 0,
+          bcr3SellPct: fd.grossSellConcentrationPct || 0,
+          bcr5BuyPct: fd.bcr5NetPct || 0,
+          bcr5NetPct: fd.bcr5NetPct || 0,
+          scr3NetPct: fd.scr3NetPct || 0,
+          grossBuyConcentrationPct: fd.grossBuyConcentrationPct,
+          grossSellConcentrationPct: fd.grossSellConcentrationPct,
+          smartMoneyNetFlowPct: fd.smartMoneyNetFlowPct,
+          topBuyerBrokers: (fd.topGrossBuyers || []).map(normalizeBrokerItem).filter(Boolean),
+          topSellerBrokers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          topBuyers: (fd.topGrossBuyers || []).map(normalizeBrokerItem).filter(Boolean),
+          topSellers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetBuyers: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetSellers: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          bigBrokerVWAP: fd.bigBrokerVWAP,
+          buyZoneMin: fd.buyZoneMin,
+          buyZoneMax: fd.buyZoneMax,
+          entryStatus: fd.entryStatus,
+          entryDescription: fd.entryDescription,
+          phase: fd.phase,
+          phaseLabel: fd.phaseLabel,
+          scopeLabel: fd.scopeLabel,
+          timeframeDays: fd.timeframeDays,
+          source: 'hot_cache_precomputed'
+        };
+        setCachedRealBrokerAnalysis(sym, normalized, numDays, options);
+        return normalized;
+      }
+    } catch (_) {}
+  }
 
   try {
     const params = new URLSearchParams();
@@ -3120,5 +3221,42 @@ export async function fetchMarketStatus() {
 }
 
 
+/**
+ * Fast Tier-1 Precomputed Radar Endpoint
+ * Returns all stocks' Wyckoff phase classifications & metrics for 1D, 5D, 15D, or 30D in < 5ms
+ */
+export async function fetchPrecomputedRadar(days = 1) {
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  try {
+    const res = await fetchFromBackend(`/api/radar?days=${numDays}`, 6000);
+    if (res?.success && Array.isArray(res.stocks)) {
+      return res;
+    }
+  } catch (err) {
+    console.warn('[liveData] fetchPrecomputedRadar error:', err.message);
+  }
+  return null;
+}
+
+/**
+ * Fast Tier-1 Precomputed Single Stock Deep Diagnostic Endpoint
+ * Returns deep diagnostic, Top 5 Net Buyers/Sellers, and Safe Buy Zone in < 5ms
+ */
+export async function fetchPrecomputedDiagnostic(symbol, days = 1) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  try {
+    const res = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 6000);
+    if (res?.success && res.data) {
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('[liveData] fetchPrecomputedDiagnostic error:', err.message);
+  }
+  return null;
+}
+
 // ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
 export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };
+

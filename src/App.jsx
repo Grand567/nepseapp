@@ -70,7 +70,7 @@ function AppInner() {
 
   useEffect(() => {
     let base = 'dashboard';
-    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo') base = 'portfolio';
+    if (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') base = 'portfolio';
     else if (activeTab === 'predictor' || activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit') base = 'predictor';
     else if (activeTab === 'services') base = 'services';
     else if (activeTab === 'calculator') base = 'calculator';
@@ -1548,13 +1548,13 @@ function AppInner() {
               <React.Suspense fallback={<div style={{ display: 'flex', minHeight: 320, width: '100%', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} /></div>}>
                 {/* Tab 2: Portfolio & Bulk IPO */}
                 {visitedTabs.has('portfolio') && (
-                  <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
+                  <div style={{ display: (activeTab === 'portfolio' || activeTab === 'bulk_ipo' || activeTab === 'simulator') ? 'flex' : 'none', flexDirection: 'column', flex: '1 0 auto' }}>
                     <PortfolioHub
                       marketStocks={stocks}
                       userId={user?.uid}
                       userEmail={user?.email}
                       apiStatus={apiStatus}
-                      initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : 'portfolio'}
+                      initialSubTab={activeTab === 'bulk_ipo' ? 'bulk_ipo' : activeTab === 'simulator' ? 'simulator' : 'portfolio'}
                       onSelectStock={openStockDetail}
                     />
                   </div>
@@ -1668,7 +1668,7 @@ function AppInner() {
           { id: 'services',   icon: LayoutGrid,      label: 'Services' },
           { id: 'ai',         icon: BrainCircuit,    label: 'Guru AI' },
         ].map(({ id, icon: Icon, label }) => {
-          const isActive = activeTab === id || (id === 'portfolio' && activeTab === 'bulk_ipo') || (id === 'predictor' && (activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit'));
+          const isActive = activeTab === id || (id === 'portfolio' && (activeTab === 'bulk_ipo' || activeTab === 'simulator')) || (id === 'predictor' && (activeTab === 'entry_exit' || activeTab === 'short_term_plan' || activeTab === 'master_100_profit'));
           return (
             <button
               key={id}
