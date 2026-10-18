@@ -18,6 +18,7 @@ import {
 
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { getProxyBase, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { AlphaCommandCenter } from './AlphaCommandCenter';
 
 interface Master100ProfitWorkstationProps {
   stocks?: any[];
@@ -45,7 +46,7 @@ export function Master100ProfitWorkstation({
   const [selectedStockSymbol, setSelectedStockSymbol] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [watchlistSuccess, setWatchlistSuccess] = useState(false);
-  const [activeViewTab, setActiveViewTab] = useState<'blueprint' | 'matrix' | 'leaderboard' | 'exits' | 'simulator' | 'telegram'>('blueprint');
+  const [activeViewTab, setActiveViewTab] = useState<'alpha_desk' | 'blueprint' | 'matrix' | 'leaderboard' | 'exits' | 'simulator' | 'telegram'>('alpha_desk');
   const [leaderboardTrackFilter, setLeaderboardTrackFilter] = useState<'all' | 'growth' | 'bluechip' | 'bounce'>('all');
 
   // Telegram Alert State
@@ -523,6 +524,7 @@ export function Master100ProfitWorkstation({
         borderBottom: '1px solid rgba(255,255,255,0.08)'
       }}>
         {[
+          { id: 'alpha_desk', label: '⚡ 5-Step Alpha Command Desk', icon: Zap },
           { id: 'blueprint', label: '👑 Crowned Prime Pick', icon: Crown },
           { id: 'matrix', label: '🎯 6-Point Matrix Audit', icon: ShieldCheck },
           { id: 'leaderboard', label: '🔍 8-Gate Screener Leaderboard', icon: Filter },
@@ -558,6 +560,15 @@ export function Master100ProfitWorkstation({
           );
         })}
       </div>
+
+      {/* ── VIEW 0: UNIFIED 5-STEP ALPHA COMMAND DESK ── */}
+      {activeViewTab === 'alpha_desk' && (
+        <AlphaCommandCenter
+          stocks={stocks}
+          indices={indices}
+          onSelectStock={onSelectStock}
+        />
+      )}
 
       {/* ── VIEW 1: CROWNED HERO BLUEPRINT & SIZING ── */}
       {activeViewTab === 'blueprint' && (
