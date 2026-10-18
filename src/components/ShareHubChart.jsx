@@ -7,6 +7,7 @@ import {
   LineSeries,
   AreaSeries,
   LineStyle,
+  createSeriesMarkers,
 } from 'lightweight-charts';
 import { fetchRealPriceHistory } from '../utils/liveData';
 import { fetchNepseIntradayGraph } from '../utils/servicesApi';
@@ -981,10 +982,14 @@ export default function ShareHubChart({
           close: d.close
         })));
 
-        // Pattern Markers on Candlesticks
+        // Pattern Markers on Candlesticks (v5 createSeriesMarkers primitive + v4 fallback)
         if (effectiveShowPatterns && patternMarkers.length > 0) {
           try {
-            mainSeries.setMarkers(patternMarkers);
+            if (typeof createSeriesMarkers === 'function') {
+              createSeriesMarkers(mainSeries, patternMarkers);
+            } else if (typeof mainSeries.setMarkers === 'function') {
+              mainSeries.setMarkers(patternMarkers);
+            }
           } catch (_) {}
         }
       } else {

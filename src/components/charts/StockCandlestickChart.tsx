@@ -6,6 +6,7 @@ import {
   HistogramSeries,
   LineSeries,
   LineStyle,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
 } from 'lightweight-charts';
@@ -163,7 +164,8 @@ function parseIntradayCandles(rawTicks: any[], ltp?: number): CandleData[] {
           const ampm = (match[4] || '').toUpperCase();
           if (ampm === 'PM' && hrs < 12) hrs += 12;
           if (ampm === 'AM' && hrs === 12) hrs = 0;
-          ts = Math.floor(Date.UTC(year, month, day, hrs, mins, secs) / 1000);
+          // Anchor to Nepal Standard Time (UTC+05:45 = 20,700 seconds)
+          ts = Math.floor(Date.UTC(year, month, day, hrs, mins, secs) / 1000) - 20700;
         }
       }
     }
@@ -702,10 +704,14 @@ export function StockCandlestickChart({
     );
     mainSeriesRef.current = candleSeries;
 
-    // Pattern markers
+    // Pattern markers (supports lightweight-charts v5 createSeriesMarkers + v4 fallback)
     if (showPatterns && patternMarkers.length > 0) {
       try {
-        candleSeries.setMarkers(patternMarkers as any);
+        if (typeof createSeriesMarkers === 'function') {
+          createSeriesMarkers(candleSeries, patternMarkers as any);
+        } else if (typeof (candleSeries as any).setMarkers === 'function') {
+          (candleSeries as any).setMarkers(patternMarkers as any);
+        }
       } catch { /* ignore */ }
     }
 
@@ -1030,7 +1036,7 @@ export function StockCandlestickChart({
       const matchingVwap = vwapData.find((d) => d.time === param.time)?.value ?? null;
 
       const dateStr = typeof param.time === 'number'
-        ? new Date(param.time * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+        ? new Date(param.time * 1000).toLocaleTimeString('en-US', { timeZone: 'Asia/Kathmandu', hour: '2-digit', minute: '2-digit', hour12: true })
         : String(param.time);
 
       setTooltipData({

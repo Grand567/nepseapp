@@ -106,8 +106,10 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   const ema50 = Number(stock.ema50 || stock.sma50 || dynEMAs.ema50);
   const rsi = resolveDynamicStockRSI(stock);
   const cachedFund = stock.cachedFund || (stock.eps !== undefined ? stock : getCachedStockFundamentals(sym));
-  const eps = Number(cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : (stock.eps ?? 0));
-  const bookValue = Number(cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock.bookValue ?? stock.bvps ?? 100));
+  const rawEps = cachedFund?.eps !== undefined && cachedFund?.eps !== null ? cachedFund.eps : stock.eps;
+  const eps = rawEps !== undefined && rawEps !== null ? Number(rawEps) : null;
+  const rawBv = cachedFund?.bookValue !== undefined && cachedFund?.bookValue !== null ? cachedFund.bookValue : (stock.bookValue ?? stock.bvps);
+  const bookValue = rawBv !== undefined && rawBv !== null ? Number(rawBv) : null;
   const vsr = Number(stock.volumeSurgeRatio || (vol > 15000 ? 1.4 : vol > 4000 ? 1.15 : 0.95));
 
   // Comprehensive Exclusions: Mutual funds, debentures, bonds, promoter shares, penny units (< Rs 50)
@@ -235,8 +237,8 @@ export function evaluateShortTermCriteria(stock = {}, indices = {}) {
   // 7. T+2 Settlement & 3-Year Lockup Guard
   const passT2Guard = t2Guard.isSafeToEnter && t2Guard.status !== 'HIGH_T2_CIRCUIT_TRAP' && !hasLockupCliff;
 
-  // 8. Solvency & Conviction Score (Strictly require non-negative EPS and Book Value >= 75)
-  const passFundamentals = (eps >= 0 && bookValue >= 75);
+  // 8. Solvency & Conviction Score (Strictly require verified positive EPS > 5 and Book Value >= 100 Par Value)
+  const passFundamentals = eps !== null && eps > 5 && bookValue !== null && bookValue >= 100;
 
   // Calculate composite conviction score (0-100)
   let baseScore = 48;

@@ -416,7 +416,7 @@ export function Master100ProfitWorkstation({
                 </span>
               </div>
               <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#94a3b8' }}>
-                Automated 8-Gate Screener &bull; 6-Point Matrix &bull; Half-Kelly Compounding (&plusmn;15% Circuits | 10% CGT)
+                Automated 8-Gate Screener &bull; 6-Point Matrix &bull; Half-Kelly Compounding (&plusmn;15% Circuits | 7.5% Short-Term CGT)
               </p>
             </div>
           </div>
@@ -831,7 +831,7 @@ export function Master100ProfitWorkstation({
                   <div>
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>NET RISK : REWARD</div>
                     <div style={{ fontSize: 18, fontWeight: 900, color: '#fbbf24' }}>
-                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 12, color: '#94a3b8' }}>net 10% CGT</span>
+                      {inspectedStock.netRRR} : 1 <span style={{ fontSize: 12, color: '#94a3b8' }}>net 7.5% CGT</span>
                     </div>
                   </div>
                   <div>
@@ -958,7 +958,7 @@ export function Master100ProfitWorkstation({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Calculator style={{ width: 18, height: 18, color: '#38bdf8' }} />
                       <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#fff' }}>
-                        Friction-Adjusted Position Sizer (Half-Kelly 2% Risk)
+                        Friction-Adjusted Position Sizer (Half-Kelly {riskTolerancePct}% Risk)
                       </h3>
                     </div>
                     <div style={{ fontSize: 12, color: '#94a3b8' }}>
@@ -1017,7 +1017,7 @@ export function Master100ProfitWorkstation({
                     </div>
 
                     <div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>MAX PORTFOLIO RISK (2%)</div>
+                      <div style={{ fontSize: 12, color: '#94a3b8' }}>MAX PORTFOLIO RISK ({riskTolerancePct}%)</div>
                       <div style={{ fontSize: 20, fontWeight: 900, color: '#f87171', marginTop: 2 }}>
                         Rs. {sizing.maxRiskCapital.toLocaleString()}
                       </div>
@@ -1519,14 +1519,26 @@ export function Master100ProfitWorkstation({
               gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
               gap: 10
             }}>
-              {[
-                { stage: 'Start', trades: 'Trade 0', equity: 'Rs. 5,00,000', gain: 'Base Capital', color: '#94a3b8' },
-                { stage: 'Milestone 1', trades: 'Trade 4', equity: 'Rs. 6,05,000', gain: '+21.0% Net', color: '#38bdf8' },
-                { stage: 'Milestone 2', trades: 'Trade 8', equity: 'Rs. 7,32,000', gain: '+46.4% Net', color: '#38bdf8' },
-                { stage: 'Milestone 3', trades: 'Trade 12', equity: 'Rs. 8,86,000', gain: '+77.2% Net', color: '#fbbf24' },
-                { stage: 'Milestone 4', trades: 'Trade 16', equity: 'Rs. 10,72,000', gain: '+114.4% Net', color: '#34d399' },
-                { stage: 'Target Achieved', trades: 'Trade 20', equity: `Rs. ${auditReport.compoundSimulation.endingCapital.toLocaleString()}`, gain: `+${auditReport.compoundSimulation.netReturnPct}% Net 👑`, color: '#10b981' }
-              ].map(m => (
+              {(() => {
+                const startCap = Number(auditReport.compoundSimulation.startingCapital || 100000);
+                const endCap = Number(auditReport.compoundSimulation.endingCapital || startCap * 2.19);
+                const totalGrowth = endCap / Math.max(1, startCap);
+                const fmtStep = (stepIdx: number) => {
+                  const factor = Math.pow(totalGrowth, stepIdx / 5);
+                  const eq = Math.round(startCap * factor);
+                  const pct = +((factor - 1) * 100).toFixed(1);
+                  return { eq: `Rs. ${eq.toLocaleString('en-IN')}`, pct: `+${pct}% Net` };
+                };
+                const s1 = fmtStep(1), s2 = fmtStep(2), s3 = fmtStep(3), s4 = fmtStep(4);
+                return [
+                  { stage: 'Start', trades: 'Trade 0', equity: `Rs. ${startCap.toLocaleString('en-IN')}`, gain: 'Base Capital', color: '#94a3b8' },
+                  { stage: 'Milestone 1', trades: 'Trade 4', equity: s1.eq, gain: s1.pct, color: '#38bdf8' },
+                  { stage: 'Milestone 2', trades: 'Trade 8', equity: s2.eq, gain: s2.pct, color: '#38bdf8' },
+                  { stage: 'Milestone 3', trades: 'Trade 12', equity: s3.eq, gain: s3.pct, color: '#fbbf24' },
+                  { stage: 'Milestone 4', trades: 'Trade 16', equity: s4.eq, gain: s4.pct, color: '#34d399' },
+                  { stage: 'Target Achieved', trades: 'Trade 20', equity: `Rs. ${endCap.toLocaleString('en-IN')}`, gain: `+${auditReport.compoundSimulation.netReturnPct}% Net 👑`, color: '#10b981' }
+                ];
+              })().map(m => (
                 <div key={m.stage} style={{
                   background: 'rgba(255,255,255,0.03)',
                   border: '1px solid rgba(255,255,255,0.06)',

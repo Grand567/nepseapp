@@ -183,24 +183,28 @@ export default function TestSuite({ marketTrend, setMarketTrend, apiStatus, setA
     await new Promise(r => setTimeout(r, 300));
     addLog('info', '🧪 Test 8: Quant Setup Engine & Geometric Order (SL < Entry <= T1)');
     try {
-      const mockStock = { symbol: 'NABIL', ltp: 600, high52: 700, low52: 450, volume: 50000 };
-      const mockCandles = Array.from({ length: 60 }, (_, i) => ({
-        t: `2026-0${Math.floor(i / 25) + 1}-${String((i % 25) + 1).padStart(2, '0')}`,
-        o: 580 + (i * 0.5),
-        h: 590 + (i * 0.5),
-        l: 575 + (i * 0.5),
-        c: 585 + (i * 0.5),
-        v: 10000 + i * 100,
+      const mockStock = { symbol: 'NABIL', ltp: 615, high52w: 700, low52w: 450, volume: 50000 };
+      const mockCandles = Array.from({ length: 65 }, (_, i) => ({
+        date: `2026-0${Math.floor(i / 25) + 1}-${String((i % 25) + 1).padStart(2, '0')}`,
+        open: 580 + (i * 0.5),
+        high: 590 + (i * 0.5),
+        low: 575 + (i * 0.5),
+        close: 585 + (i * 0.5),
+        volume: 10000 + i * 100,
       }));
-      const plan = generateEntryExitPlan(mockStock, mockCandles);
-      const valid = typeof plan?.score === 'number' && plan.score >= 0 && plan.score <= 100;
-      const geomValid = plan?.stopLoss && plan?.entryMin && plan?.target1
-        ? (plan.stopLoss < plan.entryMin && plan.entryMin <= plan.target1)
+      const plan = generateEntryExitPlan(mockStock, mockCandles, []);
+      const scoreVal = Number(plan?.setupScore ?? plan?.score ?? -1);
+      const valid = plan?.supported === true && scoreVal >= 0 && scoreVal <= 100;
+      const sl = Number(plan?.levels?.stopLoss?.price ?? plan?.stopLoss ?? 0);
+      const entryMin = Number(plan?.levels?.entryZone?.min ?? plan?.levels?.entryZone?.low ?? plan?.entryMin ?? 0);
+      const t1 = Number(plan?.levels?.target1?.price ?? plan?.target1 ?? 0);
+      const geomValid = (sl > 0 && entryMin > 0 && t1 > 0)
+        ? (sl < entryMin && entryMin <= t1)
         : true;
       if (valid && geomValid) {
-        addLog('success', `✅ Test 8 Passed: Quant setup score ${plan.score}/100 and price geometry verified.`);
+        addLog('success', `✅ Test 8 Passed: Quant setup score ${scoreVal}/100 and price geometry (SL Rs.${sl} < Entry Rs.${entryMin} <= T1 Rs.${t1}) verified.`);
       } else {
-        throw new Error(`Quant setup invalid: score=${plan?.score}, SL=${plan?.stopLoss}, Entry=${plan?.entryMin}`);
+        throw new Error(`Quant setup invalid: score=${scoreVal}, SL=${sl}, Entry=${entryMin}, T1=${t1}`);
       }
     } catch (err) {
       addLog('error', `❌ Test 8 Failed: ${err.message}`);

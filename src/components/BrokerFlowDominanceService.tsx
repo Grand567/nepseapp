@@ -695,10 +695,11 @@ export function BrokerFlowDominanceService({
       // 4. Large net offloading (> 20% of total sell volume)
       const isGreenOrElevated = pChange >= 0;
       const topBrokersHeavyDumping = !isThinSample && (
-        top3SellPct >= 48.0 && (top3SellPct - top3BuyPct) >= 12.0 && (
+        top3SellPct >= 38.0 && top3SellPct > top3BuyPct && (
+          (top3SellPct - top3BuyPct) >= 8.0 ||
           sortedSellers.slice(0, 3).some(s => {
             const buyAmt = val.buyers.get(s.id) || 0;
-            return (s.amt - buyAmt) > (val.totalSell * 0.20);
+            return (s.amt - buyAmt) > (val.totalSell * 0.18);
           })
         )
       );

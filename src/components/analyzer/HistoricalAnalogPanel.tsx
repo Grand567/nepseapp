@@ -113,7 +113,7 @@ export function HistoricalAnalogPanel({ analogResult }: HistoricalAnalogPanelPro
             Sample: {sampleTier} (N = {stats.sampleSize})
           </span>
           <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-full">
-            <Coins size={12} className="text-amber-400" /> Net of SEBON fees & 10% CGT (Final)
+            <Coins size={12} className="text-amber-400" /> Net of SEBON fees & 7.5% CGT (Final)
           </span>
         </div>
       </div>

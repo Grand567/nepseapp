@@ -28,7 +28,7 @@ import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert } from 
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
-import { getUpcomingHolidays } from './utils/bikramSambat.js';
+import { getUpcomingHolidays, toNepaliDigits } from './utils/bikramSambat.js';
 
 import { fetchLiveMarketData, calculateIndices, fetchMarketStatus, fetchMarketIndices, getLastMarketSyncTime, getCachedIndices, getCachedStocks, saveCachedStocks, saveCachedIndices, warmUpServer } from './utils/liveData';
 import { getDetailedMarketStatus, clearDynamicMarketHalt } from './utils/nepseCalendar';

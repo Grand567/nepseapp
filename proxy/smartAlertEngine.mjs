@@ -62,12 +62,17 @@ const STATE_FILE = path.join(DATA_DIR, 'smart_alert_state.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'smart_alert_history.json');
 const TOKENS_FILE = path.join(DATA_DIR, 'push_tokens.json');
 
+let stockMap = {};
 try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  const stockmapPath = path.join(__dirname, 'stockmap.json');
+  if (fs.existsSync(stockmapPath)) {
+    stockMap = JSON.parse(fs.readFileSync(stockmapPath, 'utf8'));
   }
-} catch (e) {
-  console.warn('[SmartAlertEngine] Failed to create data dir:', e.message);
+} catch (_) {}
+
+export function getSectorForSymbol(sym) {
+  const upper = String(sym || '').toUpperCase().trim();
+  return stockMap[upper]?.sector || stockMap[upper]?.sectorName || 'Others';
 }
 
 // ── 1. PERSISTENCE HELPERS ──────────────────────────────────────────────────
@@ -328,7 +333,11 @@ export function evaluateStockAlertConditions({
   floorsheetTrades = [],
   avgVolume20D = 0,
   priceHistory = [],
-  elapsedMinutes = null
+  elapsedMinutes = null,
+  sector = null,
+  sectorRank10D = null,
+  stock10DReturn = null,
+  sector10DReturn = null
 }) {
   const sym = String(symbol || '').toUpperCase().trim();
   const currentLtp = Number(ltp || 0);
@@ -491,10 +500,10 @@ export function evaluateStockAlertConditions({
     bcr3BuyPct: bcr3 * 100,
     topBuyerBrokers,
     priceHistory,
-    sector: 'Hydro Power',
-    sectorRank10D: 2,
-    stock10DReturn: 5.2,
-    sector10DReturn: 3.0,
+    sector: sector || getSectorForSymbol(sym),
+    sectorRank10D: sectorRank10D != null ? sectorRank10D : 2,
+    stock10DReturn: stock10DReturn != null ? stock10DReturn : 5.2,
+    sector10DReturn: sector10DReturn != null ? sector10DReturn : 3.0,
     target1,
     target2,
     bypassTimingGate: true // Allows unit tests & manual evaluations without timing gate block

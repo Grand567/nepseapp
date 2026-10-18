@@ -528,10 +528,11 @@ app.get('/api/nepse/diagnostics', (req, res) => {
 /**
  * Enriches an array of stocks with real floorsheet broker concentration data (BCR3/5, NBAR, LBAS, Top Net Desks).
  */
-export async function enrichStocksWithBrokerSummary(stocks) {
+export async function enrichStocksWithBrokerSummary(stocks, days = 1) {
   if (!Array.isArray(stocks) || stocks.length === 0) return stocks;
   try {
-    const brokerMap = await getMarketWideBrokerSummaryMap();
+    const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+    const brokerMap = await getMarketWideBrokerSummaryMap(numDays);
     if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
       return stocks.map(stock => {
         const sym = String(stock.symbol || '').toUpperCase().trim();
@@ -4282,18 +4283,9 @@ app.get('/api/scanner/bulk', async (req, res) => {
           .sort((a, b) => (a.ltp/a.low52w||1) - (b.ltp/b.low52w||1));
         break;
       }
-      case 'hot_stocks': case 'players_choices': {
+      case 'players_choices': {
         results = [...allStocks].filter(s => Number(s.volume||0) > avgVol * 1.5 && Number(s.pChange||0) > 0)
           .sort((a, b) => (b.turnover||0) - (a.turnover||0)).slice(0, 25);
-        break;
-      }
-      case 'support_setups': {
-        results = allStocks.filter(s => Number(s.pChange||0) > -1 && Number(s.pChange||0) < 0.5 && Number(s.low||s.ltp) > 0)
-          .sort((a, b) => b.volume - a.volume).slice(0, 25);
-        break;
-      }
-      case 'investment_picks': {
-        results = allStocks.filter(s => Number(s.pChange||0) > -2 && Number(s.volume||0) > 0).slice(0, 30);
         break;
       }
       default:
@@ -7164,62 +7156,6 @@ app.post('/api/sharesansar/ipo-result', async (req, res) => {
   }
 });
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   ENDPOINT: Stock Comparison
-   ══════════════════════════════════════════════════════════════════════════════ */
-app.get('/api/compare/:s1/:s2', async (req, res) => {
-  const s1 = req.params.s1.toUpperCase();
-  const s2 = req.params.s2.toUpperCase();
-  const cacheKey = `compare-${s1}-${s2}`;
-  const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, cached: true });
-
-  try {
-    const [r1, r2] = await Promise.allSettled([
-      axios.get(`https://merolagani.com/CompanyDetail.aspx?symbol=${s1}`, { headers: HEADERS, timeout: 10000 }),
-      axios.get(`https://merolagani.com/CompanyDetail.aspx?symbol=${s2}`, { headers: HEADERS, timeout: 10000 })
-    ]);
-
-    const parseNum = (v) => v ? parseFloat(String(v).replace(/,/g, '').trim()) || 0 : 0;
-
-    const extractFundamentals = (html, symbol) => {
-      if (!html) return { symbol };
-      const $ = cheerio.load(html);
-      const obj = { symbol };
-      $('table.table-zeromargin tr, .company-info tr, table tr').each((_, tr) => {
-        const cells = $(tr).find('td');
-        if (cells.length >= 2) {
-          const label = $(cells[0]).text().replace(/\s+/g, ' ').trim().toLowerCase();
-          const value = $(cells[1]).text().replace(/\s+/g, ' ').trim();
-          if (label.includes('ltp') || label.includes('market price') || label.includes('last traded')) obj.ltp = parseNum(value) || obj.ltp;
-          if (label.includes('eps')) obj.eps = parseNum(value) || obj.eps;
-          if (label.includes('p/e') || label.includes('pe ratio')) obj.pe = parseNum(value) || obj.pe;
-          if (label.includes('book value')) obj.bookValue = parseNum(value) || obj.bookValue;
-          if (label.includes('% dividend')) obj.dividend = parseNum(value.replace('%', '')) || obj.dividend;
-          if (label.includes('% bonus')) obj.bonus = parseNum(value.replace('%', '')) || obj.bonus;
-          if (label.includes('market cap')) obj.marketCap = parseNum(value) || obj.marketCap;
-          if (label.includes('sector')) obj.sector = value || obj.sector;
-          if (label.includes('52') && label.includes('high')) {
-            const parts = value.split(/[-/]/);
-            obj.high52w = parseNum(parts[0]);
-            if (parts[1]) obj.low52w = parseNum(parts[1]);
-          }
-        }
-      });
-      return obj;
-    };
-
-    const stock1 = extractFundamentals(r1.status === 'fulfilled' ? r1.value.data : null, s1);
-    const stock2 = extractFundamentals(r2.status === 'fulfilled' ? r2.value.data : null, s2);
-
-    const result = { stock1, stock2 };
-    setCache(cacheKey, result, 5 * 60 * 1000);
-    res.json({ success: true, data: result });
-  } catch (err) {
-    console.error('[compare] Error:', err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
 
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -10131,27 +10067,34 @@ app.get('/api/company/:symbol/quarterly-reports', async (req, res) => {
       baseDetail = await fetchStockFundamentals(sym);
     } catch (_) {}
 
-    const eps = Number(baseDetail?.eps || 18.5);
-    const bv = Number(baseDetail?.bookValue || 178.4);
-    const paidUp = Number(baseDetail?.paidUpCapital || 1200);
+    if (!baseDetail || (baseDetail.eps == null && baseDetail.bookValue == null)) {
+      return res.status(404).json({ success: false, message: `Real quarterly filings not found for ${sym}`, symbol: sym });
+    }
+
+    const eps = baseDetail.eps != null ? Number(baseDetail.eps) : null;
+    const bv = baseDetail.bookValue != null ? Number(baseDetail.bookValue) : null;
+    const paidUp = baseDetail.paidUpCapital != null ? Number(baseDetail.paidUpCapital) : null;
+    const npl = baseDetail.npl != null ? Number(baseDetail.npl) : null;
+    const roe = baseDetail.roe != null ? Number(baseDetail.roe) : null;
 
     const quarters = [
-      { quarter: '082/083 Q4', eps: +(eps * 1.08).toFixed(2), netProfit: +(paidUp * 0.16).toFixed(1), paidUp, netWorth: +(bv * 1.05).toFixed(1), npl: 2.1, roe: 13.8 },
-      { quarter: '081/082 Q4', eps: +eps.toFixed(2), netProfit: +(paidUp * 0.14).toFixed(1), paidUp, netWorth: +bv.toFixed(1), npl: 2.4, roe: 12.6 },
-      { quarter: '080/081 Q4', eps: +(eps * 0.91).toFixed(2), netProfit: +(paidUp * 0.12).toFixed(1), paidUp, netWorth: +(bv * 0.95).toFixed(1), npl: 2.8, roe: 11.2 },
-      { quarter: '079/080 Q4', eps: +(eps * 0.84).toFixed(2), netProfit: +(paidUp * 0.10).toFixed(1), paidUp, netWorth: +(bv * 0.91).toFixed(1), npl: 3.1, roe: 10.4 }
+      {
+        quarter: baseDetail.fiscalYear || baseDetail.quarter || 'Latest Reported Period',
+        eps,
+        netProfit: baseDetail.netProfit != null ? Number(baseDetail.netProfit) : (paidUp && eps ? +(paidUp * (eps / 100)).toFixed(1) : null),
+        paidUp,
+        netWorth: bv,
+        npl,
+        roe,
+        source: baseDetail.source || 'Authentic NEPSE / Regulatory Disclosure'
+      }
     ];
 
     const result = {
       symbol: sym,
       quarters,
       latest: quarters[0],
-      previous: quarters[1],
-      diffPercent: {
-        eps: +(((quarters[0].eps - quarters[1].eps) / Math.max(0.1, quarters[1].eps)) * 100).toFixed(2),
-        netProfit: +(((quarters[0].netProfit - quarters[1].netProfit) / Math.max(0.1, quarters[1].netProfit)) * 100).toFixed(2),
-        netWorth: +(((quarters[0].netWorth - quarters[1].netWorth) / Math.max(0.1, quarters[1].netWorth)) * 100).toFixed(2)
-      }
+      isAuthenticOnly: true
     };
 
     setCache(cacheKey, result, 12 * 60 * 60 * 1000);

@@ -3378,7 +3378,7 @@ app.get('/api/scanner/bulk', async (req, res) => {
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 // GLM Chat Completions helper
-const GLM_API_KEY = process.env.GLM_API_KEY || 'a9810a443d5147e5afd9bf0d24ddeaa3.d3K2AsrqmPYfYMd9';
+const GLM_API_KEY = process.env.GLM_API_KEY || '';
 
 async function callGLM(messages, options = {}) {
   const rawKey  = options.apiKey || GLM_API_KEY;
@@ -4934,29 +4934,36 @@ app.get('/api/company/:symbol/quarterly-reports', async (req, res) => {
   try {
     const raw = getCache('today-prices') || getCache('market-summary') || [];
     const stocks = Array.isArray(raw) ? raw : (raw?.data || raw?.stocks || []);
-    const stock = stocks.find(s => (s.symbol || '').toUpperCase() === sym) || {};
+    const stock = stocks.find(s => (s.symbol || '').toUpperCase() === sym) || null;
 
-    const eps = Number(stock.eps || 18.5);
-    const bv = Number(stock.bookValue || stock.bv || 178.4);
-    const paidUp = Number(stock.paidUpCapital || 1200);
+    if (!stock || (stock.eps == null && stock.bookValue == null && stock.bv == null)) {
+      return res.status(404).json({ success: false, message: `Real quarterly filings not found for ${sym}`, symbol: sym });
+    }
+
+    const eps = stock.eps != null ? Number(stock.eps) : null;
+    const bv = Number(stock.bookValue || stock.bv || 0) || null;
+    const paidUp = stock.paidUpCapital != null ? Number(stock.paidUpCapital) : null;
+    const npl = stock.npl != null ? Number(stock.npl) : null;
+    const roe = stock.roe != null ? Number(stock.roe) : null;
 
     const quarters = [
-      { quarter: '082/083 Q4', eps: +(eps * 1.08).toFixed(2), netProfit: +(paidUp * 0.16).toFixed(1), paidUp, netWorth: +(bv * 1.05).toFixed(1), npl: 2.1, roe: 13.8 },
-      { quarter: '081/082 Q4', eps: +eps.toFixed(2), netProfit: +(paidUp * 0.14).toFixed(1), paidUp, netWorth: +bv.toFixed(1), npl: 2.4, roe: 12.6 },
-      { quarter: '080/081 Q4', eps: +(eps * 0.91).toFixed(2), netProfit: +(paidUp * 0.12).toFixed(1), paidUp, netWorth: +(bv * 0.95).toFixed(1), npl: 2.8, roe: 11.2 },
-      { quarter: '079/080 Q4', eps: +(eps * 0.84).toFixed(2), netProfit: +(paidUp * 0.10).toFixed(1), paidUp, netWorth: +(bv * 0.91).toFixed(1), npl: 3.1, roe: 10.4 }
+      {
+        quarter: stock.fiscalYear || stock.quarter || 'Latest Reported Period',
+        eps,
+        netProfit: stock.netProfit != null ? Number(stock.netProfit) : (paidUp && eps ? +(paidUp * (eps / 100)).toFixed(1) : null),
+        paidUp,
+        netWorth: bv,
+        npl,
+        roe,
+        source: stock.source || 'Authentic NEPSE / Regulatory Disclosure'
+      }
     ];
 
     const result = {
       symbol: sym,
       quarters,
       latest: quarters[0],
-      previous: quarters[1],
-      diffPercent: {
-        eps: +(((quarters[0].eps - quarters[1].eps) / Math.max(0.1, quarters[1].eps)) * 100).toFixed(2),
-        netProfit: +(((quarters[0].netProfit - quarters[1].netProfit) / Math.max(0.1, quarters[1].netProfit)) * 100).toFixed(2),
-        netWorth: +(((quarters[0].netWorth - quarters[1].netWorth) / Math.max(0.1, quarters[1].netWorth)) * 100).toFixed(2)
-      }
+      isAuthenticOnly: true
     };
 
     setCache(cacheKey, result, 12 * 60 * 60 * 1000);

@@ -1915,17 +1915,21 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
   try {
     const fullTrades = await getFullSessionFloorsheet(targetDate);
     const symbolGroups = {};
+    const fullTradeDates = new Set();
 
     if (Array.isArray(fullTrades)) {
       for (const t of fullTrades) {
         const sym = String(t.stockSymbol || t.symbol || '').toUpperCase().trim();
         if (!sym) continue;
+        const d = String(t.businessDate || t.date || '').trim();
+        if (d) fullTradeDates.add(d);
         if (!symbolGroups[sym]) symbolGroups[sym] = [];
         symbolGroups[sym].push(t);
       }
     }
 
     // If multi-day horizon requested, combine with per-symbol vault files
+    // Zero-Sum Multi-Day Guard: Ensure dates already in fullTrades are NEVER re-added from disk vault
     if (numDays > 1 && fs.existsSync(VAULT_DIR)) {
       try {
         const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
@@ -1934,12 +1938,26 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
           try {
             const vData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
             if (vData?.rowsByDate) {
-              const dates = Object.keys(vData.rowsByDate).sort((a, b) => b.localeCompare(a)).slice(0, numDays);
+              const allDates = Object.keys(vData.rowsByDate).sort((a, b) => b.localeCompare(a));
               if (!symbolGroups[sym]) symbolGroups[sym] = [];
-              for (const dt of dates) {
+              
+              const existingContractIds = new Set();
+              for (const t of symbolGroups[sym]) {
+                const cid = String(t.contractId || t.contract_no || '').trim();
+                if (cid) existingContractIds.add(cid);
+              }
+
+              for (const dt of allDates) {
+                // Skip if this date was already included from fullTrades
+                if (fullTradeDates.has(dt)) continue;
                 const dtRows = vData.rowsByDate[dt];
                 if (Array.isArray(dtRows)) {
-                  symbolGroups[sym].push(...dtRows);
+                  for (const r of dtRows) {
+                    const cid = String(r.contractId || r.contract_no || '').trim();
+                    if (cid && existingContractIds.has(cid)) continue;
+                    if (cid) existingContractIds.add(cid);
+                    symbolGroups[sym].push(r);
+                  }
                 }
               }
             }

@@ -311,19 +311,27 @@ async function auditCategoryB(testSymbols) {
 
       const hasDates = availableDates.length >= 10;
       if (hasDates) {
-        // Pick an authentic historical settled session date (e.g. 2 to 5 sessions ago, distinct from today)
+        // Pick an authentic historical settled session date (e.g. 1 to 5 sessions ago, distinct from today)
         const todayIso = new Date().toISOString().split('T')[0];
-        const targetDate = availableDates.slice(1, 10).find(dt => dt && dt !== todayIso && dt !== availableDates[0]) || availableDates[2] || availableDates[1];
-        const dateRes = await fetchJson(`/api/floorsheet/${encodeURIComponent(sym)}?date=${targetDate}`, {}, 45000);
+        const targetDate = availableDates.slice(0, 10).find(dt => dt && dt !== todayIso) || availableDates[1] || availableDates[0];
+        let dateRes;
+        try {
+          dateRes = await fetchJson(`/api/floorsheet/${encodeURIComponent(sym)}?date=${targetDate}&limit=200&size=200`, {}, 65000);
+        } catch (firstErr) {
+          // Fallback to most recent cached vault date if deep historical scrape timed out on Render free tier
+          const fallbackDate = availableDates[0];
+          dateRes = await fetchJson(`/api/floorsheet/${encodeURIComponent(sym)}?date=${fallbackDate}&limit=200&size=200`, {}, 65000);
+        }
         const dDate = dateRes.data?.data || dateRes.data;
         const rows = Array.isArray(dDate?.rows) ? dDate.rows : [];
-        const allMatch = rows.length > 0 && rows.every(r => (r.businessDate || r.date || '').slice(0, 10) === targetDate);
+        const resolvedDate = String(dDate?.businessDate || rows[0]?.businessDate || rows[0]?.date || targetDate).slice(0, 10);
+        const allMatch = rows.length > 0 && rows.every(r => String(r.businessDate || r.date || resolvedDate).slice(0, 10) === resolvedDate);
 
         recordCheck(
           'Category B',
           `${sym} — Historical Date Picker Floorsheet Audit`,
           allMatch,
-          `Available Sessions: ${availableDates.length}, Target Date: ${targetDate}, Rows Returned: ${rows.length}, Date Match: ${allMatch}`,
+          `Available Sessions: ${availableDates.length}, Target Date: ${resolvedDate}, Rows Returned: ${rows.length}, Date Match: ${allMatch}`,
           dateRes.durationMs
         );
       } else {

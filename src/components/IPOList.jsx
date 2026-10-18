@@ -9,6 +9,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import * as servicesApi from '../utils/servicesApi';
 import { checkSingleBoidAllotment, fetchUserApplicationReports } from '../services/meroShareService';
 import { calculateIpoAllotmentProbability } from '../utils/calculations';
+import { decryptProfileCredentials } from '../utils/credentialCrypto';
 
 // Same key as AccountManager
 const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
@@ -16,7 +17,8 @@ const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
 function loadLocalAccounts() {
   try {
     const raw = localStorage.getItem(BULK_ACCOUNTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(acc => decryptProfileCredentials(acc)) : [];
   } catch {
     return [];
   }
@@ -518,20 +520,29 @@ export default function IPOList({ initialTab = 'apply' }) {
         if (i > 0) await sleep(3000);
 
         try {
-          // Resolve clientId
+          // Resolve clientId (offline 16-digit BOID prefix first, network fallback second)
           let clientId = 101;
-          try {
-            const dpRes = await fetch(`${MEROSHARE_BASE}/capital/`);
-            if (dpRes.ok) {
-              const dpData = await dpRes.json();
-              if (Array.isArray(dpData)) {
-                const fullPrefix = acc.boid.substring(0, 8);
-                const shortPrefix = acc.boid.substring(3, 8);
-                const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix);
-                if (match) clientId = match.id;
-              }
+          const boidStr = String(acc.boid || '').trim();
+          if (boidStr.length === 16) {
+            const resolved = parseInt(boidStr.substring(3, 6), 10);
+            if (!isNaN(resolved) && resolved >= 100 && resolved <= 400) {
+              clientId = resolved;
             }
-          } catch (_) {}
+          }
+          if (clientId === 101) {
+            try {
+              const dpRes = await fetch(`${MEROSHARE_BASE}/capital/`);
+              if (dpRes.ok) {
+                const dpData = await dpRes.json();
+                if (Array.isArray(dpData)) {
+                  const fullPrefix = boidStr.substring(0, 8);
+                  const shortPrefix = boidStr.substring(3, 8);
+                  const match = dpData.find(dp => dp.code === fullPrefix || dp.code === shortPrefix);
+                  if (match) clientId = match.id;
+                }
+              }
+            } catch (_) {}
+          }
 
           // Login
           const loginRes = await fetch(`${MEROSHARE_BASE}/auth/`, {

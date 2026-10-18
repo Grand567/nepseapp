@@ -584,7 +584,7 @@ export function calculateTrapProofLevels(
   const structuralSL = Math.min(nearestS * 0.985, maxAllowedSL);
   const volatilitySL = entryAnchor - atr * 1.75;
   const stopLossPrice = Number(Math.max(entryAnchor * 0.86, Math.min(structuralSL, volatilitySL)).toFixed(1));
-  const stopLossPct = Number((((stopLossPrice - entryAnchor) / entryAnchor) * 100).toFixed(2));
+  const stopLossPct = Number((((entryAnchor - stopLossPrice) / entryAnchor) * 100).toFixed(2));
   const riskPerShare = Math.max(1, Number((entryAnchor - stopLossPrice).toFixed(1)));
 
   // 4. Targets with Asymmetric RRR (Target 1: 2.0x Risk, Target 2: 3.0x Risk)

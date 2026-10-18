@@ -280,7 +280,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-emerald-300">
-              Net: +{levels.target1?.netReturnPct ?? 7.2}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+              Net: +{levels.target1?.netReturnPct ?? 7.2}% <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target1?.horizon || '1–2 Weeks Horizon'}
@@ -300,7 +300,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
           </div>
           <div className="mt-2 pt-1.5 border-t border-slate-800/80 space-y-0.5">
             <div className="text-[11px] font-bold text-teal-300">
-              Net: +{levels.target2?.netReturnPct ?? 15.0}% <span className="text-[9.5px] font-normal text-slate-400">(-10% CGT/fees)</span>
+              Net: +{levels.target2?.netReturnPct ?? 15.0}% <span className="text-[9.5px] font-normal text-slate-400">(-7.5% CGT/fees)</span>
             </div>
             <div className="text-[10.5px] text-slate-400">
               {levels.target2?.horizon || '3–6 Weeks Horizon'}
@@ -528,7 +528,7 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
               +Rs. {target1NetGainRupees.toLocaleString()}
             </div>
             <div className="text-[10px] text-emerald-400/80 mt-0.5">
-              Net of 10% CGT & broker fees
+              Net of 7.5% CGT & broker fees
             </div>
           </div>
         </div>

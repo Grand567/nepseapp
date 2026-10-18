@@ -811,7 +811,22 @@ export function calculateBrokerConcentration(
     : [];
 
   const rba = realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis || getCachedBrokerData(normSym);
-  const hasValidRba = rba && (rba.topBuyers?.length > 0 || rba.topNetBuyers?.length > 0 || rba.buyers?.length > 0 || rba.isReal || rba.isRealFloorsheet);
+  const hasValidRba = Boolean(
+    rba && (
+      (Array.isArray(rba.topBuyers) && rba.topBuyers.length > 0) ||
+      (Array.isArray(rba.topNetBuyers) && rba.topNetBuyers.length > 0) ||
+      (Array.isArray(rba.topBuyerBrokers) && rba.topBuyerBrokers.length > 0) ||
+      (Array.isArray(rba.topGrossBuyers) && rba.topGrossBuyers.length > 0) ||
+      (Array.isArray(rba.buyers) && rba.buyers.length > 0) ||
+      (Array.isArray(rba.brokers) && rba.brokers.length > 0) ||
+      rba.isReal ||
+      rba.isRealFloorsheet ||
+      rba.grossBuyConcentrationPct !== undefined ||
+      rba.bcr3BuyPct !== undefined ||
+      rba.bcr5BuyPct !== undefined ||
+      rba.bcr5NetPct !== undefined
+    )
+  );
 
   if (hasValidRba) {
     const rbaBrokersMap = new Map<string, any>();
@@ -822,8 +837,8 @@ export function calculateBrokerConcentration(
       });
     }
 
-    const rawBuyers = rba.topBuyers || rba.buyers || [];
-    const rawSellers = rba.topSellers || rba.sellers || [];
+    const rawBuyers = rba.topBuyers || rba.topBuyerBrokers || rba.topGrossBuyers || rba.buyers || [];
+    const rawSellers = rba.topSellers || rba.topSellerBrokers || rba.topGrossSellers || rba.sellers || [];
 
     const topBuyers: BrokerDetail[] = rawBuyers.slice(0, 5).map((b: any) => {
       const id = String(b.broker || b.brokerNo || b.memberId || b.id || b.brokerId || '').trim();
@@ -983,6 +998,9 @@ export function calculateBrokerConcentration(
     if (rba.bcr3BuyPct !== undefined && Number(rba.bcr3BuyPct) > 0) {
       bcr3BuyPct = Number(rba.bcr3BuyPct);
       bcr5BuyPct = Number(rba.bcr5BuyPct || (bcr3BuyPct / authenticTop3to5Ratio).toFixed(1));
+    } else if (rba.grossBuyConcentrationPct !== undefined && Number(rba.grossBuyConcentrationPct) > 0) {
+      bcr3BuyPct = Number(rba.grossBuyConcentrationPct);
+      bcr5BuyPct = Number(rba.bcr5NetPct || (bcr3BuyPct / authenticTop3to5Ratio).toFixed(1));
     } else if (rba.crb5 !== undefined && Number(rba.crb5) > 0) {
       bcr5BuyPct = Number((Number(rba.crb5) * 100).toFixed(1));
       bcr3BuyPct = Number((bcr5BuyPct * authenticTop3to5Ratio).toFixed(1));
@@ -1000,28 +1018,47 @@ export function calculateBrokerConcentration(
         bcr3BuyPct = Number(topBuyers.slice(0, 3).reduce((acc, b) => acc + b.pct, 0).toFixed(1));
       } else {
         // 3. Compute from volumes against true total buy volume
-        const effectiveBuyVol = rbaTotalBuyVol > top5BuyVol ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : top5BuyVol);
+        const sumAllBrokersBuyVol = Array.isArray(rba?.brokers)
+          ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyVol || 0), 0)
+          : 0;
+        const effectiveBuyVol = rbaTotalBuyVol > 0
+          ? rbaTotalBuyVol
+          : (stockTotalVol > 0 ? stockTotalVol : (sumAllBrokersBuyVol > 0 ? sumAllBrokersBuyVol : 0));
+
         bcr5BuyPct = effectiveBuyVol > 0 ? Number(Math.min(100.0, (top5BuyVol / effectiveBuyVol) * 100).toFixed(1)) : 0;
         bcr3BuyPct = effectiveBuyVol > 0 ? Number(Math.min(bcr5BuyPct, (top3BuyVol / effectiveBuyVol) * 100).toFixed(1)) : 0;
       }
     }
 
-    const effectiveSellVol = rbaTotalSellVol > top5SellVol ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : top5SellVol);
-    bcr3SellPct = effectiveSellVol > 0 ? Number(Math.min(100.0, (top3SellVol / effectiveSellVol) * 100).toFixed(1)) : 0;
+    if (rba.bcr3SellPct !== undefined && Number(rba.bcr3SellPct) > 0) {
+      bcr3SellPct = Number(rba.bcr3SellPct);
+    } else if (rba.grossSellConcentrationPct !== undefined && Number(rba.grossSellConcentrationPct) > 0) {
+      bcr3SellPct = Number(rba.grossSellConcentrationPct);
+    } else if (rba.scr3NetPct !== undefined && Number(rba.scr3NetPct) > 0) {
+      bcr3SellPct = Number(rba.scr3NetPct);
+    } else {
+      const sumAllBrokersSellVol = Array.isArray(rba?.brokers)
+        ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellVol || 0), 0)
+        : 0;
+      const effectiveSellVol = rbaTotalSellVol > 0
+        ? rbaTotalSellVol
+        : (stockTotalVol > 0 ? stockTotalVol : (sumAllBrokersSellVol > 0 ? sumAllBrokersSellVol : 0));
+      bcr3SellPct = effectiveSellVol > 0 ? Number(Math.min(100.0, (top3SellVol / effectiveSellVol) * 100).toFixed(1)) : 0;
+    }
 
     // Fill in individual pct for buyers/sellers against true market base
-    const marketBuyBase = (rbaTotalBuyVol > top5BuyVol ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : (bcr5BuyPct > 0 ? Math.round(top5BuyVol / (bcr5BuyPct / 100)) : top5BuyVol))) || 1;
+    const marketBuyBase = (rbaTotalBuyVol > 0 ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : (bcr5BuyPct > 0 ? Math.round(top5BuyVol / (bcr5BuyPct / 100)) : (top5BuyVol || 1)))) || 1;
     topBuyers.forEach(b => {
       b.pct = Number(((b.volume / marketBuyBase) * 100).toFixed(1));
     });
 
-    const marketSellBase = (rbaTotalSellVol > top5SellVol ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : (bcr3SellPct > 0 ? Math.round(top5SellVol / (bcr3SellPct / 100)) : top5SellVol))) || 1;
+    const marketSellBase = (rbaTotalSellVol > 0 ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : (bcr3SellPct > 0 ? Math.round(top5SellVol / (bcr3SellPct / 100)) : (top5SellVol || 1)))) || 1;
     topSellers.forEach(s => {
       s.pct = Number(((s.volume / marketSellBase) * 100).toFixed(1));
     });
 
-    const totalBuyVol = rbaTotalBuyVol > top5BuyVol ? rbaTotalBuyVol : top5BuyVol;
-    const totalSellVol = rbaTotalSellVol > top5SellVol ? rbaTotalSellVol : top5SellVol;
+    const totalBuyVol = rbaTotalBuyVol > 0 ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : top5BuyVol);
+    const totalSellVol = rbaTotalSellVol > 0 ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : top5SellVol);
 
     const top3BuyerTradesCount = topBuyers.slice(0, 3).reduce((acc, b: any) => {
       const match = rbaBrokersMap.get(b.broker);

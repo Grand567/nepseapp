@@ -55,7 +55,7 @@ export function SimulatedDataBanner({ isSimulated, dataQuality, onRefresh }) {
       <span style={{ flex: 1, lineHeight: 1.4 }}>
         {isMarketClosed ? (
           <>
-            <strong>NEPSE Market Closed.</strong> Showing official closing prices from the last trading session. Real-time updates resume when trading opens (Sun–Thu 11:00 AM – 3:00 PM).
+            <strong>NEPSE Market Closed.</strong> Showing official closing prices from the last trading session. Real-time updates resume when trading opens (11:00 AM – 3:00 PM NPT per official NEPSE trading calendar).
           </>
         ) : (
           <>

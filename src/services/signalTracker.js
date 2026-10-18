@@ -1,5 +1,5 @@
-// src/services/signalTracker.js
 import { getCachedRealPriceHistory } from '../utils/historyCache.js';
+import { getNepseBrokerCommissionRate } from '../utils/calculations.js';
 
 const STORAGE_KEY = 'drabyashree_signals';
 
@@ -66,24 +66,28 @@ const saveSignals = (signals) => {
 };
 
 /**
- * Calculates statutory NEPSE brokerage commission, SEBON fee (0.015%), DP fee (Rs 25), and 7.5% retail CGT.
+ * Calculates statutory NEPSE tiered brokerage commission (0.36% down to 0.24%), SEBON fee (0.015%), DP fee (Rs 25), and 7.5% short-term / 5.0% long-term CGT.
  */
-export const calculateNetReturn = (entryPrice, exitPrice, holdingDays = 1) => {
+export const calculateNetReturn = (entryPrice, exitPrice, holdingDays = 1, tradeAmount = 50000) => {
   const entry = Number(entryPrice || 0);
   const exit = Number(exitPrice || 0);
   if (entry <= 0 || exit <= 0) {
     return { grossReturnPct: 0, netReturnPct: 0, totalFeesPct: 0, cgtPct: 0, cgtRatePct: 7.5 };
   }
 
-  // Baseline retail brokerage rate in NEPSE: 0.40%
-  const brokerageRate = 0.0040;
+  // Tiered brokerage per SEBON schedule (0.36% down to 0.24%)
+  const buyBrokerageRate = getNepseBrokerCommissionRate(tradeAmount);
+  const exitAmount = tradeAmount * (exit / entry);
+  const sellBrokerageRate = getNepseBrokerCommissionRate(exitAmount);
+
   // SEBON regulatory fee: 0.015% per leg
   const sebonRate = 0.00015;
-  // DP transaction charge (Rs 25 per transaction, ~0.05% on standard trade size)
-  const dpRate = 0.0005;
+  // DP transaction charge: Rs 25 flat per leg (normalized against trade size)
+  const dpBuyRate = Math.min(0.005, 25 / Math.max(tradeAmount, 1000));
+  const dpSellRate = Math.min(0.005, 25 / Math.max(exitAmount, 1000));
 
-  const buyFeeRate = brokerageRate + sebonRate;
-  const sellFeeRate = brokerageRate + sebonRate + dpRate;
+  const buyFeeRate = buyBrokerageRate + sebonRate + dpBuyRate;
+  const sellFeeRate = sellBrokerageRate + sebonRate + dpSellRate;
 
   const totalCost = entry * (1 + buyFeeRate);
   const grossProceeds = exit * (1 - sellFeeRate);

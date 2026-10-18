@@ -482,7 +482,7 @@ export default function Calculator() {
                       Net {sellResult.netProfitLoss >= 0 ? 'Profit' : 'Loss'}:
                     </span>
                     <span style={{ fontWeight: 900, fontSize: 16, color: sellResult.netProfitLoss >= 0 ? 'var(--bull)' : 'var(--bear)', fontFamily: 'var(--font-mono)' }}>
-                      {sellResult.netProfitLoss >= 0 ? '+' : ''}{formatRs(sellResult.netProfitLoss)} ({sellResult.netProfitLoss >= 0 ? '+' : ''}{sellResult.profitPercentage.toFixed(2)}%)
+                      {sellResult.netProfitLoss >= 0 ? '+' : ''}{formatRs(sellResult.netProfitLoss)} ({sellResult.netProfitLoss >= 0 ? '+' : ''}{(sellResult.roi ?? sellResult.profitPercentage ?? 0).toFixed(2)}%)
                     </span>
                   </div>
                 </div>

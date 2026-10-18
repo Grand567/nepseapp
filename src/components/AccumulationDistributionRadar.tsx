@@ -28,7 +28,6 @@ import {
 import {
   captureDailyWhaleSnapshot,
   getStoredWhaleArchive,
-  initWhaleArchiveWithSeeds,
   calculateArchivePerformance,
   exportWhaleArchiveJSON,
   importWhaleArchiveJSON
@@ -525,7 +524,7 @@ export function AccumulationDistributionRadar({
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
   const [stockBrokerDataMap, setStockBrokerDataMap] = useState<Record<string, any>>({});
-  const [whaleArchive, setWhaleArchive] = useState<any[]>(() => initWhaleArchiveWithSeeds());
+  const [whaleArchive, setWhaleArchive] = useState<any[]>(() => getStoredWhaleArchive());
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>('');
   const [modalStock, setModalStock] = useState<any>(null);
   const [sortBy, setSortBy] = useState<'qai' | 'stealth' | 'dumpRisk' | 'pChange' | 'turnover' | 'cmf'>('qai');
@@ -586,7 +585,7 @@ export function AccumulationDistributionRadar({
         const brokerMap: Record<string, any> = {};
         for (const st of fastRadar.stocks) {
           const symUpper = String(st.symbol).toUpperCase().trim();
-          brokerMap[symUpper] = {
+          const entry = {
             symbol: symUpper,
             bcr3BuyPct: st.grossBuyConcentrationPct || 0,
             bcr3SellPct: st.grossSellConcentrationPct || 0,
@@ -611,19 +610,28 @@ export function AccumulationDistributionRadar({
             topBuyerBrokers: st.topBuyers || [],
             topSellerBrokers: st.topSellers || []
           };
+          brokerMap[symUpper] = entry;
+          brokerMap[`${symUpper}_${d}`] = entry;
         }
         setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
       } else {
         const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { refresh: true });
         if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
-          setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
+          const mapWithKeys: Record<string, any> = {};
+          for (const [k, v] of Object.entries(brokerMap)) {
+            const u = String(k).toUpperCase();
+            mapWithKeys[u] = v;
+            mapWithKeys[`${u}_${d}`] = v;
+          }
+          setStockBrokerDataMap(prev => ({ ...prev, ...mapWithKeys }));
         }
       }
 
       if (selectedStockSymbol) {
+        const symU = selectedStockSymbol.toUpperCase();
         const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d).catch(() => null);
         if (diagFast) {
-          setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: diagFast }));
+          setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
           if (typeof (diagFast as any).loadedTradingDays === 'number') {
             setLoadedTradingDays((diagFast as any).loadedTradingDays);
           }
@@ -633,7 +641,7 @@ export function AccumulationDistributionRadar({
         } else {
           const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true }).catch(() => null);
           if (res) {
-            setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res }));
+            setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
           }
         }
       }
@@ -648,10 +656,11 @@ export function AccumulationDistributionRadar({
     setDiagnosticDays(d);
     if (!selectedStockSymbol) return;
     setDiagnosticLoading(true);
+    const symU = selectedStockSymbol.toUpperCase();
     try {
       const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d).catch(() => null);
       if (diagFast) {
-        setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: diagFast }));
+        setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
         if (typeof (diagFast as any).loadedTradingDays === 'number') {
           setLoadedTradingDays((diagFast as any).loadedTradingDays);
         }
@@ -661,7 +670,7 @@ export function AccumulationDistributionRadar({
       } else {
         const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true }).catch(() => null);
         if (res) {
-          setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res }));
+          setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
         }
       }
     } catch (_) {
@@ -724,7 +733,13 @@ export function AccumulationDistributionRadar({
         ]);
         if (!isMounted) return;
         if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
-          setStockBrokerDataMap(prev => ({ ...prev, ...brokerMapRes.value }));
+          const map1D: Record<string, any> = {};
+          for (const [k, v] of Object.entries(brokerMapRes.value)) {
+            const u = String(k).toUpperCase();
+            map1D[u] = v;
+            map1D[`${u}_1`] = v;
+          }
+          setStockBrokerDataMap(prev => ({ ...prev, ...map1D }));
         }
         fetchPrecomputedRadar(1).then(fastR => {
           if (fastR?.success) {
@@ -940,7 +955,7 @@ export function AccumulationDistributionRadar({
         : [];
 
       // When analyzing across multi-day horizons, resolve multi-day broker metrics
-      const stockBrokerAnalysis = stockBrokerDataMap[sym] || stockBrokerDataMap[symUpper] || getCachedRealBrokerAnalysis(sym, radarDays) || s.realBrokerAnalysis || s.brokerAnalysis;
+      const stockBrokerAnalysis = stockBrokerDataMap[`${symUpper}_${radarDays}`] || getCachedRealBrokerAnalysis(sym, radarDays) || (radarDays === 1 ? (stockBrokerDataMap[sym] || stockBrokerDataMap[symUpper]) : null) || s.realBrokerAnalysis || s.brokerAnalysis;
       
       // If multi-day horizon (radarDays > 1), compute multi-day return and volume from authentic historical candles
       const multiDayCandles = historyCandles.length >= 2
@@ -1011,8 +1026,8 @@ export function AccumulationDistributionRadar({
         grossBuyConcentrationPct: multiDayDiag?.grossBuyConcentrationPct || bcr3Buy,
         grossSellConcentrationPct: multiDayDiag?.grossSellConcentrationPct || bcr3Sell,
         smartMoneyNetFlowPct: multiDayDiag?.smartMoneyNetFlowPct || (bcr3Buy - bcr3Sell),
-        buyZoneMin: multiDayDiag?.buyZoneMin || +(effectivePChange * 0.98),
-        buyZoneMax: multiDayDiag?.buyZoneMax || +(effectivePChange * 1.02),
+        buyZoneMin: multiDayDiag?.buyZoneMin || +(Number(s.ltp || s.closePrice || 100) * 0.98).toFixed(1),
+        buyZoneMax: multiDayDiag?.buyZoneMax || +(Number(s.ltp || s.closePrice || 100) * 1.02).toFixed(1),
         entryStatus: multiDayDiag?.entryStatus || '',
         entryDescription: multiDayDiag?.entryDescription || '',
         wyckoff,
@@ -1163,14 +1178,78 @@ export function AccumulationDistributionRadar({
     });
   }, [analyzedStocks, searchQuery, selectedSector, selectedStage, sortBy, step4Filter]);
 
-  // Currently inspected stock for Deep Diagnostic
+  // Currently inspected stock for Deep Diagnostic (strictly reactive to diagnosticDays)
   const activeStock = useMemo(() => {
-    return (
+    const base = (
       analyzedStocks.find((s) => s.symbol === selectedStockSymbol) ||
       analyzedStocks[0] ||
       null
     );
-  }, [analyzedStocks, selectedStockSymbol]);
+    if (!base) return null;
+
+    if (diagnosticDays === radarDays) {
+      return base;
+    }
+
+    const sym = base.symbol;
+    const symUpper = sym ? sym.toUpperCase() : '';
+    const diagBrokerAnalysis = stockBrokerDataMap[`${symUpper}_${diagnosticDays}`] || getCachedRealBrokerAnalysis(sym, diagnosticDays);
+
+    const cachedHist = getCachedRealPriceHistory(sym);
+    const historyCandles: Candle[] = Array.isArray(base.history) && base.history.length >= 10
+      ? base.history
+      : Array.isArray(cachedHist) && cachedHist.length >= 10
+      ? cachedHist
+      : [];
+
+    const multiDayCandles = historyCandles.length >= 2
+      ? historyCandles.slice(-Math.min(historyCandles.length, diagnosticDays))
+      : historyCandles;
+
+    const effectivePChange = (diagnosticDays > 1 && multiDayCandles.length >= 2)
+      ? Number((((multiDayCandles[multiDayCandles.length - 1].close - multiDayCandles[0].open) / (multiDayCandles[0].open || 1)) * 100).toFixed(2))
+      : Number(base.pChange || 0);
+
+    const effectiveVolume = (diagnosticDays > 1 && multiDayCandles.length >= 2)
+      ? multiDayCandles.reduce((acc: number, c: any) => acc + (c.volume || 0), 0)
+      : Number(base.volume || base.totalTradedQuantity || 0);
+
+    const stockSummaryWithBroker = diagBrokerAnalysis
+      ? { ...base, pChange: effectivePChange, volume: effectiveVolume, realBrokerAnalysis: diagBrokerAnalysis }
+      : { ...base, pChange: effectivePChange, volume: effectiveVolume };
+
+    // For multi-day diagnostic, single-day live floorsheet must NOT contaminate multi-day cumulative metrics!
+    const stockTrades = diagnosticDays === 1 ? (floorsheetBySymbol.get(symUpper) || []) : [];
+    const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker, diagBrokerAnalysis);
+
+    const dailyHistory = buildDailyHistoryFromStockData(stockSummaryWithBroker, diagBrokerAnalysis, historyCandles);
+    const multiDayDiag = calculateMultiDayDiagnostics(dailyHistory, diagnosticDays);
+
+    const stockLtp = Number(base.ltp || base.closePrice || 100);
+    const buyZoneMin = multiDayDiag?.buyZoneMin || +(stockLtp * 0.98).toFixed(1);
+    const buyZoneMax = multiDayDiag?.buyZoneMax || +(stockLtp * 1.02).toFixed(1);
+
+    return {
+      ...base,
+      pChange: effectivePChange,
+      volume: effectiveVolume,
+      timeframeDays: diagnosticDays,
+      multiDayDiag,
+      brokerData,
+      buyZoneMin,
+      buyZoneMax,
+      bcr5NetPct: multiDayDiag?.bcr5NetPct ?? brokerData?.bcr5BuyPct ?? base.bcr5NetPct,
+      scr3NetPct: multiDayDiag?.scr3NetPct ?? brokerData?.bcr3SellPct ?? base.scr3NetPct,
+      grossBuyConcentrationPct: multiDayDiag?.grossBuyConcentrationPct ?? brokerData?.bcr3BuyPct ?? base.grossBuyConcentrationPct,
+      grossSellConcentrationPct: multiDayDiag?.grossSellConcentrationPct ?? brokerData?.bcr3SellPct ?? base.grossSellConcentrationPct,
+      smartMoneyNetFlowPct: multiDayDiag?.smartMoneyNetFlowPct ?? ((brokerData?.bcr3BuyPct || 0) - (brokerData?.bcr3SellPct || 0)),
+      bigBrokerVWAP: multiDayDiag?.bigBrokerVWAP || base.bigBrokerVWAP || 0,
+      phase: multiDayDiag?.phase || base.phase,
+      phaseLabel: multiDayDiag?.phaseLabel || base.phaseLabel,
+      entryStatus: multiDayDiag?.entryStatus || base.entryStatus,
+      entryDescription: multiDayDiag?.entryDescription || base.entryDescription
+    };
+  }, [analyzedStocks, selectedStockSymbol, diagnosticDays, radarDays, stockBrokerDataMap, floorsheetBySymbol]);
 
   const runZeroSumVerification = async (symToVerify?: string) => {
     const targetSym = (symToVerify || selectedStockSymbol || 'NABIL').toUpperCase().trim();

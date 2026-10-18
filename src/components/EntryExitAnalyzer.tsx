@@ -38,6 +38,7 @@ import {
   fetchRealBrokerAnalysis,
   fetchStockFundamentals,
   getCachedStockFundamentals,
+  getCachedRealPriceHistory,
 } from '../utils/liveData';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isActionableBuySignal } from '../utils/guruEngine';

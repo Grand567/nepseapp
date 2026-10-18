@@ -2413,10 +2413,11 @@ function Dashboard({
 
     (async () => {
       const evaluatedList = [];
+      const cappedSymbols = prioritySymbols.slice(0, 16); // Cap to top 16 high-conviction candidates
+      const BATCH_SIZE = 4;
 
-      for (const sym of prioritySymbols) {
-        if (!isMounted) break;
-
+      const evaluateSingleSymbol = async (sym) => {
+        if (!isMounted) return;
         try {
           const [history, divRes, brokerRes, fundRes] = await Promise.all([
             fetchPriceHistory(sym, 500).catch(() => null),
@@ -2425,7 +2426,7 @@ function Dashboard({
             fetchStockFundamentals(sym).catch(() => null)
           ]);
 
-          if (!isMounted) break;
+          if (!isMounted) return;
 
           let candleList = Array.isArray(history) ? history : (history?.data || []);
           if (candleList.length === 0) {
@@ -2442,56 +2443,53 @@ function Dashboard({
               { indices, maxHoldDays: 20, brokerAnalysis: brokerRes }
             );
 
-            if (plan && plan.supported && isMounted) {
+            if (plan && plan.supported && isMounted && isActionableBuySignal(plan)) {
               const scoreVal = Number(plan.setupScore || 0);
+              const epsVal = Number(fundRes?.eps ?? stockObj.eps ?? 0);
+              const passesAll5 = 
+                !Boolean(plan.riskGate?.isCircuitTrap) &&
+                !Boolean(plan.riskGate?.isLossMaking) &&
+                epsVal >= 0 &&
+                Boolean(plan.levels?.entryZone?.min) &&
+                Number(plan.levels?.entryZone?.min) > 0;
 
-              // STRICT DIRECTIVE: Only genuine BUY or ACCUMULATE signals from Entry/Exit Analyzer!
-              if (isActionableBuySignal(plan)) {
-                const epsVal = Number(fundRes?.eps ?? stockObj.eps ?? 0);
-                const passesAll5 = 
-                  !Boolean(plan.riskGate?.isCircuitTrap) &&
-                  !Boolean(plan.riskGate?.isLossMaking) &&
-                  epsVal >= 0 &&
-                  Boolean(plan.levels?.entryZone?.min) &&
-                  Number(plan.levels?.entryZone?.min) > 0;
-
-                const entryHighNum = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || plan.ltp || stockObj.ltp || 100);
-                const verifiedPick = {
-                  ...stockObj,
-                  ...plan,
-                  symbol: sym,
-                  setupScore: scoreVal,
-                  score: scoreVal,
-                  compositeScore: scoreVal,
-                  guruScore: scoreVal,
-                  passesAll5,
-                  rvol: plan.technical?.volume?.rvol || stockObj.rvol || 1.25,
-                  winRate: plan.analogResult?.stats?.winRate ?? 50,
-                  analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
-                  confidenceLevel: plan.confidence?.level || 'MEDIUM',
-                  levels: plan.levels,
-                  entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
-                  entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
-                  chaseCap: plan.levels?.chaseCap || +(entryHighNum * 1.025).toFixed(1),
-                  target1: plan.levels?.target1?.price,
-                  target2: plan.levels?.target2?.price,
-                  stopLoss: plan.levels?.stopLoss?.price,
-                  isPlanVerified: true,
-                  candles: candleList
-                };
-                evaluatedList.push(verifiedPick);
-                // Note: intermediate candidate promotion removed to eliminate card flashing!
-              }
+              const entryHighNum = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || plan.ltp || stockObj.ltp || 100);
+              evaluatedList.push({
+                ...stockObj,
+                ...plan,
+                symbol: sym,
+                setupScore: scoreVal,
+                score: scoreVal,
+                compositeScore: scoreVal,
+                guruScore: scoreVal,
+                passesAll5,
+                rvol: plan.technical?.volume?.rvol || stockObj.rvol || 1.25,
+                winRate: plan.analogResult?.stats?.winRate ?? 50,
+                analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
+                confidenceLevel: plan.confidence?.level || 'MEDIUM',
+                levels: plan.levels,
+                entryLow: plan.levels?.entryZone?.min || plan.levels?.entryZone?.low,
+                entryHigh: plan.levels?.entryZone?.max || plan.levels?.entryZone?.high,
+                chaseCap: plan.levels?.chaseCap || +(entryHighNum * 1.025).toFixed(1),
+                target1: plan.levels?.target1?.price,
+                target2: plan.levels?.target2?.price,
+                stopLoss: plan.levels?.stopLoss?.price,
+                isPlanVerified: true,
+                candles: candleList
+              });
             }
           }
         } catch (err) {
           console.warn(`[Dashboard] Prime pick candidate verification error for ${sym}:`, err);
         }
+      };
+
+      for (let i = 0; i < cappedSymbols.length; i += BATCH_SIZE) {
+        if (!isMounted) break;
+        const batch = cappedSymbols.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(batch.map(sym => evaluateSingleSymbol(sym)));
       }
 
-      // Final rank of all evaluated candidates across this pass:
-      // Tier 1: stocks that pass all 5 criteria with actionable Buy/Accumulate signal
-      // Tier 2: if no stock passes all 5 criteria, fallback to stocks that have an actionable Buy/Accumulate signal
       if (isMounted && evaluatedList.length > 0) {
         const tier1 = evaluatedList.filter(e => e.passesAll5);
         const listToRank = tier1.length > 0 ? tier1 : evaluatedList;
@@ -2526,7 +2524,7 @@ function Dashboard({
       isMounted = false;
       setIsEvaluatingCandidates(false);
     };
-  }, [stocks, watchedOrAlertSymbols, activeBreakoutToast?.symbol, cashDefenseActive, backtestCacheVersion]);
+  }, [stocks?.length, watchedOrAlertSymbols, activeBreakoutToast?.symbol, cashDefenseActive, backtestCacheVersion]);
 
   // Poll Level-2 pre-open order book during pre-open / post-market sessions for the Prime Pick
   useEffect(() => {
@@ -5113,7 +5111,7 @@ function Dashboard({
               </span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {marketStatus?.message || 'Trading Hours: Mon – Fri 11:00 AM – 3:00 PM NPT (Sat & Sun Weekend)'}
+              {marketStatus?.message || 'Trading Hours: 11:00 AM – 3:00 PM NPT (Official NEPSE Trading Calendar)'}
             </div>
             {/* C4: Last-updated timestamp */}
             {getCachedMarketSummary() && !getCachedMarketSummary()?.isSimulated && (() => {

@@ -5,6 +5,7 @@
     "output": "dist-electron"
   },
   "electronVersion": "31.7.7",
+  "npmRebuild": false,
   "files": [
     "dist/**/*",
     "electron/**/*",

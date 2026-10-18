@@ -172,20 +172,20 @@ export function TradingViewChartService({ initialSymbol = 'NABIL' }: { initialSy
           />
           <StatCard
             label="Target 1 (R:R)"
-            value={plan?.target1 ? `Rs. ${plan.target1}` : (stockInfo.high52w ? `Rs. ${stockInfo.high52w}` : '—')}
-            subtitle={plan?.target1Pct ? `+${plan.target1Pct}% Expected` : 'Major Resistance'}
+            value={(plan?.levels?.target1?.price ?? plan?.target1) ? `Rs. ${plan?.levels?.target1?.price ?? plan?.target1}` : (stockInfo.high52w ? `Rs. ${stockInfo.high52w}` : '—')}
+            subtitle={(plan?.levels?.target1?.pct ?? plan?.target1Pct) ? `+${plan?.levels?.target1?.pct ?? plan?.target1Pct}% Expected` : 'Major Resistance'}
             color="#10b981"
           />
           <StatCard
             label="Stop-Loss Level"
-            value={plan?.stopLoss ? `Rs. ${plan.stopLoss}` : (stockInfo.low52w ? `Rs. ${stockInfo.low52w}` : '—')}
-            subtitle={plan?.stopLossPct ? `-${plan.stopLossPct}% Risk Cut` : 'Major Support'}
+            value={(plan?.levels?.stopLoss?.price ?? plan?.stopLoss) ? `Rs. ${plan?.levels?.stopLoss?.price ?? plan?.stopLoss}` : (stockInfo.low52w ? `Rs. ${stockInfo.low52w}` : '—')}
+            subtitle={(plan?.levels?.stopLoss?.pct ?? plan?.stopLossPct) ? `-${Math.abs(Number(plan?.levels?.stopLoss?.pct ?? plan?.stopLossPct)).toFixed(1)}% Risk Cut` : 'Major Support'}
             color="#f43f5e"
           />
           <StatCard
             label="Setup Quality"
-            value={plan?.overallGrade || (stockInfo.rsi ? `RSI: ${stockInfo.rsi}` : 'Neutral')}
-            subtitle={plan?.score ? `Confidence: ${plan.score}/100` : 'Technical Stance'}
+            value={plan?.verdict || plan?.overallGrade || (stockInfo.rsi ? `RSI: ${stockInfo.rsi}` : 'Neutral')}
+            subtitle={(plan?.setupScore != null || plan?.score != null) ? `Setup Score: ${plan?.setupScore ?? plan?.score}/100` : (stockInfo.rsi ? 'Technical Stance' : 'Neutral')}
             color="#8b5cf6"
           />
         </div>

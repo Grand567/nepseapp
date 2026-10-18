@@ -101,8 +101,15 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
   if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
 
   const stockMap = new Map(); // symbol -> { open, high, low, close, vol, amt, brokers: Map }
+  const seenContracts = new Set();
 
   for (const trade of rawTrades) {
+    const cid = String(trade.contractId || trade.contract_no || '').trim();
+    if (cid) {
+      if (seenContracts.has(cid)) continue;
+      seenContracts.add(cid);
+    }
+
     const symbol = String(trade.contractSymbol || trade.stockSymbol || trade.symbol || '').toUpperCase().trim();
     const qty = Number(trade.contractQuantity || trade.quantity || trade.qty || 0);
     const rate = Number(trade.contractRate || trade.rate || 0);
@@ -111,6 +118,13 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     const seller = Number(trade.sellerMemberId || trade.sellerBroker || trade.seller || 0);
 
     if (!symbol || qty <= 0) continue;
+
+    // Exclude circular self-matched wash trades (buyer === seller) from distorting net flow
+    const isWashTrade = buyer > 0 && seller > 0 && buyer === seller;
+
+    // Zero-Sum Guard: If trades come from one-sided matrix reconstruction (seller only, no buyer),
+    // do NOT add to stock total volume/turnover again (already counted on the buyer side).
+    const isOneSidedSellReconstruction = !buyer && Boolean(seller);
 
     let s = stockMap.get(symbol);
     if (!s) {
@@ -128,14 +142,19 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     }
 
     const currentRate = rate > 0 ? rate : (amt > 0 ? amt / qty : s.close);
-    if (currentRate > s.high) s.high = currentRate;
-    if (currentRate < s.low) s.low = currentRate;
-    s.close = currentRate;
-    s.vol += qty;
-    s.amt += amt;
+    if (currentRate > 0) {
+      if (currentRate > s.high) s.high = currentRate;
+      if (currentRate < s.low || s.low <= 0) s.low = currentRate;
+      s.close = currentRate;
+    }
 
-    // Accumulate Buyer Broker
-    if (buyer) {
+    if (!isOneSidedSellReconstruction) {
+      s.vol += qty;
+      s.amt += amt;
+    }
+
+    // Accumulate Buyer Broker (skip wash trades so smart money concentration is 100% genuine)
+    if (buyer && !isWashTrade) {
       const b = s.brokers.get(buyer) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
       b.buyVol += qty;
       b.buyAmt += amt;
@@ -143,7 +162,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     }
 
     // Accumulate Seller Broker
-    if (seller) {
+    if (seller && !isWashTrade) {
       const b = s.brokers.get(seller) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
       b.sellVol += qty;
       b.sellAmt += amt;
@@ -529,6 +548,17 @@ export function seedFromDiskVault() {
   // Generate snapshot gz so future container redeploys boot instantly
   exportLedgerSnapshotGz();
   console.log(`[Drabyashree Ledger] Cold boot seeding completed in ${Date.now() - startTime}ms.`);
+
+  // Auto-backfill real historical sessions if fewer than 15 trading days are stored
+  const loadedDates = getStoredDates(15);
+  if (loadedDates.length < 15 && !backfillStatusState.isBackfilling) {
+    console.log(`[Drabyashree Ledger] Cold boot loaded ${loadedDates.length} dates (< 15). Triggering non-blocking background backfill for real trading days...`);
+    setTimeout(() => {
+      backfillRealHistoricalFloorsheets(15).catch(err => {
+        console.warn("[Drabyashree Ledger] Background auto-backfill caught error:", err.message);
+      });
+    }, 5000);
+  }
 }
 
 export const backfillStatusState = {

@@ -63,7 +63,18 @@ export const InstitutionalAlertCardModal: React.FC<InstitutionalAlertCardModalPr
       `${brokersText} absorbing ${concentration}% of morning float. Seller volume dry.\n` +
       `Target: NPR ${target1} - ${target2} | Stop-Loss: NPR ${stopLoss} (R:R ${rr}:1)\n` +
       `Dravyashree Smart Institutional Alert`;
-    navigator.clipboard?.writeText(text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+    }
   };
 
   return (

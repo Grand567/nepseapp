@@ -267,38 +267,57 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
 export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candleHistory = []) {
   if (!stock) return [];
 
-  // 1. If realBrokerAnalysis contains pre-aggregated dailyFlow, map it directly
+  // 1. Authoritative Multi-Day Path: Use authentic date-by-date broker flows from dailyFlow
   if (Array.isArray(realBrokerAnalysis?.dailyFlow) && realBrokerAnalysis.dailyFlow.length > 0) {
-    return realBrokerAnalysis.dailyFlow.map((df, idx) => {
-      const candle = candleHistory.find(c => c.date === df.date) || candleHistory[candleHistory.length - 1 - idx] || {};
+    // Ensure sorted newest -> oldest (index 0 = latest trading session)
+    const sortedFlow = [...realBrokerAnalysis.dailyFlow].sort((a, b) =>
+      String(b.date || "").localeCompare(String(a.date || ""))
+    );
+
+    return sortedFlow.map((df, idx) => {
+      const candle =
+        candleHistory.find((c) => c.date === df.date) ||
+        candleHistory[candleHistory.length - 1 - idx] ||
+        {};
+
       const dayBrokers = Array.isArray(df.brokers)
-        ? df.brokers
-        : Object.values(df.brokerMap || {}).map(b => ({
-            brokerId: b.brokerId || b.broker || b.id,
-            brokerName: b.brokerName || b.name,
-            buyVol: Number(b.buyQty || b.buyVol || 0),
-            sellVol: Number(b.sellQty || b.sellVol || 0),
-            buyAmt: Number(b.buyAmt || b.buyAmount || 0),
-            sellAmt: Number(b.sellAmt || b.sellAmount || 0),
+        ? df.brokers.map((b) => ({
+            brokerId: String(b.brokerId || b.broker || b.id || "").trim(),
+            brokerName: b.brokerName || b.name || `Broker #${b.brokerId || b.broker}`,
+            buyVol: Number(b.buyQty ?? b.buyVol ?? 0),
+            sellVol: Number(b.sellQty ?? b.sellVol ?? 0),
+            buyAmt: Number(b.buyAmt ?? b.buyAmount ?? 0),
+            sellAmt: Number(b.sellAmt ?? b.sellAmount ?? 0),
+          }))
+        : Object.values(df.brokerMap || {}).map((b) => ({
+            brokerId: String(b.brokerId || b.broker || b.id || "").trim(),
+            brokerName: b.brokerName || b.name || `Broker #${b.brokerId || b.broker}`,
+            buyVol: Number(b.buyQty ?? b.buyVol ?? 0),
+            sellVol: Number(b.sellQty ?? b.sellVol ?? 0),
+            buyAmt: Number(b.buyAmt ?? b.buyAmount ?? 0),
+            sellAmt: Number(b.sellAmt ?? b.sellAmount ?? 0),
           }));
 
-      const dayVol = Number(df.totalVolume || df.turnoverVolume || df.buyVol || candle.volume || stock.volume || 1);
-      const dayTurnover = Number(df.turnover || df.totalTurnover || (dayVol * (candle.close || stock.ltp || 100)));
+      const dayVol = Number(
+        df.totalVolume || df.buyVol || df.sellVol || candle.volume || (idx === 0 ? stock.volume : 0) || 0
+      );
+      const closePx = Number(df.vwap || candle.close || (idx === 0 ? stock.ltp : 0) || 100);
+      const dayTurnover = Number(df.turnover || df.totalTurnover || dayVol * closePx);
 
       return {
-        date: df.date || candle.date || '',
-        closePrice: Number(candle.close || stock.ltp || 100),
-        openPrice: Number(candle.open || candle.close || stock.ltp || 100),
-        highPrice: Number(candle.high || candle.close || stock.ltp || 100),
-        lowPrice: Number(candle.low || candle.close || stock.ltp || 100),
+        date: df.date || candle.date || "",
+        closePrice: Number(candle.close || closePx),
+        openPrice: Number(candle.open || candle.close || closePx),
+        highPrice: Number(candle.high || candle.close || closePx),
+        lowPrice: Number(candle.low || candle.close || closePx),
         totalVolume: dayVol,
         totalTurnover: dayTurnover,
-        brokers: dayBrokers
+        brokers: dayBrokers,
       };
-    });
+    }).filter((d) => d.totalVolume > 0 && d.brokers.length > 0);
   }
 
-  // 2. If realBrokerAnalysis has brokers array with raw session data, build snapshots
+  // 2. Single-Session Fallback (Strictly 1-Day Authentic Snapshot — NEVER clone Day 1 brokers onto past candles!)
   const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers)
     ? realBrokerAnalysis.brokers
     : [
@@ -306,57 +325,35 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
         ...(realBrokerAnalysis?.topSellers || []).map(s => ({ ...s, buyQty: 0, sellQty: s.volume || s.sellQty }))
       ];
 
-  const totalVol = Number(realBrokerAnalysis?.totalVolume || stock.volume || stock.totalTradedQuantity || 1);
-  const totalTurnover = Number(realBrokerAnalysis?.totalTurnover || stock.turnover || (totalVol * (stock.ltp || 100)));
+  if (rawBrokers.length === 0) return [];
 
-  const baseDay = {
-    date: realBrokerAnalysis?.businessDate || stock.date || 'latest',
-    closePrice: Number(stock.ltp || stock.close || 100),
-    openPrice: Number(stock.open || stock.openPrice || stock.ltp || 100),
-    highPrice: Number(stock.high || stock.highPrice || stock.ltp || 100),
-    lowPrice: Number(stock.low || stock.lowPrice || stock.ltp || 100),
-    totalVolume: totalVol,
-    totalTurnover: totalTurnover,
-    brokers: rawBrokers.map(b => ({
-      brokerId: String(b.broker || b.brokerId || b.id || '').trim(),
-      brokerName: b.brokerName || b.name,
-      buyVol: Number(b.buyQty || b.volume || 0),
-      sellVol: Number(b.sellQty || 0),
-      buyAmt: Number(b.buyAmt || b.amount || 0),
-      sellAmt: Number(b.sellAmt || 0),
-    }))
-  };
+  const totalVol = Number(
+    realBrokerAnalysis?.totalVolume || stock.volume || stock.totalTradedQuantity || 0
+  );
+  if (totalVol <= 0) return [];
 
-  // If candle history is available, generate past sessions with distributed broker flow
-  if (Array.isArray(candleHistory) && candleHistory.length > 1) {
-    const sortedCandles = [...candleHistory].reverse();
-    return sortedCandles.map((c, i) => {
-      if (i === 0) return baseDay;
-      const vol = Number(c.volume || 1);
-      const cClose = Number(c.close || 100);
-      const cOpen = Number(c.open || cClose);
-      const cHigh = Number(c.high || cClose);
-      const cLow = Number(c.low || cClose);
-      const scale = totalVol > 0 ? vol / totalVol : 1;
+  const ltp = Number(stock.ltp || stock.close || 100);
+  const totalTurnover = Number(
+    realBrokerAnalysis?.totalTurnover || stock.turnover || totalVol * ltp
+  );
 
-      return {
-        date: c.date || '',
-        closePrice: cClose,
-        openPrice: cOpen,
-        highPrice: cHigh,
-        lowPrice: cLow,
-        totalVolume: vol,
-        totalTurnover: vol * cClose,
-        brokers: baseDay.brokers.map(b => ({
-          ...b,
-          buyVol: Math.round(b.buyVol * scale),
-          sellVol: Math.round(b.sellVol * scale),
-          buyAmt: Math.round(b.buyAmt * scale),
-          sellAmt: Math.round(b.sellAmt * scale),
-        }))
-      };
-    });
-  }
-
-  return [baseDay];
+  return [
+    {
+      date: realBrokerAnalysis?.businessDate || stock.date || "Latest 1D",
+      closePrice: ltp,
+      openPrice: Number(stock.open || stock.openPrice || ltp),
+      highPrice: Number(stock.high || stock.highPrice || ltp),
+      lowPrice: Number(stock.low || stock.lowPrice || ltp),
+      totalVolume: totalVol,
+      totalTurnover: totalTurnover,
+      brokers: rawBrokers.map((b) => ({
+        brokerId: String(b.broker || b.brokerId || b.id || "").trim(),
+        brokerName: b.brokerName || b.name,
+        buyVol: Number(b.buyQty ?? b.buyVol ?? 0),
+        sellVol: Number(b.sellQty ?? b.sellVol ?? 0),
+        buyAmt: Number(b.buyAmt ?? b.buyAmount ?? 0),
+        sellAmt: Number(b.sellAmt ?? b.sellAmount ?? 0),
+      })),
+    },
+  ];
 }

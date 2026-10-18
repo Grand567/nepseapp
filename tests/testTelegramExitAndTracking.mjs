@@ -1,4 +1,6 @@
 // tests/testTelegramExitAndTracking.mjs
+process.env.SUPPRESS_TEST_ALERTS = 'true';
+process.env.NODE_ENV = 'test';
 import assert from 'assert';
 import {
   trackCustomHolding,

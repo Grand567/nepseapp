@@ -19,6 +19,7 @@ import {
 import { getProxyBase } from '../utils/liveData';
 import { sanitizeMeroShareHoldings, guessScripBasePrice, setScripCustomWacc, stripHoldingForStorage, applyDiscoveredWaccMap, calculateIpoAllotmentProbability, safeStorageSetItem, purgeDispensableStorageCaches } from '../utils/calculations';
 import { syncUserDataToCloud, fetchUserDataFromCloud } from '../utils/firebase';
+import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 import { Capacitor } from '@capacitor/core';
 
 const formatRs = (value) => {
@@ -280,7 +281,7 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
       try { 
         const raw = saved ? JSON.parse(saved) : []; 
         parsed = (Array.isArray(raw) ? raw : []).map(p => ({
-          ...p,
+          ...decryptProfileCredentials(p, userId),
           holdings: sanitizeMeroShareHoldings(p.holdings, userId, p.id || p.boid)
         }));
       } catch (_) { parsed = []; }
@@ -312,21 +313,22 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           if (Array.isArray(candAccounts) && candAccounts.length > 0) {
             candAccounts.forEach(acc => {
               if (!acc || (!acc.boid && !acc.id && !acc.name)) return;
-              const existing = parsed.find(p => (acc.boid && p.boid === acc.boid) || (acc.id && p.id === acc.id));
+              const decAcc = decryptProfileCredentials(acc, userId);
+              const existing = parsed.find(p => (decAcc.boid && p.boid === decAcc.boid) || (decAcc.id && p.id === decAcc.id));
               if (!existing) {
                 parsed.push({
-                  id: acc.id || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
-                  name: acc.name || 'Demat Account',
-                  boid: acc.boid || '',
-                  username: acc.username || '',
-                  dpCode: acc.dpCode || '',
-                  dpId: acc.dpId || '',
-                  dpName: acc.dpName || 'Capital DP',
-                  password: acc.password || '',
-                  crn: acc.crn || '',
-                  pin: String(acc.pin || ''),
-                  holdings: sanitizeMeroShareHoldings(acc.holdings, userId, acc.id || acc.boid),
-                  lastSyncedAt: acc.lastSyncedAt || null
+                  id: decAcc.id || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6)),
+                  name: decAcc.name || 'Demat Account',
+                  boid: decAcc.boid || '',
+                  username: decAcc.username || '',
+                  dpCode: decAcc.dpCode || '',
+                  dpId: decAcc.dpId || '',
+                  dpName: decAcc.dpName || 'Capital DP',
+                  password: decAcc.password || '',
+                  crn: decAcc.crn || '',
+                  pin: String(decAcc.pin || ''),
+                  holdings: sanitizeMeroShareHoldings(decAcc.holdings, userId, decAcc.id || decAcc.boid),
+                  lastSyncedAt: decAcc.lastSyncedAt || null
                 });
                 changed = true;
               } else if (acc.holdings?.length > 0 && (!existing.holdings || existing.holdings.length === 0)) {
@@ -524,17 +526,16 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
   // Save profiles and keep Portfolio tab in sync via storage event
   const saveProfilesToStorage = (newProfiles) => {
     setProfiles(newProfiles);
+    const encryptedForStorage = (newProfiles || []).map(p => encryptProfileCredentials(p, userId));
     const profileKey = `nepse_hub_${userId}_profiles`;
-    safeStorageSetItem(profileKey, newProfiles);
-    safeStorageSetItem('nepse_hub_bulk_ipo_accounts', newProfiles);
-    // Dispatch storage event so Portfolio tab and other components pick up the change immediately
+    safeStorageSetItem(profileKey, encryptedForStorage);
+    safeStorageSetItem('nepse_hub_bulk_ipo_accounts', encryptedForStorage);
     try {
-      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(newProfiles) }));
+      window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedForStorage) }));
       window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: newProfiles } }));
     } catch (_) {}
-    // Cloud Sync
     try {
-      syncUserDataToCloud(userId, { profiles: newProfiles, bulkAccounts: newProfiles }, userEmail);
+      syncUserDataToCloud(userId, { profiles: encryptedForStorage, bulkAccounts: encryptedForStorage }, userEmail);
     } catch (_) {}
   };
 
@@ -3450,30 +3451,40 @@ export default function MeroShareHub({ apiStatus, marketStocks = [], userId = 'g
           <div className="card" style={{
             maxWidth: 400,
             width: '100%',
+            padding: 20,
+            background: 'var(--bg-elevated, #151922)',
             border: '1px solid var(--border)',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-            padding: 24,
-            background: 'var(--bg-card)',
-            borderRadius: 'var(--radius-lg)'
+            borderRadius: 'var(--radius-lg, 16px)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
           }}>
-            <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: 'var(--text-primary)' }}>Confirm Action</h4>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <ShieldAlert style={{ width: 22, height: 22, flexShrink: 0, color: 'var(--accent-amber, #f59e0b)' }} />
+              <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>
+                Confirm Action
+              </h4>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'pre-line', lineHeight: 1.5 }}>
               {confirmDialog.message}
-            </p>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button 
-                onClick={confirmDialog.onCancel} 
-                className="btn-secondary" 
-                style={{ padding: '8px 16px', fontSize: 12 }}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                onClick={confirmDialog.onCancel}
+                className="btn-secondary"
+                style={{ padding: '8px 16px', fontSize: 12.5, fontWeight: 700, borderRadius: 8, cursor: 'pointer' }}
               >
                 Cancel
               </button>
-              <button 
-                onClick={confirmDialog.onConfirm} 
-                className="btn-primary" 
-                style={{ padding: '8px 16px', fontSize: 12, background: 'var(--bear)' }}
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: 12.5, fontWeight: 800, borderRadius: 8, cursor: 'pointer' }}
               >
-                Yes, Proceed
+                Proceed
               </button>
             </div>
           </div>
