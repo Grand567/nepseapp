@@ -425,6 +425,22 @@ router.post('/apply', async (req, res) => {
       }
 
       // C. Submit application
+      const valResult = validateCasbaApplicationPayload({
+        boid: acc.boid,
+        dpId: acc.dpCode || (acc.boid ? acc.boid.slice(3, 8) : ''),
+        appliedKitta: Number(appliedKitta),
+        crnNumber: crn.trim(),
+        accountNumber: template.accountNumber,
+        bankId: template.bankId,
+        customerId: template.customerId,
+        branchId: template.accountBranchId || template.branchId || 1,
+        transactionPin: pin.trim(),
+        issueType: 'IPO'
+      });
+      if (!valResult.isValid) {
+        throw new Error(`C-ASBA pre-flight validation failed: ${valResult.errors.join('; ')}`);
+      }
+
       const payload = {
         ...template,
         appliedKitta: Number(appliedKitta),
@@ -743,5 +759,139 @@ router.get('/my-applied-ipo', async (req, res) => {
     });
   }
 });
+
+// ─── Pre-flight C-ASBA Validation & Session Retry Mutex (Argon P8-01 / Patch 7) ───
+
+const activeTokenRefreshPromises = new Map(); // profileId -> Promise<newToken>
+
+/**
+ * Pre-flight C-ASBA Safety Validator:
+ * Prevents failed bank requests or bank C-ASBA rejection penalties by verifying
+ * BOID (16 digits starting with 130), DP ID, CRN, Bank Account, Kitta lot multiples, and 4-digit PIN.
+ */
+export function validateCasbaApplicationPayload({
+  boid,
+  dpId,
+  appliedKitta,
+  minUnits = 10,
+  maxUnits = 5000,
+  crnNumber,
+  accountNumber,
+  bankId,
+  customerId,
+  branchId,
+  transactionPin,
+  issueType = 'IPO' // 'IPO' | 'FPO' | 'RIGHT'
+}) {
+  const errors = [];
+  const cleanBoid = String(boid || '').trim();
+  const cleanDp = String(dpId || '').trim();
+  const cleanCrn = String(crnNumber || '').trim();
+  const cleanAcc = String(accountNumber || '').trim();
+  const cleanPin = String(transactionPin || '').trim();
+  const kitta = Number(appliedKitta || 0);
+
+  // 1. 16-Digit CDSC BOID Check (Must start with 130 + 5-digit DP code + 8-digit client ID)
+  if (!/^130\d{13}$/.test(cleanBoid)) {
+    errors.push('BOID must be an exact 16-digit CDSC Demat number starting with 130.');
+  } else if (cleanDp && cleanDp.length === 5 && cleanBoid.slice(3, 8) !== cleanDp) {
+    errors.push(`BOID DP prefix (${cleanBoid.slice(3, 8)}) does not match selected DP ID (${cleanDp}).`);
+  }
+
+  // 2. SEBON 10-Kitta Lot Rule (IPO/FPO must be >= 10 and strictly divisible by 10)
+  if (!Number.isInteger(kitta) || kitta < minUnits || kitta > maxUnits) {
+    errors.push(`Applied kitta (${kitta}) must be an integer between ${minUnits} and ${maxUnits}.`);
+  } else if (issueType !== 'RIGHT' && kitta % 10 !== 0) {
+    errors.push(`Applied kitta (${kitta}) must be a multiple of 10 under SEBON C-ASBA allotment rules.`);
+  }
+
+  // 3. CRN (C-ASBA Registration Number) Validation
+  if (!/^[A-Za-z0-9\-/]{6,20}$/.test(cleanCrn)) {
+    errors.push('Invalid CRN (C-ASBA Registration Number): must be 6–20 alphanumeric characters issued by your C-ASBA bank.');
+  }
+
+  // 4. Bank Account & Branch Metadata Validation
+  if (!/^[A-Za-z0-9\-]{8,24}$/.test(cleanAcc)) {
+    errors.push('Invalid Bank Account Number: must be 8–24 alphanumeric characters.');
+  }
+  if (!bankId || !customerId || !branchId) {
+    errors.push('Missing C-ASBA Bank / Branch / Customer ID binding from MeroShare bank details.');
+  }
+
+  // 5. 4-Digit Numeric MeroShare Transaction PIN
+  if (!/^\d{4}$/.test(cleanPin)) {
+    errors.push('MeroShare Transaction PIN must be an exact 4-digit number.');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedPayload: errors.length === 0 ? {
+      demat: cleanBoid,
+      boid: cleanBoid.slice(-8),
+      appliedKitta: String(kitta),
+      crnNumber: cleanCrn,
+      accountNumber: cleanAcc,
+      bankId: String(bankId),
+      customerId: String(customerId),
+      accountBranchId: String(branchId),
+      transactionPin: cleanPin
+    } : null
+  };
+}
+
+/**
+ * Executes a MeroShare CDSC API call with automatic, mutex-locked session token renewal on HTTP 401/403
+ * and exponential jittered backoff on HTTP 429 rate-limits.
+ */
+export async function withMeroShareSessionRetry({
+  profileId,
+  apiCallFn,
+  reauthenticateFn,
+  getCurrentTokenFn,
+  setNewTokenFn,
+  maxRetries = 2
+}) {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      const currentToken = getCurrentTokenFn(profileId);
+      return await apiCallFn(currentToken);
+    } catch (err) {
+      const status = Number(err?.status || err?.response?.status || 0);
+
+      // Handle expired CDSC Authorization JWT (401 / 403)
+      if ((status === 401 || status === 403) && attempt < maxRetries && typeof reauthenticateFn === 'function') {
+        if (!activeTokenRefreshPromises.has(profileId)) {
+          const refreshPromise = (async () => {
+            try {
+              const freshToken = await reauthenticateFn(profileId);
+              if (freshToken && typeof setNewTokenFn === 'function') {
+                setNewTokenFn(profileId, freshToken);
+              }
+              return freshToken;
+            } finally {
+              activeTokenRefreshPromises.delete(profileId);
+            }
+          })();
+          activeTokenRefreshPromises.set(profileId, refreshPromise);
+        }
+        await activeTokenRefreshPromises.get(profileId);
+        attempt++;
+        continue;
+      }
+
+      // Handle CDSC IPO rush rate-limiting (429 / 503) with jittered backoff
+      if ((status === 429 || status === 503) && attempt < maxRetries) {
+        const backoffMs = (800 * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        attempt++;
+        continue;
+      }
+
+      throw err;
+    }
+  }
+}
 
 export default router;

@@ -11,6 +11,142 @@ import { pool } from '../db.mjs';
 import { getMacroCache, hasMacroCache } from './macroCache.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
 
+const EPSILON = 1e-8;
+
+export function safeDiv(numerator, denominator, fallback = 0) {
+  const num = Number(numerator);
+  const den = Number(denominator);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || Math.abs(den) < EPSILON) {
+    return fallback;
+  }
+  const ratio = num / den;
+  return Number.isFinite(ratio) ? ratio : fallback;
+}
+
+export function clampFinite(value, min = -10, max = 10, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Computes zero-lookahead, NaN-immune technical features strictly up to index `idx` (inclusive).
+ * Safe for newly listed IPOs (< 30 candles), suspended scrips, and consecutive upper/lower circuits.
+ */
+export function extractSafeFeatureVector(candles = [], idx = candles.length - 1) {
+  if (!Array.isArray(candles) || candles.length === 0 || idx < 0 || idx >= candles.length) {
+    return {
+      isValid: false,
+      reason: 'Empty or out-of-bounds candle slice',
+      features: {
+        ret1d: 0, ret5d: 0, ret20d: 0,
+        rsi14Norm: 0, bbPercentB: 0.5, zScore20: 0,
+        rvol20: 1.0, atrPct14: 0.025, ema20Dist: 0, ema50Dist: 0
+      }
+    };
+  }
+
+  // Strictly slice [0 .. idx] to guarantee ZERO lookahead leakage
+  const slice = candles.slice(0, idx + 1);
+  const n = slice.length;
+  const curr = slice[n - 1];
+  const close = Math.max(EPSILON, Number(curr.close ?? curr.ltp ?? 0));
+
+  const prev1 = n >= 2 ? Number(slice[n - 2].close || close) : close;
+  const prev5 = n >= 6 ? Number(slice[n - 6].close || close) : Number(slice[0].close || close);
+  const prev20 = n >= 21 ? Number(slice[n - 21].close || close) : Number(slice[0].close || close);
+
+  const ret1d = clampFinite(safeDiv(close - prev1, prev1, 0), -0.20, 0.20, 0);
+  const ret5d = clampFinite(safeDiv(close - prev5, prev5, 0), -0.60, 0.60, 0);
+  const ret20d = clampFinite(safeDiv(close - prev20, prev20, 0), -1.0, 1.5, 0);
+
+  // Rolling 20-day mean & standard deviation with zero-variance circuit guard
+  const win20 = slice.slice(-Math.min(20, n)).map(c => Number(c.close || close));
+  const mean20 = win20.reduce((a, b) => a + b, 0) / Math.max(1, win20.length);
+  const variance20 = win20.reduce((a, b) => a + Math.pow(b - mean20, 2), 0) / Math.max(1, win20.length);
+  const std20 = Math.sqrt(Math.max(0, variance20));
+
+  // If std20 === 0 (e.g. flat price or single-price IPO), zScore -> 0, bbPercentB -> 0.5
+  const zScore20 = std20 > EPSILON ? clampFinite((close - mean20) / std20, -4.0, 4.0, 0) : 0;
+  const bbLower = mean20 - 2 * std20;
+  const bbWidth = 4 * std20;
+  const bbPercentB = bbWidth > EPSILON ? clampFinite((close - bbLower) / bbWidth, -0.5, 1.5, 0.5) : 0.5;
+
+  // Safe Wilder RSI-14 (handles AvgLoss === 0 during consecutive upper circuits)
+  let gains = 0;
+  let losses = 0;
+  const rsiLookback = Math.min(14, n - 1);
+  for (let i = n - rsiLookback; i < n; i++) {
+    const diff = Number(slice[i].close || 0) - Number(slice[i - 1].close || 0);
+    if (diff > 0) gains += diff;
+    else if (diff < 0) losses += Math.abs(diff);
+  }
+  let rsi14 = 50;
+  if (rsiLookback >= 2) {
+    if (losses < EPSILON && gains > EPSILON) rsi14 = 95; // Capped at 95 instead of 100/Infinity
+    else if (gains < EPSILON && losses > EPSILON) rsi14 = 5;
+    else if (gains > EPSILON || losses > EPSILON) {
+      const rs = safeDiv(gains / rsiLookback, losses / rsiLookback, 1.0);
+      rsi14 = 100 - (100 / (1 + rs));
+    }
+  }
+  const rsi14Norm = clampFinite((rsi14 - 50) / 50, -1.0, 1.0, 0);
+
+  // Safe RVOL-20 (handles zero historical volume)
+  const vols20 = slice.slice(-Math.min(20, n)).map(c => Math.max(0, Number(c.volume || 0)));
+  const avgVol20 = vols20.reduce((a, b) => a + b, 0) / Math.max(1, vols20.length);
+  const currVol = Math.max(0, Number(curr.volume || 0));
+  const rvol20 = avgVol20 > EPSILON ? clampFinite(currVol / avgVol20, 0, 8.0, 1.0) : 1.0;
+
+  // Safe ATR-14 Percentage
+  let trSum = 0;
+  const atrLookback = Math.min(14, n);
+  for (let i = n - atrLookback; i < n; i++) {
+    const h = Number(slice[i].high || slice[i].close || close);
+    const l = Number(slice[i].low || slice[i].close || close);
+    const pc = i > 0 ? Number(slice[i - 1].close || close) : close;
+    const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    trSum += Math.max(0, tr);
+  }
+  const atr14 = trSum / Math.max(1, atrLookback);
+  const atrPct14 = clampFinite(safeDiv(atr14, close, 0.025), 0.002, 0.15, 0.025);
+
+  // Safe EMA-20 & EMA-50 Relative Distance
+  const win50 = slice.slice(-Math.min(50, n)).map(c => Number(c.close || close));
+  const mean50 = win50.reduce((a, b) => a + b, 0) / Math.max(1, win50.length);
+  const ema20Dist = clampFinite(safeDiv(close - mean20, mean20, 0), -0.5, 0.5, 0);
+  const ema50Dist = clampFinite(safeDiv(close - mean50, mean50, 0), -0.6, 0.6, 0);
+
+  const rawFeatures = {
+    ret1d: +ret1d.toFixed(4),
+    ret5d: +ret5d.toFixed(4),
+    ret20d: +ret20d.toFixed(4),
+    rsi14Norm: +rsi14Norm.toFixed(4),
+    bbPercentB: +bbPercentB.toFixed(4),
+    zScore20: +zScore20.toFixed(4),
+    rvol20: +rvol20.toFixed(4),
+    atrPct14: +atrPct14.toFixed(4),
+    ema20Dist: +ema20Dist.toFixed(4),
+    ema50Dist: +ema50Dist.toFixed(4)
+  };
+
+  return {
+    isValid: n >= 5,
+    historyLength: n,
+    isNewlyListedIpo: n < 30,
+    features: sanitizeFeatureVector(rawFeatures)
+  };
+}
+
+export function sanitizeFeatureVector(featureObj = {}) {
+  const clean = {};
+  for (const [k, v] of Object.entries(featureObj)) {
+    const num = Number(v);
+    clean[k] = Number.isFinite(num) && !Number.isNaN(num) ? num : 0;
+  }
+  return clean;
+}
+
 /**
  * Simple RSI (Wilder's smoothing) over a closing-price series.
  * @param {number[]} closes - oldest -> newest

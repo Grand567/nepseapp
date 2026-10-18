@@ -36,6 +36,90 @@
  * adjusted series clearly as "Adjusted for Corporate Actions".
  * ─────────────────────────────────────────────────────────────────────────────
  */
+export const PAR_VALUE_EQUITY = 100;
+export const STATUTORY_DIVIDEND_TAX_RATE = 0.05; // 5.0% final withholding tax on cash dividends (Income Tax Act Sec. 88)
+export const NEPSE_CASH_DIV_PRICE_ADJ_THRESHOLD = 0.10; // Cash dividend only adjusts market price if > 10% of pre-close LTP
+
+/**
+ * 1. Official NEPSE Bonus Share Market Price Adjustment:
+ *    Adjusted Price = Market Price / (1 + (Bonus % / 100))
+ */
+export function calculateBonusAdjustedPrice(marketPrice, bonusPercent) {
+  const p = Number(marketPrice || 0);
+  const b = Math.max(0, Number(bonusPercent || 0)) / 100;
+  if (p <= 0) return 0;
+  return +((p / (1 + b)).toFixed(2));
+}
+
+/**
+ * 2. Official NEPSE Right Share Market Price Adjustment:
+ *    Adjusted Price = (Market Price + (Right Ratio * Subscription Price)) / (1 + Right Ratio)
+ *    Accepts rightRatio as either decimal (0.50 for 50% / 1:0.5) or percentage (50 for 50%).
+ */
+export function calculateRightAdjustedPrice(marketPrice, rightRatioOrPct, subscriptionPrice = PAR_VALUE_EQUITY) {
+  const p = Number(marketPrice || 0);
+  const rawR = Math.max(0, Number(rightRatioOrPct || 0));
+  // Normalize: if caller passed > 3 (e.g. 25, 50, 100 for 25%, 50%, 100%), convert to decimal ratio
+  const r = rawR > 3.0 ? rawR / 100 : rawR;
+  const sub = Number(subscriptionPrice || PAR_VALUE_EQUITY);
+  if (p <= 0) return 0;
+  return +(((p + (r * sub)) / (1 + r)).toFixed(2));
+}
+
+/**
+ * 3. Simultaneous Bonus + Right + Cash Dividend Adjustment per NEPSE Bylaws:
+ *    - Simultaneous Bonus (B) + Right (R): P_adj = (P_cum + R * S) / (1 + B + R)
+ *    - Cash Dividend (D_cash): Adjusted from market price ONLY if Cash Dividend > 10% of Market Price.
+ */
+export function calculateNepseCorporateActionAdjustment({
+  marketPrice,
+  bonusPercent = 0,
+  rightPercent = 0,
+  cashDividendPercent = 0,
+  paidUpValue = PAR_VALUE_EQUITY,
+  subscriptionPrice = PAR_VALUE_EQUITY
+}) {
+  const pCum = Number(marketPrice || 0);
+  if (pCum <= 0) return null;
+
+  const bRatio = Math.max(0, Number(bonusPercent || 0)) / 100;
+  const rawRight = Math.max(0, Number(rightPercent || 0));
+  const rRatio = rawRight > 3.0 ? rawRight / 100 : rawRight;
+  const cashPct = Math.max(0, Number(cashDividendPercent || 0));
+  const par = Number(paidUpValue || PAR_VALUE_EQUITY);
+  const subPrice = Number(subscriptionPrice || PAR_VALUE_EQUITY);
+
+  const grossCashDivPerShare = +((cashPct / 100) * par).toFixed(2);
+  const dividendTaxPerShare = +(grossCashDivPerShare * STATUTORY_DIVIDEND_TAX_RATE).toFixed(2);
+  const netCashDivPerShare = +(grossCashDivPerShare - dividendTaxPerShare).toFixed(2);
+
+  // NEPSE Bylaw: Cash dividend reduces base price ONLY if gross cash dividend > 10% of previous closing market price
+  const cashDivToMarketRatio = pCum > 0 ? grossCashDivPerShare / pCum : 0;
+  const isCashDivPriceAdjusted = cashDivToMarketRatio > NEPSE_CASH_DIV_PRICE_ADJ_THRESHOLD;
+
+  const cashDeduction = isCashDivPriceAdjusted ? grossCashDivPerShare : 0;
+  const denominator = 1 + bRatio + rRatio;
+  const adjustedPrice = denominator > 0
+    ? +(((pCum - cashDeduction + (rRatio * subPrice)) / denominator).toFixed(2))
+    : pCum;
+
+  const priceDropPct = pCum > 0 ? +(((pCum - adjustedPrice) / pCum) * 100).toFixed(2) : 0;
+
+  return {
+    cumPrice: pCum,
+    adjustedPrice: Math.max(10, adjustedPrice),
+    priceDropPct,
+    bonusPercent: +(bRatio * 100).toFixed(2),
+    rightPercent: +(rRatio * 100).toFixed(2),
+    cashDividendPercent: cashPct,
+    grossCashDivPerShare,
+    dividendTaxPerShare,
+    netCashDivPerShare,
+    isCashDivPriceAdjusted,
+    cashDivToMarketPct: +(cashDivToMarketRatio * 100).toFixed(2),
+    formulaUsed: `(${pCum}${isCashDivPriceAdjusted ? ` - ${grossCashDivPerShare}` : ''} + (${rRatio} * ${subPrice})) / (1 + ${bRatio} + ${rRatio})`
+  };
+}
 
 /**
  * Parses a corporate action record into a normalised structure.

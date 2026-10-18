@@ -11,10 +11,175 @@ import {
   computeRSI,
   computeEMA,
   getMacroFeatures,
-  getPoliticalEventFlag
+  getPoliticalEventFlag,
+  extractSafeFeatureVector
 } from './featureEngine.mjs';
 import { pool } from '../db.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
+
+export const ROUND_TRIP_FRICTION_HURDLE = 0.0085; // 0.85% statutory round-trip hurdle
+
+/**
+ * Computes NRB Monetary Macro Multiplier for equity valuation & breakout conviction.
+ * High interest rates / tight CD ratios discount bullish probability and raise breakout conviction thresholds.
+ */
+export function evaluateNrbMacroMultiplier(nrbMetrics = {}) {
+  const cdRatio = Number(nrbMetrics.cdRatio ?? 81.5);
+  const ibor = Number(nrbMetrics.ibor ?? nrbMetrics.interbankRate ?? 4.5);
+  const tbill91d = Number(nrbMetrics.tbill91d ?? 4.2);
+  const repoRate = Number(nrbMetrics.repoRate ?? 5.0);
+
+  let probabilityMultiplier = 1.0;
+  let breakoutConvictionThreshold = 60.0; // baseline 60% probability required
+  let valuationDiscountPct = 0.0;
+  let regimeLabel = 'NEUTRAL_LIQUIDITY';
+
+  if (cdRatio > 87.0 || ibor > 7.0 || tbill91d > 7.5) {
+    // Severe Liquidity Crunch
+    probabilityMultiplier = 0.78;
+    breakoutConvictionThreshold = 72.0;
+    valuationDiscountPct = 15.0;
+    regimeLabel = 'TIGHT_LIQUIDITY_CRUNCH';
+  } else if (cdRatio > 85.0 || ibor > 6.0 || repoRate > 6.5) {
+    // Moderate Tightening
+    probabilityMultiplier = 0.88;
+    breakoutConvictionThreshold = 66.0;
+    valuationDiscountPct = 8.0;
+    regimeLabel = 'CAUTIOUS_MONETARY_REGIME';
+  } else if (cdRatio < 82.0 && ibor <= 4.5 && tbill91d <= 4.5) {
+    // Excess Banking Liquidity Expansion
+    probabilityMultiplier = 1.06;
+    breakoutConvictionThreshold = 58.0;
+    valuationDiscountPct = 0.0;
+    regimeLabel = 'EXPANSIONARY_LIQUIDITY';
+  }
+
+  return {
+    regimeLabel,
+    cdRatio,
+    ibor,
+    tbill91d,
+    repoRate,
+    probabilityMultiplier,
+    breakoutConvictionThreshold,
+    valuationDiscountPct
+  };
+}
+
+/**
+ * Builds Zero-Lookahead Training & Walk-Forward Evaluation Dataset for horizons 1D, 3D, and 5D.
+ * - Features at index `t` use ONLY candles[0 .. t].
+ * - Trade Entry occurs at Day `t + 1` OPEN (O_{t+1}).
+ * - Trade Exit occurs at Day `t + 1 + h` CLOSE (C_{t+1+h}).
+ */
+export function buildZeroLookaheadDataset(candles = [], horizonDays = 3) {
+  const samples = [];
+  const h = Math.max(1, Number(horizonDays || 3));
+  if (!Array.isArray(candles) || candles.length < 25 + h) return samples;
+
+  for (let t = 20; t < candles.length - h - 1; t++) {
+    const signalCandle = candles[t];
+    const entryCandle = candles[t + 1];
+    const exitCandle = candles[t + 1 + h];
+
+    const signalClose = Number(signalCandle.close || 0);
+    const tPlus1Open = Number(entryCandle.open || entryCandle.close || 0);
+    const exitClose = Number(exitCandle.close || 0);
+
+    if (signalClose <= 0 || tPlus1Open <= 0 || exitClose <= 0) continue;
+
+    // Reject unreachable T+1 upper-circuit gap opens (>= +14.9%)
+    const overnightGap = (tPlus1Open - signalClose) / signalClose;
+    if (overnightGap >= 0.149) continue;
+
+    // Extract features strictly from [0 .. t]
+    const featRes = extractSafeFeatureVector(candles, t);
+    if (!featRes.isValid) continue;
+
+    // Forward return strictly measured from T+1 Open to T+1+h Close
+    const forwardGrossReturn = (exitClose - tPlus1Open) / tPlus1Open;
+    const forwardNetReturn = forwardGrossReturn - ROUND_TRIP_FRICTION_HURDLE;
+
+    samples.push({
+      signalIndex: t,
+      signalDate: signalCandle.date,
+      entryDate: entryCandle.date,
+      exitDate: exitCandle.date,
+      entryPriceTPlus1Open: tPlus1Open,
+      exitPrice: exitClose,
+      features: featRes.features,
+      forwardGrossReturnPct: +(forwardGrossReturn * 100).toFixed(2),
+      forwardNetReturnPct: +(forwardNetReturn * 100).toFixed(2),
+      labelWin: forwardNetReturn > 0 ? 1 : 0
+    });
+  }
+
+  return samples;
+}
+
+/**
+ * Generates 1D, 3D, and 5D directional probabilities with NRB Macro Discounting and Zero Lookahead.
+ */
+export function predictMultiHorizonProbabilities(candles = [], nrbMetrics = {}, newsScore = 0) {
+  const currIdx = candles.length - 1;
+  const currentFeatures = extractSafeFeatureVector(candles, currIdx);
+  const macro = evaluateNrbMacroMultiplier(nrbMetrics);
+
+  if (!currentFeatures.isValid) {
+    return {
+      supported: false,
+      reason: 'Insufficient trading history (< 5 sessions) for reliable probability inference.',
+      macro
+    };
+  }
+
+  const f = currentFeatures.features;
+  // Base log-odds linear combination calibrated for NEPSE momentum & mean-reversion
+  const rawScore =
+    (f.ema20Dist * 2.2) +
+    (f.ema50Dist * 1.5) +
+    (f.rsi14Norm * 0.8) +
+    ((f.rvol20 - 1.0) * 0.35) -
+    (Math.max(0, f.zScore20 - 2.2) * 0.9) + // penalize overextended > 2.2 sigma
+    (clampNewsImpact(newsScore) * 0.25);
+
+  const sigmoid = (x) => 1 / (1 + Math.exp(-x));
+
+  const computeHorizon = (hDays, scale) => {
+    const baseProb = sigmoid(rawScore * scale) * 100;
+    // Apply NRB Macro Liquidity Multiplier & clamp to [15%, 88%]
+    const macroAdjustedProb = Math.min(88.0, Math.max(15.0, +(baseProb * macro.probabilityMultiplier).toFixed(1)));
+    const isActionableBullish = macroAdjustedProb >= macro.breakoutConvictionThreshold;
+    return {
+      horizon: `${hDays}D`,
+      rawProbabilityPct: +baseProb.toFixed(1),
+      probabilityPct: macroAdjustedProb,
+      convictionThresholdPct: macro.breakoutConvictionThreshold,
+      isActionableBullish,
+      signal: isActionableBullish
+        ? 'BULLISH_HIGH_CONVICTION'
+        : (macroAdjustedProb <= 40.0 ? 'BEARISH_DISTRIBUTION' : 'NEUTRAL_HOLD')
+    };
+  };
+
+  return {
+    supported: true,
+    isNewlyListedIpo: currentFeatures.isNewlyListedIpo,
+    entryExecutionBasis: 'T+1_OPEN_STRICT',
+    macro,
+    features: f,
+    horizons: {
+      '1D': computeHorizon(1, 0.85),
+      '3D': computeHorizon(3, 1.00),
+      '5D': computeHorizon(5, 1.12)
+    }
+  };
+}
+
+function clampNewsImpact(s) {
+  const n = Number(s || 0);
+  return Number.isFinite(n) ? Math.max(-1, Math.min(1, n)) : 0;
+}
 
 /**
  * Predicts NEPSE index direction for the upcoming trading session.

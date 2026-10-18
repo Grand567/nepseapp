@@ -199,3 +199,14 @@ export function dividendPayingYears(dividends) {
 export function latestDividendRecord(dividends) {
   return dividends.find((d) => d.cashDividend > 0 || d.bonusShare > 0 || d.rightShare > 0) || null;
 }
+
+// ─────────────────── Corporate Action Math Re-exports ───────────
+export {
+  PAR_VALUE_EQUITY,
+  STATUTORY_DIVIDEND_TAX_RATE,
+  NEPSE_CASH_DIV_PRICE_ADJ_THRESHOLD,
+  calculateBonusAdjustedPrice,
+  calculateRightAdjustedPrice,
+  calculateNepseCorporateActionAdjustment
+} from './priceAdjustment.js';
+

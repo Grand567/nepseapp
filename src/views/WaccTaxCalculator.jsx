@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Calculator, ShieldCheck } from 'lucide-react';
+import {
+  calculateBuyDetails,
+  calculateBrokerCommission,
+  calculateSebonFee,
+  DP_CHARGE
+} from '../utils/calculations.js';
 
 export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const isNe = lang === 'ne';
@@ -302,6 +308,192 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
       )}
     </div>
   );
+}
+
+/**
+ * Computes both True Economic WACC (Bonus @ Rs. 0) and CDSC MeroShare Statutory WACC (Bonus @ Rs. 100 Par),
+ * plus strict FIFO lot segregation for Short-Term (<= 365 days, 7.5% CGT) vs Long-Term (> 365 days, 5.0% CGT).
+ *
+ * @param {Array<{qty:number, price:number, date:string, type?:'BUY'|'IPO'|'FPO'|'BONUS'|'RIGHT'}>} lots
+ * @param {Object} sellOrder - { sellQty: number, sellPrice: number, sellDate: string, investorType: 'individual'|'institutional', waccMode: 'economic'|'cdsc' }
+ */
+export function calculateFifoWaccAndSegregatedCgt(lots = [], sellOrder = null) {
+  if (!Array.isArray(lots) || lots.length === 0) {
+    return {
+      totalUnits: 0,
+      economicTotalCost: 0,
+      economicWacc: 0,
+      cdscTotalCost: 0,
+      cdscStatutoryWacc: 0,
+      fifoSaleBreakdown: null
+    };
+  }
+
+  // Sort lots chronologically (oldest first for strict FIFO)
+  const sortedLots = [...lots]
+    .filter(l => Number(l.qty || l.quantity || l.units || 0) > 0)
+    .sort((a, b) => new Date(a.date || '2020-01-01') - new Date(b.date || '2020-01-01'));
+
+  let totalUnits = 0;
+  let economicTotalCost = 0;
+  let cdscTotalCost = 0;
+
+  const normalizedLots = sortedLots.map((lot, idx) => {
+    const qty = Number(lot.qty || lot.quantity || lot.units || 0);
+    const price = Number(lot.price || lot.rate || 0);
+    const type = String(lot.type || 'BUY').toUpperCase();
+    const date = lot.date || new Date().toISOString().slice(0, 10);
+
+    let lotEconomicCost = 0;
+    let lotCdscCost = 0;
+
+    if (type === 'BONUS') {
+      // Bonus shares: Rs. 0 economic cash outlay, Rs. 100 par value in CDSC MyWACC portal
+      lotEconomicCost = 0;
+      lotCdscCost = qty * 100;
+    } else if (type === 'RIGHT' || type === 'IPO' || type === 'FPO') {
+      // Primary allotment / Right subscription: no secondary broker or SEBON fee
+      const subPrice = price > 0 ? price : 100;
+      lotEconomicCost = qty * subPrice;
+      lotCdscCost = qty * subPrice;
+    } else {
+      // Secondary market purchase: includes tiered broker commission, 0.015% SEBON fee, and Rs. 25 DP charge
+      const buyInfo = calculateBuyDetails(qty, price);
+      lotEconomicCost = buyInfo.totalAmount;
+      lotCdscCost = buyInfo.totalAmount;
+    }
+
+    totalUnits += qty;
+    economicTotalCost += lotEconomicCost;
+    cdscTotalCost += lotCdscCost;
+
+    return {
+      lotId: idx + 1,
+      type,
+      date,
+      qty,
+      remainingQty: qty,
+      rawPrice: price,
+      lotEconomicCost: +lotEconomicCost.toFixed(2),
+      lotCdscCost: +lotCdscCost.toFixed(2)
+    };
+  });
+
+  const economicWacc = totalUnits > 0 ? +(economicTotalCost / totalUnits).toFixed(2) : 0;
+  const cdscStatutoryWacc = totalUnits > 0 ? +(cdscTotalCost / totalUnits).toFixed(2) : 0;
+
+  if (!sellOrder || Number(sellOrder.sellQty || 0) <= 0 || Number(sellOrder.sellPrice || 0) <= 0) {
+    return {
+      totalUnits,
+      economicTotalCost: +economicTotalCost.toFixed(2),
+      economicWacc,
+      cdscTotalCost: +cdscTotalCost.toFixed(2),
+      cdscStatutoryWacc,
+      lots: normalizedLots,
+      fifoSaleBreakdown: null
+    };
+  }
+
+  // ── STRICT FIFO SALE & CGT SEGREGATION (<= 365 Days @ 7.5% vs > 365 Days @ 5.0%) ──
+  const sellQtyRequested = Math.min(totalUnits, Number(sellOrder.sellQty));
+  const sellPrice = Number(sellOrder.sellPrice);
+  const sellDateObj = sellOrder.sellDate ? new Date(sellOrder.sellDate) : new Date();
+  const isInstitutional = sellOrder.investorType === 'institutional';
+  const activeWacc = sellOrder.waccMode === 'cdsc' ? cdscStatutoryWacc : economicWacc;
+
+  const grossSellValue = sellQtyRequested * sellPrice;
+  const totalSellCommission = calculateBrokerCommission(grossSellValue);
+  const totalSellSebon = calculateSebonFee(grossSellValue);
+  const totalSellDp = DP_CHARGE;
+  const totalSellExpenses = totalSellCommission + totalSellSebon + totalSellDp;
+
+  let qtyToMatch = sellQtyRequested;
+  let shortTermUnits = 0;
+  let longTermUnits = 0;
+  let shortTermTaxableGain = 0;
+  let longTermTaxableGain = 0;
+  let shortTermCgt = 0;
+  let longTermCgt = 0;
+  const matchedTranches = [];
+
+  for (const lot of normalizedLots) {
+    if (qtyToMatch <= 0) break;
+    const matchedQty = Math.min(lot.remainingQty, qtyToMatch);
+    lot.remainingQty -= matchedQty;
+    qtyToMatch -= matchedQty;
+
+    const buyDateObj = new Date(lot.date);
+    const holdingDays = Math.max(1, Math.floor((sellDateObj - buyDateObj) / (1000 * 60 * 60 * 24)));
+    const isLongTerm = holdingDays > 365;
+
+    // Pro-rate sell-side friction across the matched tranche
+    const trancheWeight = matchedQty / sellQtyRequested;
+    const trancheSellGross = matchedQty * sellPrice;
+    const trancheSellFees = totalSellExpenses * trancheWeight;
+    const trancheCostBasis = matchedQty * activeWacc;
+    const tranchePreTaxProfit = trancheSellGross - trancheCostBasis - trancheSellFees;
+
+    const cgtRate = isInstitutional ? 0.10 : (isLongTerm ? 0.05 : 0.075);
+    const trancheTaxable = Math.max(0, tranchePreTaxProfit);
+    const trancheCgt = +(trancheTaxable * cgtRate).toFixed(2);
+
+    if (isLongTerm) {
+      longTermUnits += matchedQty;
+      longTermTaxableGain += trancheTaxable;
+      longTermCgt += trancheCgt;
+    } else {
+      shortTermUnits += matchedQty;
+      shortTermTaxableGain += trancheTaxable;
+      shortTermCgt += trancheCgt;
+    }
+
+    matchedTranches.push({
+      lotId: lot.lotId,
+      buyDate: lot.date,
+      holdingDays,
+      holdingCategory: isLongTerm ? 'LONG_TERM (>365d)' : 'SHORT_TERM (<=365d)',
+      matchedQty,
+      waccUsed: activeWacc,
+      tranchePreTaxProfit: +tranchePreTaxProfit.toFixed(2),
+      cgtRatePct: +(cgtRate * 100).toFixed(1),
+      trancheCgt
+    });
+  }
+
+  const totalCgt = +(shortTermCgt + longTermCgt).toFixed(2);
+  const totalAcquisitionCost = +(sellQtyRequested * activeWacc).toFixed(2);
+  const netReceivable = +(grossSellValue - totalSellExpenses - totalCgt).toFixed(2);
+  const netRealizedProfitLoss = +(netReceivable - totalAcquisitionCost).toFixed(2);
+  const netRoiPct = totalAcquisitionCost > 0 ? +((netRealizedProfitLoss / totalAcquisitionCost) * 100).toFixed(2) : 0;
+
+  return {
+    totalUnits,
+    remainingUnitsAfterSale: totalUnits - sellQtyRequested,
+    economicTotalCost: +economicTotalCost.toFixed(2),
+    economicWacc,
+    cdscTotalCost: +cdscTotalCost.toFixed(2),
+    cdscStatutoryWacc,
+    fifoSaleBreakdown: {
+      sellQty: sellQtyRequested,
+      sellPrice,
+      waccUsed: activeWacc,
+      grossSellValue: +grossSellValue.toFixed(2),
+      sellCommission: +totalSellCommission.toFixed(2),
+      sellSebonFee: +totalSellSebon.toFixed(2),
+      sellDpFee: totalSellDp,
+      shortTermUnits,
+      longTermUnits,
+      shortTermTaxableGain: +shortTermTaxableGain.toFixed(2),
+      longTermTaxableGain: +longTermTaxableGain.toFixed(2),
+      shortTermCgt: +shortTermCgt.toFixed(2),
+      longTermCgt: +longTermCgt.toFixed(2),
+      totalCgt,
+      netReceivable,
+      netRealizedProfitLoss,
+      netRoiPct,
+      matchedTranches
+    }
+  };
 }
 
 export default WaccTaxCalculator;

@@ -461,3 +461,79 @@ export function sortNewsByNepseImpact(newsList = []) {
   const deduped = deduplicateNews(scoredList);
   return sortNews(deduped, 'impact');
 }
+
+/**
+ * Calculates elapsed NEPSE trading hours between two timestamps.
+ * Continuous trading: Sunday - Thursday, 11:00 AM - 3:00 PM NPT (4 hours/day).
+ * Friday, Saturday, and off-market hours are frozen from decay so weekend
+ * dividend/AGM announcements retain full strength until market opens!
+ */
+export function calculateTradingSessionHoursElapsed(fromTimestampMs, toTimestampMs = Date.now()) {
+  const tStart = Math.min(fromTimestampMs, toTimestampMs);
+  const tEnd = Math.max(fromTimestampMs, toTimestampMs);
+  if (tEnd - tStart <= 0) return 0;
+
+  // Step in 15-minute increments
+  const stepMs = 15 * 60 * 1000;
+  let tradingMinutes = 0;
+
+  // Convert to NPT (UTC + 5:45)
+  const NPT_OFFSET = (5 * 60 + 45) * 60 * 1000;
+
+  for (let t = tStart; t < tEnd; t += stepMs) {
+    const nptDate = new Date(t + NPT_OFFSET);
+    const day = nptDate.getUTCDay(); // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
+    const mins = nptDate.getUTCHours() * 60 + nptDate.getUTCMinutes();
+
+    // Active trading session: Sunday (0) to Thursday (4), 11:00 AM (660m) to 3:00 PM (900m)
+    if (day >= 0 && day <= 4 && mins >= 660 && mins < 900) {
+      tradingMinutes += 15;
+    }
+  }
+
+  return tradingMinutes / 60;
+}
+
+/**
+ * Source credibility weight multiplier.
+ */
+export function getSourceCredibilityWeight(source = '') {
+  const s = String(source || '').toLowerCase();
+  if (s.includes('sebon') || s.includes('nepse') || s.includes('nrb') || s.includes('official') || s.includes('notice')) {
+    return 1.30;
+  }
+  if (s.includes('sharesansar') || s.includes('merolagani') || s.includes('bizmandu') || s.includes('karobar') || s.includes('abhiyan')) {
+    return 1.00;
+  }
+  return 0.75; // General media or social
+}
+
+/**
+ * Calculates exponential sentiment decay over actual NEPSE trading session hours.
+ * Half-life is set to 8 trading hours (2 full NEPSE sessions).
+ */
+export function calculateTradingSessionDecayedScore(article, now = Date.now()) {
+  const baseRes = getNepseImpactScore(article);
+  const rawScore = baseRes.score;
+  if (rawScore <= 0) return { ...baseRes, decayedScore: 0, tradingHoursElapsed: 0 };
+
+  const pubTs = parseNewsTimestamp(article);
+  const nowTs = typeof now === 'number' ? now : (now instanceof Date ? now.getTime() : Date.now());
+  const tradingHours = pubTs > 0 ? calculateTradingSessionHoursElapsed(pubTs, nowTs) : 0;
+
+  const credWeight = getSourceCredibilityWeight(article.source || article.portal || '');
+  const HALF_LIFE_HOURS = 8.0; // 2 trading days
+  const lambda = Math.LN2 / HALF_LIFE_HOURS;
+  const decayFactor = Math.exp(-lambda * tradingHours);
+
+  const decayedScore = +(rawScore * credWeight * decayFactor).toFixed(1);
+
+  return {
+    ...baseRes,
+    baseScore: rawScore,
+    credibilityWeight: credWeight,
+    tradingHoursElapsed: +tradingHours.toFixed(2),
+    decayFactor: +decayFactor.toFixed(3),
+    decayedScore
+  };
+}
