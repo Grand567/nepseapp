@@ -6,7 +6,8 @@ import {
   Layers, ArrowUpRight, ArrowDownRight, ArrowRight, Eye, Filter, CheckCircle2,
   AlertTriangle, Shield, Flame, Compass, LineChart, PieChart, Users, Clock,
   ExternalLink, ThumbsUp, MessageSquare, Share2, HelpCircle, Check,
-  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar, Bell, Crown, Lock, Crosshair
+  Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Star, Calendar, Bell, Crown, Lock, Crosshair,
+  ShieldCheck
 } from 'lucide-react';
 import { useSubscription } from '../context/SubscriptionContext';
 import ProGate from './ProGate';
@@ -27,6 +28,7 @@ import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngin
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
 import { isLockInSupplyCliffTrap, selectPrimePickOfTheDay } from '../utils/scanners';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
+import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
 import StockDetailModal from './StockDetailModal';
@@ -2339,6 +2341,17 @@ function Dashboard({
   const nextBreakoutStocks = masterBreakoutPipeline.nextBreakouts || [];
   const cashDefenseActive = masterBreakoutPipeline.cashDefenseActive || false;
 
+  // ── ⚡ UNIFIED 5-STEP ALPHA COMMAND DESK PIPELINE SUMMARY ──
+  const alphaDeskSummary = useMemo(() => {
+    if (!Array.isArray(stocks) || stocks.length === 0) return null;
+    try {
+      return runUnifiedFiveStepAlphaDesk({ stocks, indices });
+    } catch (err) {
+      console.error('[Dashboard] Error evaluating runUnifiedFiveStepAlphaDesk:', err);
+      return null;
+    }
+  }, [stocks, indices, backtestCacheVersion]);
+
   // ── AUTO-ANALYSIS: Multi-candidate backtest verification against Entry/Exit Analyzer engine ──
   useEffect(() => {
     // If Cash Defense is active and we already have a verified defensive fallback with levels and candles, skip scan
@@ -4004,6 +4017,401 @@ function Dashboard({
           </div>
         );
       })()}
+
+      {/* ── 4. ⚡ UNIFIED 5-STEP ALPHA COMMAND DESK SUMMARY WIDGET ── */}
+      {alphaDeskSummary && (
+        <div style={{
+          borderRadius: 18,
+          background: alphaDeskSummary.hasVerifiedPicks
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(15, 23, 42, 0.98) 55%, rgba(6, 78, 59, 0.28) 100%)'
+            : 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.98) 55%, rgba(120, 53, 15, 0.22) 100%)',
+          border: alphaDeskSummary.hasVerifiedPicks
+            ? '1.5px solid rgba(16, 185, 129, 0.5)'
+            : '1.5px solid rgba(245, 158, 11, 0.45)',
+          padding: '16px 18px',
+          marginBottom: 14,
+          boxShadow: alphaDeskSummary.hasVerifiedPicks
+            ? '0 12px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(16, 185, 129, 0.12)'
+            : '0 12px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(245, 158, 11, 0.1)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {/* Subtle glow orb */}
+          <div style={{
+            position: 'absolute',
+            top: -24,
+            right: -24,
+            width: 130,
+            height: 130,
+            borderRadius: '50%',
+            background: alphaDeskSummary.hasVerifiedPicks ? 'rgba(16, 185, 129, 0.14)' : 'rgba(245, 158, 11, 0.12)',
+            filter: 'blur(28px)',
+            pointerEvents: 'none'
+          }} />
+
+          {/* Top Bar: Title, Stance, and 1-Click Launch Button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                background: alphaDeskSummary.hasVerifiedPicks ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+                border: alphaDeskSummary.hasVerifiedPicks ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                {alphaDeskSummary.hasVerifiedPicks ? (
+                  <Crown size={20} color="#34d399" />
+                ) : (
+                  <Shield size={20} color="#fbbf24" />
+                )}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 900,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: alphaDeskSummary.hasVerifiedPicks ? '#34d399' : '#fbbf24'
+                  }}>
+                    5-Step Institutional Alpha Desk
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    background: alphaDeskSummary.hasVerifiedPicks ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: alphaDeskSummary.hasVerifiedPicks ? '#6ee7b7' : '#fcd34d',
+                    fontWeight: 700
+                  }}>
+                    {alphaDeskSummary.hasVerifiedPicks ? `${alphaDeskSummary.qualifiedList.length} Qualified` : 'Cash Defense'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', marginTop: 1 }}>
+                  {alphaDeskSummary.hasVerifiedPicks
+                    ? `👑 ${alphaDeskSummary.qualifiedList.length} Stock${alphaDeskSummary.qualifiedList.length > 1 ? 's' : ''} Cleared All 5 Quantitative Gates`
+                    : '🛡️ Capital Preservation Mode Active (100% Cash Defense)'}
+                </div>
+              </div>
+            </div>
+
+            {/* 1-Click Jump Button */}
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem('master_guide_tab', 'alpha_desk');
+                  if (alphaDeskSummary?.primePick?.symbol) {
+                    localStorage.setItem('selected_entry_exit_symbol', alphaDeskSummary.primePick.symbol);
+                  }
+                  window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                    detail: {
+                      tab: 'master_100_profit',
+                      symbol: alphaDeskSummary?.primePick?.symbol
+                    }
+                  }));
+                } catch (_) {}
+                if (typeof setActiveTab === 'function') {
+                  setActiveTab('master_100_profit');
+                }
+              }}
+              style={{
+                background: alphaDeskSummary.hasVerifiedPicks
+                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                  : 'linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.35) 100%)',
+                border: alphaDeskSummary.hasVerifiedPicks
+                  ? '1px solid rgba(52, 211, 153, 0.6)'
+                  : '1px solid rgba(245, 158, 11, 0.5)',
+                borderRadius: 10,
+                padding: '8px 14px',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: alphaDeskSummary.hasVerifiedPicks ? '0 4px 14px rgba(16, 185, 129, 0.35)' : 'none',
+                transition: 'all 0.15s ease',
+                flexShrink: 0
+              }}
+              title="Open the Full Unified 5-Step Alpha Command Center"
+            >
+              <Zap size={13} style={{ flexShrink: 0 }} />
+              <span>Open Alpha Desk →</span>
+            </button>
+          </div>
+
+          {/* Body Content */}
+          <div style={{ marginTop: 12, position: 'relative', zIndex: 1 }}>
+            {alphaDeskSummary.hasVerifiedPicks && alphaDeskSummary.primePick ? (
+              <div>
+                {/* Prime Pick Highlight Strip */}
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span
+                      onClick={() => {
+                        try {
+                          localStorage.setItem('master_guide_tab', 'alpha_desk');
+                          localStorage.setItem('selected_entry_exit_symbol', alphaDeskSummary.primePick.symbol);
+                          window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                            detail: {
+                              tab: 'master_100_profit',
+                              symbol: alphaDeskSummary.primePick.symbol
+                            }
+                          }));
+                        } catch (_) {}
+                        setActiveTab('master_100_profit');
+                      }}
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 900,
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                    >
+                      {alphaDeskSummary.primePick.symbol}
+                      <ArrowUpRight size={16} color="#34d399" />
+                    </span>
+
+                    <span style={{ fontSize: 14, fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+                      Rs. {fmt(alphaDeskSummary.primePick.ltp)}
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: Number(alphaDeskSummary.primePick.pChange || 0) >= 0 ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.18)',
+                      color: Number(alphaDeskSummary.primePick.pChange || 0) >= 0 ? '#34d399' : '#fb7185'
+                    }}>
+                      {Number(alphaDeskSummary.primePick.pChange || 0) >= 0 ? '+' : ''}{alphaDeskSummary.primePick.pChange}%
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      border: '1px solid rgba(56, 189, 248, 0.3)'
+                    }}>
+                      #{alphaDeskSummary.primePick.sectorRank} {alphaDeskSummary.primePick.sector}
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: 'rgba(16, 185, 129, 0.18)',
+                      color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.35)'
+                    }}>
+                      Score {alphaDeskSummary.primePick.setupScore}/100
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: 'rgba(168, 85, 247, 0.18)',
+                      color: '#c084fc',
+                      border: '1px solid rgba(168, 85, 247, 0.3)'
+                    }}>
+                      ⚖️ {alphaDeskSummary.primePick.executionPlan?.netRRR1}:1 Net R:R
+                    </span>
+                  </div>
+
+                  {/* Buy / Target / Stop / Sizing Details */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 12 }}>
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Buy: </span>
+                      <strong style={{ color: '#ffffff' }}>Rs. {fmt(alphaDeskSummary.primePick.executionPlan?.buyZoneLow)} - {fmt(alphaDeskSummary.primePick.executionPlan?.buyZoneHigh)}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Target: </span>
+                      <strong style={{ color: '#34d399' }}>Rs. {fmt(alphaDeskSummary.primePick.executionPlan?.target1)} (+{alphaDeskSummary.primePick.executionPlan?.target1NetPct}%)</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Stop: </span>
+                      <strong style={{ color: '#fb7185' }}>Rs. {fmt(alphaDeskSummary.primePick.executionPlan?.stopLoss)} (-{alphaDeskSummary.primePick.executionPlan?.stopLossPct}%)</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Size: </span>
+                      <strong style={{ color: '#38bdf8' }}>{fmt(alphaDeskSummary.primePick.executionPlan?.recommendedKitta)} Kitta</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5-Stage Verification Mini Badges */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 6, marginTop: 8 }}>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                    <span style={{ color: '#cbd5e1' }}>1. Sector #{alphaDeskSummary.primePick.sectorRank} Lead</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                    <span style={{ color: '#cbd5e1' }}>2. 8-Gate Quality Pass</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                    <span style={{ color: '#cbd5e1' }}>3. VDU & Flow ({alphaDeskSummary.primePick.executionPlan?.bcr3Buy}% Buy)</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                    <span style={{ color: '#cbd5e1' }}>4. Kelly Sized ({alphaDeskSummary.primePick.executionPlan?.netRRR1}:1)</span>
+                  </div>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <CheckCircle2 size={12} color="#10b981" style={{ flexShrink: 0 }} />
+                    <span style={{ color: '#cbd5e1' }}>5. Circuit & Tax Cleared</span>
+                  </div>
+                </div>
+
+                {/* Other Qualified Picks if any */}
+                {alphaDeskSummary.qualifiedList.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8, fontSize: 11, color: '#94a3b8' }}>
+                    <span style={{ fontWeight: 700 }}>Also Qualified:</span>
+                    {alphaDeskSummary.qualifiedList.slice(1).map(q => (
+                      <span
+                        key={q.symbol}
+                        onClick={() => {
+                          try {
+                            localStorage.setItem('master_guide_tab', 'alpha_desk');
+                            localStorage.setItem('selected_entry_exit_symbol', q.symbol);
+                            window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                              detail: { tab: 'master_100_profit', symbol: q.symbol }
+                            }));
+                          } catch (_) {}
+                          setActiveTab('master_100_profit');
+                        }}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          background: 'rgba(16, 185, 129, 0.14)',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          color: '#34d399',
+                          fontWeight: 800
+                        }}
+                      >
+                        {q.symbol} • Score {q.setupScore} (R:R {q.executionPlan?.netRRR1}:1)
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                {/* Capital Preservation Mode View */}
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.5 }}>
+                  Zero out of 340+ NEPSE stocks satisfied all 5 institutional criteria (Sector Leadership, 8-Gate Quality, Wyckoff VDU, Smart Money Broker Absorption, and Net R:R ≥ 2.5:1). The pipeline is enforcing <strong style={{ color: '#fbbf24' }}>100% Cash Defense</strong> to protect capital from distribution traps.
+                </div>
+
+                {/* Radar Runner-ups */}
+                {alphaDeskSummary.watchlistRadar && alphaDeskSummary.watchlistRadar.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Radar Contenders (3-4/5 Gates):</span>
+                    {alphaDeskSummary.watchlistRadar.slice(0, 4).map(r => (
+                      <span
+                        key={r.symbol}
+                        onClick={() => {
+                          try {
+                            localStorage.setItem('master_guide_tab', 'alpha_desk');
+                            localStorage.setItem('selected_entry_exit_symbol', r.symbol);
+                            window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                              detail: { tab: 'master_100_profit', symbol: r.symbol }
+                            }));
+                          } catch (_) {}
+                          setActiveTab('master_100_profit');
+                        }}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#e2e8f0',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        <span style={{ color: '#ffffff' }}>{r.symbol}</span>
+                        <span style={{ color: '#fbbf24', fontSize: 10 }}>({r.stagesPassedCount}/5 gates • {r.setupScore} score)</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bottom Footer: Top 3 Leading Sectors & Risk Buffer Policy */}
+            <div style={{
+              marginTop: 10,
+              paddingTop: 8,
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              fontSize: 11,
+              color: '#94a3b8'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700, color: '#cbd5e1' }}>Top Sectors (10D RS):</span>
+                {alphaDeskSummary.marketContext?.topSectors?.slice(0, 3).map((sec, idx) => (
+                  <span
+                    key={sec.sector}
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: idx === 0 ? '#34d399' : idx === 1 ? '#38bdf8' : '#e2e8f0',
+                      fontWeight: 700
+                    }}
+                  >
+                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'} {sec.sector} ({sec.avgPChange >= 0 ? '+' : ''}{sec.avgPChange}%)
+                  </span>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#64748b' }}>•</span>
+                <span>Turnover: <strong style={{ color: '#ffffff' }}>Rs. {alphaDeskSummary.marketContext?.marketTurnoverArba} Arba</strong></span>
+                <span style={{ color: '#64748b' }}>•</span>
+                <span>Breadth: <strong style={{ color: alphaDeskSummary.marketContext?.breadthPassed ? '#34d399' : '#fb7185' }}>{alphaDeskSummary.marketContext?.breadthPct}%</strong></span>
+                <span style={{ color: '#64748b' }}>•</span>
+                <span style={{ color: '#f59e0b' }}>10% Cash Reserve Locked</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 4A. 🏆 TODAY'S PRIME BREAKOUT & BUY-ZONE PICK / CASH DEFENSE BANNER ── */}
       {(!stocks || stocks.length === 0) ? (
