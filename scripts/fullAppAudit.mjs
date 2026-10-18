@@ -137,7 +137,7 @@ async function auditCategoryA() {
   // A3: /api/today-prices & /api/market-summary
   let topTurnoverStocks = [];
   try {
-    const todayRes = await fetchJson('/api/today-prices');
+    const todayRes = await fetchJson('/api/today-prices', {}, 65000);
     const list = Array.isArray(todayRes.data?.data) ? todayRes.data.data : (Array.isArray(todayRes.data) ? todayRes.data : []);
     const validCount = list.filter(s => s && s.symbol && Number(s.ltp || s.closePrice || 0) > 0).length;
     const enrichedCount = list.filter(s => s && (s.brokerAnalysis || s.bcr3BuyPct || s.topNetBuyers)).length;
@@ -162,7 +162,7 @@ async function auditCategoryA() {
 
   // A4: /api/market-summary
   try {
-    const msRes = await fetchJson('/api/market-summary');
+    const msRes = await fetchJson('/api/market-summary', {}, 65000);
     const msData = msRes.data?.data || msRes.data;
     const stockCount = Array.isArray(msData?.stocks) ? msData.stocks.length : (Array.isArray(msData) ? msData.length : 0);
     recordCheck(

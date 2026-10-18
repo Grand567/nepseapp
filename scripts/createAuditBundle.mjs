@@ -406,17 +406,42 @@ for (const f of rawSourceFiles) {
   }
 }
 
+// Bundle 5: Specialized Stock Selection, Quant Ranking & Alpha Optimization
+const bundle5Paths = new Set([
+  'src/utils/setupAnalyzer.js',
+  'src/utils/scanners.js',
+  'proxy/institutionalAlertEngine.mjs',
+  'proxy/smartAlertEngine.mjs',
+  'src/utils/dynamicCapitalEngine.js',
+  'src/utils/calculations.js',
+  'src/utils/backtest.js',
+  'src/components/analyzer/EntryRiskCard.tsx',
+  'src/components/analyzer/HistoricalAnalogPanel.tsx',
+  'src/components/analyzer/SignalTrackRecord.jsx',
+  'tests/testInstitutionalConfluencePipeline.mjs',
+  'tests/testDynamicCapitalEngine.mjs',
+  'tests/testSmartAlertPipeline.mjs',
+  'tests/testTelegramExitAndTracking.mjs'
+]);
+const bundle5Files = [];
+for (const relPath of bundle5Paths) {
+  const item = fileMap.get(relPath);
+  if (item) bundle5Files.push(item);
+}
+
 // Sort for consistency
 bundle1Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle2Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle3Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 bundle4Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
+bundle5Files.sort((a, b) => a.relPath.localeCompare(b.relPath));
 
 console.log(`Categorized Files:`);
 console.log(`  Bundle 1 (Architecture & Backend) : ${bundle1Files.length} files`);
 console.log(`  Bundle 2 (Quant Engine & Gates)   : ${bundle2Files.length} files`);
 console.log(`  Bundle 3 (Frontend Radar & UI)    : ${bundle3Files.length} files`);
 console.log(`  Bundle 4 (Diagnostics & Charts)   : ${bundle4Files.length} files`);
+console.log(`  Bundle 5 (Alpha & Stock Selection): ${bundle5Files.length} files`);
 
 // Helper to write a bundle
 function createBundleText(bundleName, bundleTitle, description, files, extraText = '') {
@@ -539,10 +564,86 @@ const b4Meta = createBundleText(
   auditOutput
 );
 
-console.log('\n✓ Step 2 Complete: 4 Ready-to-Paste Text Bundles created.\n');
+console.log('Generating Bundle 5: Stock Selection, Quant Ranking & Alpha Optimization...');
+const b5Meta = createBundleText(
+  'BUNDLE_5_STOCK_SELECTION_AND_ALPHA.txt',
+  'Part 5: Core Stock Picking, Prime Pick Ranking, Veto Filters & Alpha Optimization',
+  'Contains setupAnalyzer.js, scanners.js, institutionalAlertEngine.mjs, smartAlertEngine.mjs, dynamicCapitalEngine.js, calculations.js, backtest.js, EntryRiskCard.tsx, HistoricalAnalogPanel.tsx, SignalTrackRecord.jsx, and automated quant verification suites.',
+  bundle5Files
+);
 
-// 6. Summary Table
-const results = [b1Meta, b2Meta, b3Meta, b3AMeta, b3BMeta, b4Meta];
+// 6. Generate Master Argon Stock Selection Audit Prompt on Desktop
+const argonPromptPath = path.join(desktopDir, 'ARGON_STOCK_SELECTION_AUDIT_PROMPT.md');
+const argonPromptContent = `# 🚀 Argon Deep Quantitative Audit: Stock Selection, Alpha Optimization & Capital Preservation Engine
+
+## 🎯 AUDIT MISSION
+You are **Argon**, an elite Principal Quantitative Finance Auditor specializing in emerging frontier stock exchanges (**NEPSE — Nepal Stock Exchange**).
+
+You are auditing **\`BUNDLE_5_STOCK_SELECTION_AND_ALPHA.txt\`** from **Drabyashree NEPSE**, containing the central quantitative algorithms that select, score, and rank stocks for live recommendation to retail and institutional users:
+- **\`src/utils/setupAnalyzer.js\`**: The core quant brain generating Setup Scores (0–100), win-rates, dynamic buy zones, chase caps, and 5 quality gates.
+- **\`src/utils/scanners.js\`**: Scanners for Breakouts, Wyckoff Volume Dry-Up (VDU), Momentum, and Sector Relative Strength.
+- **\`proxy/institutionalAlertEngine.mjs\`**: Morning market institutional accumulation detector, 4-pillar confluence scoring, and the 7-Point Veto Engine against operator dumps and settlement cliffs.
+- **\`proxy/smartAlertEngine.mjs\`**: Real-time intraday breakout scanner and two-way Telegram exit alert pipeline.
+- **\`src/utils/dynamicCapitalEngine.js\`**: Friction-adjusted Half-Kelly position sizing across 4 capital tiers (Rs. 50k, Rs. 1 Lakh, Rs. 10 Lakh, Rs. 75 Lakh) with turnover liquidity guards.
+- **\`src/utils/calculations.js\`**: Statutory NEPSE transaction friction engine (tiered broker commissions 0.27%–0.40%, SEBON 0.015%, DP fee Rs. 25, statutory 7.5% Short-Term CGT, and Net R:R math).
+- **\`src/components/analyzer/EntryRiskCard.tsx\`**: Complete trade execution ticket UI, risk/reward preview, and scale-out execution roadmap.
+
+---
+
+## 🔍 5 CRITICAL AUDIT OBJECTIVES
+
+### 1. Setup Score (0–100) & Win-Rate Formula Calibration (\`src/utils/setupAnalyzer.js\`)
+- **Objective:** Ensure the setup score rewards genuine accumulation and penalizes overextended rallies.
+- **Audit Checks:**
+  1. Does the score reward Wyckoff Volume Dry-Up ($VDU \le 0.5\times$ 20D vol) sufficiently?
+  2. Is the sector leadership bonus ($+15$ pts) applied only to stocks in the Top 3 strongest sectors over the past 10 sessions?
+  3. Is the \`chaseCap\` strictly enforced so users never buy when price exceeds $\text{Entry}_{\max} \times 1.025$?
+  4. Are the 5 Quality Gates (Circuit Trap Gate, Negative EPS / Loss-Maker Gate, Excessive Upper Wick $\ge 40\%$ Gate, Downtrend Under 50 EMA Gate, Low Liquidity Gate) rigorous?
+
+### 2. The 7 Hard Veto Gates Against Operator Traps (\`proxy/institutionalAlertEngine.mjs\`)
+- **Objective:** Eliminate operator pump-and-dump losses in NEPSE.
+- **Audit Checks:**
+  1. **±15% Circuit Ceiling Chase:** Are stocks within $2\%$ of the circuit ceiling vetoed?
+  2. **Operator Offloading ($\text{BCR3}_{\text{sell}} \ge 38\%$):** Are stocks where top 3 selling brokers dominate vetoed?
+  3. **T+3 Settlement Dump Risk:** Does the engine check if shares bought 3 sessions ago ($t-3$) are up $>10\%$ and ready for delivery sale dump?
+  4. **Micro-Cap Illiquidity:** Are stocks with $< \text{Rs. } 60\text{ Lakhs}$ 20D median turnover vetoed?
+  5. **Pre-Open Gap Trap:** Are stocks with $>4.5\%$ pre-open gap-up vetoed from morning buy recommendations?
+  6. **Opening Noise:** Are signals triggered between 11:00 AM and 11:15 AM filtered or delayed until 11:16 AM price stabilization?
+
+### 3. Net Post-Tax & Fee Risk-to-Reward Ratio ($\text{R:R} \ge 3:1$) (\`src/utils/calculations.js\`)
+- **Objective:** Ensure no user ever buys a stock with unfavorable mathematical expectancy.
+- **Audit Checks:**
+  1. Does \`calculateBuyDetails\` and \`calculateSellDetails\` calculate statutory SEBON ($0.015\%$), tiered broker fees ($0.27\% - 0.40\%$), Rs. 25 DP fee, and $7.5\%$ Short-Term CGT accurately?
+  2. Is a "BUY" signal blocked unless the net take-home profit at Target 1 divided by the net loss at Stop-Loss is $\ge 3.0 : 1$?
+  3. Does the plan trigger a Stop-to-Breakeven rule at Target 1 to make the remaining runner position risk-free?
+
+### 4. Friction-Adjusted Half-Kelly Position Sizing (\`src/utils/dynamicCapitalEngine.js\`)
+- **Objective:** Capital preservation tailored to exact investor account sizes.
+- **Audit Checks:**
+  1. For Starter Portfolios (Rs. 50k / Rs. 1 Lakh), does the sizer prevent over-allocation while respecting minimum commission floors?
+  2. Is maximum portfolio loss capped at $\le 1.5\% - 2.0\%$ of total capital across all tiers?
+  3. Does the liquidity cap prevent single orders exceeding $5\%$ of the 20-day median turnover?
+
+### 5. False Breakout Scanners & Prime Pick Selection (\`src/utils/scanners.js\` & \`src/components/Dashboard.jsx\`)
+- **Objective:** Ensure the single stock crowned "Prime Pick of the Day" on the dashboard has the highest probability of winning.
+- **Audit Checks:**
+  1. Does the ranking algorithm prioritize verified setups passing all 5 gates before unverified setups?
+  2. Does the scanner filter out low-float promoter lock-in supply cliffs?
+
+---
+
+## 📋 OUTPUT FORMAT REQUIRED
+1. **Executive Scorecard Table:** List all defects found (Audit ID, File, Severity, Root Cause, Financial Impact).
+2. **Technical & Quantitative Analysis:** For each defect, explain the exact mathematical flaw and why it leads to suboptimal trades or unexpected losses.
+3. **Master Remediation Patch Block for Antigravity:** Provide clear, copy-pasteable code patches with exact file paths, line references, and instructions for Antigravity to apply.
+`;
+
+fs.writeFileSync(argonPromptPath, argonPromptContent, 'utf8');
+
+console.log('\n✓ Step 2 Complete: Ready-to-Paste Text Bundles and Master Argon Prompt created.\n');
+
+// 7. Summary Table
+const results = [b1Meta, b2Meta, b3Meta, b3AMeta, b3BMeta, b4Meta, b5Meta];
 console.log('═══════════════════════════════════════════════════════════════════════════════');
 console.log('           DRABYASHREE NEPSE — EXTERNAL AUDIT BUNDLE MANIFEST                 ');
 console.log('═══════════════════════════════════════════════════════════════════════════════');
@@ -551,4 +652,5 @@ console.log(`Target Folder: ${desktopDir}\n`);
 for (const r of results) {
   console.log(`📄 ${r.name.padEnd(42)} | ${String(r.fileCount).padStart(3)} files | ${r.kb.padStart(8)} KB (${r.mb} MB)`);
 }
+console.log(`📝 ${'ARGON_STOCK_SELECTION_AUDIT_PROMPT.md'.padEnd(42)} | Master Audit Prompt for Argon`);
 console.log('═══════════════════════════════════════════════════════════════════════════════\n');
