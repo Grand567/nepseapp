@@ -1,9 +1,8 @@
 // src/components/AlphaCommandCenter.tsx
 import React, { useState, useMemo } from 'react';
 import {
-  Crown, ShieldCheck, ShieldAlert, Target, Zap, CheckCircle2, XCircle,
-  Copy, Check, TrendingUp, Layers, Compass, ArrowRight, Eye, Calculator,
-  AlertTriangle, Sparkles, BarChart3, Lock
+  Crown, ShieldAlert, Zap, CheckCircle2, XCircle,
+  Copy, Check, Compass, Eye, BarChart3, Layers, TrendingUp, Lock
 } from 'lucide-react';
 import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
 import { addToWatchlist } from '../utils/watchlist';
@@ -16,6 +15,11 @@ interface AlphaCommandCenterProps {
 }
 
 const CAPITAL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
+const CGT_MODES = [
+  { rate: 0.05, label: '5.0% CGT (Gazette 2083)' },
+  { rate: 0.075, label: '7.5% CGT (Standard ST)' },
+  { rate: 0.10, label: '10.0% CGT (Institutional)' }
+];
 
 export function AlphaCommandCenter({
   stocks = [],
@@ -31,6 +35,7 @@ export function AlphaCommandCenter({
     return 100000;
   });
 
+  const [cgtRate, setCgtRate] = useState<number>(0.075);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [paperOrderSaved, setPaperOrderSaved] = useState(false);
@@ -41,9 +46,10 @@ export function AlphaCommandCenter({
       indices,
       userCapital,
       riskTolerancePct: 1.5,
-      requiredNetRRR: 2.5
+      requiredNetRRR: 2.5,
+      cgtRate
     });
-  }, [stocks, indices, userCapital]);
+  }, [stocks, indices, userCapital, cgtRate]);
 
   const activeDossier = useMemo(() => {
     if (selectedSymbol) {
@@ -59,15 +65,17 @@ export function AlphaCommandCenter({
     if (!dossier) return;
     const ep = dossier.executionPlan;
     const text =
-      `👑 DRABYASHREE 5-STEP VERIFIED TMS ORDER:\n` +
-      `• Stock: ${dossier.symbol} (${dossier.sector} - Rank #${dossier.sectorRank})\n` +
-      `• Action: LIMIT BUY (${dossier.executionStatus === 'EXTENDED_ABOVE_CHASE_CAP' ? 'WAIT FOR PULLBACK' : 'READY IN BUY ZONE'})\n` +
-      `• Limit Buy Zone: Rs. ${ep.buyZoneLow} – Rs. ${ep.buyZoneHigh} (Do NOT chase > Rs. ${ep.chaseCap})\n` +
-      `• Order Quantity: ${ep.recommendedKitta} Kitta (Deploy: Rs. ${ep.capitalOutlay.toLocaleString('en-IN')} | 10% Cash Reserve: Rs. ${ep.cashReserveLocked.toLocaleString('en-IN')})\n` +
+      `👑 DRABYASHREE 5-STEP PROFIT-MAXIMIZED TMS TICKET:\n` +
+      `• Scrip: ${dossier.symbol} (${dossier.sector} - Sector Rank #${dossier.sectorRank})\n` +
+      `• Limit Buy Zone: Rs. ${ep.buyZoneLow} – Rs. ${ep.buyZoneHigh} (NEVER chase > Rs. ${ep.chaseCap})\n` +
+      `• Total Allocation: ${ep.recommendedKitta} Kitta (Deploy: Rs. ${ep.capitalOutlay.toLocaleString('en-IN')} | 10% Cash Reserve: Rs. ${ep.cashReserveLocked.toLocaleString('en-IN')})\n` +
+      `• 2-Tranche T+2 Entry: Buy ${ep.tranche1Kitta} Kitta Today (Tranche 1) + Buy ${ep.tranche2Kitta} Kitta after T+2 Demat Settlement\n` +
       `• Hard Stop-Loss: Rs. ${ep.stopLoss} (-${ep.stopLossPct}% | Max Risk: Rs. ${ep.maxRiskRupees.toLocaleString('en-IN')})\n` +
-      `• Target 1: Rs. ${ep.target1} (+${ep.target1NetPct}% Net -> Sell ${ep.scaleOutKitta} Kitta & Move SL to Breakeven Rs. ${ep.statutoryBreakevenPrice})\n` +
-      `• Target 2: Rs. ${ep.target2} (+${ep.target2NetPct}% Net Runner)\n` +
-      `• Net Post-Tax R:R: ${ep.netRRR1} : 1 (After 7.5% CGT & SEBON Fees)`;
+      `• 3-Tier Profit Ladder:\n` +
+      `   1) Target 1 (Rs. ${ep.target1}): Sell ${ep.scaleOutT1Kitta} Kitta & Move SL to Zero-Loss Breakeven Rs. ${ep.statutoryBreakevenPrice}\n` +
+      `   2) Target 2 (Rs. ${ep.target2}): Sell ${ep.scaleOutT2Kitta} Kitta & Move SL to Rs. ${ep.target1}\n` +
+      `   3) Runner (Rs. ${ep.target3Runner}+): Trail final ${ep.runnerT3Kitta} Kitta along 20-Day EMA\n` +
+      `• Maximized Ladder Net Profit: +Rs. ${ep.maximizedLadderNetProfit.toLocaleString('en-IN')} (Net R:R ${ep.netRRR1}:1 after ${(cgtRate * 100).toFixed(1)}% CGT)`;
 
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).catch(() => {});
@@ -88,9 +96,12 @@ export function AlphaCommandCenter({
         sector: dossier.sector,
         buyPrice: dossier.ltp,
         kitta: ep.recommendedKitta,
+        tranche1Kitta: ep.tranche1Kitta,
+        tranche2Kitta: ep.tranche2Kitta,
         stopLoss: ep.stopLoss,
         target1: ep.target1,
         target2: ep.target2,
+        target3Runner: ep.target3Runner,
         breakevenPrice: ep.statutoryBreakevenPrice,
         t2SettlementDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
         createdAt: new Date().toISOString()
@@ -105,7 +116,7 @@ export function AlphaCommandCenter({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
-      {/* ── 1. TOP FUNNEL & CAPITAL BAR ── */}
+      {/* ── 1. TOP FUNNEL, CAPITAL & CGT REGIME BAR ── */}
       <div style={{
         background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.96) 100%)',
         border: '1px solid rgba(16, 185, 129, 0.35)',
@@ -125,39 +136,63 @@ export function AlphaCommandCenter({
                 5-STEP UNIFIED COMMAND DESK
               </span>
               <span style={{ fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
-                High-Reward / Low-Risk Institutional Execution Hub
+                Maximum Reward / Minimum Loss Institutional Execution Hub
               </span>
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>
-              Automatically filters 340+ NEPSE stocks across Sector RS, 8-Gate Quality, Wyckoff VDU + Broker Flow, Half-Kelly Sizing, and Circuit/Tax Rules.
+              Combines Sector RS + 8-Gate Quality + Wyckoff VDU & Anti-Wick Broker Flow + 2-Tranche T+2 Split + 3-Tier Profit Ladder.
             </div>
           </div>
 
-          {/* Portfolio Capital Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', background: 'rgba(0,0,0,0.35)', padding: '6px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
-            <span style={{ fontSize: 11.5, color: '#cbd5e1', fontWeight: 700 }}>Capital:</span>
-            {CAPITAL_PRESETS.map(cap => (
-              <button
-                key={cap}
-                type="button"
-                onClick={() => {
-                  setUserCapital(cap);
-                  try { localStorage.setItem('master_guide_capital', String(cap)); } catch (_) {}
-                }}
-                style={{
-                  background: userCapital === cap ? '#10b981' : 'rgba(255,255,255,0.05)',
-                  color: userCapital === cap ? '#080c14' : '#94a3b8',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '3px 8px',
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  cursor: 'pointer'
-                }}
-              >
-                {cap >= 100000 ? `Rs.${cap / 100000}L` : `Rs.50K`}
-              </button>
-            ))}
+          {/* Portfolio Capital & CGT Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.35)', padding: '5px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span style={{ fontSize: 11, color: '#cbd5e1', fontWeight: 700 }}>Capital:</span>
+              {CAPITAL_PRESETS.map(cap => (
+                <button
+                  key={cap}
+                  type="button"
+                  onClick={() => {
+                    setUserCapital(cap);
+                    try { localStorage.setItem('master_guide_capital', String(cap)); } catch (_) {}
+                  }}
+                  style={{
+                    background: userCapital === cap ? '#10b981' : 'rgba(255,255,255,0.05)',
+                    color: userCapital === cap ? '#080c14' : '#94a3b8',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '3px 7px',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {cap >= 100000 ? `Rs.${cap / 100000}L` : `Rs.50K`}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,0,0,0.35)', padding: '5px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)' }}>
+              {CGT_MODES.map(mode => (
+                <button
+                  key={mode.rate}
+                  type="button"
+                  onClick={() => setCgtRate(mode.rate)}
+                  style={{
+                    background: cgtRate === mode.rate ? '#38bdf8' : 'transparent',
+                    color: cgtRate === mode.rate ? '#080c14' : '#94a3b8',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '3px 7px',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -197,7 +232,7 @@ export function AlphaCommandCenter({
             <span>•</span>
             <span>Breadth: <strong style={{ color: mc.breadthPassed ? '#34d399' : '#f87171' }}>{mc.breadthPct}% Adv</strong></span>
             <span>•</span>
-            <span>Qualified: <strong style={{ color: '#38bdf8' }}>{alphaDesk.qualifiedList.length} Picks</strong></span>
+            <span>5/5 Verified: <strong style={{ color: '#34d399' }}>{alphaDesk.qualifiedList.length} Picks</strong></span>
           </div>
         </div>
       </div>
@@ -216,10 +251,10 @@ export function AlphaCommandCenter({
           <ShieldAlert size={22} color="#fbbf24" style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 900, color: '#fbbf24' }}>
-              🛡️ CAPITAL PRESERVATION MODE — 0 STOCKS PASS ALL 5 STAGES SIMULTANEOUSLY
+              🛡️ 100% CAPITAL PRESERVATION ACTIVE — 0 STOCKS PASS ALL 5 STAGES RIGHT NOW
             </div>
             <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4, lineHeight: 1.5 }}>
-              No stock currently satisfies all 5 institutional gates at once (Top 3 Sector + 8-Gate Quality + Wyckoff VDU & Broker BCR3 ≥ 38% + Net R:R ≥ 2.5:1 inside Chase Cap). Sitting in cash today protects your capital. Below is the highest-scoring <strong>Radar Runner-Up</strong> so you can see exactly which stage is awaiting confirmation.
+              Our strict AND-gate requires all 5 institutional stages to pass simultaneously. Sitting in cash during choppy sessions prevents drawdowns. Below is the highest-scoring <strong>Radar Runner-Up</strong> so you can monitor which gate is awaiting confirmation.
             </div>
           </div>
         </div>
@@ -273,7 +308,7 @@ export function AlphaCommandCenter({
                   </span>
                 </div>
                 <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 4 }}>
-                  {activeDossier.name} • <strong>{activeDossier.sector}</strong> (Sector Rank #{activeDossier.sectorRank}) • Confluence Score: <strong style={{ color: '#34d399' }}>{activeDossier.setupScore}/100</strong>
+                  {activeDossier.name} • <strong>{activeDossier.sector}</strong> (Sector Rank #{activeDossier.sectorRank}) • Confluence Score: <strong style={{ color: '#34d399' }}>{activeDossier.setupScore}/100</strong> • Upper Wick: <strong>{ep.upperWickPct}%</strong>
                 </div>
               </div>
 
@@ -328,7 +363,7 @@ export function AlphaCommandCenter({
               ))}
             </div>
 
-            {/* Step-by-Step Direction Box: Exact Entry, Sizing, Stop-Loss & Targets */}
+            {/* Step-by-Step Direction Box: Exact Entry, 2-Tranche Split, 3-Tier Profit Ladder */}
             <div style={{
               background: 'rgba(0, 0, 0, 0.35)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -341,10 +376,10 @@ export function AlphaCommandCenter({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 900, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Compass size={16} />
-                  <span>APP DIRECTION & EXACT EXECUTION PLAN (FOR RS. {userCapital.toLocaleString('en-IN')} PORTFOLIO)</span>
+                  <span>PROFIT-MAXIMIZATION BLUEPRINT (FOR RS. {userCapital.toLocaleString('en-IN')} PORTFOLIO)</span>
                 </div>
                 <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                  10% Cash Reserve Locked: <strong style={{ color: '#cbd5e1' }}>Rs. {ep.cashReserveLocked.toLocaleString('en-IN')}</strong>
+                  10% Cash Reserve Locked: <strong style={{ color: '#cbd5e1' }}>Rs. {ep.cashReserveLocked.toLocaleString('en-IN')}</strong> • WACC: <strong style={{ color: '#34d399' }}>Rs. {ep.waccPerShare}</strong>
                 </span>
               </div>
 
@@ -353,14 +388,14 @@ export function AlphaCommandCenter({
                 gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
                 gap: 10
               }}>
-                {/* 1. Order Size */}
+                {/* 1. 2-Tranche T+2 Split Order Size */}
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>1. ORDER SIZE (10-LOT)</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    {ep.recommendedKitta} Kitta
+                  <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>1. 2-TRANCHE T+2 ENTRY</div>
+                  <div style={{ fontSize: 17, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    {ep.recommendedKitta} Kitta Total
                   </div>
                   <div style={{ fontSize: 11, color: '#38bdf8', marginTop: 2 }}>
-                    Deploy: Rs. {ep.capitalOutlay.toLocaleString('en-IN')}
+                    Now: <strong>{ep.tranche1Kitta}</strong> | Post-T+2: <strong>{ep.tranche2Kitta}</strong>
                   </div>
                 </div>
 
@@ -382,34 +417,34 @@ export function AlphaCommandCenter({
                     Rs. {ep.stopLoss} (-{ep.stopLossPct}%)
                   </div>
                   <div style={{ fontSize: 11, color: '#fca5a5', marginTop: 2 }}>
-                    Max Loss: Rs. {ep.maxRiskRupees.toLocaleString('en-IN')} ({ep.actualRiskPct}%)
+                    Max Risk: Rs. {ep.maxRiskRupees.toLocaleString('en-IN')} ({ep.actualRiskPct}%)
                   </div>
                 </div>
 
-                {/* 4. Target 1 & Zero-Loss Rule */}
+                {/* 4. Target 1 & Breakeven Raise */}
                 <div style={{ background: 'rgba(56, 189, 248, 0.06)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-                  <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>4. TARGET 1 (SELL 50%)</div>
+                  <div style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700 }}>4. TARGET 1 (SELL {ep.scaleOutT1Kitta} KITTA)</div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                     Rs. {ep.target1} (+{ep.target1NetPct}%)
                   </div>
                   <div style={{ fontSize: 11, color: '#34d399', marginTop: 2 }}>
-                    Net Profit: +Rs. {ep.netProfitT1.toLocaleString('en-IN')}
+                    Move SL ➔ Rs. {ep.statutoryBreakevenPrice}
                   </div>
                 </div>
 
-                {/* 5. Target 2 & Net R:R */}
+                {/* 5. 3-Tier Maximized Ladder Profit */}
                 <div style={{ background: 'rgba(168, 85, 247, 0.06)', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(168, 85, 247, 0.25)' }}>
-                  <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 700 }}>5. TARGET 2 & NET R:R</div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#c084fc', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                    Rs. {ep.target2} ({ep.netRRR1}:1 R:R)
+                  <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 700 }}>5. MAXIMIZED LADDER NET</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                    +Rs. {ep.maximizedLadderNetProfit.toLocaleString('en-IN')}
                   </div>
                   <div style={{ fontSize: 11, color: '#e2e8f0', marginTop: 2 }}>
-                    Move SL ➔ Rs. {ep.statutoryBreakevenPrice} at T1
+                    T2: Rs. {ep.target2} | R:R {ep.netRRR1}:1
                   </div>
                 </div>
               </div>
 
-              {/* Plain-Language Action Steps */}
+              {/* 3-Tier Profit Maximization & T+2 Protection Playbook */}
               <div style={{
                 background: 'rgba(16, 185, 129, 0.08)',
                 border: '1px solid rgba(16, 185, 129, 0.25)',
@@ -419,16 +454,19 @@ export function AlphaCommandCenter({
                 color: '#e2e8f0',
                 lineHeight: 1.5
               }}>
-                <strong style={{ color: '#34d399' }}>📋 Exact Step-by-Step Direction to Follow:</strong>
+                <strong style={{ color: '#34d399' }}>📋 Exact 4-Step Execution & Profit-Maximization Direction:</strong>
                 <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
                   <li>
-                    Place a <strong>LIMIT BUY</strong> order on TMS for <strong>{ep.recommendedKitta} Kitta</strong> of <strong>{activeDossier.symbol}</strong> between <strong>Rs. {ep.buyZoneLow} – Rs. {ep.buyZoneHigh}</strong>. Never buy if price is above <strong>Rs. {ep.chaseCap}</strong>.
+                    <strong>Tranche 1 Entry (Today):</strong> Place a <strong>LIMIT BUY</strong> on TMS for <strong>{ep.tranche1Kitta} Kitta</strong> between <strong>Rs. {ep.buyZoneLow} – Rs. {ep.buyZoneHigh}</strong>. Do not chase if price exceeds <strong>Rs. {ep.chaseCap}</strong>.
                   </li>
                   <li>
-                    Once your shares settle in Demat (T+2), set your mental/alert Stop-Loss at <strong>Rs. {ep.stopLoss}</strong>. If daily closing price falls below Rs. {ep.stopLoss}, exit immediately to cap loss at <strong>Rs. {ep.maxRiskRupees.toLocaleString('en-IN')}</strong>.
+                    <strong>Tranche 2 Entry (Post-T+2 Demat Settlement):</strong> Once Tranche 1 shares arrive in your MeroShare Demat account and price holds above <strong>Rs. {ep.buyZoneLow}</strong>, add the remaining <strong>{ep.tranche2Kitta} Kitta</strong>. This guarantees you always have settled shares ready for immediate EDIS if the market reverses.
                   </li>
                   <li>
-                    When price reaches <strong>Target 1 (Rs. {ep.target1})</strong>, sell <strong>{ep.scaleOutKitta} Kitta</strong> (50%) to lock in profit, and raise your Stop-Loss on the remaining shares to <strong>Rs. {ep.statutoryBreakevenPrice}</strong> (Zero-Loss Breakeven after SEBON/Broker fees & 7.5% CGT).
+                    <strong>Tier 1 Zero-Loss Lock (At Rs. {ep.target1}):</strong> Sell <strong>{ep.scaleOutT1Kitta} Kitta</strong> (40%) at Target 1 and immediately raise your Stop-Loss on the remaining shares to your <strong>Statutory Breakeven (Rs. {ep.statutoryBreakevenPrice})</strong>. Your trade is now 100% risk-free.
+                  </li>
+                  <li>
+                    <strong>Tier 2 & Multibagger Runner (Rs. {ep.target2} ➔ Rs. {ep.target3Runner}+):</strong> Sell <strong>{ep.scaleOutT2Kitta} Kitta</strong> (30%) at Target 2 (Rs. {ep.target2}), and trail the final <strong>{ep.runnerT3Kitta} Kitta</strong> (30% runner) until a 2-day close below the 20-Day EMA.
                   </li>
                 </ol>
               </div>
@@ -475,7 +513,7 @@ export function AlphaCommandCenter({
                   }}
                 >
                   {copiedTicket ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedTicket ? 'TMS Ticket Copied!' : '📋 Copy TMS Limit Order'}</span>
+                  <span>{copiedTicket ? 'TMS Ticket Copied!' : '📋 Copy 3-Tier TMS Ticket'}</span>
                 </button>
 
                 {onSelectStock && (

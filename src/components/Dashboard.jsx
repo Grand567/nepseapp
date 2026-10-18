@@ -5055,6 +5055,42 @@ function Dashboard({
               >
                 <span>📖 Alpha Playbook</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('master_guide_tab', 'alpha_desk');
+                    if (primeDailyPick?.symbol) {
+                      localStorage.setItem('selected_entry_exit_symbol', primeDailyPick.symbol);
+                    }
+                    window.dispatchEvent(new CustomEvent('switch_predictor_tab', {
+                      detail: {
+                        tab: 'master_100_profit',
+                        symbol: primeDailyPick?.symbol
+                      }
+                    }));
+                  } catch (_) {}
+                  setActiveTab('master_100_profit');
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(5, 150, 105, 0.25))',
+                  color: '#34d399',
+                  border: '1px solid rgba(16, 185, 129, 0.45)',
+                  borderRadius: 10,
+                  padding: '7px 12px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+                title="Open the Unified 5-Step Alpha Command Desk"
+              >
+                <Crown size={14} style={{ flexShrink: 0 }} />
+                <span>👑 5-Step Alpha Desk</span>
+              </button>
             </div>
           </div>
           </div>
