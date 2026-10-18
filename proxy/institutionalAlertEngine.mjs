@@ -46,9 +46,9 @@ export const DEFAULT_FRICTION_CONSTANTS = {
   brokerCommissionRate: 0.0033, // 0.33% average tiered schedule
   sebonFeeRate: 0.00015,        // 0.015% per leg
   dpCharge: 25,                 // NPR 25 per leg
-  cgtRate: 0.100,               // 10.0% FY 2083 short-term capital gains tax (<= 365 days)
-  cgtLongTermRate: 0.075,       // 7.5% FY 2083 long-term capital gains tax (> 365 days)
-  slippageBufferRate: 0.0045    // 0.45% on entry/exit (2082 Bylaws ±15% volatility adjusted)
+  cgtRate: 0.075,               // Statutory 7.5% Short-Term retail CGT (<= 365 days)
+  cgtLongTermRate: 0.050,       // Statutory 5.0% Long-Term retail CGT (> 365 days)
+  slippageBufferRate: 0.0025    // 0.25% execution slippage buffer
 };
 
 export const CANONICAL_SUB_INDICES = [
@@ -205,9 +205,9 @@ export function evaluateSectorFundamentalAndLockinTraps({
   const f = fundamentals || {};
 
   // 1. Promoter & Mutual Fund Lock-In Expiry Guard (90 to 180 Days)
-  if (daysToLockInExpiry !== null && daysToLockInExpiry !== undefined) {
+  if (daysToLockInExpiry !== null && daysToLockInExpiry !== undefined && daysToLockInExpiry !== '') {
     const days = Number(daysToLockInExpiry);
-    if (days >= 0 && days <= 180) {
+    if (Number.isFinite(days) && days >= 90 && days <= 180) {
       traps.push({
         code: 'VETO_LOCKIN_EXPIRY_CLIFF',
         reason: `Lock-in Supply Cliff: ${lockinType === 'mutual_fund' ? '6-month Mutual Fund' : '3-year Promoter'} lock-in expires in ${days} days (Blackout: 90-180 days to prevent pre-unlock institutional front-running)`
@@ -466,6 +466,7 @@ export function evaluatePillar1_WyckoffVduVcp({
 export function evaluatePillar2_SmartMoneyAbsorption({
   floorsheetTrades = [],
   bcr3BuyPct = null,
+  bcr3SellPct = null,
   topBuyerBrokers = [],
   rolling5DBrokerData = null,
   totalBuyTrades = 0,
@@ -475,7 +476,10 @@ export function evaluatePillar2_SmartMoneyAbsorption({
   threshold5DRetention = 0.75
 }) {
   let bcr3Buy = Number(bcr3BuyPct ?? 0);
+  let bcr3Sell = Number(bcr3SellPct ?? 0);
+  let circularWashPct = 0;
   let buyers = Array.isArray(topBuyerBrokers) ? [...topBuyerBrokers] : [];
+  let sellers = [];
   let singleDayNetRetention = 0.80; // default assumption if already pre-filtered
   let buyTradesCount = Number(totalBuyTrades || 0);
   let sellTradesCount = Number(totalSellTrades || 0);
@@ -488,6 +492,7 @@ export function evaluatePillar2_SmartMoneyAbsorption({
     const sellerMap = {};
     let decontamBuyVol = 0;
     let decontamSellVol = 0;
+    let washVol = 0;
     let bTrades = 0;
     let sTrades = 0;
 
@@ -497,7 +502,10 @@ export function evaluatePillar2_SmartMoneyAbsorption({
       const q = Number(t.qty || t.quantity || 0);
 
       // Exclude circular wash trades
-      if (b && s && b === s) return;
+      if (b && s && b === s) {
+        washVol += q;
+        return;
+      }
 
       if (b) {
         buyerMap[b] = buyerMap[b] || { broker: b, buyQty: 0, sellQty: 0 };
@@ -511,21 +519,32 @@ export function evaluatePillar2_SmartMoneyAbsorption({
         decontamSellVol += q;
         sTrades++;
       }
-      if (buyerMap[s]) {
-        buyerMap[s].sellQty += q;
-      }
+    });
+
+    Object.keys(buyerMap).forEach(k => {
+      if (sellerMap[k]) buyerMap[k].sellQty = sellerMap[k].sellQty;
     });
 
     const sortedBuyers = Object.values(buyerMap).sort((a, b) => b.buyQty - a.buyQty);
+    const sortedSellers = Object.values(sellerMap).sort((a, b) => b.sellQty - a.sellQty);
     buyers = sortedBuyers.slice(0, 3);
+    sellers = sortedSellers.slice(0, 3);
+
     const top3Buy = buyers.reduce((sum, b) => sum + b.buyQty, 0);
-    const top3Sell = buyers.reduce((sum, b) => sum + (b.sellQty || 0), 0);
+    const top3BuyersSold = buyers.reduce((sum, b) => sum + (b.sellQty || 0), 0);
+    const top3Sell = sellers.reduce((sum, s) => sum + s.sellQty, 0);
 
     if (decontamBuyVol > 0) {
       bcr3Buy = +((top3Buy / decontamBuyVol) * 100).toFixed(1);
     }
+    if (decontamSellVol > 0 && bcr3SellPct === null) {
+      bcr3Sell = +((top3Sell / decontamSellVol) * 100).toFixed(1);
+    }
+    if ((decontamBuyVol + washVol) > 0) {
+      circularWashPct = +((washVol / (decontamBuyVol + washVol)) * 100).toFixed(1);
+    }
     if (top3Buy > 0) {
-      singleDayNetRetention = +((top3Buy - top3Sell) / top3Buy).toFixed(2);
+      singleDayNetRetention = +((top3Buy - top3BuyersSold) / top3Buy).toFixed(2);
     }
     buyTradesCount = bTrades;
     sellTradesCount = sTrades;
@@ -564,6 +583,8 @@ export function evaluatePillar2_SmartMoneyAbsorption({
     name: 'Smart Money Floorsheet Absorption & Anti-Splitting',
     passed,
     bcr3BuyPct: bcr3Buy,
+    bcr3SellPct: bcr3Sell,
+    circularWashPct,
     isBcr3Met,
     singleDayNetRetention,
     isSingleDayRetentionMet,
@@ -572,7 +593,8 @@ export function evaluatePillar2_SmartMoneyAbsorption({
     atsr,
     isAtsrMet,
     topBuyerBrokers: buyers,
-    detail: `BCR3 Buy: ${bcr3Buy}% (>=40%) | 1D Retention: ${Math.round(singleDayNetRetention * 100)}% (>=70%) | 5D Retention: ${Math.round(rolling5DRetention * 100)}% (>=${Math.round(threshold5DRetention * 100)}%) | ATSR: ${atsr}x (>=2.2x)`
+    topSellerBrokers: sellers,
+    detail: `BCR3 Buy: ${bcr3Buy}% (>=40%) | BCR3 Sell: ${bcr3Sell}% (<38%) | 1D Retention: ${Math.round(singleDayNetRetention * 100)}% (>=70%) | 5D Retention: ${Math.round(rolling5DRetention * 100)}% (>=${Math.round(threshold5DRetention * 100)}%) | ATSR: ${atsr}x (>=2.2x)`
   };
 }
 
@@ -699,11 +721,11 @@ export function evaluateVetoFilters({
   avgVolume20D = 50000,
   medianDailyTurnover20D = 7500000,
   preOpenGapPct = 0,
-  isPreOpenGapRetested = true,
+  isPreOpenGapRetested = false,
   nepseIndexChangePct = 0,
   nptMinutes = null,
   isLiveMarket = true,
-  bypassTimingGate = false, // allows EOD testing
+  bypassTimingGate = false,
   symbol = '',
   sector = '',
   fundamentals = null,
@@ -713,33 +735,77 @@ export function evaluateVetoFilters({
   const currentLtp = Number(ltp || 0);
   const prevClose = Number(previousClose || (currentLtp > 0 ? currentLtp : 0));
   const pChange = prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0;
-  
-  // Under Securities Trading Operations (Fourth Amendment) Bylaws, 2082:
-  // Continuous trading has a ±15% daily stock circuit limit.
+
   const upperCircuitCeiling = prevClose > 0 ? +(prevClose * 1.15).toFixed(2) : +(currentLtp * 1.15).toFixed(2);
-  const distanceToUpperCircuitPct = upperCircuitCeiling > 0 ? +(((upperCircuitCeiling - currentLtp) / upperCircuitCeiling) * 100).toFixed(2) : 15.0;
+  const distanceToUpperCircuitPct = upperCircuitCeiling > 0
+    ? +(((upperCircuitCeiling - currentLtp) / upperCircuitCeiling) * 100).toFixed(2)
+    : 15.0;
 
   const vetoTriggers = [];
 
-  // VETO 1: NEPSE ±15% Circuit-Ceiling Guard & Pre-Open Gap Filter
-  // Hard Ceiling Veto: Drop any alert where LTP is up >= 10.5% on the day OR within 1.5% to 2.5% of +15% ceiling
-  if (pChange >= 10.5 || distanceToUpperCircuitPct <= 2.5 || currentLtp >= prevClose * 1.125) {
+  // HARD VETO 1: ±15% Circuit Ceiling Chase (Within 2.0% of upper circuit ceiling)
+  if (distanceToUpperCircuitPct <= 2.0 || (prevClose > 0 && currentLtp >= prevClose * 1.127) || pChange >= 12.7) {
     vetoTriggers.push({
       code: 'VETO_CIRCUIT_CEILING',
-      reason: `±15% Circuit-Ceiling Guard: Up +${pChange.toFixed(1)}% today or within ${distanceToUpperCircuitPct.toFixed(1)}% of +15% ceiling (Do not chase)`
+      reason: `±15% Circuit-Ceiling Guard: Within ${distanceToUpperCircuitPct.toFixed(2)}% (<= 2.0%) of +15% circuit ceiling Rs. ${upperCircuitCeiling} (Up +${pChange.toFixed(1)}% today — Do not chase)`
     });
   }
 
-  // Unfilled Pre-Open Gap Veto: Gapped up >= 4.0% in pre-open without 30m VWAP hold
-  if (Number(preOpenGapPct || 0) >= 4.0 && !isPreOpenGapRetested) {
+  // HARD VETO 2: Operator Offloading (BCR3_Sell >= 38% or circular wash > 25%)
+  const bcr3Sell = Number(bcr3SellPct || 0);
+  const washPct = Number(circularWashPct || 0);
+  if (bcr3Sell >= 38.0 || washPct > 25.0) {
+    vetoTriggers.push({
+      code: 'VETO_OPERATOR_OFFLOADING_WASH',
+      reason: `Operator Offloading/Wash: Top 3 selling brokers dominate ${bcr3Sell}% (>= 38% ceiling) or circular wash volume ${washPct}% (> 25%)`
+    });
+  }
+
+  // HARD VETO 3: T+3 Settlement Dump Risk (t-3 shares up > 10% and ready for delivery sale dump)
+  const t3Vol = Number(volumeTMinus3 || 0);
+  const t3Vwap = Number(vwapTMinus3 || 0);
+  const avgVol = Number(avgVolume20D || 50000);
+  const t3VolRatio = avgVol > 0 ? +(t3Vol / avgVol).toFixed(2) : 1.0;
+  const t3GainPct = t3Vwap > 0 ? +(((currentLtp - t3Vwap) / t3Vwap) * 100).toFixed(2) : 0;
+
+  if (t3Vwap > 0 && currentLtp > 1.10 * t3Vwap && (t3Vol <= 0 || t3Vol >= 1.5 * avgVol)) {
+    vetoTriggers.push({
+      code: 'VETO_T3_SETTLEMENT_OVERHANG',
+      reason: `T+3 Settlement Dump Risk: Shares accumulated at t-3 (VWAP Rs. ${t3Vwap}) are up +${t3GainPct}% (> 10% threshold, Vol ${t3VolRatio}x) and settled in Demat for immediate profit-booking`
+    });
+  }
+
+  // HARD VETO 4: Micro-Cap Illiquidity (< Rs. 60 Lakhs 20D median turnover)
+  const turnover = Number(medianDailyTurnover20D || 0);
+  if (turnover < 6000000) {
+    vetoTriggers.push({
+      code: 'VETO_LOW_TURNOVER_LIQUIDITY',
+      reason: `Micro-Cap Illiquidity Veto: 20D median turnover Rs. ${(turnover / 100000).toFixed(1)}L < Rs. 60.0 Lakhs floor`
+    });
+  }
+
+  // HARD VETO 5: Pre-Open Gap Trap (> 4.5% pre-open gap-up vetoed from morning buy recommendations)
+  const gapPct = Number(preOpenGapPct || 0);
+  if (gapPct >= 4.0 && !isPreOpenGapRetested) {
     vetoTriggers.push({
       code: 'VETO_UNFILLED_PREOPEN_GAP',
-      reason: `Unfilled Pre-Open Gap Veto: Gapped up +${Number(preOpenGapPct).toFixed(1)}% in pre-open without holding 30m intraday VWAP retest`
+      reason: `Pre-Open Gap Trap: Stock gapped up +${gapPct.toFixed(2)}% in pre-open session without confirmed VWAP retest`
     });
   }
 
-  // VETO 2: Market-Wide Index Circuit Guard (5% / 8% Rule)
-  // Pause/suppress if benchmark index is within 0.5% of +5% halt or down <= -4.0%
+  // HARD VETO 6: Opening Noise Gate (11:00 AM – 11:15 AM NPT filtered/delayed until 11:16 AM price stabilization)
+  if (!bypassTimingGate && isLiveMarket) {
+    const status = getDetailedMarketStatus();
+    const currentMins = nptMinutes !== null ? Number(nptMinutes) : Number(status.nptTotalMinutes);
+    if (currentMins >= 660 && currentMins <= 675) {
+      vetoTriggers.push({
+        code: 'VETO_OPENING_RETAIL_WINDOW',
+        reason: 'Opening Noise Gate: Signals triggered between 11:00 AM and 11:15 AM NPT are delayed until 11:16 AM price stabilization'
+      });
+    }
+  }
+
+  // HARD VETO 7: Market-Wide Index Circuit & Sector/Lock-In Fundamental Traps
   const idxChange = Number(nepseIndexChangePct || 0);
   if ((idxChange >= 4.5 && idxChange <= 5.5) || idxChange <= -4.0) {
     vetoTriggers.push({
@@ -748,56 +814,6 @@ export function evaluateVetoFilters({
     });
   }
 
-  // VETO 3: Operator Offloading & Wash-Trade Filter
-  // BCR3_Sell >= 38% OR circular wash trade volume > 25% of turnover
-  const bcr3Sell = Number(bcr3SellPct || 0);
-  const washPct = Number(circularWashPct || 0);
-  if (bcr3Sell >= 38.0 || washPct > 25.0) {
-    vetoTriggers.push({
-      code: 'VETO_OPERATOR_OFFLOADING_WASH',
-      reason: `Operator Offloading/Wash: Top 3 sellers hold ${bcr3Sell}% (>=38%) or circular wash volume ${washPct}% (>25%)`
-    });
-  }
-
-  // VETO 4: T+3 Settlement Supply Overhang Veto (±15% Volatility Adjusted)
-  // In NEPSE's T+2 cycle, shares bought on t-3 hit Demat today.
-  // If Volume[t-3] >= 2.5 * 20D SMA AND current LTP >= 1.11 * VWAP[t-3] (sitting 11%+ in profit), VETO!
-  const t3Vol = Number(volumeTMinus3 || 0);
-  const t3Vwap = Number(vwapTMinus3 || 0);
-  const avgVol = Number(avgVolume20D || 50000);
-  const t3VolRatio = avgVol > 0 ? +(t3Vol / avgVol).toFixed(2) : 1.0;
-
-  if (t3Vol >= 2.5 * avgVol && t3Vwap > 0 && currentLtp >= 1.11 * t3Vwap) {
-    vetoTriggers.push({
-      code: 'VETO_T3_SETTLEMENT_OVERHANG',
-      reason: `T+3 Settlement Supply Overhang (±15% Adjusted): t-3 volume was ${t3VolRatio}x of 20D avg with holders sitting 11%+ in profit, poised to dump on settlement`
-    });
-  }
-
-  // VETO 5: Liquidity Depth & Market Impact Guard
-  // Require 20-day Median Daily Turnover >= Rs. 60,00,000 (Rs. 60 Lakhs)
-  const turnover = Number(medianDailyTurnover20D || 0);
-  if (turnover < 6000000) {
-    vetoTriggers.push({
-      code: 'VETO_LOW_TURNOVER_LIQUIDITY',
-      reason: `Low Liquidity Depth: 20D median turnover Rs. ${(turnover / 100000).toFixed(1)}L < Rs. 60L (High risk of zero-bid lockup)`
-    });
-  }
-
-  // VETO 6: Intraday Time-of-Day Gate
-  // Suppress during volatile retail opening: 11:00 AM – 11:25 AM NPT (660 to 685 minutes) following ±5% pre-open
-  if (!bypassTimingGate && isLiveMarket) {
-    const status = getDetailedMarketStatus();
-    const currentMins = nptMinutes !== null ? nptMinutes : status.nptTotalMinutes;
-    if (currentMins >= 660 && currentMins <= 685) {
-      vetoTriggers.push({
-        code: 'VETO_OPENING_RETAIL_WINDOW',
-        reason: 'Opening Noise Gate: Suppressed during 11:00 AM – 11:25 AM NPT retail rush following ±5% pre-open (Await institutional 1:15–2:45 PM window)'
-      });
-    }
-  }
-
-  // VETO 7: Sector-Specific Fundamental & Lock-In Trap Agent (Layer 2)
   if (sector || fundamentals || daysToLockInExpiry !== null) {
     const secEval = evaluateSectorFundamentalAndLockinTraps({
       symbol,
@@ -820,7 +836,8 @@ export function evaluateVetoFilters({
     pChange: +pChange.toFixed(2),
     distanceToCircuitPct: distanceToUpperCircuitPct,
     upperCircuitCeiling,
-    t3VolRatio
+    t3VolRatio,
+    t3GainPct
   };
 }
 

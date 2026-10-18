@@ -25,6 +25,7 @@ import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedMarket
 import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
+import { isLockInSupplyCliffTrap, selectPrimePickOfTheDay } from '../utils/scanners';
 import { getDetailedMarketStatus } from '../utils/nepseCalendar';
 import { analyzeStockWithAi, generateOfflineStockReport } from '../services/aiService';
 import ShareHubChart from './ShareHubChart';
@@ -2445,13 +2446,16 @@ function Dashboard({
 
             if (plan && plan.supported && isMounted && isActionableBuySignal(plan)) {
               const scoreVal = Number(plan.setupScore || 0);
-              const epsVal = Number(fundRes?.eps ?? stockObj.eps ?? 0);
-              const passesAll5 = 
-                !Boolean(plan.riskGate?.isCircuitTrap) &&
-                !Boolean(plan.riskGate?.isLossMaking) &&
-                epsVal >= 0 &&
-                Boolean(plan.levels?.entryZone?.min) &&
-                Number(plan.levels?.entryZone?.min) > 0;
+              const lockinCheck = isLockInSupplyCliffTrap({ ...(stockObj || {}), ...(fundRes || {}) });
+              const gates = plan.riskGate?.qualityGates || {};
+              const isVerified = Boolean(
+                gates.all5GatesPassed &&
+                gates.chaseCapPassed &&
+                gates.netRrr3To1Passed &&
+                !lockinCheck.isTrap &&
+                !plan.riskGate?.warning
+              );
+              const passesAll5 = Boolean(gates.all5GatesPassed && !lockinCheck.isTrap);
 
               const entryHighNum = Number(plan.levels?.entryZone?.max || plan.levels?.entryZone?.high || plan.ltp || stockObj.ltp || 100);
               evaluatedList.push({
@@ -2462,7 +2466,9 @@ function Dashboard({
                 score: scoreVal,
                 compositeScore: scoreVal,
                 guruScore: scoreVal,
+                isVerified,
                 passesAll5,
+                lockinTrap: lockinCheck.isTrap ? lockinCheck.reason : null,
                 rvol: plan.technical?.volume?.rvol || stockObj.rvol || 1.25,
                 winRate: plan.analogResult?.stats?.winRate ?? 50,
                 analogCount: plan.analogResult?.stats?.sampleSize ?? 6,
@@ -2474,7 +2480,7 @@ function Dashboard({
                 target1: plan.levels?.target1?.price,
                 target2: plan.levels?.target2?.price,
                 stopLoss: plan.levels?.stopLoss?.price,
-                isPlanVerified: true,
+                isPlanVerified: isVerified,
                 candles: candleList
               });
             }
@@ -2491,15 +2497,20 @@ function Dashboard({
       }
 
       if (isMounted && evaluatedList.length > 0) {
-        const tier1 = evaluatedList.filter(e => e.passesAll5);
-        const listToRank = tier1.length > 0 ? tier1 : evaluatedList;
-        listToRank.sort((a, b) => (Number(b.setupScore || 0)) - (Number(a.setupScore || 0)));
-        const winner = listToRank[0];
+        // Strictly prioritize verified setups passing all 5 Quality Gates + Chase Cap + Net R:R >= 3:1 + Zero Lock-in Cliff
+        evaluatedList.sort((a, b) => {
+          if (a.isVerified !== b.isVerified) return a.isVerified ? -1 : 1;
+          if (a.passesAll5 !== b.passesAll5) return a.passesAll5 ? -1 : 1;
+          if (b.setupScore !== a.setupScore) return b.setupScore - a.setupScore;
+          return Number(b.levels?.netRRR1 || b.levels?.rrr1 || 0) - Number(a.levels?.netRRR1 || a.levels?.rrr1 || 0);
+        });
+        const winner = evaluatedList[0];
         const bestPick = {
           ...winner,
           sessionDate: status.targetSessionDate,
           isLockedForSession: true,
-          lockedAt: new Date().toISOString()
+          lockedAt: new Date().toISOString(),
+          isDefensiveFallback: !winner.isVerified
         };
         setHydratedPrimePick(bestPick);
         try {

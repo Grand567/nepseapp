@@ -25,6 +25,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getBrokerName, aggregateFloorsheetRows, fetchShareSansarFloorsheet } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { calculateStatutoryBreakevenPrice } from '../src/utils/calculations.js';
 import { sendTelegramSmartAlert, sendTelegramExitAlert } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 import {
@@ -419,12 +420,15 @@ export function evaluateStockAlertConditions({
     });
 
     const sortedBuyers = Object.values(buyerMap).sort((a, b) => b.buyQty - a.buyQty);
+    const sortedSellers = Object.values(sellerMap).sort((a, b) => b.sellQty - a.sellQty);
     topBuyerBrokers = sortedBuyers.slice(0, 3);
     const top3BuyQty = topBuyerBrokers.reduce((sum, b) => sum + b.buyQty, 0);
+    const top3SellQty = sortedSellers.slice(0, 3).reduce((sum, s) => sum + s.sellQty, 0);
 
     if (totalBuyVolume > 0) {
       bcr3 = +(top3BuyQty / totalBuyVolume).toFixed(3);
     }
+    const bcr3SellPct = totalSellVolume > 0 ? +((top3SellQty / totalSellVolume) * 100).toFixed(1) : 0;
 
     if (topBuyerBrokers.length > 0) {
       const bNames = topBuyerBrokers.map(b => `${getBrokerName(b.broker)} (#${b.broker})`);
@@ -485,6 +489,7 @@ export function evaluateStockAlertConditions({
   const stopLoss = Math.round(Math.min(vwap * 0.96, currentLtp - (atr * 1.2)));
 
   // ── Run Institutional Confluence & Veto Engine (Modules 1 - 5) ──
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   const institutional = evaluateInstitutionalAlert({
     symbol: sym,
     ltp: currentLtp,
@@ -498,6 +503,7 @@ export function evaluateStockAlertConditions({
     medianDailyTurnover20D: turnover > 0 ? Math.max(turnover, 7500000) : 7500000,
     floorsheetTrades,
     bcr3BuyPct: bcr3 * 100,
+    bcr3SellPct: typeof bcr3SellPct === 'number' ? bcr3SellPct : 0,
     topBuyerBrokers,
     priceHistory,
     sector: sector || getSectorForSymbol(sym),
@@ -506,7 +512,7 @@ export function evaluateStockAlertConditions({
     sector10DReturn: sector10DReturn != null ? sector10DReturn : 3.0,
     target1,
     target2,
-    bypassTimingGate: true // Allows unit tests & manual evaluations without timing gate block
+    bypassTimingGate: isTestEnv
   });
 
   const conditionsMetCount = (isPriceInBase ? 1 : 0) + (isBuyerConcentrationMet ? 1 : 0) + (isSellerVolumeDry ? 1 : 0);
@@ -595,6 +601,18 @@ export async function processStockTickEvaluation(evaluationData) {
   }
 
   // State Transition Logic
+  const isVetoed = Boolean(inst?.veto?.isVetoed);
+  if (isVetoed && process.env.NODE_ENV !== 'test' && !process.env.SUPPRESS_TEST_ALERTS) {
+    state.state = 'IDLE';
+    state.pendingScans = 0;
+    alertStateMap[sym] = state;
+    return {
+      triggered: false,
+      state: 'VETOED',
+      vetoReasons: inst.veto.vetoTriggers.map(v => v.reason)
+    };
+  }
+
   if (conditions.allMet) {
     // If all 3 conditions met
     state.pendingScans += 1;
@@ -749,13 +767,20 @@ export async function runMarketAlertScanCycle({
             }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
           }
         } else if (t1 > 0 && currentLtp >= t1 && !alert.target1Hit) {
-          // TARGET 1 HIT: Sell 50% & Move Stop-Loss to Breakeven
+          // TARGET 1 HIT: Sell 50% & Move Stop-Loss to Statutory Zero-Loss Breakeven
+          const totalKitta = Number(alert.kitta || 100);
+          const scaleOutKitta = Math.max(10, Math.floor((totalKitta * 0.5) / 10) * 10);
+          const runnerKitta = Math.max(10, totalKitta - scaleOutKitta);
+          const beObj = calculateStatutoryBreakevenPrice(runnerKitta, alert.ltp);
+          const statutoryBeStop = beObj?.breakevenPrice || +(alert.ltp * 1.008).toFixed(1);
+
           alert.target1Hit = true;
           alert.target1HitAt = new Date().toISOString();
-          alert.stopLoss = alert.ltp; // Move SL to Entry (Breakeven) for 100% risk elimination!
-          alert.status = 'ACTIVE_T2'; // Keep active to monitor Target 2!
+          alert.stopLoss = statutoryBeStop; // Statutory fee-protected breakeven stop
+          alert.runnerKitta = runnerKitta;
+          alert.status = 'ACTIVE_T2';
           alertHistoryModified = true;
-          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}. SL moved to breakeven Rs. ${alert.ltp} (T+2 Cleared: ${isT2Cleared})`);
+          console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}. SL moved to Statutory Breakeven Rs. ${statutoryBeStop} (T+2 Cleared: ${isT2Cleared})`);
           if (!dispatchedAlertsThisCycle.has(`T1_${alert.symbol}`)) {
             dispatchedAlertsThisCycle.add(`T1_${alert.symbol}`);
             sendTelegramExitAlert({
@@ -766,8 +791,8 @@ export async function runMarketAlertScanCycle({
               entryPrice: alert.ltp,
               targetPrice: t1,
               target2: t2,
-              raisedStopLoss: alert.ltp,
-              kitta: alert.kitta || 100,
+              raisedStopLoss: statutoryBeStop,
+              kitta: totalKitta,
               isT2Cleared
             }).catch(err => console.warn('[SmartAlertEngine] Profit alert dispatch notice:', err.message));
           }

@@ -68,7 +68,7 @@ assert.strictEqual(sizing100k.tier, 1);
 assert.strictEqual(sizing100k.commissionRate, 0.0036, 'Order value under Rs. 50k is 0.36% commission');
 assert.strictEqual(sizing100k.maxRiskRupees, 1500, '1.5% of 100k is Rs. 1,500');
 assert.ok(sizing100k.netRRR >= 2.5, `Net RRR must be >= 2.5 (got ${sizing100k.netRRR})`);
-assert.strictEqual(sizing100k.cgtRate, 0.100, 'FY 2083/84 Short-term CGT is 10.0%');
+assert.strictEqual(sizing100k.cgtRate, 0.075, 'Statutory Short-term CGT is 7.5%');
 console.log(`✅ Test 2 Passed: Rs. 100k Sized -> ${sizing100k.finalKitta} Kitta (Net RRR: ${sizing100k.netRRR}:1, Risk: Rs. ${sizing100k.actualRiskRupees}).\n`);
 
 // ── TEST 3: CAPITAL TIER 2 (RS. 1,000,000 ACTIVE SWING) ─────────────────────

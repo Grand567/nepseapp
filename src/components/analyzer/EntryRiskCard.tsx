@@ -105,27 +105,52 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
     } catch (_) {}
   };
 
-  // ── Derived Position Sizing Calculations ──
+  // ── Derived Friction-Adjusted Position Sizing Calculations ──
   const entryPx = currentPrice || levels.entryZone?.low || 100;
-  const stopPx = levels.stopLoss?.price || entryPx * 0.94;
-  const rawRiskPerShare = Math.max(0.5, levels.riskPerShare || (entryPx - stopPx));
-  const maxCapitalAtRisk = portfolioCapital * (riskTolerancePct / 100);
+  const stopPx = levels.stopLoss?.price || +(entryPx * 0.945).toFixed(1);
+  const chaseCapPx = (levels as any).chaseCap || +(Number(levels.entryZone?.high || entryPx * 1.01) * 1.025).toFixed(1);
+  const isChaseExceeded = Boolean(currentPrice && currentPrice > chaseCapPx);
 
-  // Raw shares allowed by the risk-per-share formula
-  const rawQuantity = Math.floor(maxCapitalAtRisk / rawRiskPerShare);
+  // Enforce max 1.5% - 2.0% portfolio risk ceiling across all tiers
+  const effectiveRiskPct = Math.min(2.0, Math.max(0.75, riskTolerancePct));
+  const maxCapitalAtRisk = portfolioCapital * (effectiveRiskPct / 100);
 
-  // Maximum single-stock allocation cap (25% of total portfolio)
-  const maxAllocationShares = Math.floor((portfolioCapital * 0.25) / entryPx);
-  const baseShares = Math.max(10, Math.min(rawQuantity, maxAllocationShares));
+  // Include round-trip broker commission (0.36% starter / 0.33% standard, min Rs. 10), SEBON (0.015%), and Rs. 50 round-trip DP fee
+  const estBrokerRate = portfolioCapital <= 150000 ? 0.0036 : 0.0033;
+  const rawPriceRisk = Math.max(0.5, entryPx - stopPx);
+  const perShareVarFriction = (entryPx + stopPx) * (estBrokerRate + 0.00015);
+  const effectiveRiskPerShare = rawPriceRisk + perShareVarFriction;
 
-  // Scale by T+2 lockup risk multiplier (e.g. 0.50x if illiquid or volatile)
+  const rawQuantity = Math.floor(Math.max(0, maxCapitalAtRisk - 50) / effectiveRiskPerShare);
+
+  // Maximum single-stock allocation cap (25% of portfolio) AND 5% of 20-day median turnover cap
+  const median20DTurnover = Number((levels as any).median20DayTurnover || (levels as any).t2Risk?.median20DayTurnover || 8000000);
+  const maxLiquidityOrderValue = Math.floor(0.05 * median20DTurnover);
+  const maxSlotValue = Math.min(portfolioCapital * 0.25, maxLiquidityOrderValue);
+  const maxAllocationShares = Math.floor(Math.max(0, maxSlotValue - 25) / (entryPx * (1 + estBrokerRate + 0.00015)));
+
   const t2Multiplier = levels.t2Risk?.recommendedPositionMultiplier ?? levels.recommendedPositionMultiplier ?? 1.0;
-  const finalShares = Math.max(10, Math.floor(baseShares * t2Multiplier));
+  const scaledShares = Math.floor((Math.min(rawQuantity, maxAllocationShares) * t2Multiplier) / 10) * 10;
 
-  const totalPositionOutlay = finalShares * entryPx;
+  // Verify 10-kitta minimum lot does not breach 2.0% hard portfolio loss cap
+  const lossAt10Kitta = 10 * effectiveRiskPerShare + 50;
+  const finalShares = scaledShares >= 10
+    ? scaledShares
+    : (lossAt10Kitta <= portfolioCapital * 0.02 && 10 * entryPx <= maxSlotValue ? 10 : 0);
+
+  const buyOrderVal = finalShares * entryPx;
+  const buyBrokerComm = finalShares > 0 ? Math.max(10, +(buyOrderVal * estBrokerRate).toFixed(2)) : 0;
+  const buySebon = finalShares > 0 ? +(buyOrderVal * 0.00015).toFixed(2) : 0;
+  const buyDp = finalShares > 0 ? 25 : 0;
+  const totalPositionOutlay = Math.round(buyOrderVal + buyBrokerComm + buySebon + buyDp);
+
   const portfolioAllocationPct = portfolioCapital > 0 ? +((totalPositionOutlay / portfolioCapital) * 100).toFixed(1) : 0;
-  const actualRiskRupees = Math.round(finalShares * rawRiskPerShare);
+  const actualRiskRupees = finalShares > 0 ? Math.round(finalShares * effectiveRiskPerShare + 50) : 0;
   const actualRiskPctOfCapital = portfolioCapital > 0 ? +((actualRiskRupees / portfolioCapital) * 100).toFixed(2) : 0;
+
+  const statutoryBePx = levels.statutoryBreakeven?.breakevenPrice || +(entryPx * 1.0085).toFixed(1);
+  const scaleOutShares = finalShares >= 20 ? Math.floor((finalShares * 0.5) / 10) * 10 : Math.floor(finalShares * 0.5);
+  const runnerShares = Math.max(0, finalShares - scaleOutShares);
 
   // Expected Net Return in Rupees at Target 1
   const t1NetGainPerShare = levels.target1?.netGainPerShare || (levels.target1?.price ? levels.target1.price - entryPx : entryPx * 0.08);
@@ -532,6 +557,17 @@ export function EntryRiskCard({ levels, currentPrice, quantMetrics, verdict, set
             </div>
           </div>
         </div>
+
+        {/* Stop-to-Breakeven Scale-Out Roadmap */}
+        {finalShares >= 10 && (
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-800/40 text-xs text-emerald-200">
+            <Coins size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-white">Execution Roadmap: </span>
+              <span>Sell {scaleOutShares} shares (50%) at Target 1 ({levels.target1?.label || `Rs. ${levels.target1?.price}`}) ➔ Raise Stop-Loss on remaining {runnerShares} runner shares to Statutory Breakeven (Rs. {statutoryBePx}) for zero risk.</span>
+            </div>
+          </div>
+        )}
 
         {/* T+2 Lockup Notification if high risk */}
         {t2Risk && t2Risk.warning && (

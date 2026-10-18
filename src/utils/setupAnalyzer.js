@@ -51,6 +51,7 @@
 
 import { calculateRSI, calculateEMA } from './indicators.js';
 import { runBacktest, quantMultiFactorStrategy } from './backtest.js';
+import { calculateNetRiskRewardRatio, calculateStatutoryBreakevenPrice } from './calculations.js';
 import {
   calculateATR,
   calculateMultiHorizonTargets,
@@ -819,11 +820,24 @@ function computeEffectiveWeights(availabilityMap, { analogSampleSize = 15 } = {}
 }
 
 export function scoreToVerdict(score, riskGate = {}, setupType = '') {
-  // ── HARD GATES (execution-safety) — never overridden by score ──────────
-  // These represent situations where trade execution itself is impossible or
-  // catastrophically risky regardless of how good the technical setup is.
+  // ── 5 MANDATORY QUALITY GATES + CHASE CAP & NET RRR HARD GATES ──────────
   if (riskGate.isCircuitTrap) {
-    return 'NO TRADE (CIRCUIT CEILING TRAP)';
+    return 'NO TRADE (GATE 1: CIRCUIT CEILING TRAP)';
+  }
+  if (riskGate.isLossMaking) {
+    return 'NO TRADE (GATE 2: NEGATIVE EPS / LOSS-MAKER)';
+  }
+  if (riskGate.isExcessiveUpperWick) {
+    return 'NO TRADE (GATE 3: UPPER WICK >= 40% BULL TRAP)';
+  }
+  if (riskGate.isBelow50EMA) {
+    return 'NO TRADE (GATE 4: DOWNTREND UNDER 50 EMA)';
+  }
+  if (riskGate.isLowLiquidityGate) {
+    return 'NO TRADE (GATE 5: LOW LIQUIDITY < RS. 60L)';
+  }
+  if (riskGate.isChaseCapExceeded) {
+    return 'DO NOT CHASE (PRICE EXCEEDS CHASE CAP)';
   }
   if (riskGate.isT2CircuitExhaustion) {
     return 'NO TRADE (T+2 DELIVERY EXHAUSTION TRAP)';
@@ -834,50 +848,28 @@ export function scoreToVerdict(score, riskGate = {}, setupType = '') {
   if (riskGate.isInstitutionalDumping) {
     return 'REDUCE / AVOID ENTRY (INSTITUTIONAL DUMPING)';
   }
-  if (riskGate.isHardCeilingDowntrend) {
-    return 'REDUCE / AVOID NEW ENTRY (BEAR STRUCTURE)';
-  }
   if (riskGate.isDeepHydroDryBreakout) {
     return 'REDUCE / AVOID ENTRY (HYDRO DRY SEASON OVERHANG)';
   }
-
-  // ── SOFT GATES (risk cautions) — high-conviction setups (score >= 78) ──
-  // receive a CAUTION notice rather than a hard veto, because a strong
-  // multi-factor score can legitimately outweigh these secondary concerns.
-  const highConviction = score >= 78;
-
   if (riskGate.isSubFriction) {
-    return highConviction
-      ? 'CAUTION — NEAR T1 TARGET (REVIEW T2 UPSIDE)'
-      : 'NO TRADE (UPSIDE < TRANSACTION FRICTION)';
+    return 'NO TRADE (UPSIDE < TRANSACTION FRICTION)';
   }
   if (riskGate.isUnfavorableRRR) {
-    return highConviction
-      ? 'CAUTION — RRR BORDERLINE (USE T2 FOR FULL R:R)'
-      : 'NO TRADE (UNFAVORABLE RISK/REWARD)';
+    return 'HOLD / WAIT FOR PULLBACK (NET R:R < 3.0:1)';
   }
   if (riskGate.isFestiveLowVolumeTrap && score < 68) {
     return 'NO TRADE (FESTIVE CASH DRAIN / LOW RVOL)';
   }
-  if (riskGate.isLossMaking) {
-    return highConviction
-      ? 'HOLD / ACCUMULATE (VERIFY CURRENT EARNINGS — EPS MAY BE STALE)'
-      : 'HOLD / AVOID NEW ENTRY (OPERATING LOSS)';
-  }
   if (riskGate.isOverheadResistanceCeiling) {
-    return highConviction
-      ? 'BUY / ACCUMULATE (200-EMA OVERHEAD — WATCH FOR BREAKOUT)'
-      : 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
+    return 'REDUCE / AVOID NEW ENTRY (200 EMA RESISTANCE CEILING)';
   }
   if (riskGate.isExtremeMultiple) {
-    return score >= 68
-      ? 'HOLD / AVOID CHASING (EXTREME VALUATION)'
-      : 'HOLD / AVOID ENTRY (ELEVATED VALUATION)';
+    return 'HOLD / AVOID CHASING (EXTREME VALUATION)';
   }
 
-  // ── SCORE-BASED VERDICTS — reached when all gates pass or are overridden ─
-  if (score >= 82) return setupType === 'coiled_pre_breakout' ? 'HIGH-CONVICTION COIL (AWAITING TRIGGER)' : 'VERY STRONG SETUP';
-  if (score >= 70) return setupType === 'coiled_pre_breakout' ? 'COILED BASE (PRE-BREAKOUT RADAR)' : 'STRONG ENTRY ZONE';
+  // ── VERIFIED SCORE-BASED VERDICTS (All 5 Quality Gates & Net R:R >= 3:1 Passed) ─
+  if (score >= 82) return setupType === 'coiled_pre_breakout' ? 'HIGH-CONVICTION COIL (BUY ZONE)' : 'VERY STRONG SETUP (BUY)';
+  if (score >= 70) return setupType === 'coiled_pre_breakout' ? 'COILED BASE (BUY ZONE)' : 'STRONG ENTRY ZONE (BUY)';
   if (score >= 58) return 'BUY / ACCUMULATE';
   if (score >= 45) return 'HOLD / WAIT FOR CONFIRMATION';
   if (score >= 32) return 'REDUCE / AVOID NEW ENTRY';
@@ -1397,8 +1389,32 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     recommendedPositionMultiplier: t2Risk.recommendedPositionMultiplier,
   };
 
-  const statutoryBreakeven = calculateStatutoryBreakeven(ltp, 100);
-  levels.statutoryBreakeven = statutoryBreakeven;
+  // Strict Chase Cap: Entry_max * 1.025
+  const strictChaseCap = +(entryZoneMax * 1.025).toFixed(1);
+  const isChaseCapExceeded = ltp > strictChaseCap;
+
+  // Statutory Net Post-Tax/Fee R:R (>= 3.0:1 requirement at Target 1) & Stop-to-Breakeven Plan
+  const netRrrEval = calculateNetRiskRewardRatio({
+    quantity: 100,
+    entryPrice: ltp,
+    stopLossPrice,
+    target1Price: t1Cap.price,
+    target2Price: t2Cap.price,
+    holdingType: 'short',
+    requiredNetRRR: 3.0
+  });
+
+  // Attach netRrrEval fields to levels:
+  levels.chaseCap = strictChaseCap;
+  levels.isChaseCapExceeded = isChaseCapExceeded;
+  levels.netRRR1 = netRrrEval.netRRR1;
+  levels.netRRR2 = netRrrEval.netRRR2;
+  levels.rrr1 = netRrrEval.netRRR1; // Expose net post-tax R:R as primary R:R
+  levels.rrr2 = netRrrEval.netRRR2;
+  levels.isValidTradeSetup = netRrrEval.isBuyAllowed && !isChaseCapExceeded;
+  levels.stopToBreakevenRule = netRrrEval.stopToBreakevenRule;
+  levels.statutoryBreakeven = calculateStatutoryBreakevenPrice(100, ltp);
+  const statutoryBreakeven = levels.statutoryBreakeven;
 
   // ── Historical analog backtest ────────────────────────────────
   const analogOptions = {
@@ -1696,12 +1712,29 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     bearishFactors.push(`Minervini Stage 4: Fails structural trend template (${minerviniTemplate.passedCount}/8)`);
   }
 
-  if (volumeDryUp.isPocketPivot) {
-    combinedScore = Math.min(100, +(combinedScore + 4).toFixed(1));
-    bullishFactors.push('🚀 Pocket Pivot Accumulation: Buying volume eclipsed 10-day peak down-volume');
-  } else if (volumeDryUp.isDryUp) {
-    combinedScore = Math.min(100, +(combinedScore + 3).toFixed(1));
-    bullishFactors.push(`💎 Volume Dry-Up (VDU ${volumeDryUp.vduRatio}x): Seller supply exhausted before pivot`);
+  const vduRatioVal = Number(volumeDryUp?.vduRatio ?? 1.0);
+  const isStrictWyckoffVdu = Boolean(volumeDryUp?.isDryUp || vduRatioVal <= 0.50);
+
+  if (isStrictWyckoffVdu && vduRatioVal <= 0.50) {
+    combinedScore = Math.min(100, +(combinedScore + 12).toFixed(1));
+    bullishFactors.push(`💎 Wyckoff Volume Dry-Up (VDU ${vduRatioVal.toFixed(2)}x <= 0.50x 20D Vol): Institutional supply exhaustion confirmed (+12 pts)`);
+  } else if (volumeDryUp.isPocketPivot) {
+    combinedScore = Math.min(100, +(combinedScore + 8).toFixed(1));
+    bullishFactors.push('🚀 Pocket Pivot Accumulation: Buying volume eclipsed 10-day peak down-volume (+8 pts)');
+  }
+
+  // Top 3 Sector Leadership Bonus (+15 pts strictly for Top 3 sectors over past 10 sessions)
+  const sectorRank10D = Number(
+    options.sectorRank10D ??
+    sectorCtx?.rank10D ??
+    sectorCtx?.rank ??
+    stock?.sectorRank10D ??
+    99
+  );
+  const isTop3SectorLeader = sectorRank10D >= 1 && sectorRank10D <= 3;
+  if (isTop3SectorLeader) {
+    combinedScore = Math.min(100, +(combinedScore + 15).toFixed(1));
+    bullishFactors.push(`🏆 Top-3 Sector Leadership Bonus (+15 pts): Sector ranks #${sectorRank10D} over the past 10 sessions`);
   }
 
   if (mansfieldRS.isOutperforming && mansfieldRS.isRising) {
@@ -1886,26 +1919,45 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
   const upperCeiling = +(prevClose * 1.15).toFixed(1); // Standard individual stock daily circuit limit is ±15%
   const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-  const isCircuitTrap = distToCeilingPct <= 2.0 || (prevClose > 0 && ltp >= prevClose * 1.13); // Within 2% of +15% ceiling
+  const isCircuitTrap = distToCeilingPct <= 2.0 || (prevClose > 0 && ltp >= prevClose * 1.127) || (Number(stock?.pChange || 0) >= 12.7);
 
   const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
   const target2UpsidePct = ltp > 0 ? ((levels.target2.price - ltp) / ltp) * 100 : 0;
-  // Only block if BOTH T1 and T2 upside fail to clear round-trip friction.
-  // When T2 still has meaningful upside (>= 1.8%), the investor should target T2.
   const isSubFriction = target1UpsidePct > 0 && target1UpsidePct < 0.90 && target2UpsidePct < 1.80;
 
-  // Only block if BOTH T1 and T2 have unfavorable risk/reward.
-  // When T2 offers >= 1.8:1 R:R, the setup can still be valid — investor
-  // should target T2 instead of T1 for acceptable reward.
-  const isUnfavorableRRR = levels.rrr1 > 0 && levels.rrr1 < 1.4 && levels.rrr2 > 0 && levels.rrr2 < 1.8;
+  // Latest candle upper wick check (Gate 3: Excessive Upper Wick >= 40%)
+  const latestBar = adjustedCandles[adjustedCandles.length - 1] || {};
+  const barHigh = Number(stock?.high || latestBar.high || ltp);
+  const barLow = Number(stock?.low || latestBar.low || ltp);
+  const barOpen = Number(stock?.open || latestBar.open || ltp);
+  const barClose = Number(ltp || latestBar.close || 0);
+  const barRange = Math.max(0.01, barHigh - barLow);
+  const upperWickRatio = barHigh > barLow ? +((barHigh - Math.max(barOpen, barClose)) / barRange).toFixed(2) : 0;
+  const isExcessiveUpperWick = Boolean(upperWickRatio >= 0.40 || priceActionReport?.breakout?.bullTrapRisk);
 
+  // 20D Median Daily Turnover check (Gate 5: Low Liquidity < Rs. 60 Lakhs)
+  const recent20Bars = adjustedCandles.slice(-20);
+  const turnovers20D = recent20Bars
+    .map(c => Number(c.turnover || (Number(c.close || 0) * Number(c.volume || 0)) || 0))
+    .filter(v => v > 0)
+    .sort((a, b) => a - b);
+  const computedMedianTurnover20D = turnovers20D.length > 0
+    ? turnovers20D[Math.floor(turnovers20D.length / 2)]
+    : Number(stock?.medianDailyTurnover20D || stock?.turnover || 0);
+  const isLowLiquidityGate = computedMedianTurnover20D > 0 && computedMedianTurnover20D < 6000000;
+
+  // Gate 2: Negative EPS / Loss-Maker (strictly enforced, no stale/score bypass when EPS <= 0)
+  const isStrictLossMaker = stock?.eps !== undefined && stock?.eps !== null && Number(stock.eps) <= 0;
+
+  // Gate 4: Downtrend Under 50 EMA (unconditional)
   const ema50Val = technicalReport?.trend?.ema?.ema50 || 0;
   const ema200Val = technicalReport?.trend?.ema?.ema200 || Number(stock?.ema200 || stock?.sma200 || 0);
   const isBelow50EMA = ema50Val > 0 && ltp < ema50Val;
-  const isBearMarket = marketScore !== null && marketScore <= 35;
-  const isHardCeilingDowntrend = isBelow50EMA && isBearMarket;
   const isDeepHydroDryBreakout = isDeepHydroDry && (priceActionReport?.breakout?.detected || (stock?.pChange || 0) >= 5.0);
   const isOverheadResistanceCeiling = ema200Val > 0 && Math.abs(ltp - ema200Val) / ema200Val <= 0.015 && (analogWinRate !== null && analogWinRate < 45);
+
+  // Net Post-Tax/Fee R:R Gate (< 3.0:1 blocks BUY signal)
+  const isUnfavorableRRR = !netRrrEval.isBuyAllowed || netRrrEval.netRRR1 < 3.0;
 
   const isFestiveLowVolumeTrap = Boolean(
     festivalSeason.isFestiveLull &&
@@ -1924,32 +1976,54 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     warnings.unshift('⚠️ T+2 Circuit Exhaustion Trap: Stock has surged +28%+ over 2 sessions (consecutive ±15% circuits). High risk of Demat delivery dump on settlement.');
   }
 
+  const qualityGates = {
+    gate1_circuitTrapPassed: !isCircuitTrap,
+    gate2_positiveEpsPassed: !isStrictLossMaker,
+    gate3_upperWickPassed: !isExcessiveUpperWick,
+    gate4_above50EmaPassed: !isBelow50EMA,
+    gate5_liquidityPassed: !isLowLiquidityGate,
+    chaseCapPassed: !isChaseCapExceeded,
+    netRrr3To1Passed: !isUnfavorableRRR,
+    upperWickRatio,
+    medianTurnover20D: computedMedianTurnover20D
+  };
+  qualityGates.all5GatesPassed =
+    qualityGates.gate1_circuitTrapPassed &&
+    qualityGates.gate2_positiveEpsPassed &&
+    qualityGates.gate3_upperWickPassed &&
+    qualityGates.gate4_above50EmaPassed &&
+    qualityGates.gate5_liquidityPassed;
+  qualityGates.isVerifiedBuySetup =
+    qualityGates.all5GatesPassed &&
+    qualityGates.chaseCapPassed &&
+    qualityGates.netRrr3To1Passed;
+
   const riskGate = {
     isCircuitTrap,
+    isLossMaking: isStrictLossMaker,
+    isExcessiveUpperWick,
+    isBelow50EMA,
+    isLowLiquidityGate,
+    isChaseCapExceeded,
     isT2CircuitExhaustion,
     isSubFriction,
     isUnfavorableRRR,
     isInstitutionalDumping,
     isDeepHydroDryBreakout,
-    isHardCeilingDowntrend,
+    isHardCeilingDowntrend: isBelow50EMA,
     isOverheadResistanceCeiling,
-    isLossMaking,
     isExtremeMultiple,
     isFestiveLowVolumeTrap,
     isCriticalT2Lockup: t2Risk.tier === 'CRITICAL',
+    qualityGates,
     t2Risk,
-    warning: isCircuitTrap ? `Stock is within 2% of +15% upper circuit ceiling (Rs. ${upperCeiling}). Capped upside vs severe downside risk.`
-           : isT2CircuitExhaustion ? '⚠️ T+2 Circuit Exhaustion Trap: Stock surged +28%+ over 2 sessions (consecutive ±15% circuits). Fresh buyers face heavy Demat delivery dump risk on T+2.'
-           : t2Risk.tier === 'CRITICAL' ? t2Risk.warning
-           : isSubFriction ? `Expected Target 1 upside (+${target1UpsidePct.toFixed(2)}%) fails to clear ~0.9% round-trip friction.`
-           : isUnfavorableRRR ? `Risk-to-reward ratio (${levels.rrr1}:1) fails the minimum 1.4:1 threshold.`
-           : isFestiveLowVolumeTrap ? `Festive Cash Drain Trap: Dashain Festive Window active. Breakout RVOL (${resolvedRvol.toFixed(2)}x) fails festive hurdle (${festivalSeason.rvolThreshold}x).`
-           : isLossMaking ? `Fundamental Caution: Negative EPS (Rs. ${epsVal.toFixed(2)}) indicates operational losses.`
-           : isExtremeMultiple ? `Extreme Valuation Multiple: P/E of ${peVal > 0 ? peVal.toFixed(1) + 'x' : '—'} (P/E × P/B: ${pePbMultiple.toFixed(1)}) carries severe multiple contraction risk. Maintain trailing stops; avoid chasing extended breakouts.`
-           : isInstitutionalDumping ? `Institutional Broker Distribution: Net ${Math.abs(brokerAdRatio * 100).toFixed(1)}% volume dumped by top institutional brokers into retail demand. Avoid fresh entry.`
-           : isDeepHydroDryBreakout ? 'Deep winter hydro dry season: RoR power output severely depressed. Avoid chasing speculative spikes.'
-           : isHardCeilingDowntrend ? 'Asset is below 50 EMA during a broader market bear regime.'
-           : isOverheadResistanceCeiling ? `Asset is testing 200-day EMA overhead resistance (Rs. ${ema200Val.toFixed(1)}) with lower historical forward win rate (${analogWinRate}%). Overhead supply risk.`
+    warning: isCircuitTrap ? `Gate 1 Failed: Stock is within 2% of +15% upper circuit ceiling (Rs. ${upperCeiling}).`
+           : isStrictLossMaker ? `Gate 2 Failed: Negative/Zero EPS (Rs. ${epsVal.toFixed(2)}) — loss-making companies are excluded.`
+           : isExcessiveUpperWick ? `Gate 3 Failed: Excessive upper rejection wick (${Math.round(upperWickRatio * 100)}% >= 40% of candle range) signals operator supply dump.`
+           : isBelow50EMA ? `Gate 4 Failed: Stock is trading below its 50-day EMA (Rs. ${Number(ema50Val).toFixed(1)}) in structural downtrend.`
+           : isLowLiquidityGate ? `Gate 5 Failed: 20D median turnover (Rs. ${(computedMedianTurnover20D / 100000).toFixed(1)}L) is below Rs. 60 Lakhs institutional floor.`
+           : isChaseCapExceeded ? `Chase Cap Exceeded: LTP (Rs. ${ltp}) is above max chase price Rs. ${strictChaseCap} (Entry_max * 1.025). Do NOT chase.`
+           : isUnfavorableRRR ? `Net Post-Tax R:R at Target 1 (${netRrrEval.netRRR1}:1) is below the mandatory 3.0:1 mathematical expectancy threshold.`
            : null
   };
 

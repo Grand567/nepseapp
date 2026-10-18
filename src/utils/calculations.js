@@ -265,6 +265,135 @@ export function calculateSellDetails(quantity, sellPrice, buyPriceWacc, holdingT
 }
 
 /**
+ * Calculates exact Statutory Zero-Loss Breakeven Price for a given quantity and buy price,
+ * accounting for both buy-leg and sell-leg tiered broker commissions (min Rs. 10),
+ * SEBON fee (0.015% per leg), and DP charge (Rs. 25 per leg).
+ */
+export function calculateStatutoryBreakevenPrice(quantity, buyPrice) {
+  const qty = Math.max(10, Number(quantity || 10));
+  const entry = Number(buyPrice || 0);
+  if (entry <= 0) return 0;
+
+  const buyDetails = calculateBuyDetails(qty, entry);
+  // Iteratively solve for the exact exit price where netReceivable === buyDetails.totalAmount
+  let estExit = +(buyDetails.costPerShare * 1.0045).toFixed(2);
+  for (let i = 0; i < 4; i++) {
+    const sellValue = qty * estExit;
+    const sellComm = calculateBrokerCommission(sellValue);
+    const sellSebon = calculateSebonFee(sellValue);
+    const sellDp = DP_CHARGE;
+    const requiredGross = buyDetails.totalAmount + sellComm + sellSebon + sellDp;
+    estExit = requiredGross / qty;
+  }
+  const breakevenPrice = +Math.ceil(estExit * 10) / 10; // Round up to nearest 10 paisa tick
+  const hurdlePct = +(((breakevenPrice - entry) / entry) * 100).toFixed(2);
+
+  return {
+    entryPrice: entry,
+    quantity: qty,
+    breakevenPrice,
+    hurdlePct,
+    totalBuyCost: +buyDetails.totalAmount.toFixed(2),
+    roundTripExpenses: +((breakevenPrice * qty) - (entry * qty)).toFixed(2),
+    label: `Rs. ${breakevenPrice} (+${hurdlePct}% statutory zero-loss floor)`
+  };
+}
+
+/**
+ * Calculates Net Post-Tax & Post-Fee Risk-to-Reward Ratio (R:R) and Stop-to-Breakeven Runner Plan.
+ * Enforces statutory 7.5% Short-Term CGT, tiered broker commissions, 0.015% SEBON fee, and Rs. 25 DP fee.
+ * Blocks "BUY" qualification unless Net R:R at Target 1 >= requiredNetRRR (default 3.0 : 1).
+ */
+export function calculateNetRiskRewardRatio({
+  quantity = 100,
+  entryPrice,
+  stopLossPrice,
+  target1Price,
+  target2Price = null,
+  holdingType = 'short',
+  requiredNetRRR = 3.0
+}) {
+  const qty = Math.max(10, Number(quantity || 100));
+  const entry = Number(entryPrice || 0);
+  const stop = Number(stopLossPrice || 0);
+  const t1 = Number(target1Price || 0);
+  const t2 = Number(target2Price || (t1 > entry ? entry + (t1 - entry) * 1.6 : entry * 1.20));
+
+  if (entry <= 0 || stop <= 0 || stop >= entry || t1 <= entry) {
+    return {
+      isValid: false,
+      isBuyBlocked: true,
+      netRRR1: 0,
+      netRRR2: 0,
+      requiredNetRRR,
+      reason: 'Invalid price geometry (Stop-Loss must be below Entry and Target 1 above Entry).'
+    };
+  }
+
+  // 1. Exact Buy Cost (shareValue + buyCommission + buySebon + Rs. 25 DP)
+  const buyLeg = calculateBuyDetails(qty, entry);
+  const waccPerShare = buyLeg.costPerShare;
+
+  // 2. Exact Net Take-Home Profit at Target 1 (includes 7.5% Short-Term CGT on net gain above WACC)
+  const sellT1 = calculateSellDetails(qty, t1, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.05 : 0.075 });
+  const netProfitT1 = +sellT1.netProfitLoss.toFixed(2);
+  const netProfitPerShareT1 = +(netProfitT1 / qty).toFixed(2);
+
+  // 3. Exact Net Take-Home Profit at Target 2
+  const sellT2 = calculateSellDetails(qty, t2, waccPerShare, holdingType, new Date(), { cgtRate: holdingType === 'long' ? 0.05 : 0.075 });
+  const netProfitT2 = +sellT2.netProfitLoss.toFixed(2);
+  const netProfitPerShareT2 = +(netProfitT2 / qty).toFixed(2);
+
+  // 4. Exact Net Loss at Stop-Loss (no CGT on loss, includes full buy + sell friction)
+  const sellSL = calculateSellDetails(qty, stop, waccPerShare, holdingType, new Date(), { cgtRate: 0.075 });
+  const netLossSL = +Math.abs(sellSL.netProfitLoss).toFixed(2);
+  const netLossPerShareSL = +(netLossSL / qty).toFixed(2);
+
+  // 5. Net Post-Tax/Fee R:R Ratios
+  const netRRR1 = netLossSL > 0 ? +(netProfitT1 / netLossSL).toFixed(2) : 0;
+  const netRRR2 = netLossSL > 0 ? +(netProfitT2 / netLossSL).toFixed(2) : 0;
+  const isBuyAllowed = netProfitT1 > 0 && netRRR1 >= requiredNetRRR;
+
+  // 6. Stop-to-Breakeven Rule at Target 1 (50% scale-out, remaining 50% runner risk-free)
+  const scaleOutQty = Math.max(10, Math.floor((qty * 0.5) / 10) * 10);
+  const runnerQty = Math.max(0, qty - scaleOutQty);
+  const breakevenObj = calculateStatutoryBreakevenPrice(Math.max(10, runnerQty), entry);
+
+  return {
+    isValid: true,
+    isBuyAllowed,
+    isBuyBlocked: !isBuyAllowed,
+    quantity: qty,
+    entryPrice: entry,
+    stopLossPrice: stop,
+    target1Price: t1,
+    target2Price: t2,
+    waccPerShare: +waccPerShare.toFixed(2),
+    netProfitT1,
+    netProfitPerShareT1,
+    netProfitT2,
+    netProfitPerShareT2,
+    netLossSL,
+    netLossPerShareSL,
+    netRRR1,
+    netRRR2,
+    requiredNetRRR,
+    cgtRatePct: holdingType === 'long' ? 5.0 : 7.5,
+    stopToBreakevenRule: {
+      enabled: true,
+      triggerAtPrice: t1,
+      scaleOutPct: 50,
+      scaleOutQty,
+      runnerQty,
+      newStopLossPrice: breakevenObj.breakevenPrice,
+      runnerRiskRupees: 0,
+      instruction: `At Target 1 (Rs. ${t1}), sell ${scaleOutQty} kitta (50%) and immediately raise Stop-Loss on the remaining ${runnerQty} kitta to Statutory Breakeven (Rs. ${breakevenObj.breakevenPrice}) for a 100% risk-free runner.`
+    }
+  };
+}
+
+
+/**
  * Calculates Weighted Average Cost of Capital (WACC) for multiple transactions
  * with full inclusion of broker commission tiers, SEBON fee, DP fee, and corporate actions.
  * @param {Array<{ quantity: number, price: number }>} buyTransactions

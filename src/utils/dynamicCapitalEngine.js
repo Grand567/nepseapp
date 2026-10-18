@@ -21,13 +21,14 @@ export const DEFAULT_USER_CAPITAL = 100000;
 
 // ── REGULATORY FRICTION CONSTANTS (FY 2083/84) ─────────────────────────────
 export const NEPSE_FRICTION_FY2083 = {
-  cgtShortTerm: 0.100,     // 10.0% Short-term CGT (<= 365 days)
-  cgtLongTerm: 0.075,      // 7.5% Long-term CGT (> 365 days, final tax)
-  sebonFeeRate: 0.00015,   // 0.015% SEBON regulatory fee per leg
-  dpCharge: 25,            // NPR 25 DP fee per leg
-  minBrokerCommission: 10, // NPR 10 minimum broker commission
-  slippageBufferRate: 0.0045, // 0.45% slippage buffer (±15% circuit volatility adjusted)
-  minLotSize: 10           // NEPSE minimum 10-kitta regular trading lot
+  cgtShortTerm: 0.075,       // Statutory 7.5% Short-term retail CGT (<= 365 days)
+  cgtLongTerm: 0.050,        // Statutory 5.0% Long-term retail CGT (> 365 days)
+  cgtInstitutional: 0.100,   // 10.0% Corporate/Institutional CGT
+  sebonFeeRate: 0.00015,     // 0.015% SEBON regulatory fee per leg
+  dpCharge: 25,              // NPR 25 DP fee per leg
+  minBrokerCommission: 10,   // NPR 10 minimum broker commission floor
+  slippageBufferRate: 0.0025,// 0.25% execution slippage buffer
+  minLotSize: 10             // NEPSE minimum 10-kitta regular trading lot
 };
 
 /**
@@ -101,70 +102,65 @@ export function syncCapitalWithPortfolio(portfolioEquity, availableCash = 0) {
 export function getCapitalTierConfig(userCapital = DEFAULT_USER_CAPITAL) {
   const cap = Math.max(10000, Number(userCapital || DEFAULT_USER_CAPITAL));
 
-  // Tier 1: Micro / Starter Portfolio (<= Rs. 150,000)
+  // Tier 1: Starter Portfolio (Rs. 50k - Rs. 1.5 Lakh)
   if (cap <= 150000) {
     return {
       tier: 1,
-      tierName: 'Micro / Starter Portfolio',
+      tierName: 'Starter Portfolio (Rs. 50k – 1L)',
       userCapital: cap,
       maxSlots: 3,
-      riskPerTradePct: 0.015,     // 1.5% portfolio risk
+      riskPerTradePct: 0.015,       // 1.50% target risk per trade
+      hardMaxRiskPct: 0.020,        // 2.00% absolute hard ceiling (never breached by 10-kitta floor)
       tacticalCashReservePct: 0.10, // 10% cash reserve
-      maxSlotAllocationPct: 0.35, // 35% max capital in single stock
-      guidance: 'Concentrated 3-slot allocation to overcome NEPSE minimum lot and fixed fee friction.'
+      maxSlotAllocationPct: 0.35,   // 35% max capital in single stock
+      guidance: 'Concentrated 3-slot Half-Kelly allocation respecting Rs. 10 minimum broker commission floor and 2.0% hard risk cap.'
     };
   }
 
-  // Tier 2: Standard Active Retail (Rs. 150,001 - Rs. 1,000,000)
+  // Tier 2: Standard Active Retail (Rs. 1.5 Lakh - Rs. 10 Lakh)
   if (cap <= 1000000) {
     return {
       tier: 2,
-      tierName: 'Standard Active Retail',
+      tierName: 'Standard Active Retail (Up to Rs. 10L)',
       userCapital: cap,
       maxSlots: 5,
-      riskPerTradePct: 0.0125,    // 1.25% portfolio risk
-      tacticalCashReservePct: 0.10, // 10% cash reserve
-      maxSlotAllocationPct: 0.25, // 25% max capital in single stock
-      guidance: 'Balanced 5-slot swing portfolio with disciplined capital compounding.'
+      riskPerTradePct: 0.0125,      // 1.25% target risk per trade
+      hardMaxRiskPct: 0.015,        // 1.50% hard risk ceiling
+      tacticalCashReservePct: 0.10,
+      maxSlotAllocationPct: 0.25,   // 25% max capital in single stock
+      guidance: 'Balanced 5-slot swing portfolio with friction-adjusted Half-Kelly compounding.'
     };
   }
 
-  // Tier 3: High Net-Worth Individual / HNWI (Rs. 1,000,001 - Rs. 5,000,000)
+  // Tier 3: High Net-Worth Individual / HNWI (Rs. 10 Lakh - Rs. 50 Lakh)
   if (cap <= 5000000) {
     return {
       tier: 3,
       tierName: 'High Net-Worth Individual (HNWI)',
       userCapital: cap,
       maxSlots: 6,
-      riskPerTradePct: 0.010,     // 1.0% portfolio risk
-      tacticalCashReservePct: 0.12, // 12% cash reserve
-      maxSlotAllocationPct: 0.20, // 20% max capital in single stock
-      guidance: 'Diversified institutional-grade portfolio with liquidity impact filters.'
+      riskPerTradePct: 0.010,       // 1.00% target risk per trade
+      hardMaxRiskPct: 0.015,        // 1.50% hard risk ceiling
+      tacticalCashReservePct: 0.12,
+      maxSlotAllocationPct: 0.20,   // 20% max capital in single stock
+      guidance: 'Diversified institutional-grade portfolio with 5% turnover liquidity guards.'
     };
   }
 
-  // Tier 4: Institutional / Family Office (> Rs. 5,000,000)
+  // Tier 4: Institutional / Family Office (Rs. 75 Lakh / > Rs. 50 Lakh)
   return {
     tier: 4,
-    tierName: 'Institutional / Family Office',
+    tierName: 'Institutional / Family Office (Rs. 75L+)',
     userCapital: cap,
     maxSlots: 8,
-    riskPerTradePct: 0.0075,    // 0.75% portfolio risk
-    tacticalCashReservePct: 0.15, // 15% cash reserve
-    maxSlotAllocationPct: 0.15, // 15% max capital in single stock
-    guidance: 'Strict liquidity preservation, multi-desk stealth accumulation, and low market impact.'
+    riskPerTradePct: 0.0075,      // 0.75% target risk per trade
+    hardMaxRiskPct: 0.0125,       // 1.25% hard risk ceiling
+    tacticalCashReservePct: 0.15,
+    maxSlotAllocationPct: 0.15,   // 15% max capital in single stock
+    guidance: 'Strict liquidity preservation, zero market impact (<= 5% of 20D median turnover).'
   };
 }
 
-/**
- * Dynamic Kitta & Market-Impact Sizing Algorithm
- * Iteratively solves for exact recommended kitta accounting for:
- * 1. User capital risk budget
- * 2. Slot allocation limit
- * 3. 5% 20D median turnover market-impact cap
- * 4. Tiered broker commission schedule on order amount
- * 5. Minimum 10-kitta regular trading lot rule
- */
 export function calculateDynamicPositionSizing({
   userCapital = DEFAULT_USER_CAPITAL,
   entryPrice,
@@ -172,6 +168,7 @@ export function calculateDynamicPositionSizing({
   target1,
   target2,
   median20DayTurnover = 8000000,
+  winRatePct = 62.0,
   isLongTerm = false,
   requiredNetRRR = 2.5
 }) {
@@ -187,123 +184,147 @@ export function calculateDynamicPositionSizing({
   }
 
   const tierConfig = getCapitalTierConfig(cap);
-
-  // 1. Risk budget in Rupees
   const maxRiskRupees = +(cap * tierConfig.riskPerTradePct).toFixed(2);
+  const hardMaxRiskRupees = +(cap * tierConfig.hardMaxRiskPct).toFixed(2);
 
-  // 2. Maximum slot capital allocation in Rupees
-  const maxSlotCapital = +(cap * tierConfig.maxSlotAllocationPct).toFixed(2);
+  // Market-Impact Safety Cap: Strictly <= 5% of 20D median daily turnover
+  const maxLiquiditySafeOrder = Math.floor(0.05 * turnover20D);
+  const minRequiredTurnover = Math.max(6000000, cap * tierConfig.maxSlotAllocationPct * 20);
+  const isLiquiditySufficient = turnover20D >= 6000000 && maxLiquiditySafeOrder >= (10 * entry);
+  const liquidityWarning = turnover20D < 6000000
+    ? `⚠️ VETO: 20D median turnover (Rs. ${(turnover20D / 100000).toFixed(1)}L) is below Rs. 60L institutional floor.`
+    : (turnover20D < minRequiredTurnover
+      ? `⚠️ Liquidity Cap Active: Order capped at 5% of 20D turnover (Rs. ${(maxLiquiditySafeOrder / 100000).toFixed(2)}L).`
+      : null);
 
-  // 3. Market-Impact Safety Cap: Never exceed 5% of 20D median daily turnover
-  const maxLiquiditySafeOrder = Math.round(0.05 * turnover20D);
-
-  // 4. Liquidity Veto Check: Minimum required turnover
-  const minRequiredTurnover = Math.max(6000000, maxSlotCapital * 20);
-  const isLiquiditySufficient = turnover20D >= minRequiredTurnover;
-  const liquidityWarning = !isLiquiditySufficient
-    ? `⚠️ Low Liquidity Warning: 20D turnover (Rs. ${(turnover20D/100000).toFixed(1)}L) is below recommended Rs. ${(minRequiredTurnover/100000).toFixed(1)}L for Rs. ${(cap/100000).toFixed(1)}L capital.`
-    : null;
-
-  // 5. Iterative Kitta Solver with Dynamic Tiered Commission
+  // Friction-Adjusted Half-Kelly Calculation
   const rawRiskPerShare = entry - sl;
-  let estimatedKitta = Math.max(10, Math.floor(maxRiskRupees / Math.max(1, rawRiskPerShare)));
+  const estGrossWin = Math.max(0.5, t1 - entry);
+  const estNetWin = estGrossWin * (1 - (isLongTerm ? NEPSE_FRICTION_FY2083.cgtLongTerm : NEPSE_FRICTION_FY2083.cgtShortTerm)) - (entry * 0.0075);
+  const estNetLoss = rawRiskPerShare + (entry * 0.0075);
+  const netPayoffOddsB = estNetLoss > 0 ? Math.max(0.5, estNetWin / estNetLoss) : 1.0;
+  const pWin = Math.min(0.85, Math.max(0.35, Number(winRatePct || 62) / 100));
+  const fullKellyFraction = Math.max(0, pWin - ((1 - pWin) / netPayoffOddsB));
+  const halfKellyFraction = +(fullKellyFraction * 0.5).toFixed(4);
 
-  let convergedKitta = estimatedKitta;
-  let brokerRate = 0.0033;
-  let netLossPerShare = rawRiskPerShare;
+  // Effective slot cap is the minimum of Tier Slot Cap and Half-Kelly Capital Cap (bounded >= 10% if Half-Kelly is positive)
+  const halfKellySlotPct = halfKellyFraction > 0
+    ? Math.min(tierConfig.maxSlotAllocationPct, Math.max(0.10, halfKellyFraction))
+    : tierConfig.maxSlotAllocationPct;
+  const maxSlotCapital = +(cap * halfKellySlotPct).toFixed(2);
 
-  // Converge over 3 iterations to account for tiered commission based on exact orderValue
-  for (let iter = 0; iter < 3; iter++) {
-    const testOrderValue = convergedKitta * entry;
-    brokerRate = getNepseBrokerCommissionRate(testOrderValue);
+  // Iterative Kitta Solver accounting for Rs. 10 minimum commission floor, Rs. 25 DP, and 5% turnover cap
+  let convergedKitta = Math.max(10, Math.floor(maxRiskRupees / Math.max(1, estNetLoss)));
 
-    const sebonRate = NEPSE_FRICTION_FY2083.sebonFeeRate;
-    const slippageRate = NEPSE_FRICTION_FY2083.slippageBufferRate;
-    const dpPerShare = (NEPSE_FRICTION_FY2083.dpCharge * 2) / Math.max(10, convergedKitta);
+  for (let iter = 0; iter < 4; iter++) {
+    const k = Math.max(10, convergedKitta);
+    const buyVal = k * entry;
+    const slVal = k * sl;
+    const buyComm = calculateDynamicBrokerFee(buyVal); // enforces Rs. 10 floor
+    const slComm = calculateDynamicBrokerFee(slVal);   // enforces Rs. 10 floor
+    const buySebon = +(buyVal * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2);
+    const slSebon = +(slVal * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2);
+    const totalFixedAndVarFriction = buyComm + slComm + buySebon + slSebon + (NEPSE_FRICTION_FY2083.dpCharge * 2);
 
-    const buyFrictionPerShare = entry * (brokerRate + sebonRate + slippageRate);
-    const slFrictionPerShare = sl * (brokerRate + sebonRate + slippageRate);
-    netLossPerShare = +(rawRiskPerShare + buyFrictionPerShare + slFrictionPerShare + dpPerShare).toFixed(2);
+    const exactLossPerShare = rawRiskPerShare + (totalFixedAndVarFriction / k);
+    const riskKitta = Math.floor(maxRiskRupees / Math.max(0.1, exactLossPerShare));
 
-    const riskKitta = Math.floor(maxRiskRupees / Math.max(0.1, netLossPerShare));
-    const effectiveCapPerShare = entry * (1 + brokerRate + sebonRate + slippageRate);
-    const slotKitta = Math.floor(Math.min(maxSlotCapital, maxLiquiditySafeOrder) / Math.max(1, effectiveCapPerShare));
+    // Max capital outlay bound (including buy-side fees so deployedCapital never exceeds maxSlotCapital or maxLiquiditySafeOrder)
+    const maxAllowedOutlay = Math.min(maxSlotCapital, maxLiquiditySafeOrder);
+    const buyFixedFees = NEPSE_FRICTION_FY2083.dpCharge + (buyVal <= 2777 ? NEPSE_FRICTION_FY2083.minBrokerCommission : 0);
+    const varRate = (buyVal <= 2777 ? 0 : getNepseBrokerCommissionRate(buyVal)) + NEPSE_FRICTION_FY2083.sebonFeeRate;
+    const capKitta = Math.floor(Math.max(0, maxAllowedOutlay - buyFixedFees) / (entry * (1 + varRate)));
 
-    convergedKitta = Math.max(0, Math.min(riskKitta, slotKitta));
+    convergedKitta = Math.max(0, Math.min(riskKitta, capKitta));
   }
 
-  // Enforce NEPSE 10-kitta regular trading lot rule
+  // Enforce NEPSE 10-kitta regular trading lot rule without EVER breaching hardMaxRiskRupees (<= 2.0%) or 5% turnover cap
   let finalKitta = Math.floor(convergedKitta / 10) * 10;
   let lotSizeRiskWarning = null;
 
   if (finalKitta < 10) {
-    // If capital allows at least 10 shares without catastrophic risk (> 2.5x riskPerTrade)
-    const costFor10 = 10 * entry;
-    const lossFor10 = 10 * netLossPerShare;
-    if (costFor10 <= maxSlotCapital * 1.25 && lossFor10 <= maxRiskRupees * 2.0) {
+    const buyVal10 = 10 * entry;
+    const slVal10 = 10 * sl;
+    const buyFees10 = calculateDynamicBrokerFee(buyVal10) + +(buyVal10 * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2) + NEPSE_FRICTION_FY2083.dpCharge;
+    const slFees10 = calculateDynamicBrokerFee(slVal10) + +(slVal10 * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2) + NEPSE_FRICTION_FY2083.dpCharge;
+    const totalOutlay10 = buyVal10 + buyFees10;
+    const totalLoss10 = (10 * rawRiskPerShare) + buyFees10 + slFees10;
+
+    if (totalOutlay10 <= maxSlotCapital && totalOutlay10 <= maxLiquiditySafeOrder && totalLoss10 <= hardMaxRiskRupees) {
       finalKitta = 10;
-      lotSizeRiskWarning = `Adjusted to NEPSE minimum regular lot (10 kitta). Risk: Rs. ${Math.round(lossFor10)} vs Rs. ${Math.round(maxRiskRupees)} budget.`;
+      lotSizeRiskWarning = `Sized to NEPSE 10-kitta minimum lot (Risk: Rs. ${Math.round(totalLoss10)} = ${((totalLoss10 / cap) * 100).toFixed(2)}% of capital, within ${tierConfig.hardMaxRiskPct * 100}% hard cap).`;
     } else {
       finalKitta = 0;
-      lotSizeRiskWarning = `Capital (Rs. ${cap.toLocaleString()}) insufficient for 10-kitta minimum lot under safe risk limits.`;
+      lotSizeRiskWarning = `Order blocked: 10-kitta minimum lot risks Rs. ${Math.round(totalLoss10)} (${((totalLoss10 / cap) * 100).toFixed(2)}%), exceeding the ${tierConfig.hardMaxRiskPct * 100}% max portfolio loss cap or slot limit.`;
     }
   }
 
-  // 6. Final Financials with converged kitta
-  const orderAmount = finalKitta * entry;
+  // Final Financials with converged kitta (compute per-unit expectancy on 10-kitta basis if finalKitta === 0)
+  const evalKitta = finalKitta > 0 ? finalKitta : 10;
+  const orderAmount = evalKitta * entry;
   const commissionRate = getNepseBrokerCommissionRate(orderAmount);
   const buyBrokerFee = calculateDynamicBrokerFee(orderAmount);
   const buySebonFee = +((orderAmount * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2));
-  const buyDpFee = finalKitta > 0 ? NEPSE_FRICTION_FY2083.dpCharge : 0;
-  const deployedCapital = Math.round(orderAmount + buyBrokerFee + buySebonFee + buyDpFee);
+  const buyDpFee = NEPSE_FRICTION_FY2083.dpCharge;
+  const evalDeployedCapital = Math.round(orderAmount + buyBrokerFee + buySebonFee + buyDpFee);
+
+  const deployedCapital = finalKitta > 0 ? evalDeployedCapital : 0;
   const capitalAllocationPct = cap > 0 ? +((deployedCapital / cap) * 100).toFixed(1) : 0;
 
   // Actual Risk at Stop-Loss
-  const slGrossLoss = (entry - sl) * finalKitta;
-  const slOrderAmount = finalKitta * sl;
+  const slGrossLoss = (entry - sl) * evalKitta;
+  const slOrderAmount = evalKitta * sl;
   const slBrokerFee = calculateDynamicBrokerFee(slOrderAmount);
   const slSebonFee = +((slOrderAmount * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2));
-  const slDpFee = finalKitta > 0 ? NEPSE_FRICTION_FY2083.dpCharge : 0;
-  const actualRiskRupees = Math.round(slGrossLoss + buyBrokerFee + buySebonFee + buyDpFee + slBrokerFee + slSebonFee + slDpFee);
+  const slDpFee = NEPSE_FRICTION_FY2083.dpCharge;
+  const evalRiskRupees = Math.round(slGrossLoss + buyBrokerFee + buySebonFee + buyDpFee + slBrokerFee + slSebonFee + slDpFee);
+
+  const actualRiskRupees = finalKitta > 0 ? evalRiskRupees : 0;
   const actualRiskPct = cap > 0 ? +((actualRiskRupees / cap) * 100).toFixed(2) : 0;
 
-  // Target 1 Net Profit (FY 2083/84: Short-Term 10.0%, Long-Term 7.5%)
+  // Target 1 Net Profit (Statutory 7.5% Short-Term CGT, 5.0% Long-Term CGT)
   const cgtRate = isLongTerm ? NEPSE_FRICTION_FY2083.cgtLongTerm : NEPSE_FRICTION_FY2083.cgtShortTerm;
-  const t1GrossProfit = (t1 - entry) * finalKitta;
-  const t1OrderAmount = finalKitta * t1;
+  const t1GrossProfit = (t1 - entry) * evalKitta;
+  const t1OrderAmount = evalKitta * t1;
   const t1BrokerFee = calculateDynamicBrokerFee(t1OrderAmount);
   const t1SebonFee = +((t1OrderAmount * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2));
-  const t1DpFee = finalKitta > 0 ? NEPSE_FRICTION_FY2083.dpCharge : 0;
+  const t1DpFee = NEPSE_FRICTION_FY2083.dpCharge;
   const totalT1Friction = buyBrokerFee + buySebonFee + buyDpFee + t1BrokerFee + t1SebonFee + t1DpFee;
   const t1TaxableGain = Math.max(0, t1GrossProfit - totalT1Friction);
   const t1Cgt = +(t1TaxableGain * cgtRate).toFixed(2);
-  const t1NetProfit = Math.round(t1GrossProfit - totalT1Friction - t1Cgt);
+  const evalT1NetProfit = Math.round(t1GrossProfit - totalT1Friction - t1Cgt);
+  const t1NetProfit = finalKitta > 0 ? evalT1NetProfit : 0;
 
   // Target 2 Net Profit
-  const t2GrossProfit = (t2 - entry) * finalKitta;
-  const t2OrderAmount = finalKitta * t2;
+  const t2GrossProfit = (t2 - entry) * evalKitta;
+  const t2OrderAmount = evalKitta * t2;
   const t2BrokerFee = calculateDynamicBrokerFee(t2OrderAmount);
   const t2SebonFee = +((t2OrderAmount * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2));
-  const t2DpFee = finalKitta > 0 ? NEPSE_FRICTION_FY2083.dpCharge : 0;
+  const t2DpFee = NEPSE_FRICTION_FY2083.dpCharge;
   const totalT2Friction = buyBrokerFee + buySebonFee + buyDpFee + t2BrokerFee + t2SebonFee + t2DpFee;
   const t2TaxableGain = Math.max(0, t2GrossProfit - totalT2Friction);
   const t2Cgt = +(t2TaxableGain * cgtRate).toFixed(2);
-  const t2NetProfit = Math.round(t2GrossProfit - totalT2Friction - t2Cgt);
+  const evalT2NetProfit = Math.round(t2GrossProfit - totalT2Friction - t2Cgt);
+  const t2NetProfit = finalKitta > 0 ? evalT2NetProfit : 0;
 
   // Net Post-Tax/Fee RRR
-  const netRRR = actualRiskRupees > 0 ? +(t1NetProfit / actualRiskRupees).toFixed(2) : 0;
+  const netRRR = evalRiskRupees > 0 ? +(evalT1NetProfit / evalRiskRupees).toFixed(2) : 0;
   const isRrrAcceptable = netRRR >= requiredNetRRR;
 
-  // 7. Universal Rs. 1 Lakh Multiplier for Broadcast Subscribers
-  const singleLossPerShare = +(rawRiskPerShare + (entry * 0.0033 * 2) + 0.50).toFixed(2);
+  // Universal Rs. 1 Lakh Multiplier for Broadcast Subscribers
+  const singleLossPerShare = +(rawRiskPerShare + (entry * 0.0036 * 2) + 0.50).toFixed(2);
   const kittaPer1Lakh = Math.max(10, Math.floor(Math.floor(1000 / Math.max(1, singleLossPerShare)) / 10) * 10);
 
-  // 8. Scale-Out & Breakeven Runner Plan
-  const scaleOutKitta = Math.floor((finalKitta * 0.5) / 10) * 10 || Math.floor(finalKitta * 0.5);
+  // Scale-Out & Statutory Breakeven Runner Plan
+  const scaleOutKitta = finalKitta >= 20 ? Math.floor((finalKitta * 0.5) / 10) * 10 : Math.floor(finalKitta * 0.5);
   const runnerKitta = finalKitta - scaleOutKitta;
-  const breakevenStopLoss = finalKitta > 0
-    ? +((deployedCapital / finalKitta) * 1.005).toFixed(1) // exact break-even basis including buy friction + roundtrip sell friction
-    : entry;
+  const runnerEvalQty = Math.max(10, runnerKitta);
+  const runnerSellComm = calculateDynamicBrokerFee(runnerEvalQty * entry);
+  const runnerSellSebon = +((runnerEvalQty * entry * NEPSE_FRICTION_FY2083.sebonFeeRate).toFixed(2));
+  const breakevenStopLoss = +(
+    (evalDeployedCapital / evalKitta) +
+    ((runnerSellComm + runnerSellSebon + NEPSE_FRICTION_FY2083.dpCharge) / runnerEvalQty)
+  ).toFixed(1);
 
   return {
     userCapital: cap,
@@ -311,7 +332,10 @@ export function calculateDynamicPositionSizing({
     tierName: tierConfig.tierName,
     maxSlots: tierConfig.maxSlots,
     riskPerTradePct: tierConfig.riskPerTradePct,
+    hardMaxRiskPct: tierConfig.hardMaxRiskPct,
     maxSlotAllocationPct: tierConfig.maxSlotAllocationPct,
+    halfKellyFraction,
+    halfKellySlotPct: +(halfKellySlotPct * 100).toFixed(1),
     tacticalCashReservePct: tierConfig.tacticalCashReservePct,
     entryPrice: entry,
     stopLoss: sl,
@@ -324,13 +348,14 @@ export function calculateDynamicPositionSizing({
     deployedCapital,
     capitalAllocationPct,
     maxRiskRupees,
+    hardMaxRiskRupees,
     actualRiskRupees,
     actualRiskPct,
     commissionRate,
     commissionTierText: `${(commissionRate * 100).toFixed(2)}%`,
-    buyBrokerFee,
-    buySebonFee,
-    buyDpFee,
+    buyBrokerFee: finalKitta > 0 ? buyBrokerFee : 0,
+    buySebonFee: finalKitta > 0 ? buySebonFee : 0,
+    buyDpFee: finalKitta > 0 ? buyDpFee : 0,
     cgtRate,
     cgtRateText: `${(cgtRate * 100).toFixed(1)}%`,
     t1NetProfit,

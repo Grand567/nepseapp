@@ -52,8 +52,8 @@ const shivmT1 = afterT1Holdings.find(h => h.symbol === 'SHIVM');
 assert.ok(shivmT1, 'SHIVM should still be active for Target 2 monitoring');
 assert.strictEqual(shivmT1.target1Hit, true, 'target1Hit should be marked true');
 assert.strictEqual(shivmT1.status, 'ACTIVE_T2', 'Status should be ACTIVE_T2 to watch Target 2');
-assert.strictEqual(shivmT1.stopLoss, 512, 'Stop-Loss must be raised to breakeven (entry price 512)');
-console.log('✅ Test 2 Passed: Target 1 triggered, 50% profit booked & Stop-Loss raised to breakeven.\n');
+assert.ok(shivmT1.stopLoss >= 512 && shivmT1.stopLoss <= 520, `Stop-Loss must be raised to statutory breakeven >= entry price 512 (got ${shivmT1.stopLoss})`);
+console.log(`✅ Test 2 Passed: Target 1 triggered, 50% profit booked & Stop-Loss raised to statutory breakeven (Rs. ${shivmT1.stopLoss}).\n`);
 
 // ── Test 3: Target 2 Hit Simulation & Full Exit ──────────────────────────────
 console.log('Test 3: Simulating Target 2 hit (LTP = 645 >= T2 640)...');
