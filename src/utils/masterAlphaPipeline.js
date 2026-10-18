@@ -418,3 +418,272 @@ export function runUnifiedFiveStepAlphaDesk({
     watchlistRadar: radarRunnerUps.slice(0, 6)
   };
 }
+
+/**
+ * Evaluates ANY manual stock symbol against all 5 institutional stages on demand.
+ * Enables users to test any stock to see exactly which gates pass or fail.
+ */
+export function evaluateSingleStockAlphaDossier(stockOrSymbol, {
+  stocks = [],
+  indices = {},
+  userCapital = getUserConfiguredCapital(),
+  riskTolerancePct = 1.5,
+  requiredNetRRR = 2.5,
+  cgtRate = 0.075
+} = {}) {
+  let rawStock = typeof stockOrSymbol === 'object' && stockOrSymbol !== null ? stockOrSymbol : null;
+  const sym = typeof stockOrSymbol === 'string'
+    ? stockOrSymbol.trim().toUpperCase()
+    : String(rawStock?.symbol || '').trim().toUpperCase();
+
+  if (!sym) return null;
+
+  if (!rawStock && Array.isArray(stocks)) {
+    rawStock = stocks.find(s => String(s?.symbol || s?.scrip || '').trim().toUpperCase() === sym) || null;
+  }
+  if (!rawStock) return null;
+
+  const marketStatus = getDetailedMarketStatus();
+  const nptMins = Number(marketStatus?.nptTotalMinutes || 690);
+  const elapsedTradingMins = Math.max(15, Math.min(240, nptMins - 660));
+  const intradayVolumePacingFactor = marketStatus?.isOpen ? (240 / elapsedTradingMins) : 1.0;
+
+  const adv = stocks.filter(s => Number(s?.pChange || 0) > 0).length;
+  const dec = stocks.filter(s => Number(s?.pChange || 0) < 0).length;
+  const totalTraded = Math.max(1, adv + dec);
+  const breadthPct = Math.round((adv / totalTraded) * 100);
+  const breadthPassed = breadthPct >= 38;
+
+  const { sectorRanks } = computeSectorRelativeStrengthRanks(stocks);
+
+  const safeUserCapital = Math.max(10000, Number(userCapital) || 100000);
+  const deployableCapital = Math.round(safeUserCapital * 0.90);
+
+  const symbol = sym;
+  const ltp = Number(rawStock.ltp || rawStock.closePrice || 100);
+  const sector = rawStock.sector || rawStock.sectorName || 'Others';
+  const sectorRank = Number(sectorRanks[sector] ?? 99);
+
+  const rawHistory = getCachedRealPriceHistory(symbol) || rawStock.history || [];
+  const dividends = rawStock.dividendHistory || [];
+  let adjustedCandles = rawHistory;
+  try {
+    if (Array.isArray(rawHistory) && rawHistory.length > 10 && dividends.length > 0) {
+      const adj = adjustForCorporateActionsWithConfirmation(rawHistory, dividends);
+      if (adj?.adjustedCandles) adjustedCandles = adj.adjustedCandles;
+    }
+  } catch (_) {}
+
+  const masterEval = evaluateMasterStock(rawStock, breadthPassed, 0);
+  if (!masterEval) return null;
+
+  // Step 1: Sector RS
+  const step1SectorPassed = sectorRank <= 3 || (sectorRank <= 5 && masterEval.setupScore >= 82);
+
+  // Step 2: 8-Gate Quality
+  const step2GatePassed = Boolean(
+    masterEval.gatesPassedCount >= 6 &&
+    masterEval.setupScore >= 72 &&
+    !masterEval.isPromoterLockinNear &&
+    masterEval.turnoverLakhs >= 40
+  );
+
+  // Step 3: Wyckoff & Broker Flow & Anti-Wick
+  const cachedBroker = getCachedRealBrokerAnalysis(symbol) || rawStock.brokerAnalysis || rawStock.realBrokerAnalysis || null;
+  const bcr3Buy = Number(cachedBroker?.bcr3BuyPct ?? masterEval.bcr3 ?? 0);
+  const bcr3Sell = Number(cachedBroker?.bcr3SellPct ?? 0);
+  const isOperatorDumping = bcr3Sell >= 38.0 && bcr3Sell > bcr3Buy;
+
+  const high = Number(rawStock.high || ltp);
+  const low = Number(rawStock.low || ltp);
+  const open = Number(rawStock.open || ltp);
+  const candleRange = Math.max(0.01, high - low);
+  const upperWickRatio = high > Math.max(open, ltp) ? +((high - Math.max(open, ltp)) / candleRange).toFixed(2) : 0;
+  const hasShadowDistributionWick = upperWickRatio >= 0.42 && Number(rawStock.pChange || 0) > 2.0;
+
+  let rawVduRatio = Number(rawStock.rvol || masterEval.rvol || 1.0);
+  if (Array.isArray(adjustedCandles) && adjustedCandles.length >= 20) {
+    const recent20 = adjustedCandles.slice(-20);
+    const avgVol20 = recent20.reduce((sum, c) => sum + Number(c.volume || 0), 0) / 20;
+    const minQuietVol = Math.min(...recent20.slice(-5).map(c => Number(c.volume || avgVol20)));
+    if (avgVol20 > 0) {
+      rawVduRatio = +(minQuietVol / avgVol20).toFixed(2);
+    }
+  }
+  const pacedVduRatio = +(rawVduRatio * (marketStatus?.isOpen ? Math.min(1.15, intradayVolumePacingFactor * 0.8) : 1.0)).toFixed(2);
+  const step3FlowPassed = Boolean(
+    bcr3Buy >= 38.0 &&
+    !isOperatorDumping &&
+    !hasShadowDistributionWick &&
+    (pacedVduRatio <= 0.65 || masterEval.rvol >= 1.35)
+  );
+
+  // Step 4: Sizing & R:R
+  const entryLow = Number(masterEval.entryLow || +(ltp * 0.99).toFixed(1));
+  const entryHigh = Number(masterEval.entryHigh || +(ltp * 1.015).toFixed(1));
+  const chaseCap = Number(masterEval.chaseCap || +(entryHigh * 1.025).toFixed(1));
+  const stopLoss = Number(masterEval.stopLoss || +(ltp * 0.945).toFixed(1));
+  const target1 = Number(masterEval.target1Gross || +(ltp * 1.15).toFixed(1));
+  const target2 = Number(masterEval.target2Net || +(ltp * 1.25).toFixed(1));
+  const target3Runner = +(ltp * 1.40).toFixed(1);
+
+  const isInsideBuyZone = ltp >= entryLow * 0.985 && ltp <= entryHigh * 1.005;
+  const isInsideChaseCap = ltp <= chaseCap;
+
+  const dynSizing = calculateDynamicPositionSizing({
+    userCapital: deployableCapital,
+    entryPrice: ltp,
+    stopLoss,
+    target1,
+    target2,
+    median20DayTurnover: Math.max(5000000, masterEval.turnoverLakhs * 100000)
+  });
+
+  const rawKitta = Number(dynSizing?.finalKitta || 10);
+  const strict10LotKitta = Math.max(10, Math.floor(rawKitta / 10) * 10);
+
+  const tranche1Kitta = strict10LotKitta >= 20 ? Math.floor((strict10LotKitta * 0.5) / 10) * 10 : strict10LotKitta;
+  const tranche2Kitta = Math.max(0, strict10LotKitta - tranche1Kitta);
+
+  const scaleOutT1Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.floor((strict10LotKitta * 0.4) / 10) * 10) : Math.max(10, Math.floor((strict10LotKitta * 0.5) / 10) * 10);
+  const scaleOutT2Kitta = strict10LotKitta >= 30 ? Math.max(10, Math.floor((strict10LotKitta * 0.3) / 10) * 10) : Math.max(0, strict10LotKitta - scaleOutT1Kitta);
+  const runnerT3Kitta = Math.max(0, strict10LotKitta - scaleOutT1Kitta - scaleOutT2Kitta);
+
+  const netTradeT1 = calculateExactStatutoryTrade(ltp, target1, strict10LotKitta, cgtRate);
+  const netTradeT2 = calculateExactStatutoryTrade(ltp, target2, strict10LotKitta, cgtRate);
+  const netTradeRunner = calculateExactStatutoryTrade(ltp, target3Runner, strict10LotKitta, cgtRate);
+
+  const blendedTier1Gain = calculateExactStatutoryTrade(ltp, target1, scaleOutT1Kitta, cgtRate).netRealizedGain;
+  const blendedTier2Gain = scaleOutT2Kitta > 0 ? calculateExactStatutoryTrade(ltp, target2, scaleOutT2Kitta, cgtRate).netRealizedGain : 0;
+  const blendedRunnerGain = runnerT3Kitta > 0 ? calculateExactStatutoryTrade(ltp, target3Runner, runnerT3Kitta, cgtRate).netRealizedGain : 0;
+  const maximizedLadderNetProfit = Math.round(blendedTier1Gain + blendedTier2Gain + blendedRunnerGain);
+
+  const riskPerShare = Math.max(1, ltp - stopLoss);
+  const totalRiskRupees = Math.round(strict10LotKitta * riskPerShare);
+  const netRRR1 = totalRiskRupees > 0 ? +(netTradeT1.netRealizedGain / totalRiskRupees).toFixed(2) : Number(masterEval.netRRR || 2.5);
+
+  const step4SizingPassed = Boolean(
+    strict10LotKitta >= 10 &&
+    netRRR1 >= requiredNetRRR &&
+    isInsideChaseCap
+  );
+
+  // Step 5: Circuit & Tax
+  const pChangePct = Number(rawStock.pChange || 0);
+  const isCircuitLocked = Math.abs(pChangePct) >= 14.2;
+  const step5ExecutionReady = Boolean(!isCircuitLocked && netTradeT1.statutoryBreakevenPrice > 0);
+
+  const checklist = [
+    {
+      step: 1,
+      title: 'Step 1: Sector Leadership',
+      passed: step1SectorPassed,
+      metric: `${sector} (Rank #${sectorRank <= 20 ? sectorRank : '—'})`,
+      detail: step1SectorPassed
+        ? `Institutional money is actively rotating into ${sector}.`
+        : `${sector} is currently lagging the top 3 sector leaders.`
+    },
+    {
+      step: 2,
+      title: 'Step 2: 8-Gate Quality & Score',
+      passed: step2GatePassed,
+      metric: `${masterEval.gatesPassedCount}/8 Gates • Score ${masterEval.setupScore}/100`,
+      detail: step2GatePassed
+        ? `Passed liquidity (${masterEval.turnoverLakhs}L), trend (>50 EMA), and lock-in safety.`
+        : `Failed one or more quality gates (passed ${masterEval.gatesPassedCount}/8, score ${masterEval.setupScore}/100).`
+    },
+    {
+      step: 3,
+      title: 'Step 3: Wyckoff VDU & Broker Flow',
+      passed: step3FlowPassed,
+      metric: `BCR3 Buy: ${bcr3Buy}% • VDU: ${pacedVduRatio}x`,
+      detail: isOperatorDumping
+        ? `🚨 VETO: Top brokers dumping (${bcr3Sell}% sell share).`
+        : hasShadowDistributionWick
+        ? `🚨 VETO: Upper rejection shadow (${Math.round(upperWickRatio * 100)}% wick) indicates shadow supply.`
+        : step3FlowPassed
+        ? `Top 3 brokers absorbing ${bcr3Buy}% of volume with clean candle body.`
+        : `Awaiting stronger top-3 broker concentration (>=38%) or volume dry-up (current VDU: ${pacedVduRatio}x).`
+    },
+    {
+      step: 4,
+      title: 'Step 4: Half-Kelly Sizing & Net R:R',
+      passed: step4SizingPassed,
+      metric: `Net R:R ${netRRR1}:1 • ${strict10LotKitta} Kitta`,
+      detail: !isInsideChaseCap
+        ? `⚠️ Extended above Chase Cap (Rs. ${chaseCap}). Wait for pullback.`
+        : netRRR1 < requiredNetRRR
+        ? `⚠️ Net R:R ${netRRR1}:1 is below required ${requiredNetRRR}:1 threshold.`
+        : `Net R:R ${netRRR1}:1 after ${(cgtRate * 100).toFixed(1)}% CGT & fees. Max Risk: Rs. ${totalRiskRupees.toLocaleString()}.`
+    },
+    {
+      step: 5,
+      title: 'Step 5: Circuit & T+2 Tax Check',
+      passed: step5ExecutionReady,
+      metric: `Breakeven: Rs. ${netTradeT1.statutoryBreakevenPrice} • Band Clear`,
+      detail: isCircuitLocked
+        ? `🚨 Locked near ±15% circuit limit (${pChangePct}%). Do not chase.`
+        : `Clear of ±15% circuit freeze. Zero-Loss Breakeven at Rs. ${netTradeT1.statutoryBreakevenPrice}.`
+    }
+  ];
+
+  const stagesPassedCount = checklist.filter(c => c.passed).length;
+  const all5StagesPassed = stagesPassedCount === 5;
+
+  return {
+    symbol,
+    name: masterEval.name || rawStock.companyName || rawStock.name || symbol,
+    sector,
+    sectorRank,
+    ltp,
+    pChange: pChangePct,
+    setupScore: masterEval.setupScore,
+    stagesPassedCount,
+    all5StagesPassed,
+    isManualInspection: true,
+    executionStatus: !isInsideChaseCap
+      ? 'EXTENDED_ABOVE_CHASE_CAP'
+      : isInsideBuyZone
+      ? 'ACTIONABLE_IN_BUY_ZONE'
+      : 'NEAR_PIVOT_WATCH',
+    checklist,
+    executionPlan: {
+      buyZoneLow: entryLow,
+      buyZoneHigh: entryHigh,
+      chaseCap,
+      stopLoss,
+      stopLossPct: masterEval.stopLossPct,
+      target1,
+      target1NetPct: netTradeT1.netReturnPct,
+      target2,
+      target2NetPct: netTradeT2.netReturnPct,
+      target3Runner,
+      target3RunnerNetPct: netTradeRunner.netReturnPct,
+      statutoryBreakevenPrice: netTradeT1.statutoryBreakevenPrice,
+      waccPerShare: netTradeT1.waccPerShare,
+      recommendedKitta: strict10LotKitta,
+      tranche1Kitta,
+      tranche2Kitta,
+      scaleOutT1Kitta,
+      scaleOutT2Kitta,
+      runnerT3Kitta,
+      capitalOutlay: strict10LotKitta * ltp,
+      cashReserveLocked: safeUserCapital - deployableCapital,
+      maxRiskRupees: totalRiskRupees,
+      actualRiskPct: +((totalRiskRupees / safeUserCapital) * 100).toFixed(2),
+      netProfitT1: netTradeT1.netRealizedGain,
+      netProfitT2: netTradeT2.netRealizedGain,
+      maximizedLadderNetProfit,
+      netRRR1,
+      bcr3Buy,
+      bcr3Sell,
+      pacedVduRatio,
+      upperWickPct: Math.round(upperWickRatio * 100),
+      analogWinRate: masterEval.analogWinRate,
+      track: masterEval.track
+    },
+    rawStock,
+    masterEval
+  };
+}
+

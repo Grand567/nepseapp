@@ -2,9 +2,10 @@
 import React, { useState, useMemo } from 'react';
 import {
   Crown, ShieldAlert, Zap, CheckCircle2, XCircle,
-  Copy, Check, Compass, Eye, BarChart3, Layers, TrendingUp, Lock
+  Copy, Check, Compass, Eye, BarChart3, Layers, TrendingUp, Lock,
+  Search, X, RotateCcw, AlertTriangle
 } from 'lucide-react';
-import { runUnifiedFiveStepAlphaDesk } from '../utils/masterAlphaPipeline';
+import { runUnifiedFiveStepAlphaDesk, evaluateSingleStockAlphaDossier } from '../utils/masterAlphaPipeline';
 import { addToWatchlist } from '../utils/watchlist';
 
 interface AlphaCommandCenterProps {
@@ -37,6 +38,8 @@ export function AlphaCommandCenter({
 
   const [cgtRate, setCgtRate] = useState<number>(0.075);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [paperOrderSaved, setPaperOrderSaved] = useState(false);
 
@@ -51,15 +54,43 @@ export function AlphaCommandCenter({
     });
   }, [stocks, indices, userCapital, cgtRate]);
 
+  // Autocomplete suggestions matching search query
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toUpperCase();
+    if (!q) return [];
+    return stocks
+      .filter((s: any) => {
+        const sym = String(s?.symbol || s?.scrip || '').toUpperCase();
+        const name = String(s?.name || s?.companyName || '').toUpperCase();
+        return sym.includes(q) || name.includes(q);
+      })
+      .slice(0, 8);
+  }, [searchQuery, stocks]);
+
+  // Active dossier resolution:
+  // 1. If user selected a specific symbol: check qualified, then radar, or evaluate ANY stock on demand!
+  // 2. Default to prime pick or top radar runner-up
   const activeDossier = useMemo(() => {
     if (selectedSymbol) {
-      const found =
-        alphaDesk.qualifiedList.find((d: any) => d.symbol === selectedSymbol) ||
-        alphaDesk.watchlistRadar.find((d: any) => d.symbol === selectedSymbol);
-      if (found) return found;
+      const foundQualified = alphaDesk.qualifiedList.find((d: any) => d.symbol === selectedSymbol);
+      if (foundQualified) return foundQualified;
+
+      const foundRadar = alphaDesk.watchlistRadar.find((d: any) => d.symbol === selectedSymbol);
+      if (foundRadar) return foundRadar;
+
+      // Manual on-demand evaluation of ANY stock in NEPSE
+      const manualEval = evaluateSingleStockAlphaDossier(selectedSymbol, {
+        stocks,
+        indices,
+        userCapital,
+        riskTolerancePct: 1.5,
+        requiredNetRRR: 2.5,
+        cgtRate
+      });
+      if (manualEval) return manualEval;
     }
     return alphaDesk.primePick || alphaDesk.watchlistRadar[0] || null;
-  }, [selectedSymbol, alphaDesk]);
+  }, [selectedSymbol, alphaDesk, stocks, indices, userCapital, cgtRate]);
 
   const handleCopyTmsTicket = (dossier: any) => {
     if (!dossier) return;
@@ -196,6 +227,158 @@ export function AlphaCommandCenter({
           </div>
         </div>
 
+        {/* ── 🔍 MANUAL STOCK TESTER & SEARCH BAR ── */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.45)',
+          border: '1px solid rgba(255, 255, 255, 0.10)',
+          borderRadius: 12,
+          padding: '8px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          {/* Autocomplete Input */}
+          <div style={{ position: 'relative', flex: '1 1 260px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Search size={15} color="#38bdf8" style={{ flexShrink: 0 }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => setIsSearchOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    setSelectedSymbol(searchQuery.trim().toUpperCase());
+                    setIsSearchOpen(false);
+                  }
+                }}
+                placeholder="Test ANY manual stock (e.g. NABIL, SHIVM, CHCL, HATHY)..."
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#ffffff',
+                  fontSize: 12.5,
+                  width: '100%',
+                  fontWeight: 600
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setIsSearchOpen(false);
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 2 }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Suggestions Dropdown */}
+            {isSearchOpen && searchSuggestions.length > 0 && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                zIndex: 60,
+                marginTop: 6,
+                background: 'rgba(15, 23, 42, 0.98)',
+                border: '1.5px solid rgba(56, 189, 248, 0.5)',
+                borderRadius: 10,
+                boxShadow: '0 12px 30px rgba(0,0,0,0.7)',
+                maxHeight: 220,
+                overflowY: 'auto'
+              }}>
+                {searchSuggestions.map((s: any) => (
+                  <div
+                    key={s.symbol}
+                    onClick={() => {
+                      setSelectedSymbol(s.symbol);
+                      setSearchQuery('');
+                      setIsSearchOpen(false);
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 12
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(56, 189, 248, 0.15)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div>
+                      <strong style={{ color: '#ffffff' }}>{s.symbol}</strong>
+                      <span style={{ color: '#94a3b8', marginLeft: 8, fontSize: 11 }}>{s.sector || s.sectorName}</span>
+                    </div>
+                    <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                      Rs. {s.ltp || s.closePrice || '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick preset test chips */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>Quick Test:</span>
+            {['NABIL', 'SHIVM', 'CHCL', 'UPPER', 'HATHY', 'CIT', 'HDL'].map(sym => (
+              <button
+                key={sym}
+                type="button"
+                onClick={() => setSelectedSymbol(sym)}
+                style={{
+                  background: selectedSymbol === sym ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${selectedSymbol === sym ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  color: selectedSymbol === sym ? '#38bdf8' : '#cbd5e1',
+                  borderRadius: 6,
+                  padding: '2px 7px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {sym}
+              </button>
+            ))}
+            {selectedSymbol && (
+              <button
+                type="button"
+                onClick={() => setSelectedSymbol(null)}
+                style={{
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  color: '#fca5a5',
+                  borderRadius: 6,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3
+                }}
+                title="Reset to Top Qualified Pick"
+              >
+                <RotateCcw size={11} />
+                <span>Reset to Prime</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Step 1 Macro & Top 3 Sector Leaders Strip */}
         <div style={{
           display: 'flex',
@@ -238,7 +421,7 @@ export function AlphaCommandCenter({
       </div>
 
       {/* ── 2. CASH PRESERVATION BANNER (When 0 stocks pass all 5 steps) ── */}
-      {!alphaDesk.hasVerifiedPicks && (
+      {!alphaDesk.hasVerifiedPicks && !activeDossier?.isManualInspection && (
         <div style={{
           background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(15, 23, 42, 0.95))',
           border: '1.5px solid rgba(245, 158, 11, 0.45)',
@@ -254,7 +437,7 @@ export function AlphaCommandCenter({
               🛡️ 100% CAPITAL PRESERVATION ACTIVE — 0 STOCKS PASS ALL 5 STAGES RIGHT NOW
             </div>
             <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4, lineHeight: 1.5 }}>
-              Our strict AND-gate requires all 5 institutional stages to pass simultaneously. Sitting in cash during choppy sessions prevents drawdowns. Below is the highest-scoring <strong>Radar Runner-Up</strong> so you can monitor which gate is awaiting confirmation.
+              Our strict AND-gate requires all 5 institutional stages to pass simultaneously. Sitting in cash during choppy sessions prevents drawdowns. Below is the highest-scoring <strong>Radar Runner-Up</strong> so you can monitor which gate is awaiting confirmation. You can also search ANY stock above to test its 5-gate score.
             </div>
           </div>
         </div>
@@ -271,6 +454,8 @@ export function AlphaCommandCenter({
             background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(20, 28, 46, 0.98))',
             border: activeDossier.all5StagesPassed
               ? '1.5px solid rgba(16, 185, 129, 0.55)'
+              : activeDossier.isManualInspection
+              ? '1.5px solid rgba(245, 158, 11, 0.45)'
               : '1.5px solid rgba(56, 189, 248, 0.45)',
             borderRadius: 18,
             padding: '16px 18px',
@@ -288,11 +473,27 @@ export function AlphaCommandCenter({
                   </span>
                   <span style={{
                     fontSize: 11.5, fontWeight: 900, padding: '3px 9px', borderRadius: 8,
-                    background: activeDossier.all5StagesPassed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                    color: activeDossier.all5StagesPassed ? '#34d399' : '#38bdf8',
-                    border: activeDossier.all5StagesPassed ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(56, 189, 248, 0.4)'
+                    background: activeDossier.all5StagesPassed
+                      ? 'rgba(16, 185, 129, 0.2)'
+                      : activeDossier.isManualInspection
+                      ? 'rgba(245, 158, 11, 0.2)'
+                      : 'rgba(56, 189, 248, 0.2)',
+                    color: activeDossier.all5StagesPassed
+                      ? '#34d399'
+                      : activeDossier.isManualInspection
+                      ? '#fbbf24'
+                      : '#38bdf8',
+                    border: activeDossier.all5StagesPassed
+                      ? '1px solid rgba(16, 185, 129, 0.4)'
+                      : activeDossier.isManualInspection
+                      ? '1px solid rgba(245, 158, 11, 0.4)'
+                      : '1px solid rgba(56, 189, 248, 0.4)'
                   }}>
-                    {activeDossier.all5StagesPassed ? '👑 PASSED ALL 5/5 STAGES' : `📡 RADAR RUNNER-UP (${activeDossier.stagesPassedCount}/5 STAGES)`}
+                    {activeDossier.all5StagesPassed
+                      ? '👑 PASSED ALL 5/5 STAGES'
+                      : activeDossier.isManualInspection
+                      ? `🔍 MANUAL TEST: ${activeDossier.stagesPassedCount}/5 STAGES PASSED`
+                      : `📡 RADAR RUNNER-UP (${activeDossier.stagesPassedCount}/5 STAGES)`}
                   </span>
                   <span style={{
                     fontSize: 11.5, fontWeight: 900, padding: '3px 9px', borderRadius: 8,
@@ -308,7 +509,7 @@ export function AlphaCommandCenter({
                   </span>
                 </div>
                 <div style={{ fontSize: 12.5, color: '#94a3b8', marginTop: 4 }}>
-                  {activeDossier.name} • <strong>{activeDossier.sector}</strong> (Sector Rank #{activeDossier.sectorRank}) • Confluence Score: <strong style={{ color: '#34d399' }}>{activeDossier.setupScore}/100</strong> • Upper Wick: <strong>{ep.upperWickPct}%</strong>
+                  {activeDossier.name} • <strong>{activeDossier.sector}</strong> (Sector Rank #{activeDossier.sectorRank}) • Confluence Score: <strong style={{ color: activeDossier.setupScore >= 72 ? '#34d399' : '#fbbf24' }}>{activeDossier.setupScore}/100</strong> • Upper Wick: <strong>{ep.upperWickPct}%</strong>
                 </div>
               </div>
 
@@ -325,6 +526,26 @@ export function AlphaCommandCenter({
                 </div>
               </div>
             </div>
+
+            {/* Manual Test Notice Banner if failed some gates */}
+            {!activeDossier.all5StagesPassed && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                fontSize: 11.5,
+                color: '#cbd5e1',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <AlertTriangle size={15} color="#fbbf24" style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Loss-Prevention Warning:</strong> {activeDossier.symbol} does NOT satisfy all 5 institutional stages ({activeDossier.stagesPassedCount}/5 passed). Inspect the red cards below to see why capital is protected from this stock.
+                </span>
+              </div>
+            )}
 
             {/* 5-Step Visual Audit Checklist */}
             <div style={{
