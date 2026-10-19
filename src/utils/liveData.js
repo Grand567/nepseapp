@@ -3339,6 +3339,36 @@ export async function fetchPortfolioShield(items = [], days = 30) {
   return null;
 }
 
+/**
+ * Fast Tier-1 Early Ignition & Manipulation Scanner
+ * Queries GET /api/radar/early-ignition with filters
+ */
+export async function fetchEarlyIgnition(params = {}) {
+  const stage = params.stage || 'ALL';
+  const minRvol = params.minRvol !== undefined ? params.minRvol : 1.2;
+  const maxOperatorMargin = params.maxOperatorMargin !== undefined ? params.maxOperatorMargin : 8.0;
+  const sector = params.sector || 'ALL';
+  const limit = params.limit || 15;
+
+  const q = new URLSearchParams({
+    stage,
+    minRvol: String(minRvol),
+    maxOperatorMargin: String(maxOperatorMargin),
+    sector,
+    limit: String(limit)
+  }).toString();
+
+  try {
+    const res = await fetchFromBackend(`/api/radar/early-ignition?${q}`, 6000);
+    if (res?.success && Array.isArray(res.stocks)) {
+      return res;
+    }
+  } catch (err) {
+    console.warn('[liveData] fetchEarlyIgnition error:', err.message);
+  }
+  return null;
+}
+
 // ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
 export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };
 

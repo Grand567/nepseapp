@@ -35,11 +35,11 @@ try {
   }
 } catch (_) {}
 
-// Helper to snap any requested days to the closest precomputed HOT_CACHE bucket [1, 5, 15, 30]
+// Helper to snap any requested days to the closest precomputed HOT_CACHE bucket [1, 3, 5, 15, 30]
 export function resolveValidTimeframe(rawDays, defaultDays = 30) {
   const num = Number(rawDays);
   if (!Number.isFinite(num) || num <= 0) return defaultDays;
-  const buckets = [1, 5, 15, 30];
+  const buckets = [1, 3, 5, 15, 30];
   if (buckets.includes(num)) return num;
   return buckets.reduce((prev, curr) =>
     Math.abs(curr - num) < Math.abs(prev - num) ? curr : prev
@@ -358,6 +358,94 @@ router.get("/radar/broker-tracker", async (req, res) => {
     topStocks: results.slice(0, limit),
   });
 });
+
+/**
+ * GET /api/radar/early-ignition & /api/early-ignition
+ * Precomputed 3-Day Early Ignition & Manipulation Detector (<1ms response from HOT_CACHE)
+ */
+const handleEarlyIgnition = async (req, res) => {
+  await ensureHotCacheReady();
+  const stageFilter = String(req.query.stage || "ALL").toUpperCase().trim();
+  const minRvol = req.query.minRvol !== undefined && req.query.minRvol !== "" ? Number(req.query.minRvol) : 1.2;
+  const maxOperatorMargin = req.query.maxOperatorMargin !== undefined && req.query.maxOperatorMargin !== "" ? Number(req.query.maxOperatorMargin) : 8.0;
+  const sectorFilter = String(req.query.sector || "ALL").toUpperCase().trim();
+  const limit = req.query.limit === "ALL" ? Infinity : Math.max(1, parseInt(req.query.limit, 10) || 15);
+
+  const allRecords = HOT_CACHE.earlyIgnition || [];
+
+  // Summary counts
+  let primeEntryCount = 0;
+  let stealthSeedingCount = 0;
+  let breakoutCount = 0;
+  let washTrapCount = 0;
+
+  for (const st of allRecords) {
+    if (st.ignitionStage === 'STAGE_2_SUPPLY_VACUUM_IGNITION') primeEntryCount++;
+    else if (st.ignitionStage === 'STAGE_1_STEALTH_SEEDING') stealthSeedingCount++;
+    else if (st.ignitionStage === 'STAGE_3_BREAKOUT_IN_PROGRESS') breakoutCount++;
+    else if (st.ignitionStage === 'WASH_CHURN_TRAP') washTrapCount++;
+  }
+
+  const filtered = allRecords.filter((st) => {
+    // Stage Filter
+    if (stageFilter === "PRIME_ENTRY") {
+      if (st.ignitionStage !== 'STAGE_1_STEALTH_SEEDING' && st.ignitionStage !== 'STAGE_2_SUPPLY_VACUUM_IGNITION') return false;
+    } else if (stageFilter === "STAGE_1") {
+      if (st.ignitionStage !== 'STAGE_1_STEALTH_SEEDING') return false;
+    } else if (stageFilter === "STAGE_2") {
+      if (st.ignitionStage !== 'STAGE_2_SUPPLY_VACUUM_IGNITION') return false;
+    } else if (stageFilter === "BREAKOUT") {
+      if (st.ignitionStage !== 'STAGE_3_BREAKOUT_IN_PROGRESS') return false;
+    } else if (stageFilter === "WASH_TRAP") {
+      if (st.ignitionStage !== 'WASH_CHURN_TRAP') return false;
+    } else if (stageFilter !== "ALL") {
+      if (st.ignitionStage !== stageFilter) return false;
+    }
+
+    // Min RVOL (for non-wash traps)
+    if (st.ignitionStage !== 'WASH_CHURN_TRAP' && Number.isFinite(minRvol) && minRvol > 0) {
+      if (st.rvol3d < minRvol) return false;
+    }
+
+    // Max Operator Margin (for non-wash traps)
+    if (st.ignitionStage !== 'WASH_CHURN_TRAP' && Number.isFinite(maxOperatorMargin) && maxOperatorMargin > 0) {
+      if (st.operatorProfitMargin3d > maxOperatorMargin) return false;
+    }
+
+    // Sector Filter
+    if (sectorFilter !== "ALL") {
+      const sec = (stockMap[st.symbol]?.sector || st.sector || "").toUpperCase();
+      if (sec !== sectorFilter) return false;
+    }
+
+    return true;
+  });
+
+  const allSectors = Array.from(new Set(allRecords.map(s => stockMap[s.symbol]?.sector || s.sector || 'Others'))).filter(Boolean).sort();
+
+  res.set("Cache-Control", "public, max-age=30");
+  return res.json({
+    success: true,
+    timeframe: 3,
+    stage: stageFilter,
+    minRvol,
+    maxOperatorMargin,
+    sector: sectorFilter,
+    totalMatched: filtered.length,
+    sectors: allSectors,
+    summary: {
+      totalScanned: allRecords.length,
+      primeEntryCount: primeEntryCount + stealthSeedingCount,
+      stealthSeedingCount,
+      primeIgnitionCount: primeEntryCount,
+      breakoutCount,
+      washTrapCount
+    },
+    stocks: filtered.slice(0, limit)
+  });
+};
+
+router.get(["/radar/early-ignition", "/early-ignition"], handleEarlyIgnition);
 
 /**
  * Portfolio & Watchlist 30-Day Broker Shield Evaluator

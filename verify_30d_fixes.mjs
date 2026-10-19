@@ -1,7 +1,7 @@
 // verify_30d_fixes.mjs
 // Automated verification suite for the 6 Argon 30-Day Ledger & Service Hub Bug Fixes
 
-import { calculateMultiDayDiagnostics, PHASE_DEFINITIONS } from './proxy/utils/microstructureEngine.js';
+import { calculateMultiDayDiagnostics, PHASE_DEFINITIONS, evaluateEarlyIgnition } from './proxy/utils/microstructureEngine.js';
 import { 
   aggregateFloorsheetRows, 
   isIlliquidDebtOrMutualFund 
@@ -184,8 +184,9 @@ const exact15 = resolveValidTimeframe(15, 30);
 assert(defaultSnap === 30, 'Missing days query defaults to 30D institutional scope', `Result: ${defaultSnap}D`);
 assert(emptySnap === 30, 'Empty days query defaults to 30D', `Result: ${emptySnap}D`);
 assert(exact15 === 15, 'Exact supported days (15) preserved', `Result: ${exact15}D`);
+assert(resolveValidTimeframe(3, 30) === 3, '3D Early Ignition timeframe correctly recognized', `Result: 3D`);
 assert([15, 30].includes(snap20), 'Non-standard days=20 snapped to valid timeframe', `Result: ${snap20}D`);
-assert([5, 15].includes(snap7), 'Non-standard days=7 snapped to valid timeframe', `Result: ${snap7}D`);
+assert([3, 5, 15].includes(snap7), 'Non-standard days=7 snapped to valid timeframe', `Result: ${snap7}D`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEST 6: Debenture & Mutual Fund False-Missing Sync Loop Prevention
@@ -278,6 +279,128 @@ assert(shieldResult.portfolioSummary.criticalExitCount >= 2,
 assert(Array.isArray(shieldResult.portfolioSummary.rotationAlerts) && shieldResult.portfolioSummary.rotationAlerts.length > 0,
   'Active institutional rotation alerts detected in held/watched symbols',
   `Rotation alert sample: ${shieldResult.portfolioSummary.rotationAlerts[0]}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 9: ⚡ Day 1–3 Early Ignition & Manipulation Detector Verification
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▶ TEST 9: ⚡ Day 1–3 Early Ignition & Manipulation Detector Multi-Factor Verification');
+
+// 1. Verify HOT_CACHE 3D timeframe precomputation
+assert(Array.isArray(HOT_CACHE.radarByTimeframe[3]) && HOT_CACHE.radarByTimeframe[3].length > 0,
+  'HOT_CACHE precomputed 3D timeframe radar data',
+  `Count: ${HOT_CACHE.radarByTimeframe[3]?.length} stocks`);
+
+// 2. Verify HOT_CACHE.earlyIgnition pipeline
+assert(Array.isArray(HOT_CACHE.earlyIgnition) && HOT_CACHE.earlyIgnition.length > 0,
+  'HOT_CACHE precomputed early ignition candidates',
+  `Candidates evaluated: ${HOT_CACHE.earlyIgnition?.length}`);
+
+// 3. Verify sorting by ignitionScore descending
+const topCandidate = HOT_CACHE.earlyIgnition[0];
+const secondCandidate = HOT_CACHE.earlyIgnition[1];
+assert(topCandidate && typeof topCandidate.ignitionScore === 'number' && topCandidate.ignitionScore >= (secondCandidate?.ignitionScore || 0),
+  'Early ignition list correctly sorted descending by ignitionScore',
+  `Top 1: ${topCandidate?.symbol} (${topCandidate?.ignitionScore}/100, Stage: ${topCandidate?.stage})`);
+
+// 4. Verify candidate payload fields
+assert(
+  typeof topCandidate.smh3dPct === 'number' &&
+  typeof topCandidate.dispersionRatio === 'number' &&
+  typeof topCandidate.rvol3d === 'number' &&
+  typeof topCandidate.t2RetentionPct === 'number' &&
+  topCandidate.asymmetryBadge &&
+  topCandidate.tacticalPlan,
+  'Early ignition candidate contains full multi-factor microstructure metrics',
+  `SMH: ${topCandidate.smh3dPct}%, RVOL: ${topCandidate.rvol3d}x, Asymmetry: ${topCandidate.asymmetryBadge}, T+2 Hold: ${topCandidate.t2RetentionPct}%`
+);
+
+// 5. Test Synthetic Early Ignition Logic: Stage 1 Stealth Seeding
+const mockDiag3d = {
+  totalVolume: 500000,
+  timeframeDays: 3,
+  latestClose: 300,
+  closePrice: 300,
+  bigBrokerVWAP: 295,
+  priceChangePct: 1.7,
+  topAccumulators: [
+    { brokerId: 58, netVol: 75000, netInflowCr: 2.2 },
+    { brokerId: 45, netVol: 45000, netInflowCr: 1.3 },
+    { brokerId: 34, netVol: 30000, netInflowCr: 0.9 }
+  ],
+  topDistributors: [
+    { brokerId: 19, netVol: -20000, netInflowCr: -0.6 },
+    { brokerId: 28, netVol: -15000, netInflowCr: -0.4 }
+  ],
+  totalBuyersCount: 12,
+  totalSellersCount: 48,
+  scr3NetPct: 5.5
+};
+
+const mockDiag30d = {
+  avgDailyVolume: 100000,
+  marketVWAP: 290
+};
+
+const mockHistory3d = [
+  {
+    date: '2026-10-13',
+    brokers: [{ brokerId: 58, buyVol: 30000, sellVol: 0 }]
+  },
+  {
+    date: '2026-10-14',
+    brokers: [{ brokerId: 58, buyVol: 25000, sellVol: 0 }]
+  },
+  {
+    date: '2026-10-15',
+    brokers: [{ brokerId: 58, buyVol: 20000, sellVol: 1000 }]
+  }
+];
+
+const ignitionResult = evaluateEarlyIgnition('TEST_STEALTH', mockDiag3d, mockDiag30d, mockHistory3d);
+
+assert(ignitionResult.stage === 'STAGE_2_SUPPLY_VACUUM_IGNITION' || ignitionResult.stage === 'STAGE_1_STEALTH_SEEDING',
+  'evaluateEarlyIgnition correctly detects early institutional accumulation phase',
+  `Detected Stage: ${ignitionResult.stage} (Score: ${ignitionResult.ignitionScore}/100)`);
+
+assert(ignitionResult.t2RetentionPct >= 85,
+  'evaluateEarlyIgnition computes authentic T+2 retention without flip dump',
+  `Retention: ${ignitionResult.t2RetentionPct}%`);
+
+// 6. Test Synthetic Wash-Churn Trap Veto
+const mockWashDiag3d = {
+  totalVolume: 800000,
+  timeframeDays: 3,
+  latestClose: 350,
+  closePrice: 350,
+  bigBrokerVWAP: 310,
+  retentionPct: 20,
+  topAccumulators: [{ brokerId: 81, netVol: 2000, netInflowCr: 0.07 }],
+  topDistributors: [{ brokerId: 81, netVol: -3000, netInflowCr: -0.1 }],
+  totalBuyersCount: 20,
+  totalSellersCount: 20,
+  scr3NetPct: 35.0
+};
+
+const mockWashHistory = [
+  {
+    date: '2026-10-13',
+    brokers: [{ brokerId: 81, buyVol: 80000, sellVol: 0 }]
+  },
+  {
+    date: '2026-10-14',
+    brokers: [{ brokerId: 81, buyVol: 0, sellVol: 40000 }]
+  },
+  {
+    date: '2026-10-15',
+    brokers: [{ brokerId: 81, buyVol: 0, sellVol: 35000 }] // flipped > 90% of Day 1 buy
+  }
+];
+
+const washResult = evaluateEarlyIgnition('TEST_WASH', mockWashDiag3d, mockDiag30d, mockWashHistory);
+
+assert(washResult.isWashTrap === true && washResult.stage === 'WASH_CHURN_TRAP',
+  'evaluateEarlyIgnition strictly detects circular churn and sets WASH_CHURN_TRAP veto',
+  `Stage: ${washResult.stage} | isWashTrap: ${washResult.isWashTrap} | Flag: ${washResult.tacticalPlan?.actionBadge}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUMMARY

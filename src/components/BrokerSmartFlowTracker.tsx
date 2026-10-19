@@ -8,9 +8,9 @@ import {
   Search, RefreshCw, Filter, Layers, Users, ArrowUpRight, ArrowDownRight,
   Activity, CheckCircle2, DollarSign, Calendar, Clock, ChevronRight,
   ChevronDown, ChevronUp, ExternalLink, Sparkles, Percent, Database,
-  Repeat, X, BarChart3, ArrowRight
+  Repeat, X, BarChart3, ArrowRight, Zap, Flame
 } from 'lucide-react';
-import { fetchBrokerTracker } from '../utils/liveData';
+import { fetchBrokerTracker, fetchEarlyIgnition, fetchPrecomputedDiagnostic } from '../utils/liveData';
 import { TOP_NEPSE_BROKERS } from '../utils/microstructureEngine';
 import PortfolioBrokerShield from './PortfolioBrokerShield';
 
@@ -97,7 +97,18 @@ export default function BrokerSmartFlowTracker({
   const [syndicateOnly, setSyndicateOnly] = useState<boolean>(false);
   const [limit, setLimit] = useState<string>('10');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [viewTab, setViewTab] = useState<'MARKET_FLOW' | 'PORTFOLIO_SHIELD'>('MARKET_FLOW');
+  const [viewTab, setViewTab] = useState<'MARKET_FLOW' | 'EARLY_IGNITION' | 'PORTFOLIO_SHIELD'>('MARKET_FLOW');
+
+  // Early Ignition States
+  const [ignitionStocks, setIgnitionStocks] = useState<any[]>([]);
+  const [ignitionLoading, setIgnitionLoading] = useState<boolean>(false);
+  const [ignitionStageFilter, setIgnitionStageFilter] = useState<string>('PRIME_ENTRY');
+  const [ignitionMinRvol, setIgnitionMinRvol] = useState<number>(1.2);
+  const [ignitionMaxMargin, setIgnitionMaxMargin] = useState<number>(8.0);
+  const [ignitionSector, setIgnitionSector] = useState<string>('ALL');
+  const [ignitionSummary, setIgnitionSummary] = useState<any>(null);
+  const [availableIgnitionSectors, setAvailableIgnitionSectors] = useState<string[]>([]);
+  const [lastIgnitionRefreshed, setLastIgnitionRefreshed] = useState<string>('');
 
   // Data States
   const [loading, setLoading] = useState<boolean>(true);
@@ -149,6 +160,50 @@ export default function BrokerSmartFlowTracker({
     loadData();
   }, [days, mode, brokerId, sector, sortBy, syndicateOnly, limit]);
 
+  // Load Early Ignition Data from Backend API
+  const loadEarlyIgnitionData = async (isManual = false) => {
+    setIgnitionLoading(true);
+    try {
+      const res = await fetchEarlyIgnition({
+        stage: ignitionStageFilter,
+        minRvol: ignitionMinRvol,
+        maxOperatorMargin: ignitionMaxMargin,
+        sector: ignitionSector,
+        limit: 'ALL'
+      });
+      if (res?.success && Array.isArray(res.stocks)) {
+        setIgnitionStocks(res.stocks);
+        setIgnitionSummary(res.summary || null);
+        if (Array.isArray(res.sectors) && res.sectors.length > 0) {
+          setAvailableIgnitionSectors(res.sectors);
+        }
+        setLastIgnitionRefreshed(new Date().toLocaleTimeString());
+      }
+    } catch (err) {
+      console.warn('[BrokerSmartFlowTracker] Failed to load early ignition:', err);
+    } finally {
+      setIgnitionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewTab === 'EARLY_IGNITION') {
+      loadEarlyIgnitionData();
+    }
+  }, [viewTab, ignitionStageFilter, ignitionMinRvol, ignitionMaxMargin, ignitionSector]);
+
+  // Client-side text filter for Early Ignition Stocks
+  const filteredIgnitionStocks = useMemo(() => {
+    if (!searchQuery.trim()) return ignitionStocks;
+    const q = searchQuery.toLowerCase().trim();
+    return ignitionStocks.filter(
+      (s) =>
+        s.symbol.toLowerCase().includes(q) ||
+        (s.companyName && s.companyName.toLowerCase().includes(q)) ||
+        (s.sector && s.sector.toLowerCase().includes(q))
+    );
+  }, [ignitionStocks, searchQuery]);
+
   // Client-side text filter by Symbol, Company Name, or Broker
   const filteredStocks = useMemo(() => {
     if (!searchQuery.trim()) return stocks;
@@ -189,6 +244,49 @@ export default function BrokerSmartFlowTracker({
     return `${sign}Rs. ${abs.toLocaleString()}`;
   };
 
+  // Inspect Early Ignition Stock in Tape Modal
+  const handleInspectIgnitionStock = async (stk: any) => {
+    try {
+      const diag = await fetchPrecomputedDiagnostic(stk.symbol, 3);
+      setInspectedStock({
+        symbol: stk.symbol,
+        companyName: stk.companyName,
+        sector: stk.sector,
+        timeframeDays: 3,
+        ltp: stk.ltp,
+        priceChangePct: stk.priceChange3dPct,
+        marketVWAP: stk.marketVWAP3d,
+        bigBrokerVWAP: stk.bigBrokerVWAP3d,
+        buyZoneMin: stk.buyZoneMin,
+        buyZoneMax: stk.buyZoneMax,
+        phase: stk.ignitionStage,
+        phaseLabel: stk.stageLabel,
+        bcr5NetPct: stk.bcr5NetPct,
+        scr3NetPct: stk.scr3NetPct,
+        brokerId: stk.leadAccumulator?.brokerId || 'SYN',
+        brokerName: stk.leadAccumulator?.brokerName || 'Co-Accumulating Syndicate',
+        buyQty: stk.leadAccumulator?.buyVol || stk.totalVolume3d,
+        sellQty: stk.leadAccumulator?.sellVol || 0,
+        remainingQty: stk.leadAccumulator?.remainingQty || stk.top10NetBuyVol,
+        buyAmount: stk.leadAccumulator?.buyAmt || 0,
+        sellAmount: stk.leadAccumulator?.sellAmt || 0,
+        netInflowAmount: stk.leadAccumulator?.netAmt || 0,
+        totalTradedAmount: diag?.totalTurnover || 0,
+        avgBuyPrice: stk.leadAccumulator?.avgBuyPrice || stk.bigBrokerVWAP3d,
+        avgSellPrice: stk.leadAccumulator?.avgSellPrice || 0,
+        retentionPct: stk.leadAccumulator?.retentionPct || 90,
+        statusIndication: stk.stageBadge,
+        actionStartDate: stk.leadAccumulator?.startDate || null,
+        streakDays: stk.leadAccumulator?.streakDays || 3,
+        consistencyPct: stk.leadAccumulator?.consistencyPct || 80,
+        unrealizedProfitPct: stk.operatorProfitMargin3d,
+        isSyndicateCoAccumulation: stk.isSyndicateCoAccumulation,
+        syndicateBrokers: stk.syndicateBrokers,
+        dailySeries: diag?.topAccumulators?.[0]?.dailySeries || []
+      });
+    } catch (_) {}
+  };
+
   return (
     <div className="space-y-6 text-slate-100">
       {/* ── HEADER & WORKSTATION TITLE ── */}
@@ -200,7 +298,7 @@ export default function BrokerSmartFlowTracker({
             </span>
             <div>
               <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                NEPSE Broker Slow Accumulation & Dumping Tracker
+                NEPSE Broker Slow Accumulation &amp; Dumping Tracker
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
                   HOT_CACHE &lt;1ms
                 </span>
@@ -214,24 +312,27 @@ export default function BrokerSmartFlowTracker({
 
         {/* Right Info & Refresh */}
         <div className="flex items-center gap-3">
-          {lastRefreshed && (
+          {(lastRefreshed || lastIgnitionRefreshed) && (
             <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
-              <Clock className="w-3.5 h-3.5 text-slate-500" /> Synced {lastRefreshed}
+              <Clock className="w-3.5 h-3.5 text-slate-500" /> Synced {viewTab === 'EARLY_IGNITION' ? lastIgnitionRefreshed : lastRefreshed}
             </span>
           )}
           <button
-            onClick={() => loadData(true)}
-            disabled={refreshing}
+            onClick={() => {
+              if (viewTab === 'EARLY_IGNITION') loadEarlyIgnitionData(true);
+              else loadData(true);
+            }}
+            disabled={refreshing || ignitionLoading}
             className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700/80 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing || ignitionLoading ? 'animate-spin text-emerald-400' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* ── WORKSTATION MODE SWITCHER (MARKET TRACKER VS PORTFOLIO SHIELD) ── */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 w-fit">
+      {/* ── WORKSTATION MODE SWITCHER (MARKET TRACKER VS EARLY IGNITION VS PORTFOLIO SHIELD) ── */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 w-fit">
         <button
           type="button"
           onClick={() => setViewTab('MARKET_FLOW')}
@@ -242,6 +343,17 @@ export default function BrokerSmartFlowTracker({
           }`}
         >
           <Users className="w-3.5 h-3.5" /> Market Slow Flow &amp; Dumping
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewTab('EARLY_IGNITION')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            viewTab === 'EARLY_IGNITION'
+              ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5 text-amber-950 fill-current" /> ⚡ Day 1–3 Early Ignition Scanner
         </button>
         <button
           type="button"
@@ -261,6 +373,372 @@ export default function BrokerSmartFlowTracker({
           onSelectStock={onSelectStock}
           defaultTimeframe={days}
         />
+      ) : viewTab === 'EARLY_IGNITION' ? (
+        /* ── ⚡ 3-DAY EARLY IGNITION SCANNER VIEW ── */
+        <div className="space-y-6">
+          {/* Top Banner */}
+          <div className="p-4 bg-gradient-to-r from-amber-950/30 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <Flame className="w-5 h-5 animate-pulse" />
+              </span>
+              <div>
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  72-Hour Smart Money Early Ignition &amp; Manipulation Detector
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                    3-Day Horizon
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Multi-Broker Syndicate Detection · 1-to-Many Asymmetry · RVOL Surge · T+2 Demat Hold · Anti-Wash Veto
+                </p>
+              </div>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">
+              Scanned: <strong className="text-white">{ignitionSummary?.totalScanned || 367}</strong> stocks
+            </span>
+          </div>
+
+          {/* Top 4 KPI Metrics Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-bold text-amber-400 flex items-center gap-1">
+                  <Zap className="w-3.5 h-3.5" /> Prime Entry Window
+                </span>
+                <div className="text-2xl font-black text-white mt-1">
+                  {ignitionSummary?.primeEntryCount || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">Stage 1 + 2</span>
+                </div>
+              </div>
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                <Zap className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-bold text-emerald-400 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" /> Stealth Seeding
+                </span>
+                <div className="text-2xl font-black text-white mt-1">
+                  {ignitionSummary?.stealthSeedingCount || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">Stage 1</span>
+                </div>
+              </div>
+              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                <Sparkles className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-bold text-blue-400 flex items-center gap-1">
+                  <TrendingUp className="w-3.5 h-3.5" /> Markup Breakouts
+                </span>
+                <div className="text-2xl font-black text-white mt-1">
+                  {ignitionSummary?.breakoutCount || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">&gt;6.5% candle</span>
+                </div>
+              </div>
+              <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-bold text-rose-400 flex items-center gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5" /> Wash Traps Blocked
+                </span>
+                <div className="text-2xl font-black text-white mt-1">
+                  {ignitionSummary?.washTrapCount || 0}{' '}
+                  <span className="text-xs font-normal text-slate-500">circular churn</span>
+                </div>
+              </div>
+              <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filter & Tuning Bar */}
+          <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-3.5 shadow-md">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Stage Filter Buttons */}
+              <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-950/80 rounded-xl border border-slate-800">
+                {[
+                  { id: 'PRIME_ENTRY', label: '⚡ Prime Entry (Stage 1+2)' },
+                  { id: 'STAGE_1', label: '🌱 Stealth Seeding' },
+                  { id: 'STAGE_2', label: '⚡ Prime Ignition' },
+                  { id: 'BREAKOUT', label: '🚀 Breakout' },
+                  { id: 'WASH_TRAP', label: '🚨 Fake Wash Churn' },
+                  { id: 'ALL', label: 'All Detected' }
+                ].map((stg) => (
+                  <button
+                    key={stg.id}
+                    type="button"
+                    onClick={() => setIgnitionStageFilter(stg.id)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                      ignitionStageFilter === stg.id
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {stg.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Min RVOL Dropdown */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-400 font-semibold whitespace-nowrap">Min RVOL:</label>
+                <select
+                  value={ignitionMinRvol}
+                  onChange={(e) => setIgnitionMinRvol(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500"
+                >
+                  <option value={0}>0.0x (All Vol)</option>
+                  <option value={1.0}>1.0x (Normal)</option>
+                  <option value={1.2}>1.2x (Default)</option>
+                  <option value={1.5}>1.5x (Surge)</option>
+                  <option value={2.0}>2.0x (Explosion)</option>
+                </select>
+              </div>
+
+              {/* Max Operator Margin Dropdown */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-400 font-semibold whitespace-nowrap">Max Operator Profit:</label>
+                <select
+                  value={ignitionMaxMargin}
+                  onChange={(e) => setIgnitionMaxMargin(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500"
+                >
+                  <option value={4.0}>&le; 4.0% (Ultra-Tight)</option>
+                  <option value={6.0}>&le; 6.0% (Prime)</option>
+                  <option value={8.0}>&le; 8.0% (Default)</option>
+                  <option value={999}>No Limit</option>
+                </select>
+              </div>
+
+              {/* Sector Filter */}
+              {availableIgnitionSectors.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-400 font-semibold whitespace-nowrap">Sector:</label>
+                  <select
+                    value={ignitionSector}
+                    onChange={(e) => setIgnitionSector(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-500 max-w-[140px]"
+                  >
+                    <option value="ALL">All Sectors</option>
+                    {availableIgnitionSectors.map((sec) => (
+                      <option key={sec} value={sec}>{sec}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Results Grid / Table */}
+          {ignitionLoading ? (
+            <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3 bg-slate-900/60 rounded-2xl border border-slate-800">
+              <RefreshCw className="w-8 h-8 animate-spin text-amber-400" />
+              <span className="text-xs font-bold">Scanning 367 stocks in &lt;1ms for 3-Day Early Ignition signatures...</span>
+            </div>
+          ) : filteredIgnitionStocks.length === 0 ? (
+            <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3 bg-slate-900/60 rounded-2xl border border-slate-800">
+              <Zap className="w-10 h-10 text-slate-600" />
+              <p className="text-sm font-bold text-slate-300">No stocks matched current Early Ignition filters.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIgnitionStageFilter('ALL');
+                  setIgnitionMinRvol(0);
+                  setIgnitionMaxMargin(999);
+                  setIgnitionSector('ALL');
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-all shadow-md"
+              >
+                Reset to All Detected
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-xs text-slate-400 flex items-center justify-between px-1">
+                <span>Displaying <strong>{filteredIgnitionStocks.length}</strong> early ignition setups</span>
+                <span className="font-mono text-[11px]">Ranked by Ignition Score (0–100)</span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3.5">
+                {filteredIgnitionStocks.map((stock) => {
+                  const isStage2 = stock.ignitionStage === 'STAGE_2_SUPPLY_VACUUM_IGNITION';
+                  const isStage1 = stock.ignitionStage === 'STAGE_1_STEALTH_SEEDING';
+                  const isBreakout = stock.ignitionStage === 'STAGE_3_BREAKOUT_IN_PROGRESS';
+                  const isWash = stock.ignitionStage === 'WASH_CHURN_TRAP';
+
+                  return (
+                    <div
+                      key={stock.symbol}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        isStage2
+                          ? 'bg-gradient-to-r from-amber-950/30 via-slate-900 to-slate-900 border-amber-500/40 shadow-lg'
+                          : isStage1
+                          ? 'bg-gradient-to-r from-emerald-950/20 via-slate-900 to-slate-900 border-emerald-500/30'
+                          : isWash
+                          ? 'bg-rose-950/20 border-rose-500/30'
+                          : 'bg-slate-900/80 border-slate-800'
+                      }`}
+                    >
+                      {/* Top Header Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-800/80">
+                        <div className="flex items-center gap-3">
+                          <span className="text-base font-black text-white">{stock.symbol}</span>
+                          <span className="text-xs text-slate-400 truncate max-w-[200px]">{stock.companyName}</span>
+                          <span className="text-[10px] font-semibold text-slate-400 px-2 py-0.5 rounded bg-slate-800 border border-slate-700/80">
+                            {stock.sector}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Stage Badge */}
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black border flex items-center gap-1 ${
+                              isStage2
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                                : isStage1
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : isBreakout
+                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                : isWash
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                            }`}
+                          >
+                            {stock.stageBadge}
+                          </span>
+
+                          {/* Score Badge */}
+                          <span className="px-2 py-1 rounded-lg bg-slate-950 font-mono text-xs font-black border border-slate-800 text-amber-400">
+                            Score: {stock.ignitionScore}/100
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Middle 5 Quantitative Signals Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 my-3 text-xs">
+                        {/* 1. SMH Power */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-xl border border-slate-800/80">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">SMH Power (Top 10)</span>
+                          <div
+                            className={`text-sm font-black font-mono mt-0.5 ${
+                              stock.smh3dPct >= 15 ? 'text-emerald-400' : stock.smh3dPct >= 8 ? 'text-amber-400' : 'text-slate-300'
+                            }`}
+                          >
+                            {stock.smh3dPct >= 0 ? '+' : ''}{stock.smh3dPct}%
+                          </div>
+                          <span className="text-[9.5px] text-slate-500 font-mono truncate block">
+                            Net Vol: {(stock.top10NetBuyVol - stock.top10NetSellVol).toLocaleString()}
+                          </span>
+                        </div>
+
+                        {/* 2. Dispersion Asymmetry */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-xl border border-slate-800/80">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Dispersion Asymmetry</span>
+                          <div className="text-sm font-black font-mono text-white mt-0.5">
+                            {stock.dispersionRatio}x
+                          </div>
+                          <span className="text-[9.5px] text-slate-400 truncate block">
+                            {stock.buyersCount} Buyers / {stock.sellersCount} Sellers
+                          </span>
+                        </div>
+
+                        {/* 3. 3D RVOL Surge */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-xl border border-slate-800/80">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">3D RVOL Surge</span>
+                          <div
+                            className={`text-sm font-black font-mono mt-0.5 ${
+                              stock.rvol3d >= 1.6 ? 'text-amber-400' : stock.rvol3d >= 1.2 ? 'text-emerald-400' : 'text-slate-300'
+                            }`}
+                          >
+                            {stock.rvol3d}x
+                          </div>
+                          <span className="text-[9.5px] text-slate-500 truncate block">
+                            vs 30D baseline
+                          </span>
+                        </div>
+
+                        {/* 4. T+2 Retention */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-xl border border-slate-800/80">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">T+2 Settlement Hold</span>
+                          <div
+                            className={`text-sm font-black font-mono mt-0.5 ${
+                              stock.t2RetentionPct >= 85 ? 'text-emerald-400' : stock.t2RetentionPct >= 70 ? 'text-amber-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {stock.t2RetentionPct}%
+                          </div>
+                          <span className="text-[9.5px] text-slate-500 truncate block">
+                            held through Demat
+                          </span>
+                        </div>
+
+                        {/* 5. Operator VWAP & Margin */}
+                        <div className="p-2.5 bg-slate-950/70 rounded-xl border border-slate-800/80">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Operator VWAP &amp; Margin</span>
+                          <div className="text-sm font-black font-mono text-white mt-0.5">
+                            Rs. {stock.bigBrokerVWAP3d.toFixed(1)}
+                          </div>
+                          <span
+                            className={`text-[9.5px] font-mono block ${
+                              stock.operatorProfitMargin3d <= 4 ? 'text-emerald-400' : stock.operatorProfitMargin3d <= 6 ? 'text-amber-400' : 'text-rose-400'
+                            }`}
+                          >
+                            Margin: {stock.operatorProfitMargin3d >= 0 ? '+' : ''}{stock.operatorProfitMargin3d}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bottom Tactical Row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2.5 border-t border-slate-800/60 text-xs">
+                        <div className="flex-1 text-slate-300 leading-snug">
+                          <strong className="text-amber-400 mr-1.5">Tactical Plan:</strong>
+                          {stock.tacticalAdvice}
+                          {stock.buyZoneMin > 0 && (
+                            <span className="text-emerald-400 ml-1.5 font-mono">
+                              (Safe Entry Zone: Rs. {stock.buyZoneMin}–{stock.buyZoneMax})
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleInspectIgnitionStock(stock)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-700 shadow-sm"
+                          >
+                            <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                            Floorsheet Tape
+                          </button>
+                          {onSelectStock && (
+                            <button
+                              type="button"
+                              onClick={() => onSelectStock(stock)}
+                              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold transition-colors flex items-center gap-1 border border-amber-500/40"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Stock Analytics
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         <>
           {/* ── TOP KPI SUMMARY CARDS ── */}
@@ -452,6 +930,7 @@ export default function BrokerSmartFlowTracker({
           <div className="flex items-center gap-1 p-1 bg-slate-950/80 rounded-xl border border-slate-800">
             {[
               { label: '1D Session', val: 1 },
+              { label: '3D ⚡ Early', val: 3 },
               { label: '5D (1W)', val: 5 },
               { label: '15D (2W)', val: 15 },
               { label: '1M (30D)', val: 30 }

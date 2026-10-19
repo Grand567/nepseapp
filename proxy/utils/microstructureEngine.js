@@ -417,10 +417,12 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     absorptionConsistency: `${sessionsWithPositiveSmartFlow}/${actualDays} Sessions`,
     phase,
     phaseLabel,
-    topBuyers: topNetBuyers.slice(0, 5),
-    topSellers: topNetSellers.slice(0, 5),
-    topAccumulators: topNetBuyers.slice(0, 5),
-    topDistributors: topNetSellers.slice(0, 5),
+    topBuyers: topNetBuyers.slice(0, 10),
+    topSellers: topNetSellers.slice(0, 10),
+    topAccumulators: topNetBuyers.slice(0, 10),
+    topDistributors: topNetSellers.slice(0, 10),
+    totalBuyersCount: topNetBuyers.length,
+    totalSellersCount: topNetSellers.length,
     topGrossBuyers: top5GrossBuyers.map(b => ({
       ...b,
       pct: Number(((b.buyVol / totalVolume) * 100).toFixed(1))
@@ -535,4 +537,226 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
       })),
     },
   ];
+}
+
+/**
+ * Evaluates 3-Day Early Ignition & Manipulation Detection for a single stock.
+ * Combines:
+ * 1. Broker-Agnostic Smart Money Holding (SMH_3D)
+ * 2. Buyer vs. Seller Concentration Asymmetry
+ * 3. Amihud Absorption & Relative Volume Surge (RVOL 3D vs 30D baseline)
+ * 4. T+2 Settlement Retention
+ * 5. Anti-Wash / Cross-Trade Veto
+ *
+ * @param {string} symbol
+ * @param {object} diag3d - Precomputed 3-day multi-day diagnostic
+ * @param {object} diag30d - Precomputed 30-day baseline diagnostic
+ * @param {Array<object>} dailyHistory - Sorted newest first [day0, day1, day2, ...]
+ * @returns {object} Early Ignition diagnostic record
+ */
+export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!diag3d) return null;
+
+  const totalVolume3d = Math.max(1, Number(diag3d.totalVolume || 0));
+  const ltp = Number(diag3d.latestClose || diag3d.closePrice || diag3d.close || diag30d?.latestClose || 0);
+  const bigBrokerVWAP3d = Number(diag3d.bigBrokerVWAP || diag3d.marketVWAP || ltp);
+  const priceChange3dPct = Number(diag3d.priceChangePct || 0);
+  const bcr5NetPct = Number(diag3d.bcr5NetPct || 0);
+  const scr3NetPct = Number(diag3d.scr3NetPct || 0);
+
+  // 1. Broker-Agnostic Smart Money Holding (SMH_3D)
+  // Sum of net buy volume for top 10 accumulating brokers minus sum of net sell volume for top 10 distributing brokers
+  const topAcc = diag3d.topAccumulators || [];
+  const topDist = diag3d.topDistributors || [];
+
+  const top10NetBuyVol = topAcc.slice(0, 10).reduce((sum, b) => sum + Math.max(0, Number(b.remainingQty ?? b.netVol ?? 0)), 0);
+  const top10NetSellVol = topDist.slice(0, 10).reduce((sum, s) => sum + Math.abs(Number(s.remainingQty ?? s.netVol ?? 0)), 0);
+  const smh3dPct = Number((((top10NetBuyVol - top10NetSellVol) / totalVolume3d) * 100).toFixed(2));
+
+  // 2. Buyer vs. Seller Concentration Asymmetry
+  const buyersCount = diag3d.totalBuyersCount || topAcc.length;
+  const sellersCount = diag3d.totalSellersCount || topDist.length;
+  const dispersionRatio = buyersCount > 0 ? Number((sellersCount / Math.max(1, buyersCount)).toFixed(2)) : 1.0;
+  const asymmetryBadge = `${buyersCount} Buyers absorbing ${sellersCount} Sellers (${dispersionRatio}x Dispersion)`;
+
+  // 3. 3D Relative Volume vs 30D Baseline (RVOL 3D)
+  const avgVol3d = totalVolume3d / Math.max(1, Number(diag3d.timeframeDays || 3));
+  const avgVol30d = Math.max(
+    1,
+    Number(diag30d?.avgDailyVolume || (Number(diag30d?.totalVolume || (totalVolume3d * 10)) / Math.max(1, Number(diag30d?.timeframeDays || 30))))
+  );
+  const rvol3d = Number((avgVol3d / avgVol30d).toFixed(2));
+
+  // Operator profit margin over 3D Big Broker VWAP
+  const operatorProfitMargin3d = bigBrokerVWAP3d > 0
+    ? Number((((ltp - bigBrokerVWAP3d) / bigBrokerVWAP3d) * 100).toFixed(2))
+    : 0.0;
+
+  // 4. T+2 Settlement Retention
+  // Find top buyers from day2 (T-2) and day1 (T-1), check how much they retained on day0 (T-0)
+  let t2RetentionPct = 100.0;
+  let t2AccumulatedQty = 0;
+  let t2DumpedOnDay0Qty = 0;
+
+  if (Array.isArray(dailyHistory) && dailyHistory.length >= 2) {
+    const sortedHistory = [...dailyHistory].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const day0 = sortedHistory[0]; // today
+    const day1 = sortedHistory[1]; // T-1
+    const day2 = sortedHistory[2]; // T-2 (if available)
+
+    const t2BuyersMap = new Map();
+
+    const processPriorSession = (session) => {
+      if (!session || !Array.isArray(session.brokers)) return;
+      for (const b of session.brokers) {
+        const bId = String(b.brokerId || b.broker || '');
+        if (!bId) continue;
+        const net = Number(b.buyVol || 0) - Number(b.sellVol || 0);
+        if (net > 0) {
+          t2BuyersMap.set(bId, (t2BuyersMap.get(bId) || 0) + net);
+        }
+      }
+    };
+
+    if (day2) processPriorSession(day2);
+    if (day1) processPriorSession(day1);
+
+    // Get the top 5 buyers who accumulated on T-2 and T-1
+    const topPriorBuyers = Array.from(t2BuyersMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    if (topPriorBuyers.length > 0) {
+      t2AccumulatedQty = topPriorBuyers.reduce((s, [, qty]) => s + qty, 0);
+      const topBuyerIds = new Set(topPriorBuyers.map(([id]) => id));
+
+      if (day0 && Array.isArray(day0.brokers)) {
+        for (const b of day0.brokers) {
+          const bId = String(b.brokerId || b.broker || '');
+          if (topBuyerIds.has(bId)) {
+            t2DumpedOnDay0Qty += Number(b.sellVol || 0);
+          }
+        }
+      }
+
+      const retained = Math.max(0, t2AccumulatedQty - t2DumpedOnDay0Qty);
+      t2RetentionPct = t2AccumulatedQty > 0
+        ? Number(Math.min(100, Math.max(0, (retained / t2AccumulatedQty) * 100)).toFixed(1))
+        : 100.0;
+    }
+  }
+
+  // 5. Anti-Wash / Cross-Trade Veto & Stage Classification
+  const avgGrossRetention = Number(diag3d.retentionPct || 80);
+  const isWashTrap = (avgGrossRetention < 35 && rvol3d >= 1.2) || scr3NetPct >= 20 || diag3d.phase === 'BULL_TRAP';
+
+  let ignitionStage = 'NEUTRAL_ACCUMULATION';
+  let stageLabel = 'Neutral / No Ignition';
+  let stageBadge = '⚪ Neutral / Base';
+  let ignitionScore = 45;
+  let entrySignal = 'WAIT';
+  let tacticalAdvice = 'Normal trading flow. No active early ignition impulse detected.';
+
+  if (isWashTrap) {
+    ignitionStage = 'WASH_CHURN_TRAP';
+    stageLabel = 'Fake Wash Churn Trap';
+    stageBadge = '🚨 Fake Wash Churn';
+    ignitionScore = Math.max(10, Math.round(30 - (scr3NetPct * 0.5)));
+    entrySignal = 'AVOID_TRAP';
+    tacticalAdvice = `High churn circular volume detected with low net retention (${avgGrossRetention}% retention, SCR3: ${scr3NetPct}%). Operators offloading into retail liquidity.`;
+  }
+  // STAGE 2: Prime Ignition Entry (Supply Vacuum Ignition)
+  else if (
+    rvol3d >= 1.6 &&
+    smh3dPct >= 18 &&
+    t2RetentionPct >= 85 &&
+    priceChange3dPct >= 1.0 &&
+    priceChange3dPct <= 6.5 &&
+    operatorProfitMargin3d <= 6.0
+  ) {
+    ignitionStage = 'STAGE_2_SUPPLY_VACUUM_IGNITION';
+    stageLabel = 'Day 3 Prime Ignition Entry';
+    stageBadge = '⚡ Day 3 Prime Ignition Entry';
+    ignitionScore = Math.min(100, Math.round(85 + (smh3dPct * 0.4) + (rvol3d * 3)));
+    entrySignal = 'PRIME_BUY';
+    tacticalAdvice = `Supply vacuum confirmed! Smart money holding +${smh3dPct}% with ${t2RetentionPct}% T+2 retention. Operator margin is tight (+${operatorProfitMargin3d}%). Prime early entry window before public breakout.`;
+  }
+  // STAGE 1: Stealth Seeding
+  else if (
+    rvol3d >= 1.3 &&
+    smh3dPct >= 12 &&
+    t2RetentionPct >= 80 &&
+    priceChange3dPct >= -2.0 &&
+    priceChange3dPct <= 3.5 &&
+    operatorProfitMargin3d <= 4.0
+  ) {
+    ignitionStage = 'STAGE_1_STEALTH_SEEDING';
+    stageLabel = 'Day 1–2 Stealth Seeding';
+    stageBadge = '🌱 Day 1–2 Stealth Seeding';
+    ignitionScore = Math.min(88, Math.round(75 + (smh3dPct * 0.5) + (rvol3d * 4)));
+    entrySignal = 'EARLY_ACCUMULATE';
+    tacticalAdvice = `Quiet early seeding detected. Volume surging (${rvol3d}x) while price remains flat (+${priceChange3dPct}%). Accumulate with tight invalidation below Rs. ${(bigBrokerVWAP3d * 0.96).toFixed(1)}.`;
+  }
+  // STAGE 3: Breakout in Progress
+  else if (priceChange3dPct > 6.5 && smh3dPct >= 15) {
+    ignitionStage = 'STAGE_3_BREAKOUT_IN_PROGRESS';
+    stageLabel = 'Markup Breakout in Progress';
+    stageBadge = '🚀 Markup Breakout';
+    ignitionScore = Math.min(85, Math.round(70 + (smh3dPct * 0.5)));
+    entrySignal = 'MOMENTUM_RIDE';
+    tacticalAdvice = `Breakout candle underway (+${priceChange3dPct}%). Only enter on intraday pullbacks toward Rs. ${bigBrokerVWAP3d.toFixed(1)} VWAP; avoid chasing circuit tops.`;
+  }
+  else if (smh3dPct > 8 && rvol3d >= 1.1) {
+    ignitionScore = Math.min(74, Math.round(50 + (smh3dPct * 0.8) + (rvol3d * 5)));
+    tacticalAdvice = `Mild institutional interest (+${smh3dPct}% SMH). Watch for volume expansion above 1.5x.`;
+  }
+
+  // Safe buy zone around 3D Big Broker VWAP
+  const buyZoneMin = Number((bigBrokerVWAP3d * 0.975).toFixed(1));
+  const buyZoneMax = Number((bigBrokerVWAP3d * 1.035).toFixed(1));
+
+  return {
+    symbol: sym,
+    companyName: diag3d.companyName || sym,
+    sector: diag3d.sector || 'Others',
+    ltp,
+    bigBrokerVWAP3d,
+    marketVWAP3d: Number(diag3d.marketVWAP || ltp),
+    priceChange3dPct,
+    operatorProfitMargin3d,
+    rvol3d,
+    smh3dPct,
+    top10NetBuyVol,
+    top10NetSellVol,
+    totalVolume3d,
+    buyersCount,
+    sellersCount,
+    dispersionRatio,
+    asymmetryBadge,
+    t2RetentionPct,
+    t2AccumulatedQty,
+    t2DumpedOnDay0Qty,
+    bcr5NetPct,
+    scr3NetPct,
+    isWashTrap,
+    stage: ignitionStage,
+    ignitionStage,
+    stageLabel,
+    stageBadge,
+    ignitionScore,
+    entrySignal,
+    tacticalAdvice,
+    tacticalPlan: {
+      actionBadge: stageBadge,
+      signal: entrySignal,
+      advice: tacticalAdvice
+    },
+    buyZoneMin,
+    buyZoneMax,
+    leadAccumulator: diag3d.leadAccumulator,
+    leadDistributor: diag3d.leadDistributor,
+    isSyndicateCoAccumulation: Boolean(diag3d.isSyndicateCoAccumulation),
+    syndicateBrokers: diag3d.syndicateBrokers || []
+  };
 }

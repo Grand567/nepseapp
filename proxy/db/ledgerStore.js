@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import zlib from "zlib";
 import { fileURLToPath } from "url";
-import { calculateMultiDayDiagnostics, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
+import { calculateMultiDayDiagnostics, evaluateEarlyIgnition, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -97,8 +97,9 @@ db.exec(`
 // In-Memory Tier-1 Hot Cache for < 1ms API responses
 export const HOT_CACHE = {
   lastUpdatedDate: null,
-  radarByTimeframe: { 1: [], 5: [], 15: [], 30: [] },
+  radarByTimeframe: { 1: [], 3: [], 5: [], 15: [], 30: [] },
   stockDiagnostics: new Map(), // Key: `${symbol}_${days}` -> Single stock deep diagnostic
+  earlyIgnition: [], // Precomputed 3D Early Ignition & Manipulation records sorted by ignitionScore
 };
 
 /**
@@ -560,15 +561,22 @@ export function rebuildHotCache() {
     });
   }
 
-  // 3. Precompute 1D, 5D, 15D, and 30D for every symbol and store in RAM
-  const timeframes = [1, 5, 15, 30];
-  const nextRadar = { 1: [], 5: [], 15: [], 30: [] };
+  // 3. Precompute 1D, 3D, 5D, 15D, and 30D for every symbol and store in RAM
+  const timeframes = [1, 3, 5, 15, 30];
+  const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
   const nextDiagnostics = new Map();
+  const earlyIgnitionList = [];
 
   for (const [symbol, dailyHistory] of historyBySymbol.entries()) {
+    let diag3 = null;
+    let diag30 = null;
+
     for (const days of timeframes) {
       const diag = calculateMultiDayDiagnostics(dailyHistory, days);
       if (diag) {
+        if (days === 3) diag3 = diag;
+        if (days === 30) diag30 = diag;
+
         // Strip memory-heavy allBrokers (each with 30-day daily tape arrays) to keep V8 heap < 100MB on Render Free Tier
         const { allBrokers, ...compactDiag } = diag;
         const payload = { symbol, ...compactDiag };
@@ -619,6 +627,14 @@ export function rebuildHotCache() {
         nextRadar[days].push(radarSummary);
       }
     }
+
+    // Evaluate 3-Day Early Ignition & Manipulation Detection for this symbol
+    if (diag3) {
+      try {
+        const ignition = evaluateEarlyIgnition(symbol, diag3, diag30, dailyHistory);
+        if (ignition) earlyIgnitionList.push(ignition);
+      } catch (_) {}
+    }
   }
 
   const stockCount = historyBySymbol.size;
@@ -629,9 +645,10 @@ export function rebuildHotCache() {
   HOT_CACHE.lastUpdatedDate = dates[0];
   HOT_CACHE.radarByTimeframe = nextRadar;
   HOT_CACHE.stockDiagnostics = nextDiagnostics;
+  HOT_CACHE.earlyIgnition = earlyIgnitionList.sort((a, b) => b.ignitionScore - a.ignitionScore);
 
   console.log(
-    `[Drabyashree Cache] Rebuilt 1D/5D/15D/30D hot cache for ${stockCount} stocks in ${Date.now() - startTime}ms (Session: ${dates[0]})`
+    `[Drabyashree Cache] Rebuilt 1D/3D/5D/15D/30D hot cache for ${stockCount} stocks (${earlyIgnitionList.length} early ignition records) in ${Date.now() - startTime}ms (Session: ${dates[0]})`
   );
 
   // Background export of snapshot gz to ensure cold-boot safety
