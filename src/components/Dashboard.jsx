@@ -5599,7 +5599,7 @@ function Dashboard({
             whiteSpace: 'nowrap'
           }}
         >
-          <span>View Holidays</span>
+          <span>NEPSE Calendar</span>
           <ArrowRight style={{ width: 13, height: 13 }} />
         </button>
       </div>

@@ -649,12 +649,10 @@ export function getDetailedMarketStatus(now = new Date()) {
       session: isHalt ? 'EMERGENCY_HALT' : baseData.session,
       sessionLabel: isHalt ? 'Trading Suspended (Emergency Market Halt)' : baseData.sessionLabel,
       isWeekend: false,
-      isCloseDay: true,
-      holidayName: holiday.holidayName,
-      statusLabel: isHalt ? 'Emergency Market Halt (आकस्मिक बजार बन्द)' : 'Holiday Closed',
+      statusLabel: isHalt ? 'Emergency Halt' : (holiday.holidayName ? `Holiday: ${holiday.holidayName}` : 'Market Holiday'),
       message: isHalt
-        ? `Market Closed — ${holiday.holidayName}`
-        : `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp}) • Reopens ${nextTradingDayName}, ${nextTradingDayIso} at 10:30 AM`,
+        ? `Trading Suspended — ${holiday.holidayName}`
+        : `${holiday.holidayName} • Reopens ${nextTradingDayName}, ${nextTradingDayIso} at 10:30 AM`,
       lastTradingDay: getLastValidTradingDay(now),
       nextTradingDay,
       nextTradingDayIso,

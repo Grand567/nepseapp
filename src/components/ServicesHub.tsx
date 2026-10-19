@@ -197,23 +197,17 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
   { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
 
-  // ── 2. Smart Money & Institutional Flow (16 Tools) ──
+  // ── 2. Smart Money & Institutional Flow (10 Flagship Tools) ──
   { id: 'broker-smart-flow',          name: '⚡ Broker Smart Flow & Early Ignition Workstation', icon: Zap,    color: 'emerald', cat: 'smart-money', star: true },
   { id: 'whale-daily-archive',        name: 'Daily Top 5 Whale Archive (दैनिक ह्वेल)',       icon: Calendar,           color: 'emerald', cat: 'smart-money', star: true },
-  { id: 'slow-accumulation',          name: 'Slow Institutional Accumulation (2–15D)',      icon: Crosshair,          color: 'emerald', cat: 'smart-money', star: true },
-  { id: 'aggressive-accumulators',    name: 'Aggressive Accumulators (Volume Surge)',       icon: Flame,              color: 'emerald', cat: 'smart-money', star: true },
-  { id: 'aggressive-holdings',        name: 'Aggressive Broker Holdings (Zero Dump)',       icon: Shield,             color: 'teal',    cat: 'smart-money', star: true },
-  { id: 'distribution-leaders',       name: 'Distribution & Dump Warning Radar',            icon: Shield,             color: 'rose',    cat: 'smart-money', star: true },
   { id: 'unusual-trades',             name: 'Top Unusual Block Deals (≥ 1 Cr)',             icon: Zap,                color: 'yellow',  cat: 'smart-money', star: true },
   { id: 'players-choices',            name: 'Smart Money / Big Players Choices',            icon: Crown,              color: 'yellow',  cat: 'smart-money', star: true },
-  { id: 'matching-buy-sell',          name: 'Self-Matched / Cross Broker Trades',           icon: ArrowLeftRight,     color: 'cyan',    cat: 'smart-money', star: true },
   { id: 'broker-analysis',            name: 'Broker A/D Flow Analysis',                     icon: Users,              color: 'purple',  cat: 'smart-money', star: true },
   { id: 'broker-dominance',           name: 'Broker Dominance & Cornering (BCR3)',          icon: Award,              color: 'blue',    cat: 'smart-money', star: true },
   { id: 'broker-top10',               name: 'Broker Top 10 Stocks (Brokers 58, 45, 34)',    icon: BarChart3,          color: 'amber',   cat: 'smart-money', star: true },
   { id: 'broker-heatmap',             name: 'Broker Network Heatmap',                       icon: LayoutGrid,         color: 'purple',  cat: 'smart-money', star: true },
   { id: 'broker-favourites',          name: 'Broker Historical Favourites',                 icon: Heart,              color: 'pink',    cat: 'smart-money', star: true },
   { id: 'broker-flow',                name: 'Institutional Broker Flow Telemetry',          icon: Activity,           color: 'blue',    cat: 'smart-money', star: true },
-  { id: 'zero-sum-floorsheet',        name: 'Zero-Sum Net Floorsheet Engine',               icon: LayoutGrid,         color: 'teal',    cat: 'smart-money', star: true },
 
   // ── 3. Trading & Technical Setups (35 Tools) ──
   { id: 'candlestick-patterns',       name: '28 Candlestick Patterns Scanner',              icon: Compass,            color: 'pink',    cat: 'trading', star: true },
@@ -279,10 +273,9 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'regulatory-circulars',       name: 'Central Bank & SEBON Directives & Circulars',  icon: FileText,           color: 'orange',  cat: 'regulatory', star: true },
   { id: 'nrb-indicators',             name: 'Macroeconomic & Monetary Policy Indicators',   icon: Activity,           color: 'purple',  cat: 'regulatory', star: true },
 
-  // ── 6. Market Data & Primary Market (22 Tools) ──
+  // ── 6. Market Data & Primary Market (21 Tools) ──
   { id: 'live-market',                name: 'Live Market Real-Time Trading Board',          icon: Activity,           color: 'teal',    cat: 'market', star: true },
   { id: 'market-summary',             name: 'Market Summary, Breadth & Indices',            icon: LayoutDashboard,    color: 'blue',    cat: 'market', star: true },
-  { id: 'live-nepse',                 name: 'Live NEPSE Index & Sub-Indices Telemetry',     icon: Activity,           color: 'cyan',    cat: 'market', star: true },
   { id: 'sector-heatmap',             name: 'Sector Performance & Rotation Heatmap',        icon: LayoutGrid,         color: 'emerald', cat: 'market', star: true },
   { id: 'market-depth',               name: 'Real-Time 5-Depth Market Order Book',          icon: Layers,             color: 'blue',    cat: 'market', star: true },
   { id: 'floor-sheet',                name: 'Official Floor Sheet & Live Trade Tape',       icon: LayoutGrid,         color: 'purple',  cat: 'market', star: true },
@@ -303,7 +296,7 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'beginners-guide',            name: 'NEPSE Beginner\'s Glossary & Trading Guide',   icon: BookOpen,           color: 'yellow',  cat: 'market', star: true },
   { id: 'api-status',                 name: 'Core API & Proxy Telemetry Health Status',     icon: ShieldCheck,        color: 'teal',    cat: 'market', star: true },
 
-  // ── 7. Trading Calculators (9 Tools) ──
+  // ── 7. Trading Calculators (10 Tools) ──
   { id: 'calculator',                 name: 'SEBON Brokerage & Net P&L Calculator',         icon: Calculator,         color: 'orange',  cat: 'calculators', star: true },
   { id: 'margin-loan',                name: 'Margin Loan (NRB 70% LTV Valuation)',          icon: Scale,              color: 'rose',    cat: 'calculators', star: true },
   { id: 'bonus-adjustment',           name: 'Bonus Share Book-Closure Price Adjustment',    icon: Percent,            color: 'emerald', cat: 'calculators', star: true },
@@ -315,11 +308,10 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'risk-reward',                name: 'Position Sizing & Risk/Reward Calculator',     icon: Target,             color: 'purple',  cat: 'calculators', star: true },
   { id: 'capital-simulator',          name: 'Dynamic Capital & Risk Simulator',             icon: SlidersHorizontal,  color: 'indigo',  cat: 'calculators', star: true },
 
-  // ── 8. Your Personal Desk (7 Tools) ──
+  // ── 8. Your Personal Desk (6 Tools) ──
   { id: 'portfolio',                  name: 'Portfolio Tracker & Real P&L',                 icon: Briefcase,          color: 'cyan',    cat: 'desk', star: true },
   { id: 'watchlist',                  name: 'Watchlist & Telemetry Alerts',                 icon: Eye,                color: 'purple',  cat: 'desk', star: true },
-  { id: 'trade-notes',                name: 'Trader\'s Journal & Setup Thesis Notes',        icon: FileText,           color: 'orange',  cat: 'desk', star: true },
-  { id: 'smart-trade-journal',        name: 'Drabyashree Smart Trade Journal & P&L Log',    icon: BookOpen,           color: 'emerald', cat: 'desk', star: true },
+  { id: 'smart-trade-journal',        name: 'Drabyashree Smart Trade Journal & Setup Notes', icon: BookOpen,           color: 'emerald', cat: 'desk', star: true },
   { id: 'stock-alerts',               name: 'Real-Time Price Target & Stop Alerts',         icon: Bell,               color: 'yellow',  cat: 'desk', star: true },
   { id: 'credentials',                name: 'Credentials & Local Vault Storage',            icon: Lock,               color: 'rose',    cat: 'desk', star: true },
   { id: 'edit',                       name: 'Preferences, Themes & Settings',               icon: Settings,           color: 'teal',    cat: 'desk', star: true },
@@ -1051,62 +1043,13 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'stealth-accumulation-tracker': AccumulationDistributionRadar,
   'whale-daily-archive': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
   'daily-whale-tracker': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
-  'aggressive-accumulators': () => (
-    <UniversalScreener
-      filterFn={(s) => (
-        !s.isChurnDistribution &&
-        ((s.bcr3BuyPct >= 35 && s.bcr3BuyPct > (s.bcr3SellPct || 0)) ||
-         (s.nbar >= 1.25 && s.bcr3BuyPct >= 28) ||
-         (s.volumeSurgeRatio >= 1.5 && s.adRatio > 0.05)) &&
-        Number(s.turnover || 0) >= 500000
-      )}
-      sortFn={(a, b) => ((b.bcr3BuyPct || 0) * (b.nbar || 1)) - ((a.bcr3BuyPct || 0) * (a.nbar || 1))}
-      customCols={[
-        { key: 'bcr3BuyPct', label: 'Top 3 Buy (BCR3 %)', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 40 ? '#10b981' : '#38bdf8') },
-        { key: 'nbar', label: 'Buy/Sell Ratio (NBAR)', align: 'right', bold: true, format: (v) => (v ? `${Number(v).toFixed(2)}×` : '1.00×'), colorFn: (v) => (Number(v) >= 1.3 ? '#10b981' : '#94a3b8') },
-        { key: 'topAccumulator', label: 'Top Net Buyer', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
-      ]}
-      banner={{ type: 'success', text: 'Aggressive institutional buying: 100% floorsheet validated broker concentration without distribution churn.' }}
-      insight="Follow strong hands cornering and accumulating inventory with size before momentum peaks." />
-  ),
+  'aggressive-accumulators': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={5} />,
   'distribution-leaders': (props: any) => <AccumulationDistributionRadar {...props} initialStage="DISTRIBUTION" />,
   'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
   'broker-top10': () => <BrokerFlowDominanceService mode="top10" />,
-  'aggressive-holdings': () => (
-    <UniversalScreener
-      filterFn={(s) => (
-        !s.isChurnDistribution &&
-        ((s.topAccumulator && Number(s.topAccumulator.netQty || 0) > 0 && Number(s.topAccumulator.holdPctOfBuy || 0) >= 60) ||
-         (s.bcr3BuyPct >= 38 && s.nbar >= 1.3)) &&
-        Number(s.volume || 0) >= 1000
-      )}
-      sortFn={(a, b) => (Number(b.topAccumulator?.holdPctOfBuy || b.bcr3BuyPct || 0)) - (Number(a.topAccumulator?.holdPctOfBuy || a.bcr3BuyPct || 0))}
-      customCols={[
-        { key: 'topAccumulator', label: 'Lead Accumulator Desk', align: 'left', bold: true, format: (v) => (v ? `#${v.broker || v.brokerId}` : '—') },
-        { key: 'topAccumulator', label: 'Net Held Qty', align: 'right', format: (v) => (v ? Number(v.netQty || 0).toLocaleString() : '—') },
-        { key: 'topAccumulator', label: 'Hold Retention %', align: 'right', bold: true, format: (v, s) => (v?.holdPctOfBuy ? `${v.holdPctOfBuy}%` : (s?.bcr3BuyPct ? `${s.bcr3BuyPct}%` : '—')), colorFn: (v) => (v?.holdPctOfBuy >= 70 ? '#10b981' : '#38bdf8') }
-      ]}
-      banner={{ type: 'success', text: 'High-conviction institutional holding pattern across leading accumulation names.' }}
-      insight="Overnight inventory lockup + strong retention = institutions unwilling to surrender scrips into the close." />
-  ),
+  'aggressive-holdings': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={15} />,
   'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
-  'slow-accumulation': () => (
-    <UniversalScreener
-      filterFn={(s) => (
-        !s.isChurnDistribution &&
-        Math.abs(Number(s.pChange || 0)) <= 3.0 &&
-        ((s.bcr3BuyPct >= 32 && s.nbar >= 1.15) || s.stealthAccumulation >= 58) &&
-        (s.bcr3SellPct || 0) < (s.bcr3BuyPct || 50)
-      )}
-      sortFn={(a, b) => ((b.bcr3BuyPct || 30) * (b.nbar || 1)) - ((a.bcr3BuyPct || 30) * (a.nbar || 1))}
-      customCols={[
-        { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
-        { key: 'nbar', label: 'NBAR', align: 'right', bold: true, format: (v) => (v ? Number(v).toFixed(2) : '1.00') },
-        { key: 'stealthAccumulation', label: 'Stealth Score', align: 'right', bold: true, format: (v) => `${v || 50}/100`, colorFn: (v) => (v >= 65 ? '#10b981' : '#38bdf8') }
-      ]}
-      banner={{ type: 'info', text: 'Slow, silent accumulation — patient operators absorbing supply inside a tight base. Filter: Stealth Score ≥58 or BCR3 ≥32%, Price Quiet (-3% to +3%), BCR3 Sell < Buy.' }}
-      insight="Low-volatility consolidation on steady quiet absorption precedes major structural markups." />
-  ),
+  'slow-accumulation': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={30} />,
 };
 
 
