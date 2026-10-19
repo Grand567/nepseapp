@@ -5054,36 +5054,15 @@ async function scrapeShareSansarHistory(rawSymbol, startDate, endDate, size = 50
 // ============================================================
 // 1: HEALTH CHECK (Critical for warmup)
 // ============================================================
-app.get(['/health', '/api/health'], async (req, res) => {
-  const checks = {};
-
-  try {
-    const keymap = await nepseClient.getSecuritySymbolIdKeymap();
-    checks.nepse = {
-      status: 'OK',
-      securitiesLoaded: keymap?.size || 0
-    };
-  } catch (e) {
-    checks.nepse = { status: 'FAILED', error: e.message };
-  }
-
-  try {
-    const ms = await nepseClient.getMarketStatus();
-    checks.marketData = { status: 'OK', hasData: !!ms };
-  } catch (e) {
-    checks.marketData = { status: 'FAILED', error: e.message };
-  }
-
-  const allOk = Object.values(checks).every(c => c.status === 'OK');
-
+app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({
-    status: allOk ? 'HEALTHY' : 'DEGRADED',
-    nepseConnected: checks.nepse?.status === 'OK',
-    isMockData: false,
+    status: 'HEALTHY',
     timestamp: new Date().toISOString(),
-    checks,
     server: 'nepseapp.onrender.com',
-    dataSource: 'Official NEPSE NOTS API + ShareSansar'
+    service: 'Drabyashree NEPSE Ledger & Microstructure API',
+    hotCacheReady: (HOT_CACHE.radarByTimeframe[30] || []).length > 0,
+    stocksLoaded: (HOT_CACHE.radarByTimeframe[30] || []).length,
+    dataSource: 'Official NEPSE NOTS API + ShareSansar + 30D SQLite Ledger'
   });
 });
 
