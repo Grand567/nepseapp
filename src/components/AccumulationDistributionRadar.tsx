@@ -4,7 +4,7 @@ import {
   Search, RefreshCw, Zap, Crosshair, BarChart3, Info, BookOpen,
   Filter, Layers, ArrowUpRight, ArrowDownRight, Activity, Flame,
   CheckCircle2, XCircle, HelpCircle, Calendar, History, Clock, Sparkles,
-  Download, Upload, Crown, ChevronDown, ChevronUp
+  Download, Upload, Crown, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic } from '../utils/liveData';
 import {
@@ -36,6 +36,7 @@ import {
 import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData, PHASE_DEFINITIONS } from '../utils/microstructureEngine';
 // @ts-ignore
 import StockDetailModal from './StockDetailModal';
+import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
 
 const STAGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   STEALTH: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
@@ -499,7 +500,7 @@ const StockRadarCard = React.memo(function StockRadarCard({
 interface AccumulationDistributionRadarProps {
   initialSymbol?: string;
   initialStage?: string;
-  initialTab?: 'radar' | 'archive' | 'diagnostic' | 'playbook';
+  initialTab?: 'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow';
   onSelectStock?: (stock: any) => void;
   onAskGuruAi?: (stock: any) => void;
 }
@@ -511,7 +512,7 @@ export function AccumulationDistributionRadar({
   onSelectStock,
   onAskGuruAi
 }: AccumulationDistributionRadarProps) {
-  const [activeTab, setActiveTab] = useState<'radar' | 'archive' | 'diagnostic' | 'playbook'>(initialTab || 'radar');
+  const [activeTab, setActiveTab] = useState<'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow'>(initialTab || 'radar');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedStage, setSelectedStage] = useState<string>(initialStage || 'ALL');
   const [step4Filter, setStep4Filter] = useState<'ALL' | 'SECTOR_LEADERS' | 'DAY1_STEALTH' | 'DAY2_PRIME' | 'VDU_COIL' | 'CHURN_TRAP' | 'ACCUMULATION' | 'TRAP'>('ALL');
@@ -1385,6 +1386,16 @@ export function AccumulationDistributionRadar({
               <Crosshair className="w-3.5 h-3.5" /> Live Radar
             </button>
             <button
+              onClick={() => setActiveTab('smart-flow')}
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                activeTab === 'smart-flow'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" /> Slow Flow & Dump Tracker
+            </button>
+            <button
               onClick={() => setActiveTab('archive')}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'archive'
@@ -1898,6 +1909,22 @@ export function AccumulationDistributionRadar({
           );
         })()}
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* TAB: SMART MONEY SLOW ACCUMULATION & DUMPING TRACKER                */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {activeTab === 'smart-flow' && (
+        <BrokerSmartFlowTracker
+          defaultTimeframe={radarDays || 30}
+          onSelectStock={(stk) => {
+            if (stk?.symbol) {
+              setSelectedStockSymbol(stk.symbol);
+              setActiveTab('diagnostic');
+            }
+            onSelectStock?.(stk);
+          }}
+        />
+      )}
 
       {/* ─────────────────────────────────────────────────────────────────── */}
       {/* TAB 1: LIVE RADAR & SCANNER                                         */}

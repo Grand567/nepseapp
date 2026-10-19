@@ -179,6 +179,21 @@ async function getShareSansarSession() {
 }
 
 /**
+ * Detects corporate debentures, mutual funds, or promoter units that have naturally low trading frequency.
+ * Prevents redundant scraping attempts for non-existent trading sessions.
+ */
+export function isIlliquidDebtOrMutualFund(symbol) {
+  if (!symbol) return false;
+  const sym = String(symbol).toUpperCase().trim();
+  return (
+    /^\d|[0-9]{2,}|D\d{2}|DEB|MF|PF|P$/i.test(sym) ||
+    sym.endsWith('D') ||
+    sym.includes('DEB') ||
+    sym.includes('BOND')
+  );
+}
+
+/**
  * Fetches available trading dates for a symbol (newest first) using Chukul historydata API.
  */
 export async function fetchSymbolTradingDates(symbol) {
@@ -446,12 +461,15 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
 
   const syncPromise = (async () => {
   const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
-  let vaultObj = { symbol: sym, vaultVersion: 2, rowsByDate: {}, updatedAt: null, preAggregated: null };
+  let vaultObj = { symbol: sym, vaultVersion: 2, rowsByDate: {}, updatedAt: null, preAggregated: null, isCompleteHistory: false };
 
   if (fs.existsSync(vaultPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
       if (parsed && typeof parsed === 'object') {
+        if (parsed.isCompleteHistory) {
+          vaultObj.isCompleteHistory = true;
+        }
         if (parsed.vaultVersion === 2 && parsed.rowsByDate) {
           vaultObj.rowsByDate = parsed.rowsByDate;
           vaultObj.updatedAt = parsed.updatedAt || null;
@@ -481,23 +499,49 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   ];
 
   const allAvailableDates = await fetchSymbolTradingDates(sym);
+  const isIlliquid = isIlliquidDebtOrMutualFund(sym) || (allAvailableDates.length > 0 && allAvailableDates.length < 30);
   const latestTwoDates = allAvailableDates.slice(0, 2);
 
-  // Determine which dates we need to fetch
-  const datesToFetch = new Set();
-  for (const dt of requestedDates) {
-    if (!dt) continue;
-    const existing = vaultObj.rowsByDate[dt];
-    const isRecent = latestTwoDates.includes(dt);
-    const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
-    if (!Array.isArray(existing) || existing.length === 0 || (isRecent && ageMs > 10 * 60 * 1000)) {
-      datesToFetch.add(dt);
-    }
+  const populatedVaultDatesCount = Object.keys(vaultObj.rowsByDate).filter(
+    d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0
+  ).length;
+
+  if (isIlliquid && allAvailableDates.length > 0 && populatedVaultDatesCount >= allAvailableDates.length) {
+    vaultObj.isCompleteHistory = true;
   }
 
-  // If no specific dates were requested or vault is empty, ensure the 2 most recent trading dates are checked
-  if (Object.keys(vaultObj.rowsByDate).length === 0) {
-    latestTwoDates.forEach(d => { if (d) datesToFetch.add(d); });
+  // Determine which dates we need to fetch
+  // For illiquid instruments, never attempt fetching dates where the instrument never traded
+  const candidateDates = isIlliquid && allAvailableDates.length > 0
+    ? requestedDates.filter(dt => allAvailableDates.includes(dt))
+    : requestedDates;
+
+  const datesToFetch = new Set();
+  if (!vaultObj.isCompleteHistory) {
+    for (const dt of candidateDates) {
+      if (!dt) continue;
+      const existing = vaultObj.rowsByDate[dt];
+      const isRecent = latestTwoDates.includes(dt);
+      const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
+      if (!Array.isArray(existing) || existing.length === 0 || (isRecent && ageMs > 10 * 60 * 1000)) {
+        datesToFetch.add(dt);
+      }
+    }
+
+    // If no specific dates were requested or vault is empty, ensure the 2 most recent trading dates are checked
+    if (Object.keys(vaultObj.rowsByDate).length === 0) {
+      latestTwoDates.forEach(d => { if (d) datesToFetch.add(d); });
+    }
+  } else {
+    // Already complete history: only check if the newest trading date is missing or stale
+    if (latestTwoDates.length > 0) {
+      const latestDt = latestTwoDates[0];
+      const existing = vaultObj.rowsByDate[latestDt];
+      const ageMs = vaultObj.updatedAt ? (Date.now() - new Date(vaultObj.updatedAt).getTime()) : Infinity;
+      if (!Array.isArray(existing) || existing.length === 0 || ageMs > 10 * 60 * 1000) {
+        datesToFetch.add(latestDt);
+      }
+    }
   }
 
   let didUpdate = false;
@@ -613,7 +657,10 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   const populatedDatesCount = Object.keys(vaultObj.rowsByDate).filter(d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0).length;
   const targetThreshold = requestedDates.length > 0 ? Math.min(requestedDates.length, 5) : 2;
 
-  if (datesToFetch.size > 0 || populatedDatesCount < targetThreshold || Object.keys(vaultObj.rowsByDate).length === 0) {
+  // Never invoke heavy ShareSansar scraping if vault is already verified complete or all known dates are populated
+  const shouldSkipShareSansar = vaultObj.isCompleteHistory || (isIlliquid && allAvailableDates.length > 0 && populatedDatesCount >= allAvailableDates.length);
+
+  if (!shouldSkipShareSansar && (datesToFetch.size > 0 || populatedDatesCount < targetThreshold || Object.keys(vaultObj.rowsByDate).length === 0)) {
     const ssRows = await fetchShareSansarFloorsheet(sym, 50000);
     if (Array.isArray(ssRows) && ssRows.length > 0) {
       for (const r of ssRows) {
@@ -628,6 +675,13 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
           datesToFetch.delete(dt);
         }
       }
+    }
+  }
+
+  if (isIlliquid && allAvailableDates.length > 0) {
+    const currentPopulated = Object.keys(vaultObj.rowsByDate).filter(d => Array.isArray(vaultObj.rowsByDate[d]) && vaultObj.rowsByDate[d].length > 0).length;
+    if (currentPopulated >= allAvailableDates.length) {
+      vaultObj.isCompleteHistory = true;
     }
   }
 
@@ -888,11 +942,24 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   // Top-5 Buyer Concentration (CR_B_5)
   const crb5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(3) : 0;
 
-  // True BCR3 & BCR5
+  // True BCR3 & BCR5 (Gross)
   const bcr3BuyPct = totalTradedQty > 0 ? +((top3BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
   const bcr5BuyPct = totalTradedQty > 0 ? +((top5BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
   const bcr3SellPct = totalTradedQty > 0 ? +((top3SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
   const bcr5SellPct = totalTradedQty > 0 ? +((top5SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
+
+  // True Net Absorption & Seller Concentration (Net)
+  const top3NetBuyVol = topNetBuyers.slice(0, 3).reduce((s, b) => s + b.netQty, 0);
+  const top5NetBuyVol = topNetBuyers.slice(0, 5).reduce((s, b) => s + b.netQty, 0);
+  const top3NetSellVol = topNetSellers.slice(0, 3).reduce((s, b) => s + Math.abs(b.netQty), 0);
+  const top5NetSellVol = topNetSellers.slice(0, 5).reduce((s, b) => s + Math.abs(b.netQty), 0);
+
+  const bcr3NetPct = totalTradedQty > 0 ? +((top3NetBuyVol / totalTradedQty) * 100).toFixed(2) : 0;
+  const bcr5NetPct = totalTradedQty > 0 ? +((top5NetBuyVol / totalTradedQty) * 100).toFixed(2) : 0;
+  const scr3NetPct = totalTradedQty > 0 ? +((top3NetSellVol / totalTradedQty) * 100).toFixed(2) : 0;
+  const scr5NetPct = totalTradedQty > 0 ? +((top5NetSellVol / totalTradedQty) * 100).toFixed(2) : 0;
+  const scr3SellPct = bcr3SellPct;
+
   const concentrationPct = bcr3BuyPct;
   const bcr3 = totalTradedQty > 0 ? +(top3BuyTotal / totalTradedQty).toFixed(4) : 0;
   const bcr5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(4) : 0;
@@ -966,8 +1033,14 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     topSellers,
     buyers: topBuyers,
     sellers: topSellers,
+    topAccumulator: topNetBuyers[0] || null,
+    topDistributor: topNetSellers[0] || null,
+    topAccumulators: topNetBuyers,
+    topDistributors: topNetSellers,
     topNetBuyers,
     topNetSellers,
+    topGrossBuyers: topBuyers,
+    topGrossSellers: topSellers,
     brokers,
     dailyFlow,
     totalTrades: totalTradesCount || uniqueRows.length,
@@ -991,6 +1064,11 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     bcr5BuyPct,
     bcr3SellPct,
     bcr5SellPct,
+    bcr3NetPct,
+    bcr5NetPct,
+    scr3NetPct,
+    scr5NetPct,
+    scr3SellPct,
     concentrationPct: bcr3BuyPct || concentrationPct,
     isReal: true,
     source: 'authentic_multi_date_floorsheet',
@@ -1094,6 +1172,9 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
     if (combinedRows.length > 0) {
       const aggregated = aggregateFloorsheetRows(combinedRows, sym, availableDates);
       if (aggregated) {
+        if (isIlliquidDebtOrMutualFund(sym) || (allTradingDates.length > 0 && activeDates.length >= allTradingDates.length)) {
+          aggregated.isCompleteHistory = true;
+        }
         memoryCache.set(cacheKey, { timestamp: now, data: aggregated });
         return aggregated;
       }

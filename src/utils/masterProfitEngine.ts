@@ -443,17 +443,28 @@ export function evaluateMasterStock(
   const ema200 = Number(stock?.ema200 || stock?.sma200 || dynEMAs.ema200 || (ltp * 0.90));
   const dynamicAtr = calculateATR(cachedHistory, 14) || Math.max(2, ltp * 0.035);
 
-  // Volume & Broker Analysis (With Verification Check)
-  const cachedBroker = stock?.brokerAnalysis || stock?.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym) || {};
+  // Volume & 30-Day Broker Analysis (Unified Vault + 30D HOT_CACHE Diagnostics)
+  const cachedBroker =
+    stock?.diagnostics30d ||
+    stock?.brokerAnalysis ||
+    stock?.realBrokerAnalysis ||
+    getCachedRealBrokerAnalysis(sym) || {};
+
   const brokerConc = calculateBrokerConcentration(
     cachedBroker?.transactions || cachedBroker?.floorsheet || [],
     sym,  // ← FIXED: was `vol` (number), must be stock symbol string for trade matching
     { ltp, volume: vol, totalTradedQuantity: vol, ...cachedBroker }
   );
-  const rawBcr3 = cachedBroker?.bcr3BuyPct ?? brokerConc?.bcr3BuyPct ?? null;
+
+  const rawGrossBcr3 = cachedBroker?.bcr3BuyPct ?? brokerConc?.bcr3BuyPct ?? null;
+  const rawNetBcr3 = cachedBroker?.bcr3NetPct ?? null;
+  const rawBcr3 = rawGrossBcr3 ?? rawNetBcr3 ?? null;
+
   const isBrokerVerified = rawBcr3 !== null && rawBcr3 !== undefined && Number(rawBcr3) > 0;
-  const bcr3 = isBrokerVerified ? Number(rawBcr3) : 0.0;
-  const bcr5 = Number(cachedBroker?.bcr5BuyPct || brokerConc?.bcr5BuyPct || (isBrokerVerified ? bcr3 * 1.15 : 0.0));
+  const bcr3 = isBrokerVerified ? Number(rawGrossBcr3 ?? (Number(rawNetBcr3) * 2.2).toFixed(1)) : 0.0;
+  const bcr3Net = rawNetBcr3 !== null && rawNetBcr3 !== undefined ? Number(rawNetBcr3) : Number((bcr3 * 0.45).toFixed(1));
+  const bcr5 = Number(cachedBroker?.bcr5BuyPct ?? cachedBroker?.bcr5NetPct ?? brokerConc?.bcr5BuyPct ?? (isBrokerVerified ? bcr3 * 1.35 : 0.0));
+  const scr3 = Number(cachedBroker?.scr3SellPct ?? cachedBroker?.scr3NetPct ?? 0);
   const avgBuySizeRatio = Number(brokerConc?.tradeSizeRatio || 1.15);
   const rvolRaw = stock?.volumeSurgeRatio || stock?.rvol || null;
   const rvolVerified = rvolRaw !== null && Number(rvolRaw) > 0;
@@ -470,14 +481,19 @@ export function evaluateMasterStock(
   const wyckoffResult = classifyWyckoffStage(stock, cachedHistory, brokerConc);
   const wyckoffStageStr: string = (wyckoffResult && typeof wyckoffResult.stage === 'string')
     ? wyckoffResult.stage
-    : '🟢 STEALTH_ACCUMULATION';
+    : (cachedBroker?.phase || '🟢 STEALTH_ACCUMULATION');
 
-  // Traps & Lock-in Check
+  // Traps & Lock-in Check (Anti-Distribution & Operator Exit Liquidity Trap Gate)
   const isDumping = Boolean(
     cachedBroker?.isInstitutionalDumping ||
+    cachedBroker?.phase === 'DISTRIBUTION_DANGER' ||
+    cachedBroker?.phase === 'BULL_TRAP' ||
+    (cachedBroker?.scr3NetPct !== undefined && Number(cachedBroker.scr3NetPct) >= 20.0) ||
+    (cachedBroker?.scr3SellPct !== undefined && Number(cachedBroker.scr3SellPct) >= 38.0) ||
     (cachedBroker?.adSignal === 'Distribution' && bcr3 < 30) ||
     wyckoffStageStr.includes('DISTRIBUTION') ||
-    wyckoffStageStr.includes('DUMP')
+    wyckoffStageStr.includes('DUMP') ||
+    Boolean(stock?.isDistributionTrap)
   );
   const isDistributionTrap = isDumping && pChange >= 0;
 
@@ -574,16 +590,16 @@ export function evaluateMasterStock(
     },
     gate5_broker: {
       // P1: CMF >= 0.08 fallback when live broker data unavailable (replaces stealthAccumulation proxy)
-      passed: isBrokerVerified
-        ? bcr3 >= 40.0
-        : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 75),  // tightened stealth threshold when CMF also fails
-      label: 'Smart Money Broker Inflow',
+      passed: !isDistributionTrap && (isBrokerVerified
+        ? (bcr3 >= 40.0 || bcr3Net >= 16.0)
+        : (cmfFallbackPasses || (stock?.stealthAccumulation || 0) >= 65)),
+      label: 'Smart Money 30D Broker Inflow',
       actualValue: isBrokerVerified
-        ? `BCR3 ${bcr3}% (Verified)`
+        ? `BCR3 ${bcr3}% (Net ${bcr3Net}%)${isDistributionTrap ? ' [TRAP VETO]' : ' (30D Verified)'}`
         : cmfFallbackPasses
           ? `CMF ${cmfResult?.cmf?.toFixed(3)} ≥ 0.08 (OHLCV-based)`
           : (stock?.stealthAccumulation ? `Stealth ${stock.stealthAccumulation} (Est.)` : 'No Flow Signal'),
-      threshold: isBrokerVerified ? '>= 40.0% BCR3' : 'CMF >= 0.08 or Stealth >= 75',
+      threshold: isBrokerVerified ? '>= 40.0% BCR3 (or >= 16% Net) & No Dump' : 'CMF >= 0.08 or Stealth >= 65',
       category: 'Order Flow'
     },
     gate6_dpi: {
@@ -649,7 +665,10 @@ export function evaluateMasterStock(
   const netRRR = +(netRewardPerShare / riskPerShare).toFixed(2);
 
   // Analog win rate
-  const analogWinRate = Math.max(35, Math.min(85, Math.round(52 + (bcr3 > 45 ? 12 : 0) + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0) + (isBounceBack ? 6 : 0))));
+  const analogWinRate = Math.max(
+    35,
+    Math.min(85, Math.round(52 + (!isDistributionTrap && (bcr3 > 45 || bcr3Net >= 18) ? 12 : (isDistributionTrap ? -10 : 0)) + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0) + (isBounceBack ? 6 : 0)))
+  );
 
   // Composite Setup Score (0 - 100)
   let rawScore = 35 + (gatesPassedCount * 5.5) + (bcr3 * 0.35) + (analogWinRate * 0.15);
@@ -692,12 +711,12 @@ export function evaluateMasterStock(
       id: 'matrix_bcr3',
       name: '4. Smart Money Inflow',
       targetMetric: 'Step 4 Broker Card',
-      rule: 'Top 3 Brokers account for >= 40% of Buy Volume (BCR3)',
-      passed: isBrokerVerified ? bcr3 >= 40.0 : ((stock?.stealthAccumulation || 0) >= 65),
+      rule: 'Top 3 Brokers account for >= 40% of Buy Volume (BCR3) or >= 16% Net',
+      passed: !isDistributionTrap && (isBrokerVerified ? (bcr3 >= 40.0 || bcr3Net >= 16.0) : ((stock?.stealthAccumulation || 0) >= 65)),
       actual: isBrokerVerified
-        ? `BCR3 = ${bcr3}% (${avgBuySizeRatio >= 1.4 ? 'Large Blocks' : 'Moderate Tickets'})`
+        ? `BCR3 = ${bcr3}% (Net ${bcr3Net}%) ${avgBuySizeRatio >= 1.4 ? 'Large Blocks' : 'Moderate Tickets'}${isDistributionTrap ? ' [TRAP]' : ''}`
         : `Est. Stealth = ${stock?.stealthAccumulation || 50} (Pending Live Floorsheet)`,
-      isHardReject: isBrokerVerified && bcr3 < 25.0
+      isHardReject: isDistributionTrap || (isBrokerVerified && bcr3 < 25.0 && bcr3Net < 10.0)
     },
     {
       id: 'matrix_trap',

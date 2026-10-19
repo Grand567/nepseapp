@@ -26,6 +26,7 @@ import { sortNewsByNepseImpact, deduplicateNews, sortNews } from '../utils/newsI
 import sebonPipelineData from '../data/sebonPipelineData.json';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
 import { DataTable, InfoBanner, Insight, NoData, SourceBar, Spinner, TableSkeleton, StatCard, TimeframeFilterBar, StockSearchSelect, type ColDef } from './ui';
+import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
 
 const DEFAULT_COLS: ColDef[] = [
   {
@@ -3875,6 +3876,7 @@ export function BrokerFavouritesService({
   stocks?: any[];
   onSelectStock?: (stk: any) => void;
 } = {}) {
+  const [activeSubTab, setActiveSubTab] = useState<'smart-flow' | 'classic'>('smart-flow');
   const [timeframe, setTimeframe] = useState('1D');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -4058,109 +4060,148 @@ export function BrokerFavouritesService({
     );
   }, [data, search]);
 
-  if (loading) return <Spinner text={`Calculating ${timeframe} Broker Accumulation Leaders…`} />;
-
   return (
     <div className="space-y-4">
-      <TimeframeFilterBar
-        timeframe={timeframe}
-        onSelectTimeframe={setTimeframe}
-        title="Broker Favourite Securities (Smart Money Accumulation)"
-        onRefresh={handleRefresh}
-        isRefreshing={refreshing}
-      />
-
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard label="Top Pick" value={filtered[0]?.symbol || '—'} subtitle={filtered[0]?.favBroker} color="#10b981" />
-        <StatCard label="Avg Accumulation" value={filtered.length === 0 ? '—' : `${Math.min(99, Math.round(filtered.slice(0, 10).reduce((s, x) => s + x.netDominancePct, 0) / Math.min(10, filtered.length)))}%`} big color="#38bdf8" />
-        <StatCard label="Screened Horizon" value={timeframe} big color="#a855f7" />
-        <StatCard label="Tracked Names" value={filtered.length} color="#f59e0b" />
-      </div>
-
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by stock symbol, company, or broker name…"
-          className="w-full rounded-xl border border-slate-800 bg-slate-900/90 py-2.5 pl-9 pr-8 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
-        />
-        {search && (
+      {/* View Switcher Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800/80">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/90 border border-slate-800 shadow-inner">
           <button
             type="button"
-            onClick={() => setSearch('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-400 cursor-pointer"
+            onClick={() => setActiveSubTab('smart-flow')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeSubTab === 'smart-flow'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
           >
-            ✕
+            <Activity size={14} className={activeSubTab === 'smart-flow' ? 'text-white' : 'text-emerald-400'} />
+            32D Broker Flow & Dump Tracker
           </button>
-        )}
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('classic')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeSubTab === 'classic'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-950/40'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <LayoutGrid size={14} className={activeSubTab === 'classic' ? 'text-white' : 'text-blue-400'} />
+            Classic Matrix View
+          </button>
+        </div>
+        <span className="text-[11px] text-slate-400 font-medium">
+          Ledger Source: <span className="text-emerald-400 font-mono font-bold">drabyashree_ledger.db</span> (32 Trading Days)
+        </span>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner w-full max-w-full">
-        <table className="w-full border-collapse text-left text-xs text-slate-200 min-w-[650px]">
-          <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
-            <tr>
-              <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">#</th>
-              <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">Symbol / Company</th>
-              <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">Leading Accumulator</th>
-              <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">Broker Dominance</th>
-              <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">{timeframe} Change</th>
-              <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">{timeframe} Turnover</th>
-              <th className="px-3.5 py-2.5 text-center text-[11px] font-bold uppercase text-slate-400">Signal</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {filtered.map((s, idx) => {
-              const p = Number(s.periodChange || s.pChange || 0);
-              const isUp = p >= 0;
-              return (
-                <tr
-                  key={s.symbol}
-                  onClick={() => onSelectStock && onSelectStock(s)}
-                  className={`hover:bg-slate-800/50 transition-colors ${onSelectStock ? 'cursor-pointer' : ''}`}
-                >
-                  <td className="px-3.5 py-2.5 font-mono text-slate-500 text-xs">{idx + 1}</td>
-                  <td className="px-3.5 py-2.5">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-white tracking-wide">{s.symbol}</span>
-                      <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{s.companyName || s.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3.5 py-2.5">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-950/60 border border-blue-800/60 text-blue-300 font-semibold text-[11px]">
-                      {s.favBroker}
-                    </span>
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">
-                    <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60">
-                      {s.netDominancePct}% Buy
-                    </span>
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right font-mono font-bold" style={{ color: isUp ? '#10b981' : '#f43f5e' }}>
-                    {isUp ? '+' : ''}{p.toFixed(2)}%
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">
-                    Rs. {((Number(s.institutionalTurnover || s.turnover || 0)) / 1e7).toFixed(1)} Cr
-                  </td>
-                  <td className="px-3.5 py-2.5 text-center">
-                    <span className={`px-2 py-0.5 rounded text-[10.5px] font-bold border ${
-                      s.status === 'Heavy Accumulation'
-                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
-                        : 'bg-blue-950/80 text-blue-300 border-blue-700'
-                    }`}>
-                      {s.status}
-                    </span>
-                  </td>
+      {activeSubTab === 'smart-flow' ? (
+        <BrokerSmartFlowTracker onSelectStock={onSelectStock} />
+      ) : loading ? (
+        <Spinner text={`Calculating ${timeframe} Broker Accumulation Leaders…`} />
+      ) : (
+        <div className="space-y-4">
+          <TimeframeFilterBar
+            timeframe={timeframe}
+            onSelectTimeframe={setTimeframe}
+            title="Broker Favourite Securities (Smart Money Accumulation)"
+            onRefresh={handleRefresh}
+            isRefreshing={refreshing}
+          />
+
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <StatCard label="Top Pick" value={filtered[0]?.symbol || '—'} subtitle={filtered[0]?.favBroker} color="#10b981" />
+            <StatCard label="Avg Accumulation" value={filtered.length === 0 ? '—' : `${Math.min(99, Math.round(filtered.slice(0, 10).reduce((s, x) => s + x.netDominancePct, 0) / Math.min(10, filtered.length)))}%`} big color="#38bdf8" />
+            <StatCard label="Screened Horizon" value={timeframe} big color="#a855f7" />
+            <StatCard label="Tracked Names" value={filtered.length} color="#f59e0b" />
+          </div>
+
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by stock symbol, company, or broker name…"
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/90 py-2.5 pl-9 pr-8 text-xs text-white placeholder:text-slate-500 outline-none focus:border-blue-500"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-400 cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40 shadow-inner w-full max-w-full">
+            <table className="w-full border-collapse text-left text-xs text-slate-200 min-w-[650px]">
+              <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
+                <tr>
+                  <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">#</th>
+                  <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">Symbol / Company</th>
+                  <th className="px-3.5 py-2.5 text-[11px] font-bold uppercase text-slate-400">Leading Accumulator</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">Broker Dominance</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">{timeframe} Change</th>
+                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold uppercase text-slate-400">{timeframe} Turnover</th>
+                  <th className="px-3.5 py-2.5 text-center text-[11px] font-bold uppercase text-slate-400">Signal</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {filtered.map((s, idx) => {
+                  const p = Number(s.periodChange || s.pChange || 0);
+                  const isUp = p >= 0;
+                  return (
+                    <tr
+                      key={s.symbol}
+                      onClick={() => onSelectStock && onSelectStock(s)}
+                      className={`hover:bg-slate-800/50 transition-colors ${onSelectStock ? 'cursor-pointer' : ''}`}
+                    >
+                      <td className="px-3.5 py-2.5 font-mono text-slate-500 text-xs">{idx + 1}</td>
+                      <td className="px-3.5 py-2.5">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-white tracking-wide">{s.symbol}</span>
+                          <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{s.companyName || s.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-blue-950/60 border border-blue-800/60 text-blue-300 font-semibold text-[11px]">
+                          {s.favBroker}
+                        </span>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400">
+                        <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/60">
+                          {s.netDominancePct}% Buy
+                        </span>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right font-mono font-bold" style={{ color: isUp ? '#10b981' : '#f43f5e' }}>
+                        {isUp ? '+' : ''}{p.toFixed(2)}%
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-slate-200">
+                        Rs. {((Number(s.institutionalTurnover || s.turnover || 0)) / 1e7).toFixed(1)} Cr
+                      </td>
+                      <td className="px-3.5 py-2.5 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10.5px] font-bold border ${
+                          s.status === 'Heavy Accumulation'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
+                            : 'bg-blue-950/80 text-blue-300 border-blue-700'
+                        }`}>
+                          {s.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-      <Insight>
-        Broker Favorites highlights equities with asymmetric institutional sponsorship across selected time horizons. Stocks with &gt;70% broker dominance typically form reliable swing bottoms.
-      </Insight>
+          <Insight>
+            Broker Favorites highlights equities with asymmetric institutional sponsorship across selected time horizons. Stocks with &gt;70% broker dominance typically form reliable swing bottoms.
+          </Insight>
+        </div>
+      )}
     </div>
   );
 }

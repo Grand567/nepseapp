@@ -324,13 +324,24 @@ export function calculateBreakoutQuality(
     }
   }
 
+  // ── Operator Unrealized Profit Margin & Distribution Risk Guard ──
+  const operatorProfitMarginPct = Number(
+    stock?.operatorProfitMarginPct ??
+    stock?.brokerAnalysis?.leadAccumulator?.unrealizedProfitPct ??
+    stock?.brokerAnalysis?.operatorProfitMarginPct ??
+    stock?.unrealizedProfitPct ??
+    0
+  );
+  const isOperatorExtendedProfit = operatorProfitMarginPct > 28;
+
   // ── DYNAMIC CONTINUOUS SCORING FOUNDATIONS ──
   const baseTrap = Math.round(
     14 +
     (upperWickRatio * 42) +
     (rvol >= 1.6 ? 12 : rvol >= 1.2 ? 6 : 0) +
     (pChange >= 7.5 ? 16 : pChange >= 4.0 ? 8 : 0) +
-    (brokerOffloadingIntoBreakout ? 22 : 0)
+    (brokerOffloadingIntoBreakout ? 22 : 0) +
+    (isOperatorExtendedProfit ? 18 : 0)
   );
   const dynamicTrapProb = Math.max(5, Math.min(95, baseTrap));
 
@@ -339,15 +350,17 @@ export function calculateBreakoutQuality(
     (bodyRatio * 22) +
     (rvol >= 1.3 ? 16 : rvol >= 1.0 ? 6 : -10) +
     (pChange > 0 ? Math.min(15, pChange * 2.2) : Math.max(-18, pChange * 3)) -
-    (upperWickRatio * 28)
+    (upperWickRatio * 28) -
+    (isOperatorExtendedProfit ? 15 : 0)
   );
   const dynamicQualityScore = Math.max(8, Math.min(96, baseQuality));
 
   // ── 1. BULL TRAP REJECTION (Intraday spike rejected with large upper wick or broker dumping) ──
   const isNearR = nearestR ? (high >= nearestR.price * 0.995) : false;
   const isSevereWickRejection = (upperWickRatio >= 0.38 && (rvol >= 1.15 || isNearR)) || (upperWickRatio >= 0.50);
+  const isOperatorDistributionClimax = isOperatorExtendedProfit && (upperWickRatio >= 0.28 || brokerOffloadingIntoBreakout);
 
-  if (isSevereWickRejection || brokerOffloadingIntoBreakout) {
+  if (isSevereWickRejection || brokerOffloadingIntoBreakout || isOperatorDistributionClimax) {
     return {
       detected: true,
       status: 'Bull Trap (Rejection)',
@@ -359,11 +372,15 @@ export function calculateBreakoutQuality(
       retestConfirmed: false,
       upperWickRatio,
       bodyRatio,
-      qualityScore: Math.min(45, dynamicQualityScore),
-      bullTrapProbability: Math.max(55, dynamicTrapProb),
+      qualityScore: Math.min(42, dynamicQualityScore),
+      bullTrapProbability: Math.max(isOperatorDistributionClimax ? 72 : 55, dynamicTrapProb),
       t2Hazard: '🚨 EXTREME_TRAP_HAZARD',
-      t2HazardDescriptionNepali: 'चेतावनी! ब्रेकआउट ट्र्याप: माथिल्लो विक ठूलो छ र ब्रोकरहरूले माल फाल्दैछन्। T+2 मा फसिने उच्च जोखिम छ।',
-      t2HazardDescriptionEnglish: 'Severe Bull Trap Risk. Strong upper wick rejection with broker offloading into retail buying.',
+      t2HazardDescriptionNepali: isOperatorDistributionClimax
+        ? `चेतावनी! अपरेटर प्रोफिट-बुकिङ ट्र्याप: ब्रोकरहरू +${operatorProfitMarginPct.toFixed(1)}% नाफामा छन् र ब्रेकआउटमा माल फाल्दैछन्। T+2 मा फसिने उच्च जोखिम छ।`
+        : 'चेतावनी! ब्रेकआउट ट्र्याप: माथिल्लो विक ठूलो छ र ब्रोकरहरूले माल फाल्दैछन्। T+2 मा फसिने उच्च जोखिम छ।',
+      t2HazardDescriptionEnglish: isOperatorDistributionClimax
+        ? `Severe Bull Trap Risk: Operators sitting on +${operatorProfitMarginPct.toFixed(1)}% profit are distributing into breakout buyers.`
+        : 'Severe Bull Trap Risk. Strong upper wick rejection with broker offloading into retail buying.',
     };
   }
 

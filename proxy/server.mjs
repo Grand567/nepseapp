@@ -18,7 +18,7 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
-import { seedFromDiskVault, rebuildHotCache } from './db/ledgerStore.js';
+import { seedFromDiskVault, rebuildHotCache, HOT_CACHE } from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -3222,6 +3222,49 @@ app.get('/api/nepse/company-id/:symbol', async (req, res) => {
   }
 });
 
+/**
+ * Attaches precomputed 30D/multi-day Wyckoff microstructure diagnostics from HOT_CACHE
+ * into broker-analysis response payloads for sub-millisecond enrichment.
+ */
+function enrichWithMicrostructure(symbol, days, vaultData) {
+  if (!vaultData || typeof vaultData !== 'object') return vaultData;
+  const sym = String(symbol || '').toUpperCase().trim();
+  const d = Number(days || 30);
+
+  // Try exact days key, then 30D key, then 15D, 5D, 1D
+  const diag =
+    HOT_CACHE?.stockDiagnostics?.get(`${sym}_${d}`) ||
+    HOT_CACHE?.stockDiagnostics?.get(`${sym}_30`) ||
+    HOT_CACHE?.stockDiagnostics?.get(`${sym}_15`) ||
+    HOT_CACHE?.stockDiagnostics?.get(`${sym}_5`) ||
+    HOT_CACHE?.stockDiagnostics?.get(`${sym}_1`);
+
+  if (!diag) return vaultData;
+
+  return {
+    ...vaultData,
+    microstructure30d: diag,
+    phase: vaultData.phase || diag.phase,
+    phaseLabel: vaultData.phaseLabel || diag.phaseLabel,
+    marketVWAP: vaultData.marketVWAP || diag.marketVWAP,
+    bigBrokerVWAP: vaultData.bigBrokerVWAP || diag.bigBrokerVWAP,
+    buyZoneMin: vaultData.buyZoneMin ?? diag.buyZoneMin,
+    buyZoneMax: vaultData.buyZoneMax ?? diag.buyZoneMax,
+    bcr3NetPct: vaultData.bcr3NetPct ?? diag.bcr3NetPct,
+    bcr5NetPct: vaultData.bcr5NetPct ?? diag.bcr5NetPct,
+    scr3NetPct: vaultData.scr3NetPct ?? diag.scr3NetPct,
+    bcr3BuyPct: vaultData.bcr3BuyPct ?? diag.bcr3BuyPct,
+    bcr5BuyPct: vaultData.bcr5BuyPct ?? diag.bcr5BuyPct,
+    scr3SellPct: vaultData.scr3SellPct ?? diag.scr3SellPct,
+    isInstitutionalDumping: vaultData.isInstitutionalDumping ?? diag.isInstitutionalDumping,
+    adSignal: vaultData.adSignal || diag.adSignal,
+    topAccumulators: vaultData.topAccumulators || diag.topAccumulators,
+    topDistributors: vaultData.topDistributors || diag.topDistributors,
+    topAccumulator: vaultData.topAccumulator || (diag.topAccumulators?.[0] ? diag.topAccumulators[0].broker : null),
+    topDistributor: vaultData.topDistributor || (diag.topDistributors?.[0] ? diag.topDistributors[0].broker : null),
+  };
+}
+
 /* ═══════════════════════════════════════════════════
    REAL DATA ENDPOINT D — Broker Analysis (Aggregate Floorsheet)
    GET /api/broker-analysis/:symbol?days=30&date=&fromDate=&toDate=
@@ -3237,7 +3280,7 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
-    if (cached) return res.json({ success: true, data: cached, cached: true });
+    if (cached) return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, cached), cached: true });
   }
 
   // Tier 1: Authentic Multi-Date Broker Vault (Chukul Date-Wise + ShareSansar + Persistent File Cache)
@@ -3260,13 +3303,17 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
           fastSnapshot = getFastVaultSnapshot(symbol, 1);
         }
         if (fastSnapshot && (fastSnapshot.brokers?.length > 0 || fastSnapshot.totalVolume > 0)) {
-          vaultData = fastSnapshot;
-          setCache(cacheKey, fastSnapshot, 2 * 60 * 1000);
+          const enrichedFast = enrichWithMicrostructure(symbol, days, fastSnapshot);
+          vaultData = enrichedFast;
+          setCache(cacheKey, enrichedFast, 2 * 60 * 1000);
           // Let the full sync complete in the background to update cache
           fullPromise.then(full => {
-            if (full) setCache(cacheKey, full, 10 * 60 * 1000);
+            if (full) {
+              const enrichedFull = enrichWithMicrostructure(symbol, days, full);
+              setCache(cacheKey, enrichedFull, 10 * 60 * 1000);
+            }
           }).catch(() => {});
-          return res.json({ success: true, data: fastSnapshot, source: 'broker_vault_fast_snapshot', isPartial: true });
+          return res.json({ success: true, data: enrichedFast, source: 'broker_vault_fast_snapshot', isPartial: true });
         } else {
           const fallbackTimeout = new Promise(resolve => setTimeout(() => resolve(null), 4500));
           vaultData = await Promise.race([fullPromise, fallbackTimeout]);
@@ -3277,8 +3324,9 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     }
 
     if (vaultData && (vaultData.brokers?.length > 0 || vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0 || vaultData.totalVolume > 0)) {
-      setCache(cacheKey, vaultData, 10 * 60 * 1000);
-      return res.json({ success: true, data: vaultData, source: 'broker_vault_authentic' });
+      const enrichedVault = enrichWithMicrostructure(symbol, days, vaultData);
+      setCache(cacheKey, enrichedVault, 10 * 60 * 1000);
+      return res.json({ success: true, data: enrichedVault, source: 'broker_vault_authentic' });
     }
   } catch (vaultErr) {
     console.warn(`[broker-analysis] BrokerVault error for ${symbol}:`, vaultErr.message);
@@ -3342,8 +3390,9 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
         dailyFlow: []
       };
 
-      setCache(cacheKey, data, 5 * 60 * 1000);
-      return res.json({ success: true, data, source: 'empty_no_floorsheet_records' });
+      const enrichedEmpty = enrichWithMicrostructure(symbol, days, data);
+      setCache(cacheKey, enrichedEmpty, 5 * 60 * 1000);
+      return res.json({ success: true, data: enrichedEmpty, source: 'empty_no_floorsheet_records' });
     }
 
     // Filter to N trading days
@@ -3356,8 +3405,9 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     // Route fallback filtered array directly through aggregateFloorsheetRows
     const aggregated = aggregateFloorsheetRows(filtered, symbol, sortedDates);
     if (aggregated) {
-      setCache(cacheKey, aggregated, 10 * 60 * 1000);
-      return res.json({ success: true, data: aggregated, source: 'floorsheet_aggregated' });
+      const enrichedAgg = enrichWithMicrostructure(symbol, days, aggregated);
+      setCache(cacheKey, enrichedAgg, 10 * 60 * 1000);
+      return res.json({ success: true, data: enrichedAgg, source: 'floorsheet_aggregated' });
     }
 
     res.status(503).json({

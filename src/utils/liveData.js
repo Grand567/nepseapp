@@ -3257,6 +3257,40 @@ export async function fetchPrecomputedDiagnostic(symbol, days = 1) {
   return null;
 }
 
+/**
+ * Fast Tier-1 Broker Slow Accumulation & Dumping Tracker
+ * Queries /api/radar/broker-tracker with full multi-filter parameters
+ */
+export async function fetchBrokerTracker(params = {}) {
+  const days = params.days || 30;
+  const mode = params.mode || 'ACCUMULATING';
+  const brokerId = params.brokerId || 'ALL';
+  const sector = params.sector || 'ALL';
+  const sortBy = params.sortBy || 'netInflow';
+  const syndicateOnly = params.syndicateOnly ? 'true' : 'false';
+  const limit = params.limit || 10;
+
+  const q = new URLSearchParams({
+    days: String(days),
+    mode,
+    brokerId,
+    sector,
+    sortBy,
+    syndicateOnly,
+    limit: String(limit)
+  }).toString();
+
+  try {
+    const res = await fetchFromBackend(`/api/radar/broker-tracker?${q}`, 6000);
+    if (res?.success && Array.isArray(res.topStocks)) {
+      return res;
+    }
+  } catch (err) {
+    console.warn('[liveData] fetchBrokerTracker error:', err.message);
+  }
+  return null;
+}
+
 // ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
 export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };
 

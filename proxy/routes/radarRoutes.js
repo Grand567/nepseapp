@@ -1,5 +1,7 @@
 // proxy/routes/radarRoutes.js
 import express from "express";
+import fs from "fs";
+import path from "path";
 import { 
   HOT_CACHE, 
   rebuildHotCache, 
@@ -13,13 +15,38 @@ import {
 
 const router = express.Router();
 
+let stockMap = {};
+try {
+  const candidatePaths = [
+    path.join(process.cwd(), "src", "utils", "stockmap.json"),
+    path.join(process.cwd(), "proxy", "utils", "stockmap.json"),
+    path.join(process.cwd(), "proxy", "data", "stockmap.json")
+  ];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      stockMap = JSON.parse(fs.readFileSync(p, "utf8"));
+      break;
+    }
+  }
+} catch (_) {}
+
+// Helper to snap any requested days to the closest precomputed HOT_CACHE bucket [1, 5, 15, 30]
+export function resolveValidTimeframe(rawDays, defaultDays = 30) {
+  const num = Number(rawDays);
+  if (!Number.isFinite(num) || num <= 0) return defaultDays;
+  const buckets = [1, 5, 15, 30];
+  if (buckets.includes(num)) return num;
+  return buckets.reduce((prev, curr) =>
+    Math.abs(curr - num) < Math.abs(prev - num) ? curr : prev
+  );
+}
+
 /**
- * GET /api/radar?days=5
+ * GET /api/radar?days=30
  * Returns all stocks' phase classifications & radar counts for 1D, 5D, 15D, or 30D in < 1ms
  */
 router.get("/radar", (req, res) => {
-  const requestedDays = Number(req.query.days) || 1;
-  const validDays = [1, 5, 15, 30].includes(requestedDays) ? requestedDays : 1;
+  const validDays = resolveValidTimeframe(req.query.days, 30);
 
   // Serve directly from Tier 1 Hot RAM Cache
   const stocks = HOT_CACHE.radarByTimeframe[validDays] || [];
@@ -58,13 +85,241 @@ router.get("/radar", (req, res) => {
 });
 
 /**
- * GET /api/diagnostics/:symbol?days=15
+ * GET /api/radar/broker-tracker
+ * Multi-criteria Smart Money Slow Accumulation & Dumping Tracker
+ * Query Params:
+ *  - days: 1, 5, 15, 30 (default: 30)
+ *  - mode: ACCUMULATING | DUMPING | ALL (default: ACCUMULATING)
+ *  - brokerId: ALL or broker ID (e.g. 58, 45, 34)
+ *  - sector: ALL or sector name
+ *  - sortBy: netInflow | remainingQty | priceAsc | priceDesc | bcr5 | streakDays | profitMargin
+ *  - syndicateOnly: boolean ('true' / 'false')
+ *  - limit: 10, 25, 50, ALL (default: 10)
+ */
+router.get("/radar/broker-tracker", (req, res) => {
+  const rawDays = Number(req.query.days) || 30;
+  const validDays = resolveValidTimeframe(rawDays, 30);
+  const mode = String(req.query.mode || "ACCUMULATING").toUpperCase();
+  const brokerIdFilter = String(req.query.brokerId || "ALL").trim().toUpperCase();
+  const sectorFilter = String(req.query.sector || "ALL").trim();
+  const sortBy = String(req.query.sortBy || "netInflow").trim();
+  const syndicateOnly = String(req.query.syndicateOnly || "false").toLowerCase() === "true";
+  const limit = req.query.limit === "ALL" ? 500 : Math.max(1, Number(req.query.limit) || 10);
+
+  const universe = HOT_CACHE.radarByTimeframe[validDays] || [];
+  const results = [];
+
+  for (const stock of universe) {
+    const diag = HOT_CACHE.stockDiagnostics.get(`${stock.symbol}_${validDays}`) || stock;
+    const smInfo = stockMap[stock.symbol] || {};
+    const stockSector = smInfo.sector || stock.sector || diag.sector || "Others";
+    const companyName = smInfo.name || stock.name || diag.companyName || stock.symbol;
+
+    if (sectorFilter !== "ALL" && stockSector.toLowerCase() !== sectorFilter.toLowerCase()) {
+      continue;
+    }
+
+    if (syndicateOnly && !diag.isSyndicateCoAccumulation) {
+      continue;
+    }
+
+    // Case A: User selected a specific Broker (e.g., Broker #58)
+    // Case B: Market-wide Top Institutional Broker per stock (brokerId === "ALL")
+    let targetBroker = null;
+    if (brokerIdFilter !== "ALL") {
+      const brokersList = diag.allBrokers || [...(diag.topBuyers || []), ...(diag.topSellers || [])];
+      targetBroker = brokersList.find((b) => String(b.brokerId) === brokerIdFilter) || null;
+      if (!targetBroker) continue;
+    } else {
+      targetBroker = mode === "DUMPING"
+        ? (diag.leadDistributor || diag.topDistributors?.[0] || diag.topSellers?.[0] || null)
+        : (diag.leadAccumulator || diag.topAccumulators?.[0] || diag.topBuyers?.[0] || null);
+    }
+
+    if (!targetBroker) continue;
+
+    const remainingQty = Number(targetBroker.remainingQty ?? targetBroker.netVol ?? (targetBroker.buyVol - targetBroker.sellVol) ?? 0);
+    const buyAmt = Number(targetBroker.buyAmt || 0);
+    const sellAmt = Number(targetBroker.sellAmt || 0);
+    const netInflowAmt = Number(targetBroker.netAmt ?? (buyAmt - sellAmt));
+
+    const isAccumulating = remainingQty > 0;
+    const isDumping = remainingQty < 0;
+
+    if (mode === "ACCUMULATING" && !isAccumulating) continue;
+    if (mode === "DUMPING" && !isDumping) continue;
+
+    const latestPrice = Number(diag.latestClose || stock.latestClose || 0);
+    const avgBuyPrice = Number(targetBroker.avgBuyPrice || 0);
+    const unrealizedProfitPct = targetBroker.unrealizedProfitPct !== undefined
+      ? targetBroker.unrealizedProfitPct
+      : (avgBuyPrice > 0 ? Number((((latestPrice - avgBuyPrice) / avgBuyPrice) * 100).toFixed(2)) : 0);
+
+    results.push({
+      symbol: stock.symbol,
+      companyName,
+      sector: stockSector,
+      timeframeDays: validDays,
+      ltp: latestPrice,
+      priceChangePct: Number(diag.priceChangePct || 0),
+      marketVWAP: Number(diag.marketVWAP || 0),
+      bigBrokerVWAP: Number(diag.bigBrokerVWAP || 0),
+      buyZoneMin: Number(diag.buyZoneMin || 0),
+      buyZoneMax: Number(diag.buyZoneMax || 0),
+      phase: diag.phase,
+      phaseLabel: diag.phaseLabel,
+      bcr5NetPct: Number(diag.bcr5NetPct || 0),
+      scr3NetPct: Number(diag.scr3NetPct || 0),
+      // Target Broker Metrics
+      brokerId: targetBroker.brokerId,
+      brokerName: targetBroker.brokerName || `Broker #${targetBroker.brokerId}`,
+      buyQty: Number(targetBroker.buyVol || 0),
+      sellQty: Number(targetBroker.sellVol || 0),
+      remainingQty, // Buy Qty - Sell Qty
+      buyAmount: buyAmt,
+      sellAmount: sellAmt,
+      netInflowAmount: netInflowAmt, // Total Net Inflow/Outflow Amount
+      totalTradedAmount: buyAmt + sellAmt,
+      avgBuyPrice,
+      avgSellPrice: Number(targetBroker.avgSellPrice || 0),
+      retentionPct: Number(targetBroker.retentionPct || 0),
+      statusIndication: targetBroker.brokerActionLabel || (isAccumulating ? "Slowly Accumulating" : "Slowly Dumping"),
+      actionStartDate: targetBroker.startDate || null,
+      streakDays: Number(targetBroker.streakDays || 0),
+      consistencyPct: Number(targetBroker.consistencyPct || 0),
+      unrealizedProfitPct,
+      isSyndicateCoAccumulation: Boolean(diag.isSyndicateCoAccumulation),
+      syndicateBrokers: diag.syndicateBrokers || [],
+      dailySeries: Array.isArray(targetBroker.dailySeries) ? targetBroker.dailySeries : []
+    });
+  }
+
+  // ── Operator Capital Rotation & Pair-Trade Detector ──
+  // Matches each heavyweight broker's #1 Dumped Stock with its #1 Accumulated Stock
+  const brokerFlowMap = new Map();
+  for (const s of universe) {
+    const sDiag = HOT_CACHE.stockDiagnostics.get(`${s.symbol}_${validDays}`);
+    if (!sDiag) continue;
+    const smMeta = stockMap[s.symbol] || {};
+    const symCompany = smMeta.name || s.name || sDiag.companyName || s.symbol;
+
+    for (const b of (sDiag.topAccumulators || [])) {
+      if (!b.brokerId || b.netAmt <= 0) continue;
+      const bId = String(b.brokerId);
+      let entry = brokerFlowMap.get(bId);
+      if (!entry) {
+        entry = { brokerId: bId, brokerName: b.brokerName || `Broker #${bId}`, buys: [], sells: [] };
+        brokerFlowMap.set(bId, entry);
+      }
+      entry.buys.push({
+        symbol: s.symbol,
+        companyName: symCompany,
+        netAmt: b.netAmt,
+        remainingQty: b.remainingQty,
+        avgBuyPrice: b.avgBuyPrice,
+        ltp: Number(sDiag.latestClose || s.latestClose || 0)
+      });
+    }
+
+    for (const d of (sDiag.topDistributors || [])) {
+      if (!d.brokerId || d.netAmt >= 0) continue;
+      const bId = String(d.brokerId);
+      let entry = brokerFlowMap.get(bId);
+      if (!entry) {
+        entry = { brokerId: bId, brokerName: d.brokerName || `Broker #${bId}`, buys: [], sells: [] };
+        brokerFlowMap.set(bId, entry);
+      }
+      entry.sells.push({
+        symbol: s.symbol,
+        companyName: symCompany,
+        netAmt: d.netAmt,
+        remainingQty: d.remainingQty,
+        avgSellPrice: d.avgSellPrice,
+        ltp: Number(sDiag.latestClose || s.latestClose || 0)
+      });
+    }
+  }
+
+  // Dynamic threshold scaled by timeframe window
+  const minThreshold = validDays >= 30 ? 2.5e7 : validDays >= 15 ? 1.2e7 : validDays >= 5 ? 6e6 : 1.5e6;
+  const capitalRotations = [];
+
+  for (const [bId, flow] of brokerFlowMap.entries()) {
+    if (brokerIdFilter !== "ALL" && bId !== brokerIdFilter) continue;
+    flow.buys.sort((a, b) => b.netAmt - a.netAmt);
+    flow.sells.sort((a, b) => a.netAmt - b.netAmt); // Most negative outflow first
+
+    const topBuy = flow.buys[0];
+    const topSell = flow.sells[0];
+
+    if (topBuy && topSell && topBuy.netAmt >= minThreshold && topSell.netAmt <= -minThreshold) {
+      const shiftedAmount = Math.min(topBuy.netAmt, Math.abs(topSell.netAmt));
+      capitalRotations.push({
+        brokerId: bId,
+        brokerName: flow.brokerName,
+        dumpedSymbol: topSell.symbol,
+        dumpedCompanyName: topSell.companyName,
+        dumpedNetAmt: topSell.netAmt,
+        dumpedQty: topSell.remainingQty,
+        accumulatedSymbol: topBuy.symbol,
+        accumulatedCompanyName: topBuy.companyName,
+        accumulatedNetAmt: topBuy.netAmt,
+        accumulatedQty: topBuy.remainingQty,
+        shiftedAmount,
+        shiftedAmountCr: Number((shiftedAmount / 1e7).toFixed(2)),
+        rotationMatchPct: Number(((shiftedAmount / Math.max(topBuy.netAmt, Math.abs(topSell.netAmt))) * 100).toFixed(1))
+      });
+    }
+  }
+
+  capitalRotations.sort((a, b) => b.shiftedAmount - a.shiftedAmount);
+
+  // Dynamic Multi-Criteria Sorting
+  results.sort((a, b) => {
+    if (sortBy === "priceAsc") return a.ltp - b.ltp;
+    if (sortBy === "priceDesc") return b.ltp - a.ltp;
+    if (sortBy === "remainingQty") {
+      return mode === "DUMPING" ? a.remainingQty - b.remainingQty : b.remainingQty - a.remainingQty;
+    }
+    if (sortBy === "bcr5") {
+      return mode === "DUMPING" ? b.scr3NetPct - a.scr3NetPct : b.bcr5NetPct - a.bcr5NetPct;
+    }
+    if (sortBy === "streakDays") {
+      return b.streakDays - a.streakDays;
+    }
+    if (sortBy === "profitMargin") {
+      return b.unrealizedProfitPct - a.unrealizedProfitPct;
+    }
+    // Default: sortBy === "netInflow"
+    return mode === "DUMPING"
+      ? a.netInflowAmount - b.netInflowAmount // Most negative outflow first
+      : b.netInflowAmount - a.netInflowAmount; // Highest positive net inflow first
+  });
+
+  const allSectors = Array.from(new Set(universe.map((s) => stockMap[s.symbol]?.sector || s.sector || "Others"))).filter(Boolean).sort();
+
+  res.set("Cache-Control", "public, max-age=30");
+  return res.json({
+    success: true,
+    timeframeDays: validDays,
+    mode,
+    brokerId: brokerIdFilter,
+    sector: sectorFilter,
+    sortBy,
+    totalMatched: results.length,
+    sectors: allSectors,
+    capitalRotations: capitalRotations.slice(0, 12),
+    topStocks: results.slice(0, limit),
+  });
+});
+
+/**
+ * GET /api/diagnostics/:symbol?days=30
  * Returns full Deep Diagnostic + Top 5 Net Buyers/Sellers + Safe Buy Zone metrics for a single stock
  */
 router.get("/diagnostics/:symbol", (req, res) => {
   const symbol = String(req.params.symbol || "").toUpperCase().trim();
-  const requestedDays = Number(req.query.days) || 1;
-  const validDays = [1, 5, 15, 30].includes(requestedDays) ? requestedDays : 1;
+  const validDays = resolveValidTimeframe(req.query.days, 30);
 
   const data = HOT_CACHE.stockDiagnostics.get(`${symbol}_${validDays}`);
   const storedDates = getStoredDates(40);
@@ -82,9 +337,16 @@ router.get("/diagnostics/:symbol", (req, res) => {
   res.set("Cache-Control", "public, max-age=60");
   return res.json({
     success: true,
+    timeframeDays: validDays,
     loadedTradingDays: storedDates.length,
     isBackfilling: backfill.isBackfilling,
     targetTradingDays: backfill.targetTradingDays,
+    allTimeframes: {
+      1: HOT_CACHE.stockDiagnostics.get(`${symbol}_1`) || null,
+      5: HOT_CACHE.stockDiagnostics.get(`${symbol}_5`) || null,
+      15: HOT_CACHE.stockDiagnostics.get(`${symbol}_15`) || null,
+      30: HOT_CACHE.stockDiagnostics.get(`${symbol}_30`) || null,
+    },
     data,
   });
 });

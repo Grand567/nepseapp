@@ -1851,6 +1851,37 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const brokerAdStrength = parseFloat(brokerAnalysis?.adStrength) || 0;
   const isInstitutionalDumping = brokerAdSignal === 'Distribution' && (brokerAdStrength >= 35 || brokerAdRatio <= -0.10);
 
+  // 30D Microstructure Intelligence (Syndicate Co-Accumulation & Operator Unrealized Profit Margin)
+  const operatorProfitMarginPct = Number(
+    brokerAnalysis?.leadAccumulator?.unrealizedProfitPct ??
+    brokerAnalysis?.operatorProfitMarginPct ??
+    brokerAnalysis?.unrealizedProfitPct ??
+    stock?.operatorProfitMarginPct ??
+    0
+  );
+  const syndicateBrokersList = brokerAnalysis?.syndicateBrokers || stock?.syndicateBrokers;
+  const syndicateCount = Array.isArray(syndicateBrokersList)
+    ? syndicateBrokersList.length
+    : (brokerAnalysis?.isSyndicateCoAccumulation || stock?.isSyndicateCoAccumulation ? 3 : Number(stock?.syndicateCount || 0));
+  const accumStreakDays = Number(
+    brokerAnalysis?.leadAccumulator?.streakDays ??
+    brokerAnalysis?.streakDays ??
+    stock?.streakDays ??
+    0
+  );
+
+  // 1. Early Syndicate Accumulation Boost (+8 pts): Multi-broker co-accumulation near cost basis
+  if (syndicateCount >= 3 && operatorProfitMarginPct <= 12 && !isInstitutionalDumping) {
+    combinedScore = Math.min(100, +(combinedScore + 8).toFixed(1));
+    bullishFactors.push(`🏛️ Syndicate Co-Accumulation Near Cost Basis (+8 pts): ${syndicateCount} institutional brokers co-accumulating (${accumStreakDays > 0 ? accumStreakDays + 'd streak, ' : ''}operator profit ${operatorProfitMarginPct.toFixed(1)}% <= 12%)`);
+  }
+
+  // 2. High Operator Unrealized Profit Penalty (-10 pts): Operators sitting on >28% profit
+  if (operatorProfitMarginPct > 28) {
+    combinedScore = Math.max(0, +(combinedScore - 10).toFixed(1));
+    bearishFactors.push(`⚠️ High Operator Unrealized Profit (${operatorProfitMarginPct.toFixed(1)}% > 28%): Big institutional brokers are in deep profit zone — elevated distribution climax risk`);
+  }
+
   if (isInstitutionalDumping) {
     bearishFactors.push(`Heavy broker distribution: Top institutional brokers are net distributing (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`);
   } else if (brokerAdSignal === 'Accumulation' && brokerAdRatio >= 0.08) {
@@ -1905,6 +1936,7 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
     ...(dataSource.real === false ? ['⚠️ Price history is estimated — analysis is based on simulated data'] : []),
     ...(caEvents.length > 0 && unconfirmedCount > 0 ? [`${unconfirmedCount} corporate action adjustment(s) could not be confirmed against dividend records`] : []),
     ...(isInstitutionalDumping ? [`⚠️ Institutional Distribution: Top brokers are net offloading inventory (${Math.abs(brokerAdRatio * 100).toFixed(1)}% net sell volume)`] : []),
+    ...(operatorProfitMarginPct > 28 ? [`⚠️ High Operator Profit (${operatorProfitMarginPct.toFixed(1)}%): Big brokers sitting on heavy gains may trigger profit-taking dump`] : []),
     ...(isLossMaking ? [`⚠️ Fundamental Caution: Negative EPS (${epsVal.toFixed(2)}) indicates operating losses`] : []),
     ...(isExtremePE ? [`⚠️ High Valuation Multiple: P/E of ${peVal.toFixed(1)}x exceeds prudent thresholds`] : []),
     ...(isDeepHydroDry && hydroSeason.warning ? [hydroSeason.warning] : []),
