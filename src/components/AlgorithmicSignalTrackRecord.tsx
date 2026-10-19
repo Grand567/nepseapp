@@ -20,7 +20,8 @@ import {
   Calendar,
   Layers,
   Building2,
-  ExternalLink
+  ExternalLink,
+  Flame
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 
@@ -49,6 +50,11 @@ export interface AlgorithmicSignal {
   gross_pnl_pct: number;
   net_pnl_after_fees_pct: number;
   holding_days: number;
+  current_ltp?: number;
+  vwap_diff_pct?: number;
+  vwap_zone?: 'BELOW_VWAP' | 'AT_VWAP' | 'ABOVE_VWAP' | string;
+  live_risk_to_sl_pct?: number;
+  live_reward_to_t1_pct?: number;
 }
 
 export interface SignalSummary {
@@ -124,7 +130,7 @@ export function AlgorithmicSignalTrackRecord({
   const [strategyFilter, setStrategyFilter] = useState<string>('ALL');
   const [brokerFilter, setBrokerFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'dateDesc' | 'netPnlDesc' | 'maxGainDesc'>('dateDesc');
+  const [sortBy, setSortBy] = useState<'dateDesc' | 'netPnlDesc' | 'maxGainDesc' | 'vwapDiscount'>('dateDesc');
 
   // Lock body scroll in modal mode
   useEffect(() => {
@@ -220,7 +226,28 @@ export function AlgorithmicSignalTrackRecord({
     }
 
     // Sorting
-    if (sortBy === 'netPnlDesc') {
+    if (sortBy === 'vwapDiscount') {
+      result.sort((a, b) => {
+        const aOpen = a.status === 'OPEN_ACTIVE' ? 0 : 1;
+        const bOpen = b.status === 'OPEN_ACTIVE' ? 0 : 1;
+        if (aOpen !== bOpen) return aOpen - bOpen;
+        const aLtp = Number((a.exit_price || a.entry_price).toFixed(2));
+        const bLtp = Number((b.exit_price || b.entry_price).toFixed(2));
+        const aDiff =
+          a.vwap_diff_pct !== undefined
+            ? a.vwap_diff_pct
+            : a.broker_vwap > 0
+            ? ((aLtp - a.broker_vwap) / a.broker_vwap) * 100
+            : 0;
+        const bDiff =
+          b.vwap_diff_pct !== undefined
+            ? b.vwap_diff_pct
+            : b.broker_vwap > 0
+            ? ((bLtp - b.broker_vwap) / b.broker_vwap) * 100
+            : 0;
+        return aDiff - bDiff;
+      });
+    } else if (sortBy === 'netPnlDesc') {
       result.sort((a, b) => (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0));
     } else if (sortBy === 'maxGainDesc') {
       result.sort((a, b) => (b.max_gain_pct ?? 0) - (a.max_gain_pct ?? 0));
@@ -235,6 +262,37 @@ export function AlgorithmicSignalTrackRecord({
 
     return result;
   }, [signals, statusFilter, strategyFilter, brokerFilter, searchQuery, sortBy]);
+
+  // Helper for VWAP discount badge
+  const renderVwapBadge = (s: AlgorithmicSignal) => {
+    const ltp = Number((s.exit_price || s.entry_price).toFixed(2));
+    const diff =
+      s.vwap_diff_pct !== undefined
+        ? s.vwap_diff_pct
+        : s.broker_vwap > 0
+        ? Number((((ltp - s.broker_vwap) / s.broker_vwap) * 100).toFixed(2))
+        : 0;
+
+    if (diff <= 0) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm">
+          🔥 {Math.abs(diff).toFixed(2)}% BELOW VWAP
+        </span>
+      );
+    }
+    if (diff <= 1.5) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm">
+          ✅ +{diff.toFixed(2)}% AT VWAP
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
+        ⚠️ +{diff.toFixed(2)}% ABOVE VWAP
+      </span>
+    );
+  };
 
   // Helper for status badge rendering
   const renderStatusBadge = (s: AlgorithmicSignal) => {
@@ -526,7 +584,7 @@ export function AlgorithmicSignalTrackRecord({
         {/* ── INTERACTIVE FILTER BAR ── */}
         <div className="rounded-xl bg-slate-900/60 border border-slate-800/80 p-3.5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
-            {/* Status Pills */}
+            {/* Status Pills & VWAP Discount Sort */}
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 onClick={() => setStatusFilter('ALL')}
@@ -568,6 +626,21 @@ export function AlgorithmicSignalTrackRecord({
               >
                 🔴 Stopped / Expired ({summary?.lossCount ?? 0})
               </button>
+
+              <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block" />
+
+              <button
+                onClick={() => setSortBy(sortBy === 'vwapDiscount' ? 'dateDesc' : 'vwapDiscount')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  sortBy === 'vwapDiscount'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/40 ring-1 ring-emerald-400/40'
+                    : 'bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/30'
+                }`}
+                title="Sort by lowest price relative to lead broker VWAP (deepest discount inside safe buy zone)"
+              >
+                <Flame className={`w-3.5 h-3.5 ${sortBy === 'vwapDiscount' ? 'text-amber-300 animate-pulse' : 'text-emerald-400'}`} />
+                <span>🔥 Best VWAP Discount (Buy Zone)</span>
+              </button>
             </div>
 
             {/* Sort Dropdown */}
@@ -579,6 +652,7 @@ export function AlgorithmicSignalTrackRecord({
                 className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
                 <option value="dateDesc">Signal Date (Newest)</option>
+                <option value="vwapDiscount">🔥 Best VWAP Discount (Buy Zone)</option>
                 <option value="netPnlDesc">Highest Net Return %</option>
                 <option value="maxGainDesc">Highest Peak Gain %</option>
               </select>
@@ -657,7 +731,7 @@ export function AlgorithmicSignalTrackRecord({
                   <th className="py-3 px-3.5">Signal & T+2 Unlock</th>
                   <th className="py-3 px-3.5">Symbol & Sector</th>
                   <th className="py-3 px-3.5">Strategy & Lead Broker</th>
-                  <th className="py-3 px-3.5 text-right">Entry (vs VWAP)</th>
+                  <th className="py-3 px-3.5 text-right">Entry / Broker VWAP</th>
                   <th className="py-3 px-3.5 text-center">Targets (T1 / T2 / SL)</th>
                   <th className="py-3 px-3.5 text-right">Exit / LTP (Peak)</th>
                   <th className="py-3 px-3.5 text-right">Net Return (After Fees)</th>
@@ -682,11 +756,6 @@ export function AlgorithmicSignalTrackRecord({
                   </tr>
                 ) : (
                   filteredSignals.map((s) => {
-                    const marginVsVWAP =
-                      s.broker_vwap > 0
-                        ? (((s.entry_price - s.broker_vwap) / s.broker_vwap) * 100).toFixed(1)
-                        : '0.0';
-
                     return (
                       <tr
                         key={s.signal_id}
@@ -728,29 +797,49 @@ export function AlgorithmicSignalTrackRecord({
                           </div>
                         </td>
 
-                        {/* Entry Price & VWAP Margin */}
+                        {/* Entry Price & VWAP Margin Badge */}
                         <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
                           <div className="font-bold text-slate-200">Rs. {s.entry_price.toLocaleString()}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {Number(marginVsVWAP) >= 0 ? `+${marginVsVWAP}%` : `${marginVsVWAP}%`} vs VWAP
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            VWAP: Rs. {s.broker_vwap ? s.broker_vwap.toLocaleString() : s.entry_price.toLocaleString()}
+                          </div>
+                          <div className="mt-1">
+                            {renderVwapBadge(s)}
                           </div>
                         </td>
 
-                        {/* Targets (T1 / T2 / SL) */}
+                        {/* Targets (T1 / T2 / SL) & Live Reward-to-Risk */}
                         <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
                           <div className="inline-flex items-center gap-1.5 text-[11px]">
-                            <span className="text-teal-400 font-semibold" title="Target 1 (+8.0%)">
+                            <span className="text-teal-400 font-semibold" title="Target 1">
                               T1: {s.target1_price}
                             </span>
                             <span className="text-slate-600">|</span>
-                            <span className="text-emerald-400 font-semibold" title="Target 2 (+16.0%)">
+                            <span className="text-emerald-400 font-semibold" title="Target 2">
                               T2: {s.target2_price}
                             </span>
                             <span className="text-slate-600">|</span>
-                            <span className="text-rose-400 font-semibold" title="Stop Loss (-5.5%)">
+                            <span className="text-rose-400 font-semibold" title="Stop Loss">
                               SL: {s.stop_loss_price}
                             </span>
                           </div>
+                          {s.status === 'OPEN_ACTIVE' && (
+                            <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
+                              <span
+                                className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30"
+                                title="Live potential gain to Target 1"
+                              >
+                                +{s.live_reward_to_t1_pct !== undefined ? s.live_reward_to_t1_pct : ((((s.target1_price - (s.exit_price || s.entry_price)) / (s.exit_price || s.entry_price)) * 100).toFixed(1))}% to T1
+                              </span>
+                              <span className="text-slate-500">/</span>
+                              <span
+                                className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/30"
+                                title="Live potential risk to Stop Loss"
+                              >
+                                -{s.live_risk_to_sl_pct !== undefined ? s.live_risk_to_sl_pct : (((( (s.exit_price || s.entry_price) - s.stop_loss_price) / (s.exit_price || s.entry_price)) * 100).toFixed(1))}% to SL
+                              </span>
+                            </div>
+                          )}
                         </td>
 
                         {/* Exit / Current LTP & Peak */}

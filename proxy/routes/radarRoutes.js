@@ -542,7 +542,15 @@ export async function handleSignalTrackRecord(req, res) {
   }
 
   // Sorting
-  if (sortBy === "netPnlDesc") {
+  if (sortBy === "vwapDiscount") {
+    // Sorts OPEN_ACTIVE signals ascending by vwap_diff_pct so BELOW_VWAP setups appear at the top
+    signals = [...signals].sort((a, b) => {
+      const aOpen = a.status === "OPEN_ACTIVE" ? 0 : 1;
+      const bOpen = b.status === "OPEN_ACTIVE" ? 0 : 1;
+      if (aOpen !== bOpen) return aOpen - bOpen;
+      return (a.vwap_diff_pct ?? 0) - (b.vwap_diff_pct ?? 0);
+    });
+  } else if (sortBy === "netPnlDesc") {
     signals = [...signals].sort((a, b) => (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0));
   } else if (sortBy === "maxGainDesc") {
     signals = [...signals].sort((a, b) => (b.max_gain_pct ?? 0) - (a.max_gain_pct ?? 0));

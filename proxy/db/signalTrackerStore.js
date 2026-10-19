@@ -105,7 +105,12 @@ export function initSignalLedgerTable(db) {
       max_gain_pct REAL,
       gross_pnl_pct REAL,
       net_pnl_after_fees_pct REAL,
-      holding_days INTEGER
+      holding_days INTEGER,
+      current_ltp REAL,
+      vwap_diff_pct REAL,
+      vwap_zone TEXT,
+      live_risk_to_sl_pct REAL,
+      live_reward_to_t1_pct REAL
     );
 
     CREATE INDEX IF NOT EXISTS idx_asl_date ON algorithmic_signal_ledger(signal_date DESC);
@@ -113,6 +118,25 @@ export function initSignalLedgerTable(db) {
     CREATE INDEX IF NOT EXISTS idx_asl_status ON algorithmic_signal_ledger(status);
     CREATE INDEX IF NOT EXISTS idx_asl_broker ON algorithmic_signal_ledger(lead_broker_id);
   `);
+
+  try {
+    const tableCols = db.prepare(`PRAGMA table_info(algorithmic_signal_ledger)`).all().map((c) => c.name);
+    if (!tableCols.includes("current_ltp")) {
+      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN current_ltp REAL;`);
+    }
+    if (!tableCols.includes("vwap_diff_pct")) {
+      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN vwap_diff_pct REAL;`);
+    }
+    if (!tableCols.includes("vwap_zone")) {
+      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN vwap_zone TEXT;`);
+    }
+    if (!tableCols.includes("live_risk_to_sl_pct")) {
+      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN live_risk_to_sl_pct REAL;`);
+    }
+    if (!tableCols.includes("live_reward_to_t1_pct")) {
+      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN live_reward_to_t1_pct REAL;`);
+    }
+  } catch (_) {}
 }
 
 /**
@@ -451,6 +475,18 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         Math.round(74 + (diag3.bcr5NetPct * 0.4) + Math.min(10, rvol * 2.5))
       );
 
+      const currentLtp = Number((exitPrice || entryPrice).toFixed(2));
+      const vwapDiffPct = bigBrokerVWAP > 0
+        ? Number((((currentLtp - bigBrokerVWAP) / bigBrokerVWAP) * 100).toFixed(2))
+        : 0;
+      const vwapZone = vwapDiffPct <= 0 ? "BELOW_VWAP" : vwapDiffPct <= 1.5 ? "AT_VWAP" : "ABOVE_VWAP";
+      const liveRiskToSlPct = currentLtp > 0
+        ? Number((((currentLtp - stopLossPrice) / currentLtp) * 100).toFixed(2))
+        : 0;
+      const liveRewardToT1Pct = currentLtp > 0
+        ? Number((((target1Price - currentLtp) / currentLtp) * 100).toFixed(2))
+        : 0;
+
       signals.push({
         signal_id: `${symbol}_${currentDate}_${signalType}`,
         symbol,
@@ -476,6 +512,11 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         gross_pnl_pct: grossPnlPct,
         net_pnl_after_fees_pct: netPnlPct,
         holding_days: holdingDays,
+        current_ltp: currentLtp,
+        vwap_diff_pct: vwapDiffPct,
+        vwap_zone: vwapZone,
+        live_risk_to_sl_pct: liveRiskToSlPct,
+        live_reward_to_t1_pct: liveRewardToT1Pct,
       });
     }
   }
@@ -487,11 +528,13 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       entry_price, broker_vwap, lead_broker_id, lead_broker_name,
       bcr5_net_pct, scr3_net_pct, ignition_score, stop_loss_price,
       target1_price, target2_price, status, exit_date, exit_price,
-      peak_price, max_gain_pct, gross_pnl_pct, net_pnl_after_fees_pct, holding_days
+      peak_price, max_gain_pct, gross_pnl_pct, net_pnl_after_fees_pct, holding_days,
+      current_ltp, vwap_diff_pct, vwap_zone, live_risk_to_sl_pct, live_reward_to_t1_pct
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?
     )
@@ -524,7 +567,12 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         s.max_gain_pct,
         s.gross_pnl_pct,
         s.net_pnl_after_fees_pct,
-        s.holding_days
+        s.holding_days,
+        s.current_ltp,
+        s.vwap_diff_pct,
+        s.vwap_zone,
+        s.live_risk_to_sl_pct,
+        s.live_reward_to_t1_pct
       );
     }
   });
