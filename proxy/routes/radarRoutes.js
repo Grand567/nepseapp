@@ -23,8 +23,11 @@ const router = express.Router();
 let stockMap = {};
 try {
   const candidatePaths = [
+    path.join(__dirname, "..", "stockmap.json"),
+    path.join(__dirname, "stockmap.json"),
+    path.join(process.cwd(), "proxy", "stockmap.json"),
     path.join(process.cwd(), "src", "utils", "stockmap.json"),
-    path.join(process.cwd(), "proxy", "utils", "stockmap.json"),
+    path.join(process.cwd(), "stockmap.json"),
     path.join(process.cwd(), "proxy", "data", "stockmap.json")
   ];
   for (const p of candidatePaths) {
@@ -227,7 +230,10 @@ router.get("/radar/broker-tracker", async (req, res) => {
   const sectorFilter = String(req.query.sector || "ALL").trim();
   const sortBy = String(req.query.sortBy || "netInflow").trim();
   const syndicateOnly = String(req.query.syndicateOnly || "false").toLowerCase() === "true";
-  const limit = req.query.limit === "ALL" ? 500 : Math.max(1, Number(req.query.limit) || 10);
+  const search = String(req.query.search || "").trim();
+  const searchLower = search.toLowerCase();
+  const brokerNumberMatch = (/^(?:#|broker\s*|b)?(\d{1,3})$/i.exec(search))?.[1] || null;
+  const limit = req.query.limit === "ALL" || search ? 500 : Math.max(1, Number(req.query.limit) || 10);
 
   const universe = HOT_CACHE.radarByTimeframe[validDays] || [];
   const results = [];
@@ -238,21 +244,50 @@ router.get("/radar/broker-tracker", async (req, res) => {
     const stockSector = smInfo.sector || stock.sector || diag.sector || "Others";
     const companyName = smInfo.name || stock.name || diag.companyName || stock.symbol;
 
-    if (sectorFilter !== "ALL" && stockSector.toLowerCase() !== sectorFilter.toLowerCase()) {
-      continue;
+    if (sectorFilter !== "ALL") {
+      const sf = sectorFilter.toLowerCase().trim();
+      const ss = stockSector.toLowerCase().trim();
+      const matchesSector = ss === sf ||
+        ss.includes(sf) ||
+        sf.includes(ss) ||
+        (sf.startsWith("hydro") && ss.includes("hydro")) ||
+        (sf.startsWith("bank") && ss.includes("bank")) ||
+        (sf.includes("dev") && ss.includes("dev")) ||
+        (sf === "finance" && ss === "finance") ||
+        (sf.startsWith("micro") && ss.includes("micro")) ||
+        (sf.includes("insurance") && ss.includes("insurance")) ||
+        (sf.includes("hotel") && ss.includes("hotel")) ||
+        (sf.includes("manuf") && ss.includes("manuf")) ||
+        (sf.includes("invest") && ss.includes("invest")) ||
+        (sf.includes("trad") && ss.includes("trad")) ||
+        (sf.includes("mutual") && ss.includes("mutual"));
+      if (!matchesSector) continue;
     }
 
     if (syndicateOnly && !diag.isSyndicateCoAccumulation) {
       continue;
     }
 
+    const brokersList = diag.allBrokers || [...(diag.topBuyers || []), ...(diag.topSellers || [])];
+
     // Case A: User selected a specific Broker (e.g., Broker #58)
-    // Case B: Market-wide Top Institutional Broker per stock (brokerId === "ALL")
+    // Case B: User searched a broker number or broker name in search input
+    // Case C: Market-wide Top Institutional Broker per stock (brokerId === "ALL")
     let targetBroker = null;
     if (brokerIdFilter !== "ALL") {
-      const brokersList = diag.allBrokers || [...(diag.topBuyers || []), ...(diag.topSellers || [])];
       targetBroker = brokersList.find((b) => String(b.brokerId) === brokerIdFilter) || null;
       if (!targetBroker) continue;
+    } else if (brokerNumberMatch) {
+      targetBroker = brokersList.find((b) => String(b.brokerId) === brokerNumberMatch) || null;
+      // If broker is not found in this stock and stock symbol does not match search, skip
+      if (!targetBroker && !stock.symbol.toLowerCase().includes(searchLower)) continue;
+      if (!targetBroker) {
+        targetBroker = mode === "DUMPING"
+          ? (diag.leadDistributor || diag.topDistributors?.[0] || diag.topSellers?.[0] || null)
+          : (diag.leadAccumulator || diag.topAccumulators?.[0] || diag.topBuyers?.[0] || null);
+      }
+    } else if (searchLower && brokersList.some((b) => (b.brokerName || "").toLowerCase().includes(searchLower))) {
+      targetBroker = brokersList.find((b) => (b.brokerName || "").toLowerCase().includes(searchLower)) || null;
     } else {
       targetBroker = mode === "DUMPING"
         ? (diag.leadDistributor || diag.topDistributors?.[0] || diag.topSellers?.[0] || null)
@@ -260,6 +295,18 @@ router.get("/radar/broker-tracker", async (req, res) => {
     }
 
     if (!targetBroker) continue;
+
+    // Search query check (Symbol, Company Name, Broker ID, Broker Name, Syndicate Brokers)
+    if (searchLower) {
+      const matchesSearch =
+        stock.symbol.toLowerCase().includes(searchLower) ||
+        companyName.toLowerCase().includes(searchLower) ||
+        String(targetBroker.brokerId) === searchLower ||
+        String(targetBroker.brokerId) === brokerNumberMatch ||
+        (targetBroker.brokerName || "").toLowerCase().includes(searchLower) ||
+        (diag.syndicateBrokers || []).some((bId) => String(bId) === searchLower || String(bId) === brokerNumberMatch);
+      if (!matchesSearch) continue;
+    }
 
     const remainingQty = Number(targetBroker.remainingQty ?? targetBroker.netVol ?? (targetBroker.buyVol - targetBroker.sellVol) ?? 0);
     const buyAmt = Number(targetBroker.buyAmt || 0);

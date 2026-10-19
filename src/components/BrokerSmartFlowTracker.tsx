@@ -79,6 +79,23 @@ export interface BrokerSmartStock {
   dailySeries?: DailyTapePoint[];
 }
 
+export const NEPSE_SECTORS = [
+  { value: 'ALL', label: 'All Sectors' },
+  { value: 'Hydropower', label: '⚡ Hydropower (Hydro)' },
+  { value: 'Commercial Banks', label: '🏦 Commercial Banks (Bank)' },
+  { value: 'Development Banks', label: '🏛️ Development Banks' },
+  { value: 'Finance', label: '💰 Finance' },
+  { value: 'Microfinance', label: '🌱 Microfinance' },
+  { value: 'Life Insurance', label: '🛡️ Life Insurance' },
+  { value: 'Non-Life Insurance', label: '📑 Non-Life Insurance' },
+  { value: 'Hotels And Tourism', label: '🏨 Hotels & Tourism' },
+  { value: 'Manufacturing And Processing', label: '🏭 Manufacturing & Processing' },
+  { value: 'Investment', label: '📈 Investment' },
+  { value: 'Trading', label: '🛒 Trading' },
+  { value: 'Mutual Fund', label: '📊 Mutual Fund' },
+  { value: 'Others', label: '🌐 Others' }
+];
+
 interface BrokerSmartFlowTrackerProps {
   onSelectStock?: (stock: any) => void;
   defaultTimeframe?: number;
@@ -98,6 +115,20 @@ export default function BrokerSmartFlowTracker({
   const [limit, setLimit] = useState<string>('10');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewTab, setViewTab] = useState<'MARKET_FLOW' | 'EARLY_IGNITION' | 'PORTFOLIO_SHIELD'>('MARKET_FLOW');
+
+  // Searchable Broker Picker States
+  const [brokerSearchInput, setBrokerSearchInput] = useState<string>('');
+  const [isBrokerPickerOpen, setIsBrokerPickerOpen] = useState<boolean>(false);
+
+  // Debounced search query for Symbol / Broker search
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Early Ignition States
   const [ignitionStocks, setIgnitionStocks] = useState<any[]>([]);
@@ -121,7 +152,17 @@ export default function BrokerSmartFlowTracker({
   const [totalMatched, setTotalMatched] = useState<number>(0);
   const [lastRefreshed, setLastRefreshed] = useState<string>('');
 
-  // Fetch data from backend API
+  // Filtered brokers list for searchable picker
+  const matchingBrokers = useMemo(() => {
+    const q = brokerSearchInput.trim().toLowerCase().replace(/^#/, '');
+    const entries = Object.entries(TOP_NEPSE_BROKERS);
+    if (!q) return entries;
+    return entries.filter(([id, name]) => {
+      return id === q || id.startsWith(q) || name.toLowerCase().includes(q);
+    });
+  }, [brokerSearchInput]);
+
+  // Fetch data from backend API (passes debouncedSearch to fetch across universe)
   const loadData = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     else setLoading(true);
@@ -134,7 +175,8 @@ export default function BrokerSmartFlowTracker({
         sector,
         sortBy,
         syndicateOnly,
-        limit: limit === 'ALL' ? 'ALL' : Number(limit)
+        limit: limit === 'ALL' || debouncedSearch ? 'ALL' : Number(limit),
+        search: debouncedSearch
       });
 
       if (res?.success && Array.isArray(res.topStocks)) {
@@ -158,7 +200,7 @@ export default function BrokerSmartFlowTracker({
 
   useEffect(() => {
     loadData();
-  }, [days, mode, brokerId, sector, sortBy, syndicateOnly, limit]);
+  }, [days, mode, brokerId, sector, sortBy, syndicateOnly, limit, debouncedSearch]);
 
   // Load Early Ignition Data from Backend API
   const loadEarlyIgnitionData = async (isManual = false) => {
@@ -208,13 +250,18 @@ export default function BrokerSmartFlowTracker({
   const filteredStocks = useMemo(() => {
     if (!searchQuery.trim()) return stocks;
     const q = searchQuery.toLowerCase().trim();
-    return stocks.filter(
-      (s) =>
-        s.symbol.toLowerCase().includes(q) ||
-        s.companyName.toLowerCase().includes(q) ||
-        s.brokerName.toLowerCase().includes(q) ||
-        String(s.brokerId).includes(q)
-    );
+    const cleanBrokerNum = (/^(?:#|broker\s*|b)?(\d{1,3})$/i.exec(q))?.[1] || null;
+
+    return stocks.filter((s) => {
+      const symMatch = s.symbol.toLowerCase().includes(q);
+      const nameMatch = s.companyName && s.companyName.toLowerCase().includes(q);
+      const brokerNameMatch = s.brokerName && s.brokerName.toLowerCase().includes(q);
+      const brokerIdMatch = String(s.brokerId) === q || (cleanBrokerNum && String(s.brokerId) === cleanBrokerNum);
+      const syndicateMatch = (s.syndicateBrokers || []).some(
+        (b) => String(b) === q || (cleanBrokerNum && String(b) === cleanBrokerNum)
+      );
+      return symMatch || nameMatch || brokerNameMatch || brokerIdMatch || syndicateMatch;
+    });
   }, [stocks, searchQuery]);
 
   // Summary Metrics
@@ -1021,26 +1068,127 @@ export default function BrokerSmartFlowTracker({
 
         {/* Row 2: Broker Dropdown, Sector Dropdown, Sort By, and Search Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
-          {/* Broker Filter */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Select NEPSE Broker
-            </label>
-            <select
-              value={brokerId}
-              onChange={(e) => setBrokerId(e.target.value)}
-              className="bg-slate-950/90 border border-slate-800 text-xs rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-            >
-              <option value="ALL">All Brokers (Market-Wide Lead)</option>
-              {Object.entries(TOP_NEPSE_BROKERS).map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
+          {/* Broker Filter: Searchable Picker with Type-To-Select */}
+          <div className="flex flex-col gap-1 relative">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Select NEPSE Broker
+              </label>
+              {brokerId !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrokerId('ALL');
+                    setBrokerSearchInput('');
+                    setIsBrokerPickerOpen(false);
+                  }}
+                  className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-0.5"
+                >
+                  <X className="w-2.5 h-2.5" /> Reset (All)
+                </button>
+              )}
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                value={isBrokerPickerOpen ? brokerSearchInput : (brokerId === 'ALL' ? '' : (TOP_NEPSE_BROKERS[brokerId] || `Broker #${brokerId}`))}
+                onFocus={() => {
+                  setIsBrokerPickerOpen(true);
+                  if (brokerId !== 'ALL' && !brokerSearchInput) setBrokerSearchInput(brokerId);
+                }}
+                onChange={(e) => {
+                  setBrokerSearchInput(e.target.value);
+                  setIsBrokerPickerOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && matchingBrokers.length > 0) {
+                    setBrokerId(matchingBrokers[0][0]);
+                    setIsBrokerPickerOpen(false);
+                    setBrokerSearchInput('');
+                  } else if (e.key === 'Escape') {
+                    setIsBrokerPickerOpen(false);
+                  }
+                }}
+                placeholder={brokerId === 'ALL' ? '🔍 Type broker # (e.g. 58) or name...' : (TOP_NEPSE_BROKERS[brokerId] || `Broker #${brokerId}`)}
+                className="w-full bg-slate-950/90 border border-slate-800 text-xs rounded-xl pl-8 pr-7 py-2 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+              <Users className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+              {brokerId !== 'ALL' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrokerId('ALL');
+                    setBrokerSearchInput('');
+                    setIsBrokerPickerOpen(false);
+                  }}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                  title="Clear broker filter"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsBrokerPickerOpen(!isBrokerPickerOpen)}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {/* Floating Autocomplete Dropdown */}
+              {isBrokerPickerOpen && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1.5 max-h-56 overflow-y-auto bg-slate-950/98 border border-slate-700/80 rounded-xl shadow-2xl p-1.5 space-y-1 backdrop-blur-xl">
+                  <div
+                    onClick={() => {
+                      setBrokerId('ALL');
+                      setIsBrokerPickerOpen(false);
+                      setBrokerSearchInput('');
+                    }}
+                    className={`px-2.5 py-1.5 text-xs rounded-lg cursor-pointer transition-all flex items-center justify-between ${
+                      brokerId === 'ALL'
+                        ? 'bg-emerald-500/20 text-emerald-300 font-black'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <span>🌐 All Brokers (Market-Wide Lead)</span>
+                    {brokerId === 'ALL' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                  </div>
+
+                  {matchingBrokers.length === 0 ? (
+                    <div className="px-2.5 py-2 text-xs text-slate-500 text-center">
+                      No broker matching "{brokerSearchInput}"
+                    </div>
+                  ) : (
+                    matchingBrokers.map(([id, name]) => (
+                      <div
+                        key={id}
+                        onClick={() => {
+                          setBrokerId(id);
+                          setIsBrokerPickerOpen(false);
+                          setBrokerSearchInput('');
+                        }}
+                        className={`px-2.5 py-1.5 text-xs rounded-lg cursor-pointer transition-all flex items-center justify-between ${
+                          brokerId === id
+                            ? 'bg-emerald-500/20 text-emerald-300 font-black'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-slate-400">#{id}</span>
+                          <span>{name.replace(` (#${id})`, '')}</span>
+                        </div>
+                        {brokerId === id && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Sector Filter */}
+          {/* Sector Filter: Full Canonical NEPSE Sectors */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Sector Filter
@@ -1050,12 +1198,18 @@ export default function BrokerSmartFlowTracker({
               onChange={(e) => setSector(e.target.value)}
               className="bg-slate-950/90 border border-slate-800 text-xs rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
             >
-              <option value="ALL">All Sectors</option>
-              {availableSectors.map((sec) => (
-                <option key={sec} value={sec}>
-                  {sec}
+              {NEPSE_SECTORS.map((sec) => (
+                <option key={sec.value} value={sec.value}>
+                  {sec.label}
                 </option>
               ))}
+              {availableSectors
+                .filter((s) => !NEPSE_SECTORS.some((ns) => ns.value.toLowerCase() === s.toLowerCase()))
+                .map((sec) => (
+                  <option key={sec} value={sec}>
+                    {sec}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -1079,7 +1233,7 @@ export default function BrokerSmartFlowTracker({
             </select>
           </div>
 
-          {/* Search Input */}
+          {/* Search Input: Immediate Symbol or Broker Query */}
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Search Symbol / Broker
@@ -1087,14 +1241,76 @@ export default function BrokerSmartFlowTracker({
             <div className="relative">
               <input
                 type="text"
-                placeholder="e.g. RADHI, Naasa, 58..."
+                placeholder="Type stock (TAMOR) or broker (58)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950/90 border border-slate-800 text-xs rounded-xl pl-8 pr-3 py-2 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950/90 border border-slate-800 text-xs rounded-xl pl-8 pr-7 py-2 text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
               />
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
+        </div>
+
+        {/* Quick Broker Chips & Search Indicators */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Top Desks:</span>
+            {[
+              { id: 'ALL', label: 'All Desks' },
+              { id: '58', label: '#58 Naasa' },
+              { id: '45', label: '#45 Imperial' },
+              { id: '34', label: '#34 Vision' },
+              { id: '49', label: '#49 Online' },
+              { id: '57', label: '#57 Aryatara' },
+              { id: '42', label: '#42 Sani' },
+              { id: '38', label: '#38 Dipshikha' },
+              { id: '28', label: '#28 Shree Krishna' }
+            ].map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => {
+                  setBrokerId(b.id);
+                  setBrokerSearchInput('');
+                  setIsBrokerPickerOpen(false);
+                }}
+                className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-all ${
+                  brokerId === b.id
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+                    : 'bg-slate-950/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+
+          {searchQuery && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">
+              <Search className="w-3 h-3 text-amber-400" />
+              <span>
+                Search active for: <strong>"{searchQuery}"</strong> ({filteredStocks.length} matched)
+              </span>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="text-amber-400 hover:text-white ml-1"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

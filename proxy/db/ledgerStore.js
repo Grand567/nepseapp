@@ -95,6 +95,24 @@ db.exec(`
 `);
 
 // In-Memory Tier-1 Hot Cache for < 1ms API responses
+let stockMap = {};
+try {
+  const candidatePaths = [
+    path.join(__dirname, "..", "stockmap.json"),
+    path.join(__dirname, "stockmap.json"),
+    path.join(process.cwd(), "proxy", "stockmap.json"),
+    path.join(process.cwd(), "src", "utils", "stockmap.json"),
+    path.join(process.cwd(), "stockmap.json"),
+    path.join(process.cwd(), "proxy", "data", "stockmap.json")
+  ];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      stockMap = JSON.parse(fs.readFileSync(p, "utf8"));
+      break;
+    }
+  }
+} catch (_) {}
+
 export const HOT_CACHE = {
   lastUpdatedDate: null,
   radarByTimeframe: { 1: [], 3: [], 5: [], 15: [], 30: [] },
@@ -577,14 +595,23 @@ export function rebuildHotCache() {
         if (days === 3) diag3 = diag;
         if (days === 30) diag30 = diag;
 
-        // Strip memory-heavy allBrokers (each with 30-day daily tape arrays) to keep V8 heap < 100MB on Render Free Tier
-        const { allBrokers, ...compactDiag } = diag;
-        const payload = { symbol, ...compactDiag };
+        const smInfo = stockMap[symbol] || {};
+        const companyName = smInfo.name || symbol;
+        const sector = smInfo.sector || 'Others';
+
+        // Store lightweight broker summary (stripping per-broker dailySeries tape arrays to keep V8 heap < 100MB on Render Free Tier)
+        const compactBrokers = Array.isArray(diag.allBrokers)
+          ? diag.allBrokers.map(({ dailySeries, ...b }) => b)
+          : [];
+        const { allBrokers: _stripped, ...compactDiag } = diag;
+        const payload = { symbol, companyName, sector, ...compactDiag, allBrokers: compactBrokers };
         nextDiagnostics.set(`${symbol}_${days}`, payload);
 
         // Comprehensive yet lightweight version for full-market Radar list & Broker Tracker:
         const radarSummary = {
           symbol,
+          companyName,
+          sector,
           timeframeDays: diag.timeframeDays,
           scopeLabel: diag.scopeLabel,
           latestClose: diag.latestClose,

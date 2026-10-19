@@ -3269,8 +3269,9 @@ export async function fetchBrokerTracker(params = {}) {
   const sortBy = params.sortBy || 'netInflow';
   const syndicateOnly = params.syndicateOnly ? 'true' : 'false';
   const limit = params.limit || 10;
+  const search = params.search ? String(params.search).trim() : '';
 
-  const q = new URLSearchParams({
+  const queryObj = {
     days: String(days),
     mode,
     brokerId,
@@ -3278,7 +3279,10 @@ export async function fetchBrokerTracker(params = {}) {
     sortBy,
     syndicateOnly,
     limit: String(limit)
-  }).toString();
+  };
+  if (search) queryObj.search = search;
+
+  const q = new URLSearchParams(queryObj).toString();
 
   try {
     const res = await fetchFromBackend(`/api/radar/broker-tracker?${q}`, 6000);
