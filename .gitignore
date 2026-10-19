@@ -48,3 +48,4 @@ src/data/broker_matrix_latest.json
 *.db-wal
 proxy/data/*.db
 !proxy/data/ledger_seed_snapshot.json.gz
+!proxy/data/drabyashree_ledger.db.gz

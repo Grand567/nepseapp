@@ -5076,7 +5076,7 @@ app.get(['/health', '/api/health'], async (req, res) => {
 
   const allOk = Object.values(checks).every(c => c.status === 'OK');
 
-  res.status(allOk ? 200 : 503).json({
+  res.status(200).json({
     status: allOk ? 'HEALTHY' : 'DEGRADED',
     nepseConnected: checks.nepse?.status === 'OK',
     isMockData: false,

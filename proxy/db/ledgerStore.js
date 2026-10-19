@@ -31,6 +31,33 @@ const DATA_DIR = resolveDataDir();
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const dbPath = path.join(DATA_DIR, "drabyashree_ledger.db");
+
+// Fast bootstrap: If SQLite DB doesn't exist or is empty (<100KB), attempt instant restore from drabyashree_ledger.db.gz
+if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
+  const candidateGzFiles = [
+    path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
+    path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db.gz"),
+    path.join(process.cwd(), "data", "drabyashree_ledger.db.gz"),
+    path.join(__dirname, "..", "data", "drabyashree_ledger.db.gz"),
+    path.join(__dirname, "..", "proxy", "data", "drabyashree_ledger.db.gz"),
+    path.join(__dirname, "data", "drabyashree_ledger.db.gz"),
+  ];
+  for (const gzFile of candidateGzFiles) {
+    if (fs.existsSync(gzFile)) {
+      try {
+        const t0 = Date.now();
+        const compressed = fs.readFileSync(gzFile);
+        const uncompressed = zlib.gunzipSync(compressed);
+        fs.writeFileSync(dbPath, uncompressed);
+        console.log(`[Drabyashree Ledger] Fast bootstrap restored ${dbPath} (${(uncompressed.length / 1024 / 1024).toFixed(2)} MB) from ${gzFile} in ${Date.now() - t0}ms`);
+        break;
+      } catch (err) {
+        console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${gzFile}:`, err.message);
+      }
+    }
+  }
+}
+
 export const db = new Database(dbPath);
 
 // Enable WAL mode & NORMAL synchronous for maximum concurrent read/write throughput
