@@ -194,7 +194,7 @@ export function AlgorithmicSignalTrackRecord({
     } else if (statusFilter === 'OPEN_ACTIVE') {
       result = result.filter((s) => s.status === 'OPEN_ACTIVE');
     } else if (statusFilter === 'STOPPED_OUT') {
-      result = result.filter((s) => s.status === 'STOPPED_OUT');
+      result = result.filter((s) => s.status === 'STOPPED_OUT' || s.status === 'TIME_EXPIRED');
     }
 
     // Strategy filter
@@ -242,7 +242,7 @@ export function AlgorithmicSignalTrackRecord({
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          WIN T2 (+16%)
+          WIN T2 (T2 Hit)
         </span>
       );
     }
@@ -250,7 +250,7 @@ export function AlgorithmicSignalTrackRecord({
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40">
           <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
-          WIN T1 (+8%)
+          WIN T1 (T1 Locked)
         </span>
       );
     }
@@ -258,7 +258,15 @@ export function AlgorithmicSignalTrackRecord({
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
           <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-          STOPPED (-5.5%)
+          STOPPED (SL Hit)
+        </span>
+      );
+    }
+    if (s.status === 'TIME_EXPIRED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700/60 text-slate-300 border border-slate-600/60">
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
+          TIME EXPIRED (T+{s.holding_days})
         </span>
       );
     }
@@ -558,7 +566,7 @@ export function AlgorithmicSignalTrackRecord({
                     : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300'
                 }`}
               >
-                🔴 Stopped Out ({summary?.lossCount ?? 0})
+                🔴 Stopped / Expired ({summary?.lossCount ?? 0})
               </button>
             </div>
 
