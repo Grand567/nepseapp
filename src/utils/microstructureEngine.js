@@ -682,8 +682,43 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     entrySignal = 'PRIME_BUY';
     tacticalAdvice = `Supply vacuum confirmed! Smart money holding +${smh3dPct}% with ${t2RetentionPct}% T+2 retention. Operator margin is tight (+${operatorProfitMargin3d}%). Prime early entry window before public breakout.`;
   }
-  // STAGE 1: Stealth Seeding
+  // Single-day or 3-day spike under the ±15% circuit limit
+  const day0PriceChange = Array.isArray(dailyHistory) && dailyHistory.length > 0
+    ? Number(dailyHistory[0]?.priceChangePct || dailyHistory[0]?.pChange || 0)
+    : 0;
+  const isLargeSpike = day0PriceChange > 9.0 || priceChange3dPct > 9.0;
+  const isNearCircuit = priceChange3dPct >= 12.5 || day0PriceChange >= 12.5;
+  const isCircuitLocked = priceChange3dPct >= 14.8 || day0PriceChange >= 14.8;
+
+  // STAGE 3: Breakout / Gap-Up Markup in Progress (Evaluated before Stealth Seeding to catch >9% spikes)
+  if (
+    isLargeSpike ||
+    (priceChange3dPct > 6.5 && smh3dPct >= 15)
+  ) {
+    ignitionStage = 'STAGE_3_BREAKOUT_IN_PROGRESS';
+    stageLabel = isCircuitLocked
+      ? 'Circuit Locked Breakout (+15%)'
+      : isNearCircuit
+      ? 'Near-Circuit Breakout (≥+12.5%)'
+      : isLargeSpike
+      ? 'Markup Breakout / Gap Spike (>+9%)'
+      : 'Markup Breakout in Progress';
+    stageBadge = isCircuitLocked
+      ? '🔒 Circuit Locked (+15%)'
+      : isNearCircuit
+      ? '⚡ Near Circuit (≥+12.5%)'
+      : '🚀 Markup Breakout';
+    ignitionScore = Math.min(85, Math.round(70 + (smh3dPct * 0.5)));
+    entrySignal = isCircuitLocked ? 'CIRCUIT_LOCKED_AVOID_CHASE' : 'MOMENTUM_PULLBACK_ONLY';
+    tacticalAdvice = isCircuitLocked
+      ? `Stock is locked at or near the +15% upper circuit limit (+${priceChange3dPct}%). Extreme T+2 delivery risk if chasing locked circuit; wait for orderly pullback.`
+      : isNearCircuit
+      ? `Near circuit ceiling (+${priceChange3dPct}%). Approaching the +15% daily limit; high T+2 chase risk. Only enter on pullbacks toward Rs. ${bigBrokerVWAP3d.toFixed(1)}.`
+      : `Large breakout/gap surge underway (+${priceChange3dPct}% toward ±15% band). Avoid chasing extended candles; wait for retest of Rs. ${bigBrokerVWAP3d.toFixed(1)} VWAP.`;
+  }
+  // STAGE 1: Stealth Seeding (Strictly requires flat/compressed price without >9% spike)
   else if (
+    !isLargeSpike &&
     rvol3d >= 1.3 &&
     smh3dPct >= 12 &&
     t2RetentionPct >= 80 &&
@@ -697,15 +732,6 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     ignitionScore = Math.min(88, Math.round(75 + (smh3dPct * 0.5) + (rvol3d * 4)));
     entrySignal = 'EARLY_ACCUMULATE';
     tacticalAdvice = `Quiet early seeding detected. Volume surging (${rvol3d}x) while price remains flat (+${priceChange3dPct}%). Accumulate with tight invalidation below Rs. ${(bigBrokerVWAP3d * 0.96).toFixed(1)}.`;
-  }
-  // STAGE 3: Breakout in Progress
-  else if (priceChange3dPct > 6.5 && smh3dPct >= 15) {
-    ignitionStage = 'STAGE_3_BREAKOUT_IN_PROGRESS';
-    stageLabel = 'Markup Breakout in Progress';
-    stageBadge = '🚀 Markup Breakout';
-    ignitionScore = Math.min(85, Math.round(70 + (smh3dPct * 0.5)));
-    entrySignal = 'MOMENTUM_RIDE';
-    tacticalAdvice = `Breakout candle underway (+${priceChange3dPct}%). Only enter on intraday pullbacks toward Rs. ${bigBrokerVWAP3d.toFixed(1)} VWAP; avoid chasing circuit tops.`;
   }
   else if (smh3dPct > 8 && rvol3d >= 1.1) {
     ignitionScore = Math.min(74, Math.round(50 + (smh3dPct * 0.8) + (rvol3d * 5)));

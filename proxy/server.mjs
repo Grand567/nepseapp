@@ -453,6 +453,7 @@ const NEPSE_HOLIDAYS_MAP = {
   '2026-09-04': 'Krishna Janmashtami', '2026-09-14': 'Haritalika Teej', '2026-09-19': 'Constitution Day',
   '2026-09-25': 'Indra Jatra', '2026-10-10': 'Ghatasthapana', '2026-10-17': 'Dashain',
   '2026-10-18': 'Dashain', '2026-10-19': 'Dashain', '2026-10-20': 'Dashain', '2026-10-21': 'Dashain',
+  '2026-10-22': 'Dashain', '2026-10-23': 'Dashain',
   '2026-11-08': 'Tihar', '2026-11-09': 'Tihar', '2026-11-10': 'Tihar', '2026-11-15': 'Chhath Parva',
   '2026-12-25': 'Christmas Day', '2026-12-30': 'Tamu Lhosar',
   '2027-01-11': 'Prithvi Jayanti', '2027-01-15': 'Maghe Sankranti', '2027-01-30': "Shahid Diwas",

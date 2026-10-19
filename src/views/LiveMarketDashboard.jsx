@@ -127,9 +127,9 @@ export function LiveMarketDashboard({
       enName: "Shivam Cements Ltd.",
       sector: "Mfg",
       ltp: 612.40,
-      change: "+9.84%",
-      changeAmt: "+54.90",
-      tag: "Circuit 9.8%",
+      change: "+14.80%",
+      changeAmt: "+82.50",
+      tag: "Circuit +14.8%",
       color: "emerald"
     },
     {

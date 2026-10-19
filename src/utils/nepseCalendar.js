@@ -116,9 +116,11 @@ export const NEPSE_PUBLIC_HOLIDAYS = {
   '2026-10-10': 'Ghatasthapana',
   '2026-10-17': 'Dashain (Phulpati)',
   '2026-10-18': 'Dashain (Maha Ashtami)',
-  '2026-10-19': 'Dashain (Maha Navami)',
+  '2026-10-19': 'Dashain (Maha Ashtami / Navami)',
   '2026-10-20': 'Dashain (Vijaya Dashami)',
-  '2026-10-21': 'Dashain (Ekadashi)',
+  '2026-10-21': 'Dashain (Papankusha Ekadashi)',
+  '2026-10-22': 'Dashain (Dwadashi)',
+  '2026-10-23': 'Dashain (Kojagrat Purnima)',
   '2026-11-08': 'Tihar (Laxmi Puja)',
   '2026-11-09': 'Tihar (Gobardhan Puja)',
   '2026-11-10': 'Tihar (Bhai Tika)',
@@ -447,6 +449,67 @@ export function getTargetTradingSessionDate(now = new Date()) {
 }
 
 /**
+ * Calculates the exact T+2 Settlement Date and Demat Credit sellable date (T+3)
+ * under the active NEPSE Monday–Friday trading schedule.
+ *
+ * Rules (effective under SEBON / NEPSE Mon-Fri regulations):
+ * - Trading Days: Monday (1) through Friday (5).
+ * - Weekly Market Holidays: Saturday (6) and Sunday (0).
+ * - Strictly skips all Saturdays, Sundays, and official NEPSE festival/public holidays.
+ *
+ * Standard schedule (no intervening public holidays):
+ * - Monday trade    -> Settles Wednesday (T+2) | Sellable from Demat Thursday (T+3)
+ * - Tuesday trade   -> Settles Thursday (T+2)  | Sellable from Demat Friday (T+3)
+ * - Wednesday trade -> Settles Friday (T+2)    | Sellable from Demat Monday (T+3, skips Sat/Sun)
+ * - Thursday trade  -> Settles Monday (T+2, skips Sat/Sun) | Sellable from Demat Tuesday (T+3)
+ * - Friday trade    -> Settles Tuesday (T+2, skips Sat/Sun) | Sellable from Demat Wednesday (T+3)
+ *
+ * @param {Date|string} tradeDate - Execution date (default: now)
+ * @returns {object} Comprehensive T+2 settlement schedule
+ */
+export function calculateT2SettlementDate(tradeDate = new Date()) {
+  const d = new Date(tradeDate);
+  // Ensure we are anchored to a valid trading session date in NPT
+  let tradeSession = new Date(d);
+  if (!isNepseTradingDay(tradeSession)) {
+    tradeSession = getNextValidTradingDay(tradeSession);
+  }
+
+  // Count active NEPSE trading sessions forward (T+1, T+2, T+3)
+  const t1 = getNextValidTradingDay(tradeSession);
+  const t2 = getNextValidTradingDay(t1);
+  const t3 = getNextValidTradingDay(t2); // First day shares can be sold from Demat
+
+  const t0Iso = formatNptDateIso(tradeSession);
+  const t1Iso = formatNptDateIso(t1);
+  const t2Iso = formatNptDateIso(t2);
+  const t3Iso = formatNptDateIso(t3);
+
+  const t0DayName = isNepseWeekend(tradeSession).dayName;
+  const t1DayName = isNepseWeekend(t1).dayName;
+  const t2DayName = isNepseWeekend(t2).dayName;
+  const t3DayName = isNepseWeekend(t3).dayName;
+
+  return {
+    tradeDate: tradeSession,
+    tradeDateIso: t0Iso,
+    tradeDayName: t0DayName,
+    t1Date: t1,
+    t1Iso,
+    t1DayName,
+    settlementDate: t2,
+    settlementDateIso: t2Iso,
+    settlementDayName: t2DayName,
+    dematCreditDate: t3,
+    dematCreditDateIso: t3Iso,
+    dematSellableDayName: t3DayName,
+    summary: `${t0DayName} Trade (${t0Iso}) → Settles ${t2DayName} (${t2Iso}) under T+2 (Sellable ${t3DayName})`
+  };
+}
+
+export const getT2SettlementSchedule = calculateT2SettlementDate;
+
+/**
  * Generates an array of EXACT past valid NEPSE trading dates.
  * Strictly skips Saturdays, Sundays, and all Nepal Public Holidays.
  */
@@ -572,6 +635,12 @@ export function getDetailedMarketStatus(now = new Date()) {
   // 1. Check Holiday (Bikram Sambat public holiday or Emergency Market Halt)
   if (holiday.isHoliday) {
     const isHalt = Boolean(holiday.isEmergencyHalt);
+    const nextTradingDay = getNextValidTradingDay(now);
+    const nextTradingDayIso = formatNptDateIso(nextTradingDay);
+    const nextTradingDayName = isNepseWeekend(nextTradingDay).dayName;
+    const reopeningTime = '10:30 AM (Pre-Open) / 11:00 AM (Continuous)';
+    const reopeningSchedule = `Market reopens on ${nextTradingDayName}, ${nextTradingDayIso} at ${reopeningTime}`;
+
     return {
       ...baseData,
       isOpen: false,
@@ -585,13 +654,24 @@ export function getDetailedMarketStatus(now = new Date()) {
       statusLabel: isHalt ? 'Emergency Market Halt (आकस्मिक बजार बन्द)' : 'Holiday Closed',
       message: isHalt
         ? `Market Closed — ${holiday.holidayName}`
-        : `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp})`,
-      lastTradingDay: getLastValidTradingDay(now)
+        : `Market Closed — ${holiday.holidayName} (${nepaliDate.shortNp}) • Reopens ${nextTradingDayName}, ${nextTradingDayIso} at 10:30 AM`,
+      lastTradingDay: getLastValidTradingDay(now),
+      nextTradingDay,
+      nextTradingDayIso,
+      nextTradingDayName,
+      reopeningTime,
+      reopeningSchedule
     };
   }
 
   // 2. Check Weekly Close (Saturday, Sunday)
   if (weekend.isWeekend) {
+    const nextTradingDay = getNextValidTradingDay(now);
+    const nextTradingDayIso = formatNptDateIso(nextTradingDay);
+    const nextTradingDayName = isNepseWeekend(nextTradingDay).dayName;
+    const reopeningTime = '10:30 AM (Pre-Open) / 11:00 AM (Continuous)';
+    const reopeningSchedule = `Market reopens on ${nextTradingDayName}, ${nextTradingDayIso} at ${reopeningTime}`;
+
     return {
       ...baseData,
       isOpen: false,
@@ -600,8 +680,13 @@ export function getDetailedMarketStatus(now = new Date()) {
       isCloseDay: true,
       holidayName: null,
       statusLabel: 'Weekend Closed',
-      message: `Market Closed — ${weekend.dayName} Weekend (${nepaliDate.shortNp})`,
-      lastTradingDay: getLastValidTradingDay(now)
+      message: `Market Closed — ${weekend.dayName} Weekend (${nepaliDate.shortNp}) • Reopens ${nextTradingDayName}, ${nextTradingDayIso} at 10:30 AM`,
+      lastTradingDay: getLastValidTradingDay(now),
+      nextTradingDay,
+      nextTradingDayIso,
+      nextTradingDayName,
+      reopeningTime,
+      reopeningSchedule
     };
   }
 

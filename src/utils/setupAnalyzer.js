@@ -1064,12 +1064,12 @@ export function calculateT2LockupRisk(candles, ltp, atr, stock = {}) {
     }
   }
 
-  // 2. Frequency of severe single-day drops (>= 7.5% drop indicating circuit / near-circuit plunge)
+  // 2. Frequency of severe single-day drops (>= 10.0% drop indicating circuit / near-circuit plunge under ±15% band)
   let circuitDropsCount = 0;
   for (let i = 1; i < subCloses.length; i++) {
     const prevC = subCloses[i - 1];
     const currC = subCloses[i];
-    if (prevC > 0 && ((prevC - currC) / prevC) * 100 >= 7.5) {
+    if (prevC > 0 && ((prevC - currC) / prevC) * 100 >= 10.0) {
       circuitDropsCount++;
     }
   }
@@ -1951,7 +1951,10 @@ export function generateEntryExitPlan(stock, rawCandlesOrMeta, dividendHistoryOr
   const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
   const upperCeiling = +(prevClose * 1.15).toFixed(1); // Standard individual stock daily circuit limit is ±15%
   const distToCeilingPct = prevClose > 0 ? +(((upperCeiling - ltp) / prevClose) * 100).toFixed(2) : 15;
-  const isCircuitTrap = distToCeilingPct <= 2.0 || (prevClose > 0 && ltp >= prevClose * 1.127) || (Number(stock?.pChange || 0) >= 12.7);
+  const currentPChange = pChange || (prevClose > 0 ? (((ltp - prevClose) / prevClose) * 100) : 0);
+  const isNearCircuit = currentPChange >= 12.5;
+  const isCircuitLocked = currentPChange >= 14.8;
+  const isCircuitTrap = distToCeilingPct <= 2.0 || isNearCircuit || isCircuitLocked;
 
   const target1UpsidePct = ltp > 0 ? ((levels.target1.price - ltp) / ltp) * 100 : 0;
   const target2UpsidePct = ltp > 0 ? ((levels.target2.price - ltp) / ltp) * 100 : 0;

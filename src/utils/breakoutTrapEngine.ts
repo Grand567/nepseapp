@@ -389,7 +389,10 @@ export function calculateBreakoutQuality(
     const isDecisive = close >= (nearestR.price + clearanceBuffer * 0.5);
 
     if (isDecisive && rvol >= 1.25) {
-      const isOverextended = pChange >= 8.5;
+      const isNearCircuit = pChange >= 12.5;
+      const isCircuitLocked = pChange >= 14.8;
+      const isOverextended = isNearCircuit || pChange >= 8.5;
+
       return {
         detected: true,
         status: 'Confirmed Breakout',
@@ -402,13 +405,21 @@ export function calculateBreakoutQuality(
         upperWickRatio,
         bodyRatio,
         qualityScore: Math.max(72, dynamicQualityScore),
-        bullTrapProbability: isOverextended ? Math.max(45, dynamicTrapProb) : Math.min(30, dynamicTrapProb),
-        t2Hazard: isOverextended ? '⚠️ HIGH_RISK_CHASE' : '🟡 MODERATE_SETUP',
-        t2HazardDescriptionNepali: isOverextended
-          ? 'सर्किट चेस जोखिम: ब्रेकआउट बलियो छ तर आज +८% माथि किन्दा T+2 डम्पको खतरा हुन्छ। पुलब्याक कुर्नुहोस्।'
+        bullTrapProbability: isCircuitLocked ? 75 : isNearCircuit ? 55 : isOverextended ? Math.max(45, dynamicTrapProb) : Math.min(30, dynamicTrapProb),
+        t2Hazard: isCircuitLocked || isNearCircuit ? '🚨 EXTREME_TRAP_HAZARD' : isOverextended ? '⚠️ HIGH_RISK_CHASE' : '🟡 MODERATE_SETUP',
+        t2HazardDescriptionNepali: isCircuitLocked
+          ? 'अपर सर्किट लक (+१५%): सेयर सर्किटमा बन्द भएको छ। अर्को सत्रमा ग्याप-अप खुल्न सक्छ तर T+2 मा फसिने जोखिम उच्च छ।'
+          : isNearCircuit
+          ? 'सर्किट सिलिङ चेस जोखिम (≥+१२.५%): सेयर +१५% सर्किट नजिक पुगेको छ; आज किन्दा T+2 डम्पको खतरा हुन्छ। पुलब्याक कुर्नुहोस्।'
+          : isOverextended
+          ? 'विस्तारित ब्रेकआउट: ब्रेकआउट बलियो छ तर आज +८.५% माथि किन्दा T+2 डम्पको खतरा हुन्छ। पुलब्याक कुर्नुहोस्।'
           : 'सक्रिय ब्रेकआउट: उच्च भोल्युमका साथ रेसिस्टेन्स पार गरेको छ। ट्रेलिङ स्टप लस सहित हेर्नुहोस्।',
-        t2HazardDescriptionEnglish: isOverextended
-          ? 'Strong breakout but high T+2 chase risk near circuit ceiling. Wait for pullback.'
+        t2HazardDescriptionEnglish: isCircuitLocked
+          ? 'Upper circuit locked (+15%). Chasing circuit bids risks severe T+2 delivery dump on settlement.'
+          : isNearCircuit
+          ? 'Near circuit ceiling (≥+12.5%). High T+2 chase hazard under the ±15% band; wait for pullback.'
+          : isOverextended
+          ? 'Strong breakout but extended from pivot (≥+8.5%). High T+2 chase risk; wait for pullback.'
           : 'Confirmed volume breakout above key pivot with decisive clearance.',
       };
     }
@@ -433,8 +444,11 @@ export function calculateBreakoutQuality(
     };
   }
 
-  // ── 3. SUPPORT BREAKDOWN (EXIT TRAP RISK) ──
+  // ── 3. SUPPORT BREAKDOWN (EXIT TRAP RISK / LOWER CIRCUIT) ──
   if (nearestS && (close < nearestS.price * 0.998 || (pChange <= -3.0 && close <= nearestS.price * 1.002))) {
+    const isLowerCircuitLocked = pChange <= -14.8;
+    const isNearLowerCircuit = pChange <= -12.5;
+
     return {
       detected: true,
       status: 'Support Breakdown',
@@ -449,8 +463,16 @@ export function calculateBreakoutQuality(
       qualityScore: Math.min(30, dynamicQualityScore),
       bullTrapProbability: Math.max(75, dynamicTrapProb),
       t2Hazard: '🚨 EXTREME_TRAP_HAZARD',
-      t2HazardDescriptionNepali: 'सपोर्ट ब्रेकडाउन! तत्काल स्टप लस पालना गर्नुहोस्; निकास बन्द (Zero-Bid) हुने खतरा छ।',
-      t2HazardDescriptionEnglish: 'Support broken. Critical breakdown risk with zero-bid lower circuit potential.',
+      t2HazardDescriptionNepali: isLowerCircuitLocked
+        ? 'लोअर सर्किट लक (-१५%)! खरिदकर्ता शून्य (Zero Bids); सेयर बेच्नै नपाइने चरम निकास ट्र्याप।'
+        : isNearLowerCircuit
+        ? 'तल्लो सर्किट जोखिम (≤-१२.५%): सेयर -१५% फ्लोर नजिक खसिरहेको छ; तुरुन्त स्टप लस पालना गर्नुहोस्।'
+        : 'सपोर्ट ब्रेकडाउन! तत्काल स्टप लस पालना गर्नुहोस्; निकास बन्द (Zero-Bid) हुने खतरा छ।',
+      t2HazardDescriptionEnglish: isLowerCircuitLocked
+        ? 'Negative circuit locked (-15%). Critical zero-bid lockup; exit execution impossible until bids reappear.'
+        : isNearLowerCircuit
+        ? 'Severe lower circuit hazard (≤-12.5% plunge toward -15% floor). Zero-bid lock imminent.'
+        : 'Support broken. Critical breakdown risk with zero-bid lower circuit potential.',
     };
   }
 

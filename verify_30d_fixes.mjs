@@ -8,6 +8,13 @@ import {
 } from './proxy/brokerVault.mjs';
 import { resolveValidTimeframe, evaluatePortfolioShield } from './proxy/routes/radarRoutes.js';
 import { db, HOT_CACHE, rebuildHotCache } from './proxy/db/ledgerStore.js';
+import { 
+  calculateT2SettlementDate, 
+  isNepseWeekend, 
+  isNepseTradingDay, 
+  getNextValidTradingDay, 
+  getDetailedMarketStatus 
+} from './src/utils/nepseCalendar.js';
 
 console.log('═══════════════════════════════════════════════════════════════════');
 console.log('   DRABYASHREE NEPSE: 30-DAY LEDGER & SERVICE HUB VERIFICATION     ');
@@ -401,6 +408,128 @@ const washResult = evaluateEarlyIgnition('TEST_WASH', mockWashDiag3d, mockDiag30
 assert(washResult.isWashTrap === true && washResult.stage === 'WASH_CHURN_TRAP',
   'evaluateEarlyIgnition strictly detects circular churn and sets WASH_CHURN_TRAP veto',
   `Stage: ${washResult.stage} | isWashTrap: ${washResult.isWashTrap} | Flag: ${washResult.tacticalPlan?.actionBadge}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 10: NEPSE Mon–Fri Trading Schedule, Saturday/Sunday Weekend & Dashain 2026
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▶ TEST 10: NEPSE Mon–Fri Trading Schedule, Weekend Closures, Dashain 2026 & T+2 Settlement');
+
+// 1. Weekend Closures: Saturday (6) and Sunday (0) are market holidays
+const satCheck = isNepseWeekend(new Date('2026-10-24T12:00:00+05:45'));
+const sunCheck = isNepseWeekend(new Date('2026-10-25T12:00:00+05:45'));
+const monCheck = isNepseWeekend(new Date('2026-10-26T12:00:00+05:45'));
+
+assert(satCheck.isWeekend === true && sunCheck.isWeekend === true,
+  'Saturday (6) and Sunday (0) strictly identified as weekly market closures',
+  `Saturday: ${satCheck.isWeekend} (${satCheck.dayName}), Sunday: ${sunCheck.isWeekend} (${sunCheck.dayName})`);
+
+assert(monCheck.isWeekend === false,
+  'Monday through Friday identified as active trading days (when not a holiday)',
+  `Monday: isWeekend = ${monCheck.isWeekend}`);
+
+// 2. T+2 Settlement Cycle Verification (Monday through Friday)
+const monSettlement = calculateT2SettlementDate(new Date('2026-12-07')); // Mon Dec 7
+const tueSettlement = calculateT2SettlementDate(new Date('2026-12-08')); // Tue Dec 8
+const wedSettlement = calculateT2SettlementDate(new Date('2026-12-09')); // Wed Dec 9
+const thuSettlement = calculateT2SettlementDate(new Date('2026-12-10')); // Thu Dec 10
+const friSettlement = calculateT2SettlementDate(new Date('2026-12-11')); // Fri Dec 11
+
+assert(monSettlement.settlementDayName === 'Wednesday' && monSettlement.settlementDateIso === '2026-12-09',
+  'Monday trade settles on Wednesday (T+2)',
+  monSettlement.summary);
+
+assert(tueSettlement.settlementDayName === 'Thursday' && tueSettlement.settlementDateIso === '2026-12-10',
+  'Tuesday trade settles on Thursday (T+2)',
+  tueSettlement.summary);
+
+assert(wedSettlement.settlementDayName === 'Friday' && wedSettlement.settlementDateIso === '2026-12-11',
+  'Wednesday trade settles on Friday (T+2)',
+  wedSettlement.summary);
+
+assert(thuSettlement.settlementDayName === 'Monday' && thuSettlement.settlementDateIso === '2026-12-14',
+  'Thursday trade settles on Monday (T+2, skips Sat & Sun weekends)',
+  thuSettlement.summary);
+
+assert(friSettlement.settlementDayName === 'Tuesday' && friSettlement.settlementDateIso === '2026-12-15',
+  'Friday trade settles on Tuesday (T+2, skips Sat & Sun weekends)',
+  friSettlement.summary);
+
+// 3. 2026 Dashain Festival Holidays (Oct 19–23) & Reopening Mon Oct 26
+const oct19Status = getDetailedMarketStatus(new Date('2026-10-19T11:30:00+05:45'));
+const oct23Trading = isNepseTradingDay(new Date('2026-10-23T11:30:00+05:45'));
+const nextReopenDate = getNextValidTradingDay(new Date('2026-10-19T11:30:00+05:45'));
+
+assert(oct19Status.isHoliday === true && oct19Status.isOpen === false,
+  'Monday, October 19, 2026 marked as official Dashain holiday (market closed)',
+  `Holiday: ${oct19Status.holidayName} | Status: ${oct19Status.statusLabel}`);
+
+assert(oct23Trading === false,
+  'Friday, October 23, 2026 marked as official Dashain holiday (Kojagrat Purnima)',
+  `isTradingDay: ${oct23Trading}`);
+
+assert(oct19Status.nextTradingDayIso === '2026-10-26' && oct19Status.nextTradingDayName === 'Monday',
+  'Next active trading day after Dashain week is Monday, October 26, 2026',
+  `Next Reopen: ${oct19Status.reopeningSchedule}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 11: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▶ TEST 11: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection');
+
+// 1. Single-day or 3-day spike > 9.0% strictly classified as STAGE_3_BREAKOUT_IN_PROGRESS
+const mockSpikeDiag3d = {
+  totalVolume: 500000,
+  timeframeDays: 3,
+  latestClose: 330,
+  closePrice: 330,
+  bigBrokerVWAP: 295,
+  priceChangePct: 10.5, // > +9.0% spike under 15% circuit limit
+  topAccumulators: [{ brokerId: 58, netVol: 75000 }],
+  topDistributors: [{ brokerId: 19, netVol: -10000 }],
+  totalBuyersCount: 15,
+  totalSellersCount: 40,
+  retentionPct: 85
+};
+
+const spikeResult = evaluateEarlyIgnition('TEST_SPIKE', mockSpikeDiag3d, mockDiag30d, []);
+
+assert(spikeResult.stage === 'STAGE_3_BREAKOUT_IN_PROGRESS' && spikeResult.stage !== 'STAGE_1_STEALTH_SEEDING',
+  'Single-day/3-day surge > +9.0% strictly flagged as Markup Breakout rather than Stealth Seeding',
+  `Stage: ${spikeResult.stage} (Badge: ${spikeResult.stageBadge})`);
+
+// 2. Near-circuit momentum (>= +12.5% under ±15% band)
+const mockNearCircuitDiag3d = {
+  totalVolume: 600000,
+  timeframeDays: 3,
+  latestClose: 335,
+  closePrice: 335,
+  bigBrokerVWAP: 295,
+  priceChangePct: 13.5, // >= +12.5%
+  retentionPct: 85
+};
+
+const nearCircuitResult = evaluateEarlyIgnition('TEST_NEAR', mockNearCircuitDiag3d, mockDiag30d, []);
+
+assert(nearCircuitResult.stageBadge.includes('Near Circuit'),
+  'Flags near-circuit momentum badge at >= +12.5% under ±15% daily band',
+  `Badge: ${nearCircuitResult.stageBadge} | Signal: ${nearCircuitResult.entrySignal}`);
+
+// 3. Positive circuit lock (+15% band / >= 14.8%)
+const mockLockedCircuitDiag3d = {
+  totalVolume: 700000,
+  timeframeDays: 3,
+  latestClose: 340,
+  closePrice: 340,
+  bigBrokerVWAP: 295,
+  priceChangePct: 14.9, // >= +14.8% circuit lock
+  retentionPct: 85
+};
+
+const lockedCircuitResult = evaluateEarlyIgnition('TEST_LOCKED', mockLockedCircuitDiag3d, mockDiag30d, []);
+
+assert(lockedCircuitResult.stageBadge.includes('Circuit Locked') && lockedCircuitResult.entrySignal === 'CIRCUIT_LOCKED_AVOID_CHASE',
+  'Circuit lock at >= +14.8% flags CIRCUIT_LOCKED_AVOID_CHASE to prevent T+2 trapped buy',
+  `Badge: ${lockedCircuitResult.stageBadge} | Signal: ${lockedCircuitResult.entrySignal}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUMMARY
