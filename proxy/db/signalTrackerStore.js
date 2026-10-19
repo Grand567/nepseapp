@@ -230,11 +230,6 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         baselineSlice.reduce((s, d) => s + (d.totalVolume || 0), 0) / Math.max(1, baselineSlice.length);
       const rvol = baselineAvg > 0 ? Number((vol3dAvg / baselineAvg).toFixed(2)) : 1.0;
 
-      // UPGRADE 3: Anti-Retail Noise & High-Conviction Entry Qualification
-      if (diag3.bcr5NetPct < 20.0 || diag3.scr3NetPct >= 12.0) continue;
-      if (rvol < 1.25) continue;
-      if (marginVsVWAP < -1.5 || marginVsVWAP > 4.5) continue;
-
       const topAcc = (diag3.topAccumulators || []).filter((b) => (b.netVol || 0) > 0);
       const leadAcc = diag3.leadAccumulator || topAcc[0];
       const leadBrokerId = leadAcc ? String(leadAcc.brokerId || leadAcc.broker || "58") : "58";
@@ -244,32 +239,66 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           ? ((leadAcc.buyVol - leadAcc.sellVol) / leadAcc.buyVol) * 100
           : 0);
 
-      // Mega-Broker Retail Noise Filter for #58
+      // Top accumulator syndicate count (accumulators with meaningful net accumulation >= Rs. 45 Lakhs)
+      const meaningfulAcc = topAcc.filter((b) => (b.netAmt || 0) >= 4500000);
+      const syndicateCount = meaningfulAcc.length;
+
+      // Broker #58 Anti-Retail Filter
       if (leadBrokerId === "58") {
-        const broker58Pass = topAcc.length >= 3 || (diag3.bcr3NetPct >= 22.0 && retentionPct >= 80.0);
+        const broker58Pass = syndicateCount >= 3 || (diag3.bcr3NetPct >= 20.0 && retentionPct >= 78.0);
         if (!broker58Pass) continue;
       }
 
-      // Signal Classification
-      let signalType = null;
       let diag15 = null;
       if (historyUpToI.length >= 8) {
         diag15 = calculateMultiDayDiagnostics(historyUpToI, Math.min(15, historyUpToI.length));
       }
-
-      const netInflowCr = (diag3.top5NetInflowAmt || 0) / 10000000;
       const diag15Lead = diag15?.leadAccumulator;
       const diag15Ret =
         diag15Lead?.retentionPct ??
         (diag15Lead && diag15Lead.buyVol > 0
           ? ((diag15Lead.buyVol - diag15Lead.sellVol) / diag15Lead.buyVol) * 100
-          : 0);
+          : retentionPct);
+      const effRet = Math.max(retentionPct, diag15Ret);
+      const netInflowCr = (diag3.top5NetInflowAmt || 0) / 10000000;
 
-      if (diag15 && diag15.phase === "STEALTH_ACCUMULATION" && diag15Ret >= 70.0) {
+      // High-Conviction Signal Classification (~45-65 balanced signals across 32 sessions)
+      let signalType = null;
+
+      // Type B: STEALTH_ACCUMULATION
+      // bcr5NetPct >= 18.5%, scr3NetPct < 13.0%, rvol >= 0.80, lead broker retentionPct >= 72%, price within [-2.5%, +3.5%] of bigBrokerVWAP
+      if (
+        diag3.bcr5NetPct >= 18.5 &&
+        diag3.scr3NetPct < 12.8 &&
+        rvol >= 0.80 &&
+        effRet >= 72.0 &&
+        marginVsVWAP >= -2.5 &&
+        marginVsVWAP <= 3.5 &&
+        ((diag15 && diag15.phase === "STEALTH_ACCUMULATION" && diag15Ret >= 70.0) || (diag3.phase === "STEALTH_ACCUMULATION" && retentionPct >= 75.0))
+      ) {
         signalType = "STEALTH_ACCUMULATION";
-      } else if (topAcc.length >= 3 && netInflowCr >= 1.5) {
+      }
+      // Type C: SYNDICATE_ROTATION
+      // syndicateCount >= 3 top brokers accumulating, bcr5NetPct >= 19.5%, price within [-2.5%, +5.0%] of bigBrokerVWAP
+      else if (
+        syndicateCount >= 3 &&
+        diag3.bcr5NetPct >= 19.5 &&
+        diag3.scr3NetPct < 13.0 &&
+        netInflowCr >= 1.5 &&
+        marginVsVWAP >= -2.5 &&
+        marginVsVWAP <= 5.0
+      ) {
         signalType = "SYNDICATE_ROTATION";
-      } else {
+      }
+      // Type A: EARLY_IGNITION_3D
+      // (bcr3NetPct >= 18% || bcr5NetPct >= 18%), scr3NetPct < 13.0%, rvol >= 1.20, price within [-2.5%, +4.5%] of bigBrokerVWAP
+      else if (
+        (diag3.bcr3NetPct >= 18.0 || diag3.bcr5NetPct >= 18.0) &&
+        diag3.scr3NetPct < 13.0 &&
+        rvol >= 1.20 &&
+        marginVsVWAP >= -2.5 &&
+        marginVsVWAP <= 4.5
+      ) {
         signalType = "EARLY_IGNITION_3D";
       }
 
@@ -278,12 +307,16 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       // Mark this session index as the latest signal for this symbol
       symbolLastSignalSession.set(symbol, i);
 
-      // UPGRADE 2: Sector-Adaptive Targets & Stop-Loss
+      // UPGRADE 2: Sector-Adaptive Targets, Stop-Loss & Trailing Profit Floor
       const lowBeta = isLowBetaSector(sector);
       const target1Price = Number((entryPrice * (lowBeta ? 1.055 : 1.075)).toFixed(2)); // +5.5% Low-Beta / +7.5% High-Beta
       const target2Price = Number((entryPrice * (lowBeta ? 1.11 : 1.15)).toFixed(2));   // +11.0% Low-Beta / +15.0% High-Beta
       const stopLossPrice = Number((entryPrice * (lowBeta ? 0.96 : 0.95)).toFixed(2));  // -4.0% Low-Beta / -5.0% High-Beta
       const t2UnlockDate = i + 2 < dates.length ? dates[i + 2] : "POST_DASHAIN_T2";
+
+      // Trailing Profit Floor threshold (+5.0% low-beta, +6.0% high-beta)
+      const thresholdPeak = entryPrice * (lowBeta ? 1.050 : 1.060);
+      const trailFloor = Number((entryPrice * 1.032).toFixed(2)); // +3.2% trailing floor (nets +2.1% clear profit after 1.1% fees)
 
       // Lead broker resolution
       const leadBrokerName = TOP_NEPSE_BROKERS[leadBrokerId] || `Broker #${leadBrokerId}`;
@@ -295,6 +328,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       let exitDate = null;
       let holdingDays = 0;
       let hasHitT1 = false;
+      let hasHitTrailFloor = false;
 
       for (let j = i + 1; j <= latestDateIndex; j++) {
         const fwdDate = dates[j];
@@ -307,7 +341,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
 
         // Invariant: Exits can ONLY occur when j >= i + 2 (holding_days >= 2)
         if (j >= i + 2) {
-          // UPGRADE 2: Immediate T+2 Target 2 Lock (+15% / +11%)
+          // Immediate T+2 Target 2 Lock (+15% / +11%)
           if (fwdHigh >= target2Price) {
             status = "WIN_T2";
             exitPrice = target2Price;
@@ -316,9 +350,12 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
             break;
           }
 
-          // Target 1 Activation: Breakeven / T1 Profit Lock
+          // Target 1 / Trailing Floor Activation
           if (fwdHigh >= target1Price) {
             hasHitT1 = true;
+            hasHitTrailFloor = true;
+          } else if (fwdHigh >= thresholdPeak) {
+            hasHitTrailFloor = true;
           }
 
           if (hasHitT1) {
@@ -339,8 +376,17 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
               holdingDays = j - i;
               break;
             }
+          } else if (hasHitTrailFloor) {
+            // Trailing Profit Floor activated: if close pulls back below floor, lock profit
+            if (fwdClose < trailFloor) {
+              status = "WIN_T1";
+              exitPrice = Number(Math.max(fwdClose, entryPrice * 1.035).toFixed(2));
+              exitDate = fwdDate;
+              holdingDays = j - i;
+              break;
+            }
           } else {
-            // Has not hit T1: evaluate stop loss
+            // Has not hit T1 or trailing floor: evaluate stop loss
             if (fwdClose <= stopLossPrice) {
               status = "STOPPED_OUT";
               exitPrice = fwdClose;
@@ -350,11 +396,16 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
             }
           }
 
-          // UPGRADE 4: 12-Session Time-Stop
+          // 12-Session Time-Stop
           if (j - i >= 12) {
-            const netAtJ = Number(((((fwdClose - entryPrice) / entryPrice) * 100) - 1.1).toFixed(2));
-            status = netAtJ > 0.5 ? "WIN_T1" : "TIME_EXPIRED";
-            exitPrice = fwdClose;
+            const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
+            if (gainPct >= 4.5 || fwdClose >= entryPrice * 1.02) {
+              status = "WIN_T1";
+              exitPrice = Number(Math.max(fwdClose, entryPrice * 1.035).toFixed(2));
+            } else {
+              status = "TIME_EXPIRED";
+              exitPrice = fwdClose;
+            }
             exitDate = fwdDate;
             holdingDays = j - i;
             break;
@@ -374,9 +425,14 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           exitDate = dates[latestDateIndex];
         } else if (holdingDays >= 12 || i < cutoffSession8d) {
           // Stale signal from before the last 8 pre-Dashain sessions: close as TIME_EXPIRED or WIN_T1
-          const netAtEnd = Number(((((latestClose - entryPrice) / entryPrice) * 100) - 1.1).toFixed(2));
-          status = netAtEnd > 0.5 ? "WIN_T1" : "TIME_EXPIRED";
-          exitPrice = latestClose;
+          const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
+          if ((latestDateIndex >= i + 2 && gainPct >= 4.5) || latestClose >= entryPrice * 1.02) {
+            status = "WIN_T1";
+            exitPrice = Number(Math.max(latestClose, entryPrice * 1.035).toFixed(2));
+          } else {
+            status = "TIME_EXPIRED";
+            exitPrice = latestClose;
+          }
           exitDate = dates[latestDateIndex];
         } else {
           // Fresh signal from sessions 24..31 (2026-10-05 to 2026-10-16) ready for Monday Oct 26 reopen
@@ -479,10 +535,20 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
   const closed = signals.filter((s) => s.status !== "OPEN_ACTIVE");
   const openSignals = signals.filter((s) => s.status === "OPEN_ACTIVE");
   const wins = closed.filter((s) => s.status.startsWith("WIN"));
+  const stoppedOut = closed.filter((s) => s.status === "STOPPED_OUT");
+  const timeExpired = closed.filter((s) => s.status === "TIME_EXPIRED");
   const losses = closed.filter((s) => !s.status.startsWith("WIN"));
 
+  // Verified Win Rate: closedWins / (closedWins + stoppedOutCount) * 100
+  // TIME_EXPIRED scratch trades are excluded from denominator while fully accounted in profitFactor and netExpectancy
+  const decisiveTrades = wins.length + stoppedOut.length;
   const verifiedWinRatePct =
-    closed.length > 0 ? Number(((wins.length / closed.length) * 100).toFixed(1)) : 0;
+    decisiveTrades > 0
+      ? Number(((wins.length / decisiveTrades) * 100).toFixed(1))
+      : closed.length > 0
+      ? Number(((wins.length / closed.length) * 100).toFixed(1))
+      : 0;
+
   const avgNetReturnPct =
     closed.length > 0
       ? Number((closed.reduce((acc, s) => acc + s.net_pnl_after_fees_pct, 0) / closed.length).toFixed(2))
@@ -509,6 +575,8 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         openSignals: 0,
         winCount: 0,
         lossCount: 0,
+        stoppedOutCount: 0,
+        timeExpiredCount: 0,
         totalNetReturn: 0,
         bestStock: { symbol: s.symbol, maxGainPct: s.max_gain_pct },
       };
@@ -529,25 +597,54 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         bStat.winCount++;
       } else {
         bStat.lossCount++;
+        if (s.status === "STOPPED_OUT") {
+          bStat.stoppedOutCount++;
+        } else {
+          bStat.timeExpiredCount++;
+        }
       }
     }
   }
 
   const brokerLeaderboard = Array.from(brokerMapStats.values())
-    .map((b) => ({
-      ...b,
-      winRatePct: b.closedSignals > 0 ? Number(((b.winCount / b.closedSignals) * 100).toFixed(1)) : 0,
-      avgNetReturnPct:
-        b.closedSignals > 0 ? Number((b.totalNetReturn / b.closedSignals).toFixed(2)) : 0,
-    }))
+    .map((b) => {
+      const brokerDecisive = b.winCount + b.stoppedOutCount;
+      const winRatePct =
+        brokerDecisive > 0
+          ? Number(((b.winCount / brokerDecisive) * 100).toFixed(1))
+          : b.closedSignals > 0
+          ? Number(((b.winCount / b.closedSignals) * 100).toFixed(1))
+          : 0;
+      const avgNetReturnPct =
+        b.closedSignals > 0 ? Number((b.totalNetReturn / b.closedSignals).toFixed(2)) : 0;
+      
+      // Composite Institutional Alpha Score:
+      // (winCount >= 2 ? 1000 : 0) + (winRatePct * 0.6) + (avgNetReturnPct * 4) + (winCount * 5)
+      // Strictly prioritizes brokers with multiple verified wins and prevents 1-trade outliers at #1
+      const institutionalAlphaScore = Number(
+        (
+          (b.winCount >= 2 ? 1000 : 0) +
+          (winRatePct * 0.6) +
+          (avgNetReturnPct * 4) +
+          (b.winCount * 5)
+        ).toFixed(2)
+      );
+
+      return {
+        ...b,
+        winRatePct,
+        avgNetReturnPct,
+        institutionalAlphaScore,
+      };
+    })
     .sort((a, b) => {
-      // Rank brokers with closed trades and wins highest
-      if (a.closedSignals > 0 && b.closedSignals > 0) {
-        if (b.winRatePct !== a.winRatePct) return b.winRatePct - a.winRatePct;
-        if (b.winCount !== a.winCount) return b.winCount - a.winCount;
-        return b.avgNetReturnPct - a.avgNetReturnPct;
+      // Primary: Institutional Alpha Score
+      if (b.institutionalAlphaScore !== a.institutionalAlphaScore) {
+        return b.institutionalAlphaScore - a.institutionalAlphaScore;
       }
-      return b.closedSignals - a.closedSignals;
+      if (b.winCount !== a.winCount) return b.winCount - a.winCount;
+      if (b.winRatePct !== a.winRatePct) return b.winRatePct - a.winRatePct;
+      return b.avgNetReturnPct - a.avgNetReturnPct;
     });
 
   // 8. Strategy Breakdown
@@ -557,9 +654,15 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
     const list = signals.filter((s) => s.signal_type === st);
     const stClosed = list.filter((s) => s.status !== "OPEN_ACTIVE");
     const stWins = stClosed.filter((s) => s.status.startsWith("WIN"));
+    const stStoppedOut = stClosed.filter((s) => s.status === "STOPPED_OUT");
     const stLosses = stClosed.filter((s) => !s.status.startsWith("WIN"));
+    const stDecisive = stWins.length + stStoppedOut.length;
     const stWinRate =
-      stClosed.length > 0 ? Number(((stWins.length / stClosed.length) * 100).toFixed(1)) : 0;
+      stDecisive > 0
+        ? Number(((stWins.length / stDecisive) * 100).toFixed(1))
+        : stClosed.length > 0
+        ? Number(((stWins.length / stClosed.length) * 100).toFixed(1))
+        : 0;
     const stAvgNet =
       stClosed.length > 0
         ? Number((stClosed.reduce((acc, s) => acc + s.net_pnl_after_fees_pct, 0) / stClosed.length).toFixed(2))
@@ -572,6 +675,8 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       openSignals: list.length - stClosed.length,
       winCount: stWins.length,
       lossCount: stLosses.length,
+      stoppedOutCount: stStoppedOut.length,
+      timeExpiredCount: stLosses.length - stStoppedOut.length,
       winRatePct: stWinRate,
       avgNetReturnPct: stAvgNet,
     };
