@@ -50,6 +50,7 @@ import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
 import { AlphaPlaybookService } from './AlphaPlaybookService';
 import { AccumulationDistributionRadar } from './AccumulationDistributionRadar';
+import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
 import { BreakoutTrapRadar } from './BreakoutTrapRadar';
 import { MultibaggerHunterService } from './MultibaggerHunterService';
 import { MinerviniLeaderboard } from './MinerviniLeaderboard';
@@ -64,6 +65,7 @@ import { fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
 import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
 
 export const PRO_SERVICE_IDS = new Set<string>([
+  'broker-smart-flow',
   'master-100-profit',
   'multibagger-hunter',
   'minervini-leaderboard',
@@ -134,7 +136,7 @@ export const getServiceCategory = (s: { id: string; cat: string }): string => {
   if (['regulatory-hub', 'nrb-safety-shield', 'nrb-forex', 'bullion-rates', 'regulatory-circulars', 'nrb-indicators'].includes(s.id)) {
     return 'regulatory';
   }
-  if (['broker-analysis', 'broker-favourites', 'zero-sum-floorsheet', 'broker-flow', 'broker-heatmap', 'broker-dominance', 'broker-top10', 'aggressive-accumulators', 'aggressive-holdings', 'distribution-leaders', 'matching-buy-sell', 'slow-accumulation', 'unusual-trades', 'sector-wise-ad', 'smart-money', 'players-choices', 'whale-daily-archive', 'daily-whale-tracker'].includes(s.id)) {
+  if (['broker-smart-flow', 'broker-analysis', 'broker-favourites', 'zero-sum-floorsheet', 'broker-flow', 'broker-heatmap', 'broker-dominance', 'broker-top10', 'aggressive-accumulators', 'aggressive-holdings', 'distribution-leaders', 'matching-buy-sell', 'slow-accumulation', 'unusual-trades', 'sector-wise-ad', 'smart-money', 'players-choices', 'whale-daily-archive', 'daily-whale-tracker'].includes(s.id)) {
     return 'smart-money';
   }
   if (s.id === 'calculator' || s.id === 'margin-loan' || s.id.includes('calc') || s.id.includes('adjustment') || s.id === 'stock-split' || s.id === 'wacc-averaging' || s.id === 'risk-reward' || s.id === 'capital-simulator' || s.id === 'compare-stocks' || s.id === 'sip-in-stocks') {
@@ -195,7 +197,8 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
   { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
 
-  // ── 2. Smart Money & Institutional Flow (15 Tools) ──
+  // ── 2. Smart Money & Institutional Flow (16 Tools) ──
+  { id: 'broker-smart-flow',          name: '⚡ Broker Smart Flow & Early Ignition Workstation', icon: Zap,    color: 'emerald', cat: 'smart-money', star: true },
   { id: 'whale-daily-archive',        name: 'Daily Top 5 Whale Archive (दैनिक ह्वेल)',       icon: Calendar,           color: 'emerald', cat: 'smart-money', star: true },
   { id: 'slow-accumulation',          name: 'Slow Institutional Accumulation (2–15D)',      icon: Crosshair,          color: 'emerald', cat: 'smart-money', star: true },
   { id: 'aggressive-accumulators',    name: 'Aggressive Accumulators (Volume Surge)',       icon: Flame,              color: 'emerald', cat: 'smart-money', star: true },
@@ -1044,6 +1047,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'system-health': () => <PreferencesSettingsService initialTab="system-health" />,
 
   // Smart money
+  'broker-smart-flow': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} />,
   'stealth-accumulation-tracker': AccumulationDistributionRadar,
   'whale-daily-archive': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
   'daily-whale-tracker': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
@@ -1295,6 +1299,7 @@ export default function ServicesHub({
 
   // Top Flagship Tools for Quick Access Carousel
   const QUICK_ACCESS_IDS = [
+    'broker-smart-flow',
     'short-term-profit-plan',
     'entry-exit-analyzer',
     'stock-momentum',
