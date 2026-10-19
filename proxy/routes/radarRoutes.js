@@ -495,6 +495,80 @@ const handleEarlyIgnition = async (req, res) => {
 router.get(["/radar/early-ignition", "/early-ignition"], handleEarlyIgnition);
 
 /**
+ * GET /api/radar/signal-track-record
+ * Walk-Forward 32-Day Algorithmic Signal Track Record & T+2 Settlement Audit
+ * Query filters:
+ * - status: ALL | WINS (WIN_T1 + WIN_T2) | OPEN_ACTIVE | STOPPED_OUT
+ * - signalType: ALL | EARLY_IGNITION_3D | STEALTH_ACCUMULATION | SYNDICATE_ROTATION
+ * - brokerId: ALL or broker ID (e.g. 58, 45, #58)
+ * - sector: ALL or sector name
+ * - sortBy: dateDesc (default) | netPnlDesc | maxGainDesc
+ */
+export async function handleSignalTrackRecord(req, res) {
+  await ensureHotCacheReady();
+  const trackRecord = HOT_CACHE.signalTrackRecord || { summary: {}, strategyBreakdown: {}, brokerLeaderboard: [], signals: [] };
+  let signals = trackRecord.signals || [];
+
+  const status = String(req.query.status || "ALL").trim().toUpperCase();
+  const signalType = String(req.query.signalType || "ALL").trim().toUpperCase();
+  const brokerId = String(req.query.brokerId || "ALL").trim();
+  const sector = String(req.query.sector || "ALL").trim();
+  const sortBy = String(req.query.sortBy || "dateDesc").trim();
+
+  // Filter: status
+  if (status !== "ALL") {
+    if (status === "WINS") {
+      signals = signals.filter((s) => s.status === "WIN_T1" || s.status === "WIN_T2");
+    } else {
+      signals = signals.filter((s) => s.status === status);
+    }
+  }
+
+  // Filter: signalType
+  if (signalType !== "ALL") {
+    signals = signals.filter((s) => s.signal_type === signalType);
+  }
+
+  // Filter: brokerId
+  if (brokerId !== "ALL") {
+    const cleanId = brokerId.replace(/^#/, "").trim();
+    signals = signals.filter((s) => String(s.lead_broker_id) === cleanId);
+  }
+
+  // Filter: sector
+  if (sector !== "ALL") {
+    const secLower = sector.toLowerCase();
+    signals = signals.filter((s) => String(s.sector || "").toLowerCase() === secLower);
+  }
+
+  // Sorting
+  if (sortBy === "netPnlDesc") {
+    signals = [...signals].sort((a, b) => (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0));
+  } else if (sortBy === "maxGainDesc") {
+    signals = [...signals].sort((a, b) => (b.max_gain_pct ?? 0) - (a.max_gain_pct ?? 0));
+  } else {
+    // dateDesc (default)
+    signals = [...signals].sort(
+      (a, b) =>
+        String(b.signal_date).localeCompare(String(a.signal_date)) ||
+        (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0)
+    );
+  }
+
+  res.set("Cache-Control", "public, max-age=60");
+  return res.json({
+    success: true,
+    summary: trackRecord.summary,
+    strategyBreakdown: trackRecord.strategyBreakdown,
+    brokerLeaderboard: trackRecord.brokerLeaderboard,
+    signals,
+    totalCount: signals.length,
+  });
+}
+
+router.get(["/radar/signal-track-record", "/signal-track-record"], handleSignalTrackRecord);
+
+/**
  * Portfolio & Watchlist 30-Day Broker Shield Evaluator
  * Cross-checks user portfolio holdings & watchlist symbols against
  * HOT_CACHE microstructure, operator profit margins, syndicate accumulation,

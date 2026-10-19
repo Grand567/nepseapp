@@ -49,7 +49,7 @@ import DataQualityBanner, { RiskDisclaimer } from './DataQualityBanner'; // A1+A
 import { computeLiveSectorMedians } from '../utils/liveSectorMedians';
 import { classifySector } from '../utils/fundamentals';
 import { evaluateOpenSignals, getSignalStats } from '../services/signalTracker';
-import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
+import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
 
 /* ─── Formatters & Helpers ─── */
 const fmt = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -5610,10 +5610,11 @@ function Dashboard({
       )}
 
       {showSignalTrackerModal && (
-        <GlobalSignalTrackerModal
+        <AlgorithmicSignalTrackRecord
           isOpen={showSignalTrackerModal}
           onClose={() => setShowSignalTrackerModal(false)}
           marketStocks={stocks || []}
+          onSelectStock={s => handleStockClick(s)}
         />
       )}
 

@@ -664,10 +664,19 @@ export function evaluateMasterStock(
   const netRewardPerShare = Math.max(0.5, t1NetCalc.netRealizedGain / 100);
   const netRRR = +(netRewardPerShare / riskPerShare).toFixed(2);
 
-  // Analog win rate
+  // Empirical Walk-Forward Win Rate Calibration (Replaces static 52 + 12 estimate)
+  const baseEmpiricalWinRate = Number(
+    (stock as any)?.empiricalWinRate ??
+    (typeof window !== 'undefined' && (window as any)?.__HOT_CACHE__?.signalTrackRecord?.summary?.verifiedWinRatePct) ??
+    (typeof globalThis !== 'undefined' && (globalThis as any)?.HOT_CACHE?.signalTrackRecord?.summary?.verifiedWinRatePct) ??
+    52
+  );
+  const winRateBoost = (!isDistributionTrap && (bcr3 > 45 || bcr3Net >= 18)) ? 12 : (isDistributionTrap ? -10 : 0);
+  const empiricalBase = (stock as any)?.empiricalWinRate ? baseEmpiricalWinRate : (baseEmpiricalWinRate + winRateBoost);
+
   const analogWinRate = Math.max(
     35,
-    Math.min(85, Math.round(52 + (!isDistributionTrap && (bcr3 > 45 || bcr3Net >= 18) ? 12 : (isDistributionTrap ? -10 : 0)) + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0) + (isBounceBack ? 6 : 0)))
+    Math.min(85, Math.round(empiricalBase + (gatesPassedCount >= 6 ? 10 : -8) - (pe > 45 ? 15 : 0) + (isBounceBack ? 6 : 0)))
   );
 
   // Composite Setup Score (0 - 100)

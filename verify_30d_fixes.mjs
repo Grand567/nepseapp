@@ -472,9 +472,9 @@ assert(oct19Status.nextTradingDayIso === '2026-10-26' && oct19Status.nextTrading
   `Next Reopen: ${oct19Status.reopeningSchedule}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST 11: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection
+// TEST 11A: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n▶ TEST 11: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection');
+console.log('\n▶ TEST 11A: 15% Daily Stock Circuit Limit Calibration & Gap-Up Markup Protection');
 
 // 1. Single-day or 3-day spike > 9.0% strictly classified as STAGE_3_BREAKOUT_IN_PROGRESS
 const mockSpikeDiag3d = {
@@ -530,6 +530,87 @@ const lockedCircuitResult = evaluateEarlyIgnition('TEST_LOCKED', mockLockedCircu
 assert(lockedCircuitResult.stageBadge.includes('Circuit Locked') && lockedCircuitResult.entrySignal === 'CIRCUIT_LOCKED_AVOID_CHASE',
   'Circuit lock at >= +14.8% flags CIRCUIT_LOCKED_AVOID_CHASE to prevent T+2 trapped buy',
   `Badge: ${lockedCircuitResult.stageBadge} | Signal: ${lockedCircuitResult.entrySignal}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 11: Walk-Forward Algorithmic Signal Track Record & T+2 Audit
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▶ TEST 11: Walk-Forward Algorithmic Signal Track Record & T+2 Audit');
+
+if (!HOT_CACHE.signalTrackRecord) {
+  rebuildHotCache();
+}
+
+const trackRecord = HOT_CACHE.signalTrackRecord;
+
+// 1. Verify HOT_CACHE.signalTrackRecord populated with signals.length > 0
+assert(
+  Boolean(trackRecord) && Array.isArray(trackRecord.signals) && trackRecord.signals.length > 0,
+  'HOT_CACHE.signalTrackRecord is populated with generated signals',
+  `Total signals generated: ${trackRecord?.signals?.length}`
+);
+
+const allSignals = trackRecord?.signals || [];
+const closedSignals = allSignals.filter(s => s.status !== 'OPEN_ACTIVE');
+const openSignals = allSignals.filter(s => s.status === 'OPEN_ACTIVE');
+const winningSignals = closedSignals.filter(s => s.status.startsWith('WIN'));
+
+// 2. Strict T+2 settlement invariant: all closed signals must satisfy holding_days >= 2
+const invalidClosedSignals = closedSignals.filter(s => s.holding_days < 2);
+assert(
+  invalidClosedSignals.length === 0,
+  'All closed signals strictly satisfy holding_days >= 2 (T+2 settlement invariant)',
+  `Closed signals audited: ${closedSignals.length} | Invariant violations: ${invalidClosedSignals.length}`
+);
+
+// 3. Verify summary, brokerLeaderboard, and OPEN_ACTIVE signals
+const summary = trackRecord?.summary;
+const brokerLeaderboard = trackRecord?.brokerLeaderboard || [];
+
+assert(
+  typeof summary?.verifiedWinRatePct === 'number' &&
+  summary.verifiedWinRatePct > 0 &&
+  Array.isArray(brokerLeaderboard) &&
+  brokerLeaderboard.length > 0 &&
+  openSignals.length > 0,
+  'summary.verifiedWinRatePct, brokerLeaderboard, and OPEN_ACTIVE signals computed accurately',
+  `Win Rate: ${summary?.verifiedWinRatePct}% | Profit Factor: ${summary?.profitFactor}x | Open: ${openSignals.length} | Brokers: ${brokerLeaderboard.length}`
+);
+
+// 4. Print Telemetry
+console.log('\n  🏆 TOP 5 VERIFIED WINNING SIGNALS (T+2 Settled):');
+const topWins = [...winningSignals]
+  .sort((a, b) => b.net_pnl_after_fees_pct - a.net_pnl_after_fees_pct)
+  .slice(0, 5);
+
+topWins.forEach((s, idx) => {
+  console.log(
+    `     ${idx + 1}. ${s.symbol} (${s.sector}) | Signal: ${s.signal_date} (Unlock: ${s.t2_unlock_date}) | Exit: ${s.exit_date} (T+${s.holding_days})`
+  );
+  console.log(
+    `        Entry: NPR ${s.entry_price} -> Exit: NPR ${s.exit_price} (Peak: NPR ${s.peak_price}, Max Gain: +${s.max_gain_pct}%) | Net: +${s.net_pnl_after_fees_pct}% | Lead: ${s.lead_broker_name}`
+  );
+});
+
+console.log('\n  📊 TOP 3 BROKERS ON WIN-RATE LEADERBOARD:');
+brokerLeaderboard.slice(0, 3).forEach((b, idx) => {
+  console.log(
+    `     ${idx + 1}. ${b.brokerName} | Win Rate: ${b.winRatePct}% (${b.winCount}W / ${b.lossCount}L of ${b.totalSignals} signals) | Avg Net: ${b.avgNetReturnPct >= 0 ? '+' : ''}${b.avgNetReturnPct}% | Best: ${b.bestStock?.symbol} (+${b.bestStock?.maxGainPct}%)`
+  );
+});
+
+console.log('\n  ⏳ TOP 5 OPEN ACTIVE SIGNALS (Post-Dashain Watchlist for Mon Oct 26):');
+const topOpen = [...openSignals]
+  .sort((a, b) => b.ignition_score - a.ignition_score || b.bcr5_net_pct - a.bcr5_net_pct)
+  .slice(0, 5);
+
+topOpen.forEach((s, idx) => {
+  console.log(
+    `     ${idx + 1}. ${s.symbol} (${s.sector}) | Signal Date: ${s.signal_date} (T+2 Unlock: ${s.t2_unlock_date}) | Strategy: ${s.signal_type}`
+  );
+  console.log(
+    `        Entry: NPR ${s.entry_price} (VWAP: NPR ${s.broker_vwap}) | Targets: T1 NPR ${s.target1_price} / T2 NPR ${s.target2_price} / SL NPR ${s.stop_loss_price} | Lead: ${s.lead_broker_name} | Score: ${s.ignition_score}/100`
+  );
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUMMARY

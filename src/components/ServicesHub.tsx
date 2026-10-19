@@ -22,7 +22,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import NepseAgentDashboard from './NepseAgentDashboard';
-import { GlobalSignalTrackerModal } from './analyzer/GlobalSignalTrackerModal';
+import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
 import type { LucideIcon } from 'lucide-react';
 import {
   UniversalScreener, StockMomentumAnalyzer, MarketSummaryService, TopPerformersService,
@@ -326,7 +326,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'ai-agent-dossier':      NepseAgentDashboard as unknown as ComponentType,
   'signals-track-record': (({ stocks }: { stocks?: any[] }) => (
     <div className="py-2">
-      <GlobalSignalTrackerModal isOpen={true} inlineMode={true} marketStocks={stocks || []} />
+      <AlgorithmicSignalTrackRecord inlineMode={true} marketStocks={stocks || []} />
     </div>
   )) as ComponentType,
   'stock-momentum': StockMomentumAnalyzer,

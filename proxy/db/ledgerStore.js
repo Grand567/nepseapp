@@ -5,6 +5,7 @@ import fs from "fs";
 import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { calculateMultiDayDiagnostics, evaluateEarlyIgnition, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
+import { rebuildSignalTrackRecord, initSignalLedgerTable } from "./signalTrackerStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,6 +119,7 @@ export const HOT_CACHE = {
   radarByTimeframe: { 1: [], 3: [], 5: [], 15: [], 30: [] },
   stockDiagnostics: new Map(), // Key: `${symbol}_${days}` -> Single stock deep diagnostic
   earlyIgnition: [], // Precomputed 3D Early Ignition & Manipulation records sorted by ignitionScore
+  signalTrackRecord: null, // Empirical walk-forward T+2 audit track record
 };
 
 /**
@@ -678,6 +680,13 @@ export function rebuildHotCache() {
     `[Drabyashree Cache] Rebuilt 1D/3D/5D/15D/30D hot cache for ${stockCount} stocks (${earlyIgnitionList.length} early ignition records) in ${Date.now() - startTime}ms (Session: ${dates[0]})`
   );
 
+  // 4. Rebuild Algorithmic Signal Track Record walk-forward audit
+  try {
+    rebuildSignalTrackRecord(db, HOT_CACHE);
+  } catch (sigErr) {
+    console.warn("[Drabyashree Cache] Signal track record rebuild warning:", sigErr.message);
+  }
+
   // Background export of snapshot gz to ensure cold-boot safety
   setTimeout(() => {
     try { exportLedgerSnapshotGz(); } catch (_) {}
@@ -899,4 +908,6 @@ export async function backfillRealHistoricalFloorsheets(targetTradingDays = 30, 
 
 // Alias for backwards compatibility
 export const backfillHistoricalDays = backfillRealHistoricalFloorsheets;
+
+export { rebuildSignalTrackRecord, initSignalLedgerTable };
 
