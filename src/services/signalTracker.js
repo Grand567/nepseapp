@@ -291,6 +291,8 @@ export const updateSignalOutcome = (signalId, currentPrice, highSince, lowSince)
     const entryDate = new Date(signal.signalDate);
     const exitDateObj = new Date();
     const holdingDays = Math.max(1, Math.floor((exitDateObj - entryDate) / (1000 * 60 * 60 * 24)));
+    // Invariant: Under NEPSE T+2 settlement, shares cannot be exited prior to Demat delivery
+    if (holdingDays < 2) return signal;
     const entryPrice = signal.entryPrice || currentPrice;
     const returnPct = +(((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2);
     const { netReturnPct, totalFeesPct, cgtPct } = calculateNetReturn(entryPrice, exitPrice, holdingDays);

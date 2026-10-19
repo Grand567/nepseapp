@@ -680,12 +680,14 @@ export function evaluateMasterStock(
   );
 
   // Composite Setup Score (0 - 100)
-  let rawScore = 35 + (gatesPassedCount * 5.5) + (bcr3 * 0.35) + (analogWinRate * 0.15);
+  const safeBcr3 = Number.isFinite(bcr3) ? bcr3 : 0;
+  const safeWinRate = Number.isFinite(analogWinRate) ? analogWinRate : 50;
+  let rawScore = 35 + (gatesPassedCount * 5.5) + (safeBcr3 * 0.35) + (safeWinRate * 0.15);
   if (isDistributionTrap) rawScore -= 25;
   if (isPromoterLockinNear) rawScore -= 30;
   if (publicFloatM > 15.0 && track !== 'BLUE_CHIP_COMPOUNDER') rawScore -= 20;
   if (isBounceBack && pChange >= 0.2) rawScore += 6;
-  const setupScore = Math.max(15, Math.min(98, Math.round(rawScore)));
+  const setupScore = Math.max(15, Math.min(98, Math.round(Number.isFinite(rawScore) ? rawScore : 50)));
 
   const matrixChecks: MatrixCheck[] = [
     {

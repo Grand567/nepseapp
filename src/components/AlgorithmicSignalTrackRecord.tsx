@@ -85,6 +85,7 @@ export interface BrokerPerformance {
   lossCount: number;
   winRatePct: number;
   avgNetReturnPct: number;
+  institutionalAlphaScore?: number;
   bestStock: {
     symbol: string;
     maxGainPct: number;
@@ -98,6 +99,8 @@ export interface StrategyPerformance {
   openSignals: number;
   winCount: number;
   lossCount: number;
+  stoppedOutCount?: number;
+  timeExpiredCount?: number;
   winRatePct: number;
   avgNetReturnPct: number;
 }
@@ -829,14 +832,14 @@ export function AlgorithmicSignalTrackRecord({
                                 className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30"
                                 title="Live potential gain to Target 1"
                               >
-                                +{s.live_reward_to_t1_pct !== undefined ? s.live_reward_to_t1_pct : ((((s.target1_price - (s.exit_price || s.entry_price)) / (s.exit_price || s.entry_price)) * 100).toFixed(1))}% to T1
+                                +{s.live_reward_to_t1_pct !== undefined ? s.live_reward_to_t1_pct : ((((s.target1_price - (s.exit_price || s.entry_price || 1)) / (s.exit_price || s.entry_price || 1)) * 100).toFixed(1))}% to T1
                               </span>
                               <span className="text-slate-500">/</span>
                               <span
                                 className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/30"
                                 title="Live potential risk to Stop Loss"
                               >
-                                -{s.live_risk_to_sl_pct !== undefined ? s.live_risk_to_sl_pct : (((( (s.exit_price || s.entry_price) - s.stop_loss_price) / (s.exit_price || s.entry_price)) * 100).toFixed(1))}% to SL
+                                -{s.live_risk_to_sl_pct !== undefined ? s.live_risk_to_sl_pct : (((((s.exit_price || s.entry_price || 1) - s.stop_loss_price) / (s.exit_price || s.entry_price || 1)) * 100).toFixed(1))}% to SL
                               </span>
                             </div>
                           )}

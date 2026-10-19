@@ -3249,7 +3249,12 @@ export async function fetchPrecomputedDiagnostic(symbol, days = 1) {
   try {
     const res = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 6000);
     if (res?.success && res.data) {
-      return res.data;
+      return {
+        ...res.data,
+        loadedTradingDays: res.loadedTradingDays,
+        isBackfilling: res.isBackfilling,
+        targetTradingDays: res.targetTradingDays
+      };
     }
   } catch (err) {
     console.warn('[liveData] fetchPrecomputedDiagnostic error:', err.message);

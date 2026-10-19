@@ -1556,15 +1556,11 @@ export function AccumulationDistributionRadar({
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">Horizon:</span>
             {[
-              { label: '1D', days: 1 },
-              { label: '5D', days: 5 },
-              { label: '15D', days: 15 },
-              { label: '1M', days: 30 },
-              { label: '2M', days: 60 },
-              { label: '3M', days: 90 },
-              { label: '6M', days: 180 },
-              { label: '1Y', days: 260 },
-              { label: '2Y / All', days: 500 },
+              { label: '1D (Daily)', days: 1 },
+              { label: '3D (Ignition)', days: 3 },
+              { label: '5D (Weekly)', days: 5 },
+              { label: '15D (Swing)', days: 15 },
+              { label: '30D (Full Ledger)', days: 30 },
             ].map(pill => (
               <button
                 key={pill.label}

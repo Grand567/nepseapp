@@ -67,6 +67,7 @@ export function isExcludedInstrument(symbol, sector) {
 export function isLowBetaSector(sector) {
   if (!sector) return false;
   const s = String(sector).toLowerCase().trim();
+  if (s.includes("development bank")) return false; // Development banks are high-beta equities in NEPSE
   return (
     s.includes("commercial bank") ||
     s.includes("banking") ||
@@ -401,10 +402,10 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
               break;
             }
           } else if (hasHitTrailFloor) {
-            // Trailing Profit Floor activated: if close pulls back below floor, lock profit
+            // Trailing Profit Floor activated: if close pulls back below floor, lock profit at close
             if (fwdClose < trailFloor) {
               status = "WIN_T1";
-              exitPrice = Number(Math.max(fwdClose, entryPrice * 1.035).toFixed(2));
+              exitPrice = Number(fwdClose.toFixed(2));
               exitDate = fwdDate;
               holdingDays = j - i;
               break;
@@ -425,7 +426,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
             const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
             if (gainPct >= 4.5 || fwdClose >= entryPrice * 1.02) {
               status = "WIN_T1";
-              exitPrice = Number(Math.max(fwdClose, entryPrice * 1.035).toFixed(2));
+              exitPrice = Number(fwdClose.toFixed(2));
             } else {
               status = "TIME_EXPIRED";
               exitPrice = fwdClose;
@@ -452,7 +453,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
           if ((latestDateIndex >= i + 2 && gainPct >= 4.5) || latestClose >= entryPrice * 1.02) {
             status = "WIN_T1";
-            exitPrice = Number(Math.max(latestClose, entryPrice * 1.035).toFixed(2));
+            exitPrice = Number(latestClose.toFixed(2));
           } else {
             status = "TIME_EXPIRED";
             exitPrice = latestClose;

@@ -346,12 +346,14 @@ export function seedFromSnapshotGz(force = false) {
         fs.writeFileSync(tempDbPath, zlib.gunzipSync(gzBuf));
 
         const normalizedTempPath = tempDbPath.replace(/\\/g, "/");
-        db.exec(`ATTACH DATABASE '${normalizedTempPath}' AS seed_db;`);
-        db.exec(`INSERT OR REPLACE INTO daily_stock_summary SELECT * FROM seed_db.daily_stock_summary;`);
-        db.exec(`INSERT OR REPLACE INTO daily_broker_ledger SELECT * FROM seed_db.daily_broker_ledger;`);
-        db.exec(`DETACH DATABASE seed_db;`);
-
-        try { fs.unlinkSync(tempDbPath); } catch (_) {}
+        try {
+          db.exec(`ATTACH DATABASE '${normalizedTempPath}' AS seed_db;`);
+          db.exec(`INSERT OR REPLACE INTO daily_stock_summary SELECT * FROM seed_db.daily_stock_summary;`);
+          db.exec(`INSERT OR REPLACE INTO daily_broker_ledger SELECT * FROM seed_db.daily_broker_ledger;`);
+        } finally {
+          try { db.exec(`DETACH DATABASE seed_db;`); } catch (_) {}
+          try { fs.unlinkSync(tempDbPath); } catch (_) {}
+        }
         console.log(`[Drabyashree Ledger] Ultra-fast ATTACH restore completed in ${Date.now() - t0}ms from ${foundGz}.`);
         return true;
       } catch (attachErr) {
@@ -805,7 +807,7 @@ export const backfillStatusState = {
 
 export function getBackfillStatus(targetTradingDays = 30) {
   const dates = getStoredDates(Math.max(40, Number(targetTradingDays) || 30));
-  const target = Number(backfillStatusState.targetTradingDays || targetTradingDays || 30);
+  const target = Math.max(1, Number(backfillStatusState.targetTradingDays || targetTradingDays) || 30);
   return {
     success: true,
     loadedTradingDays: dates.length,
@@ -813,7 +815,7 @@ export function getBackfillStatus(targetTradingDays = 30) {
     dates,
     isBackfilling: backfillStatusState.isBackfilling,
     currentBackfillingDate: backfillStatusState.currentBackfillingDate,
-    progressPct: Math.min(100, Math.round((dates.length / target) * 100)),
+    progressPct: Math.min(100, Math.max(0, Math.round((dates.length / target) * 100))),
     startedAt: backfillStatusState.startedAt,
     completedAt: backfillStatusState.completedAt,
     error: backfillStatusState.error,
