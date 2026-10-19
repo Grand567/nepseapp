@@ -37,6 +37,7 @@ import { calculateMultiDayDiagnostics, buildDailyHistoryFromStockData, PHASE_DEF
 // @ts-ignore
 import StockDetailModal from './StockDetailModal';
 import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
+import PortfolioBrokerShield from './PortfolioBrokerShield';
 
 const STAGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   STEALTH: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
@@ -500,7 +501,7 @@ const StockRadarCard = React.memo(function StockRadarCard({
 interface AccumulationDistributionRadarProps {
   initialSymbol?: string;
   initialStage?: string;
-  initialTab?: 'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow';
+  initialTab?: 'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow' | 'portfolio-shield';
   onSelectStock?: (stock: any) => void;
   onAskGuruAi?: (stock: any) => void;
 }
@@ -512,7 +513,7 @@ export function AccumulationDistributionRadar({
   onSelectStock,
   onAskGuruAi
 }: AccumulationDistributionRadarProps) {
-  const [activeTab, setActiveTab] = useState<'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow'>(initialTab || 'radar');
+  const [activeTab, setActiveTab] = useState<'radar' | 'archive' | 'diagnostic' | 'playbook' | 'smart-flow' | 'portfolio-shield'>(initialTab || 'radar');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedStage, setSelectedStage] = useState<string>(initialStage || 'ALL');
   const [step4Filter, setStep4Filter] = useState<'ALL' | 'SECTOR_LEADERS' | 'DAY1_STEALTH' | 'DAY2_PRIME' | 'VDU_COIL' | 'CHURN_TRAP' | 'ACCUMULATION' | 'TRAP'>('ALL');
@@ -1396,6 +1397,16 @@ export function AccumulationDistributionRadar({
               <Users className="w-3.5 h-3.5" /> Slow Flow & Dump Tracker
             </button>
             <button
+              onClick={() => setActiveTab('portfolio-shield')}
+              className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                activeTab === 'portfolio-shield'
+                  ? 'bg-indigo-600 text-white shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" /> 🛡️ Portfolio Shield
+            </button>
+            <button
               onClick={() => setActiveTab('archive')}
               className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                 activeTab === 'archive'
@@ -1915,6 +1926,22 @@ export function AccumulationDistributionRadar({
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeTab === 'smart-flow' && (
         <BrokerSmartFlowTracker
+          defaultTimeframe={radarDays || 30}
+          onSelectStock={(stk) => {
+            if (stk?.symbol) {
+              setSelectedStockSymbol(stk.symbol);
+              setActiveTab('diagnostic');
+            }
+            onSelectStock?.(stk);
+          }}
+        />
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* TAB: PORTFOLIO & WATCHLIST 30-DAY BROKER SHIELD                    */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {activeTab === 'portfolio-shield' && (
+        <PortfolioBrokerShield
           defaultTimeframe={radarDays || 30}
           onSelectStock={(stk) => {
             if (stk?.symbol) {

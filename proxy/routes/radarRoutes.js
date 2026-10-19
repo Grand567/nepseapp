@@ -120,6 +120,93 @@ router.get("/radar", async (req, res) => {
 });
 
 /**
+ * Operator Capital Rotation & Pair-Trade Detector Helper
+ * Matches each heavyweight broker's #1 Dumped Stock with its #1 Accumulated Stock
+ */
+export function computeCapitalRotations(validDays = 30, brokerIdFilter = "ALL") {
+  const universe = HOT_CACHE.radarByTimeframe[validDays] || [];
+  const brokerFlowMap = new Map();
+
+  for (const s of universe) {
+    const sDiag = HOT_CACHE.stockDiagnostics.get(`${s.symbol}_${validDays}`) || s;
+    if (!sDiag) continue;
+    const smMeta = stockMap[s.symbol] || {};
+    const symCompany = smMeta.name || s.name || sDiag.companyName || s.symbol;
+
+    for (const b of (sDiag.topAccumulators || [])) {
+      if (!b.brokerId || (b.netAmt || 0) <= 0) continue;
+      const bId = String(b.brokerId);
+      let entry = brokerFlowMap.get(bId);
+      if (!entry) {
+        entry = { brokerId: bId, brokerName: b.brokerName || `Broker #${bId}`, buys: [], sells: [] };
+        brokerFlowMap.set(bId, entry);
+      }
+      entry.buys.push({
+        symbol: s.symbol,
+        companyName: symCompany,
+        netAmt: b.netAmt,
+        remainingQty: b.remainingQty,
+        avgBuyPrice: b.avgBuyPrice,
+        ltp: Number(sDiag.latestClose || s.latestClose || 0)
+      });
+    }
+
+    for (const d of (sDiag.topDistributors || [])) {
+      if (!d.brokerId || (d.netAmt || 0) >= 0) continue;
+      const bId = String(d.brokerId);
+      let entry = brokerFlowMap.get(bId);
+      if (!entry) {
+        entry = { brokerId: bId, brokerName: d.brokerName || `Broker #${bId}`, buys: [], sells: [] };
+        brokerFlowMap.set(bId, entry);
+      }
+      entry.sells.push({
+        symbol: s.symbol,
+        companyName: symCompany,
+        netAmt: d.netAmt,
+        remainingQty: d.remainingQty,
+        avgSellPrice: d.avgSellPrice,
+        ltp: Number(sDiag.latestClose || s.latestClose || 0)
+      });
+    }
+  }
+
+  // Dynamic threshold scaled by timeframe window
+  const minThreshold = validDays >= 30 ? 2.5e7 : validDays >= 15 ? 1.2e7 : validDays >= 5 ? 6e6 : 1.5e6;
+  const capitalRotations = [];
+
+  for (const [bId, flow] of brokerFlowMap.entries()) {
+    if (brokerIdFilter !== "ALL" && bId !== brokerIdFilter) continue;
+    flow.buys.sort((a, b) => b.netAmt - a.netAmt);
+    flow.sells.sort((a, b) => a.netAmt - b.netAmt); // Most negative outflow first
+
+    const topBuy = flow.buys[0];
+    const topSell = flow.sells[0];
+
+    if (topBuy && topSell && topBuy.netAmt >= minThreshold && topSell.netAmt <= -minThreshold) {
+      const shiftedAmount = Math.min(topBuy.netAmt, Math.abs(topSell.netAmt));
+      capitalRotations.push({
+        brokerId: bId,
+        brokerName: flow.brokerName,
+        dumpedSymbol: topSell.symbol,
+        dumpedCompanyName: topSell.companyName,
+        dumpedNetAmt: topSell.netAmt,
+        dumpedQty: topSell.remainingQty,
+        accumulatedSymbol: topBuy.symbol,
+        accumulatedCompanyName: topBuy.companyName,
+        accumulatedNetAmt: topBuy.netAmt,
+        accumulatedQty: topBuy.remainingQty,
+        shiftedAmount,
+        shiftedAmountCr: Number((shiftedAmount / 1e7).toFixed(2)),
+        rotationMatchPct: Number(((shiftedAmount / Math.max(topBuy.netAmt, Math.abs(topSell.netAmt))) * 100).toFixed(1))
+      });
+    }
+  }
+
+  capitalRotations.sort((a, b) => b.shiftedAmount - a.shiftedAmount);
+  return { capitalRotations, brokerFlowMap };
+}
+
+/**
  * GET /api/radar/broker-tracker
  * Multi-criteria Smart Money Slow Accumulation & Dumping Tracker
  * Query Params:
@@ -231,84 +318,7 @@ router.get("/radar/broker-tracker", async (req, res) => {
   }
 
   // ── Operator Capital Rotation & Pair-Trade Detector ──
-  // Matches each heavyweight broker's #1 Dumped Stock with its #1 Accumulated Stock
-  const brokerFlowMap = new Map();
-  for (const s of universe) {
-    const sDiag = HOT_CACHE.stockDiagnostics.get(`${s.symbol}_${validDays}`);
-    if (!sDiag) continue;
-    const smMeta = stockMap[s.symbol] || {};
-    const symCompany = smMeta.name || s.name || sDiag.companyName || s.symbol;
-
-    for (const b of (sDiag.topAccumulators || [])) {
-      if (!b.brokerId || b.netAmt <= 0) continue;
-      const bId = String(b.brokerId);
-      let entry = brokerFlowMap.get(bId);
-      if (!entry) {
-        entry = { brokerId: bId, brokerName: b.brokerName || `Broker #${bId}`, buys: [], sells: [] };
-        brokerFlowMap.set(bId, entry);
-      }
-      entry.buys.push({
-        symbol: s.symbol,
-        companyName: symCompany,
-        netAmt: b.netAmt,
-        remainingQty: b.remainingQty,
-        avgBuyPrice: b.avgBuyPrice,
-        ltp: Number(sDiag.latestClose || s.latestClose || 0)
-      });
-    }
-
-    for (const d of (sDiag.topDistributors || [])) {
-      if (!d.brokerId || d.netAmt >= 0) continue;
-      const bId = String(d.brokerId);
-      let entry = brokerFlowMap.get(bId);
-      if (!entry) {
-        entry = { brokerId: bId, brokerName: d.brokerName || `Broker #${bId}`, buys: [], sells: [] };
-        brokerFlowMap.set(bId, entry);
-      }
-      entry.sells.push({
-        symbol: s.symbol,
-        companyName: symCompany,
-        netAmt: d.netAmt,
-        remainingQty: d.remainingQty,
-        avgSellPrice: d.avgSellPrice,
-        ltp: Number(sDiag.latestClose || s.latestClose || 0)
-      });
-    }
-  }
-
-  // Dynamic threshold scaled by timeframe window
-  const minThreshold = validDays >= 30 ? 2.5e7 : validDays >= 15 ? 1.2e7 : validDays >= 5 ? 6e6 : 1.5e6;
-  const capitalRotations = [];
-
-  for (const [bId, flow] of brokerFlowMap.entries()) {
-    if (brokerIdFilter !== "ALL" && bId !== brokerIdFilter) continue;
-    flow.buys.sort((a, b) => b.netAmt - a.netAmt);
-    flow.sells.sort((a, b) => a.netAmt - b.netAmt); // Most negative outflow first
-
-    const topBuy = flow.buys[0];
-    const topSell = flow.sells[0];
-
-    if (topBuy && topSell && topBuy.netAmt >= minThreshold && topSell.netAmt <= -minThreshold) {
-      const shiftedAmount = Math.min(topBuy.netAmt, Math.abs(topSell.netAmt));
-      capitalRotations.push({
-        brokerId: bId,
-        brokerName: flow.brokerName,
-        dumpedSymbol: topSell.symbol,
-        dumpedCompanyName: topSell.companyName,
-        dumpedNetAmt: topSell.netAmt,
-        dumpedQty: topSell.remainingQty,
-        accumulatedSymbol: topBuy.symbol,
-        accumulatedCompanyName: topBuy.companyName,
-        accumulatedNetAmt: topBuy.netAmt,
-        accumulatedQty: topBuy.remainingQty,
-        shiftedAmount,
-        shiftedAmountCr: Number((shiftedAmount / 1e7).toFixed(2)),
-        rotationMatchPct: Number(((shiftedAmount / Math.max(topBuy.netAmt, Math.abs(topSell.netAmt))) * 100).toFixed(1))
-      });
-    }
-  }
-
-  capitalRotations.sort((a, b) => b.shiftedAmount - a.shiftedAmount);
+  const { capitalRotations } = computeCapitalRotations(validDays, brokerIdFilter);
 
   // Dynamic Multi-Criteria Sorting
   results.sort((a, b) => {
@@ -348,6 +358,315 @@ router.get("/radar/broker-tracker", async (req, res) => {
     topStocks: results.slice(0, limit),
   });
 });
+
+/**
+ * Portfolio & Watchlist 30-Day Broker Shield Evaluator
+ * Cross-checks user portfolio holdings & watchlist symbols against
+ * HOT_CACHE microstructure, operator profit margins, syndicate accumulation,
+ * and capital rotation outflows/inflows.
+ */
+export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
+  const validDays = resolveValidTimeframe(rawDays, 30);
+  const items = Array.isArray(itemsInput) ? itemsInput : [];
+  const { capitalRotations } = computeCapitalRotations(validDays);
+
+  const evaluatedItems = [];
+  const rotationAlertsSet = new Set();
+
+  let totalWeight = 0;
+  let weightedScoreSum = 0;
+  let totalPortfolioValue = 0;
+  let totalPortfolioPnL = 0;
+
+  let criticalExitCount = 0;
+  let climaxRiskCount = 0;
+  let fortressCount = 0;
+  let safeAccumulateCount = 0;
+  let neutralCount = 0;
+  let portfolioCount = 0;
+  let watchlistCount = 0;
+
+  for (const rawItem of items) {
+    const sym = String(typeof rawItem === 'string' ? rawItem : rawItem.symbol || '').toUpperCase().trim();
+    if (!sym) continue;
+
+    const qty = Math.max(0, Number(rawItem.qty || 0));
+    const buyPrice = Math.max(0, Number(rawItem.buyPrice || rawItem.price || rawItem.wacc || 0));
+    const listType = String(rawItem.listType || 'PORTFOLIO').toUpperCase() === 'WATCHLIST' ? 'WATCHLIST' : 'PORTFOLIO';
+
+    if (listType === 'PORTFOLIO') portfolioCount++;
+    else watchlistCount++;
+
+    // Retrieve diagnostics from HOT_CACHE or on-demand from SQLite
+    let diag = HOT_CACHE.stockDiagnostics.get(`${sym}_${validDays}`);
+    let diag30 = validDays === 30 ? diag : HOT_CACHE.stockDiagnostics.get(`${sym}_30`);
+    let diag5 = validDays === 5 ? diag : HOT_CACHE.stockDiagnostics.get(`${sym}_5`);
+
+    if (!diag || !diag30 || !diag5) {
+      try {
+        const hist30 = getSymbolHistoryFromDb(sym, 30);
+        if (hist30 && hist30.length > 0) {
+          if (!diag30) {
+            const d30 = calculateMultiDayDiagnostics(hist30, 30);
+            if (d30) {
+              diag30 = { symbol: sym, ...d30 };
+              HOT_CACHE.stockDiagnostics.set(`${sym}_30`, diag30);
+            }
+          }
+          if (!diag5) {
+            const d5 = calculateMultiDayDiagnostics(hist30, 5);
+            if (d5) {
+              diag5 = { symbol: sym, ...d5 };
+              HOT_CACHE.stockDiagnostics.set(`${sym}_5`, diag5);
+            }
+          }
+          if (!diag) {
+            diag = validDays === 30 ? diag30 : validDays === 5 ? diag5 : null;
+            if (!diag) {
+              const dv = calculateMultiDayDiagnostics(hist30, validDays);
+              if (dv) {
+                diag = { symbol: sym, ...dv };
+                HOT_CACHE.stockDiagnostics.set(`${sym}_${validDays}`, diag);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Fallback to stock in radarByTimeframe if diagnostics map miss
+    if (!diag) {
+      const radarList = HOT_CACHE.radarByTimeframe[validDays] || HOT_CACHE.radarByTimeframe[30] || [];
+      diag = radarList.find(s => s.symbol === sym) || null;
+    }
+    if (!diag30) diag30 = diag;
+    if (!diag5) diag5 = diag;
+
+    const smInfo = stockMap[sym] || {};
+    const companyName = smInfo.name || diag?.companyName || sym;
+    const sector = smInfo.sector || diag?.sector || 'Others';
+
+    const ltp = Number(diag?.latestClose || diag30?.latestClose || 0);
+    const bigBrokerVWAP = Number(diag?.bigBrokerVWAP || diag30?.bigBrokerVWAP || ltp);
+    const marketVWAP = Number(diag?.marketVWAP || diag30?.marketVWAP || ltp);
+    const buyZoneMin = Number(diag?.buyZoneMin || diag30?.buyZoneMin || 0);
+    const buyZoneMax = Number(diag?.buyZoneMax || diag30?.buyZoneMax || 0);
+    const priceChangePct = Number(diag?.priceChangePct || diag30?.priceChangePct || 0);
+    const bcr5NetPct = Number(diag?.bcr5NetPct ?? diag30?.bcr5NetPct ?? 0);
+    const scr3NetPct = Number(diag?.scr3NetPct ?? diag30?.scr3NetPct ?? 0);
+    const phase = diag?.phase || diag30?.phase || 'NEUTRAL_RETAIL';
+    const phaseLabel = diag?.phaseLabel || diag30?.phaseLabel || 'Neutral / Consolidation';
+
+    // Lead Accumulator & Distributor
+    const rawLeadAcc = diag?.leadAccumulator || diag30?.leadAccumulator || diag?.topAccumulators?.[0] || null;
+    const leadAccumulator = rawLeadAcc ? {
+      brokerId: rawLeadAcc.brokerId,
+      brokerName: rawLeadAcc.brokerName || `Broker #${rawLeadAcc.brokerId}`,
+      remainingQty: Number(rawLeadAcc.remainingQty ?? rawLeadAcc.netVol ?? 0),
+      netInflowAmt: Number(rawLeadAcc.netAmt ?? (rawLeadAcc.buyAmt - rawLeadAcc.sellAmt) ?? 0),
+      netInflowCr: Number(((rawLeadAcc.netAmt ?? (rawLeadAcc.buyAmt - rawLeadAcc.sellAmt) ?? 0) / 1e7).toFixed(2)),
+      avgBuyPrice: Number(rawLeadAcc.avgBuyPrice || 0),
+      startDate: rawLeadAcc.startDate || null,
+      streakDays: Number(rawLeadAcc.streakDays || 0),
+      consistencyPct: Number(rawLeadAcc.consistencyPct || 0)
+    } : null;
+
+    const rawLeadDist = diag?.leadDistributor || diag30?.leadDistributor || diag?.topDistributors?.[0] || null;
+    const leadDistributor = rawLeadDist ? {
+      brokerId: rawLeadDist.brokerId,
+      brokerName: rawLeadDist.brokerName || `Broker #${rawLeadDist.brokerId}`,
+      remainingQty: Number(rawLeadDist.remainingQty ?? rawLeadDist.netVol ?? 0),
+      netOutflowAmt: Number(rawLeadDist.netAmt ?? (rawLeadDist.buyAmt - rawLeadDist.sellAmt) ?? 0),
+      netOutflowCr: Number(((rawLeadDist.netAmt ?? (rawLeadDist.buyAmt - rawLeadDist.sellAmt) ?? 0) / 1e7).toFixed(2)),
+      avgSellPrice: Number(rawLeadDist.avgSellPrice || 0),
+      startDate: rawLeadDist.startDate || null,
+      streakDays: Number(rawLeadDist.streakDays || 0),
+      consistencyPct: Number(rawLeadDist.consistencyPct || 0)
+    } : null;
+
+    // Operator margins & User metrics
+    const operatorProfitMarginPct = bigBrokerVWAP > 0 ? Number((((ltp - bigBrokerVWAP) / bigBrokerVWAP) * 100).toFixed(2)) : 0;
+    const userProfitLossPct = buyPrice > 0 ? Number((((ltp - buyPrice) / buyPrice) * 100).toFixed(2)) : null;
+    const unrealizedPnL = (buyPrice > 0 && qty > 0) ? Number(((ltp - buyPrice) * qty).toFixed(2)) : null;
+    const costAdvantageVsOperatorPct = (buyPrice > 0 && bigBrokerVWAP > 0) ? Number((((bigBrokerVWAP - buyPrice) / bigBrokerVWAP) * 100).toFixed(2)) : null;
+
+    const positionValue = qty > 0 ? qty * ltp : 0;
+    if (positionValue > 0) totalPortfolioValue += positionValue;
+    if (unrealizedPnL !== null) totalPortfolioPnL += unrealizedPnL;
+
+    // Check Capital Rotations
+    const dumpedRotation = capitalRotations.find(r => r.dumpedSymbol === sym) || null;
+    const accumulatedRotation = capitalRotations.find(r => r.accumulatedSymbol === sym) || null;
+
+    let rotationAlert = null;
+    if (dumpedRotation) {
+      rotationAlert = `⚠️ You hold/watch ${sym}, which Broker #${dumpedRotation.brokerId} (${dumpedRotation.brokerName}) is dumping (-Rs. ${Math.abs(dumpedRotation.dumpedNetAmt / 1e7).toFixed(2)} Cr) to rotate into ${dumpedRotation.accumulatedSymbol} (+Rs. ${(dumpedRotation.accumulatedNetAmt / 1e7).toFixed(2)} Cr)!`;
+      rotationAlertsSet.add(rotationAlert);
+    }
+
+    // 5-Tier Shield Verdict & Risk Classification Engine
+    let shieldVerdict = "RETAIL_DRIFT_WATCH";
+    let riskLevel = "NEUTRAL_HOLD";
+    let badge = "⚪ RETAIL DRIFT WATCH";
+    let tacticalAdvice = "No aggressive institutional accumulation or heavy distribution detected. Price moving with retail order flow.";
+    let scoreWeight = 55;
+
+    // 1. 🚨 EXIT_BEFORE_T2_DUMP (CRITICAL_EXIT)
+    const netDumpAmt = Math.abs(dumpedRotation?.dumpedNetAmt || 0);
+    const netAccRotAmt = accumulatedRotation?.accumulatedNetAmt || 0;
+    const isNetRotationDump = netDumpAmt >= 2.5e7 && (netDumpAmt > netAccRotAmt * 1.2 || scr3NetPct > bcr5NetPct);
+    const leadAccAmt = leadAccumulator?.netInflowAmt || 0;
+    const leadDistAmt = Math.abs(leadDistributor?.netOutflowAmt || 0);
+    const isNetHeavyDump = leadDistAmt >= 3e7 && leadDistAmt > (leadAccAmt * 1.3) && (scr3NetPct > bcr5NetPct || phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP");
+
+    const isExitDump = (phase === "BULL_TRAP" || phase === "DISTRIBUTION_DANGER")
+      || (scr3NetPct >= 20 && scr3NetPct > bcr5NetPct)
+      || isNetRotationDump
+      || isNetHeavyDump;
+
+    if (isExitDump) {
+      shieldVerdict = "EXIT_BEFORE_T2_DUMP";
+      riskLevel = "CRITICAL_EXIT";
+      badge = "🚨 EXIT BEFORE T+2 DUMP";
+      scoreWeight = 10;
+      criticalExitCount++;
+
+      const distName = leadDistributor?.brokerName || (dumpedRotation ? `Broker #${dumpedRotation.brokerId}` : 'Institutional sellers');
+      const outflowCr = leadDistributor ? Math.abs(leadDistributor.netOutflowCr).toFixed(2) : dumpedRotation ? Math.abs(dumpedRotation.dumpedNetAmt / 1e7).toFixed(2) : '';
+      const startStr = leadDistributor?.startDate ? ` since ${leadDistributor.startDate}` : '';
+      tacticalAdvice = `Heavyweight broker distribution detected (${distName}${outflowCr ? `: Rs. ${outflowCr} Cr outflow${startStr}` : ''}). Do not average down; use green intraday bounces to exit before T+2 supply hits.`;
+    }
+    // 2. ⚠️ PROFIT_BOOKING_CLIMAX_RISK (WARNING_TRIM)
+    else if (operatorProfitMarginPct >= 25 || (operatorProfitMarginPct >= 20 && (diag5?.smartMoneyNetFlowPct < 0 || (diag5?.leadAccumulator?.netAmt || 0) < 0))) {
+      shieldVerdict = "PROFIT_BOOKING_CLIMAX_RISK";
+      riskLevel = "WARNING_TRIM";
+      badge = "⚠️ OPERATOR PROFIT RISK";
+      scoreWeight = 35;
+      climaxRiskCount++;
+
+      const accName = leadAccumulator?.brokerName || 'Accumulating brokers';
+      tacticalAdvice = `Accumulating brokers (${accName}) are sitting on +${operatorProfitMarginPct}% unrealized profit above their Rs. ${bigBrokerVWAP.toFixed(1)} cost basis. Trail stop-loss tightly or book partial profits.`;
+    }
+    // 3. 🛡️ SYNDICATE_FORTRESS_HOLD (STRONG_SYNDICATE_BUY)
+    else if (bcr5NetPct >= 16 && bcr5NetPct > scr3NetPct * 1.2 && operatorProfitMarginPct <= 20 && (diag?.isSyndicateCoAccumulation || (diag?.syndicateBrokers?.length >= 2) || Boolean(accumulatedRotation) || leadAccAmt >= 3e7)) {
+      shieldVerdict = "SYNDICATE_FORTRESS_HOLD";
+      riskLevel = "STRONG_SYNDICATE_BUY";
+      badge = "🛡️ SYNDICATE FORTRESS";
+      scoreWeight = 100;
+      fortressCount++;
+
+      tacticalAdvice = `Institutional syndicate co-accumulating near Rs. ${bigBrokerVWAP.toFixed(1)} cost basis (Safe Buy Zone: Rs. ${buyZoneMin}–${buyZoneMax}). Strong hold / accumulate on dips.`;
+    }
+    // 4. 🟢 SAFE_ACCUMULATION_ZONE (SAFE_ACCUMULATE)
+    else if (phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || (leadAccAmt > leadDistAmt && leadAccAmt > 0 && ltp <= buyZoneMax * 1.08)) {
+      shieldVerdict = "SAFE_ACCUMULATION_ZONE";
+      riskLevel = "SAFE_ACCUMULATE";
+      badge = "🟢 SAFE ACCUMULATION";
+      scoreWeight = 85;
+      safeAccumulateCount++;
+
+      const accName = leadAccumulator?.brokerName || 'Institutions';
+      const streakStr = leadAccumulator?.startDate ? ` (Started ${leadAccumulator.startDate}, ${leadAccumulator.streakDays}d streak)` : '';
+      tacticalAdvice = `Quiet net inflow led by ${accName}${streakStr}. Price is within institutional safety band.`;
+    }
+    // 5. ⚪ RETAIL_DRIFT_WATCH (NEUTRAL_HOLD)
+    else {
+      neutralCount++;
+    }
+
+    const weight = positionValue > 0 ? positionValue : 1;
+    totalWeight += weight;
+    weightedScoreSum += (scoreWeight * weight);
+
+    evaluatedItems.push({
+      symbol: sym,
+      companyName,
+      sector,
+      listType,
+      qty,
+      buyPrice,
+      ltp,
+      bigBrokerVWAP,
+      marketVWAP,
+      buyZoneMin,
+      buyZoneMax,
+      phase,
+      phaseLabel,
+      priceChangePct,
+      bcr5NetPct,
+      scr3NetPct,
+      operatorProfitMarginPct,
+      userProfitLossPct,
+      unrealizedPnL,
+      costAdvantageVsOperatorPct,
+      positionValue,
+      shieldVerdict,
+      riskLevel,
+      badge,
+      tacticalAdvice,
+      rotationAlert,
+      dumpedRotation,
+      accumulatedRotation,
+      leadAccumulator,
+      leadDistributor,
+      isSyndicateCoAccumulation: Boolean(diag?.isSyndicateCoAccumulation),
+      syndicateBrokers: diag?.syndicateBrokers || []
+    });
+  }
+
+  const finalShieldScore = totalWeight > 0 ? Math.round(weightedScoreSum / totalWeight) : 60;
+  const shieldStatus = finalShieldScore >= 75 ? "Fortress Aligned" : finalShieldScore >= 50 ? "Mixed Exposure" : "High Operator Dump Exposure";
+
+  return {
+    success: true,
+    timeframeDays: validDays,
+    portfolioSummary: {
+      shieldScore: finalShieldScore,
+      shieldStatus,
+      totalStocks: evaluatedItems.length,
+      portfolioCount,
+      watchlistCount,
+      criticalExitCount,
+      climaxRiskCount,
+      fortressCount,
+      safeAccumulateCount,
+      neutralCount,
+      totalPortfolioValue: Number(totalPortfolioValue.toFixed(2)),
+      totalPortfolioPnL: Number(totalPortfolioPnL.toFixed(2)),
+      rotationAlerts: Array.from(rotationAlertsSet)
+    },
+    capitalRotations: capitalRotations.slice(0, 10),
+    items: evaluatedItems
+  };
+}
+
+/**
+ * GET & POST /api/radar/portfolio-shield & /api/portfolio-shield
+ * Batch evaluation of user's portfolio and watchlist against 30D broker footprints
+ */
+const handlePortfolioShield = async (req, res) => {
+  await ensureHotCacheReady();
+  const rawDays = req.method === "POST" ? (req.body?.days ?? req.query.days ?? 30) : (req.query.days ?? 30);
+  const validDays = resolveValidTimeframe(rawDays, 30);
+
+  let rawItems = [];
+  if (Array.isArray(req.body?.items)) {
+    rawItems = req.body.items;
+  } else if (Array.isArray(req.body?.symbols)) {
+    rawItems = req.body.symbols.map(s => (typeof s === 'object' ? s : { symbol: s }));
+  } else if (typeof req.query.symbols === "string") {
+    rawItems = req.query.symbols.split(",").map(s => ({ symbol: s.trim() })).filter(Boolean);
+  } else if (typeof req.body?.symbol === "string") {
+    rawItems = [{ symbol: req.body.symbol, qty: req.body.qty, buyPrice: req.body.buyPrice, listType: req.body.listType }];
+  }
+
+  const result = evaluatePortfolioShield(rawItems, validDays);
+  res.set("Cache-Control", "public, max-age=30");
+  return res.json(result);
+};
+
+router.get(["/radar/portfolio-shield", "/portfolio-shield"], handlePortfolioShield);
+router.post(["/radar/portfolio-shield", "/portfolio-shield"], handlePortfolioShield);
 
 /**
  * GET /api/diagnostics/:symbol?days=30

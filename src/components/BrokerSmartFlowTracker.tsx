@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { fetchBrokerTracker } from '../utils/liveData';
 import { TOP_NEPSE_BROKERS } from '../utils/microstructureEngine';
+import PortfolioBrokerShield from './PortfolioBrokerShield';
 
 export interface DailyTapePoint {
   date: string;
@@ -96,6 +97,7 @@ export default function BrokerSmartFlowTracker({
   const [syndicateOnly, setSyndicateOnly] = useState<boolean>(false);
   const [limit, setLimit] = useState<string>('10');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [viewTab, setViewTab] = useState<'MARKET_FLOW' | 'PORTFOLIO_SHIELD'>('MARKET_FLOW');
 
   // Data States
   const [loading, setLoading] = useState<boolean>(true);
@@ -228,8 +230,41 @@ export default function BrokerSmartFlowTracker({
         </div>
       </div>
 
-      {/* ── TOP KPI SUMMARY CARDS ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      {/* ── WORKSTATION MODE SWITCHER (MARKET TRACKER VS PORTFOLIO SHIELD) ── */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800 w-fit">
+        <button
+          type="button"
+          onClick={() => setViewTab('MARKET_FLOW')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            viewTab === 'MARKET_FLOW'
+              ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" /> Market Slow Flow &amp; Dumping
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewTab('PORTFOLIO_SHIELD')}
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            viewTab === 'PORTFOLIO_SHIELD'
+              ? 'bg-indigo-600 text-white shadow-md font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" /> 🛡️ My Portfolio &amp; Watchlist Shield
+        </button>
+      </div>
+
+      {viewTab === 'PORTFOLIO_SHIELD' ? (
+        <PortfolioBrokerShield
+          onSelectStock={onSelectStock}
+          defaultTimeframe={days}
+        />
+      ) : (
+        <>
+          {/* ── TOP KPI SUMMARY CARDS ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         {/* Card 1: Stocks Matched */}
         <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-xl flex items-center justify-between">
           <div>
@@ -1121,6 +1156,8 @@ export default function BrokerSmartFlowTracker({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -6,7 +6,7 @@ import {
   aggregateFloorsheetRows, 
   isIlliquidDebtOrMutualFund 
 } from './proxy/brokerVault.mjs';
-import { resolveValidTimeframe } from './proxy/routes/radarRoutes.js';
+import { resolveValidTimeframe, evaluatePortfolioShield } from './proxy/routes/radarRoutes.js';
 import { db, HOT_CACHE, rebuildHotCache } from './proxy/db/ledgerStore.js';
 
 console.log('═══════════════════════════════════════════════════════════════════');
@@ -233,6 +233,51 @@ if (radhi30) {
   const sampleDiag = HOT_CACHE.stockDiagnostics.get(firstSample);
   assert(Boolean(sampleDiag), `HOT_CACHE populated with ${HOT_CACHE.stockDiagnostics.size} diagnostics`, `Sample key: ${firstSample}`);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 8: Portfolio & Watchlist 30-Day Broker Shield Evaluator
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n▶ TEST 8: Portfolio & Watchlist 30-Day Broker Shield Evaluator');
+
+const shieldResult = evaluatePortfolioShield([
+  { symbol: 'TAMOR', qty: 1000, buyPrice: 410, listType: 'PORTFOLIO' },
+  { symbol: 'GHL', qty: 1500, buyPrice: 380, listType: 'PORTFOLIO' },
+  { symbol: 'API', qty: 2000, buyPrice: 330, listType: 'PORTFOLIO' },
+  { symbol: 'RADHI', qty: 0, buyPrice: 0, listType: 'WATCHLIST' }
+], 30);
+
+assert(shieldResult.success === true, 'Portfolio shield evaluation returns success');
+assert(shieldResult.items.length === 4, 'Evaluated all 4 input portfolio/watchlist stocks', `Items count: ${shieldResult.items.length}`);
+assert(typeof shieldResult.portfolioSummary.shieldScore === 'number', 'Calculated 0-100 portfolio shield score', `Score: ${shieldResult.portfolioSummary.shieldScore}`);
+
+const tamorItem = shieldResult.items.find(i => i.symbol === 'TAMOR');
+const ghlItem = shieldResult.items.find(i => i.symbol === 'GHL');
+const apiItem = shieldResult.items.find(i => i.symbol === 'API');
+const radhiItem = shieldResult.items.find(i => i.symbol === 'RADHI');
+
+assert(tamorItem?.shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' || tamorItem?.shieldVerdict === 'SAFE_ACCUMULATION_ZONE',
+  'TAMOR classified as Institutional Fortress / Accumulation',
+  `Verdict: ${tamorItem?.shieldVerdict} (BCR5: ${tamorItem?.bcr5NetPct}%, Acc: +Rs. ${tamorItem?.leadAccumulator?.netInflowCr} Cr)`);
+
+assert(ghlItem?.shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' || ghlItem?.shieldVerdict === 'SAFE_ACCUMULATION_ZONE',
+  'GHL classified as Institutional Fortress / Accumulation',
+  `Verdict: ${ghlItem?.shieldVerdict} (BCR5: ${ghlItem?.bcr5NetPct}%, Acc: +Rs. ${ghlItem?.leadAccumulator?.netInflowCr} Cr)`);
+
+assert(apiItem?.shieldVerdict === 'EXIT_BEFORE_T2_DUMP',
+  'API strictly flagged with EXIT_BEFORE_T2_DUMP',
+  `Verdict: ${apiItem?.shieldVerdict} (SCR3: ${apiItem?.scr3NetPct}%, Phase: ${apiItem?.phase})`);
+
+assert(radhiItem?.shieldVerdict === 'EXIT_BEFORE_T2_DUMP',
+  'RADHI strictly flagged with EXIT_BEFORE_T2_DUMP',
+  `Verdict: ${radhiItem?.shieldVerdict} (Phase: ${radhiItem?.phase}, Dist: Rs. ${radhiItem?.leadDistributor?.netOutflowCr} Cr)`);
+
+assert(shieldResult.portfolioSummary.criticalExitCount >= 2,
+  'Summary telemetry counts critical exit alerts accurately',
+  `Critical count: ${shieldResult.portfolioSummary.criticalExitCount}`);
+
+assert(Array.isArray(shieldResult.portfolioSummary.rotationAlerts) && shieldResult.portfolioSummary.rotationAlerts.length > 0,
+  'Active institutional rotation alerts detected in held/watched symbols',
+  `Rotation alert sample: ${shieldResult.portfolioSummary.rotationAlerts[0]}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUMMARY

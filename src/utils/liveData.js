@@ -3291,6 +3291,54 @@ export async function fetchBrokerTracker(params = {}) {
   return null;
 }
 
+/**
+ * Fast Tier-1 Portfolio & Watchlist 30-Day Broker Shield Evaluator
+ * Queries POST /api/radar/portfolio-shield with items array and days
+ */
+export async function fetchPortfolioShield(items = [], days = 30) {
+  const base = getProxyBase();
+  const validDays = Number(days) || 30;
+  const payload = { items, days: validDays };
+
+  const tryPost = async (baseUrl) => {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(`${baseUrl}/api/radar/portfolio-shield`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) return data;
+      }
+    } catch (_) {
+      clearTimeout(tid);
+    }
+    return null;
+  };
+
+  // 1. Try local/configured proxy
+  let res = await tryPost(base);
+  if (res) return res;
+
+  // 2. Fallback to production Render
+  if (base !== 'https://nepseapp.onrender.com') {
+    res = await tryPost('https://nepseapp.onrender.com');
+    if (res) return res;
+  }
+
+  // 3. Fallback GET with query params
+  const symbols = items.map(i => (typeof i === 'string' ? i : i?.symbol)).filter(Boolean).join(',');
+  if (symbols) {
+    return await fetchFromBackend(`/api/radar/portfolio-shield?symbols=${encodeURIComponent(symbols)}&days=${validDays}`, 8000);
+  }
+  return null;
+}
+
 // ── C2+C3: Re-export from priceAdjustment.js so components only need one import ──
 export { aggregateToWeeklyCandles, classifyLiquidity, adjustPricesForCorporateActions };
 
