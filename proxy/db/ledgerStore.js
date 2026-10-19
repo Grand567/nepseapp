@@ -260,13 +260,16 @@ export function exportLedgerSnapshotGz() {
 }
 
 /**
- * Automatically seeds SQLite from `ledger_seed_snapshot.json.gz` if database is empty on cold-boot
+ * Automatically seeds SQLite from `ledger_seed_snapshot.json.gz` if database has < 30 dates or < 300,000 broker rows
  */
-export function seedFromSnapshotGz() {
+export function seedFromSnapshotGz(force = false) {
   try {
-    const countRow = db.prepare(`SELECT COUNT(*) as c FROM daily_stock_summary`).get();
-    if (countRow && countRow.c > 0) {
-      return false; // Database already populated
+    const dates = getStoredDates(40);
+    const brokerRowsCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
+
+    // If database already has at least 30 trading dates and at least 300,000 broker rows, skip restore unless forced
+    if (!force && dates.length >= 30 && brokerRowsCount >= 300000) {
+      return false;
     }
 
     const candidateFiles = [
@@ -274,6 +277,8 @@ export function seedFromSnapshotGz() {
       path.join(process.cwd(), "proxy", "data", "ledger_seed_snapshot.json.gz"),
       path.join(process.cwd(), "data", "ledger_seed_snapshot.json.gz"),
       path.join(__dirname, "..", "data", "ledger_seed_snapshot.json.gz"),
+      path.join(__dirname, "..", "proxy", "data", "ledger_seed_snapshot.json.gz"),
+      path.join(__dirname, "data", "ledger_seed_snapshot.json.gz"),
     ];
 
     let foundFile = null;
@@ -285,10 +290,12 @@ export function seedFromSnapshotGz() {
     }
 
     if (!foundFile) {
+      console.warn("[Drabyashree Ledger] No ledger_seed_snapshot.json.gz found in candidate paths:", candidateFiles);
       return false;
     }
 
-    console.log(`[Drabyashree Ledger] Cold-boot restore: Found compressed snapshot at ${foundFile}. Decompressing...`);
+    const fileSizeBytes = fs.statSync(foundFile).size;
+    console.log(`[Drabyashree Ledger] Cold-boot restore: Found compressed snapshot at ${foundFile} (${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB). Upserting into SQLite...`);
     const buffer = fs.readFileSync(foundFile);
     const uncompressed = zlib.gunzipSync(buffer);
     const data = JSON.parse(uncompressed.toString("utf8"));
@@ -321,12 +328,92 @@ export function seedFromSnapshotGz() {
     const t0 = Date.now();
     restoreTx();
     console.log(
-      `[Drabyashree Ledger] Successfully restored ${stockSummaries.length} summaries and ${brokerLedger.length} broker rows from snapshot in ${Date.now() - t0}ms.`
+      `[Drabyashree Ledger] Successfully restored and merged ${stockSummaries.length} summaries and ${brokerLedger.length} broker rows from snapshot in ${Date.now() - t0}ms.`
     );
     return true;
   } catch (err) {
     console.warn("[Drabyashree Ledger] Error restoring from snapshot gz:", err.message);
     return false;
+  }
+}
+
+/**
+ * Pulls daily history for a single symbol from SQLite ledger
+ */
+export function getSymbolHistoryFromDb(symbol, days = 30) {
+  try {
+    const sym = String(symbol || '').toUpperCase().trim();
+    const dates = getStoredDates(Math.max(1, parseInt(days, 10)));
+    if (dates.length === 0) return [];
+    const oldestDate = dates[dates.length - 1];
+
+    const summaries = db.prepare(`
+      SELECT * FROM daily_stock_summary 
+      WHERE symbol = ? AND trade_date >= ? 
+      ORDER BY trade_date DESC
+    `).all(sym, oldestDate);
+
+    if (summaries.length === 0) return [];
+
+    const brokerRows = db.prepare(`
+      SELECT * FROM daily_broker_ledger 
+      WHERE symbol = ? AND trade_date >= ?
+    `).all(sym, oldestDate);
+
+    const brokerGroup = new Map();
+    for (const row of brokerRows) {
+      let arr = brokerGroup.get(row.trade_date);
+      if (!arr) {
+        arr = [];
+        brokerGroup.set(row.trade_date, arr);
+      }
+      arr.push({
+        brokerId: row.broker_id,
+        broker: row.broker_id,
+        buyVol: row.buy_vol,
+        sellVol: row.sell_vol,
+        buyAmt: row.buy_amt,
+        sellAmt: row.sell_amt,
+      });
+    }
+
+    return summaries.map(s => ({
+      date: s.trade_date,
+      openPrice: s.open_price,
+      highPrice: s.high_price,
+      lowPrice: s.low_price,
+      closePrice: s.close_price,
+      totalVolume: s.total_volume,
+      totalTurnover: s.total_turnover,
+      brokers: brokerGroup.get(s.trade_date) || [],
+    }));
+  } catch (err) {
+    console.warn(`[ledgerStore] Error querying history for ${symbol}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Returns diagnostic system health of SQLite ledger and HOT_CACHE
+ */
+export function getLedgerStatusInfo() {
+  try {
+    const dates = getStoredDates(40);
+    const stockSummaryCount = db.prepare(`SELECT COUNT(*) as c FROM daily_stock_summary`).get()?.c || 0;
+    const brokerLedgerCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
+    return {
+      success: true,
+      tradingDatesCount: dates.length,
+      latestTradeDate: dates[0] || null,
+      oldestTradeDate: dates[dates.length - 1] || null,
+      stockSummaryRows: stockSummaryCount,
+      brokerLedgerRows: brokerLedgerCount,
+      hotCacheDiagnosticCount: HOT_CACHE.stockDiagnostics.size,
+      hotCacheRadarCount30D: (HOT_CACHE.radarByTimeframe[30] || []).length,
+      lastUpdatedDate: HOT_CACHE.lastUpdatedDate || null
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }
 
@@ -344,8 +431,17 @@ export function rebuildHotCache() {
     .map((r) => r.trade_date);
 
   if (dates.length === 0) {
-    console.log("[Drabyashree Cache] No trading dates found in SQLite ledger.");
-    return false;
+    console.log("[Drabyashree Cache] No trading dates found in SQLite ledger. Attempting emergency restore from seed snapshot...");
+    seedFromSnapshotGz(true);
+    const retryDates = db
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30`)
+      .all()
+      .map((r) => r.trade_date);
+    if (retryDates.length === 0) {
+      console.warn("[Drabyashree Cache] SQLite ledger remains empty after snapshot restore.");
+      return false;
+    }
+    dates.push(...retryDates);
   }
   const oldestDate = dates[dates.length - 1];
 
@@ -472,15 +568,17 @@ export function rebuildHotCache() {
  * Reads existing historical snapshot gz, broker vault files & raw floorsheets from disk to bootstrap SQLite
  */
 export function seedFromDiskVault() {
-  const existingDates = getStoredDates(1);
-  if (existingDates.length < 15) {
-    // 0. Check compressed snapshot first (fastest cold boot restore ~300ms)
-    seedFromSnapshotGz();
+  const existingDates = getStoredDates(40);
+  const brokerRowsCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
+
+  if (existingDates.length < 30 || brokerRowsCount < 300000) {
+    console.log(`[Drabyashree Ledger] Database has ${existingDates.length} trading dates and ${brokerRowsCount} broker rows (<30 dates or <300k rows). Auto-merging bundled seed snapshot...`);
+    seedFromSnapshotGz(true);
   }
 
-  const currentDates = getStoredDates(1);
-  if (currentDates.length >= 15) {
-    console.log(`[Drabyashree Ledger] Database already has ${currentDates.length} trading dates. Skipping seed.`);
+  const currentDates = getStoredDates(40);
+  if (currentDates.length >= 30) {
+    console.log(`[Drabyashree Ledger] Database verified with ${currentDates.length} trading dates.`);
     return;
   }
 

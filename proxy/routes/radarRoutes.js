@@ -10,8 +10,13 @@ import {
   hasTradeDate,
   getBackfillStatus,
   backfillRealHistoricalFloorsheets,
-  exportLedgerSnapshotGz
+  exportLedgerSnapshotGz,
+  seedFromDiskVault,
+  seedFromSnapshotGz,
+  getSymbolHistoryFromDb,
+  getLedgerStatusInfo
 } from "../db/ledgerStore.js";
+import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
 
 const router = express.Router();
 
@@ -41,11 +46,41 @@ export function resolveValidTimeframe(rawDays, defaultDays = 30) {
   );
 }
 
+// ── Self-healing cache initialization guard ──
+let cacheInitPromise = null;
+export async function ensureHotCacheReady() {
+  const stocks30 = HOT_CACHE.radarByTimeframe[30] || [];
+  if (stocks30.length > 0) return true;
+
+  if (cacheInitPromise) {
+    return cacheInitPromise;
+  }
+
+  cacheInitPromise = (async () => {
+    try {
+      console.log("[RadarRoutes] HOT_CACHE is empty on request. Initializing disk vault / snapshot seed...");
+      seedFromDiskVault();
+      rebuildHotCache();
+      const loaded = (HOT_CACHE.radarByTimeframe[30] || []).length;
+      console.log(`[RadarRoutes] HOT_CACHE initialization completed. Loaded ${loaded} stocks in 30D window.`);
+      return loaded > 0;
+    } catch (err) {
+      console.error("[RadarRoutes] Failed to ensure HOT_CACHE:", err);
+      return false;
+    } finally {
+      cacheInitPromise = null;
+    }
+  })();
+
+  return cacheInitPromise;
+}
+
 /**
  * GET /api/radar?days=30
  * Returns all stocks' phase classifications & radar counts for 1D, 5D, 15D, or 30D in < 1ms
  */
-router.get("/radar", (req, res) => {
+router.get("/radar", async (req, res) => {
+  await ensureHotCacheReady();
   const validDays = resolveValidTimeframe(req.query.days, 30);
 
   // Serve directly from Tier 1 Hot RAM Cache
@@ -96,7 +131,8 @@ router.get("/radar", (req, res) => {
  *  - syndicateOnly: boolean ('true' / 'false')
  *  - limit: 10, 25, 50, ALL (default: 10)
  */
-router.get("/radar/broker-tracker", (req, res) => {
+router.get("/radar/broker-tracker", async (req, res) => {
+  await ensureHotCacheReady();
   const rawDays = Number(req.query.days) || 30;
   const validDays = resolveValidTimeframe(rawDays, 30);
   const mode = String(req.query.mode || "ACCUMULATING").toUpperCase();
@@ -317,13 +353,30 @@ router.get("/radar/broker-tracker", (req, res) => {
  * GET /api/diagnostics/:symbol?days=30
  * Returns full Deep Diagnostic + Top 5 Net Buyers/Sellers + Safe Buy Zone metrics for a single stock
  */
-router.get("/diagnostics/:symbol", (req, res) => {
+router.get("/diagnostics/:symbol", async (req, res) => {
   const symbol = String(req.params.symbol || "").toUpperCase().trim();
   const validDays = resolveValidTimeframe(req.query.days, 30);
 
-  const data = HOT_CACHE.stockDiagnostics.get(`${symbol}_${validDays}`);
+  await ensureHotCacheReady();
+
+  let data = HOT_CACHE.stockDiagnostics.get(`${symbol}_${validDays}`);
   const storedDates = getStoredDates(40);
   const backfill = getBackfillStatus(30);
+
+  // Dynamic on-demand SQLite fallback if symbol was missed in precomputed HOT_CACHE
+  if (!data) {
+    try {
+      const history = getSymbolHistoryFromDb(symbol, validDays);
+      if (history && history.length > 0) {
+        data = calculateMultiDayDiagnostics(symbol, history, validDays);
+        if (data) {
+          HOT_CACHE.stockDiagnostics.set(`${symbol}_${validDays}`, data);
+        }
+      }
+    } catch (e) {
+      console.warn(`[RadarRoutes] On-demand fallback calculation failed for ${symbol}:`, e.message);
+    }
+  }
 
   if (!data) {
     return res.status(404).json({
@@ -334,6 +387,24 @@ router.get("/diagnostics/:symbol", (req, res) => {
     });
   }
 
+  // Pre-load all standard timeframes (or calculate on-demand if missing)
+  const allTimeframes = {};
+  for (const d of [1, 5, 15, 30]) {
+    let tData = HOT_CACHE.stockDiagnostics.get(`${symbol}_${d}`);
+    if (!tData) {
+      try {
+        const hist = getSymbolHistoryFromDb(symbol, d);
+        if (hist && hist.length > 0) {
+          tData = calculateMultiDayDiagnostics(symbol, hist, d);
+          if (tData) {
+            HOT_CACHE.stockDiagnostics.set(`${symbol}_${d}`, tData);
+          }
+        }
+      } catch (_) {}
+    }
+    allTimeframes[d] = tData || (d === validDays ? data : null);
+  }
+
   res.set("Cache-Control", "public, max-age=60");
   return res.json({
     success: true,
@@ -341,14 +412,28 @@ router.get("/diagnostics/:symbol", (req, res) => {
     loadedTradingDays: storedDates.length,
     isBackfilling: backfill.isBackfilling,
     targetTradingDays: backfill.targetTradingDays,
-    allTimeframes: {
-      1: HOT_CACHE.stockDiagnostics.get(`${symbol}_1`) || null,
-      5: HOT_CACHE.stockDiagnostics.get(`${symbol}_5`) || null,
-      15: HOT_CACHE.stockDiagnostics.get(`${symbol}_15`) || null,
-      30: HOT_CACHE.stockDiagnostics.get(`${symbol}_30`) || null,
-    },
+    allTimeframes,
     data,
   });
+});
+
+/**
+ * GET /api/health/ledger-status & /api/radar/ledger-status
+ * Health check reporting exact SQLite DB status, row counts, and snapshot availability
+ */
+router.get(["/health/ledger-status", "/radar/ledger-status"], (req, res) => {
+  try {
+    const status = getLedgerStatusInfo();
+    return res.json({
+      success: true,
+      ...status,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
 });
 
 /**
@@ -437,16 +522,22 @@ router.post("/radar/ingest", (req, res) => {
 });
 
 /**
- * POST /api/radar/rebuild-cache
- * Manually forces RAM cache rebuild
+ * POST / GET /api/radar/rebuild-cache & /api/admin/rebuild-cache
+ * Manually forces RAM cache rebuild, optional forceSnapshot=true
  */
-router.post("/radar/rebuild-cache", (req, res) => {
+const handleRebuildCache = (req, res) => {
   try {
+    const forceSnapshot = req.query.forceSnapshot === "true" || req.body?.forceSnapshot === true;
+    if (forceSnapshot) {
+      seedFromSnapshotGz(true);
+    }
     const ok = rebuildHotCache();
+    const status = getLedgerStatusInfo();
     return res.json({
       success: ok,
       lastUpdatedDate: HOT_CACHE.lastUpdatedDate,
       stocksCount: (HOT_CACHE.radarByTimeframe[1] || []).length,
+      status,
     });
   } catch (err) {
     return res.status(500).json({
@@ -454,7 +545,10 @@ router.post("/radar/rebuild-cache", (req, res) => {
       error: err.message,
     });
   }
-});
+};
+
+router.post(["/radar/rebuild-cache", "/admin/rebuild-cache"], handleRebuildCache);
+router.get(["/radar/rebuild-cache", "/admin/rebuild-cache"], handleRebuildCache);
 
 /**
  * POST /api/radar/export-snapshot
