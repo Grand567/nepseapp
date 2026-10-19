@@ -368,8 +368,9 @@ router.get("/diagnostics/:symbol", async (req, res) => {
     try {
       const history = getSymbolHistoryFromDb(symbol, validDays);
       if (history && history.length > 0) {
-        data = calculateMultiDayDiagnostics(symbol, history, validDays);
-        if (data) {
+        const diag = calculateMultiDayDiagnostics(history, validDays);
+        if (diag) {
+          data = { symbol, ...diag };
           HOT_CACHE.stockDiagnostics.set(`${symbol}_${validDays}`, data);
         }
       }
@@ -395,8 +396,9 @@ router.get("/diagnostics/:symbol", async (req, res) => {
       try {
         const hist = getSymbolHistoryFromDb(symbol, d);
         if (hist && hist.length > 0) {
-          tData = calculateMultiDayDiagnostics(symbol, hist, d);
-          if (tData) {
+          const dDiag = calculateMultiDayDiagnostics(hist, d);
+          if (dDiag) {
+            tData = { symbol, ...dDiag };
             HOT_CACHE.stockDiagnostics.set(`${symbol}_${d}`, tData);
           }
         }

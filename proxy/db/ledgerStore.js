@@ -569,11 +569,12 @@ export function rebuildHotCache() {
     for (const days of timeframes) {
       const diag = calculateMultiDayDiagnostics(dailyHistory, days);
       if (diag) {
-        const payload = { symbol, ...diag };
+        // Strip memory-heavy allBrokers (each with 30-day daily tape arrays) to keep V8 heap < 100MB on Render Free Tier
+        const { allBrokers, ...compactDiag } = diag;
+        const payload = { symbol, ...compactDiag };
         nextDiagnostics.set(`${symbol}_${days}`, payload);
 
-        // Lightweight version for full-market Radar list:
-        // Retain top 3 buyers and sellers for instant UI table display
+        // Comprehensive yet lightweight version for full-market Radar list & Broker Tracker:
         const radarSummary = {
           symbol,
           timeframeDays: diag.timeframeDays,
@@ -594,6 +595,12 @@ export function rebuildHotCache() {
           buyZoneMin: diag.buyZoneMin,
           buyZoneMax: diag.buyZoneMax,
           entryStatus: diag.entryStatus,
+          leadAccumulator: diag.leadAccumulator,
+          leadDistributor: diag.leadDistributor,
+          topAccumulators: diag.topAccumulators,
+          topDistributors: diag.topDistributors,
+          isSyndicateCoAccumulation: diag.isSyndicateCoAccumulation,
+          syndicateBrokers: diag.syndicateBrokers,
           topBuyers: (diag.topGrossBuyers || []).slice(0, 3).map(b => ({
             broker: b.brokerId,
             brokerName: b.brokerName,
@@ -614,12 +621,17 @@ export function rebuildHotCache() {
     }
   }
 
+  const stockCount = historyBySymbol.size;
+  // Release intermediate raw structures to reclaim memory immediately
+  historyBySymbol.clear();
+  brokerGroup.clear();
+
   HOT_CACHE.lastUpdatedDate = dates[0];
   HOT_CACHE.radarByTimeframe = nextRadar;
   HOT_CACHE.stockDiagnostics = nextDiagnostics;
 
   console.log(
-    `[Drabyashree Cache] Rebuilt 1D/5D/15D/30D hot cache for ${historyBySymbol.size} stocks in ${Date.now() - startTime}ms (Session: ${dates[0]})`
+    `[Drabyashree Cache] Rebuilt 1D/5D/15D/30D hot cache for ${stockCount} stocks in ${Date.now() - startTime}ms (Session: ${dates[0]})`
   );
 
   // Background export of snapshot gz to ensure cold-boot safety
