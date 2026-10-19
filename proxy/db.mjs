@@ -5,7 +5,9 @@ let pool = null;
 if (process.env.DATABASE_URL) {
   try {
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL
+      connectionString: process.env.DATABASE_URL,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000,
     });
     pool.on('error', (err) => {
       console.warn('[db] PostgreSQL pool error (non-fatal):', err.message);

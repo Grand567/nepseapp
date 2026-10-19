@@ -299,6 +299,46 @@ export function seedFromSnapshotGz(force = false) {
       return false;
     }
 
+    // 1. Ultra-fast SQLite ATTACH restore from drabyashree_ledger.db.gz (<400ms)
+    const candidateGzFiles = [
+      path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
+      path.join(process.cwd(), "proxy", "data", "drabyashree_ledger.db.gz"),
+      path.join(process.cwd(), "data", "drabyashree_ledger.db.gz"),
+      path.join(__dirname, "..", "data", "drabyashree_ledger.db.gz"),
+      path.join(__dirname, "..", "proxy", "data", "drabyashree_ledger.db.gz"),
+      path.join(__dirname, "data", "drabyashree_ledger.db.gz"),
+    ];
+
+    let foundGz = null;
+    for (const f of candidateGzFiles) {
+      if (fs.existsSync(f)) {
+        foundGz = f;
+        break;
+      }
+    }
+
+    if (foundGz) {
+      try {
+        const t0 = Date.now();
+        const tempDbPath = path.join(DATA_DIR, `temp_seed_${Date.now()}.db`);
+        const gzBuf = fs.readFileSync(foundGz);
+        fs.writeFileSync(tempDbPath, zlib.gunzipSync(gzBuf));
+
+        const normalizedTempPath = tempDbPath.replace(/\\/g, "/");
+        db.exec(`ATTACH DATABASE '${normalizedTempPath}' AS seed_db;`);
+        db.exec(`INSERT OR REPLACE INTO daily_stock_summary SELECT * FROM seed_db.daily_stock_summary;`);
+        db.exec(`INSERT OR REPLACE INTO daily_broker_ledger SELECT * FROM seed_db.daily_broker_ledger;`);
+        db.exec(`DETACH DATABASE seed_db;`);
+
+        try { fs.unlinkSync(tempDbPath); } catch (_) {}
+        console.log(`[Drabyashree Ledger] Ultra-fast ATTACH restore completed in ${Date.now() - t0}ms from ${foundGz}.`);
+        return true;
+      } catch (attachErr) {
+        console.warn(`[Drabyashree Ledger] ATTACH restore notice: ${attachErr.message}. Falling back to snapshot JSON...`);
+      }
+    }
+
+    // 2. Fallback to JSON snapshot gz if .db.gz is not available
     const candidateFiles = [
       path.join(DATA_DIR, "ledger_seed_snapshot.json.gz"),
       path.join(process.cwd(), "proxy", "data", "ledger_seed_snapshot.json.gz"),
