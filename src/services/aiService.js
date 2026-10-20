@@ -132,24 +132,45 @@ export async function generateNepseAiContent(prompt, options = {}) {
 }
 
 export async function analyzeStockWithAi(stock, options = {}) {
-  const sym = (stock.symbol || '').toUpperCase();
+  const actualStock = (stock?.stock) ? stock.stock : (stock || {});
+  const sym = (actualStock.symbol || actualStock.stockSymbol || options.symbol || '').toUpperCase();
+  const realPriceHistory = options.realPriceHistory || stock?.realPriceHistory || null;
+  const realBrokerAnalysis = options.realBrokerAnalysis || stock?.realBrokerAnalysis || null;
+  const customNewsPulse = options.customNewsPulse || stock?.customNewsPulse || null;
+
   try {
-    const res = await callGuruStockAnalysis(sym);
-    if (res.data?.analysis) {
-      return { report: res.data.analysis, source: res.provider, success: true };
+    if (sym && sym !== 'STOCK') {
+      const res = await callGuruStockAnalysis(sym, options.userQuestion || '');
+      if (res?.data?.analysis || res?.analysis) {
+        return { report: res.data?.analysis || res.analysis, source: res.provider || 'Proxy GURU AI', success: true };
+      }
     }
   } catch (err) {
     console.warn('Stock AI call failed, falling back to offline heuristics:', err.message);
   }
-  return { report: generateOfflineStockReport(stock), source: 'Offline Quant Engine', success: true };
+  return { 
+    report: generateOfflineStockReport(actualStock, customNewsPulse, realPriceHistory, realBrokerAnalysis), 
+    source: 'Offline Quant Engine', 
+    success: true 
+  };
 }
 
 // ── Quantitative Offline Report Generator (Grounded in Authentic History) ──
 export function generateOfflineStockReport(stock, customNewsPulse = null, realPriceHistory = null, realBrokerAnalysis = null) {
   if (!stock) return '';
-  const sym = (stock.symbol || 'STOCK').toUpperCase();
-  const name = stock.name || sym;
-  const ltp = Number(stock.ltp);
+  const actualStock = (stock?.stock) ? stock.stock : stock;
+  const sym = (actualStock.symbol || actualStock.stockSymbol || 'STOCK').toUpperCase();
+  const name = actualStock.name || actualStock.companyName || sym;
+  const ltp = Number(
+    actualStock.ltp ||
+    actualStock.currentPrice ||
+    actualStock.lastTradedPrice ||
+    actualStock.closePrice ||
+    actualStock.close ||
+    actualStock.price ||
+    actualStock.entry_price ||
+    0
+  );
   if (!ltp || isNaN(ltp) || ltp <= 0) {
     return `### ⚠️ Data Insufficient for **${sym}**
 • Real market price is unavailable from the exchange feed.

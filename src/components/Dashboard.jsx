@@ -3403,7 +3403,10 @@ function Dashboard({
           <NRBMacroWidget compact />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button
-              onClick={() => setShowSignalTrackerModal(true)}
+              onClick={() => {
+                setIsSearching(false);
+                setShowSignalTrackerModal(true);
+              }}
               style={{
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.22) 100%)',
                 border: '1px solid rgba(16, 185, 129, 0.35)',

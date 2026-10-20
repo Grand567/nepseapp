@@ -735,6 +735,7 @@ function BeginnerConfidenceCard({
   const multiDayDiag = useMemo(() => {
     return calculateMultiDayDiagnostics(dailyHistory, brokerDays);
   }, [dailyHistory, brokerDays]);
+  const diag = multiDayDiag;
 
   // Check 2: Big Broker / Smart Money Activity (Dynamically bound to brokerDays via rolling-window microstructure)
   const bcr3Buy = Number(realBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration?.bcr3BuyPct ?? 0);
@@ -2334,8 +2335,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     setAiLoading(true);
     setAiResult('');
     try {
-      const res = await analyzeStockWithAi({
-        stock: d,
+      const res = await analyzeStockWithAi(d, {
         historyStr: `LTP: Rs. ${d.ltp}, 52W High: Rs. ${d.high52w || null}, 52W Low: ${d.low52w || null}, EPS: ${d.eps}, P/E: ${d.pe}`,
         adSignal: realBrokerAnalysis?.adSignal || marketDepth?.demandStatus || 'Stable',
         realPriceHistory,

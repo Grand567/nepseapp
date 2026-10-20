@@ -131,6 +131,7 @@ export function AlgorithmicSignalTrackRecord({
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [strategyFilter, setStrategyFilter] = useState<string>('ALL');
+  const [sectorFilter, setSectorFilter] = useState<string>('ALL');
   const [brokerFilter, setBrokerFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'dateDesc' | 'netPnlDesc' | 'maxGainDesc' | 'vwapDiscount'>('dateDesc');
@@ -180,6 +181,15 @@ export function AlgorithmicSignalTrackRecord({
     }
   }, [isOpen]);
 
+  // Unique sectors for filter dropdown
+  const uniqueSectors = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of signals) {
+      if (s.sector) set.add(s.sector);
+    }
+    return Array.from(set).sort();
+  }, [signals]);
+
   // Unique brokers for filter dropdown
   const uniqueBrokers = useMemo(() => {
     const map = new Map<string, string>();
@@ -199,11 +209,16 @@ export function AlgorithmicSignalTrackRecord({
 
     // Status filter
     if (statusFilter === 'WINS') {
-      result = result.filter((s) => s.status === 'WIN_T1' || s.status === 'WIN_T2');
+      result = result.filter((s) => s.status && s.status.startsWith('WIN'));
     } else if (statusFilter === 'OPEN_ACTIVE') {
       result = result.filter((s) => s.status === 'OPEN_ACTIVE');
     } else if (statusFilter === 'STOPPED_OUT') {
       result = result.filter((s) => s.status === 'STOPPED_OUT' || s.status === 'TIME_EXPIRED');
+    }
+
+    // Sector filter
+    if (sectorFilter !== 'ALL') {
+      result = result.filter((s) => s.sector === sectorFilter);
     }
 
     // Strategy filter
@@ -221,10 +236,11 @@ export function AlgorithmicSignalTrackRecord({
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(
         (s) =>
-          s.symbol.toLowerCase().includes(q) ||
+          (s.symbol && s.symbol.toLowerCase().includes(q)) ||
           (s.sector && s.sector.toLowerCase().includes(q)) ||
           (s.lead_broker_name && s.lead_broker_name.toLowerCase().includes(q)) ||
-          s.lead_broker_id.includes(q)
+          String(s.lead_broker_id || '').includes(q) ||
+          (s.signal_type && s.signal_type.toLowerCase().includes(q))
       );
     }
 
@@ -234,18 +250,18 @@ export function AlgorithmicSignalTrackRecord({
         const aOpen = a.status === 'OPEN_ACTIVE' ? 0 : 1;
         const bOpen = b.status === 'OPEN_ACTIVE' ? 0 : 1;
         if (aOpen !== bOpen) return aOpen - bOpen;
-        const aLtp = Number((a.exit_price || a.entry_price).toFixed(2));
-        const bLtp = Number((b.exit_price || b.entry_price).toFixed(2));
+        const aLtp = Number(a.exit_price ?? a.entry_price ?? 0);
+        const bLtp = Number(b.exit_price ?? b.entry_price ?? 0);
         const aDiff =
           a.vwap_diff_pct !== undefined
             ? a.vwap_diff_pct
-            : a.broker_vwap > 0
+            : (a.broker_vwap && a.broker_vwap > 0)
             ? ((aLtp - a.broker_vwap) / a.broker_vwap) * 100
             : 0;
         const bDiff =
           b.vwap_diff_pct !== undefined
             ? b.vwap_diff_pct
-            : b.broker_vwap > 0
+            : (b.broker_vwap && b.broker_vwap > 0)
             ? ((bLtp - b.broker_vwap) / b.broker_vwap) * 100
             : 0;
         return aDiff - bDiff;
@@ -264,15 +280,21 @@ export function AlgorithmicSignalTrackRecord({
     }
 
     return result;
-  }, [signals, statusFilter, strategyFilter, brokerFilter, searchQuery, sortBy]);
+  }, [signals, statusFilter, sectorFilter, strategyFilter, brokerFilter, searchQuery, sortBy]);
+
+  // Safe number formatter helper
+  const fmtRs = (val: any, fallback = '—') => {
+    if (val == null || isNaN(Number(val))) return fallback;
+    return Number(val).toLocaleString();
+  };
 
   // Helper for VWAP discount badge
   const renderVwapBadge = (s: AlgorithmicSignal) => {
-    const ltp = Number((s.exit_price || s.entry_price).toFixed(2));
+    const ltp = Number(s.exit_price ?? s.entry_price ?? 0);
     const diff =
       s.vwap_diff_pct !== undefined
         ? s.vwap_diff_pct
-        : s.broker_vwap > 0
+        : (s.broker_vwap && s.broker_vwap > 0)
         ? Number((((ltp - s.broker_vwap) / s.broker_vwap) * 100).toFixed(2))
         : 0;
 
@@ -684,6 +706,20 @@ export function AlgorithmicSignalTrackRecord({
               )}
             </div>
 
+            {/* Sector Select */}
+            <select
+              value={sectorFilter}
+              onChange={(e) => setSectorFilter(e.target.value)}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="ALL">All Sectors ({uniqueSectors.length})</option>
+              {uniqueSectors.map((sec) => (
+                <option key={sec} value={sec}>
+                  {sec}
+                </option>
+              ))}
+            </select>
+
             {/* Strategy Select */}
             <select
               value={strategyFilter}
@@ -710,12 +746,15 @@ export function AlgorithmicSignalTrackRecord({
               ))}
             </select>
 
-            {(strategyFilter !== 'ALL' || brokerFilter !== 'ALL' || searchQuery) && (
+            {(statusFilter !== 'ALL' || sectorFilter !== 'ALL' || strategyFilter !== 'ALL' || brokerFilter !== 'ALL' || searchQuery || sortBy !== 'dateDesc') && (
               <button
                 onClick={() => {
+                  setStatusFilter('ALL');
+                  setSectorFilter('ALL');
                   setStrategyFilter('ALL');
                   setBrokerFilter('ALL');
                   setSearchQuery('');
+                  setSortBy('dateDesc');
                 }}
                 className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1"
               >
@@ -802,9 +841,9 @@ export function AlgorithmicSignalTrackRecord({
 
                         {/* Entry Price & VWAP Margin Badge */}
                         <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                          <div className="font-bold text-slate-200">Rs. {s.entry_price.toLocaleString()}</div>
+                          <div className="font-bold text-slate-200">Rs. {fmtRs(s.entry_price)}</div>
                           <div className="text-[10px] text-slate-400 mt-0.5">
-                            VWAP: Rs. {s.broker_vwap ? s.broker_vwap.toLocaleString() : s.entry_price.toLocaleString()}
+                            VWAP: Rs. {fmtRs(s.broker_vwap || s.entry_price)}
                           </div>
                           <div className="mt-1">
                             {renderVwapBadge(s)}
@@ -848,10 +887,10 @@ export function AlgorithmicSignalTrackRecord({
                         {/* Exit / Current LTP & Peak */}
                         <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
                           <div className="font-bold text-slate-200">
-                            Rs. {s.exit_price ? s.exit_price.toLocaleString() : s.entry_price.toLocaleString()}
+                            Rs. {fmtRs(s.exit_price || s.entry_price)}
                           </div>
                           <div className="text-[10px] text-emerald-400">
-                            Peak: Rs. {s.peak_price.toLocaleString()} (+{s.max_gain_pct}%)
+                            Peak: Rs. {fmtRs(s.peak_price || s.entry_price)} (+{s.max_gain_pct ?? 0}%)
                           </div>
                         </td>
 
@@ -909,8 +948,11 @@ export function AlgorithmicSignalTrackRecord({
 
   // Modal mode (e.g. Dashboard popup)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-6xl max-h-[92vh] rounded-2xl overflow-hidden border border-slate-700/80 shadow-2xl flex flex-col bg-[#0d131f]">
+    <div 
+      className="fixed inset-0 flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-150"
+      style={{ zIndex: 99999 }}
+    >
+      <div className="relative w-full max-w-6xl h-[92vh] max-h-[92vh] rounded-2xl overflow-hidden border border-slate-700/80 shadow-2xl flex flex-col bg-[#0d131f] my-auto shrink-0">
         {content}
       </div>
     </div>

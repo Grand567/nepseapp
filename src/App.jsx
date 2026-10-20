@@ -870,32 +870,27 @@ function AppInner() {
             <div
               style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, cursor: 'pointer' }}
               onClick={() => setShowCalendarModal(true)}
-              title={marketStatus?.message || 'NEPSE Market Status'}
+              title={marketStatus?.message || 'NEPSE Market Status — Tap to view full calendar'}
             >
               <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-extrabold border ${
                 marketStatus?.isOpen
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
                   : marketStatus?.isPreOpen
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : marketStatus?.isHoliday
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                  : marketStatus?.isWeekend
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
               }`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${
-                  marketStatus?.isOpen ? 'bg-emerald-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : 'bg-slate-500'
+                  marketStatus?.isOpen ? 'bg-emerald-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
                 }`} />
                 {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Closed')}
               </span>
               <span className="text-[10px] font-mono text-slate-400">
                 {marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : ''}
               </span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowCalendarModal(true); }}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/30 transition-all cursor-pointer ml-1"
-                title="View official NEPSE trading holidays and calendar (वि.सं.)"
-              >
-                <span>📅</span>
-                <span>Holidays</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1353,7 +1348,7 @@ function AppInner() {
           </div>
         </div>
 
-        {/* Sub-row: Weekend / Market Status & Date written directly below Refresh, Font Size, Account */}
+        {/* Sub-row: Bikram Sambat Date written directly below Refresh, Font Size, Account */}
         <div 
           style={{ 
             display: 'flex', 
@@ -1366,76 +1361,9 @@ function AppInner() {
           onClick={() => setShowCalendarModal(true)}
           title={`${marketStatus?.message || ''} — Tap to view NEPSE Calendar & Holidays`}
         >
-          {/* Status indicator: WEEKEND / LIVE / CLOSED / HOLIDAY */}
-          {(() => {
-            const isHalt = Boolean(marketStatus?.isEmergencyHalt);
-            const isLive = Boolean(marketStatus?.isOpen);
-            const badgeColor = isHalt
-              ? '#ef4444'
-              : isLive 
-              ? 'var(--bull)' 
-              : marketStatus?.isHoliday 
-              ? '#c084fc' 
-              : marketStatus?.isWeekend 
-              ? '#fbbf24' 
-              : '#94a3b8';
-            const badgeBg = isHalt
-              ? 'rgba(239, 68, 68, 0.16)'
-              : isLive 
-              ? 'rgba(16,185,129,0.12)' 
-              : marketStatus?.isHoliday 
-              ? 'rgba(192,132,252,0.14)' 
-              : marketStatus?.isWeekend 
-              ? 'rgba(251,191,36,0.14)' 
-              : 'rgba(255,255,255,0.04)';
-            const badgeBorder = isHalt
-              ? 'rgba(239, 68, 68, 0.45)'
-              : isLive 
-              ? 'rgba(16,185,129,0.35)' 
-              : marketStatus?.isHoliday 
-              ? 'rgba(192,132,252,0.35)' 
-              : marketStatus?.isWeekend 
-              ? 'rgba(251,191,36,0.35)' 
-              : 'var(--border)';
-            const label = isHalt
-              ? 'HALTED'
-              : isLive 
-              ? 'LIVE' 
-              : marketStatus?.isHoliday 
-              ? 'HOLIDAY' 
-              : marketStatus?.isWeekend 
-              ? 'WEEKEND' 
-              : 'CLOSED';
-
-            return (
-              <span 
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: '1.5px 6px',
-                  borderRadius: 10,
-                  border: `1px solid ${badgeBorder}`,
-                  background: badgeBg,
-                  fontSize: 12, fontWeight: 800,
-                  color: badgeColor,
-                  letterSpacing: '0.02em',
-                  lineHeight: 1
-                }}
-              >
-                <span style={{
-                  display: 'inline-block',
-                  width: 5,
-                  height: 5,
-                  borderRadius: '50%',
-                  background: badgeColor
-                }} />
-                {label}
-              </span>
-            );
-          })()}
-
-          {/* Date */}
-          <span style={{ color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }} title={marketStatus.bsFormattedEn || ''}>
-            {marketStatus.bsFormattedNp || marketStatus.nptTime || '11:00 AM – 3:00 PM'}
+          <Calendar style={{ width: 13, height: 13, color: 'var(--text-muted)' }} />
+          <span style={{ color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }} title={marketStatus?.bsFormattedEn || ''}>
+            {marketStatus?.bsFormattedNp || marketStatus?.nptTime || '11:00 AM – 3:00 PM'}
           </span>
         </div>
       </div>
