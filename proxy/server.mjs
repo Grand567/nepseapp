@@ -18,6 +18,7 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
+import aiGuruRouter from './routes/aiGuruRoutes.mjs';
 import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo, getSmartMoneyAggregatedFlow, getScripLedgerTelemetry } from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
@@ -155,6 +156,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
+app.use('/api/ai-guru', aiGuruRouter);
 app.use('/api', radarRouter);
 app.use('/admin', radarRouter);
 

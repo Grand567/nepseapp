@@ -32,6 +32,8 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
 }) => {
   const [assessment, setAssessment] = useState<AiQuantitativeAssessmentResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [analysisMarkdown, setAnalysisMarkdown] = useState<string>("");
+  const [engineSource, setEngineSource] = useState<string>("");
 
   // Resolve real ticker without ever defaulting to "STOCK"
   const activeSymbol = resolveValidNepseSymbol(
@@ -47,20 +49,48 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
   const executeAssessment = useCallback(async () => {
     if (!activeSymbol) {
       setAssessment(null);
+      setAnalysisMarkdown("");
       return;
     }
     setLoading(true);
     try {
-      const result = await runAiQuantitativeAssessment({
+      const response = await fetch("/api/ai-guru/assess", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: activeSymbol,
+          quote: quoteData,
+          candles: historicalCandles,
+          ledgerTelemetry,
+          broker5DPayload,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAssessment(data);
+        setAnalysisMarkdown(data.analysisMarkdown || data.errorMarkdown || "");
+        setEngineSource(data.engine || "DETERMINISTIC_QUANT");
+        if (onAssessmentReady) {
+          onAssessmentReady(data);
+        }
+        return;
+      }
+      throw new Error(`API returned status ${response.status}`);
+    } catch {
+      // Offline fallback: run local assessment in browser memory
+      const localResult = await runAiQuantitativeAssessment({
         symbol: activeSymbol,
         quote: quoteData,
         candles: historicalCandles,
         ledgerTelemetry,
         broker5DRawPayload: broker5DPayload,
       });
-      setAssessment(result);
+      setAssessment(localResult);
+      setAnalysisMarkdown(localResult.errorMarkdown || "");
+      setEngineSource("DETERMINISTIC_QUANT");
       if (onAssessmentReady) {
-        onAssessmentReady(result);
+        onAssessmentReady(localResult);
       }
     } finally {
       setLoading(false);
@@ -256,6 +286,39 @@ export const AiGuruQuantitativeCard: React.FC<AiGuruQuantitativeCardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Qualitative / Institutional Narrative Output */}
+      {analysisMarkdown && (
+        <div style={{
+          borderRadius: 10,
+          border: '1px solid rgba(255, 255, 255, 0.10)',
+          background: 'rgba(2, 6, 23, 0.7)',
+          padding: 14,
+          fontSize: 12,
+          lineHeight: 1.6,
+          color: '#e2e8f0',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          marginTop: 2
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 11,
+            color: '#94a3b8',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            paddingBottom: 6
+          }}>
+            <span>Walk-Forward Institutional Synthesis</span>
+            <span style={{ fontFamily: 'monospace', color: '#a5b4fc', fontWeight: 700 }}>
+              {engineSource}
+            </span>
+          </div>
+          <div style={{ whiteSpace: 'pre-line' }}>{analysisMarkdown}</div>
+        </div>
+      )}
     </div>
   );
 };
