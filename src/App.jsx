@@ -1575,6 +1575,7 @@ function AppInner() {
                     stock={selectedStock}
                     allStocks={stocks}
                     onClose={closeStockDetail}
+                    marketStatus={marketStatus}
                   />
                 </React.Suspense>
               )}

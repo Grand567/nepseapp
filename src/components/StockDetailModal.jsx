@@ -1151,7 +1151,8 @@ function BeginnerConfidenceCard({
   );
 }
 
-export default function StockDetailModal({ stock, allStocks = [], onClose }) {
+export default function StockDetailModal({ stock, allStocks = [], onClose, marketStatus: propMarketStatus }) {
+  const marketStatus = useMemo(() => propMarketStatus || getDetailedMarketStatus(), [propMarketStatus]);
   const { setActiveTab: setGlobalActiveTab } = useNavigation();
   const [activeTab, setActiveTab] = useState('overview');
   const [tabCategory, setTabCategory] = useState('all'); // 'all' | 'trading' | 'financials' | 'tools'

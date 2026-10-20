@@ -5609,7 +5609,7 @@ function Dashboard({
 
       {/* ── MODALS & DRAWERS ── */}
       {selectedStock && (
-        <StockDetailModal stock={selectedStock} allStocks={stocks} onClose={() => setSelectedStock(null)} />
+        <StockDetailModal stock={selectedStock} allStocks={stocks} onClose={() => setSelectedStock(null)} marketStatus={marketStatus} />
       )}
 
       {showSignalTrackerModal && (
