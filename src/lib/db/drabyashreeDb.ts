@@ -10,7 +10,6 @@ import {
   type BrokerSmartMoney5DSummary,
 } from "../../services/aiGuru/runAiQuantitativeAssessment";
 
-// Singleton connection across Next.js hot reloads and server invocations
 const globalForSqlite = globalThis as unknown as {
   drabyashreeDb?: Database.Database;
 };
@@ -21,9 +20,7 @@ export function getDrabyashreeDb(): Database.Database {
     const defaultRootPath = path.join(process.cwd(), "drabyashree_ledger.db");
     const dbPath =
       process.env.DRABYASHREE_DB_PATH ||
-      (fs.existsSync(defaultProxyPath)
-        ? defaultProxyPath
-        : defaultRootPath);
+      (fs.existsSync(defaultProxyPath) ? defaultProxyPath : defaultRootPath);
 
     const db = new Database(dbPath, { fileMustExist: false });
     db.pragma("journal_mode = WAL");
@@ -34,10 +31,7 @@ export function getDrabyashreeDb(): Database.Database {
   return globalForSqlite.drabyashreeDb;
 }
 
-/**
- * Safely checks whether a table or view exists in SQLite before querying
- */
-export function tableExists(db: Database.Database, name: string): boolean {
+function tableExists(db: Database.Database, name: string): boolean {
   try {
     const row = db
       .prepare(
@@ -51,7 +45,7 @@ export function tableExists(db: Database.Database, name: string): boolean {
 }
 
 /**
- * Normalizes multi-shape 5D Broker payloads (matching Bug #3 fix) into AI Guru's summary format
+ * Normalizes multi-shape 5D Broker payloads with volume-share anomaly deflation (Hardened Patch B)
  */
 export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartMoney5DSummary {
   const empty: BrokerSmartMoney5DSummary = {
@@ -64,7 +58,6 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
   if (!rawPayload || typeof rawPayload !== "object") return empty;
   const obj = rawPayload as Record<string, unknown>;
 
-  // Extract array from any known shape: 5D, 5d, brokers, data, or direct array
   const candidateArray = Array.isArray(rawPayload)
     ? rawPayload
     : Array.isArray(obj["5D"])
@@ -79,7 +72,6 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
 
   if (candidateArray.length === 0) return empty;
 
-  // Retail-giant baseline share lookup (e.g., Broker #58 Naasa, #45, #49)
   const RETAIL_GIANT_BASELINE: Record<string, number> = {
     "58": 0.085,
     "45": 0.042,
@@ -90,7 +82,13 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
   let totalBuyKitta = 0;
   let totalSellKitta = 0;
 
-  const normalizedRows = candidateArray.map((rawItem: unknown) => {
+  for (const rawItem of candidateArray) {
+    const item = (rawItem && typeof rawItem === "object" ? rawItem : {}) as Record<string, unknown>;
+    totalBuyKitta += safeNum(item.buyKitta ?? item.buy_kitta ?? item.buyVolume ?? item.buy_vol, 0);
+    totalSellKitta += safeNum(item.sellKitta ?? item.sell_kitta ?? item.sellVolume ?? item.sell_vol, 0);
+  }
+
+  const normalizedRows = candidateArray.map((rawItem) => {
     const item = (rawItem && typeof rawItem === "object" ? rawItem : {}) as Record<string, unknown>;
     const brokerId = String(item.brokerId ?? item.broker_no ?? item.broker ?? item.broker_id ?? "0").replace(/^0+/, "");
     const buyKitta = safeNum(item.buyKitta ?? item.buy_kitta ?? item.buyVolume ?? item.buy_vol, 0);
@@ -102,15 +100,14 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
       (buyKitta + sellKitta) / tradeCount
     );
 
-    totalBuyKitta += buyKitta;
-    totalSellKitta += sellKitta;
-
-    // Use precomputed anomaly score or compute baseline-deflated score
-    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.024;
+    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
+    const scripBuyShare = totalBuyKitta > 0 ? buyKitta / totalBuyKitta : baselineShare;
     const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
+
+    const computedAnomaly = (scripBuyShare / baselineShare) * ticketMultiplier;
     const rawAnomaly = safeNum(
       item.anomalyScore ?? item.broker_anomaly_score,
-      (1 / (baselineShare * 25)) * ticketMultiplier
+      computedAnomaly
     );
 
     return {
@@ -156,7 +153,7 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
 }
 
 /**
- * Fetches all SQLite telemetry needed for Bug #4 (Quote, Candles, Signal Ledger, and 5D Brokers)
+ * Fetches SQLite telemetry with holiday-safe 5-session floor-sheet query (Hardened Patch B)
  */
 export function loadScripBundleFromDb(rawSymbol: string): {
   quote: RawQuotePayload | null;
@@ -172,7 +169,6 @@ export function loadScripBundleFromDb(rawSymbol: string): {
   let ledgerTelemetry: LedgerTelemetryRow | null = null;
   let broker5DRawPayload: unknown = null;
 
-  // 1. Latest Signal Ledger row (checks signal_ledger view or algorithmic_signal_ledger)
   const signalTable = tableExists(db, "signal_ledger")
     ? "signal_ledger"
     : tableExists(db, "algorithmic_signal_ledger")
@@ -207,7 +203,6 @@ export function loadScripBundleFromDb(rawSymbol: string): {
     }
   }
 
-  // 2. Historical Daily Candles (supports daily_stock_summary, daily_price_history or market_candles)
   const candleTable = tableExists(db, "daily_stock_summary")
     ? "daily_stock_summary"
     : tableExists(db, "daily_price_history")
@@ -231,7 +226,7 @@ export function loadScripBundleFromDb(rawSymbol: string): {
               CASE
                 WHEN COALESCE(total_volume, volume, 0) > 0
                 THEN (COALESCE(total_turnover, turnover, 0) / COALESCE(total_volume, volume, 1))
-                ELSE COALESCE(close_price, 0)
+                ELSE COALESCE(close_price, close, 0)
               END AS vwap
             FROM ${candleTable}
             WHERE UPPER(symbol) = ?
@@ -244,7 +239,6 @@ export function loadScripBundleFromDb(rawSymbol: string): {
     }
   }
 
-  // 3. Cached Live / Session Quote from SQLite (if market_quotes table exists)
   if (tableExists(db, "market_quotes")) {
     try {
       quote =
@@ -267,20 +261,18 @@ export function loadScripBundleFromDb(rawSymbol: string): {
     }
   }
 
-  // If no market_quotes row exists, synthesize quote fallback from latest 2 historical candles
   if (!quote && candles.length > 0) {
     const latest = candles[0];
     const prev = candles[1];
     quote = {
       symbol,
-      ltp: null, // Forces clean fallback to TODAY_CLOSE / PREV_CLOSE / HISTORICAL_CANDLE
+      ltp: null,
       todayClose: latest?.close ?? null,
       prevClose: prev?.close ?? latest?.open ?? null,
       volume: latest?.volume ?? 0,
     };
   }
 
-  // 4. 5D Floor-Sheet Broker Rollup from SQLite
   if (tableExists(db, "floorsheet_broker_summary")) {
     try {
       broker5DRawPayload = db
@@ -295,10 +287,16 @@ export function loadScripBundleFromDb(rawSymbol: string): {
             AVG(avg_ticket_kitta) AS avgTicketKitta
           FROM floorsheet_broker_summary
           WHERE UPPER(symbol) = ?
-            AND trade_date >= date('now', '-10 days')
+            AND trade_date IN (
+              SELECT DISTINCT trade_date
+              FROM floorsheet_broker_summary
+              WHERE UPPER(symbol) = ?
+              ORDER BY trade_date DESC
+              LIMIT 5
+            )
           GROUP BY broker_no`
         )
-        .all(symbol);
+        .all(symbol, symbol);
     } catch {
       broker5DRawPayload = null;
     }
@@ -316,10 +314,16 @@ export function loadScripBundleFromDb(rawSymbol: string): {
             AVG(buy_vol + sell_vol) AS avgTicketKitta
           FROM daily_broker_ledger
           WHERE UPPER(symbol) = ?
-            AND trade_date >= date('now', '-10 days')
+            AND trade_date IN (
+              SELECT DISTINCT trade_date
+              FROM daily_broker_ledger
+              WHERE UPPER(symbol) = ?
+              ORDER BY trade_date DESC
+              LIMIT 5
+            )
           GROUP BY broker_id`
         )
-        .all(symbol);
+        .all(symbol, symbol);
     } catch {
       broker5DRawPayload = null;
     }

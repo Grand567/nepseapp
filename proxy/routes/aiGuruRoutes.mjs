@@ -29,33 +29,38 @@ export function resolveValidNepseSymbol(...candidates) {
 }
 
 /**
- * 4-Stage Verified Price Fallback Chain
+ * 5-Stage Verified Price Fallback Chain (Hardened Patch A):
+ * Live LTP -> Today's Close -> Quote Previous Close -> Historical Candle Close -> Ledger VWAP
  */
 export function resolveVerifiedPrice(quote, candles = [], ledgerRow = null) {
-  const sortedCandles = [...candles].sort(
+  const sortedCandlesDesc = [...candles].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
-  const latestCandle = sortedCandles[0];
-  const prevCandle = sortedCandles[1];
+  const latestCandle = sortedCandlesDesc[0];
+  const prevCandle = sortedCandlesDesc[1];
 
   const liveLtp = safeNum(quote?.ltp ?? quote?.lastTradedPrice, 0);
   const todayClose = safeNum(quote?.todayClose ?? quote?.close, 0);
-  const prevClose = safeNum(
-    quote?.prevClose ?? quote?.previousClose ?? prevCandle?.close ?? latestCandle?.open,
-    0
-  );
+  const quotePrevClose = safeNum(quote?.prevClose ?? quote?.previousClose, 0);
   const candleClose = safeNum(latestCandle?.close, 0);
   const ledgerVwap = safeNum(ledgerRow?.entry_vwap, 0);
 
+  const referencePrevClose =
+    quotePrevClose > 0
+      ? quotePrevClose
+      : safeNum(prevCandle?.close ?? latestCandle?.open, 0);
+
+  // Stage 1: Live LTP (only when market is not on holiday)
   if (liveLtp > 0 && !quote?.isHoliday) {
     return {
       price: liveLtp,
       source: 'LIVE_LTP',
       asOfLabel: 'Live Exchange Feed (LTP)',
-      prevCloseRef: prevClose > 0 ? prevClose : liveLtp,
+      prevCloseRef: referencePrevClose > 0 ? referencePrevClose : liveLtp,
     };
   }
 
+  // Stage 2: Today's Close (or Holiday Close override)
   if (todayClose > 0) {
     return {
       price: todayClose,
@@ -63,28 +68,31 @@ export function resolveVerifiedPrice(quote, candles = [], ledgerRow = null) {
       asOfLabel: quote?.isHoliday
         ? `Holiday Close (${quote.holidayName || 'NEPSE Closed'})`
         : "Today's Closing Price",
-      prevCloseRef: prevClose > 0 ? prevClose : todayClose,
+      prevCloseRef: referencePrevClose > 0 ? referencePrevClose : todayClose,
     };
   }
 
-  if (prevClose > 0) {
+  // Stage 3: Quote Previous Close
+  if (quotePrevClose > 0) {
     return {
-      price: prevClose,
+      price: quotePrevClose,
       source: 'PREV_CLOSE',
       asOfLabel: 'Previous Session Close (Exchange Feed Offline/Holiday)',
-      prevCloseRef: safeNum(prevCandle?.close, prevClose),
+      prevCloseRef: safeNum(prevCandle?.close, quotePrevClose),
     };
   }
 
+  // Stage 4: Latest Historical OHLCV Candle Close
   if (candleClose > 0) {
     return {
       price: candleClose,
       source: 'HISTORICAL_CANDLE',
       asOfLabel: `Last Historical Candle (${latestCandle?.date || 'Historical'})`,
-      prevCloseRef: safeNum(prevCandle?.close, candleClose),
+      prevCloseRef: safeNum(prevCandle?.close ?? latestCandle?.open, candleClose),
     };
   }
 
+  // Stage 5: SQLite Signal Ledger Entry VWAP
   if (ledgerVwap > 0) {
     return {
       price: ledgerVwap,
@@ -164,6 +172,12 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
   let totalBuyKitta = 0;
   let totalSellKitta = 0;
 
+  for (const rawItem of candidateArray) {
+    const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+    totalBuyKitta += safeNum(item.buyKitta ?? item.buy_kitta ?? item.buyVolume ?? item.buy_vol, 0);
+    totalSellKitta += safeNum(item.sellKitta ?? item.sell_kitta ?? item.sellVolume ?? item.sell_vol, 0);
+  }
+
   const normalizedRows = candidateArray.map((rawItem) => {
     const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
     const brokerId = String(item.brokerId ?? item.broker_no ?? item.broker ?? item.broker_id ?? '0').replace(/^0+/, '');
@@ -176,14 +190,14 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
       (buyKitta + sellKitta) / tradeCount
     );
 
-    totalBuyKitta += buyKitta;
-    totalSellKitta += sellKitta;
-
-    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.024;
+    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
+    const scripBuyShare = totalBuyKitta > 0 ? buyKitta / totalBuyKitta : baselineShare;
     const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
+
+    const computedAnomaly = (scripBuyShare / baselineShare) * ticketMultiplier;
     const rawAnomaly = safeNum(
       item.anomalyScore ?? item.broker_anomaly_score,
-      (1 / (baselineShare * 25)) * ticketMultiplier
+      computedAnomaly
     );
 
     return {
