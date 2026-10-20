@@ -115,11 +115,17 @@ export interface StrategyInstitutionalMetric {
 export interface BrokerLeaderboardRow {
   brokerId: number | string;
   brokerName?: string;
+  rank?: number;
   auditedSignals?: number;
   totalSignals?: number;
+  activeHoldingsCount?: number;
+  settledSignalsCount?: number;
+  heldSymbols?: string;
+  heldSymbolsList?: string[];
   avgAnomalyScore?: number;
   avgTicketKitta?: number;
-  postFeeWinRatePct?: number;
+  estTotalKittaTracked?: number;
+  postFeeWinRatePct?: number | null;
   winRatePct?: number;
   winCount?: number;
   lossCount?: number;
@@ -269,6 +275,7 @@ export function AlgorithmicSignalTrackRecord({
   const [minAnomalyScore, setMinAnomalyScore] = useState<number>(0);
   const [hideUnfillable, setHideUnfillable] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'LEDGER' | 'BROKER_LEADERBOARD'>('LEDGER');
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState<boolean>(true);
 
   // Sorting State
   const [sortField, setSortField] = useState<SortField>('signal_date');
@@ -356,7 +363,35 @@ export function AlgorithmicSignalTrackRecord({
           setFetchedStrategyMetrics(data.summary.strategyMetrics);
         }
         if (Array.isArray(data.brokerLeaderboard) && data.brokerLeaderboard.length > 0) {
-          setFetchedBrokerLeaderboard(data.brokerLeaderboard);
+          const normalizedBrokers: BrokerLeaderboardRow[] = data.brokerLeaderboard.map((b: any, idx: number) => {
+            const heldSymbolsList = Array.isArray(b.heldSymbolsList)
+              ? b.heldSymbolsList
+              : typeof b.heldSymbols === 'string' && b.heldSymbols
+              ? b.heldSymbols.split(',').map((s: string) => s.trim()).filter(Boolean)
+              : [];
+            return {
+              ...b,
+              rank: b.rank ?? idx + 1,
+              brokerId: b.brokerId,
+              brokerName: b.brokerName || `Broker #${b.brokerId}`,
+              totalSignals: Number(b.totalSignals ?? b.auditedSignals ?? 0),
+              auditedSignals: Number(b.auditedSignals ?? b.totalSignals ?? 0),
+              activeHoldingsCount: Number(b.activeHoldingsCount ?? 0),
+              settledSignalsCount: Number(b.settledSignalsCount ?? 0),
+              heldSymbols: b.heldSymbols || heldSymbolsList.join(', '),
+              heldSymbolsList,
+              avgAnomalyScore: b.avgAnomalyScore != null ? Number(b.avgAnomalyScore) : undefined,
+              avgTicketKitta: b.avgTicketKitta != null ? Number(b.avgTicketKitta) : undefined,
+              estTotalKittaTracked: b.estTotalKittaTracked != null ? Number(b.estTotalKittaTracked) : undefined,
+              postFeeWinRatePct: b.postFeeWinRatePct != null ? Number(b.postFeeWinRatePct) : undefined,
+              winRatePct: b.winRatePct != null ? Number(b.winRatePct) : undefined,
+              winCount: b.winCount ?? b.winsCount ?? 0,
+              lossCount: b.lossCount ?? 0,
+              avgNetReturnPct: Number(b.avgNetReturnPct ?? 0),
+              avgNepseAlphaPct: b.avgNepseAlphaPct != null ? Number(b.avgNepseAlphaPct) : Number(b.avgNetReturnPct ?? 0),
+            };
+          });
+          setFetchedBrokerLeaderboard(normalizedBrokers);
         }
       }
     } catch (err: any) {
@@ -582,76 +617,92 @@ export function AlgorithmicSignalTrackRecord({
     );
   };
 
-  const content = (
-    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-950 text-slate-100 p-4 md:p-6 space-y-5 rounded-2xl border border-slate-800/80" style={{ WebkitOverflowScrolling: 'touch' }}>
-      {/* 1. HEADER & ACTION BAR */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Shield className="w-5 h-5 text-emerald-400" />
-              Algorithmic Signal Track Record
-            </h2>
-            <span className="px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              T+1 VWAP &bull; T+2 Demat Audited
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 7.5% short-term CGT.
-          </p>
+  const headerBar = (
+    <div className="shrink-0 p-3.5 md:px-6 border-b border-slate-800/80 bg-[#0f1626] flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            <Shield className="w-5 h-5 text-emerald-400" />
+            Algorithmic Signal Track Record
+          </h2>
+          <span className="px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            T+1 VWAP &bull; T+2 Demat Audited
+          </span>
         </div>
-
-        <div className="flex items-center gap-2.5 self-start md:self-auto">
-          <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setActiveTab('LEDGER')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                activeTab === 'LEDGER'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Signal Ledger ({filteredSignals.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('BROKER_LEADERBOARD')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                activeTab === 'BROKER_LEADERBOARD'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Smart-Money Broker Leaderboard ({brokerLeaderboard.length})
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={onRebuildTrackRecord || fetchTrackRecord}
-            disabled={isRebuilding || isRefreshing}
-            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isRebuilding || isRefreshing ? 'animate-spin' : ''}`} />
-            {isRebuilding || isRefreshing ? 'Auditing...' : '↻ Re-Audit'}
-          </button>
-
-          {!inlineMode && onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
-              title="Close Track Record"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
+        <p className="text-xs text-slate-400 mt-1">
+          Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 7.5% short-term CGT.
+        </p>
       </div>
 
-      {/* 2. INSTITUTIONAL PROFIT FACTOR & EXPECTANCY SCORECARD */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+        <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab('LEDGER')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+              activeTab === 'LEDGER'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Signal Ledger ({filteredSignals.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('BROKER_LEADERBOARD')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+              activeTab === 'BROKER_LEADERBOARD'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Smart-Money Broker Leaderboard ({brokerLeaderboard.length})
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRebuildTrackRecord || fetchTrackRecord}
+          disabled={isRebuilding || isRefreshing}
+          className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5"
+        >
+          <RotateCw className={`w-3.5 h-3.5 ${isRebuilding || isRefreshing ? 'animate-spin' : ''}`} />
+          {isRebuilding || isRefreshing ? 'Auditing...' : '↻ Re-Audit'}
+        </button>
+
+        {!inlineMode && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
+            title="Close Track Record"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const bodyContent = (
+    <>
+      {/* Mobile Summary Collapse Toggle */}
+      <div className="flex items-center justify-between md:hidden">
+        <button
+          type="button"
+          onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition"
+        >
+          <span>{isSummaryExpanded ? '▲ Hide Metrics Summary' : '▼ Show Metrics Summary'}</span>
+        </button>
+        <span className="text-[11px] text-slate-500 font-mono">
+          {activeTab === 'LEDGER' ? `${filteredSignals.length} Audited Setups` : `${brokerLeaderboard.length} Brokers`}
+        </span>
+      </div>
+
+      {/* 2. INSTITUTIONAL PROFIT FACTOR & EXPECTANCY SCORECARD (Collapsible on Mobile) */}
+      <div className={`${isSummaryExpanded ? 'block' : 'hidden md:block'} space-y-3`}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
           <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
             Profit Factor
@@ -801,6 +852,7 @@ export function AlgorithmicSignalTrackRecord({
           ))}
         </div>
       )}
+      </div>
 
       {/* 3. STICKY FILTER BAR (Fixes Scroll Clipping & Broken Filter Bugs) */}
       {activeTab === 'LEDGER' && (
@@ -932,17 +984,17 @@ export function AlgorithmicSignalTrackRecord({
 
       {/* 4A. MAIN WALK-FORWARD SIGNAL TABLE */}
       {activeTab === 'LEDGER' ? (
-        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
+        <div className="border border-slate-800 rounded-xl bg-[#0d1322] shadow-sm">
           {/* Mobile scroll hint — hidden on md+ where all columns are visible */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-slate-500 md:hidden border-b border-slate-800/60">
-            <span>← Scroll right to see</span>
+            <span>← Swipe right to see</span>
             <span className="font-bold text-sky-400">Status</span>
             <span>&amp;</span>
             <span className="font-bold text-emerald-400">Net Return &amp; Alpha</span>
             <span>→</span>
           </div>
-          <div className="overflow-x-auto min-h-[350px]" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <table className="w-full text-left border-collapse">
+          <div className="w-full overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="w-full min-w-[960px] text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                 <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                   <th
@@ -1222,94 +1274,189 @@ export function AlgorithmicSignalTrackRecord({
         </div>
       ) : (
         /* 4B. SMART-MONEY BROKER ANOMALY LEADERBOARD TAB */
-        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto min-h-[350px]">
-            <table className="w-full text-left border-collapse">
+        <div className="border border-slate-800 rounded-xl bg-[#0d1322] shadow-sm">
+          {/* Mobile swipe hint */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-slate-500 md:hidden border-b border-slate-800/60">
+            <span>← Swipe right to view full broker metrics &amp; win rate →</span>
+          </div>
+          <div className="w-full overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="w-full min-w-[1040px] text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                 <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="py-3 px-4">Rank &amp; Broker</th>
-                  <th className="py-3 px-4">Audited Signals</th>
-                  <th className="py-3 px-4">Avg Anomaly Score (vs 30D Share)</th>
-                  <th className="py-3 px-4">Avg Ticket Size (Kitta / Trade)</th>
-                  <th className="py-3 px-4">Post-Fee Win Rate</th>
-                  <th className="py-3 px-4 text-right">Avg Net Return</th>
-                  <th className="py-3 px-4 text-right">Avg NEPSE Alpha</th>
+                  <th className="py-3 px-3.5 whitespace-nowrap">Rank &amp; Broker</th>
+                  <th className="py-3 px-3.5 min-w-[240px]">Holdings &amp; Accumulated Stocks</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Audited Signals</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Avg Anomaly (vs 30D Share)</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Avg Ticket (Kitta / Trade)</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Post-Fee Win Rate</th>
+                  <th className="py-3 px-3.5 text-right whitespace-nowrap">Avg Net Return</th>
+                  <th className="py-3 px-3.5 text-right whitespace-nowrap">Avg NEPSE Alpha</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-xs">
                 {brokerLeaderboard.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-16 text-center text-slate-400">
+                    <td colSpan={8} className="py-16 text-center text-slate-400">
                       No broker leaderboard telemetry available yet. Run the walk-forward rebuild to populate broker rankings.
                     </td>
                   </tr>
                 ) : (
-                  brokerLeaderboard.map((b, idx) => (
-                    <tr
-                      key={String(b.brokerId)}
-                      className="hover:bg-slate-800/40 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setSearchQuery(`B${b.brokerId}`);
-                        setActiveTab('LEDGER');
-                      }}
-                    >
-                      <td className="py-3 px-4 font-bold text-white">
-                        #{idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-300">
-                        {b.auditedSignals ?? b.totalSignals ?? 0} signals
-                      </td>
-                      <td className="py-3 px-4 font-mono text-indigo-300">
-                        {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x baseline` : 'Institutional Tracked'}
-                      </td>
-                      <td className="py-3 px-4 font-mono">
-                        <span
-                          className={
-                            (b.avgTicketKitta ?? 0) >= 150
-                              ? 'text-emerald-300 font-semibold'
-                              : 'text-slate-300'
-                          }
-                        >
-                          {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-mono font-semibold text-white">
-                        {b.postFeeWinRatePct ?? b.winRatePct ?? 0}%
-                        {b.winCount != null && (
-                          <span className="text-slate-400 text-[11px] font-normal ml-1">
-                            ({b.winCount}W / {b.lossCount ?? 0}L)
+                  brokerLeaderboard.map((b, idx) => {
+                    const heldList = b.heldSymbolsList && b.heldSymbolsList.length > 0
+                      ? b.heldSymbolsList
+                      : (b.heldSymbols ? b.heldSymbols.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+
+                    return (
+                      <tr
+                        key={String(b.brokerId)}
+                        className="hover:bg-slate-800/40 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setSearchQuery(`B${b.brokerId}`);
+                          setActiveTab('LEDGER');
+                        }}
+                      >
+                        <td className="py-3 px-3.5 font-bold text-white whitespace-nowrap">
+                          #{b.rank ?? idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
+                        </td>
+                        <td className="py-3 px-3.5">
+                          <div className="flex flex-wrap items-center gap-1.5 max-w-[320px]">
+                            {b.activeHoldingsCount != null && b.activeHoldingsCount > 0 && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                                ● {b.activeHoldingsCount} Active
+                              </span>
+                            )}
+                            {heldList.map((sym: string) => (
+                              <button
+                                key={sym}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSearchQuery(sym);
+                                  setActiveTab('LEDGER');
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800/90 text-slate-200 border border-slate-700/80 hover:bg-emerald-500/20 hover:text-emerald-300 hover:border-emerald-500/40 transition"
+                                title={`Filter Signal Ledger to ${sym}`}
+                              >
+                                {sym}
+                              </button>
+                            ))}
+                            {heldList.length === 0 && (
+                              <span className="text-[11px] text-slate-500">—</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-300 whitespace-nowrap">
+                          <div className="font-semibold text-white">{b.auditedSignals ?? b.totalSignals ?? 0} signals</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {b.activeHoldingsCount ? `${b.activeHoldingsCount} In Trade` : ''}
+                            {b.activeHoldingsCount && b.settledSignalsCount ? ' • ' : ''}
+                            {b.settledSignalsCount ? `${b.settledSignalsCount} Settled` : (!b.activeHoldingsCount ? 'All Settled' : '')}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-indigo-300 whitespace-nowrap">
+                          {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x baseline` : 'Institutional Tracked'}
+                        </td>
+                        <td className="py-3 px-3 font-mono whitespace-nowrap">
+                          <span
+                            className={
+                              (b.avgTicketKitta ?? 0) >= 150
+                                ? 'text-emerald-300 font-semibold'
+                                : 'text-slate-300'
+                            }
+                          >
+                            {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
                           </span>
-                        )}
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-right font-mono font-bold ${
-                          (b.avgNetReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
-                        {b.avgNetReturnPct ?? 0}%
-                      </td>
-                      <td
-                        className={`py-3 px-4 text-right font-mono font-bold ${
-                          (b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? 'text-sky-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {(b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
-                        {b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0}%
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="py-3 px-3 font-mono font-semibold whitespace-nowrap">
+                          {b.settledSignalsCount === 0 ? (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              Active (In Trade)
+                            </span>
+                          ) : (
+                            <>
+                              <span className="text-white">
+                                {b.postFeeWinRatePct ?? b.winRatePct ?? 0}%
+                              </span>
+                              {b.winCount != null && (
+                                <span className="text-slate-400 text-[11px] font-normal ml-1">
+                                  ({b.winCount}W / {b.lossCount ?? 0}L)
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td
+                          className={`py-3 px-3.5 text-right font-mono font-bold whitespace-nowrap ${
+                            b.settledSignalsCount === 0
+                              ? 'text-slate-500'
+                              : (b.avgNetReturnPct ?? 0) >= 0
+                              ? 'text-emerald-400'
+                              : 'text-rose-400'
+                          }`}
+                        >
+                          {b.settledSignalsCount === 0 ? (
+                            '—'
+                          ) : (
+                            <>
+                              {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                              {b.avgNetReturnPct ?? 0}%
+                            </>
+                          )}
+                        </td>
+                        <td
+                          className={`py-3 px-3.5 text-right font-mono font-bold whitespace-nowrap ${
+                            b.settledSignalsCount === 0
+                              ? 'text-slate-500'
+                              : (b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0
+                              ? 'text-sky-400'
+                              : 'text-rose-400'
+                          }`}
+                        >
+                          {b.settledSignalsCount === 0 ? (
+                            '—'
+                          ) : (
+                            <>
+                              {(b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                              {b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0}%
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
       )}
+    </>
+  );
+
+  const renderedModal = (
+    <div
+      className={
+        inlineMode
+          ? "bg-[#0b0f19] border border-slate-800 rounded-2xl w-full flex flex-col overflow-hidden shadow-2xl"
+          : "bg-[#0b0f19] border border-slate-800 rounded-none md:rounded-2xl w-full max-w-[1440px] h-full md:h-[92vh] flex flex-col overflow-hidden shadow-2xl"
+      }
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* 1. TOP TITLE & TAB BAR (Fixed non-scrolling header) */}
+      {headerBar}
+
+      {/* 2. UNIFIED SCROLLABLE BODY (PC smooth scroll + Mobile APK smooth touch scrolling) */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain track-record-scroll p-3 md:p-6 space-y-4"
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+      >
+        {bodyContent}
+      </div>
     </div>
   );
 
   if (inlineMode) {
-    return content;
+    return renderedModal;
   }
 
   if (!isOpen) {
@@ -1318,15 +1465,10 @@ export function AlgorithmicSignalTrackRecord({
 
   return (
     <div
-      className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6"
+      className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-0 md:p-4"
       onClick={onClose}
     >
-      <div
-        className="w-full max-w-7xl max-h-[92vh] flex flex-col bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {content}
-      </div>
+      {renderedModal}
     </div>
   );
 }

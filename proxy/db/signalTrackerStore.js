@@ -907,91 +907,184 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
   const profitFactor =
     totalLosses > 0 ? Number((totalGains / totalLosses).toFixed(2)) : totalGains > 0 ? 99.9 : 1.0;
 
-  // 7. Broker Follow-Through Leaderboard
-  const brokerMapStats = new Map();
-  for (const s of signals) {
-    const bId = s.lead_broker_id || "58";
-    let bStat = brokerMapStats.get(bId);
-    if (!bStat) {
-      bStat = {
+  // 7. Broker Follow-Through Leaderboard (All 37 Brokers + Exact Held Symbols & Active/Settled Breakdown)
+  let brokerLeaderboard = [];
+  try {
+    const rawBrokerRows = db.prepare(`
+      SELECT
+        COALESCE(primary_broker_id, CAST(lead_broker_id AS INTEGER)) AS brokerId,
+        COUNT(*) AS totalSignals,
+        COUNT(*) FILTER (WHERE status IN ('ACTIVE', 'OPEN_ACTIVE')) AS activeHoldingsCount,
+        COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')) AS settledSignalsCount,
+        GROUP_CONCAT(DISTINCT symbol) AS heldSymbols,
+        ROUND(AVG(broker_anomaly_score), 2) AS avgAnomalyScore,
+        ROUND(AVG(avg_ticket_kitta), 0) AS avgTicketKitta,
+        SUM(COALESCE(avg_ticket_kitta, 0)) AS estTotalKittaTracked,
+        ROUND(
+          100.0 * COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND (status LIKE 'WIN%' OR status IN ('TARGET_HIT', 'RATCHET_STOP_WIN') OR net_return_pct > 0))
+          / NULLIF(COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0),
+          1
+        ) AS postFeeWinRatePct,
+        COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND (status LIKE 'WIN%' OR status IN ('TARGET_HIT', 'RATCHET_STOP_WIN') OR net_return_pct > 0)) AS winsCount,
+        COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND NOT (status LIKE 'WIN%' OR status IN ('TARGET_HIT', 'RATCHET_STOP_WIN') OR net_return_pct > 0)) AS lossCount,
+        ROUND(AVG(COALESCE(net_return_pct, net_pnl_after_fees_pct)) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS avgNetReturnPct,
+        ROUND(AVG(nepse_alpha_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS avgNepseAlphaPct
+      FROM algorithmic_signal_ledger
+      WHERE primary_broker_id IS NOT NULL OR lead_broker_id IS NOT NULL
+      GROUP BY COALESCE(primary_broker_id, CAST(lead_broker_id AS INTEGER))
+      ORDER BY
+        (CASE WHEN COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND (status LIKE 'WIN%' OR status IN ('TARGET_HIT', 'RATCHET_STOP_WIN') OR net_return_pct > 0)) >= 2 THEN 1000 ELSE 0 END) +
+        COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP') AND (status LIKE 'WIN%' OR status IN ('TARGET_HIT', 'RATCHET_STOP_WIN') OR net_return_pct > 0)) / NULLIF(COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0), 1), 0) * 0.6 +
+        COALESCE(AVG(COALESCE(net_return_pct, net_pnl_after_fees_pct)) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0) * 4 DESC,
+        COUNT(*) DESC
+    `).all();
+
+    brokerLeaderboard = rawBrokerRows.map((r, idx) => {
+      const bId = String(r.brokerId);
+      const heldSymbolsList = r.heldSymbols ? r.heldSymbols.split(',').filter(Boolean) : [];
+      const winRatePct = r.postFeeWinRatePct != null ? Number(r.postFeeWinRatePct) : null;
+      const avgNetReturnPct = r.avgNetReturnPct != null ? Number(r.avgNetReturnPct) : 0;
+      const avgNepseAlphaPct = r.avgNepseAlphaPct != null ? Number(r.avgNepseAlphaPct) : avgNetReturnPct;
+
+      return {
         brokerId: bId,
-        brokerName: s.lead_broker_name || TOP_NEPSE_BROKERS[bId] || `Broker #${bId}`,
-        totalSignals: 0,
-        closedSignals: 0,
-        openSignals: 0,
-        winCount: 0,
-        lossCount: 0,
-        stoppedOutCount: 0,
-        timeExpiredCount: 0,
-        totalNetReturn: 0,
-        bestStock: { symbol: s.symbol, maxGainPct: s.max_gain_pct },
+        brokerName: TOP_NEPSE_BROKERS[bId] || `Broker #${bId}`,
+        rank: idx + 1,
+        totalSignals: r.totalSignals || 0,
+        auditedSignals: r.totalSignals || 0,
+        activeHoldingsCount: r.activeHoldingsCount || 0,
+        settledSignalsCount: r.settledSignalsCount || 0,
+        heldSymbols: r.heldSymbols || '',
+        heldSymbolsList,
+        avgAnomalyScore: r.avgAnomalyScore != null ? Number(r.avgAnomalyScore) : 1.0,
+        avgTicketKitta: r.avgTicketKitta != null ? Number(r.avgTicketKitta) : 0,
+        estTotalKittaTracked: r.estTotalKittaTracked != null ? Number(r.estTotalKittaTracked) : 0,
+        postFeeWinRatePct: winRatePct,
+        winRatePct: winRatePct ?? 0,
+        winsCount: r.winsCount || 0,
+        winCount: r.winsCount || 0,
+        lossCount: r.lossCount || 0,
+        avgNetReturnPct,
+        avgNepseAlphaPct,
       };
-      brokerMapStats.set(bId, bStat);
-    }
+    });
+  } catch (err) {
+    console.error("[signalTrackerStore] SQL brokerLeaderboard query failed, using JS aggregation fallback:", err.message);
+  }
 
-    bStat.totalSignals++;
-    if (s.max_gain_pct > bStat.bestStock.maxGainPct) {
-      bStat.bestStock = { symbol: s.symbol, maxGainPct: s.max_gain_pct };
-    }
+  // Fallback to JS aggregation if SQL returned empty
+  if (brokerLeaderboard.length === 0) {
+    const brokerMapStats = new Map();
+    for (const s of signals) {
+      const bId = String(s.primary_broker_id || s.lead_broker_id || "58");
+      let bStat = brokerMapStats.get(bId);
+      if (!bStat) {
+        bStat = {
+          brokerId: bId,
+          brokerName: s.lead_broker_name || TOP_NEPSE_BROKERS[bId] || `Broker #${bId}`,
+          totalSignals: 0,
+          closedSignals: 0,
+          openSignals: 0,
+          activeHoldingsCount: 0,
+          settledSignalsCount: 0,
+          winCount: 0,
+          lossCount: 0,
+          stoppedOutCount: 0,
+          timeExpiredCount: 0,
+          totalNetReturn: 0,
+          heldSymbolsSet: new Set(),
+          anomalySum: 0,
+          ticketSum: 0,
+          bestStock: { symbol: s.symbol, maxGainPct: s.max_gain_pct },
+        };
+        brokerMapStats.set(bId, bStat);
+      }
 
-    if (s.status === "OPEN_ACTIVE") {
-      bStat.openSignals++;
-    } else {
-      bStat.closedSignals++;
-      bStat.totalNetReturn += s.net_pnl_after_fees_pct;
-      if (s.status.startsWith("WIN")) {
-        bStat.winCount++;
-      } else {
-        bStat.lossCount++;
-        if (s.status === "STOPPED_OUT") {
-          bStat.stoppedOutCount++;
+      bStat.totalSignals++;
+      if (s.symbol) bStat.heldSymbolsSet.add(s.symbol);
+      bStat.anomalySum += Number(s.broker_anomaly_score || 1.0);
+      bStat.ticketSum += Number(s.avg_ticket_kitta || 0);
+
+      if (s.max_gain_pct > bStat.bestStock.maxGainPct) {
+        bStat.bestStock = { symbol: s.symbol, maxGainPct: s.max_gain_pct };
+      }
+
+      if (s.status === "ACTIVE" || s.status === "OPEN_ACTIVE") {
+        bStat.openSignals++;
+        bStat.activeHoldingsCount++;
+      } else if (s.status !== "UNFILLABLE_SKIP") {
+        bStat.closedSignals++;
+        bStat.settledSignalsCount++;
+        bStat.totalNetReturn += (s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0);
+        if (s.status.startsWith("WIN") || s.status === "TARGET_HIT" || s.status === "RATCHET_STOP_WIN" || (s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0) > 0) {
+          bStat.winCount++;
         } else {
-          bStat.timeExpiredCount++;
+          bStat.lossCount++;
+          if (s.status === "STOPPED_OUT") {
+            bStat.stoppedOutCount++;
+          } else {
+            bStat.timeExpiredCount++;
+          }
         }
       }
     }
+
+    brokerLeaderboard = Array.from(brokerMapStats.values())
+      .map((b) => {
+        const brokerDecisive = b.winCount + b.stoppedOutCount;
+        const winRatePct =
+          brokerDecisive > 0
+            ? Number(((b.winCount / brokerDecisive) * 100).toFixed(1))
+            : b.closedSignals > 0
+            ? Number(((b.winCount / b.closedSignals) * 100).toFixed(1))
+            : null;
+        const avgNetReturnPct =
+          b.closedSignals > 0 ? Number((b.totalNetReturn / b.closedSignals).toFixed(2)) : 0;
+        const avgAnomalyScore = b.totalSignals > 0 ? Number((b.anomalySum / b.totalSignals).toFixed(2)) : 1.0;
+        const avgTicketKitta = b.totalSignals > 0 ? Math.round(b.ticketSum / b.totalSignals) : 0;
+        const heldSymbolsList = Array.from(b.heldSymbolsSet);
+
+        const institutionalAlphaScore = Number(
+          (
+            (b.winCount >= 2 ? 1000 : 0) +
+            ((winRatePct ?? 0) * 0.6) +
+            (avgNetReturnPct * 4) +
+            (b.winCount * 5)
+          ).toFixed(2)
+        );
+
+        return {
+          brokerId: b.brokerId,
+          brokerName: b.brokerName,
+          totalSignals: b.totalSignals,
+          auditedSignals: b.totalSignals,
+          activeHoldingsCount: b.activeHoldingsCount,
+          settledSignalsCount: b.settledSignalsCount,
+          heldSymbols: heldSymbolsList.join(','),
+          heldSymbolsList,
+          avgAnomalyScore,
+          avgTicketKitta,
+          estTotalKittaTracked: b.ticketSum,
+          postFeeWinRatePct: winRatePct,
+          winRatePct: winRatePct ?? 0,
+          winsCount: b.winCount,
+          winCount: b.winCount,
+          lossCount: b.lossCount,
+          avgNetReturnPct,
+          avgNepseAlphaPct: avgNetReturnPct,
+          institutionalAlphaScore,
+        };
+      })
+      .sort((a, b) => {
+        if (b.institutionalAlphaScore !== a.institutionalAlphaScore) {
+          return b.institutionalAlphaScore - a.institutionalAlphaScore;
+        }
+        if (b.winCount !== a.winCount) return b.winCount - a.winCount;
+        if ((b.winRatePct ?? 0) !== (a.winRatePct ?? 0)) return (b.winRatePct ?? 0) - (a.winRatePct ?? 0);
+        return b.avgNetReturnPct - a.avgNetReturnPct;
+      })
+      .map((b, idx) => ({ ...b, rank: idx + 1 }));
   }
-
-  const brokerLeaderboard = Array.from(brokerMapStats.values())
-    .map((b) => {
-      const brokerDecisive = b.winCount + b.stoppedOutCount;
-      const winRatePct =
-        brokerDecisive > 0
-          ? Number(((b.winCount / brokerDecisive) * 100).toFixed(1))
-          : b.closedSignals > 0
-          ? Number(((b.winCount / b.closedSignals) * 100).toFixed(1))
-          : 0;
-      const avgNetReturnPct =
-        b.closedSignals > 0 ? Number((b.totalNetReturn / b.closedSignals).toFixed(2)) : 0;
-      
-      // Composite Institutional Alpha Score:
-      // (winCount >= 2 ? 1000 : 0) + (winRatePct * 0.6) + (avgNetReturnPct * 4) + (winCount * 5)
-      // Strictly prioritizes brokers with multiple verified wins and prevents 1-trade outliers at #1
-      const institutionalAlphaScore = Number(
-        (
-          (b.winCount >= 2 ? 1000 : 0) +
-          (winRatePct * 0.6) +
-          (avgNetReturnPct * 4) +
-          (b.winCount * 5)
-        ).toFixed(2)
-      );
-
-      return {
-        ...b,
-        winRatePct,
-        avgNetReturnPct,
-        institutionalAlphaScore,
-      };
-    })
-    .sort((a, b) => {
-      // Primary: Institutional Alpha Score
-      if (b.institutionalAlphaScore !== a.institutionalAlphaScore) {
-        return b.institutionalAlphaScore - a.institutionalAlphaScore;
-      }
-      if (b.winCount !== a.winCount) return b.winCount - a.winCount;
-      if (b.winRatePct !== a.winRatePct) return b.winRatePct - a.winRatePct;
-      return b.avgNetReturnPct - a.avgNetReturnPct;
-    });
 
   // 8. Strategy Breakdown
   const strategies = ["EARLY_IGNITION_3D", "STEALTH_ACCUMULATION", "SYNDICATE_ROTATION"];

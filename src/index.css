@@ -281,6 +281,12 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(91,94,244,0.25); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(91,94,244,0.5); }
 
+/* High-Visibility Track Record Modal Scrollbar (Desktop & Tablet) */
+.track-record-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
+.track-record-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.7); border-radius: 8px; }
+.track-record-scroll::-webkit-scrollbar-thumb { background: rgba(16, 185, 129, 0.4); border-radius: 8px; }
+.track-record-scroll::-webkit-scrollbar-thumb:hover { background: rgba(16, 185, 129, 0.75); }
+
 /* ── Typography ── */
 h1, h2, h3, h4, h5 {
   font-family: var(--font-sans);
