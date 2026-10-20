@@ -1,4 +1,4 @@
-// src/components/AlgorithmicSignalTrackRecord.tsx
+// File: src/components/AlgorithmicSignalTrackRecord.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
@@ -21,58 +21,85 @@ import {
   Layers,
   Building2,
   ExternalLink,
-  Flame
+  Flame,
+  Shield,
+  Activity
 } from 'lucide-react';
 import { getProxyBase } from '../utils/liveData';
 
-export interface AlgorithmicSignal {
+export type SignalStrategy = 'EARLY_IGNITION_3D' | 'STEALTH_ACCUMULATION' | 'SYNDICATE_ROTATION' | string;
+export type SignalStatus =
+  | 'ACTIVE'
+  | 'OPEN_ACTIVE'
+  | 'TARGET_HIT'
+  | 'WIN_T1'
+  | 'WIN_T2'
+  | 'RATCHET_STOP_WIN'
+  | 'WIN_RATCHET_STOP'
+  | 'TIME_STOP_STALE'
+  | 'TIME_EXPIRED'
+  | 'STOP_LOSS'
+  | 'STOPPED_OUT'
+  | 'UNFILLABLE_SKIP'
+  | string;
+
+export type MarketRegime = 'BULL' | 'SIDEWAYS' | 'BEAR' | 'QUARTER_END_PRESSURE' | string;
+
+export interface SignalLedgerRow {
   signal_id: string;
   symbol: string;
   sector: string;
+  strategy: SignalStrategy;
+  signal_type?: string;
   signal_date: string;
-  t2_unlock_date: string;
-  signal_type: 'EARLY_IGNITION_3D' | 'STEALTH_ACCUMULATION' | 'SYNDICATE_ROTATION' | string;
-  entry_price: number;
-  broker_vwap: number;
-  lead_broker_id: string;
-  lead_broker_name: string;
-  bcr5_net_pct: number;
-  scr3_net_pct: number;
-  ignition_score: number;
-  stop_loss_price: number;
-  target1_price: number;
-  target2_price: number;
-  status: 'WIN_T1' | 'WIN_T2' | 'STOPPED_OUT' | 'OPEN_ACTIVE' | string;
+  trigger_ltp: number;
+  initial_risk_pct: number;
+  reward_multiple: number;
+  entry_date: string | null;
+  entry_vwap: number | null;
+  entry_price?: number;
+  entry_turnover_npr: number;
+  broker_vwap?: number;
+  lead_broker_id?: string;
+  lead_broker_name?: string;
+  target_price: number | null;
+  target1_price?: number;
+  target2_price?: number;
+  initial_stop_price: number | null;
+  stop_loss_price?: number;
+  active_stop_price: number | null;
+  is_ratchet_armed: number; // 1 = armed at Entry + 1.2%, 0 = initial stop
+  settlement_unlock_date: string | null;
+  t2_unlock_date?: string;
+  status: SignalStatus;
   exit_date: string | null;
-  exit_price: number;
-  peak_price: number;
-  max_gain_pct: number;
-  gross_pnl_pct: number;
-  net_pnl_after_fees_pct: number;
+  exit_price: number | null;
+  peak_price?: number;
   holding_days: number;
+  mfe_pct: number;
+  mae_pct: number;
+  max_gain_pct?: number;
+  gross_return_pct: number;
+  gross_pnl_pct?: number;
+  net_return_pct: number;
+  net_pnl_after_fees_pct?: number;
+  nepse_index_return_pct: number;
+  nepse_alpha_pct: number;
+  primary_broker_id: number | null;
+  broker_anomaly_score: number;
+  avg_ticket_kitta: number;
+  market_regime: MarketRegime;
   current_ltp?: number;
   vwap_diff_pct?: number;
-  vwap_zone?: 'BELOW_VWAP' | 'AT_VWAP' | 'ABOVE_VWAP' | string;
+  vwap_zone?: string;
   live_risk_to_sl_pct?: number;
   live_reward_to_t1_pct?: number;
-  strategy?: string;
-  entry_vwap?: number;
-  entry_turnover_npr?: number;
-  mfe_pct?: number;
-  mae_pct?: number;
-  gross_return_pct?: number;
-  net_return_pct?: number;
-  nepse_alpha_pct?: number;
-  primary_broker_id?: number | null;
-  broker_anomaly_score?: number;
-  avg_ticket_kitta?: number;
-  market_regime?: string;
-  is_ratchet_armed?: number;
-  active_stop_price?: number;
-  settlement_unlock_date?: string;
+  ignition_score?: number;
+  bcr5_net_pct?: number;
+  scr3_net_pct?: number;
 }
 
-export interface InstitutionalStrategyMetric {
+export interface StrategyInstitutionalMetric {
   strategy: string;
   total_tradable_signals: number;
   skipped_circuit_traps: number;
@@ -83,6 +110,25 @@ export interface InstitutionalStrategyMetric {
   avg_mfe_pct: number;
   avg_mae_pct: number;
   avg_holding_days: number;
+}
+
+export interface BrokerLeaderboardRow {
+  brokerId: number | string;
+  brokerName?: string;
+  auditedSignals?: number;
+  totalSignals?: number;
+  avgAnomalyScore?: number;
+  avgTicketKitta?: number;
+  postFeeWinRatePct?: number;
+  winRatePct?: number;
+  winCount?: number;
+  lossCount?: number;
+  avgNetReturnPct: number;
+  avgNepseAlphaPct?: number;
+  bestStock?: {
+    symbol: string;
+    maxGainPct: number;
+  };
 }
 
 export interface SignalSummary {
@@ -101,69 +147,233 @@ export interface SignalSummary {
   oldestDate: string;
   newestDate: string;
   t2InvariantVerified: boolean;
-  strategyMetrics?: InstitutionalStrategyMetric[];
+  strategyMetrics?: StrategyInstitutionalMetric[];
 }
 
-export interface BrokerPerformance {
-  brokerId: string;
-  brokerName: string;
-  totalSignals: number;
-  closedSignals: number;
-  openSignals: number;
-  winCount: number;
-  lossCount: number;
-  winRatePct: number;
-  avgNetReturnPct: number;
-  institutionalAlphaScore?: number;
-  bestStock: {
-    symbol: string;
-    maxGainPct: number;
-  };
-}
-
-export interface StrategyPerformance {
-  signalType: string;
-  totalSignals: number;
-  closedSignals: number;
-  openSignals: number;
-  winCount: number;
-  lossCount: number;
-  stoppedOutCount?: number;
-  timeExpiredCount?: number;
-  winRatePct: number;
-  avgNetReturnPct: number;
-}
-
-interface AlgorithmicSignalTrackRecordProps {
+export interface AlgorithmicSignalTrackRecordProps {
+  signals?: SignalLedgerRow[];
+  strategyMetrics?: StrategyInstitutionalMetric[];
+  brokerLeaderboard?: BrokerLeaderboardRow[];
   isOpen?: boolean;
   onClose?: () => void;
   inlineMode?: boolean;
   marketStocks?: any[];
   onSelectStock?: (symbol: string) => void;
+  onSelectSymbol?: (symbol: string) => void;
+  onRebuildTrackRecord?: () => Promise<void>;
+  isRebuilding?: boolean;
 }
 
+type SortField =
+  | 'signal_date'
+  | 'net_return_pct'
+  | 'nepse_alpha_pct'
+  | 'mfe_pct'
+  | 'broker_anomaly_score'
+  | 'vwapDiscount';
+
+const STATUS_BADGE_CONFIG: Record<
+  string,
+  { label: string; className: string; dotClass: string }
+> = {
+  TARGET_HIT: {
+    label: 'Target Hit',
+    className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    dotClass: 'bg-emerald-400',
+  },
+  WIN_T2: {
+    label: 'WIN T2 (T2 Hit)',
+    className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    dotClass: 'bg-emerald-400',
+  },
+  WIN_T1: {
+    label: 'WIN T1 (T1 Locked)',
+    className: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+    dotClass: 'bg-teal-400',
+  },
+  RATCHET_STOP_WIN: {
+    label: 'Ratchet Win (+1.2R Lock)',
+    className: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+    dotClass: 'bg-teal-400',
+  },
+  WIN_RATCHET_STOP: {
+    label: 'Ratchet Win (+1.2R Lock)',
+    className: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+    dotClass: 'bg-teal-400',
+  },
+  ACTIVE: {
+    label: 'Active (T+2 Live)',
+    className: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    dotClass: 'bg-sky-400 animate-pulse',
+  },
+  OPEN_ACTIVE: {
+    label: 'Active (T+2 Live)',
+    className: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    dotClass: 'bg-sky-400 animate-pulse',
+  },
+  TIME_STOP_STALE: {
+    label: 'Time-Stop (10D Stale)',
+    className: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    dotClass: 'bg-amber-400',
+  },
+  TIME_EXPIRED: {
+    label: 'Time-Stop Expired',
+    className: 'bg-slate-700/60 text-slate-300 border-slate-600/60',
+    dotClass: 'bg-slate-400',
+  },
+  STOP_LOSS: {
+    label: 'Stop Loss',
+    className: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    dotClass: 'bg-rose-400',
+  },
+  STOPPED_OUT: {
+    label: 'Stopped Out (SL Hit)',
+    className: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    dotClass: 'bg-rose-400',
+  },
+  UNFILLABLE_SKIP: {
+    label: 'Skipped (Circuit/Illiquid)',
+    className: 'bg-slate-700/40 text-slate-400 border-slate-600/40',
+    dotClass: 'bg-slate-500',
+  },
+};
+
 export function AlgorithmicSignalTrackRecord({
+  signals: propSignals,
+  strategyMetrics: propStrategyMetrics,
+  brokerLeaderboard: propBrokerLeaderboard,
   isOpen = true,
   onClose,
   inlineMode = false,
   marketStocks = [],
   onSelectStock,
+  onSelectSymbol,
+  onRebuildTrackRecord,
+  isRebuilding = false,
 }: AlgorithmicSignalTrackRecordProps) {
-  const [signals, setSignals] = useState<AlgorithmicSignal[]>([]);
-  const [summary, setSummary] = useState<SignalSummary | null>(null);
-  const [strategyBreakdown, setStrategyBreakdown] = useState<Record<string, StrategyPerformance>>({});
-  const [brokerLeaderboard, setBrokerLeaderboard] = useState<BrokerPerformance[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  // State for fetched telemetry if not passed via props
+  const [fetchedSignals, setFetchedSignals] = useState<SignalLedgerRow[]>([]);
+  const [fetchedStrategyMetrics, setFetchedStrategyMetrics] = useState<StrategyInstitutionalMetric[]>([]);
+  const [fetchedBrokerLeaderboard, setFetchedBrokerLeaderboard] = useState<BrokerLeaderboardRow[]>([]);
+  const [serverSummary, setServerSummary] = useState<SignalSummary | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [strategyFilter, setStrategyFilter] = useState<string>('ALL');
-  const [sectorFilter, setSectorFilter] = useState<string>('ALL');
-  const [brokerFilter, setBrokerFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'dateDesc' | 'netPnlDesc' | 'maxGainDesc' | 'vwapDiscount'>('dateDesc');
+  // Filter & View State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStrategy, setSelectedStrategy] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [selectedRegime, setSelectedRegime] = useState<string>('ALL');
+  const [selectedSector, setSelectedSector] = useState<string>('ALL');
+  const [minAnomalyScore, setMinAnomalyScore] = useState<number>(0);
+  const [hideUnfillable, setHideUnfillable] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<'LEDGER' | 'BROKER_LEADERBOARD'>('LEDGER');
+
+  // Sorting State
+  const [sortField, setSortField] = useState<SortField>('signal_date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Handle stock selection callback
+  const handleStockClick = (symbol: string) => {
+    if (onSelectSymbol) onSelectSymbol(symbol);
+    if (onSelectStock) onSelectStock(symbol);
+  };
+
+  // Fetch signals if propSignals not provided
+  const fetchTrackRecord = async () => {
+    try {
+      setIsRefreshing(true);
+      setError(null);
+      const base = getProxyBase() || '';
+      const res = await fetch(`${base}/api/radar/signal-track-record`);
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (data && (data.signals || data.success)) {
+        const rawSignals: any[] = data.signals || [];
+        // Map any legacy property names seamlessly to institutional schema
+        const normalized: SignalLedgerRow[] = rawSignals.map((s) => ({
+          signal_id: s.signal_id || `${s.symbol}_${s.signal_date}`,
+          symbol: s.symbol,
+          sector: s.sector || 'Others',
+          strategy: s.strategy || s.signal_type || 'STEALTH_ACCUMULATION',
+          signal_type: s.signal_type || s.strategy,
+          signal_date: s.signal_date,
+          trigger_ltp: Number(s.trigger_ltp ?? s.entry_price ?? 0),
+          initial_risk_pct: Number(s.initial_risk_pct ?? 5.0),
+          reward_multiple: Number(s.reward_multiple ?? 2.2),
+          entry_date: s.entry_date ?? s.signal_date,
+          entry_vwap: s.entry_vwap ?? s.entry_price ?? 0,
+          entry_price: s.entry_price ?? s.entry_vwap ?? 0,
+          entry_turnover_npr: Number(s.entry_turnover_npr ?? 0),
+          broker_vwap: Number(s.broker_vwap ?? 0),
+          lead_broker_id: s.lead_broker_id ? String(s.lead_broker_id) : undefined,
+          lead_broker_name: s.lead_broker_name || (s.lead_broker_id ? `Broker #${s.lead_broker_id}` : undefined),
+          target_price: Number(s.target_price ?? s.target1_price ?? 0),
+          target1_price: Number(s.target1_price ?? s.target_price ?? 0),
+          target2_price: Number(s.target2_price ?? 0),
+          initial_stop_price: Number(s.initial_stop_price ?? s.stop_loss_price ?? 0),
+          stop_loss_price: Number(s.stop_loss_price ?? s.initial_stop_price ?? 0),
+          active_stop_price: Number(s.active_stop_price ?? s.stop_loss_price ?? 0),
+          is_ratchet_armed: Number(s.is_ratchet_armed ?? 0),
+          settlement_unlock_date: s.settlement_unlock_date ?? s.t2_unlock_date ?? null,
+          t2_unlock_date: s.t2_unlock_date ?? s.settlement_unlock_date,
+          status: s.status || 'ACTIVE',
+          exit_date: s.exit_date || null,
+          exit_price: s.exit_price != null ? Number(s.exit_price) : null,
+          peak_price: s.peak_price != null ? Number(s.peak_price) : undefined,
+          holding_days: Number(s.holding_days ?? 0),
+          mfe_pct: Number(s.mfe_pct ?? s.max_gain_pct ?? 0),
+          mae_pct: Number(s.mae_pct ?? 0),
+          max_gain_pct: Number(s.max_gain_pct ?? s.mfe_pct ?? 0),
+          gross_return_pct: Number(s.gross_return_pct ?? s.gross_pnl_pct ?? 0),
+          gross_pnl_pct: Number(s.gross_pnl_pct ?? s.gross_return_pct ?? 0),
+          net_return_pct: Number(s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0),
+          net_pnl_after_fees_pct: Number(s.net_pnl_after_fees_pct ?? s.net_return_pct ?? 0),
+          nepse_index_return_pct: Number(s.nepse_index_return_pct ?? 0),
+          nepse_alpha_pct: Number(s.nepse_alpha_pct ?? (s.net_pnl_after_fees_pct ?? 0)),
+          primary_broker_id: s.primary_broker_id != null ? Number(s.primary_broker_id) : (s.lead_broker_id ? Number(s.lead_broker_id) : null),
+          broker_anomaly_score: Number(s.broker_anomaly_score ?? 0),
+          avg_ticket_kitta: Number(s.avg_ticket_kitta ?? 0),
+          market_regime: s.market_regime || 'SIDEWAYS',
+          current_ltp: s.current_ltp != null ? Number(s.current_ltp) : undefined,
+          vwap_diff_pct: s.vwap_diff_pct != null ? Number(s.vwap_diff_pct) : undefined,
+          vwap_zone: s.vwap_zone,
+          live_risk_to_sl_pct: s.live_risk_to_sl_pct != null ? Number(s.live_risk_to_sl_pct) : undefined,
+          live_reward_to_t1_pct: s.live_reward_to_t1_pct != null ? Number(s.live_reward_to_t1_pct) : undefined,
+          ignition_score: s.ignition_score,
+          bcr5_net_pct: s.bcr5_net_pct,
+          scr3_net_pct: s.scr3_net_pct,
+        }));
+
+        setFetchedSignals(normalized);
+        setServerSummary(data.summary || null);
+        if (Array.isArray(data.strategyMetrics) && data.strategyMetrics.length > 0) {
+          setFetchedStrategyMetrics(data.strategyMetrics);
+        } else if (Array.isArray(data.summary?.strategyMetrics) && data.summary.strategyMetrics.length > 0) {
+          setFetchedStrategyMetrics(data.summary.strategyMetrics);
+        }
+        if (Array.isArray(data.brokerLeaderboard) && data.brokerLeaderboard.length > 0) {
+          setFetchedBrokerLeaderboard(data.brokerLeaderboard);
+        }
+      }
+    } catch (err: any) {
+      console.error('[AlgorithmicSignalTrackRecord] Fetch error:', err);
+      setError(err?.message || 'Failed to load signal track record telemetry');
+    } finally {
+      setIsRefreshing(false);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!propSignals || propSignals.length === 0) {
+      setIsLoading(true);
+      fetchTrackRecord();
+    }
+  }, [propSignals]);
 
   // Lock body scroll in modal mode
   useEffect(() => {
@@ -176,155 +386,179 @@ export function AlgorithmicSignalTrackRecord({
     }
   }, [isOpen, inlineMode]);
 
-  // Fetch track record data from backend
-  const fetchTrackRecord = async () => {
-    try {
-      setIsRefreshing(true);
-      setError(null);
-      const base = getProxyBase() || '';
-      const res = await fetch(`${base}/api/radar/signal-track-record`);
-      if (!res.ok) {
-        throw new Error(`Failed to load track record (HTTP ${res.status})`);
-      }
-      const data = await res.json();
-      if (data && data.success) {
-        setSignals(data.signals || []);
-        setSummary(data.summary || null);
-        setStrategyBreakdown(data.strategyBreakdown || {});
-        setBrokerLeaderboard(data.brokerLeaderboard || []);
-      } else {
-        throw new Error(data?.message || 'Failed to retrieve signal track record');
-      }
-    } catch (err: any) {
-      console.warn('[SignalTrackRecord] Fetch error:', err.message);
-      setError(err.message || 'Error connecting to track record service');
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+  // Resolved sources
+  const signals = propSignals && propSignals.length > 0 ? propSignals : fetchedSignals;
+  const strategyMetrics = propStrategyMetrics && propStrategyMetrics.length > 0 ? propStrategyMetrics : fetchedStrategyMetrics;
+  const brokerLeaderboard = propBrokerLeaderboard && propBrokerLeaderboard.length > 0 ? propBrokerLeaderboard : fetchedBrokerLeaderboard;
+
+  // Extract unique sectors dynamically from ledger rows
+  const availableSectors = useMemo(() => {
+    const set = new Set<string>();
+    signals.forEach((s) => {
+      if (s.sector) set.add(s.sector);
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [signals]);
+
+  // Filter & Sort Signals
+  const filteredSignals = useMemo(() => {
+    const query = searchQuery.trim().toUpperCase();
+
+    return signals
+      .filter((row) => {
+        if (hideUnfillable && row.status === 'UNFILLABLE_SKIP') return false;
+        if (selectedStrategy !== 'ALL') {
+          const rowStrat = (row.strategy || row.signal_type || '').toUpperCase();
+          if (rowStrat !== selectedStrategy.toUpperCase()) return false;
+        }
+
+        if (selectedStatus !== 'ALL') {
+          const st = String(row.status || '').toUpperCase();
+          if (selectedStatus === 'WINS') {
+            if (!st.startsWith('WIN') && st !== 'TARGET_HIT' && st !== 'RATCHET_STOP_WIN') return false;
+          } else if (selectedStatus === 'ACTIVE') {
+            if (st !== 'ACTIVE' && st !== 'OPEN_ACTIVE') return false;
+          } else if (selectedStatus === 'STOP_LOSS') {
+            if (st !== 'STOP_LOSS' && st !== 'STOPPED_OUT') return false;
+          } else if (selectedStatus === 'TIME_STOP_STALE') {
+            if (st !== 'TIME_STOP_STALE' && st !== 'TIME_EXPIRED') return false;
+          } else if (st !== selectedStatus.toUpperCase()) {
+            return false;
+          }
+        }
+
+        if (selectedRegime !== 'ALL' && row.market_regime !== selectedRegime) return false;
+        if (selectedSector !== 'ALL' && row.sector !== selectedSector) return false;
+        if (minAnomalyScore > 0 && (row.broker_anomaly_score || 0) < minAnomalyScore) return false;
+
+        if (query) {
+          const symbolMatch = (row.symbol || '').toUpperCase().includes(query);
+          const brokerMatch =
+            (row.primary_broker_id !== null && (`B${row.primary_broker_id}` === query || String(row.primary_broker_id) === query)) ||
+            (row.lead_broker_id && (`B${row.lead_broker_id}` === query || String(row.lead_broker_id) === query)) ||
+            (row.lead_broker_name && row.lead_broker_name.toUpperCase().includes(query));
+          if (!symbolMatch && !brokerMatch) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortField === 'vwapDiscount') {
+          const aOpen = (a.status === 'ACTIVE' || a.status === 'OPEN_ACTIVE') ? 0 : 1;
+          const bOpen = (b.status === 'ACTIVE' || b.status === 'OPEN_ACTIVE') ? 0 : 1;
+          if (aOpen !== bOpen) return aOpen - bOpen;
+          return (a.vwap_diff_pct ?? 0) - (b.vwap_diff_pct ?? 0);
+        }
+
+        let valA: number | string = a[sortField] ?? 0;
+        let valB: number | string = b[sortField] ?? 0;
+
+        if (sortField === 'signal_date') {
+          valA = new Date(a.signal_date).getTime();
+          valB = new Date(b.signal_date).getTime();
+        }
+
+        if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+  }, [
+    signals,
+    searchQuery,
+    selectedStrategy,
+    selectedStatus,
+    selectedRegime,
+    selectedSector,
+    minAnomalyScore,
+    hideUnfillable,
+    sortField,
+    sortOrder,
+  ]);
+
+  // Compute Aggregate Scorecard
+  const computedPortfolioSummary = useMemo(() => {
+    const closedTradable = filteredSignals.filter(
+      (s) => s.status !== 'ACTIVE' && s.status !== 'OPEN_ACTIVE' && s.status !== 'UNFILLABLE_SKIP'
+    );
+    const skippedCount = signals.filter((s) => s.status === 'UNFILLABLE_SKIP').length;
+    const ratchetSavedCount = closedTradable.filter(
+      (s) => s.status === 'RATCHET_STOP_WIN' || s.status === 'WIN_RATCHET_STOP'
+    ).length;
+
+    if (closedTradable.length === 0) {
+      return {
+        totalClosed: serverSummary?.closedSignals ?? 0,
+        winRate: serverSummary?.verifiedWinRatePct ?? 0,
+        profitFactor: serverSummary?.profitFactor ?? 0,
+        netExpectancy: serverSummary?.avgNetReturnPct ?? 0,
+        avgAlpha: serverSummary?.avgNetReturnPct ?? 0,
+        ratchetSavedCount,
+        skippedCount,
+      };
+    }
+
+    const wins = closedTradable.filter((s) => (s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0) > 0);
+    const grossPositive = closedTradable.reduce(
+      (acc, s) => acc + Math.max(0, s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0),
+      0
+    );
+    const grossNegative = Math.abs(
+      closedTradable.reduce(
+        (acc, s) => acc + Math.min(0, s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0),
+        0
+      )
+    );
+
+    const winRate = (wins.length / closedTradable.length) * 100;
+    const profitFactor =
+      grossNegative > 0 ? grossPositive / grossNegative : grossPositive > 0 ? 9.99 : 0;
+    const netExpectancy =
+      closedTradable.reduce((acc, s) => acc + (s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0), 0) / closedTradable.length;
+    const avgAlpha =
+      closedTradable.reduce((acc, s) => acc + (s.nepse_alpha_pct ?? (s.net_return_pct ?? 0)), 0) /
+      closedTradable.length;
+
+    return {
+      totalClosed: closedTradable.length,
+      winRate: Number(winRate.toFixed(1)),
+      profitFactor: Number(profitFactor.toFixed(2)),
+      netExpectancy: Number(netExpectancy.toFixed(2)),
+      avgAlpha: Number(avgAlpha.toFixed(2)),
+      ratchetSavedCount,
+      skippedCount,
+    };
+  }, [filteredSignals, signals, serverSummary]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
     }
   };
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchTrackRecord();
-    }
-  }, [isOpen]);
-
-  // Unique sectors for filter dropdown
-  const uniqueSectors = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of signals) {
-      if (s.sector) set.add(s.sector);
-    }
-    return Array.from(set).sort();
-  }, [signals]);
-
-  // Unique brokers for filter dropdown
-  const uniqueBrokers = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const s of signals) {
-      if (s.lead_broker_id) {
-        map.set(s.lead_broker_id, s.lead_broker_name || `Broker #${s.lead_broker_id}`);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => Number(a.id) - Number(b.id));
-  }, [signals]);
-
-  // Client-side filtering & sorting for instant sub-millisecond tab switching
-  const filteredSignals = useMemo(() => {
-    let result = [...signals];
-
-    // Status filter
-    if (statusFilter === 'WINS') {
-      result = result.filter((s) => s.status && (s.status.startsWith('WIN') || s.status === 'TARGET_HIT' || s.status === 'RATCHET_STOP_WIN'));
-    } else if (statusFilter === 'OPEN_ACTIVE') {
-      result = result.filter((s) => s.status === 'OPEN_ACTIVE' || s.status === 'ACTIVE');
-    } else if (statusFilter === 'STOPPED_OUT') {
-      result = result.filter((s) => s.status === 'STOPPED_OUT' || s.status === 'STOP_LOSS' || s.status === 'TIME_EXPIRED' || s.status === 'TIME_STOP_STALE');
-    }
-
-    // Sector filter
-    if (sectorFilter !== 'ALL') {
-      result = result.filter((s) => s.sector === sectorFilter);
-    }
-
-    // Strategy filter
-    if (strategyFilter !== 'ALL') {
-      result = result.filter((s) => s.signal_type === strategyFilter);
-    }
-
-    // Broker filter
-    if (brokerFilter !== 'ALL') {
-      result = result.filter((s) => String(s.lead_broker_id) === String(brokerFilter));
-    }
-
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (s) =>
-          (s.symbol && s.symbol.toLowerCase().includes(q)) ||
-          (s.sector && s.sector.toLowerCase().includes(q)) ||
-          (s.lead_broker_name && s.lead_broker_name.toLowerCase().includes(q)) ||
-          String(s.lead_broker_id || '').includes(q) ||
-          (s.signal_type && s.signal_type.toLowerCase().includes(q))
-      );
-    }
-
-    // Sorting
-    if (sortBy === 'vwapDiscount') {
-      result.sort((a, b) => {
-        const aOpen = a.status === 'OPEN_ACTIVE' ? 0 : 1;
-        const bOpen = b.status === 'OPEN_ACTIVE' ? 0 : 1;
-        if (aOpen !== bOpen) return aOpen - bOpen;
-        const aLtp = Number(a.exit_price ?? a.entry_price ?? 0);
-        const bLtp = Number(b.exit_price ?? b.entry_price ?? 0);
-        const aDiff =
-          a.vwap_diff_pct !== undefined
-            ? a.vwap_diff_pct
-            : (a.broker_vwap && a.broker_vwap > 0)
-            ? ((aLtp - a.broker_vwap) / a.broker_vwap) * 100
-            : 0;
-        const bDiff =
-          b.vwap_diff_pct !== undefined
-            ? b.vwap_diff_pct
-            : (b.broker_vwap && b.broker_vwap > 0)
-            ? ((bLtp - b.broker_vwap) / b.broker_vwap) * 100
-            : 0;
-        return aDiff - bDiff;
-      });
-    } else if (sortBy === 'netPnlDesc') {
-      result.sort((a, b) => (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0));
-    } else if (sortBy === 'maxGainDesc') {
-      result.sort((a, b) => (b.max_gain_pct ?? 0) - (a.max_gain_pct ?? 0));
-    } else {
-      // dateDesc
-      result.sort(
-        (a, b) =>
-          String(b.signal_date).localeCompare(String(a.signal_date)) ||
-          (b.net_pnl_after_fees_pct ?? 0) - (a.net_pnl_after_fees_pct ?? 0)
-      );
-    }
-
-    return result;
-  }, [signals, statusFilter, sectorFilter, strategyFilter, brokerFilter, searchQuery, sortBy]);
-
-  // Safe number formatter helper
-  const fmtRs = (val: any, fallback = '—') => {
-    if (val == null || isNaN(Number(val))) return fallback;
-    return Number(val).toLocaleString();
+  const resetAllFilters = () => {
+    setSearchQuery('');
+    setSelectedStrategy('ALL');
+    setSelectedStatus('ALL');
+    setSelectedRegime('ALL');
+    setSelectedSector('ALL');
+    setMinAnomalyScore(0);
+    setHideUnfillable(true);
+    setSortField('signal_date');
+    setSortOrder('desc');
   };
 
   // Helper for VWAP discount badge
-  const renderVwapBadge = (s: AlgorithmicSignal) => {
-    const ltp = Number(s.exit_price ?? s.entry_price ?? 0);
+  const renderVwapBadge = (row: SignalLedgerRow) => {
+    const ltp = Number(row.exit_price ?? row.entry_price ?? row.entry_vwap ?? 0);
+    const vwap = Number(row.broker_vwap || row.entry_vwap || 0);
     const diff =
-      s.vwap_diff_pct !== undefined
-        ? s.vwap_diff_pct
-        : (s.broker_vwap && s.broker_vwap > 0)
-        ? Number((((ltp - s.broker_vwap) / s.broker_vwap) * 100).toFixed(2))
+      row.vwap_diff_pct !== undefined
+        ? row.vwap_diff_pct
+        : vwap > 0
+        ? Number((((ltp - vwap) / vwap) * 100).toFixed(2))
         : 0;
 
     if (diff <= 0) {
@@ -348,139 +582,67 @@ export function AlgorithmicSignalTrackRecord({
     );
   };
 
-  // Helper for status badge rendering
-  const renderStatusBadge = (s: AlgorithmicSignal) => {
-    if (s.status === 'WIN_T2') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          WIN T2 (T2 Hit)
-        </span>
-      );
-    }
-    if (s.status === 'WIN_T1') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40">
-          <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
-          WIN T1 (T1 Locked)
-        </span>
-      );
-    }
-    if (s.status === 'STOPPED_OUT') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-          STOPPED (SL Hit)
-        </span>
-      );
-    }
-    if (s.status === 'WIN_RATCHET_STOP' || s.status === 'RATCHET_STOP_WIN') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-          RATCHET WIN (T+{s.holding_days})
-        </span>
-      );
-    }
-    if (s.status === 'TARGET_HIT') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          TARGET HIT
-        </span>
-      );
-    }
-    if (s.status === 'STOP_LOSS') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-          STOP LOSS
-        </span>
-      );
-    }
-    if (s.status === 'TIME_EXPIRED' || s.status === 'TIME_STOP_STALE') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700/60 text-slate-300 border border-slate-600/60">
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
-          {s.status === 'TIME_STOP_STALE' ? 'STALE EJECT' : 'TIME EXPIRED'} (T+{s.holding_days})
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-        <Clock className="w-3.5 h-3.5 text-amber-400" />
-        OPEN ACTIVE (T+{s.holding_days})
-      </span>
-    );
-  };
-
-  // Helper for strategy type badge
-  const renderStrategyBadge = (type: string) => {
-    if (type === 'EARLY_IGNITION_3D') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-          <Zap className="w-3 h-3 text-cyan-400" />
-          Early Ignition (3D)
-        </span>
-      );
-    }
-    if (type === 'STEALTH_ACCUMULATION') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-          <ShieldCheck className="w-3 h-3 text-emerald-400" />
-          Stealth Accumulation
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-        <Briefcase className="w-3 h-3 text-purple-400" />
-        Syndicate Rotation
-      </span>
-    );
-  };
-
-  if (!isOpen) return null;
-
   const content = (
-    <div className="flex flex-col h-full bg-[#0d131f] text-slate-100 font-sans selection:bg-emerald-500/30">
-      {/* ── HEADER BAR ── */}
-      <div className="px-5 py-4 border-b border-slate-800/80 bg-[#0f172a]/90 backdrop-blur flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/30 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-950/40">
-            <ShieldCheck className="w-6 h-6" />
+    <div className="flex flex-col h-full max-h-[calc(100vh-3.5rem)] min-h-0 overflow-y-auto bg-slate-950 text-slate-100 p-4 md:p-6 space-y-5 rounded-2xl border border-slate-800/80">
+      {/* 1. HEADER & ACTION BAR */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              <Shield className="w-5 h-5 text-emerald-400" />
+              Algorithmic Signal Track Record
+            </h2>
+            <span className="px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              T+1 VWAP &bull; T+2 Demat Audited
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg md:text-xl font-black text-white tracking-tight">
-                Algorithmic Signal Track Record
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                Walk-Forward Audit
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Zero look-ahead 32-session historical simulation with strict NEPSE T+2 settlement lock & 1.1% fee friction
-            </p>
-          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 7.5% short-term CGT.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab('LEDGER')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                activeTab === 'LEDGER'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Signal Ledger ({filteredSignals.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('BROKER_LEADERBOARD')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                activeTab === 'BROKER_LEADERBOARD'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Smart-Money Broker Leaderboard ({brokerLeaderboard.length})
+            </button>
+          </div>
+
           <button
-            onClick={fetchTrackRecord}
-            disabled={isRefreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 transition-colors shadow-sm disabled:opacity-50"
-            title="Re-run walk-forward simulation from current database"
+            type="button"
+            onClick={onRebuildTrackRecord || fetchTrackRecord}
+            disabled={isRebuilding || isRefreshing}
+            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>{isRefreshing ? 'Auditing...' : 'Refresh Audit'}</span>
+            <RotateCw className={`w-3.5 h-3.5 ${isRebuilding || isRefreshing ? 'animate-spin' : ''}`} />
+            {isRebuilding || isRefreshing ? 'Auditing...' : '↻ Re-Audit'}
           </button>
 
           {!inlineMode && onClose && (
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              aria-label="Close modal"
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
+              title="Close Track Record"
             >
               <X className="w-5 h-5" />
             </button>
@@ -488,487 +650,552 @@ export function AlgorithmicSignalTrackRecord({
         </div>
       </div>
 
-      {/* ── SCROLLABLE BODY ── */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-5">
-        {/* TOP 4 EMPIRICAL KPI CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {/* Card 1: Verified T+2 Win Rate */}
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-900/40 border border-emerald-500/30 p-4 shadow-lg shadow-black/20">
-            <div className="flex items-center justify-between text-slate-400 mb-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                Verified T+2 Win Rate
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">
-                T+2 Invariant
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-emerald-400 tracking-tight">
-                {summary ? `${summary.verifiedWinRatePct}%` : '...'}
-              </span>
-              <span className="text-xs text-slate-400">
-                {summary ? `(${summary.winCount}/${summary.closedSignals} Closed)` : ''}
-              </span>
-            </div>
-            <div className="mt-2 text-[11px] text-slate-400 leading-snug">
-              Every closed trade held strictly for <span className="text-emerald-300 font-medium">≥2 sessions</span> before exit execution.
-            </div>
+      {/* 2. INSTITUTIONAL PROFIT FACTOR & EXPECTANCY SCORECARD */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            Profit Factor
           </div>
-
-          {/* Card 2: Net Expectancy & Profit Factor */}
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-900/40 border border-teal-500/30 p-4 shadow-lg shadow-black/20">
-            <div className="flex items-center justify-between text-slate-400 mb-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <Percent className="w-3.5 h-3.5 text-teal-400" />
-                Net Expectancy
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-500/20 text-teal-300">
-                -1.1% Fees
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span
-                className={`text-3xl font-black tracking-tight ${
-                  (summary?.avgNetReturnPct ?? 0) >= 0 ? 'text-teal-400' : 'text-rose-400'
-                }`}
-              >
-                {summary
-                  ? `${summary.avgNetReturnPct >= 0 ? '+' : ''}${summary.avgNetReturnPct}%`
-                  : '...'}
-              </span>
-              <span className="text-xs text-slate-400">
-                PF: <span className="text-slate-200 font-bold">{summary?.profitFactor ?? 1.0}x</span>
-              </span>
-            </div>
-            <div className="mt-2 text-[11px] text-slate-400 leading-snug">
-              Average net return per trade after deducting <span className="text-teal-300 font-medium">1.1% statutory friction</span>.
-            </div>
+          <div
+            className={`text-xl font-bold mt-1 ${
+              computedPortfolioSummary.profitFactor >= 1.75
+                ? 'text-emerald-400'
+                : computedPortfolioSummary.profitFactor >= 1.15
+                ? 'text-amber-300'
+                : 'text-rose-400'
+            }`}
+          >
+            {computedPortfolioSummary.profitFactor.toFixed(2)}x
           </div>
-
-          {/* Card 3: Open Active Signals (Post-Dashain Watchlist) */}
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-900/40 border border-amber-500/30 p-4 shadow-lg shadow-black/20">
-            <div className="flex items-center justify-between text-slate-400 mb-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                Open Active Signals
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300">
-                Post-Dashain
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-amber-400 tracking-tight">
-                {summary ? summary.openSignals : '...'}
-              </span>
-              <span className="text-xs text-slate-400">Scrips Active</span>
-            </div>
-            <div className="mt-2 text-[11px] text-slate-400 leading-snug">
-              Pre-positioned institutional momentum ready for <span className="text-amber-300 font-medium">Monday, Oct 26</span> market reopen.
-            </div>
-          </div>
-
-          {/* Card 4: Top Performing Strategy & Broker */}
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-900/40 border border-purple-500/30 p-4 shadow-lg shadow-black/20">
-            <div className="flex items-center justify-between text-slate-400 mb-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <Award className="w-3.5 h-3.5 text-purple-400" />
-                Top Strategy & Broker
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300">
-                Alpha Lead
-              </span>
-            </div>
-            <div className="truncate">
-              <div className="text-sm font-black text-purple-300 truncate">
-                {summary?.topStrategy || 'Stealth Accumulation'}
-              </div>
-              <div className="text-xs text-slate-400 truncate mt-0.5">
-                {summary?.topBroker || 'Broker Leaderboard'}
-              </div>
-            </div>
-            <div className="mt-2 text-[11px] text-slate-400 leading-snug">
-              Highest historical win-rate follow-through when lead accumulation triggers.
-            </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Target &ge; 1.50x Institutional
           </div>
         </div>
 
-        {/* BROKER WIN-RATE LEADERBOARD STRIP */}
-        <div className="rounded-xl bg-slate-900/70 border border-slate-800/80 p-4 shadow-lg shadow-black/20">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
-                Broker House Follow-Through Leaderboard
-              </h2>
-              <span className="text-[11px] text-slate-400 hidden sm:inline">
-                (Accuracy when lead broker is accumulating)
-              </span>
-            </div>
-            <span className="text-xs text-slate-400">
-              {brokerLeaderboard.length} Broker Houses Analyzed
-            </span>
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            Post-Fee Win Rate
           </div>
+          <div className="text-xl font-bold text-white mt-1">
+            {computedPortfolioSummary.winRate}%
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            {computedPortfolioSummary.totalClosed} settled trades audited
+          </div>
+        </div>
 
-          {brokerLeaderboard.length === 0 ? (
-            <div className="py-4 text-center text-xs text-slate-500">
-              No broker records generated yet.
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-              {brokerLeaderboard.slice(0, 6).map((b) => (
-                <div
-                  key={b.brokerId}
-                  onClick={() => setBrokerFilter(brokerFilter === b.brokerId ? 'ALL' : b.brokerId)}
-                  className={`cursor-pointer rounded-lg p-2.5 transition-all border ${
-                    brokerFilter === b.brokerId
-                      ? 'bg-emerald-950/40 border-emerald-500/60 ring-1 ring-emerald-500/40'
-                      : 'bg-slate-800/50 hover:bg-slate-800 border-slate-700/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 truncate">
-                    <span className="truncate">#{b.brokerId} {b.brokerName.split(' ')[0]}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
-                        b.winRatePct >= 60
-                          ? 'bg-emerald-500/20 text-emerald-400'
-                          : b.winRatePct >= 40
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {b.winRatePct}%
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1.5">
-                    <span>
-                      {b.winCount}W / {b.lossCount}L
-                    </span>
-                    <span className={b.avgNetReturnPct >= 0 ? 'text-teal-400' : 'text-rose-400'}>
-                      {b.avgNetReturnPct >= 0 ? '+' : ''}{b.avgNetReturnPct}%
-                    </span>
-                  </div>
-                  {b.bestStock && b.bestStock.symbol && (
-                    <div className="mt-1 text-[9px] text-slate-400 truncate">
-                      Best: <span className="text-slate-200 font-bold">{b.bestStock.symbol}</span> (+{b.bestStock.maxGainPct}%)
-                    </div>
-                  )}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            Net Expectancy / Trade
+          </div>
+          <div
+            className={`text-xl font-bold mt-1 ${
+              computedPortfolioSummary.netExpectancy >= 0
+                ? 'text-emerald-400'
+                : 'text-rose-400'
+            }`}
+          >
+            {computedPortfolioSummary.netExpectancy >= 0 ? '+' : ''}
+            {computedPortfolioSummary.netExpectancy}%
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            After Commission, DP &amp; 7.5% CGT
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            Avg NEPSE Alpha
+          </div>
+          <div
+            className={`text-xl font-bold mt-1 ${
+              computedPortfolioSummary.avgAlpha >= 0
+                ? 'text-sky-400'
+                : 'text-rose-400'
+            }`}
+          >
+            {computedPortfolioSummary.avgAlpha >= 0 ? '+' : ''}
+            {computedPortfolioSummary.avgAlpha}%
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Outperformance vs Benchmark
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            1.2R Ratchet Saves
+          </div>
+          <div className="text-xl font-bold text-teal-300 mt-1">
+            {computedPortfolioSummary.ratchetSavedCount}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Round-trip losses prevented
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">
+            Circuit Traps Filtered
+          </div>
+          <div className="text-xl font-bold text-amber-300 mt-1">
+            {computedPortfolioSummary.skippedCount}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Unfillable +10% lockouts excluded
+          </div>
+        </div>
+      </div>
+
+      {/* Strategy Breakdown Cards (from SQL View v_strategy_institutional_metrics) */}
+      {strategyMetrics.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {strategyMetrics.map((m) => (
+            <div
+              key={m.strategy}
+              className="bg-slate-900/60 border border-slate-800/90 rounded-xl p-3.5 flex flex-col justify-between gap-2.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                  {m.strategy.replace(/_/g, ' ')}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Avg Hold: {m.avg_holding_days}d
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-xs pt-1 border-t border-slate-800/60">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">PF</span>
+                  <span className="font-bold text-white">{m.profit_factor ?? 0}x</span>
                 </div>
-              ))}
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Win Rate</span>
+                  <span className="font-bold text-white">{m.verified_win_rate_pct ?? 0}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Expectancy</span>
+                  <span
+                    className={`font-bold ${
+                      (m.net_expectancy_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {(m.net_expectancy_pct ?? 0) >= 0 ? '+' : ''}
+                    {m.net_expectancy_pct ?? 0}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">MFE / MAE</span>
+                  <span className="font-mono text-slate-200 text-[11px]">
+                    +{m.avg_mfe_pct ?? 0}% / {m.avg_mae_pct ?? 0}%
+                  </span>
+                </div>
+              </div>
             </div>
-          )}
+          ))}
         </div>
+      )}
 
-        {/* ── INTERACTIVE FILTER BAR ── */}
-        <div className="rounded-xl bg-slate-900/60 border border-slate-800/80 p-3.5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            {/* Status Pills & VWAP Discount Sort */}
-            <div className="flex flex-wrap items-center gap-1.5">
+      {/* 3. STICKY FILTER BAR (Fixes Scroll Clipping & Broken Filter Bugs) */}
+      {activeTab === 'LEDGER' && (
+        <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-xl p-3 shadow-lg flex flex-wrap items-center gap-2.5">
+          {/* Symbol or Broker Search */}
+          <div className="relative min-w-[210px] flex-1 sm:flex-initial">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Symbol or Broker (e.g. NABIL, B58)..."
+              className="w-full bg-slate-950 border border-slate-700/80 rounded-lg pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {searchQuery && (
               <button
-                onClick={() => setStatusFilter('ALL')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  statusFilter === 'ALL'
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                    : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300'
-                }`}
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
               >
-                All Signals ({signals.length})
-              </button>
-              <button
-                onClick={() => setStatusFilter('OPEN_ACTIVE')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  statusFilter === 'OPEN_ACTIVE'
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-950/40'
-                    : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300'
-                }`}
-              >
-                ⏳ Open Active ({summary?.openSignals ?? 0})
-              </button>
-              <button
-                onClick={() => setStatusFilter('WINS')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  statusFilter === 'WINS'
-                    ? 'bg-teal-600 text-white shadow-md shadow-teal-950/40'
-                    : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300'
-                }`}
-              >
-                🏆 Verified Wins ({summary?.winCount ?? 0})
-              </button>
-              <button
-                onClick={() => setStatusFilter('STOPPED_OUT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  statusFilter === 'STOPPED_OUT'
-                    ? 'bg-rose-600 text-white shadow-md shadow-rose-950/40'
-                    : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300'
-                }`}
-              >
-                🔴 Stopped / Expired ({summary?.lossCount ?? 0})
-              </button>
-
-              <div className="h-4 w-px bg-slate-700/60 mx-1 hidden sm:block" />
-
-              <button
-                onClick={() => setSortBy(sortBy === 'vwapDiscount' ? 'dateDesc' : 'vwapDiscount')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  sortBy === 'vwapDiscount'
-                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-950/40 border border-emerald-400/40 ring-1 ring-emerald-400/40'
-                    : 'bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/30'
-                }`}
-                title="Sort by lowest price relative to lead broker VWAP (deepest discount inside safe buy zone)"
-              >
-                <Flame className={`w-3.5 h-3.5 ${sortBy === 'vwapDiscount' ? 'text-amber-300 animate-pulse' : 'text-emerald-400'}`} />
-                <span>🔥 Best VWAP Discount (Buy Zone)</span>
-              </button>
-            </div>
-
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-400 font-medium">Sort by:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              >
-                <option value="dateDesc">Signal Date (Newest)</option>
-                <option value="vwapDiscount">🔥 Best VWAP Discount (Buy Zone)</option>
-                <option value="netPnlDesc">Highest Net Return %</option>
-                <option value="maxGainDesc">Highest Peak Gain %</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Sub Filters: Strategy, Broker & Search */}
-          <div className="flex flex-wrap items-center gap-2.5 pt-1 border-t border-slate-800/60">
-            {/* Search Box */}
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search symbol, sector or broker..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs bg-slate-800/80 border border-slate-700/70 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Sector Select */}
-            <select
-              value={sectorFilter}
-              onChange={(e) => setSectorFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            >
-              <option value="ALL">All Sectors ({uniqueSectors.length})</option>
-              {uniqueSectors.map((sec) => (
-                <option key={sec} value={sec}>
-                  {sec}
-                </option>
-              ))}
-            </select>
-
-            {/* Strategy Select */}
-            <select
-              value={strategyFilter}
-              onChange={(e) => setStrategyFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            >
-              <option value="ALL">All Strategies</option>
-              <option value="EARLY_IGNITION_3D">Early Ignition (3D)</option>
-              <option value="STEALTH_ACCUMULATION">Stealth Accumulation</option>
-              <option value="SYNDICATE_ROTATION">Syndicate Rotation</option>
-            </select>
-
-            {/* Broker Select */}
-            <select
-              value={brokerFilter}
-              onChange={(e) => setBrokerFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            >
-              <option value="ALL">All Brokers</option>
-              {uniqueBrokers.map((b) => (
-                <option key={b.id} value={b.id}>
-                  #{b.id} {b.name}
-                </option>
-              ))}
-            </select>
-
-            {(statusFilter !== 'ALL' || sectorFilter !== 'ALL' || strategyFilter !== 'ALL' || brokerFilter !== 'ALL' || searchQuery || sortBy !== 'dateDesc') && (
-              <button
-                onClick={() => {
-                  setStatusFilter('ALL');
-                  setSectorFilter('ALL');
-                  setStrategyFilter('ALL');
-                  setBrokerFilter('ALL');
-                  setSearchQuery('');
-                  setSortBy('dateDesc');
-                }}
-                className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold px-2 py-1"
-              >
-                Reset Filters
+                ✕
               </button>
             )}
           </div>
-        </div>
 
-        {/* ── FULL AUDIT TABLE ── */}
-        <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 shadow-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#0b1120] text-slate-400 uppercase font-bold text-[10px] tracking-wider border-b border-slate-800">
-                <tr>
-                  <th className="py-3 px-3.5">Signal & T+2 Unlock</th>
-                  <th className="py-3 px-3.5">Symbol & Sector</th>
-                  <th className="py-3 px-3.5">Strategy & Lead Broker</th>
-                  <th className="py-3 px-3.5 text-right">Entry / Broker VWAP</th>
-                  <th className="py-3 px-3.5 text-center">Targets (T1 / T2 / SL)</th>
-                  <th className="py-3 px-3.5 text-right">Exit / LTP (Peak)</th>
-                  <th className="py-3 px-3.5 text-right">Net Return (After Fees)</th>
-                  <th className="py-3 px-3.5 text-center">Status</th>
+          {/* Strategy Filter */}
+          <select
+            value={selectedStrategy}
+            onChange={(e) => setSelectedStrategy(e.target.value)}
+            className="bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">All Strategies</option>
+            <option value="SYNDICATE_ROTATION">Syndicate Rotation</option>
+            <option value="STEALTH_ACCUMULATION">Stealth Accumulation</option>
+            <option value="EARLY_IGNITION_3D">Early Ignition 3D</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">All Outcomes</option>
+            <option value="WINS">All Wins (T1, T2, Ratchet)</option>
+            <option value="ACTIVE">Active (In Trade)</option>
+            <option value="RATCHET_STOP_WIN">Ratchet Stop Win (+1.2R)</option>
+            <option value="TARGET_HIT">Target Hit</option>
+            <option value="STOP_LOSS">Stop Loss</option>
+            <option value="TIME_STOP_STALE">Time-Stop Stale</option>
+            <option value="UNFILLABLE_SKIP">Skipped Circuit Traps</option>
+          </select>
+
+          {/* Sector Filter */}
+          <select
+            value={selectedSector}
+            onChange={(e) => setSelectedSector(e.target.value)}
+            className="bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            {availableSectors.map((sec) => (
+              <option key={sec} value={sec}>
+                {sec === 'ALL' ? 'All Sectors' : sec}
+              </option>
+            ))}
+          </select>
+
+          {/* Regime Filter */}
+          <select
+            value={selectedRegime}
+            onChange={(e) => setSelectedRegime(e.target.value)}
+            className="bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            <option value="ALL">All Regimes</option>
+            <option value="BULL">Bull Regime</option>
+            <option value="SIDEWAYS">Sideways Regime</option>
+            <option value="BEAR">Bear Regime</option>
+            <option value="QUARTER_END_PRESSURE">Quarter-End Pressure</option>
+          </select>
+
+          {/* Minimum Broker Anomaly Score */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1">
+            <span className="text-[11px] text-slate-400">Min Anomaly:</span>
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              max="10"
+              value={minAnomalyScore}
+              onChange={(e) => setMinAnomalyScore(Number(e.target.value) || 0)}
+              className="w-12 bg-transparent text-xs text-emerald-300 font-mono focus:outline-none text-right"
+            />
+            <span className="text-[11px] text-slate-500">&sigma;</span>
+          </div>
+
+          {/* Quick VWAP Discount Sort Button */}
+          <button
+            type="button"
+            onClick={() => handleSort('vwapDiscount')}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition flex items-center gap-1 ${
+              sortField === 'vwapDiscount'
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                : 'bg-slate-950 text-slate-300 border-slate-700/80 hover:bg-slate-800'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-amber-400" />
+            Best VWAP Discount
+          </button>
+
+          {/* Toggle Unfillable Circuit Skips */}
+          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none ml-auto">
+            <input
+              type="checkbox"
+              checked={hideUnfillable}
+              onChange={(e) => setHideUnfillable(e.target.checked)}
+              className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-0"
+            />
+            <span>Hide Circuit Locks</span>
+          </label>
+
+          <button
+            type="button"
+            onClick={resetAllFilters}
+            className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
+      {/* 4A. MAIN WALK-FORWARD SIGNAL TABLE */}
+      {activeTab === 'LEDGER' ? (
+        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto min-h-[350px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
+                <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th
+                    onClick={() => handleSort('signal_date')}
+                    className="py-3 px-3.5 cursor-pointer hover:text-white select-none whitespace-nowrap"
+                  >
+                    Stock &amp; Date{' '}
+                    {sortField === 'signal_date' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th className="py-3 px-3 whitespace-nowrap">Strategy &amp; Regime</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Execution (T+1 VWAP)</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Ratchet Stop &amp; Target</th>
+                  <th
+                    onClick={() => handleSort('mfe_pct')}
+                    className="py-3 px-3.5 cursor-pointer hover:text-white select-none min-w-[175px]"
+                  >
+                    Excursion (MAE / MFE){' '}
+                    {sortField === 'mfe_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th
+                    onClick={() => handleSort('broker_anomaly_score')}
+                    className="py-3 px-3 cursor-pointer hover:text-white select-none whitespace-nowrap"
+                  >
+                    Smart Money Footprint{' '}
+                    {sortField === 'broker_anomaly_score' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th className="py-3 px-3 whitespace-nowrap">Status</th>
+                  <th
+                    onClick={() => handleSort('net_return_pct')}
+                    className="py-3 px-3.5 text-right cursor-pointer hover:text-white select-none whitespace-nowrap"
+                  >
+                    Net Return &amp; Alpha{' '}
+                    {sortField === 'net_return_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-medium">
+              <tbody className="divide-y divide-slate-800/60 text-xs">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <td colSpan={8} className="py-16 text-center text-slate-400">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <RotateCw className="w-6 h-6 animate-spin text-emerald-400" />
-                        <span>Running zero look-ahead walk-forward simulation across 32 sessions...</span>
+                        <span>Loading settled walk-forward ledger signals...</span>
                       </div>
                     </td>
                   </tr>
                 ) : filteredSignals.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-10 text-center text-slate-500">
-                      No signals match your selected filter criteria.
+                    <td colSpan={8} className="py-16 text-center text-slate-400">
+                      No audited signals match the current filter criteria. Click{' '}
+                      <button
+                        type="button"
+                        onClick={resetAllFilters}
+                        className="text-emerald-400 underline hover:text-emerald-300 font-semibold"
+                      >
+                        Reset Filters
+                      </button>{' '}
+                      to view all records.
                     </td>
                   </tr>
                 ) : (
-                  filteredSignals.map((s) => {
+                  filteredSignals.map((row) => {
+                    const badge = STATUS_BADGE_CONFIG[row.status] || STATUS_BADGE_CONFIG.ACTIVE;
+                    const mfeBarWidth = Math.min(100, Math.max(0, (row.mfe_pct / 20) * 100));
+                    const maeBarWidth = Math.min(100, Math.max(0, (Math.abs(row.mae_pct) / 12) * 100));
+                    const isInstitutionalTicket = row.avg_ticket_kitta >= 150;
+                    const ltp = row.exit_price ?? row.entry_price ?? row.entry_vwap ?? 0;
+
                     return (
                       <tr
-                        key={s.signal_id}
-                        className="hover:bg-slate-800/40 transition-colors cursor-pointer"
-                        onClick={() => onSelectStock && onSelectStock(s.symbol)}
+                        key={row.signal_id}
+                        className="hover:bg-slate-800/40 transition-colors"
                       >
-                        {/* Signal Date & T+2 Unlock */}
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <div className="font-bold text-slate-200">{s.signal_date}</div>
-                          <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <Clock className="w-2.5 h-2.5 text-teal-400" />
-                            <span>Unlock: {s.t2_unlock_date}</span>
-                          </div>
-                        </td>
-
-                        {/* Symbol & Sector */}
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <div className="font-black text-white text-sm tracking-tight flex items-center gap-1.5">
-                            <span>{s.symbol}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-normal">
-                              Score: {s.ignition_score}
+                        {/* 1. Symbol & Date */}
+                        <td className="py-3 px-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStockClick(row.symbol)}
+                              className="font-bold text-sm text-white hover:text-emerald-400 transition"
+                            >
+                              {row.symbol}
+                            </button>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                              {row.sector}
                             </span>
                           </div>
-                          <div className="text-[10px] text-slate-400 truncate max-w-[130px]">
-                            {s.sector || 'Equities'}
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Trig: {row.signal_date}
+                            {row.holding_days > 0 && (
+                              <span className="text-slate-500"> &bull; {row.holding_days}d hold</span>
+                            )}
                           </div>
                         </td>
 
-                        {/* Strategy & Lead Broker */}
-                        <td className="py-2.5 px-3.5">
-                          <div className="flex flex-col gap-1">
-                            <div>{renderStrategyBadge(s.signal_type)}</div>
-                            <div className="text-[11px] text-slate-300 flex items-center gap-1">
-                              <Building2 className="w-3 h-3 text-slate-400" />
-                              <span className="truncate max-w-[140px]">
-                                {s.lead_broker_name || `Broker #${s.lead_broker_id}`}
-                              </span>
-                            </div>
+                        {/* 2. Strategy & Market Regime */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="font-medium text-slate-200">
+                            {row.strategy.replace(/_/g, ' ')}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <span>Regime:</span>
+                            <span
+                              className={`font-semibold ${
+                                row.market_regime === 'BULL'
+                                  ? 'text-emerald-400'
+                                  : row.market_regime === 'QUARTER_END_PRESSURE'
+                                  ? 'text-amber-400'
+                                  : row.market_regime === 'BEAR'
+                                  ? 'text-rose-400'
+                                  : 'text-slate-300'
+                              }`}
+                            >
+                              {row.market_regime}
+                            </span>
                           </div>
                         </td>
 
-                        {/* Entry Price & VWAP Margin Badge */}
-                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                          <div className="font-bold text-slate-200">Rs. {fmtRs(s.entry_price)}</div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            VWAP: Rs. {fmtRs(s.broker_vwap || s.entry_price)}
+                        {/* 3. Day T LTP vs Day T+1 Audited VWAP */}
+                        <td className="py-3 px-3 whitespace-nowrap font-mono">
+                          <div className="text-slate-200">
+                            VWAP: Rs {row.entry_vwap?.toLocaleString() ?? row.entry_price?.toLocaleString() ?? '—'}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            Day T Close: Rs {row.trigger_ltp?.toLocaleString() ?? '—'}
                           </div>
                           <div className="mt-1">
-                            {renderVwapBadge(s)}
+                            {renderVwapBadge(row)}
                           </div>
                         </td>
 
-                        {/* Targets (T1 / T2 / SL) & Live Reward-to-Risk */}
-                        <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1.5 text-[11px]">
-                            <span className="text-teal-400 font-semibold" title="Target 1">
-                              T1: {s.target1_price}
+                        {/* 4. Active Ratchet Stop & Target */}
+                        <td className="py-3 px-3 whitespace-nowrap font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-emerald-400 font-semibold">
+                              T1: Rs {row.target_price?.toLocaleString() ?? row.target1_price?.toLocaleString() ?? '—'}
                             </span>
-                            <span className="text-slate-600">|</span>
-                            <span className="text-emerald-400 font-semibold" title="Target 2">
-                              T2: {s.target2_price}
-                            </span>
-                            <span className="text-slate-600">|</span>
-                            <span className="text-rose-400 font-semibold" title="Stop Loss">
-                              SL: {s.stop_loss_price}
+                            <span className="text-slate-600">/</span>
+                            <span
+                              className={
+                                row.is_ratchet_armed === 1 ? 'text-teal-300 font-bold' : 'text-rose-400'
+                              }
+                            >
+                              SL: Rs {row.active_stop_price?.toLocaleString() ?? row.initial_stop_price?.toLocaleString() ?? '—'}
                             </span>
                           </div>
-                          {s.status === 'OPEN_ACTIVE' && (
-                            <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
-                              <span
-                                className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30"
-                                title="Live potential gain to Target 1"
-                              >
-                                +{s.live_reward_to_t1_pct !== undefined ? s.live_reward_to_t1_pct : ((((s.target1_price - (s.exit_price || s.entry_price || 1)) / (s.exit_price || s.entry_price || 1)) * 100).toFixed(1))}% to T1
-                              </span>
-                              <span className="text-slate-500">/</span>
-                              <span
-                                className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-500/30"
-                                title="Live potential risk to Stop Loss"
-                              >
-                                -{s.live_risk_to_sl_pct !== undefined ? s.live_risk_to_sl_pct : (((((s.exit_price || s.entry_price || 1) - s.stop_loss_price) / (s.exit_price || s.entry_price || 1)) * 100).toFixed(1))}% to SL
-                              </span>
+                          {row.is_ratchet_armed === 1 ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-sans font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/30 px-1.5 py-0.5 rounded mt-1">
+                              🛡️ +1.2R Ratchet Armed
+                            </span>
+                          ) : (
+                            <div className="text-[10px] font-sans text-slate-500 mt-0.5">
+                              Unlock: {row.settlement_unlock_date ?? row.t2_unlock_date ?? 'Pending'}
                             </div>
                           )}
                         </td>
 
-                        {/* Exit / Current LTP & Peak */}
-                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                          <div className="font-bold text-slate-200">
-                            Rs. {fmtRs(s.exit_price || s.entry_price)}
+                        {/* 5. Excursion Telemetry (MAE vs MFE Dual Bar) */}
+                        <td className="py-3 px-3.5">
+                          <div className="flex justify-between text-[11px] font-mono mb-1">
+                            <span className="text-rose-400" title="Maximum Adverse Excursion">
+                              MAE: {row.mae_pct}%
+                            </span>
+                            <span className="text-emerald-400" title="Maximum Favorable Excursion">
+                              MFE: +{row.mfe_pct}%
+                            </span>
                           </div>
-                          <div className="text-[10px] text-emerald-400">
-                            Peak: Rs. {fmtRs(s.peak_price || s.entry_price)} (+{s.max_gain_pct ?? 0}%)
+                          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                            <div className="w-1/2 flex justify-end border-r border-slate-600">
+                              <div
+                                className="h-full bg-rose-500/80 rounded-l-full"
+                                style={{ width: `${maeBarWidth}%` }}
+                              />
+                            </div>
+                            <div className="w-1/2 flex justify-start">
+                              <div
+                                className="h-full bg-emerald-500/80 rounded-r-full"
+                                style={{ width: `${mfeBarWidth}%` }}
+                              />
+                            </div>
                           </div>
                         </td>
 
-                        {/* Net Return % After 1.1% Fees */}
-                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                          <div
-                            className={`font-black text-sm ${
-                              s.net_pnl_after_fees_pct > 0
-                                ? 'text-emerald-400'
-                                : s.net_pnl_after_fees_pct < 0
-                                ? 'text-rose-400'
-                                : 'text-slate-300'
-                            }`}
+                        {/* 6. Broker Anomaly & Ticket Size */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {row.primary_broker_id || row.lead_broker_id ? (
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-white">
+                                  {row.lead_broker_name || `Broker #${row.primary_broker_id || row.lead_broker_id}`}
+                                </span>
+                                {row.broker_anomaly_score > 0 && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                                    {row.broker_anomaly_score}x Anomaly
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                {row.avg_ticket_kitta > 0 ? (
+                                  <>
+                                    Avg Ticket:{' '}
+                                    <span
+                                      className={
+                                        isInstitutionalTicket
+                                          ? 'text-emerald-300 font-medium'
+                                          : 'text-slate-400'
+                                      }
+                                    >
+                                      {row.avg_ticket_kitta} kitta
+                                    </span>{' '}
+                                    {isInstitutionalTicket ? '(Inst.)' : '(Retail Mix)'}
+                                  </>
+                                ) : (
+                                  <span>BCR5: {row.bcr5_net_pct ?? 0}% &bull; Retention: {row.ignition_score ?? 0}/100</span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+
+                        {/* 7. Status Badge */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${badge.className}`}
                           >
-                            {s.net_pnl_after_fees_pct > 0 ? '+' : ''}
-                            {s.net_pnl_after_fees_pct}%
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            Gross: {s.gross_pnl_pct > 0 ? `+${s.gross_pnl_pct}%` : `${s.gross_pnl_pct}%`}
-                          </div>
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
+                            {badge.label}
+                          </span>
+                          {row.exit_date && (
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              Exit: {row.exit_date} @ Rs {row.exit_price?.toLocaleString()}
+                            </div>
+                          )}
                         </td>
 
-                        {/* Status Badge */}
-                        <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
-                          {renderStatusBadge(s)}
+                        {/* 8. Post-Fee Net Return & NEPSE Alpha */}
+                        <td className="py-3 px-3.5 text-right whitespace-nowrap font-mono">
+                          {row.status === 'UNFILLABLE_SKIP' ? (
+                            <span className="text-slate-500 text-xs">No Fill (Circuit)</span>
+                          ) : (
+                            <>
+                              <div
+                                className={`text-sm font-bold ${
+                                  (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0
+                                    ? 'text-emerald-400'
+                                    : (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) < 0
+                                    ? 'text-rose-400'
+                                    : 'text-slate-300'
+                                }`}
+                              >
+                                {(row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0 ? '+' : ''}
+                                {row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0}%
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                Alpha:{' '}
+                                <span
+                                  className={
+                                    (row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? 'text-sky-400' : 'text-rose-400'
+                                  }
+                                >
+                                  {(row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? '+' : ''}
+                                  {row.nepse_alpha_pct ?? row.net_return_pct ?? 0}%
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
@@ -977,38 +1204,116 @@ export function AlgorithmicSignalTrackRecord({
               </tbody>
             </table>
           </div>
-
-          {/* Table Footer Telemetry */}
-          <div className="px-4 py-3 bg-[#0b1120] border-t border-slate-800 text-slate-400 text-xs flex flex-wrap items-center justify-between gap-2">
-            <div>
-              Showing <span className="text-white font-bold">{filteredSignals.length}</span> of{' '}
-              <span className="text-white font-bold">{signals.length}</span> signals across{' '}
-              <span className="text-emerald-400 font-bold">{summary?.datasetTradingDates ?? 32}</span> verified sessions
-            </div>
-            <div className="text-[11px] text-slate-400">
-              * Net return reflects statutory SEBON + DP fee + broker commission friction (1.1% round-trip)
-            </div>
+        </div>
+      ) : (
+        /* 4B. SMART-MONEY BROKER ANOMALY LEADERBOARD TAB */
+        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto min-h-[350px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
+                <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="py-3 px-4">Rank &amp; Broker</th>
+                  <th className="py-3 px-4">Audited Signals</th>
+                  <th className="py-3 px-4">Avg Anomaly Score (vs 30D Share)</th>
+                  <th className="py-3 px-4">Avg Ticket Size (Kitta / Trade)</th>
+                  <th className="py-3 px-4">Post-Fee Win Rate</th>
+                  <th className="py-3 px-4 text-right">Avg Net Return</th>
+                  <th className="py-3 px-4 text-right">Avg NEPSE Alpha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-xs">
+                {brokerLeaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center text-slate-400">
+                      No broker leaderboard telemetry available yet. Run the walk-forward rebuild to populate broker rankings.
+                    </td>
+                  </tr>
+                ) : (
+                  brokerLeaderboard.map((b, idx) => (
+                    <tr
+                      key={String(b.brokerId)}
+                      className="hover:bg-slate-800/40 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setSearchQuery(`B${b.brokerId}`);
+                        setActiveTab('LEDGER');
+                      }}
+                    >
+                      <td className="py-3 px-4 font-bold text-white">
+                        #{idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-300">
+                        {b.auditedSignals ?? b.totalSignals ?? 0} signals
+                      </td>
+                      <td className="py-3 px-4 font-mono text-indigo-300">
+                        {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x baseline` : 'Institutional Tracked'}
+                      </td>
+                      <td className="py-3 px-4 font-mono">
+                        <span
+                          className={
+                            (b.avgTicketKitta ?? 0) >= 150
+                              ? 'text-emerald-300 font-semibold'
+                              : 'text-slate-300'
+                          }
+                        >
+                          {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold text-white">
+                        {b.postFeeWinRatePct ?? b.winRatePct ?? 0}%
+                        {b.winCount != null && (
+                          <span className="text-slate-400 text-[11px] font-normal ml-1">
+                            ({b.winCount}W / {b.lossCount ?? 0}L)
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`py-3 px-4 text-right font-mono font-bold ${
+                          (b.avgNetReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                        {b.avgNetReturnPct ?? 0}%
+                      </td>
+                      <td
+                        className={`py-3 px-4 text-right font-mono font-bold ${
+                          (b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? 'text-sky-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {(b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                        {b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0}%
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 
-  // If inline mode (e.g. ServicesHub tab), render directly
   if (inlineMode) {
-    return <div className="w-full min-h-[600px]">{content}</div>;
+    return content;
   }
 
-  // Modal mode (e.g. Dashboard popup)
+  if (!isOpen) {
+    return null;
+  }
+
   return (
-    <div 
-      className="fixed inset-0 flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-150"
-      style={{ zIndex: 99999 }}
+    <div
+      className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6"
+      onClick={onClose}
     >
-      <div className="relative w-full max-w-6xl h-[92vh] max-h-[92vh] rounded-2xl overflow-hidden border border-slate-700/80 shadow-2xl flex flex-col bg-[#0d131f] my-auto shrink-0">
+      <div
+        className="w-full max-w-7xl max-h-[92vh] flex flex-col bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {content}
       </div>
     </div>
   );
 }
+
 export default AlgorithmicSignalTrackRecord;

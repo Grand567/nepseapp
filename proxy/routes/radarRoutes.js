@@ -573,12 +573,13 @@ export async function handleSignalTrackRecord(req, res) {
     summary: trackRecord.summary,
     strategyBreakdown: trackRecord.strategyBreakdown,
     brokerLeaderboard: trackRecord.brokerLeaderboard,
+    strategyMetrics: trackRecord.strategyMetrics || trackRecord.summary?.strategyMetrics || [],
     signals,
     totalCount: signals.length,
   });
 }
 
-router.get(["/radar/signal-track-record", "/signal-track-record"], handleSignalTrackRecord);
+router.get(["/radar/signal-track-record", "/signal-track-record", "/signals/track-record"], handleSignalTrackRecord);
 
 /**
  * Portfolio & Watchlist 30-Day Broker Shield Evaluator
