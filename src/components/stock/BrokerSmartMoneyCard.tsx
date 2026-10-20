@@ -164,19 +164,21 @@ export function normalizeAndAggregateBrokerData(
     const brokerId = safeNum(item.brokerId ?? item.broker_id ?? item.brokerNo, 0);
     if (brokerId <= 0) continue;
 
-    const buyVol = Math.max(0, safeNum(item.buyVolume ?? item.buy_volume ?? item.buyKitta, 0));
-    const sellVol = Math.max(0, safeNum(item.sellVolume ?? item.sell_volume ?? item.sellKitta, 0));
+    // BUG FIX (Discrepancy #4): realBrokerAnalysis uses `buyQty`/`sellQty`/`buyAmt`/`avgBuyRate`
+    // instead of floor-sheet canonical names. Add fallbacks so 1D Overview summary shows non-zero kitta.
+    const buyVol = Math.max(0, safeNum(item.buyVolume ?? item.buy_volume ?? item.buyKitta ?? item.buyQty, 0));
+    const sellVol = Math.max(0, safeNum(item.sellVolume ?? item.sell_volume ?? item.sellKitta ?? item.sellQty, 0));
 
-    const avgBuyPx = Math.max(0, safeNum(item.avgBuyPrice, 0));
-    const avgSellPx = Math.max(0, safeNum(item.avgSellPrice, 0));
+    const avgBuyPx = Math.max(0, safeNum(item.avgBuyPrice ?? item.avgBuyRate, 0));
+    const avgSellPx = Math.max(0, safeNum(item.avgSellPrice ?? item.avgSellRate, 0));
 
     const buyTurnover = Math.max(
       0,
-      safeNum(item.buyAmount ?? item.buy_turnover_npr, buyVol * avgBuyPx)
+      safeNum(item.buyAmount ?? item.buy_turnover_npr ?? item.buyAmt, buyVol * avgBuyPx)
     );
     const sellTurnover = Math.max(
       0,
-      safeNum(item.sellAmount ?? item.sell_turnover_npr, sellVol * avgSellPx)
+      safeNum(item.sellAmount ?? item.sell_turnover_npr ?? item.sellAmt, sellVol * avgSellPx)
     );
 
     // Estimate trade tickets if backend omitted transaction count

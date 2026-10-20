@@ -238,26 +238,6 @@ const STATUS_BADGE_CONFIG: Record<
   },
 };
 
-const TRACK_RECORD_CACHE_KEY = 'drabyashree_signal_track_record_v2';
-
-function getStoredTrackRecordCache(): {
-  signals?: SignalLedgerRow[];
-  summary?: SignalSummary | null;
-  strategyMetrics?: StrategyInstitutionalMetric[];
-  brokerLeaderboard?: BrokerLeaderboardRow[];
-} | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(TRACK_RECORD_CACHE_KEY) || localStorage.getItem(TRACK_RECORD_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.signals) && parsed.signals.length > 0) {
-      return parsed;
-    }
-  } catch (_) {}
-  return null;
-}
-
 export function AlgorithmicSignalTrackRecord({
   signals: propSignals,
   strategyMetrics: propStrategyMetrics,
@@ -271,15 +251,12 @@ export function AlgorithmicSignalTrackRecord({
   onRebuildTrackRecord,
   isRebuilding = false,
 }: AlgorithmicSignalTrackRecordProps) {
-  // Instant SWR Cache Hydration (0ms load on open)
-  const cachedData = useMemo(() => getStoredTrackRecordCache(), []);
-
   // State for fetched telemetry if not passed via props
-  const [fetchedSignals, setFetchedSignals] = useState<SignalLedgerRow[]>(() => cachedData?.signals || []);
-  const [fetchedStrategyMetrics, setFetchedStrategyMetrics] = useState<StrategyInstitutionalMetric[]>(() => cachedData?.strategyMetrics || []);
-  const [fetchedBrokerLeaderboard, setFetchedBrokerLeaderboard] = useState<BrokerLeaderboardRow[]>(() => cachedData?.brokerLeaderboard || []);
-  const [serverSummary, setServerSummary] = useState<SignalSummary | null>(() => cachedData?.summary || null);
-  const [isLoading, setIsLoading] = useState<boolean>(() => !cachedData?.signals?.length && (!propSignals || propSignals.length === 0));
+  const [fetchedSignals, setFetchedSignals] = useState<SignalLedgerRow[]>([]);
+  const [fetchedStrategyMetrics, setFetchedStrategyMetrics] = useState<StrategyInstitutionalMetric[]>([]);
+  const [fetchedBrokerLeaderboard, setFetchedBrokerLeaderboard] = useState<BrokerLeaderboardRow[]>([]);
+  const [serverSummary, setServerSummary] = useState<SignalSummary | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -304,9 +281,9 @@ export function AlgorithmicSignalTrackRecord({
   };
 
   // Fetch signals if propSignals not provided
-  const fetchTrackRecord = async (isManualRefresh = false) => {
+  const fetchTrackRecord = async () => {
     try {
-      if (isManualRefresh) setIsRefreshing(true);
+      setIsRefreshing(true);
       setError(null);
       const base = getProxyBase() || '';
       const res = await fetch(`${base}/api/radar/signal-track-record`);
@@ -373,30 +350,14 @@ export function AlgorithmicSignalTrackRecord({
 
         setFetchedSignals(normalized);
         setServerSummary(data.summary || null);
-        const nextStrategyMetrics = Array.isArray(data.strategyMetrics) && data.strategyMetrics.length > 0
-          ? data.strategyMetrics
-          : Array.isArray(data.summary?.strategyMetrics) && data.summary.strategyMetrics.length > 0
-          ? data.summary.strategyMetrics
-          : [];
-        setFetchedStrategyMetrics(nextStrategyMetrics);
-
-        const nextBrokerLeaderboard = Array.isArray(data.brokerLeaderboard) && data.brokerLeaderboard.length > 0
-          ? data.brokerLeaderboard
-          : [];
-        setFetchedBrokerLeaderboard(nextBrokerLeaderboard);
-
-        // Save fresh telemetry to local storage for instant future boots
-        try {
-          const cachePayload = {
-            signals: normalized,
-            summary: data.summary || null,
-            strategyMetrics: nextStrategyMetrics,
-            brokerLeaderboard: nextBrokerLeaderboard,
-            updatedAt: Date.now(),
-          };
-          sessionStorage.setItem(TRACK_RECORD_CACHE_KEY, JSON.stringify(cachePayload));
-          localStorage.setItem(TRACK_RECORD_CACHE_KEY, JSON.stringify(cachePayload));
-        } catch (_) {}
+        if (Array.isArray(data.strategyMetrics) && data.strategyMetrics.length > 0) {
+          setFetchedStrategyMetrics(data.strategyMetrics);
+        } else if (Array.isArray(data.summary?.strategyMetrics) && data.summary.strategyMetrics.length > 0) {
+          setFetchedStrategyMetrics(data.summary.strategyMetrics);
+        }
+        if (Array.isArray(data.brokerLeaderboard) && data.brokerLeaderboard.length > 0) {
+          setFetchedBrokerLeaderboard(data.brokerLeaderboard);
+        }
       }
     } catch (err: any) {
       console.error('[AlgorithmicSignalTrackRecord] Fetch error:', err);
@@ -407,28 +368,9 @@ export function AlgorithmicSignalTrackRecord({
     }
   };
 
-  // Dedicated manual re-audit handler that forces backend calculation
-  const handleManualReAudit = async () => {
-    try {
-      setIsRefreshing(true);
-      setError(null);
-      const base = getProxyBase() || '';
-      // Trigger background cache and ledger re-audit
-      await fetch(`${base}/api/radar/rebuild-cache`, { method: 'POST' }).catch(() => {});
-      // Fetch freshly computed ledger
-      await fetchTrackRecord(true);
-    } catch (err: any) {
-      console.warn('[AlgorithmicSignalTrackRecord] Re-audit error:', err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   useEffect(() => {
     if (!propSignals || propSignals.length === 0) {
-      if (!fetchedSignals || fetchedSignals.length === 0) {
-        setIsLoading(true);
-      }
+      setIsLoading(true);
       fetchTrackRecord();
     }
   }, [propSignals]);
@@ -640,31 +582,31 @@ export function AlgorithmicSignalTrackRecord({
     );
   };
 
-  // 1. PINNED HEADER & ACTION BAR (Never scrolls away on mobile or desktop)
-  const headerContent = (
-    <div className="flex-shrink-0 bg-slate-950 border-b border-slate-800/80 p-3 sm:p-4 md:px-6 md:py-4">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+  const content = (
+    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-950 text-slate-100 p-4 md:p-6 space-y-5 rounded-2xl border border-slate-800/80" style={{ WebkitOverflowScrolling: 'touch' }}>
+      {/* 1. HEADER & ACTION BAR */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Shield className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-              <span>Algorithmic Signal Track Record</span>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              <Shield className="w-5 h-5 text-emerald-400" />
+              Algorithmic Signal Track Record
             </h2>
-            <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+            <span className="px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               T+1 VWAP &bull; T+2 Demat Audited
             </span>
           </div>
-          <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1 sm:line-clamp-none">
+          <p className="text-xs text-slate-400 mt-1">
             Zero look-ahead walk-forward SQLite ledger deducting NEPSE broker tiers, 0.015% SEBON fee, Rs 50 round-trip DP, and 7.5% short-term CGT.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-between sm:justify-end">
-          <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 flex-1 sm:flex-initial">
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800">
             <button
               type="button"
               onClick={() => setActiveTab('LEDGER')}
-              className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-md transition text-center whitespace-nowrap ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
                 activeTab === 'LEDGER'
                   ? 'bg-emerald-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
@@ -675,51 +617,38 @@ export function AlgorithmicSignalTrackRecord({
             <button
               type="button"
               onClick={() => setActiveTab('BROKER_LEADERBOARD')}
-              className={`flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-md transition text-center whitespace-nowrap ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
                 activeTab === 'BROKER_LEADERBOARD'
                   ? 'bg-emerald-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Smart-Money Leaderboard ({brokerLeaderboard.length})
+              Smart-Money Broker Leaderboard ({brokerLeaderboard.length})
             </button>
           </div>
 
           <button
             type="button"
-            onClick={onRebuildTrackRecord || handleManualReAudit}
+            onClick={onRebuildTrackRecord || fetchTrackRecord}
             disabled={isRebuilding || isRefreshing}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap"
-            title="Force fresh audit calculation"
+            className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             <RotateCw className={`w-3.5 h-3.5 ${isRebuilding || isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{isRebuilding || isRefreshing ? 'Auditing...' : '↻ Re-Audit'}</span>
+            {isRebuilding || isRefreshing ? 'Auditing...' : '↻ Re-Audit'}
           </button>
 
           {!inlineMode && onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 sm:p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
-              title="Close Track Record (बन्द गर्नुहोस्)"
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
+              title="Close Track Record"
             >
               <X className="w-5 h-5" />
             </button>
           )}
         </div>
       </div>
-    </div>
-  );
-
-  // 2. SCROLLABLE BODY (Smooth 60fps vertical touch on mobile and mouse on desktop)
-  const scrollableBody = (
-    <div
-      className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-slate-950 text-slate-100 p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-5"
-      style={{
-        WebkitOverflowScrolling: 'touch',
-        touchAction: 'pan-y',
-      }}
-    >
 
       {/* 2. INSTITUTIONAL PROFIT FACTOR & EXPECTANCY SCORECARD */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -819,9 +748,16 @@ export function AlgorithmicSignalTrackRecord({
       </div>
 
       {/* Strategy Breakdown Cards (from SQL View v_strategy_institutional_metrics) */}
+      {/* BUG FIX (Discrepancy #1): filter cards to match selectedStrategy so cards don't show
+          all strategies when user has filtered to e.g. "Syndicate Rotation" only */}
       {strategyMetrics.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {strategyMetrics.map((m) => (
+          {strategyMetrics
+            .filter((m) =>
+              selectedStrategy === 'ALL' ||
+              m.strategy.toUpperCase() === selectedStrategy.toUpperCase()
+            )
+            .map((m) => (
             <div
               key={m.strategy}
               className="bg-slate-900/60 border border-slate-800/90 rounded-xl p-3.5 flex flex-col justify-between gap-2.5"
@@ -994,621 +930,381 @@ export function AlgorithmicSignalTrackRecord({
         </div>
       )}
 
-      {/* 4A. MAIN WALK-FORWARD SIGNAL TELEMETRY (Mobile Cards + Desktop Table) */}
+      {/* 4A. MAIN WALK-FORWARD SIGNAL TABLE */}
       {activeTab === 'LEDGER' ? (
-        <>
-          {/* MOBILE VIEW: Touch-optimized vertical cards (prevents horizontal swipe lock on phones) */}
-          <div className="block md:hidden space-y-3">
-            {isLoading ? (
-              <div className="py-12 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800">
-                <div className="flex flex-col items-center justify-center gap-2">
-                  <RotateCw className="w-6 h-6 animate-spin text-emerald-400" />
-                  <span className="text-xs">Loading settled walk-forward ledger signals...</span>
-                </div>
-              </div>
-            ) : filteredSignals.length === 0 ? (
-              <div className="py-12 px-4 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800 text-xs">
-                No audited signals match filter criteria.{' '}
-                <button
-                  type="button"
-                  onClick={resetAllFilters}
-                  className="text-emerald-400 underline font-semibold"
-                >
-                  Reset Filters
-                </button>
-              </div>
-            ) : (
-              filteredSignals.map((row) => {
-                const badge = STATUS_BADGE_CONFIG[row.status] || STATUS_BADGE_CONFIG.ACTIVE;
-                const mfeBarWidth = Math.min(100, Math.max(0, (row.mfe_pct / 20) * 100));
-                const maeBarWidth = Math.min(100, Math.max(0, (Math.abs(row.mae_pct) / 12) * 100));
-                const isInstitutionalTicket = row.avg_ticket_kitta >= 150;
-                const netReturn = row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0;
-                const alpha = row.nepse_alpha_pct ?? netReturn;
-
-                return (
-                  <div
-                    key={`mob_${row.signal_id}`}
-                    className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2.5 shadow-sm"
+        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
+          {/* Mobile scroll hint — hidden on md+ where all columns are visible */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-slate-500 md:hidden border-b border-slate-800/60">
+            <span>← Scroll right to see</span>
+            <span className="font-bold text-sky-400">Status</span>
+            <span>&amp;</span>
+            <span className="font-bold text-emerald-400">Net Return &amp; Alpha</span>
+            <span>→</span>
+          </div>
+          <div className="overflow-x-auto min-h-[350px]" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
+                <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th
+                    onClick={() => handleSort('signal_date')}
+                    className="py-3 px-3.5 cursor-pointer hover:text-white select-none whitespace-nowrap"
                   >
-                    {/* Top Row: Symbol, Sector, Status Badge & Return */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleStockClick(row.symbol)}
-                            className="font-bold text-base text-white hover:text-emerald-400 transition"
-                          >
-                            {row.symbol}
-                          </button>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                            {row.sector}
-                          </span>
-                          {row.holding_days > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400 font-mono">
-                              {row.holding_days}d hold
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          Trig: {row.signal_date} &bull; {row.strategy.replace(/_/g, ' ')}
-                        </div>
+                    Stock &amp; Date{' '}
+                    {sortField === 'signal_date' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th className="py-3 px-3 whitespace-nowrap">Strategy &amp; Regime</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Execution (T+1 VWAP)</th>
+                  <th className="py-3 px-3 whitespace-nowrap">Ratchet Stop &amp; Target</th>
+                  <th
+                    onClick={() => handleSort('mfe_pct')}
+                    className="py-3 px-3.5 cursor-pointer hover:text-white select-none min-w-[175px]"
+                  >
+                    Excursion (MAE / MFE){' '}
+                    {sortField === 'mfe_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th
+                    onClick={() => handleSort('broker_anomaly_score')}
+                    className="py-3 px-3 cursor-pointer hover:text-white select-none whitespace-nowrap"
+                  >
+                    Smart Money Footprint{' '}
+                    {sortField === 'broker_anomaly_score' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th className="py-3 px-3 whitespace-nowrap">Status</th>
+                  <th
+                    onClick={() => handleSort('net_return_pct')}
+                    className="py-3 px-3.5 text-right cursor-pointer hover:text-white select-none whitespace-nowrap"
+                  >
+                    Net Return &amp; Alpha{' '}
+                    {sortField === 'net_return_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-xs">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RotateCw className="w-6 h-6 animate-spin text-emerald-400" />
+                        <span>Loading settled walk-forward ledger signals...</span>
                       </div>
+                    </td>
+                  </tr>
+                ) : filteredSignals.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center text-slate-400">
+                      No audited signals match the current filter criteria. Click{' '}
+                      <button
+                        type="button"
+                        onClick={resetAllFilters}
+                        className="text-emerald-400 underline hover:text-emerald-300 font-semibold"
+                      >
+                        Reset Filters
+                      </button>{' '}
+                      to view all records.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSignals.map((row) => {
+                    const badge = STATUS_BADGE_CONFIG[row.status] || STATUS_BADGE_CONFIG.ACTIVE;
+                    const mfeBarWidth = Math.min(100, Math.max(0, (row.mfe_pct / 20) * 100));
+                    const maeBarWidth = Math.min(100, Math.max(0, (Math.abs(row.mae_pct) / 12) * 100));
+                    const isInstitutionalTicket = row.avg_ticket_kitta >= 150;
+                    const ltp = row.exit_price ?? row.entry_price ?? row.entry_vwap ?? 0;
 
-                      <div className="text-right flex-shrink-0">
-                        {row.status === 'UNFILLABLE_SKIP' ? (
-                          <span className="text-slate-500 text-xs">No Fill (Circuit)</span>
-                        ) : (
-                          <>
-                            <div
-                              className={`text-base font-bold font-mono ${
-                                netReturn > 0
+                    return (
+                      <tr
+                        key={row.signal_id}
+                        className="hover:bg-slate-800/40 transition-colors"
+                      >
+                        {/* 1. Symbol & Date */}
+                        <td className="py-3 px-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStockClick(row.symbol)}
+                              className="font-bold text-sm text-white hover:text-emerald-400 transition"
+                            >
+                              {row.symbol}
+                            </button>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                              {row.sector}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Trig: {row.signal_date}
+                            {row.holding_days > 0 && (
+                              <span className="text-slate-500"> &bull; {row.holding_days}d hold</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 2. Strategy & Market Regime */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="font-medium text-slate-200">
+                            {row.strategy.replace(/_/g, ' ')}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <span>Regime:</span>
+                            <span
+                              className={`font-semibold ${
+                                row.market_regime === 'BULL'
                                   ? 'text-emerald-400'
-                                  : netReturn < 0
+                                  : row.market_regime === 'QUARTER_END_PRESSURE'
+                                  ? 'text-amber-400'
+                                  : row.market_regime === 'BEAR'
                                   ? 'text-rose-400'
                                   : 'text-slate-300'
                               }`}
                             >
-                              {netReturn > 0 ? '+' : ''}{netReturn}%
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              Alpha:{' '}
-                              <span className={alpha >= 0 ? 'text-sky-400' : 'text-rose-400'}>
-                                {alpha >= 0 ? '+' : ''}{alpha}%
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Middle Row: Status Badge & Execution / VWAP */}
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/60 text-xs">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${badge.className}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
-                        {badge.label}
-                      </span>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-slate-300">
-                          VWAP Rs {row.entry_vwap?.toLocaleString() ?? row.entry_price?.toLocaleString() ?? '—'}
-                        </span>
-                        {renderVwapBadge(row)}
-                      </div>
-                    </div>
-
-                    {/* Excursion Bar (MAE / MFE) */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono">
-                        <span className="text-rose-400">MAE: {row.mae_pct}%</span>
-                        <span className="text-emerald-400">MFE: +{row.mfe_pct}%</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
-                        <div className="w-1/2 flex justify-end border-r border-slate-700">
-                          <div
-                            className="h-full bg-rose-500/80 rounded-l-full"
-                            style={{ width: `${maeBarWidth}%` }}
-                          />
-                        </div>
-                        <div className="w-1/2 flex justify-start">
-                          <div
-                            className="h-full bg-emerald-500/80 rounded-r-full"
-                            style={{ width: `${mfeBarWidth}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Targets & Ratchet Footprint */}
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
-                      <div>
-                        <span className="text-emerald-400 font-semibold">
-                          T1 Rs {row.target_price?.toLocaleString() ?? row.target1_price?.toLocaleString() ?? '—'}
-                        </span>
-                        <span className="mx-1 text-slate-600">/</span>
-                        <span className={row.is_ratchet_armed === 1 ? 'text-teal-300 font-bold' : 'text-rose-400'}>
-                          SL Rs {row.active_stop_price?.toLocaleString() ?? row.initial_stop_price?.toLocaleString() ?? '—'}
-                        </span>
-                      </div>
-
-                      {row.is_ratchet_armed === 1 ? (
-                        <span className="text-[10px] font-sans font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/30 px-1.5 py-0.5 rounded">
-                          🛡️ +1.2R Armed
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-sans text-slate-500">
-                          {row.settlement_unlock_date ?? row.t2_unlock_date ?? 'T+2 Pending'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Broker Anomaly & Institutional Ticket */}
-                    {(row.primary_broker_id || row.lead_broker_id) && (
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-200">
-                            {row.lead_broker_name || `Broker #${row.primary_broker_id || row.lead_broker_id}`}
-                          </span>
-                          {row.broker_anomaly_score > 0 && (
-                            <span className="px-1 py-0.5 text-[9px] font-mono rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                              {row.broker_anomaly_score}x Anomaly
+                              {row.market_regime}
                             </span>
+                          </div>
+                        </td>
+
+                        {/* 3. Day T LTP vs Day T+1 Audited VWAP */}
+                        <td className="py-3 px-3 whitespace-nowrap font-mono">
+                          <div className="text-slate-200">
+                            VWAP: Rs {row.entry_vwap?.toLocaleString() ?? row.entry_price?.toLocaleString() ?? '—'}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            Day T Close: Rs {row.trigger_ltp?.toLocaleString() ?? '—'}
+                          </div>
+                          <div className="mt-1">
+                            {renderVwapBadge(row)}
+                          </div>
+                        </td>
+
+                        {/* 4. Active Ratchet Stop & Target */}
+                        <td className="py-3 px-3 whitespace-nowrap font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-emerald-400 font-semibold">
+                              T1: Rs {row.target_price?.toLocaleString() ?? row.target1_price?.toLocaleString() ?? '—'}
+                            </span>
+                            <span className="text-slate-600">/</span>
+                            <span
+                              className={
+                                row.is_ratchet_armed === 1 ? 'text-teal-300 font-bold' : 'text-rose-400'
+                              }
+                            >
+                              SL: Rs {row.active_stop_price?.toLocaleString() ?? row.initial_stop_price?.toLocaleString() ?? '—'}
+                            </span>
+                          </div>
+                          {row.is_ratchet_armed === 1 ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-sans font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/30 px-1.5 py-0.5 rounded mt-1">
+                              🛡️ +1.2R Ratchet Armed
+                            </span>
+                          ) : (
+                            <div className="text-[10px] font-sans text-slate-500 mt-0.5">
+                              Unlock: {row.settlement_unlock_date ?? row.t2_unlock_date ?? 'Pending'}
+                            </div>
                           )}
-                        </div>
-                        {row.avg_ticket_kitta > 0 && (
-                          <span className={`text-[10px] font-mono ${isInstitutionalTicket ? 'text-emerald-300 font-medium' : 'text-slate-400'}`}>
-                            {row.avg_ticket_kitta} kitta {isInstitutionalTicket ? '(Inst.)' : ''}
+                        </td>
+
+                        {/* 5. Excursion Telemetry (MAE vs MFE Dual Bar) */}
+                        <td className="py-3 px-3.5">
+                          <div className="flex justify-between text-[11px] font-mono mb-1">
+                            <span className="text-rose-400" title="Maximum Adverse Excursion">
+                              MAE: {row.mae_pct}%
+                            </span>
+                            <span className="text-emerald-400" title="Maximum Favorable Excursion">
+                              MFE: +{row.mfe_pct}%
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                            <div className="w-1/2 flex justify-end border-r border-slate-600">
+                              <div
+                                className="h-full bg-rose-500/80 rounded-l-full"
+                                style={{ width: `${maeBarWidth}%` }}
+                              />
+                            </div>
+                            <div className="w-1/2 flex justify-start">
+                              <div
+                                className="h-full bg-emerald-500/80 rounded-r-full"
+                                style={{ width: `${mfeBarWidth}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 6. Broker Anomaly & Ticket Size */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {row.primary_broker_id || row.lead_broker_id ? (
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-white">
+                                  {row.lead_broker_name || `Broker #${row.primary_broker_id || row.lead_broker_id}`}
+                                </span>
+                                {row.broker_anomaly_score > 0 && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                                    {row.broker_anomaly_score}x Anomaly
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                {row.avg_ticket_kitta > 0 ? (
+                                  <>
+                                    Avg Ticket:{' '}
+                                    <span
+                                      className={
+                                        isInstitutionalTicket
+                                          ? 'text-emerald-300 font-medium'
+                                          : 'text-slate-400'
+                                      }
+                                    >
+                                      {row.avg_ticket_kitta} kitta
+                                    </span>{' '}
+                                    {isInstitutionalTicket ? '(Inst.)' : '(Retail Mix)'}
+                                  </>
+                                ) : (
+                                  <span>BCR5: {row.bcr5_net_pct ?? 0}% &bull; Retention: {row.ignition_score ?? 0}/100</span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+
+                        {/* 7. Status Badge */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${badge.className}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
+                            {badge.label}
                           </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* DESKTOP VIEW: Full 8-column wide table for PC and tablet viewports */}
-          <div className="hidden md:block border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto min-h-[350px]">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
-                  <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    <th
-                      onClick={() => handleSort('signal_date')}
-                      className="py-3 px-3.5 cursor-pointer hover:text-white select-none whitespace-nowrap"
-                    >
-                      Stock &amp; Date{' '}
-                      {sortField === 'signal_date' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th className="py-3 px-3 whitespace-nowrap">Strategy &amp; Regime</th>
-                    <th className="py-3 px-3 whitespace-nowrap">Execution (T+1 VWAP)</th>
-                    <th className="py-3 px-3 whitespace-nowrap">Ratchet Stop &amp; Target</th>
-                    <th
-                      onClick={() => handleSort('mfe_pct')}
-                      className="py-3 px-3.5 cursor-pointer hover:text-white select-none min-w-[175px]"
-                    >
-                      Excursion (MAE / MFE){' '}
-                      {sortField === 'mfe_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th
-                      onClick={() => handleSort('broker_anomaly_score')}
-                      className="py-3 px-3 cursor-pointer hover:text-white select-none whitespace-nowrap"
-                    >
-                      Smart Money Footprint{' '}
-                      {sortField === 'broker_anomaly_score' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th className="py-3 px-3 whitespace-nowrap">Status</th>
-                    <th
-                      onClick={() => handleSort('net_return_pct')}
-                      className="py-3 px-3.5 text-right cursor-pointer hover:text-white select-none whitespace-nowrap"
-                    >
-                      Net Return &amp; Alpha{' '}
-                      {sortField === 'net_return_pct' && (sortOrder === 'asc' ? '↑' : '↓')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={8} className="py-16 text-center text-slate-400">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <RotateCw className="w-6 h-6 animate-spin text-emerald-400" />
-                          <span>Loading settled walk-forward ledger signals...</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filteredSignals.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-16 text-center text-slate-400">
-                        No audited signals match the current filter criteria. Click{' '}
-                        <button
-                          type="button"
-                          onClick={resetAllFilters}
-                          className="text-emerald-400 underline hover:text-emerald-300 font-semibold"
-                        >
-                          Reset Filters
-                        </button>{' '}
-                        to view all records.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSignals.map((row) => {
-                      const badge = STATUS_BADGE_CONFIG[row.status] || STATUS_BADGE_CONFIG.ACTIVE;
-                      const mfeBarWidth = Math.min(100, Math.max(0, (row.mfe_pct / 20) * 100));
-                      const maeBarWidth = Math.min(100, Math.max(0, (Math.abs(row.mae_pct) / 12) * 100));
-                      const isInstitutionalTicket = row.avg_ticket_kitta >= 150;
-
-                      return (
-                        <tr
-                          key={row.signal_id}
-                          className="hover:bg-slate-800/40 transition-colors"
-                        >
-                          {/* 1. Symbol & Date */}
-                          <td className="py-3 px-3.5 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleStockClick(row.symbol)}
-                                className="font-bold text-sm text-white hover:text-emerald-400 transition"
-                              >
-                                {row.symbol}
-                              </button>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                                {row.sector}
-                              </span>
+                          {row.exit_date && (
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              Exit: {row.exit_date} @ Rs {row.exit_price?.toLocaleString()}
                             </div>
-                            <div className="text-[11px] text-slate-400 mt-0.5">
-                              Trig: {row.signal_date}
-                              {row.holding_days > 0 && (
-                                <span className="text-slate-500"> &bull; {row.holding_days}d hold</span>
-                              )}
-                            </div>
-                          </td>
+                          )}
+                        </td>
 
-                          {/* 2. Strategy & Market Regime */}
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <div className="font-medium text-slate-200">
-                              {row.strategy.replace(/_/g, ' ')}
-                            </div>
-                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-                              <span>Regime:</span>
-                              <span
-                                className={`font-semibold ${
-                                  row.market_regime === 'BULL'
+                        {/* 8. Post-Fee Net Return & NEPSE Alpha */}
+                        <td className="py-3 px-3.5 text-right whitespace-nowrap font-mono">
+                          {row.status === 'UNFILLABLE_SKIP' ? (
+                            <span className="text-slate-500 text-xs">No Fill (Circuit)</span>
+                          ) : (
+                            <>
+                              <div
+                                className={`text-sm font-bold ${
+                                  (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0
                                     ? 'text-emerald-400'
-                                    : row.market_regime === 'QUARTER_END_PRESSURE'
-                                    ? 'text-amber-400'
-                                    : row.market_regime === 'BEAR'
+                                    : (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) < 0
                                     ? 'text-rose-400'
                                     : 'text-slate-300'
                                 }`}
                               >
-                                {row.market_regime}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* 3. Day T LTP vs Day T+1 Audited VWAP */}
-                          <td className="py-3 px-3 whitespace-nowrap font-mono">
-                            <div className="text-slate-200">
-                              VWAP: Rs {row.entry_vwap?.toLocaleString() ?? row.entry_price?.toLocaleString() ?? '—'}
-                            </div>
-                            <div className="text-[11px] text-slate-500">
-                              Day T Close: Rs {row.trigger_ltp?.toLocaleString() ?? '—'}
-                            </div>
-                            <div className="mt-1">
-                              {renderVwapBadge(row)}
-                            </div>
-                          </td>
-
-                          {/* 4. Active Ratchet Stop & Target */}
-                          <td className="py-3 px-3 whitespace-nowrap font-mono">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-emerald-400 font-semibold">
-                                T1: Rs {row.target_price?.toLocaleString() ?? row.target1_price?.toLocaleString() ?? '—'}
-                              </span>
-                              <span className="text-slate-600">/</span>
-                              <span
-                                className={
-                                  row.is_ratchet_armed === 1 ? 'text-teal-300 font-bold' : 'text-rose-400'
-                                }
-                              >
-                                SL: Rs {row.active_stop_price?.toLocaleString() ?? row.initial_stop_price?.toLocaleString() ?? '—'}
-                              </span>
-                            </div>
-                            {row.is_ratchet_armed === 1 ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-sans font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/30 px-1.5 py-0.5 rounded mt-1">
-                                🛡️ +1.2R Ratchet Armed
-                              </span>
-                            ) : (
-                              <div className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                Unlock: {row.settlement_unlock_date ?? row.t2_unlock_date ?? 'Pending'}
+                                {(row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0 ? '+' : ''}
+                                {row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0}%
                               </div>
-                            )}
-                          </td>
-
-                          {/* 5. Excursion Telemetry (MAE vs MFE Dual Bar) */}
-                          <td className="py-3 px-3.5">
-                            <div className="flex justify-between text-[11px] font-mono mb-1">
-                              <span className="text-rose-400" title="Maximum Adverse Excursion">
-                                MAE: {row.mae_pct}%
-                              </span>
-                              <span className="text-emerald-400" title="Maximum Favorable Excursion">
-                                MFE: +{row.mfe_pct}%
-                              </span>
-                            </div>
-                            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
-                              <div className="w-1/2 flex justify-end border-r border-slate-600">
-                                <div
-                                  className="h-full bg-rose-500/80 rounded-l-full"
-                                  style={{ width: `${maeBarWidth}%` }}
-                                />
-                              </div>
-                              <div className="w-1/2 flex justify-start">
-                                <div
-                                  className="h-full bg-emerald-500/80 rounded-r-full"
-                                  style={{ width: `${mfeBarWidth}%` }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* 6. Broker Anomaly & Ticket Size */}
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            {row.primary_broker_id || row.lead_broker_id ? (
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-white">
-                                    {row.lead_broker_name || `Broker #${row.primary_broker_id || row.lead_broker_id}`}
-                                  </span>
-                                  {row.broker_anomaly_score > 0 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
-                                      {row.broker_anomaly_score}x Anomaly
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[11px] text-slate-400 mt-0.5">
-                                  {row.avg_ticket_kitta > 0 ? (
-                                    <>
-                                      Avg Ticket:{' '}
-                                      <span
-                                        className={
-                                          isInstitutionalTicket
-                                            ? 'text-emerald-300 font-medium'
-                                            : 'text-slate-400'
-                                        }
-                                      >
-                                        {row.avg_ticket_kitta} kitta
-                                      </span>{' '}
-                                      {isInstitutionalTicket ? '(Inst.)' : '(Retail Mix)'}
-                                    </>
-                                  ) : (
-                                    <span>BCR5: {row.bcr5_net_pct ?? 0}% &bull; Retention: {row.ignition_score ?? 0}/100</span>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500">—</span>
-                            )}
-                          </td>
-
-                          {/* 7. Status Badge */}
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${badge.className}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${badge.dotClass}`} />
-                              {badge.label}
-                            </span>
-                            {row.exit_date && (
-                              <div className="text-[10px] text-slate-500 mt-1">
-                                Exit: {row.exit_date} @ Rs {row.exit_price?.toLocaleString()}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* 8. Post-Fee Net Return & NEPSE Alpha */}
-                          <td className="py-3 px-3.5 text-right whitespace-nowrap font-mono">
-                            {row.status === 'UNFILLABLE_SKIP' ? (
-                              <span className="text-slate-500 text-xs">No Fill (Circuit)</span>
-                            ) : (
-                              <>
-                                <div
-                                  className={`text-sm font-bold ${
-                                    (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0
-                                      ? 'text-emerald-400'
-                                      : (row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) < 0
-                                      ? 'text-rose-400'
-                                      : 'text-slate-300'
-                                  }`}
+                              <div className="text-[11px] text-slate-400">
+                                Alpha:{' '}
+                                <span
+                                  className={
+                                    (row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? 'text-sky-400' : 'text-rose-400'
+                                  }
                                 >
-                                  {(row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0) > 0 ? '+' : ''}
-                                  {row.net_return_pct ?? row.net_pnl_after_fees_pct ?? 0}%
-                                </div>
-                                <div className="text-[11px] text-slate-400">
-                                  Alpha:{' '}
-                                  <span
-                                    className={
-                                      (row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? 'text-sky-400' : 'text-rose-400'
-                                    }
-                                  >
-                                    {(row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? '+' : ''}
-                                    {row.nepse_alpha_pct ?? row.net_return_pct ?? 0}%
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                  {(row.nepse_alpha_pct ?? (row.net_return_pct ?? 0)) >= 0 ? '+' : ''}
+                                  {row.nepse_alpha_pct ?? row.net_return_pct ?? 0}%
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        </>
+        </div>
       ) : (
-        /* 4B. SMART-MONEY BROKER ANOMALY LEADERBOARD TAB (Mobile Cards + Desktop Table) */
-        <>
-          {/* MOBILE VIEW: Cards for Broker Leaderboard */}
-          <div className="block md:hidden space-y-3">
-            {brokerLeaderboard.length === 0 ? (
-              <div className="py-12 px-4 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800 text-xs">
-                No broker leaderboard telemetry available yet.
-              </div>
-            ) : (
-              brokerLeaderboard.map((b, idx) => (
-                <div
-                  key={`mob_broker_${b.brokerId}`}
-                  className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 cursor-pointer hover:border-emerald-500/50 transition shadow-sm"
-                  onClick={() => {
-                    setSearchQuery(`B${b.brokerId}`);
-                    setActiveTab('LEDGER');
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white text-sm">
-                      #{idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
-                    </span>
-                    <span className="font-mono text-xs font-semibold text-white">
-                      {b.postFeeWinRatePct ?? b.winRatePct ?? 0}% Win Rate
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-800/60">
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Audited Signals</span>
-                      <span className="font-mono text-slate-200">{b.auditedSignals ?? b.totalSignals ?? 0}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Avg Anomaly</span>
-                      <span className="font-mono text-indigo-300">
-                        {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x` : 'Tracked'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Avg Ticket</span>
-                      <span className="font-mono text-slate-200">
-                        {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[10px] block">Avg Net Return</span>
-                      <span
-                        className={`font-mono font-bold ${
+        /* 4B. SMART-MONEY BROKER ANOMALY LEADERBOARD TAB */
+        <div className="border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto min-h-[350px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
+                <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="py-3 px-4">Rank &amp; Broker</th>
+                  <th className="py-3 px-4">Audited Signals</th>
+                  <th className="py-3 px-4">Avg Anomaly Score (vs 30D Share)</th>
+                  <th className="py-3 px-4">Avg Ticket Size (Kitta / Trade)</th>
+                  <th className="py-3 px-4">Post-Fee Win Rate</th>
+                  <th className="py-3 px-4 text-right">Avg Net Return</th>
+                  <th className="py-3 px-4 text-right">Avg NEPSE Alpha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-xs">
+                {brokerLeaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center text-slate-400">
+                      No broker leaderboard telemetry available yet. Run the walk-forward rebuild to populate broker rankings.
+                    </td>
+                  </tr>
+                ) : (
+                  brokerLeaderboard.map((b, idx) => (
+                    <tr
+                      key={String(b.brokerId)}
+                      className="hover:bg-slate-800/40 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setSearchQuery(`B${b.brokerId}`);
+                        setActiveTab('LEDGER');
+                      }}
+                    >
+                      <td className="py-3 px-4 font-bold text-white">
+                        #{idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-300">
+                        {b.auditedSignals ?? b.totalSignals ?? 0} signals
+                      </td>
+                      <td className="py-3 px-4 font-mono text-indigo-300">
+                        {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x baseline` : 'Institutional Tracked'}
+                      </td>
+                      <td className="py-3 px-4 font-mono">
+                        <span
+                          className={
+                            (b.avgTicketKitta ?? 0) >= 150
+                              ? 'text-emerald-300 font-semibold'
+                              : 'text-slate-300'
+                          }
+                        >
+                          {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold text-white">
+                        {b.postFeeWinRatePct ?? b.winRatePct ?? 0}%
+                        {b.winCount != null && (
+                          <span className="text-slate-400 text-[11px] font-normal ml-1">
+                            ({b.winCount}W / {b.lossCount ?? 0}L)
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        className={`py-3 px-4 text-right font-mono font-bold ${
                           (b.avgNetReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
                         }`}
                       >
-                        {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}{b.avgNetReturnPct ?? 0}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-emerald-400/90 font-medium text-right pt-0.5">
-                    Tap to view signals &rarr;
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* DESKTOP VIEW: Table for Broker Leaderboard */}
-          <div className="hidden md:block border border-slate-800 rounded-xl bg-slate-900/40 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto min-h-[350px]">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
-                  <tr className="border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    <th className="py-3 px-4">Rank &amp; Broker</th>
-                    <th className="py-3 px-4">Audited Signals</th>
-                    <th className="py-3 px-4">Avg Anomaly Score (vs 30D Share)</th>
-                    <th className="py-3 px-4">Avg Ticket Size (Kitta / Trade)</th>
-                    <th className="py-3 px-4">Post-Fee Win Rate</th>
-                    <th className="py-3 px-4 text-right">Avg Net Return</th>
-                    <th className="py-3 px-4 text-right">Avg NEPSE Alpha</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-xs">
-                  {brokerLeaderboard.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-16 text-center text-slate-400">
-                        No broker leaderboard telemetry available yet. Run the walk-forward rebuild to populate broker rankings.
+                        {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                        {b.avgNetReturnPct ?? 0}%
+                      </td>
+                      <td
+                        className={`py-3 px-4 text-right font-mono font-bold ${
+                          (b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? 'text-sky-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {(b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
+                        {b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0}%
                       </td>
                     </tr>
-                  ) : (
-                    brokerLeaderboard.map((b, idx) => (
-                      <tr
-                        key={String(b.brokerId)}
-                        className="hover:bg-slate-800/40 transition-colors cursor-pointer"
-                        onClick={() => {
-                          setSearchQuery(`B${b.brokerId}`);
-                          setActiveTab('LEDGER');
-                        }}
-                      >
-                        <td className="py-3 px-4 font-bold text-white">
-                          #{idx + 1} &mdash; {b.brokerName || `Broker #${b.brokerId}`}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-slate-300">
-                          {b.auditedSignals ?? b.totalSignals ?? 0} signals
-                        </td>
-                        <td className="py-3 px-4 font-mono text-indigo-300">
-                          {b.avgAnomalyScore != null ? `${b.avgAnomalyScore}x baseline` : 'Institutional Tracked'}
-                        </td>
-                        <td className="py-3 px-4 font-mono">
-                          <span
-                            className={
-                              (b.avgTicketKitta ?? 0) >= 150
-                                ? 'text-emerald-300 font-semibold'
-                                : 'text-slate-300'
-                            }
-                          >
-                            {b.avgTicketKitta ? `${b.avgTicketKitta} kitta` : 'HNI Ticket'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono font-semibold text-white">
-                          {b.postFeeWinRatePct ?? b.winRatePct ?? 0}%
-                          {b.winCount != null && (
-                            <span className="text-slate-400 text-[11px] font-normal ml-1">
-                              ({b.winCount}W / {b.lossCount ?? 0}L)
-                            </span>
-                          )}
-                        </td>
-                        <td
-                          className={`py-3 px-4 text-right font-mono font-bold ${
-                            (b.avgNetReturnPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
-                        >
-                          {(b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
-                          {b.avgNetReturnPct ?? 0}%
-                        </td>
-                        <td
-                          className={`py-3 px-4 text-right font-mono font-bold ${
-                            (b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? 'text-sky-400' : 'text-rose-400'
-                          }`}
-                        >
-                          {(b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0) >= 0 ? '+' : ''}
-                          {b.avgNepseAlphaPct ?? b.avgNetReturnPct ?? 0}%
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </>
+        </div>
       )}
-    </div>
-  );
-
-  // 3. ASSEMBLE CONTENT WITH STRICT VERTICAL FLEX BOUNDS
-  const content = (
-    <div className="flex flex-col h-full max-h-[100dvh] sm:max-h-[92vh] w-full overflow-hidden bg-slate-950">
-      {headerContent}
-      {scrollableBody}
     </div>
   );
 
@@ -1622,11 +1318,11 @@ export function AlgorithmicSignalTrackRecord({
 
   return (
     <div
-      className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-0 sm:p-3 md:p-6"
+      className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6"
       onClick={onClose}
     >
       <div
-        className="w-full h-[100dvh] sm:h-[92vh] max-w-7xl flex flex-col bg-slate-950 rounded-none sm:rounded-2xl border-0 sm:border border-slate-800 shadow-2xl overflow-hidden"
+        className="w-full max-w-7xl max-h-[92vh] flex flex-col bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}
         onClick={(e) => e.stopPropagation()}
       >
         {content}

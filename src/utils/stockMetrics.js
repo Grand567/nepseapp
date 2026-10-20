@@ -8,8 +8,16 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const s = stock || {};
   const ltp = Number(s.ltp || s.marketPrice || s.close || 0);
   const listedShares = Number(s.listedShares || s.sharesOutstanding || 0);
-  const promoterPct = Number(s.promoterPercentage ?? 0);
-  const publicPct = Number(s.publicPercentage ?? (100 - promoterPct));
+
+  // BUG FIX (Discrepancy #5): The nepseAdapterLayer returns `promoterPct` and `publicFloatPct`
+  // while this function was reading `promoterPercentage` and `publicPercentage` — causing 0% display.
+  // Now reads both canonical and adapter field names via cascaded null-coalescing.
+  const promoterPct = Number(
+    s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct ?? 0
+  );
+  const publicPct = Number(
+    s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct ?? (100 - promoterPct)
+  );
   
   // Public float units
   const publicShares = Number(s.publicShares || (listedShares > 0 ? Math.round(listedShares * (publicPct / 100)) : 0));

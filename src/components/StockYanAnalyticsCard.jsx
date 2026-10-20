@@ -97,6 +97,13 @@ export default function StockYanAnalyticsCard({
     if (!brokerData) {
       return { bcr3: 0, bcr5: 0, dominantBrokers: [], tier: 'Fragmented', label: 'Retail Dispersed' };
     }
+
+    // BUG FIX (Discrepancy #8): The broker list (brokerData.brokers / brokerData.topBuyers) may be
+    // empty when only pre-computed BCR percentages are available. Always prefer pre-computed values
+    // if the list-based calculation would yield 0% (empty list case).
+    const precomputedBcr3Buy = Number(brokerData.bcr3BuyPct ?? brokerData.bcr3 ?? 0);
+    const precomputedBcr5Net = Number(brokerData.bcr5NetPct ?? brokerData.bcr5 ?? 0);
+
     const list = Array.isArray(brokerData.brokers)
       ? brokerData.brokers
       : (Array.isArray(brokerData.topBuyers) ? brokerData.topBuyers : []);
@@ -110,12 +117,17 @@ export default function StockYanAnalyticsCard({
       .filter(b => b.id && b.id !== '?' && b.buyQty > 0)
       .sort((a, b) => b.buyQty - a.buyQty);
 
-    const totalBuy = buyers.reduce((sum, b) => sum + b.buyQty, 0) || 1;
+    const totalBuy = buyers.reduce((sum, b) => sum + b.buyQty, 0);
     const top3Buy = buyers.slice(0, 3).reduce((sum, b) => sum + b.buyQty, 0);
     const top5Buy = buyers.slice(0, 5).reduce((sum, b) => sum + b.buyQty, 0);
 
-    const bcr3 = Math.min(100, +((top3Buy / totalBuy) * 100).toFixed(1));
-    const bcr5 = Math.min(100, +((top5Buy / totalBuy) * 100).toFixed(1));
+    // If list is empty or totalBuy is 0, fall back to pre-computed values from realBrokerAnalysis
+    const bcr3 = totalBuy > 0
+      ? Math.min(100, +((top3Buy / totalBuy) * 100).toFixed(1))
+      : precomputedBcr3Buy;
+    const bcr5 = totalBuy > 0
+      ? Math.min(100, +((top5Buy / totalBuy) * 100).toFixed(1))
+      : precomputedBcr5Net;
 
     let tier = 'Moderate';
     let label = 'Balanced Market Participation';
@@ -131,10 +143,19 @@ export default function StockYanAnalyticsCard({
       color = '#94a3b8';
     }
 
-    const dominantBrokers = buyers.slice(0, 3).map(b => ({
-      ...b,
-      share: +((b.buyQty / totalBuy) * 100).toFixed(1)
-    }));
+    const dominantBrokers = totalBuy > 0
+      ? buyers.slice(0, 3).map(b => ({
+          ...b,
+          share: +((b.buyQty / totalBuy) * 100).toFixed(1)
+        }))
+      : (Array.isArray(brokerData.topNetAccumulators)
+          ? brokerData.topNetAccumulators.slice(0, 3).map(b => ({
+              id: String(b.brokerId || ''),
+              name: b.name || getBrokerName(b.brokerId),
+              buyQty: Number(b.netKitta ?? b.buyQty ?? 0),
+              share: 0
+            }))
+          : []);
 
     return { bcr3, bcr5, dominantBrokers, tier, label, color, totalBuy };
   }, [brokerData]);

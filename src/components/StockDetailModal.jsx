@@ -845,6 +845,31 @@ function BeginnerConfidenceCard({
     check3Border = 'rgba(245, 158, 11, 0.25)';
   }
 
+  // DISCREPANCY FIX: Override "Within Safe Buy Zone" (green) when the Master Consensus
+  // from the Entry/Exit Analyzer says AVOID / EXIT / NO TRADE.
+  // Showing a green "Safe Buy Zone" badge while the quantitative engine says AVOID is dangerously
+  // misleading — the price band check alone does NOT constitute a safe entry when technical
+  // consensus, momentum gates, or broker flow all contradict a buy.
+  const _eeVerdictForCheck3 = String(entryExitPlan?.verdict || '').toUpperCase();
+  const _eeSetupScoreForCheck3 = Number(entryExitPlan?.setupScore ?? entryExitPlan?.combinedScore ?? 0);
+  const _isAvoidVerdict =
+    _eeVerdictForCheck3.includes('NO TRADE') ||
+    _eeVerdictForCheck3.includes('AVOID') ||
+    _eeVerdictForCheck3.startsWith('EXIT') ||
+    _eeVerdictForCheck3.startsWith('REDUCE') ||
+    _eeVerdictForCheck3.startsWith('STAY OUT') ||
+    Boolean(entryExitPlan?.riskGate?.isInstitutionalDumping) ||
+    _eeSetupScoreForCheck3 < 40;
+  if (_isAvoidVerdict && check3Badge.includes('Within Safe Buy Zone')) {
+    // Price is geometrically inside the zone, but ALL technical/flow signals say AVOID.
+    // Downgrade to amber CAUTION — do not show green for an avoid-rated setup.
+    check3Badge = '⚠️ Caution: Zone Violated by Consensus';
+    check3Desc = `Price (Rs. ${ltp}) is inside the Rs. ${entryLow}–${entryHigh} range, but the Entry/Exit Analyzer verdict is "${entryExitPlan?.verdict || 'AVOID'}". A price inside the buy zone is NOT a safe entry when the quantitative engine flags this as high-risk.`;
+    check3Color = '#f59e0b';
+    check3Bg = 'rgba(245, 158, 11, 0.08)';
+    check3Border = 'rgba(245, 158, 11, 0.35)';
+  }
+
   // Check 4: Historical Win Rate & Setup Score
   const winRate = entryExitPlan?.analogResult?.stats?.winRate != null ? Math.round(Number(entryExitPlan.analogResult.stats.winRate)) : null;
   const setupScore = Math.round(Number(entryExitPlan?.setupScore || 0));
@@ -1385,8 +1410,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const computedMarketCap = (listedShares > 0 && ltp > 0) ? listedShares * ltp : 0;
     const marketCap = computedMarketCap > 0 ? computedMarketCap : Number(liveDetail?.marketCap || s.marketCap || 0);
 
-    const promoterPercentage = Number(liveDetail?.promoterPercentage || s.promoterPercentage || 0);
-    const publicPercentage = Number(liveDetail?.publicPercentage || s.publicPercentage || (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0));
+    // BUG FIX (Discrepancy #5): nepseAdapterLayer returns `promoterPct`/`publicFloatPct` while
+    // liveDetail and s may have either field name. Cascade through all variants to get non-zero values.
+    const promoterPercentage = Number(
+      liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ??
+      s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct ?? 0
+    );
+    const publicPercentage = Number(
+      liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ??
+      s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct ??
+      (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0)
+    );
 
     const quoteVol = Number(liveQuote?.volume || 0);
     const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
@@ -3683,7 +3717,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               </div>
 
               {/* ── 9. Shareholding Pattern ── */}
-              {(d.promoterPercentage > 0 || d.publicPercentage > 0 || d.listedShares > 0) && (
+              {(d.promoterPercentage > 0 || d.promoterPct > 0 || d.publicPercentage > 0 || d.publicFloatPct > 0 || d.listedShares > 0 || stockMetrics.promoterPct > 0) && (
                 <div style={{
                   background: '#111827',
                   border: '1px solid rgba(255, 255, 255, 0.08)',

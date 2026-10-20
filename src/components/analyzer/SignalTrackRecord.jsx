@@ -1,21 +1,132 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Target, TrendingUp, Clock, AlertCircle, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, ExternalLink } from 'lucide-react';
 import { getSignals, getSignalStats } from '../../services/signalTracker.js';
+import { getProxyBase } from '../../utils/liveData.js';
 import { GlobalSignalTrackerModal } from './GlobalSignalTrackerModal.jsx';
+
+// Module-level SWR-style cache: keyed by symbol, stores { signals, ts }
+const _backendSignalCache = {};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute TTL
+
+/**
+ * Normalise a backend signal ledger row into the same shape that
+ * the local signalTracker.js uses, so both sources can be displayed uniformly.
+ */
+function normaliseBackendRow(s) {
+  const statusMap = {
+    ACTIVE: 'open', OPEN_ACTIVE: 'open',
+    TARGET_HIT: 'hit_target', WIN_T1: 'hit_target', WIN_T2: 'hit_target',
+    RATCHET_STOP_WIN: 'hit_target', WIN_RATCHET_STOP: 'hit_target',
+    STOP_LOSS: 'hit_stop', STOPPED_OUT: 'hit_stop',
+    TIME_STOP_STALE: 'expired', TIME_EXPIRED: 'expired',
+    UNFILLABLE_SKIP: 'expired',
+  };
+  const mappedStatus = statusMap[String(s.status || '').toUpperCase()] || 'expired';
+  return {
+    id: s.signal_id || `${s.symbol}_${s.signal_date}`,
+    symbol: s.symbol,
+    signalDate: s.signal_date || s.entry_date,
+    entryPrice: Number(s.entry_vwap ?? s.entry_price ?? s.trigger_ltp ?? 0),
+    targetPrice: Number(s.target1_price ?? s.target_price ?? 0),
+    target2Price: Number(s.target2_price ?? 0) || undefined,
+    stopLoss: Number(s.initial_stop_price ?? s.stop_loss_price ?? 0),
+    status: mappedStatus,
+    outcome: mappedStatus !== 'open' ? {
+      returnPct: Number((s.gross_return_pct ?? s.gross_pnl_pct ?? 0).toFixed(2)),
+      netReturnPct: Number((s.net_return_pct ?? s.net_pnl_after_fees_pct ?? 0).toFixed(2)),
+      holdingDays: Number(s.holding_days ?? 0),
+    } : undefined,
+    _fromBackend: true,
+  };
+}
 
 export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) => {
   const [stats, setStats] = useState(null);
   const [recentSignals, setRecentSignals] = useState([]);
   const [showGlobalModal, setShowGlobalModal] = useState(false);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
     if (!symbol) return;
     const cleanSym = String(symbol).toUpperCase().trim();
-    const signals = getSignals({ symbol: cleanSym });
-    signals.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
+    fetchedRef.current = false;
 
-    setRecentSignals(signals.slice(0, 5));
-    setStats(getSignalStats({ symbol: cleanSym }));
+    // --- Step 1: Load local signals immediately (zero latency) ---
+    const localSignals = getSignals({ symbol: cleanSym });
+    localSignals.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
+    const localStats = getSignalStats({ symbol: cleanSym });
+    setRecentSignals(localSignals.slice(0, 5));
+    setStats(localStats);
+
+    // --- Step 2: Fetch from backend, merge & upgrade display ---
+    const fetchBackend = async () => {
+      if (fetchedRef.current) return;
+      try {
+        // Check module-level cache first
+        const cached = _backendSignalCache[cleanSym];
+        let backendRows;
+        if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+          backendRows = cached.signals;
+        } else {
+          const base = getProxyBase() || 'https://nepseapp.onrender.com';
+          const res = await fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data?.signals) return;
+          const all = (data.signals || [])
+            .filter(s => String(s.symbol || '').toUpperCase().trim() === cleanSym)
+            .map(normaliseBackendRow);
+          _backendSignalCache[cleanSym] = { signals: all, ts: Date.now() };
+          backendRows = all;
+        }
+
+        if (!backendRows || backendRows.length === 0) return;
+        fetchedRef.current = true;
+
+        // Merge: backend rows take precedence; local rows not in backend are appended
+        const merged = [...backendRows];
+        localSignals.forEach(loc => {
+          const exists = backendRows.some(b => b.signalDate === loc.signalDate && Math.abs(b.entryPrice - (loc.entryPrice || 0)) < 1);
+          if (!exists) merged.push(loc);
+        });
+        merged.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
+
+        // Recompute stats from merged set
+        const closed = merged.filter(s => s.status !== 'open' && s.status !== 'expired');
+        const wins = closed.filter(s => s.status === 'hit_target');
+        const losses = closed.filter(s => s.status === 'hit_stop');
+        const openCount = merged.filter(s => s.status === 'open').length;
+        const winRate = closed.length > 0 ? (wins.length / closed.length) * 100 : 0;
+        const avgReturnPct = closed.length > 0
+          ? Number((closed.reduce((sum, s) => sum + (s.outcome?.returnPct ?? 0), 0) / closed.length).toFixed(2))
+          : 0;
+        const avgNetReturnPct = closed.length > 0
+          ? Number((closed.reduce((sum, s) => sum + (s.outcome?.netReturnPct ?? 0), 0) / closed.length).toFixed(2))
+          : 0;
+        const totalGain = wins.reduce((s, r) => s + Math.max(0, r.outcome?.netReturnPct ?? 0), 0);
+        const totalLoss = Math.abs(losses.reduce((s, r) => s + Math.min(0, r.outcome?.netReturnPct ?? 0), 0));
+        const profitFactor = totalLoss > 0 ? Number((totalGain / totalLoss).toFixed(2)) : totalGain > 0 ? Infinity : 0;
+        const bestTrade = closed.reduce((best, s) => (!best || (s.outcome?.returnPct ?? 0) > (best.returnPct ?? 0))
+          ? { returnPct: s.outcome?.returnPct, netReturnPct: s.outcome?.netReturnPct }
+          : best, null);
+
+        setRecentSignals(merged.slice(0, 5));
+        setStats({
+          total: merged.length,
+          openCount,
+          closedCount: closed.length,
+          winRate,
+          avgReturnPct,
+          avgNetReturnPct,
+          profitFactor,
+          bestTrade,
+        });
+      } catch (_) {
+        // Silently ignore — local data already displayed
+      }
+    };
+
+    fetchBackend();
   }, [symbol]);
 
   const cleanSym = symbol ? String(symbol).toUpperCase().trim() : '';
