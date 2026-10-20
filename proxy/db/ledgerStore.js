@@ -917,6 +917,40 @@ export async function backfillRealHistoricalFloorsheets(targetTradingDays = 30, 
 // Alias for backwards compatibility
 export const backfillHistoricalDays = backfillRealHistoricalFloorsheets;
 
+export function getSmartMoneyAggregatedFlow(symbol, sessionLimit = 5) {
+  try {
+    const cleanSym = String(symbol || '').trim().toUpperCase();
+    if (!cleanSym) return [];
+    const limit = Math.max(1, parseInt(sessionLimit, 10) || 1);
+    const rows = db.prepare(`
+      WITH recent_dates AS (
+        SELECT DISTINCT trade_date
+        FROM daily_broker_ledger
+        WHERE symbol = @symbol
+        ORDER BY trade_date DESC
+        LIMIT @sessionLimit
+      )
+      SELECT
+        b.broker_id AS brokerId,
+        SUM(b.buy_vol) AS buyVolume,
+        SUM(b.sell_vol) AS sellVolume,
+        0 AS buyTrades,
+        0 AS sellTrades,
+        SUM(b.buy_amt) AS buyAmount,
+        SUM(b.sell_amt) AS sellAmount
+      FROM daily_broker_ledger b
+      INNER JOIN recent_dates r ON b.trade_date = r.trade_date
+      WHERE b.symbol = @symbol
+      GROUP BY b.broker_id
+      ORDER BY (SUM(b.buy_vol) - SUM(b.sell_vol)) DESC
+    `).all({ symbol: cleanSym, sessionLimit: limit });
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    console.warn(`[ledgerStore] getSmartMoneyAggregatedFlow error for ${symbol}:`, err.message);
+    return [];
+  }
+}
+
 export {
   rebuildSignalTrackRecord,
   initSignalLedgerTable,

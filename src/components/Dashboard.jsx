@@ -5723,10 +5723,8 @@ function Dashboard({
                   ? 'Emergency Halt'
                   : marketStatus?.isOpen
                   ? 'Market Open'
-                  : marketStatus?.isHoliday
-                  ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
-                  : marketStatus?.isWeekend
-                  ? 'Weekend Closed'
+                  : marketStatus?.isPreOpen
+                  ? 'Pre-Open'
                   : 'Market Closed'}
               </button>
               {marketStatus?.bsFormattedNp && (

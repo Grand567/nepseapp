@@ -78,6 +78,7 @@ import StockSeasonalityCard from './StockSeasonalityCard';
 import StockReportsAnnouncementsCard from './StockReportsAnnouncementsCard';
 import StockTechnicalGaugeCard from './StockTechnicalGaugeCard';
 import StockYanAnalyticsCard from './StockYanAnalyticsCard';
+import { BrokerSmartMoneyCard } from './stock/BrokerSmartMoneyCard';
 
 
 
@@ -690,6 +691,42 @@ function StockEntryExitCard({ entryExitPlan, d, isPrimePick, onOpenAnalyzer, onO
   );
 }
 
+
+class CardLocalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err) {
+    console.warn("[StockDetail] Card error caught:", err);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ background: '#111827', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: 16, padding: 16, color: '#f8fafc', margin: '8px 0' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#f43f5e', marginBottom: 4 }}>
+            ⚠️ Flow Telemetry Syncing
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
+            Unable to compute multi-day diagnostics for this timeframe. Reverting to 1-Day verified flow.
+          </div>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false })}
+            style={{ padding: '6px 14px', borderRadius: 8, background: '#38bdf8', color: '#000', fontWeight: 800, fontSize: 12, border: 'none', cursor: 'pointer' }}
+          >
+            Reset View
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── 1B. Beginner Confidence & Rupee Profit Simulator Card ──
 function BeginnerConfidenceCard({
   d,
@@ -740,10 +777,11 @@ function BeginnerConfidenceCard({
   // Check 2: Big Broker / Smart Money Activity (Dynamically bound to brokerDays via rolling-window microstructure)
   const bcr3Buy = Number(realBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(realBrokerAnalysis?.bcr3SellPct ?? brokerConcentration?.bcr3SellPct ?? 0);
-  const grossBuyPct = multiDayDiag ? multiDayDiag.grossBuyConcentrationPct : bcr3Buy;
-  const grossSellPct = multiDayDiag ? multiDayDiag.grossSellConcentrationPct : bcr3Sell;
+  const grossBuyPct = Number(multiDayDiag?.grossBuyConcentrationPct ?? bcr3Buy ?? 0);
+  const grossSellPct = Number(multiDayDiag?.grossSellConcentrationPct ?? bcr3Sell ?? 0);
   const nbar = Number(realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : 1.0));
-  const whaleVwap = multiDayDiag?.bigBrokerVWAP ?? null;
+  const whaleVwap = (multiDayDiag?.bigBrokerVWAP != null && !isNaN(Number(multiDayDiag.bigBrokerVWAP))) ? Number(multiDayDiag.bigBrokerVWAP).toFixed(1) : null;
+  const bcr5Net = multiDayDiag?.bcr5NetPct != null ? Number(multiDayDiag.bcr5NetPct).toFixed(1) : grossBuyPct.toFixed(1);
 
   let check2Badge = '⚪ Normal Retail Flow';
   let check2Desc = `Buying (${grossBuyPct.toFixed(1)}%) and selling (${grossSellPct.toFixed(1)}%) are evenly spread across retail brokers.`;
@@ -753,7 +791,7 @@ function BeginnerConfidenceCard({
 
   if ((multiDayDiag?.phase === 'STEALTH_ACCUMULATION' || multiDayDiag?.phase === 'ACTIVE_MARKUP') || (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)) {
     check2Badge = '🟢 Big Players Accumulating';
-    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${multiDayDiag?.bcr5NetPct ?? grossBuyPct}%).`;
+    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
     check2Color = '#10b981';
     check2Bg = 'rgba(16, 185, 129, 0.08)';
     check2Border = 'rgba(16, 185, 129, 0.25)';
@@ -830,22 +868,22 @@ function BeginnerConfidenceCard({
   // Rupee Investment Simulator calculations
   const buyPrice = ltp > 0 ? ltp : 100;
   const kitta = Math.max(10, Math.floor(selectedCapital / (buyPrice * 1.006)));
-  const buyCalc = calculateBuyDetails(kitta, buyPrice);
+  const buyCalc = calculateBuyDetails(kitta, buyPrice) || { totalAmount: kitta * buyPrice };
   const t1Price = Number(entryExitPlan?.levels?.target1?.price || +(buyPrice * 1.10).toFixed(1));
   const t2Price = Number(entryExitPlan?.levels?.target2?.price || +(buyPrice * 1.20).toFixed(1));
   const slPrice = Number(entryExitPlan?.levels?.stopLoss?.price || +(buyPrice * 0.94).toFixed(1));
 
-  const sellT1 = calculateSellDetails(kitta, t1Price, buyPrice, 'short');
-  const sellT2 = calculateSellDetails(kitta, t2Price, buyPrice, 'short');
-  const sellSL = calculateSellDetails(kitta, slPrice, buyPrice, 'short');
+  const sellT1 = calculateSellDetails(kitta, t1Price, buyPrice, 'short') || {};
+  const sellT2 = calculateSellDetails(kitta, t2Price, buyPrice, 'short') || {};
+  const sellSL = calculateSellDetails(kitta, slPrice, buyPrice, 'short') || {};
 
   const profitT1 = Math.round(sellT1.netProfitLoss ?? sellT1.profit ?? 0);
   const profitT2 = Math.round(sellT2.netProfitLoss ?? sellT2.profit ?? 0);
   const lossSL = Math.round(sellSL.netProfitLoss ?? sellSL.profit ?? 0);
 
-  const t1Pct = buyCalc.totalAmount > 0 ? ((profitT1 / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
-  const t2Pct = buyCalc.totalAmount > 0 ? ((profitT2 / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
-  const slPct = buyCalc.totalAmount > 0 ? ((Math.abs(lossSL) / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
+  const t1Pct = (buyCalc?.totalAmount > 0) ? ((profitT1 / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
+  const t2Pct = (buyCalc?.totalAmount > 0) ? ((profitT2 / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
+  const slPct = (buyCalc?.totalAmount > 0) ? ((Math.abs(lossSL) / buyCalc.totalAmount) * 100).toFixed(1) : '0.0';
 
   // Bottom Action Plan Banner
   const verdict = String(entryExitPlan?.verdict || '').toUpperCase();
@@ -1195,9 +1233,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
       return found || { symbol: stock.toUpperCase(), name: stock.toUpperCase(), ltp: 350, pChange: 0, sector: 'Commercial Banks' };
     }
     if (typeof stock === 'object') {
-      if (!stock.symbol) return { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
-      const found = allStocks.find(s => s && s.symbol === stock.symbol);
-      if (!found) return stock;
+      const sym = (stock.symbol || stock.stockSymbol || stock.sym || stock.scrip || stock.ticker || stock.item?.symbol || stock.name || '').toUpperCase();
+      if (!sym) return { symbol: 'STOCK', name: 'Stock Details', ltp: 350, pChange: 0, sector: 'Commercial Banks' };
+      const found = allStocks.find(s => s && s.symbol === sym);
+      if (!found) return { ...stock, symbol: sym };
       return {
         ...stock,
         ...found,
@@ -1283,8 +1322,14 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     
     // Live exchange price from single-stock quote or active market feed (allStocks) ALWAYS takes absolute priority
     const quoteLtp = Number(liveQuote?.ltp || liveQuote?.closePrice || 0);
-    const liveLtp = quoteLtp > 0 ? quoteLtp : Number(s.ltp || s.closePrice || s.latestPrice || 0);
-    const ltp = liveLtp > 0 ? liveLtp : Number(liveDetail?.closePrice || liveDetail?.marketPrice || 0);
+    const liveLtp = quoteLtp > 0 ? quoteLtp : Number(s.ltp || s.closePrice || s.latestPrice || s.price || 0);
+    let ltp = liveLtp > 0 ? liveLtp : Number(liveDetail?.closePrice || liveDetail?.marketPrice || 0);
+    if (ltp <= 0 && Array.isArray(realPriceHistory) && realPriceHistory.length > 0) {
+      ltp = Number(realPriceHistory[realPriceHistory.length - 1]?.close || realPriceHistory[0]?.close || 0);
+    }
+    if (ltp <= 0) {
+      ltp = Number(s.prevClose || s.previousClose || s.high || 100);
+    }
 
     const livePChange = Number(
       liveQuote?.pChange !== undefined ? liveQuote.pChange :
@@ -3006,15 +3051,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
               </div>
 
               {/* ── 2B. Beginner Confidence & Rupee Profit Simulator Card ── */}
-              <BeginnerConfidenceCard
-                d={d}
-                entryExitPlan={entryExitPlan}
-                realBrokerAnalysis={realBrokerAnalysis}
-                brokerConcentration={brokerConcentration}
-                brokerDays={brokerDays}
-                onSelectBrokerDays={handleBrokerDaysChange}
-                brokerLoading={brokerAnalysisLoading}
-              />
+              <CardLocalErrorBoundary>
+                <BeginnerConfidenceCard
+                  d={d}
+                  entryExitPlan={entryExitPlan}
+                  realBrokerAnalysis={realBrokerAnalysis}
+                  brokerConcentration={brokerConcentration}
+                  brokerDays={brokerDays}
+                  onSelectBrokerDays={handleBrokerDaysChange}
+                  brokerLoading={brokerAnalysisLoading}
+                />
+              </CardLocalErrorBoundary>
+
+              {/* ── 2C. Institutional Floor-Sheet Multi-Day Smart Money Card ── */}
+              <CardLocalErrorBoundary>
+                <BrokerSmartMoneyCard
+                  symbol={d.symbol}
+                  currentPrice={d.ltp}
+                  initialData={realBrokerAnalysis}
+                />
+              </CardLocalErrorBoundary>
 
               {/* ── 3. Performance & Today's Range (Groww / Kite Range Slider) ── */}
               <div style={{

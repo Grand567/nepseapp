@@ -17,7 +17,19 @@ import {
   detectWyckoffPhase
 } from '../utils/quantEngine.js';
 
-const PROXY_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PROXY_URL) || 'https://nepseapp.onrender.com';
+import { getProxyBase } from '../utils/liveData.js';
+
+function getEffectiveProxyBase() {
+  if (typeof getProxyBase === 'function') {
+    try {
+      const b = getProxyBase();
+      if (b) return b;
+    } catch (_) {}
+  }
+  return (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PROXY_URL) || '';
+}
+
+const PROXY_BASE = getEffectiveProxyBase();
 
 // ── Security: AI keys must ONLY live in the backend environment (proxy/.env or Render dashboard).
 // Never expose OPENROUTER_API_KEY or GLM_API_KEY via VITE_ prefix — they'd be bundled into
@@ -159,9 +171,9 @@ export async function analyzeStockWithAi(stock, options = {}) {
 export function generateOfflineStockReport(stock, customNewsPulse = null, realPriceHistory = null, realBrokerAnalysis = null) {
   if (!stock) return '';
   const actualStock = (stock?.stock) ? stock.stock : stock;
-  const sym = (actualStock.symbol || actualStock.stockSymbol || 'STOCK').toUpperCase();
+  const sym = (actualStock.symbol || actualStock.stockSymbol || actualStock.sym || actualStock.scrip || actualStock.ticker || actualStock.item?.symbol || 'STOCK').toUpperCase();
   const name = actualStock.name || actualStock.companyName || sym;
-  const ltp = Number(
+  let ltp = Number(
     actualStock.ltp ||
     actualStock.currentPrice ||
     actualStock.lastTradedPrice ||
@@ -169,8 +181,35 @@ export function generateOfflineStockReport(stock, customNewsPulse = null, realPr
     actualStock.close ||
     actualStock.price ||
     actualStock.entry_price ||
+    actualStock.prevClose ||
     0
   );
+
+  // Fallback 1: Extract latest close from realPriceHistory
+  if ((!ltp || isNaN(ltp) || ltp <= 0) && Array.isArray(realPriceHistory) && realPriceHistory.length > 0) {
+    for (let i = realPriceHistory.length - 1; i >= 0; i--) {
+      const c = realPriceHistory[i];
+      const p = Number(c?.close || c?.closePrice || c?.ltp || c?.y || 0);
+      if (p > 0) {
+        ltp = p;
+        break;
+      }
+    }
+  }
+
+  // Fallback 2: Extract from candle history if attached on stock
+  if ((!ltp || isNaN(ltp) || ltp <= 0) && Array.isArray(actualStock.history || actualStock.candles)) {
+    const arr = actualStock.history || actualStock.candles;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const c = arr[i];
+      const p = Number(c?.close || c?.closePrice || c?.ltp || 0);
+      if (p > 0) {
+        ltp = p;
+        break;
+      }
+    }
+  }
+
   if (!ltp || isNaN(ltp) || ltp <= 0) {
     return `### ⚠️ Data Insufficient for **${sym}**
 • Real market price is unavailable from the exchange feed.

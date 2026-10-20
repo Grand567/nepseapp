@@ -18,7 +18,7 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
-import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo } from './db/ledgerStore.js';
+import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo, getSmartMoneyAggregatedFlow } from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -4911,6 +4911,36 @@ app.get('/api/smart-money/stealth/:symbol', async (req, res) => {
   }
 });
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT S9B — Institutional Smart Money Multi-Day Floorsheet Rollup
+   GET /api/stocks/:symbol/smart-money?timeframe=5D&days=5
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get(['/api/stocks/:symbol/smart-money', '/api/stocks/:symbol/smart-money/'], async (req, res) => {
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required', data: [] });
+
+  const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
+  const sessionLimit = req.query.days ? Math.max(1, parseInt(req.query.days, 10)) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1);
+
+  try {
+    const rows = getSmartMoneyAggregatedFlow(symbol, sessionLimit);
+    return res.json({
+      symbol,
+      timeframe: tf,
+      sessionsIncluded: sessionLimit,
+      data: Array.isArray(rows) ? rows : [],
+    });
+  } catch (error) {
+    console.error(`[Server] /api/stocks/${symbol}/smart-money error:`, error.message);
+    return res.json({
+      symbol,
+      timeframe: tf,
+      data: [],
+      warning: error?.message || 'Floor-sheet summary table not yet populated',
+    });
+  }
+});
 
 /* ══════════════════════════════════════════════════════════════════════════════
    ENDPOINT S10 — Full NEPSE Index with sub-indices (enhanced)

@@ -886,7 +886,7 @@ function AppInner() {
                 <span className={`h-1.5 w-1.5 rounded-full ${
                   marketStatus?.isOpen ? 'bg-emerald-400' : marketStatus?.isPreOpen ? 'bg-amber-400' : marketStatus?.isHoliday ? 'bg-purple-400' : marketStatus?.isWeekend ? 'bg-amber-400' : 'bg-slate-500'
                 }`} />
-                {marketStatus?.statusLabel || (marketStatus?.isOpen ? 'Market Open' : 'Closed')}
+                {marketStatus?.isOpen ? 'Market Open' : marketStatus?.isPreOpen ? 'Pre-Open' : 'Market Closed'}
               </span>
               <span className="text-[10px] font-mono text-slate-400">
                 {marketStatus?.nptTime ? `${marketStatus.nptTime} NPT` : ''}
