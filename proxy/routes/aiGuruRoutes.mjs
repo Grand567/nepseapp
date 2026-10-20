@@ -179,11 +179,11 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
     totalBuyKitta += buyKitta;
     totalSellKitta += sellKitta;
 
-    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
+    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.024;
     const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
     const rawAnomaly = safeNum(
       item.anomalyScore ?? item.broker_anomaly_score,
-      (1 / (baselineShare * 50)) * ticketMultiplier
+      (1 / (baselineShare * 25)) * ticketMultiplier
     );
 
     return {

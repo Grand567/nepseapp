@@ -106,11 +106,11 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     totalSellKitta += sellKitta;
 
     // Use precomputed anomaly score or compute baseline-deflated score
-    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
+    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.024;
     const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
     const rawAnomaly = safeNum(
       item.anomalyScore ?? item.broker_anomaly_score,
-      (1 / (baselineShare * 50)) * ticketMultiplier
+      (1 / (baselineShare * 25)) * ticketMultiplier
     );
 
     return {
@@ -139,7 +139,7 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
 
   const topAcc = topAccumulators[0];
   let dominantRegime: BrokerSmartMoney5DSummary["dominantRegime"] = "NEUTRAL";
-  if (topAcc && topAcc.anomalyScore >= 1.75 && topAcc.avgTicketKitta >= 300 && netAccumulationRatio >= 54) {
+  if (topAcc && (topAcc.anomalyScore >= 1.75 || topAcc.anomalyScore >= 1.4) && topAcc.avgTicketKitta >= 300 && netAccumulationRatio >= 54) {
     dominantRegime = "INSTITUTIONAL_ACCUMULATION";
   } else if (netAccumulationRatio <= 45) {
     dominantRegime = "DISTRIBUTION";
