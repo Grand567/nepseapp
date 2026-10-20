@@ -79,6 +79,8 @@ import StockReportsAnnouncementsCard from './StockReportsAnnouncementsCard';
 import StockTechnicalGaugeCard from './StockTechnicalGaugeCard';
 import StockYanAnalyticsCard from './StockYanAnalyticsCard';
 import { BrokerSmartMoneyCard } from './stock/BrokerSmartMoneyCard';
+import { AiGuruQuantitativeCard } from './AiGuruQuantitativeCard';
+import { runAiQuantitativeAssessment } from '../services/aiGuru/runAiQuantitativeAssessment';
 
 
 
@@ -2380,8 +2382,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
     setAiLoading(true);
     setAiResult('');
     try {
+      const assessment = await runAiQuantitativeAssessment({
+        symbol: d.symbol,
+        quote: {
+          symbol: d.symbol,
+          ltp: d.ltp,
+          todayClose: d.close || d.ltp,
+          prevClose: d.prevClose,
+          volume: d.volume,
+          turnover: d.turnover,
+          isHoliday: marketStatus?.isHoliday,
+          holidayName: marketStatus?.holidayName
+        },
+        candles: realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || []),
+        broker5DRawPayload: realBrokerAnalysis
+      });
+
       const res = await analyzeStockWithAi(d, {
-        historyStr: `LTP: Rs. ${d.ltp}, 52W High: Rs. ${d.high52w || null}, 52W Low: ${d.low52w || null}, EPS: ${d.eps}, P/E: ${d.pe}`,
+        symbol: d.symbol,
+        userQuestion: assessment?.aiPromptContext || '',
+        historyStr: `LTP: Rs. ${assessment?.verifiedPrice || d.ltp}, 14D ATR: Rs. ${assessment?.metrics?.atr14 || '—'}, 52W High: Rs. ${d.high52w || null}, 52W Low: ${d.low52w || null}, EPS: ${d.eps}, P/E: ${d.pe}`,
         adSignal: realBrokerAnalysis?.adSignal || marketDepth?.demandStatus || 'Stable',
         realPriceHistory,
         realBrokerAnalysis
@@ -6592,6 +6612,25 @@ export default function StockDetailModal({ stock, allStocks = [], onClose }) {
 
         {activeTab === 'ai_calc' && (
           <div>
+            {/* ── Institutional Quantitative Telemetry Card ── */}
+            <div style={{ marginBottom: 14 }}>
+              <AiGuruQuantitativeCard
+                symbol={d.symbol}
+                quoteData={{
+                  symbol: d.symbol,
+                  ltp: d.ltp,
+                  todayClose: d.close || d.ltp,
+                  prevClose: d.prevClose,
+                  volume: d.volume,
+                  turnover: d.turnover,
+                  isHoliday: marketStatus?.isHoliday,
+                  holidayName: marketStatus?.holidayName
+                }}
+                historicalCandles={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
+                broker5DPayload={realBrokerAnalysis}
+              />
+            </div>
+
             {/* AI Assessment Card */}
             <div style={{ background: '#151922', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

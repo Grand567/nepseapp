@@ -18,7 +18,7 @@ import { setNewsCache } from './quant/newsCache.mjs';
 import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
-import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo, getSmartMoneyAggregatedFlow } from './db/ledgerStore.js';
+import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo, getSmartMoneyAggregatedFlow, getScripLedgerTelemetry } from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -4939,6 +4939,21 @@ app.get(['/api/stocks/:symbol/smart-money', '/api/stocks/:symbol/smart-money/'],
       data: [],
       warning: error?.message || 'Floor-sheet summary table not yet populated',
     });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT S9C — Scrip Walk-Forward Ledger & Historical OHLCV Telemetry
+   GET /api/stocks/:symbol/ledger-telemetry
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get(['/api/stocks/:symbol/ledger-telemetry', '/api/stocks/:symbol/ledger-telemetry/'], async (req, res) => {
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required' });
+  try {
+    const telemetry = getScripLedgerTelemetry(symbol);
+    return res.json({ symbol, ...telemetry });
+  } catch (err) {
+    return res.json({ symbol, ledgerRow: null, candles: [] });
   }
 });
 

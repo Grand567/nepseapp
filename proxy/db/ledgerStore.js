@@ -951,6 +951,58 @@ export function getSmartMoneyAggregatedFlow(symbol, sessionLimit = 5) {
   }
 }
 
+export function getScripLedgerTelemetry(rawSymbol) {
+  const symbol = String(rawSymbol || '').trim().toUpperCase();
+  if (!symbol) return { ledgerRow: null, candles: [] };
+
+  let ledgerRow = null;
+  try {
+    const row = db.prepare(`
+      SELECT
+        symbol,
+        strategy AS strategy_name,
+        COALESCE(entry_vwap, broker_vwap, entry_price) AS entry_vwap,
+        COALESCE(settlement_unlock_date, t2_unlock_date) AS settlement_unlock_date,
+        COALESCE(mfe_pct, max_gain_pct, 0) AS mfe_pct,
+        COALESCE(mae_pct, 0) AS mae_pct,
+        COALESCE(nepse_alpha_pct, 0) AS nepse_alpha_pct,
+        COALESCE(broker_anomaly_score, 1.0) AS broker_anomaly_score,
+        COALESCE(avg_ticket_kitta, 0) AS avg_ticket_kitta,
+        is_ratchet_armed AS ratchet_triggered,
+        status
+      FROM algorithmic_signal_ledger
+      WHERE UPPER(symbol) = ?
+      ORDER BY signal_date DESC
+      LIMIT 1
+    `).get(symbol);
+    ledgerRow = row || null;
+  } catch (err) {
+    ledgerRow = null;
+  }
+
+  let candles = [];
+  try {
+    candles = db.prepare(`
+      SELECT
+        trade_date AS date,
+        open_price AS open,
+        high_price AS high,
+        low_price AS low,
+        close_price AS close,
+        total_volume AS volume,
+        CASE WHEN total_volume > 0 THEN (total_turnover / total_volume) ELSE close_price END AS vwap
+      FROM daily_stock_summary
+      WHERE UPPER(symbol) = ?
+      ORDER BY trade_date DESC
+      LIMIT 30
+    `).all(symbol) || [];
+  } catch (err) {
+    candles = [];
+  }
+
+  return { ledgerRow, candles };
+}
+
 export {
   rebuildSignalTrackRecord,
   initSignalLedgerTable,
