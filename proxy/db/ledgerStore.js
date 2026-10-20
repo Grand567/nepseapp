@@ -150,6 +150,20 @@ db.exec(`
     LIMIT 5
   )
   GROUP BY UPPER(symbol), ROUND(rate, 0);
+
+  -- 4. Unified Views: signal_ledger & floorsheet_broker_summary
+  CREATE VIEW IF NOT EXISTS signal_ledger AS
+  SELECT * FROM algorithmic_signal_ledger;
+
+  CREATE VIEW IF NOT EXISTS floorsheet_broker_summary AS
+  SELECT
+    trade_date,
+    symbol,
+    broker_id AS broker_no,
+    buy_vol AS buy_kitta,
+    sell_vol AS sell_kitta,
+    ROUND((buy_amt + sell_amt) / NULLIF(buy_vol + sell_vol, 0), 2) AS vwap
+  FROM daily_broker_ledger;
 `);
 
 // In-Memory Tier-1 Hot Cache for < 1ms API responses

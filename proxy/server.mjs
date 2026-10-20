@@ -21,6 +21,7 @@ import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
 import floorsheetHubRouter from './routes/floorsheetHubRoutes.mjs';
 import stockTelemetryRouter from './routes/stockTelemetryRoutes.mjs';
+import signalTrackRecordRouter from './routes/signalTrackRecordRoutes.mjs';
 import {
   seedFromDiskVault,
   rebuildHotCache,
@@ -171,6 +172,7 @@ app.use('/api/sync', syncRouter);
 app.use('/api/ai-guru', aiGuruRouter);
 app.use('/api/floorsheet/hub', floorsheetHubRouter);
 app.use('/api/stocks', stockTelemetryRouter);
+app.use('/api/signals', signalTrackRecordRouter);
 app.use('/api', radarRouter);
 app.use('/admin', radarRouter);
 
