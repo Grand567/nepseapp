@@ -11,6 +11,8 @@ import {
   type LedgerTelemetryRow,
 } from "../services/aiGuru/runAiQuantitativeAssessment";
 import { AiGuruQuantitativeCard } from "./AiGuruQuantitativeCard";
+import { StockFundamentalsAndLockInTab } from "./StockFundamentalsAndLockInTab";
+import type { RawFundamentalRecord, CorporateActionRow } from "../services/fundamentals/nepseRegulatoryEngine";
 
 export type StockInfoTabKey =
   | "OVERVIEW"
@@ -18,6 +20,7 @@ export type StockInfoTabKey =
   | "BROKER_FLOW"
   | "FLOORSHEET"
   | "VOLUME_PROFILE"
+  | "FUNDAMENTALS_LOCKIN"
   | "AI_GURU_TOOLS";
 
 export interface StockInformationHubModalProps {
@@ -32,6 +35,8 @@ export interface StockInformationHubModalProps {
     asks?: Array<{ price?: number; kitta?: number; quantity?: number; orders?: number }>;
   } | null;
   broker5DPayload?: unknown;
+  rawFundamentals?: RawFundamentalRecord | null;
+  corporateActions?: CorporateActionRow[];
   onClose?: () => void;
 }
 
@@ -44,6 +49,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   rawFloorsheetContracts = [],
   liveDepth = null,
   broker5DPayload = null,
+  rawFundamentals = null,
+  corporateActions = [],
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<StockInfoTabKey>("OVERVIEW");
@@ -119,6 +126,10 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       key: "VOLUME_PROFILE",
       label: "Volume Profile (POC)",
       badge: telemetry.volumeProfile.pocPrice ? `Rs ${telemetry.volumeProfile.pocPrice}` : undefined,
+    },
+    {
+      key: "FUNDAMENTALS_LOCKIN",
+      label: "Fundamentals & Lock-In",
     },
     { key: "AI_GURU_TOOLS", label: "AI Guru & Tools" },
   ];
@@ -544,6 +555,27 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
               </div>
             ))}
           </div>
+        )}
+
+        {/* TAB: FUNDAMENTALS & REGULATORY LOCK-IN */}
+        {activeTab === "FUNDAMENTALS_LOCKIN" && (
+          <StockFundamentalsAndLockInTab
+            symbol={telemetry.symbol}
+            verifiedPrice={telemetry.overview.verifiedPrice}
+            rawFundamentals={
+              rawFundamentals || {
+                sector: selectedScrip?.sector || (quoteData as any)?.sector,
+                epsTtm: (selectedScrip as any)?.eps ?? (quoteData as any)?.eps,
+                bookValuePerShare: (selectedScrip as any)?.bookValue ?? (quoteData as any)?.bookValue ?? (selectedScrip as any)?.nwps,
+                paidUpCapital: (selectedScrip as any)?.paidUpCapital ?? (quoteData as any)?.paidUpCapital,
+                nplPct: (selectedScrip as any)?.npl ?? (quoteData as any)?.npl,
+                carPct: (selectedScrip as any)?.car ?? (quoteData as any)?.car,
+                promoterSharePct: (selectedScrip as any)?.promoterHolding ?? (quoteData as any)?.promoterHolding,
+                promoterUnlockDate: (selectedScrip as any)?.promoterUnlockDate ?? (quoteData as any)?.promoterUnlockDate,
+              }
+            }
+            corporateActions={corporateActions}
+          />
         )}
 
         {/* TAB 6: AI GURU & QUANT TOOLS */}
