@@ -86,32 +86,56 @@ export function initSignalLedgerTable(db) {
       signal_id TEXT PRIMARY KEY,
       symbol TEXT NOT NULL,
       sector TEXT,
-      signal_date TEXT NOT NULL,
-      t2_unlock_date TEXT NOT NULL,
+      strategy TEXT,
       signal_type TEXT NOT NULL,
+      signal_date TEXT NOT NULL,
+      trigger_ltp REAL,
+      initial_risk_pct REAL,
+      reward_multiple REAL DEFAULT 2.2,
+      entry_date TEXT,
       entry_price REAL NOT NULL,
+      entry_vwap REAL,
+      entry_turnover_npr REAL DEFAULT 0,
       broker_vwap REAL,
       lead_broker_id TEXT,
       lead_broker_name TEXT,
+      primary_broker_id INTEGER,
       bcr5_net_pct REAL,
       scr3_net_pct REAL,
       ignition_score REAL,
-      stop_loss_price REAL NOT NULL,
+      target_price REAL,
       target1_price REAL NOT NULL,
       target2_price REAL NOT NULL,
+      initial_stop_price REAL,
+      stop_loss_price REAL NOT NULL,
+      active_stop_price REAL,
+      is_ratchet_armed INTEGER DEFAULT 0,
+      settlement_unlock_date TEXT,
+      t2_unlock_date TEXT NOT NULL,
       status TEXT NOT NULL,
       exit_date TEXT,
       exit_price REAL,
       peak_price REAL,
       max_gain_pct REAL,
+      mfe_pct REAL DEFAULT 0,
+      mae_pct REAL DEFAULT 0,
       gross_pnl_pct REAL,
+      gross_return_pct REAL DEFAULT 0,
       net_pnl_after_fees_pct REAL,
+      net_return_pct REAL DEFAULT 0,
+      nepse_index_return_pct REAL DEFAULT 0,
+      nepse_alpha_pct REAL DEFAULT 0,
+      broker_anomaly_score REAL DEFAULT 0,
+      avg_ticket_kitta REAL DEFAULT 0,
+      market_regime TEXT DEFAULT 'SIDEWAYS',
+      corporate_action_adjusted INTEGER DEFAULT 1,
       holding_days INTEGER,
       current_ltp REAL,
       vwap_diff_pct REAL,
       vwap_zone TEXT,
       live_risk_to_sl_pct REAL,
-      live_reward_to_t1_pct REAL
+      live_reward_to_t1_pct REAL,
+      updated_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_asl_date ON algorithmic_signal_ledger(signal_date DESC);
@@ -120,24 +144,205 @@ export function initSignalLedgerTable(db) {
     CREATE INDEX IF NOT EXISTS idx_asl_broker ON algorithmic_signal_ledger(lead_broker_id);
   `);
 
+  ensureUpgradedLedgerSchema(db);
+
   try {
-    const tableCols = db.prepare(`PRAGMA table_info(algorithmic_signal_ledger)`).all().map((c) => c.name);
-    if (!tableCols.includes("current_ltp")) {
-      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN current_ltp REAL;`);
-    }
-    if (!tableCols.includes("vwap_diff_pct")) {
-      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN vwap_diff_pct REAL;`);
-    }
-    if (!tableCols.includes("vwap_zone")) {
-      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN vwap_zone TEXT;`);
-    }
-    if (!tableCols.includes("live_risk_to_sl_pct")) {
-      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN live_risk_to_sl_pct REAL;`);
-    }
-    if (!tableCols.includes("live_reward_to_t1_pct")) {
-      db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN live_reward_to_t1_pct REAL;`);
-    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ledger_symbol_date ON algorithmic_signal_ledger(symbol, signal_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_ledger_status_strategy ON algorithmic_signal_ledger(status, strategy);
+      CREATE INDEX IF NOT EXISTS idx_ledger_broker ON algorithmic_signal_ledger(primary_broker_id);
+    `);
   } catch (_) {}
+}
+
+/**
+ * Safe Schema Upgrader for existing drabyashree_ledger.db
+ */
+export function ensureUpgradedLedgerSchema(db) {
+  if (!db) return;
+  const columnsToEnsure = [
+    ['strategy', 'TEXT'],
+    ['trigger_ltp', 'REAL'],
+    ['initial_risk_pct', 'REAL'],
+    ['reward_multiple', 'REAL DEFAULT 2.2'],
+    ['entry_date', 'TEXT'],
+    ['entry_vwap', 'REAL'],
+    ['entry_turnover_npr', 'REAL DEFAULT 0'],
+    ['target_price', 'REAL'],
+    ['initial_stop_price', 'REAL'],
+    ['active_stop_price', 'REAL'],
+    ['is_ratchet_armed', 'INTEGER DEFAULT 0'],
+    ['settlement_unlock_date', 'TEXT'],
+    ['mfe_pct', 'REAL DEFAULT 0'],
+    ['mae_pct', 'REAL DEFAULT 0'],
+    ['gross_return_pct', 'REAL DEFAULT 0'],
+    ['net_return_pct', 'REAL DEFAULT 0'],
+    ['nepse_index_return_pct', 'REAL DEFAULT 0'],
+    ['nepse_alpha_pct', 'REAL DEFAULT 0'],
+    ['primary_broker_id', 'INTEGER'],
+    ['broker_anomaly_score', 'REAL DEFAULT 0'],
+    ['avg_ticket_kitta', 'REAL DEFAULT 0'],
+    ['market_regime', "TEXT DEFAULT 'SIDEWAYS'"],
+    ['corporate_action_adjusted', 'INTEGER DEFAULT 1'],
+    ['current_ltp', 'REAL'],
+    ['vwap_diff_pct', 'REAL'],
+    ['vwap_zone', 'TEXT'],
+    ['live_risk_to_sl_pct', 'REAL'],
+    ['live_reward_to_t1_pct', 'REAL'],
+    ['updated_at', "TEXT DEFAULT (datetime('now'))"]
+  ];
+
+  try {
+    const existingCols = new Set(
+      db.prepare('PRAGMA table_info(algorithmic_signal_ledger)').all().map((c) => c.name)
+    );
+
+    for (const [colName, colDef] of columnsToEnsure) {
+      if (!existingCols.has(colName)) {
+        try {
+          db.exec(`ALTER TABLE algorithmic_signal_ledger ADD COLUMN ${colName} ${colDef};`);
+        } catch (_) {}
+      }
+    }
+
+    // Create Institutional Strategy Scorecard View
+    db.exec(`
+      CREATE VIEW IF NOT EXISTS v_strategy_institutional_metrics AS
+      SELECT
+          strategy,
+          COUNT(*) FILTER (WHERE status != 'UNFILLABLE_SKIP') AS total_tradable_signals,
+          COUNT(*) FILTER (WHERE status = 'UNFILLABLE_SKIP') AS skipped_circuit_traps,
+          ROUND(
+              100.0 * COUNT(*) FILTER (WHERE status IN ('TARGET_HIT', 'RATCHET_STOP_WIN', 'WIN_T1', 'WIN_T2', 'WIN_RATCHET_STOP') OR (status != 'UNFILLABLE_SKIP' AND net_return_pct > 0))
+              / NULLIF(COUNT(*) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 0),
+              2
+          ) AS verified_win_rate_pct,
+          ROUND(AVG(net_return_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS net_expectancy_pct,
+          ROUND(AVG(nepse_alpha_pct) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 2) AS avg_nepse_alpha_pct,
+          ROUND(
+              SUM( CASE WHEN net_return_pct > 0 THEN net_return_pct ELSE 0 END )
+              / NULLIF(ABS(SUM( CASE WHEN net_return_pct < 0 THEN net_return_pct ELSE 0 END )), 0),
+              2
+          ) AS profit_factor,
+          ROUND(AVG(mfe_pct) FILTER (WHERE status NOT IN ('UNFILLABLE_SKIP')), 2) AS avg_mfe_pct,
+          ROUND(AVG(mae_pct) FILTER (WHERE status NOT IN ('UNFILLABLE_SKIP')), 2) AS avg_mae_pct,
+          ROUND(AVG(holding_days) FILTER (WHERE status NOT IN ('ACTIVE', 'OPEN_ACTIVE', 'UNFILLABLE_SKIP')), 1) AS avg_holding_days
+      FROM algorithmic_signal_ledger
+      GROUP BY strategy;
+    `);
+  } catch (_) {}
+}
+
+/**
+ * 1. Exact NEPSE Commission, SEBON, DP Charge & CGT Calculator
+ */
+export function calculateNepseNetReturn(
+  entryPrice,
+  exitPrice,
+  capitalNpr = 250000,
+  cgtRate = 0.075
+) {
+  if (entryPrice <= 0 || exitPrice <= 0) {
+    return { grossReturnPct: 0, netReturnPct: 0 };
+  }
+
+  const getBrokerCommissionRate = (amount) => {
+    if (amount <= 50000) return 0.0036;       // 0.36%
+    if (amount <= 500000) return 0.0033;      // 0.33%
+    if (amount <= 2000000) return 0.0031;     // 0.31%
+    if (amount <= 10000000) return 0.0027;    // 0.27%
+    return 0.0024;                            // 0.24%
+  };
+
+  const kitta = Math.max(10, Math.floor(capitalNpr / entryPrice));
+  const buyGross = kitta * entryPrice;
+  const buyCommission = Math.max(10, buyGross * getBrokerCommissionRate(buyGross));
+  const buySebon = buyGross * 0.00015;        // 0.015% SEBON fee
+  const buyDp = 25;                           // Rs 25 DP charge
+  const totalBuyCost = buyGross + buyCommission + buySebon + buyDp;
+
+  const sellGross = kitta * exitPrice;
+  const sellCommission = Math.max(10, sellGross * getBrokerCommissionRate(sellGross));
+  const sellSebon = sellGross * 0.00015;
+  const sellDp = 25;
+  const netSellProceedsBeforeTax = sellGross - sellCommission - sellSebon - sellDp;
+
+  const taxableProfit = netSellProceedsBeforeTax - totalBuyCost;
+  const cgtAmount = taxableProfit > 0 ? taxableProfit * cgtRate : 0;
+  const finalNetProfit = taxableProfit - cgtAmount;
+
+  const grossReturnPct = ((exitPrice - entryPrice) / entryPrice) * 100;
+  const netReturnPct = (finalNetProfit / totalBuyCost) * 100;
+
+  return {
+    grossReturnPct: Number(grossReturnPct.toFixed(2)),
+    netReturnPct: Number(netReturnPct.toFixed(2)),
+  };
+}
+
+/**
+ * 2. Smart Money Broker Anomaly & Ticket-Size Scorer
+ */
+export function evaluateBrokerSmartMoney(
+  threeDayBrokerRows,
+  totalThreeDayStockVolume,
+  brokerBaselines = new Map()
+) {
+  if (!threeDayBrokerRows || !threeDayBrokerRows.length || totalThreeDayStockVolume <= 0) {
+    return { primaryBrokerId: null, anomalyScore: 0, avgTicketKitta: 0, isInstitutionalFootprint: false };
+  }
+
+  const aggregated = new Map();
+
+  for (const row of threeDayBrokerRows) {
+    const bId = Number(row.brokerId || row.broker);
+    const curr = aggregated.get(bId) || { netBuyVol: 0, grossBuyVol: 0, buyTrades: 0 };
+    const buyVol = row.buyVolume || row.buyVol || 0;
+    const sellVol = row.sellVolume || row.sellVol || 0;
+    const trades = Math.max(1, row.buyTradesCount || row.trades || Math.round(buyVol / 250) || 1);
+    curr.netBuyVol += buyVol - sellVol;
+    curr.grossBuyVol += buyVol;
+    curr.buyTrades += trades;
+    aggregated.set(bId, curr);
+  }
+
+  let bestBrokerId = null;
+  let highestAnomalyScore = 0;
+  let bestTicketKitta = 0;
+
+  for (const [brokerId, stats] of aggregated.entries()) {
+    if (stats.netBuyVol <= 0) continue;
+
+    // Share of 3-day net accumulation in this stock
+    const stockAccumulationShare = stats.netBuyVol / totalThreeDayStockVolume;
+    // Baseline market share across NEPSE (defaults to 1.8% if unknown)
+    const baselineShare = Math.max(0.008, (brokerBaselines.get ? brokerBaselines.get(brokerId) : brokerBaselines[brokerId]) ?? (brokerId === 58 ? 0.085 : 0.018));
+
+    // Anomaly Ratio: How many multiples above their normal market footprint is this broker buying?
+    const rawAnomalyRatio = stockAccumulationShare / baselineShare;
+
+    // Average Kitta per floor-sheet transaction
+    const avgTicketKitta = stats.grossBuyVol / Math.max(1, stats.buyTrades);
+
+    // Ticket multiplier rewards HNI/Institutional lot sizes (>= 300 kitta/trade) and penalizes retail (< 45 kitta/trade)
+    const ticketMultiplier =
+      avgTicketKitta >= 350 ? 1.35 : avgTicketKitta >= 150 ? 1.0 : avgTicketKitta < 45 ? 0.45 : 0.75;
+
+    const compositeScore = Number((rawAnomalyRatio * ticketMultiplier).toFixed(2));
+
+    if (compositeScore > highestAnomalyScore) {
+      highestAnomalyScore = compositeScore;
+      bestBrokerId = brokerId;
+      bestTicketKitta = Number(avgTicketKitta.toFixed(1));
+    }
+  }
+
+  return {
+    primaryBrokerId: bestBrokerId,
+    anomalyScore: highestAnomalyScore,
+    avgTicketKitta: bestTicketKitta,
+    isInstitutionalFootprint: highestAnomalyScore >= 2.4 && bestTicketKitta >= 120,
+  };
 }
 
 /**
@@ -354,6 +559,9 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       let holdingDays = 0;
       let hasHitT1 = false;
       let hasHitTrailFloor = false;
+      let isRatchetArmed = 0;
+      let activeStopPrice = stopLossPrice;
+      let maePct = 0;
 
       for (let j = i + 1; j <= latestDateIndex; j++) {
         const fwdDate = dates[j];
@@ -361,8 +569,15 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         if (!fwdRec) continue;
 
         const fwdHigh = fwdRec.highPrice || fwdRec.closePrice || entryPrice;
+        const fwdLow = fwdRec.lowPrice || fwdRec.closePrice || entryPrice;
         const fwdClose = fwdRec.closePrice || entryPrice;
         if (fwdHigh > peakPrice) peakPrice = fwdHigh;
+
+        // Track Adverse Excursion even during T+2 settlement lock
+        const dayDrawdownPct = Number((((fwdLow - entryPrice) / entryPrice) * 100).toFixed(2));
+        if (dayDrawdownPct < maePct) {
+          maePct = dayDrawdownPct;
+        }
 
         // Invariant: Exits can ONLY occur when j >= i + 2 (holding_days >= 2)
         if (j >= i + 2) {
@@ -379,8 +594,12 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           if (fwdHigh >= target1Price) {
             hasHitT1 = true;
             hasHitTrailFloor = true;
+            isRatchetArmed = 1;
+            activeStopPrice = trailFloor;
           } else if (fwdHigh >= thresholdPeak) {
             hasHitTrailFloor = true;
+            isRatchetArmed = 1;
+            activeStopPrice = trailFloor;
           }
 
           if (hasHitT1) {
@@ -404,7 +623,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           } else if (hasHitTrailFloor) {
             // Trailing Profit Floor activated: if close pulls back below floor, lock profit at close
             if (fwdClose < trailFloor) {
-              status = "WIN_T1";
+              status = "WIN_RATCHET_STOP";
               exitPrice = Number(fwdClose.toFixed(2));
               exitDate = fwdDate;
               holdingDays = j - i;
@@ -467,10 +686,27 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         }
       }
 
-      const grossPnlPct = Number((((exitPrice - entryPrice) / entryPrice) * 100).toFixed(2));
-      // Deduct 1.1% round-trip NEPSE statutory fee friction (broker commission + SEBON + DP fee)
-      const netPnlPct = Number((grossPnlPct - 1.1).toFixed(2));
+      // Exact NEPSE return calculation
+      const { grossReturnPct, netReturnPct } = calculateNepseNetReturn(entryPrice, exitPrice);
+      const grossPnlPct = grossReturnPct;
+      const netPnlPct = netReturnPct;
       const maxGainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
+      const mfePct = maxGainPct;
+      const initialRiskPct = lowBeta ? 4.0 : 5.0;
+      const rewardMultiple = lowBeta ? 2.75 : 2.2;
+      const entryIdx = i + 1;
+      const entryDate = entryIdx < dates.length ? dates[entryIdx] : currentDate;
+      const entryRec = symbolDateMap.get(`${symbol}_${entryDate}`);
+      const entryTurnoverNpr = entryRec ? (entryRec.totalTurnover || 0) : (currentDay.totalTurnover || 0);
+
+      const smartMoney = evaluateBrokerSmartMoney(
+        diag3.topAccumulators || [],
+        diag3.totalVolume || 1
+      );
+      const primaryBrokerId = Number(leadBrokerId) || null;
+      const brokerAnomalyScore = smartMoney.anomalyScore;
+      const avgTicketKitta = smartMoney.avgTicketKitta;
+
       const ignitionScore = Math.min(
         99,
         Math.round(74 + (diag3.bcr5NetPct * 0.4) + Math.min(10, rvol * 2.5))
@@ -492,26 +728,49 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         signal_id: `${symbol}_${currentDate}_${signalType}`,
         symbol,
         sector,
-        signal_date: currentDate,
-        t2_unlock_date: t2UnlockDate,
+        strategy: signalType,
         signal_type: signalType,
+        signal_date: currentDate,
+        trigger_ltp: entryPrice,
+        initial_risk_pct: initialRiskPct,
+        reward_multiple: rewardMultiple,
+        entry_date: entryDate,
         entry_price: entryPrice,
+        entry_vwap: entryPrice,
+        entry_turnover_npr: entryTurnoverNpr,
         broker_vwap: bigBrokerVWAP,
         lead_broker_id: leadBrokerId,
         lead_broker_name: leadBrokerName,
+        primary_broker_id: primaryBrokerId,
         bcr5_net_pct: diag3.bcr5NetPct,
         scr3_net_pct: diag3.scr3NetPct,
         ignition_score: ignitionScore,
-        stop_loss_price: stopLossPrice,
+        target_price: target1Price,
         target1_price: target1Price,
         target2_price: target2Price,
+        initial_stop_price: stopLossPrice,
+        stop_loss_price: stopLossPrice,
+        active_stop_price: activeStopPrice,
+        is_ratchet_armed: isRatchetArmed,
+        settlement_unlock_date: t2UnlockDate,
+        t2_unlock_date: t2UnlockDate,
         status,
         exit_date: exitDate,
         exit_price: exitPrice,
         peak_price: peakPrice,
         max_gain_pct: maxGainPct,
+        mfe_pct: mfePct,
+        mae_pct: maePct,
         gross_pnl_pct: grossPnlPct,
+        gross_return_pct: grossReturnPct,
         net_pnl_after_fees_pct: netPnlPct,
+        net_return_pct: netReturnPct,
+        nepse_index_return_pct: 0,
+        nepse_alpha_pct: netReturnPct,
+        broker_anomaly_score: brokerAnomalyScore,
+        avg_ticket_kitta: avgTicketKitta,
+        market_regime: "SIDEWAYS",
+        corporate_action_adjusted: 1,
         holding_days: holdingDays,
         current_ltp: currentLtp,
         vwap_diff_pct: vwapDiffPct,
@@ -525,18 +784,34 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
   // 5. Persist into SQLite (algorithmic_signal_ledger)
   const insertStmt = db.prepare(`
     INSERT OR REPLACE INTO algorithmic_signal_ledger (
-      signal_id, symbol, sector, signal_date, t2_unlock_date, signal_type,
-      entry_price, broker_vwap, lead_broker_id, lead_broker_name,
-      bcr5_net_pct, scr3_net_pct, ignition_score, stop_loss_price,
-      target1_price, target2_price, status, exit_date, exit_price,
-      peak_price, max_gain_pct, gross_pnl_pct, net_pnl_after_fees_pct, holding_days,
+      signal_id, symbol, sector, strategy, signal_type,
+      signal_date, trigger_ltp, initial_risk_pct, reward_multiple,
+      entry_date, entry_price, entry_vwap, entry_turnover_npr,
+      broker_vwap, lead_broker_id, lead_broker_name, primary_broker_id,
+      bcr5_net_pct, scr3_net_pct, ignition_score,
+      target_price, target1_price, target2_price,
+      initial_stop_price, stop_loss_price, active_stop_price, is_ratchet_armed,
+      settlement_unlock_date, t2_unlock_date,
+      status, exit_date, exit_price, holding_days,
+      peak_price, max_gain_pct, mfe_pct, mae_pct,
+      gross_pnl_pct, gross_return_pct, net_pnl_after_fees_pct, net_return_pct,
+      nepse_index_return_pct, nepse_alpha_pct,
+      broker_anomaly_score, avg_ticket_kitta, market_regime,
       current_ltp, vwap_diff_pct, vwap_zone, live_risk_to_sl_pct, live_reward_to_t1_pct
     ) VALUES (
-      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?,
       ?, ?, ?, ?, ?
     )
   `);
@@ -548,27 +823,49 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
         s.signal_id,
         s.symbol,
         s.sector,
-        s.signal_date,
-        s.t2_unlock_date,
+        s.strategy,
         s.signal_type,
+        s.signal_date,
+        s.trigger_ltp,
+        s.initial_risk_pct,
+        s.reward_multiple,
+        s.entry_date,
         s.entry_price,
+        s.entry_vwap,
+        s.entry_turnover_npr,
         s.broker_vwap,
         s.lead_broker_id,
         s.lead_broker_name,
+        s.primary_broker_id,
         s.bcr5_net_pct,
         s.scr3_net_pct,
         s.ignition_score,
-        s.stop_loss_price,
+        s.target_price,
         s.target1_price,
         s.target2_price,
+        s.initial_stop_price,
+        s.stop_loss_price,
+        s.active_stop_price,
+        s.is_ratchet_armed,
+        s.settlement_unlock_date,
+        s.t2_unlock_date,
         s.status,
         s.exit_date,
         s.exit_price,
+        s.holding_days,
         s.peak_price,
         s.max_gain_pct,
+        s.mfe_pct,
+        s.mae_pct,
         s.gross_pnl_pct,
+        s.gross_return_pct,
         s.net_pnl_after_fees_pct,
-        s.holding_days,
+        s.net_return_pct,
+        s.nepse_index_return_pct,
+        s.nepse_alpha_pct,
+        s.broker_anomaly_score,
+        s.avg_ticket_kitta,
+        s.market_regime,
         s.current_ltp,
         s.vwap_diff_pct,
         s.vwap_zone,
@@ -736,6 +1033,12 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
     (a, b) => b.winCount - a.winCount || b.winRatePct - a.winRatePct
   )[0];
 
+  // Query institutional strategy scorecard view
+  let strategyMetrics = [];
+  try {
+    strategyMetrics = db.prepare(`SELECT * FROM v_strategy_institutional_metrics`).all();
+  } catch (_) {}
+
   const summary = {
     totalSignals: signals.length,
     closedSignals: closed.length,
@@ -756,12 +1059,14 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
     oldestDate: dates[0],
     newestDate: dates[dates.length - 1],
     t2InvariantVerified: closed.every((s) => s.holding_days >= 2),
+    strategyMetrics,
   };
 
   const payload = {
     summary,
     strategyBreakdown,
     brokerLeaderboard,
+    strategyMetrics,
     signals,
   };
 

@@ -5,7 +5,13 @@ import fs from "fs";
 import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { calculateMultiDayDiagnostics, evaluateEarlyIgnition, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
-import { rebuildSignalTrackRecord, initSignalLedgerTable } from "./signalTrackerStore.js";
+import {
+  rebuildSignalTrackRecord,
+  initSignalLedgerTable,
+  ensureUpgradedLedgerSchema,
+  calculateNepseNetReturn,
+  evaluateBrokerSmartMoney,
+} from "./signalTrackerStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -911,5 +917,11 @@ export async function backfillRealHistoricalFloorsheets(targetTradingDays = 30, 
 // Alias for backwards compatibility
 export const backfillHistoricalDays = backfillRealHistoricalFloorsheets;
 
-export { rebuildSignalTrackRecord, initSignalLedgerTable };
+export {
+  rebuildSignalTrackRecord,
+  initSignalLedgerTable,
+  ensureUpgradedLedgerSchema,
+  calculateNepseNetReturn,
+  evaluateBrokerSmartMoney,
+};
 

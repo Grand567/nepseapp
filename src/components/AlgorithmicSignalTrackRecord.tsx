@@ -55,6 +55,34 @@ export interface AlgorithmicSignal {
   vwap_zone?: 'BELOW_VWAP' | 'AT_VWAP' | 'ABOVE_VWAP' | string;
   live_risk_to_sl_pct?: number;
   live_reward_to_t1_pct?: number;
+  strategy?: string;
+  entry_vwap?: number;
+  entry_turnover_npr?: number;
+  mfe_pct?: number;
+  mae_pct?: number;
+  gross_return_pct?: number;
+  net_return_pct?: number;
+  nepse_alpha_pct?: number;
+  primary_broker_id?: number | null;
+  broker_anomaly_score?: number;
+  avg_ticket_kitta?: number;
+  market_regime?: string;
+  is_ratchet_armed?: number;
+  active_stop_price?: number;
+  settlement_unlock_date?: string;
+}
+
+export interface InstitutionalStrategyMetric {
+  strategy: string;
+  total_tradable_signals: number;
+  skipped_circuit_traps: number;
+  verified_win_rate_pct: number;
+  net_expectancy_pct: number;
+  avg_nepse_alpha_pct: number;
+  profit_factor: number;
+  avg_mfe_pct: number;
+  avg_mae_pct: number;
+  avg_holding_days: number;
 }
 
 export interface SignalSummary {
@@ -73,6 +101,7 @@ export interface SignalSummary {
   oldestDate: string;
   newestDate: string;
   t2InvariantVerified: boolean;
+  strategyMetrics?: InstitutionalStrategyMetric[];
 }
 
 export interface BrokerPerformance {
@@ -209,11 +238,11 @@ export function AlgorithmicSignalTrackRecord({
 
     // Status filter
     if (statusFilter === 'WINS') {
-      result = result.filter((s) => s.status && s.status.startsWith('WIN'));
+      result = result.filter((s) => s.status && (s.status.startsWith('WIN') || s.status === 'TARGET_HIT' || s.status === 'RATCHET_STOP_WIN'));
     } else if (statusFilter === 'OPEN_ACTIVE') {
-      result = result.filter((s) => s.status === 'OPEN_ACTIVE');
+      result = result.filter((s) => s.status === 'OPEN_ACTIVE' || s.status === 'ACTIVE');
     } else if (statusFilter === 'STOPPED_OUT') {
-      result = result.filter((s) => s.status === 'STOPPED_OUT' || s.status === 'TIME_EXPIRED');
+      result = result.filter((s) => s.status === 'STOPPED_OUT' || s.status === 'STOP_LOSS' || s.status === 'TIME_EXPIRED' || s.status === 'TIME_STOP_STALE');
     }
 
     // Sector filter
@@ -345,11 +374,35 @@ export function AlgorithmicSignalTrackRecord({
         </span>
       );
     }
-    if (s.status === 'TIME_EXPIRED') {
+    if (s.status === 'WIN_RATCHET_STOP' || s.status === 'RATCHET_STOP_WIN') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+          RATCHET WIN (T+{s.holding_days})
+        </span>
+      );
+    }
+    if (s.status === 'TARGET_HIT') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          TARGET HIT
+        </span>
+      );
+    }
+    if (s.status === 'STOP_LOSS') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+          STOP LOSS
+        </span>
+      );
+    }
+    if (s.status === 'TIME_EXPIRED' || s.status === 'TIME_STOP_STALE') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700/60 text-slate-300 border border-slate-600/60">
           <Clock className="w-3.5 h-3.5 text-slate-400" />
-          TIME EXPIRED (T+{s.holding_days})
+          {s.status === 'TIME_STOP_STALE' ? 'STALE EJECT' : 'TIME EXPIRED'} (T+{s.holding_days})
         </span>
       );
     }
