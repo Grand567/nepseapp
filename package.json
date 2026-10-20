@@ -15,6 +15,8 @@
     "audit:prod": "node scripts/fullAppAudit.mjs --prod",
     "audit:export": "node scripts/exportForGemini4Argon.mjs",
     "export:argon": "node scripts/exportForGemini4Argon.mjs",
+    "audit:ai-guru": "node scripts/exportAiGuruForArgon.mjs",
+    "export:ai-guru": "node scripts/exportAiGuruForArgon.mjs",
     "preview": "vite preview",
     "whitelabel": "node white-label.mjs",
     "desktop": "electron .",
