@@ -203,6 +203,114 @@ export function resolveVerifiedPrice(
 }
 
 /**
+ * Normalizes multi-shape 5D Broker payloads with volume-share anomaly deflation (Hardened Patch B)
+ */
+export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartMoney5DSummary {
+  const empty: BrokerSmartMoney5DSummary = {
+    netAccumulationRatio: 50,
+    topAccumulators: [],
+    topDistributors: [],
+    dominantRegime: "NEUTRAL",
+  };
+
+  if (!rawPayload || typeof rawPayload !== "object") return empty;
+  const obj = rawPayload as Record<string, unknown>;
+
+  const candidateArray = Array.isArray(rawPayload)
+    ? rawPayload
+    : Array.isArray(obj["5D"])
+    ? (obj["5D"] as unknown[])
+    : Array.isArray(obj["5d"])
+    ? (obj["5d"] as unknown[])
+    : Array.isArray(obj.brokers)
+    ? (obj.brokers as unknown[])
+    : Array.isArray(obj.data)
+    ? (obj.data as unknown[])
+    : [];
+
+  if (candidateArray.length === 0) return empty;
+
+  const RETAIL_GIANT_BASELINE: Record<string, number> = {
+    "58": 0.085,
+    "45": 0.042,
+    "49": 0.038,
+    "34": 0.032,
+  };
+
+  let totalBuyKitta = 0;
+  let totalSellKitta = 0;
+
+  for (const rawItem of candidateArray) {
+    const item = (rawItem && typeof rawItem === "object" ? rawItem : {}) as Record<string, unknown>;
+    totalBuyKitta += safeNum(item.buyKitta ?? item.buy_kitta ?? item.buyVolume ?? item.buy_vol, 0);
+    totalSellKitta += safeNum(item.sellKitta ?? item.sell_kitta ?? item.sellVolume ?? item.sell_vol, 0);
+  }
+
+  const normalizedRows = candidateArray.map((rawItem) => {
+    const item = (rawItem && typeof rawItem === "object" ? rawItem : {}) as Record<string, unknown>;
+    const brokerId = String(item.brokerId ?? item.broker_no ?? item.broker ?? item.broker_id ?? "0").replace(/^0+/, "");
+    const buyKitta = safeNum(item.buyKitta ?? item.buy_kitta ?? item.buyVolume ?? item.buy_vol, 0);
+    const sellKitta = safeNum(item.sellKitta ?? item.sell_kitta ?? item.sellVolume ?? item.sell_vol, 0);
+    const netKitta = safeNum(item.netKitta ?? item.net_kitta, buyKitta - sellKitta);
+    const tradeCount = Math.max(1, safeNum(item.trades ?? item.trade_count ?? item.totalTrades, 1));
+    const avgTicketKitta = safeNum(
+      item.avgTicketKitta ?? item.avg_ticket_kitta,
+      (buyKitta + sellKitta) / tradeCount
+    );
+
+    const baselineShare = RETAIL_GIANT_BASELINE[brokerId] ?? 0.018;
+    const scripBuyShare = totalBuyKitta > 0 ? buyKitta / totalBuyKitta : baselineShare;
+    const ticketMultiplier = avgTicketKitta >= 300 ? 1.35 : avgTicketKitta < 45 ? 0.65 : 1.0;
+
+    const computedAnomaly = (scripBuyShare / baselineShare) * ticketMultiplier;
+    const rawAnomaly = safeNum(
+      item.anomalyScore ?? item.broker_anomaly_score,
+      computedAnomaly
+    );
+
+    return {
+      brokerId,
+      netKitta,
+      anomalyScore: Number(Math.max(0.1, rawAnomaly).toFixed(2)),
+      avgTicketKitta: Math.round(avgTicketKitta),
+    };
+  });
+
+  const topAccumulators = normalizedRows
+    .filter((r) => r.netKitta > 0)
+    .sort((a, b) => b.netKitta * b.anomalyScore - a.netKitta * a.anomalyScore)
+    .slice(0, 5);
+
+  const topDistributors = normalizedRows
+    .filter((r) => r.netKitta < 0)
+    .sort((a, b) => Math.abs(b.netKitta) - Math.abs(a.netKitta))
+    .slice(0, 5);
+
+  const totalVolume = totalBuyKitta + totalSellKitta;
+  const netAccumulationRatio =
+    totalVolume > 0
+      ? Number(((totalBuyKitta / totalVolume) * 100).toFixed(1))
+      : 50;
+
+  const topAcc = topAccumulators[0];
+  let dominantRegime: BrokerSmartMoney5DSummary["dominantRegime"] = "NEUTRAL";
+  if (topAcc && (topAcc.anomalyScore >= 1.75 || topAcc.anomalyScore >= 1.4) && topAcc.avgTicketKitta >= 300 && netAccumulationRatio >= 54) {
+    dominantRegime = "INSTITUTIONAL_ACCUMULATION";
+  } else if (netAccumulationRatio <= 45) {
+    dominantRegime = "DISTRIBUTION";
+  } else if (topAcc && topAcc.avgTicketKitta < 45) {
+    dominantRegime = "RETAIL_CHURN";
+  }
+
+  return {
+    netAccumulationRatio,
+    topAccumulators,
+    topDistributors,
+    dominantRegime,
+  };
+}
+
+/**
  * Computes 14-period Average True Range (ATR) in strict chronological order (Oldest -> Newest)
  */
 function computeAtr14(candles: HistoricalCandle[], fallbackPrice: number): number {

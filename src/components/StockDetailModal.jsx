@@ -10,6 +10,7 @@ import {
 import ShareHubChart from './ShareHubChart';
 import AdvancedChartModal from './AdvancedChartModal';
 import BreakoutAlertDialog from './BreakoutAlertDialog';
+import StockInformationHubModal from './StockInformationHubModal';
 import { getWatchlistAlertConfig, calculateStockRvol } from '../utils/watchlistAlerts';
 import { calculatePivotPoints, calculateFibonacci, calculateRSI, calculateMACD, calculateBollingerBands, calculateEMA, calculateSMA } from '../utils/indicators';
 import { getPeerStocks } from '../utils/calculations';
@@ -1189,6 +1190,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [isFavorite, setIsFavorite] = useState(() => isWatched(initialSym));
   const [showAdvancedModal, setShowAdvancedModal] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showHubModal, setShowHubModal] = useState(false);
   const [corporateAlert, setCorporateAlert] = useState(null);
   const [historyTimeframe, setHistoryTimeframe] = useState('1Y');
   const scrollRef = useRef(null);
@@ -2550,6 +2552,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       category: 'trading',
       badge: null
     },
+    {
+      id: 'volume_profile',
+      label: 'Volume Profile (POC)',
+      icon: Activity,
+      category: 'trading',
+      badge: '📊 POC'
+    },
 
     // ── Tier 2: Financials & Corporate Actions (Essential for Valuation & Long-Term Holding) ──
     {
@@ -2722,6 +2731,29 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           >
             <Bell style={{ width: 14, height: 14 }} />
             <span>Alert</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowHubModal(true)}
+            title="Open Unified Floorsheet & Market Data Telemetry Hub"
+            style={{
+              background: 'rgba(99, 102, 241, 0.15)',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              borderRadius: 8,
+              color: '#a5b4fc',
+              cursor: 'pointer',
+              padding: '5px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 12,
+              fontWeight: 700,
+              transition: 'all 0.15s'
+            }}
+          >
+            <Activity style={{ width: 14, height: 14 }} />
+            <span>Telemetry Hub</span>
           </button>
 
           <button
@@ -5680,6 +5712,36 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           );
         })()}
 
+        {/* ════ TAB 3B: VOLUME PROFILE & POINT OF CONTROL (POC) ════ */}
+        {activeTab === 'volume_profile' && (
+          <div style={{ background: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 16, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Volume Profile & Point of Control (POC)</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                    Price-by-Volume Distribution (5D)
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                  Horizontal liquidity distribution across trade rates with buyer/seller aggressor splits
+                </div>
+              </div>
+            </div>
+            <div style={{ minHeight: 320 }}>
+              <StockInformationHubModal
+                symbol={d.symbol}
+                selectedScrip={d}
+                quoteData={d}
+                historicalCandles={realPriceHistory || history || []}
+                ledgerTelemetry={ledgerTelemetry}
+                rawFloorsheetContracts={realFloorsheet?.rows || []}
+                liveDepth={marketDepth}
+              />
+            </div>
+          </div>
+        )}
+
         {/* ════ TAB 4: BROKER ANALYSIS (Share Hub APK Video Parity + Date-Wise Buying/Selling) ════ */}
         {(activeTab === 'broker_analysis' || activeTab === 'depth_broker') && (
           <div>
@@ -6840,6 +6902,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           stock={d}
           entryExitPlan={entryExitPlan}
         />
+      )}
+
+      {/* ── Unified Floorsheet & Market Data Telemetry Hub Modal ── */}
+      {showHubModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 1050, height: '90vh' }}>
+            <StockInformationHubModal
+              symbol={d.symbol}
+              selectedScrip={d}
+              quoteData={d}
+              historicalCandles={realPriceHistory || history || []}
+              ledgerTelemetry={ledgerTelemetry}
+              rawFloorsheetContracts={realFloorsheet?.rows || []}
+              liveDepth={marketDepth}
+              onClose={() => setShowHubModal(false)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

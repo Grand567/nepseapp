@@ -19,7 +19,17 @@ import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
-import { seedFromDiskVault, rebuildHotCache, HOT_CACHE, getLedgerStatusInfo, getSmartMoneyAggregatedFlow, getScripLedgerTelemetry } from './db/ledgerStore.js';
+import {
+  seedFromDiskVault,
+  rebuildHotCache,
+  HOT_CACHE,
+  getLedgerStatusInfo,
+  getSmartMoneyAggregatedFlow,
+  getScripLedgerTelemetry,
+  getScripFloorsheet,
+  getScripVolumeProfile,
+  reconstructMarketDepthFromFloorsheet,
+} from './db/ledgerStore.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -3182,6 +3192,57 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       businessDate: businessDate || rows[0]?.businessDate || ''
     };
 
+    // Off-hours / Holiday Fallback: If live exchange scraper returned 0 rows, serve from SQLite tick-level contracts
+    if (rows.length === 0 && cleanSym) {
+      try {
+        const sqliteFs = getScripFloorsheet(cleanSym, size || 100);
+        if (sqliteFs.length > 0) {
+          const mappedRows = sqliteFs.map(c => ({
+            contractNo: c.contractNo,
+            contractId: c.contractNo,
+            stockSymbol: c.symbol,
+            symbol: c.symbol,
+            buyerMemberId: c.buyerBroker,
+            buyerBroker: c.buyerBroker,
+            sellerMemberId: c.sellerBroker,
+            sellerBroker: c.sellerBroker,
+            contractQuantity: c.kitta,
+            qty: c.kitta,
+            quantity: c.kitta,
+            contractRate: c.rate,
+            rate: c.rate,
+            contractAmount: c.amount,
+            amount: c.amount,
+            aggressor: c.aggressor,
+            aggressorSide: c.aggressor,
+            isInternalCross: c.isInternalCross,
+            isWhalePrint: c.isWhalePrint,
+            tradeTime: c.tradeTime,
+            businessDate: c.tradeDate,
+          }));
+          const totalAmount = mappedRows.reduce((s, r) => s + r.amount, 0);
+          const totalQty = mappedRows.reduce((s, r) => s + r.qty, 0);
+          const fallbackData = {
+            rows: mappedRows,
+            page: 1,
+            size: mappedRows.length,
+            totalPages: 1,
+            totalElements: mappedRows.length,
+            totalAmount: +totalAmount.toFixed(2),
+            totalQty,
+            totalTrades: mappedRows.length,
+            symbol: cleanSym,
+            businessDate: mappedRows[0]?.businessDate || businessDate || '',
+            isReal: true
+          };
+          setCache(cacheKey, fallbackData, 10 * 60 * 1000);
+          return res.json({ success: true, data: fallbackData, source: 'drabyashree_ledger_sqlite' });
+        }
+      } catch (sqlFsErr) {
+        console.warn('[floorsheet] SQLite fallback warning:', sqlFsErr.message);
+      }
+    }
+
     const ttl = businessDate ? 2 * 60 * 60 * 1000 : 5 * 60 * 1000;
     if (rows.length > 0) {
       setCache(cacheKey, data, ttl);
@@ -3523,6 +3584,24 @@ function reconstructClosingOrderBook(symbol) {
   } catch (_) {}
 
   const ltp = Number(stock?.lastTradedPrice || stock?.ltp || stock?.closePrice || 0);
+
+  // Fallback: Reconstruct L2 depth from SQLite floorsheet VAP liquidity clusters
+  try {
+    const vapDepth = reconstructMarketDepthFromFloorsheet(symbol, ltp);
+    if (vapDepth && (vapDepth.bids?.length > 0 || vapDepth.asks?.length > 0)) {
+      return {
+        ...vapDepth,
+        ltp,
+        openPrice: Number(stock?.openPrice || ltp),
+        highPrice: Number(stock?.highPrice || ltp),
+        lowPrice: Number(stock?.lowPrice || ltp),
+        previousClose: Number(stock?.previousClose || stock?.previousDayClosePrice || ltp),
+        volume: Number(stock?.totalTradedQuantity || 0),
+        isOffMarket: true,
+        source: 'floorsheet_vap_depth'
+      };
+    }
+  } catch (_) {}
 
   return {
     symbol,
@@ -4956,6 +5035,60 @@ app.get(['/api/stocks/:symbol/ledger-telemetry', '/api/stocks/:symbol/ledger-tel
     return res.json({ symbol, ...telemetry });
   } catch (err) {
     return res.json({ symbol, ledgerRow: null, candles: [] });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT S9D — Scrip 5-Day Volume Profile & Point of Control (POC)
+   GET /api/stocks/:symbol/volume-profile
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get(['/api/stocks/:symbol/volume-profile', '/api/stocks/:symbol/volume-profile/'], async (req, res) => {
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required' });
+  try {
+    const vp = getScripVolumeProfile(symbol);
+    return res.json({ success: true, symbol, ...vp });
+  } catch (err) {
+    return res.json({ success: false, symbol, pocPrice: null, nodes: [], error: err.message });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT S9E — Unified Stock Information & Telemetry Hub
+   GET /api/stocks/:symbol/telemetry
+   Hydrates all Stock Info Tabs (Overview, Depth, Broker Flow, Tape, POC, AI Guru)
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get(['/api/stocks/:symbol/telemetry', '/api/stocks/:symbol/telemetry/'], async (req, res) => {
+  const symbol = sanitizeSymbol(req.params.symbol);
+  if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required' });
+
+  try {
+    const [ledgerData, volumeProfile, contracts, depth] = await Promise.all([
+      (async () => {
+        try { return getScripLedgerTelemetry(symbol); } catch (_) { return { ledgerRow: null, candles: [] }; }
+      })(),
+      (async () => {
+        try { return getScripVolumeProfile(symbol); } catch (_) { return { pocPrice: null, nodes: [] }; }
+      })(),
+      (async () => {
+        try { return getScripFloorsheet(symbol, 100); } catch (_) { return []; }
+      })(),
+      (async () => {
+        try { return reconstructClosingOrderBook(symbol); } catch (_) { return null; }
+      })(),
+    ]);
+
+    return res.json({
+      success: true,
+      symbol,
+      ledger: ledgerData,
+      volumeProfile,
+      floorsheetTape: contracts,
+      marketDepth: depth,
+      asOf: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, symbol, error: err.message });
   }
 });
 

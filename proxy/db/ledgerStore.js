@@ -99,6 +99,57 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_stock_date ON daily_stock_summary(symbol, trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_broker_symbol_date ON daily_broker_ledger(symbol, trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_stock_summary_date ON daily_stock_summary(trade_date DESC);
+
+  -- 1. Raw Floorsheet Contracts Table (Tick-by-Tick Persistence)
+  CREATE TABLE IF NOT EXISTS floorsheet_contracts (
+    contract_no TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    trade_time TEXT,
+    buyer_broker INTEGER NOT NULL,
+    seller_broker INTEGER NOT NULL,
+    kitta INTEGER NOT NULL,
+    rate REAL NOT NULL,
+    amount REAL NOT NULL,
+    aggressor_side TEXT DEFAULT 'NEUTRAL',
+    is_internal_cross INTEGER DEFAULT 0,
+    is_whale_print INTEGER DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_fs_contracts_symbol_date
+    ON floorsheet_contracts (UPPER(symbol), trade_date DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_fs_contracts_date_amount
+    ON floorsheet_contracts (trade_date DESC, amount DESC);
+
+  -- 2. Live/Cached L2 Market Depth Table (with off-hours persistence)
+  CREATE TABLE IF NOT EXISTS market_depth_cache (
+    symbol TEXT PRIMARY KEY,
+    updated_at TEXT NOT NULL,
+    total_bid_kitta INTEGER DEFAULT 0,
+    total_ask_kitta INTEGER DEFAULT 0,
+    bids_json TEXT NOT NULL DEFAULT '[]',
+    asks_json TEXT NOT NULL DEFAULT '[]'
+  );
+
+  -- 3. View: Price-by-Volume (Volume Profile & Synthetic L2 Depth Fallback)
+  CREATE VIEW IF NOT EXISTS v_scrip_volume_profile_5d AS
+  SELECT
+    UPPER(symbol) AS symbol,
+    ROUND(rate, 0) AS price_bucket,
+    SUM(kitta) AS total_kitta,
+    SUM(CASE WHEN aggressor_side = 'BUY' THEN kitta ELSE 0 END) AS buy_aggressor_kitta,
+    SUM(CASE WHEN aggressor_side = 'SELL' THEN kitta ELSE 0 END) AS sell_aggressor_kitta,
+    SUM(CASE WHEN is_internal_cross = 1 THEN kitta ELSE 0 END) AS internal_cross_kitta,
+    COUNT(*) AS contract_count
+  FROM floorsheet_contracts
+  WHERE trade_date IN (
+    SELECT DISTINCT trade_date
+    FROM floorsheet_contracts
+    ORDER BY trade_date DESC
+    LIMIT 5
+  )
+  GROUP BY UPPER(symbol), ROUND(rate, 0);
 `);
 
 // In-Memory Tier-1 Hot Cache for < 1ms API responses
@@ -1002,6 +1053,258 @@ export function getScripLedgerTelemetry(rawSymbol) {
 
   return { ledgerRow, candles };
 }
+
+/**
+ * Ingests tick-level floorsheet contracts into floorsheet_contracts with tick-test aggressor inference
+ */
+export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, rawTrades) => {
+  if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
+
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO floorsheet_contracts
+    (contract_no, symbol, trade_date, trade_time, buyer_broker, seller_broker, kitta, rate, amount, aggressor_side, is_internal_cross, is_whale_print)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const bySymbol = new Map();
+  for (const t of rawTrades) {
+    const sym = String(t.stockSymbol || t.contractSymbol || t.symbol || '').toUpperCase().trim();
+    if (!sym) continue;
+    if (!bySymbol.has(sym)) bySymbol.set(sym, []);
+    bySymbol.get(sym).push(t);
+  }
+
+  let count = 0;
+  for (const [sym, trades] of bySymbol.entries()) {
+    trades.sort((a, b) => {
+      const cA = String(a.contractId || a.contract_no || a.contractNo || '');
+      const cB = String(b.contractId || b.contract_no || b.contractNo || '');
+      return cA.localeCompare(cB, undefined, { numeric: true });
+    });
+
+    let prevRate = null;
+    let lastDir = 'NEUTRAL';
+
+    for (const t of trades) {
+      const cid = String(t.contractId || t.contract_no || t.contractNo || `FS-${Date.now()}-${count + 1}`);
+      const date = String(t.businessDate || t.tradeDate || t.trade_date || tradeDate);
+      const time = String(t.tradeTime || t.trade_time || '');
+      const buyer = Number(t.buyerMemberId || t.buyerBroker || t.buyer_broker || t.buyer || 0);
+      const seller = Number(t.sellerMemberId || t.sellerBroker || t.seller_broker || t.seller || 0);
+      const qty = Number(t.contractQuantity || t.quantity || t.kitta || 0);
+      const rate = Number(t.contractRate || t.rate || t.price || 0);
+      const amt = Number(t.contractAmount || t.amount || (qty * rate));
+
+      if (qty <= 0) continue;
+
+      let dir = lastDir;
+      if (t.aggressor || t.aggressor_side) {
+        dir = String(t.aggressor || t.aggressor_side).toUpperCase();
+      } else if (prevRate !== null && rate > 0) {
+        if (rate > prevRate) { dir = 'BUY'; lastDir = 'BUY'; }
+        else if (rate < prevRate) { dir = 'SELL'; lastDir = 'SELL'; }
+      }
+      if (rate > 0) prevRate = rate;
+
+      const isInternal = (buyer > 0 && buyer === seller) ? 1 : 0;
+      const isWhale = (qty >= 500 || amt >= 500000) ? 1 : 0;
+
+      insert.run(cid, sym, date, time, buyer, seller, qty, rate, amt, dir, isInternal, isWhale);
+      count++;
+    }
+  }
+
+  return count;
+});
+
+/**
+ * Retrieves raw floorsheet contracts for a symbol (newest first)
+ */
+export function getScripFloorsheet(symbol, limit = 100) {
+  if (!symbol) return [];
+  const cleanSym = String(symbol).toUpperCase().trim();
+  try {
+    const rows = db.prepare(`
+      SELECT
+        contract_no AS contractNo,
+        symbol,
+        trade_date AS tradeDate,
+        trade_time AS tradeTime,
+        buyer_broker AS buyerBroker,
+        seller_broker AS sellerBroker,
+        kitta,
+        rate,
+        amount,
+        aggressor_side AS aggressor,
+        is_internal_cross AS isInternalCross,
+        is_whale_print AS isWhalePrint
+      FROM floorsheet_contracts
+      WHERE UPPER(symbol) = ?
+      ORDER BY trade_date DESC, trade_time DESC, contract_no DESC
+      LIMIT ?
+    `).all(cleanSym, limit);
+
+    return rows.map(r => ({
+      ...r,
+      isInternalCross: Boolean(r.isInternalCross),
+      isWhalePrint: Boolean(r.isWhalePrint),
+    }));
+  } catch (err) {
+    console.warn(`[ledgerStore] getScripFloorsheet error for ${cleanSym}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Retrieves 5D volume profile nodes and Point of Control (POC) for a symbol
+ */
+export function getScripVolumeProfile(symbol) {
+  if (!symbol) return { pocPrice: null, nodes: [] };
+  const cleanSym = String(symbol).toUpperCase().trim();
+  try {
+    const rows = db.prepare(`
+      SELECT
+        price_bucket AS priceBucket,
+        total_kitta AS totalKitta,
+        buy_aggressor_kitta AS buyKitta,
+        sell_aggressor_kitta AS sellKitta,
+        internal_cross_kitta AS internalCrossKitta,
+        contract_count AS contractCount
+      FROM v_scrip_volume_profile_5d
+      WHERE symbol = ?
+      ORDER BY price_bucket DESC
+    `).all(cleanSym);
+
+    let maxKitta = 0;
+    let pocPrice = null;
+    let grandTotalKitta = 0;
+
+    for (const r of rows) {
+      grandTotalKitta += r.totalKitta;
+      if (r.totalKitta > maxKitta) {
+        maxKitta = r.totalKitta;
+        pocPrice = r.priceBucket;
+      }
+    }
+
+    const nodes = rows.map(r => ({
+      priceBucket: r.priceBucket,
+      totalKitta: r.totalKitta,
+      buyKitta: r.buyKitta,
+      sellKitta: r.sellKitta,
+      pctOfTotalVolume: grandTotalKitta > 0 ? Number(((r.totalKitta / grandTotalKitta) * 100).toFixed(1)) : 0,
+      isPoc: r.priceBucket === pocPrice,
+    }));
+
+    return { pocPrice, nodes };
+  } catch (err) {
+    console.warn(`[ledgerStore] getScripVolumeProfile error for ${cleanSym}:`, err.message);
+    return { pocPrice: null, nodes: [] };
+  }
+}
+
+/**
+ * Reconstructs Level-2 Market Depth from SQLite Floorsheet Volume-at-Price (VAP) clusters
+ */
+export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = null) {
+  if (!symbol) return null;
+  const cleanSym = String(symbol).toUpperCase().trim();
+
+  try {
+    let refPrice = verifiedPrice;
+    if (!refPrice || refPrice <= 0) {
+      const latestSummary = db.prepare(`
+        SELECT close_price FROM daily_stock_summary
+        WHERE UPPER(symbol) = ?
+        ORDER BY trade_date DESC LIMIT 1
+      `).get(cleanSym);
+      refPrice = latestSummary?.close_price || 0;
+    }
+
+    const contracts = getScripFloorsheet(cleanSym, 200);
+    if (!contracts || contracts.length === 0) return null;
+
+    if (!refPrice || refPrice <= 0) {
+      refPrice = contracts[0]?.rate || 0;
+    }
+
+    const levelMap = new Map();
+    for (const c of contracts) {
+      if (c.rate <= 0 || c.kitta <= 0) continue;
+      const lvl = Number(c.rate.toFixed(1));
+      const cur = levelMap.get(lvl) || { kitta: 0, orders: 0 };
+      cur.kitta += c.kitta;
+      cur.orders += 1;
+      levelMap.set(lvl, cur);
+    }
+
+    const allLevels = Array.from(levelMap.entries()).map(([price, v]) => ({
+      price,
+      quantity: v.kitta,
+      qty: v.kitta,
+      kitta: v.kitta,
+      orders: v.orders,
+      isSyntheticVap: true,
+    }));
+
+    const bids = allLevels.filter(l => l.price <= refPrice).sort((a, b) => b.price - a.price).slice(0, 5);
+    const asks = allLevels.filter(l => l.price > refPrice).sort((a, b) => a.price - b.price).slice(0, 5);
+
+    const totalBidQty = bids.reduce((s, b) => s + b.quantity, 0);
+    const totalAskQty = asks.reduce((s, a) => s + a.quantity, 0);
+    const obir = (totalBidQty + totalAskQty) > 0
+      ? Number(((totalBidQty - totalAskQty) / (totalBidQty + totalAskQty)).toFixed(4))
+      : 0;
+
+    const topBid = bids[0]?.price || 0;
+    const topAsk = asks[0]?.price || 0;
+    const spread = topAsk > 0 && topBid > 0 ? Number(Math.max(0, topAsk - topBid).toFixed(2)) : 0;
+    const spreadPct = topBid > 0 && spread > 0 ? Number(((spread / topBid) * 100).toFixed(2)) : 0;
+
+    return {
+      symbol: cleanSym,
+      bids,
+      asks,
+      totalBidQty,
+      totalAskQty,
+      obir,
+      spread,
+      spreadPct,
+      isOffMarket: true,
+      sessionLabel: 'Floorsheet Volume-at-Price (VAP) Liquidity Walls (L2 Feed Closed)',
+      demandStatus: obir > 0.08 ? 'Demand Heavy' : obir < -0.08 ? 'Supply Heavy' : 'Balanced Flow',
+      source: 'floorsheet_vap_depth',
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.warn(`[ledgerStore] reconstructMarketDepthFromFloorsheet error for ${cleanSym}:`, err.message);
+    return null;
+  }
+}
+
+// Auto-seed floorsheet_contracts if table is currently empty
+try {
+  const fsContractsCount = db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts`).get()?.c || 0;
+  if (fsContractsCount === 0) {
+    const candidateFiles = ['floorsheet-full-2026-10-16.json', 'floorsheet-full-2026-10-15.json'];
+    for (const f of candidateFiles) {
+      const p = path.join(DATA_DIR, f);
+      if (fs.existsSync(p)) {
+        try {
+          const match = f.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+          const dt = match ? match[1] : '2026-10-16';
+          const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (Array.isArray(raw) && raw.length > 0) {
+            const ingested = ingestFloorsheetContractsTransaction(dt, raw);
+            console.log(`[Drabyashree Ledger] Auto-bootstrapped ${ingested} contracts for ${dt} from ${f}`);
+          }
+        } catch (e) {
+          console.warn(`[Drabyashree Ledger] Startup bootstrap error for ${f}:`, e.message);
+        }
+      }
+    }
+  }
+} catch (_) {}
 
 export {
   rebuildSignalTrackRecord,
