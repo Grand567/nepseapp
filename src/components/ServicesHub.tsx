@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import NepseAgentDashboard from './NepseAgentDashboard';
 import { AlgorithmicSignalTrackRecord } from './AlgorithmicSignalTrackRecord';
+import { FloorsheetServiceTab } from './FloorsheetServiceTab';
 import type { LucideIcon } from 'lucide-react';
 import {
   UniversalScreener, StockMomentumAnalyzer, MarketSummaryService, TopPerformersService,
@@ -734,8 +735,18 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ text: 'Price rise confirmed by volume. Wired to /PriceVolume.' }}
       insight="Best trades have both price and volume confirmation." />
   ),
-  'zero-sum-floorsheet': LiveFloorsheetService,
-  'floor-sheet': LiveFloorsheetService,
+  'zero-sum-floorsheet': (props: any) => (
+    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+  ),
+  'floor-sheet': (props: any) => (
+    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+  ),
+  'floorsheet-hub': (props: any) => (
+    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+  ),
+  'whale-scanner': (props: any) => (
+    <FloorsheetServiceTab onSelectSymbol={(sym) => props?.onSelectStock?.({ symbol: sym })} />
+  ),
   'pe-ranking': () => (
     <UniversalScreener hideTimeframe={true} filterFn={(s) => s.pe > 0 && s.sector !== 'Mutual Funds'} sortFn={(a, b) => a.pe - b.pe}
       customCols={[

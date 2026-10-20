@@ -19,6 +19,7 @@ import { setMacroCache } from './quant/macroCache.mjs';
 import syncRouter from './syncRouter.mjs';
 import radarRouter from './routes/radarRoutes.js';
 import aiGuruRouter from './routes/aiGuruRoutes.mjs';
+import floorsheetHubRouter from './routes/floorsheetHubRoutes.mjs';
 import {
   seedFromDiskVault,
   rebuildHotCache,
@@ -167,6 +168,7 @@ app.use(cors({
 app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
 app.use('/api/ai-guru', aiGuruRouter);
+app.use('/api/floorsheet/hub', floorsheetHubRouter);
 app.use('/api', radarRouter);
 app.use('/admin', radarRouter);
 
