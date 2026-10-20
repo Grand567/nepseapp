@@ -1462,6 +1462,7 @@ function Dashboard({
   const [showIntelligence, setShowIntelligence] = useState(false);
   const [showSubIndicesModal, setShowSubIndicesModal] = useState(false);
   const [showSignalTrackerModal, setShowSignalTrackerModal] = useState(false);
+  // Local localStorage-backed stats (immediate, zero latency)
   const signalTrackerStats = useMemo(() => {
     try {
       return getSignalStats();
@@ -1469,6 +1470,49 @@ function Dashboard({
       return null;
     }
   }, [stocks, showSignalTrackerModal]);
+
+  // BUG FIX (Dashboard badge 0% Win Rate): Also load backend summary for the dashboard badge.
+  // The local signalTracker uses localStorage and may show 0% when the SQLite backend has real data.
+  const [backendTrackerSummary, setBackendTrackerSummary] = useState(null);
+  useEffect(() => {
+    let active = true;
+    // Only fetch once per session (module-level cache)
+    if (window._dashboardBackendWinRate != null) {
+      setBackendTrackerSummary(window._dashboardBackendWinRate);
+      return;
+    }
+    import('../utils/liveData.js').then(({ getProxyBase }) => {
+      const base = getProxyBase() || 'https://nepseapp.onrender.com';
+      fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!active || !data?.summary) return;
+          const s = data.summary;
+          const summary = {
+            total: s.totalSignals ?? 0,
+            openCount: s.openSignals ?? 0,
+            closedCount: s.closedSignals ?? 0,
+            winRate: s.verifiedWinRatePct != null ? Math.round(s.verifiedWinRatePct) : null,
+          };
+          window._dashboardBackendWinRate = summary;
+          setBackendTrackerSummary(summary);
+        })
+        .catch(() => {});
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // Merge: backend takes precedence for win rate display; local provides open signal count
+  const effectiveTrackerStats = useMemo(() => {
+    if (backendTrackerSummary && (backendTrackerSummary.total > 0 || backendTrackerSummary.closedCount > 0)) {
+      return {
+        ...backendTrackerSummary,
+        // Fall back to local open count if backend doesn't have it
+        openCount: backendTrackerSummary.openCount || signalTrackerStats?.openCount || 0,
+      };
+    }
+    return signalTrackerStats;
+  }, [backendTrackerSummary, signalTrackerStats]);
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
 
@@ -3424,7 +3468,7 @@ function Dashboard({
             >
               <span>📊</span>
               <span>Algorithmic Signal Track Record</span>
-              {signalTrackerStats && signalTrackerStats.total > 0 && (
+              {(effectiveTrackerStats || signalTrackerStats) && ((effectiveTrackerStats?.total ?? signalTrackerStats?.total ?? 0) > 0 || (effectiveTrackerStats?.openCount ?? 0) > 0) && (
                 <span style={{
                   background: 'rgba(16, 185, 129, 0.25)',
                   border: '1px solid rgba(16, 185, 129, 0.45)',
@@ -3434,7 +3478,11 @@ function Dashboard({
                   fontWeight: 900,
                   color: '#6ee7b7'
                 }}>
-                  {signalTrackerStats.closedCount > 0 ? `${signalTrackerStats.winRate}% Win Rate` : `${signalTrackerStats.openCount} Active`}
+                  {/* BUG FIX: Use backend summary win rate (effectiveTrackerStats) so the badge
+                      shows real audited win rate from SQLite, not 0% from empty localStorage */}
+                  {(effectiveTrackerStats?.closedCount ?? signalTrackerStats.closedCount) > 0
+                    ? `${effectiveTrackerStats?.winRate ?? signalTrackerStats.winRate}% Win Rate`
+                    : `${effectiveTrackerStats?.openCount ?? signalTrackerStats.openCount} Active`}
                 </span>
               )}
             </button>

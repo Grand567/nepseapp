@@ -15,7 +15,8 @@ import {
   seedFromDiskVault,
   seedFromSnapshotGz,
   getSymbolHistoryFromDb,
-  getLedgerStatusInfo
+  getLedgerStatusInfo,
+  getScripLedgerTelemetry
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
 
@@ -580,6 +581,28 @@ export async function handleSignalTrackRecord(req, res) {
 }
 
 router.get(["/radar/signal-track-record", "/signal-track-record", "/signals/track-record"], handleSignalTrackRecord);
+
+/**
+ * GET /api/stocks/:symbol/ledger-telemetry
+ * Returns the most recent SQLite signal ledger row (entry_vwap, avg_ticket_kitta,
+ * broker_anomaly_score, mfe_pct, mae_pct, etc.) for a given stock symbol plus
+ * the last 30 daily OHLCV candles. Used by AI Guru Quantitative Card for offline
+ * and online assessment modes.
+ */
+router.get("/stocks/:symbol/ledger-telemetry", async (req, res) => {
+  try {
+    const rawSymbol = String(req.params.symbol || "").trim().toUpperCase();
+    if (!rawSymbol) {
+      return res.status(400).json({ success: false, error: "symbol is required" });
+    }
+    const result = getScripLedgerTelemetry(rawSymbol);
+    res.set("Cache-Control", "public, max-age=60");
+    return res.json({ success: true, symbol: rawSymbol, ...result });
+  } catch (err) {
+    console.error("[radarRoutes] /stocks/:symbol/ledger-telemetry error:", err.message);
+    return res.status(500).json({ success: false, error: err.message, ledgerRow: null, candles: [] });
+  }
+});
 
 /**
  * Portfolio & Watchlist 30-Day Broker Shield Evaluator

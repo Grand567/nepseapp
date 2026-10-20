@@ -188,10 +188,10 @@ export default function StockBrokerAnalysisTab({
       for (const b of bd.brokers) {
         const id = String(b.brokerId || b.broker || b.brokerNo || b.id || b.memberId || '').trim();
         if (!id || id === '?') continue;
-        const buyQty = Number(b.buyQty ?? b.volume ?? b.kitta ?? b.shares ?? 0);
-        const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? (buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
-        const sellQty = Number(b.sellQty ?? b.shares ?? 0);
-        const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.amount ?? (sellQty * (b.avgSellRate || ltp || 100)) ?? 0);
+        const buyQty = Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
+        const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? (buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
+        const sellQty = Number(b.sellQty ?? b.sellVol ?? b.shares ?? 0);
+        const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnover ?? b.amount ?? (sellQty * (b.avgSellRate || ltp || 100)) ?? 0);
         const matchedQty = Number(b.matchedQty ?? 0);
         const matchedAmt = Number(b.matchedAmt ?? 0);
         const trades = Number(b.trades ?? b.totalTrades ?? 0);
@@ -221,10 +221,10 @@ export default function StockBrokerAnalysisTab({
           map.set(id, { id, name: b.name || b.brokerName || getBrokerName(id), buyQty: 0, buyAmt: 0, sellQty: 0, sellAmt: 0, matchedQty: 0, trades: 0 });
         }
         const rec = map.get(id);
-        rec.buyQty += Number(b.buyQty ?? b.volume ?? b.kitta ?? b.shares ?? 0);
-        rec.buyAmt += Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? (rec.buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
-        if (b.sellQty !== undefined && rec.sellQty === 0) rec.sellQty = Number(b.sellQty || 0);
-        if (b.sellAmt !== undefined && rec.sellAmt === 0) rec.sellAmt = Number(b.sellAmt || (rec.sellQty * (b.avgSellRate || ltp || 100)) || 0);
+        rec.buyQty += Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
+        rec.buyAmt += Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? (rec.buyQty * (b.avgBuyRate || ltp || 100)) ?? 0);
+        if ((b.sellQty !== undefined || b.sellVol !== undefined) && rec.sellQty === 0) rec.sellQty = Number(b.sellQty ?? b.sellVol ?? 0);
+        if ((b.sellAmt !== undefined || b.sellTurnover !== undefined) && rec.sellAmt === 0) rec.sellAmt = Number(b.sellAmt ?? b.sellTurnover ?? (rec.sellQty * (b.avgSellRate || ltp || 100)) ?? 0);
         if (b.matchedQty !== undefined && rec.matchedQty === 0) rec.matchedQty = Number(b.matchedQty || 0);
       }
 
@@ -236,11 +236,11 @@ export default function StockBrokerAnalysisTab({
         }
         const rec = map.get(id);
         if (rec.sellQty === 0) {
-          rec.sellQty += Number(s.sellQty ?? s.volume ?? s.kitta ?? s.shares ?? 0);
-          rec.sellAmt += Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? (rec.sellQty * (s.avgSellRate || ltp || 100)) ?? 0);
+          rec.sellQty += Number(s.sellQty ?? s.sellVol ?? s.volume ?? s.kitta ?? s.shares ?? 0);
+          rec.sellAmt += Number(s.sellAmt ?? s.sellAmount ?? s.sellTurnover ?? s.amount ?? (rec.sellQty * (s.avgSellRate || ltp || 100)) ?? 0);
         }
-        if (s.buyQty !== undefined && rec.buyQty === 0) rec.buyQty = Number(s.buyQty || 0);
-        if (s.buyAmt !== undefined && rec.buyAmt === 0) rec.buyAmt = Number(s.buyAmt || (rec.buyQty * (s.avgBuyRate || ltp || 100)) || 0);
+        if ((s.buyQty !== undefined || s.buyVol !== undefined) && rec.buyQty === 0) rec.buyQty = Number(s.buyQty ?? s.buyVol ?? 0);
+        if ((s.buyAmt !== undefined || s.buyTurnover !== undefined) && rec.buyAmt === 0) rec.buyAmt = Number(s.buyAmt ?? s.buyTurnover ?? (rec.buyQty * (s.avgBuyRate || ltp || 100)) ?? 0);
         if (s.matchedQty !== undefined && rec.matchedQty === 0) rec.matchedQty = Number(s.matchedQty || 0);
       }
 
@@ -248,15 +248,15 @@ export default function StockBrokerAnalysisTab({
         const id = String(h.brokerId || h.broker || h.brokerNo || h.id || h.memberId || '').trim();
         if (!id || id === '?') continue;
         if (!map.has(id)) {
-          const buyQ = Number(h.buyQty ?? h.volume ?? h.kitta ?? 0);
-          const sellQ = Number(h.sellQty ?? 0);
+          const buyQ = Number(h.buyQty ?? h.buyVol ?? h.volume ?? h.kitta ?? 0);
+          const sellQ = Number(h.sellQty ?? h.sellVol ?? 0);
           map.set(id, {
             id,
             name: h.name || h.brokerName || getBrokerName(id),
             buyQty: buyQ,
-            buyAmt: Number(h.buyAmt ?? h.buyAmount ?? (buyQ * (h.avgBuyRate || ltp || 100)) ?? 0),
+            buyAmt: Number(h.buyAmt ?? h.buyAmount ?? h.buyTurnover ?? (buyQ * (h.avgBuyRate || ltp || 100)) ?? 0),
             sellQty: sellQ,
-            sellAmt: Number(h.sellAmt ?? h.sellAmount ?? (sellQ * (h.avgSellRate || ltp || 100)) ?? 0),
+            sellAmt: Number(h.sellAmt ?? h.sellAmount ?? h.sellTurnover ?? (sellQ * (h.avgSellRate || ltp || 100)) ?? 0),
             matchedQty: Number(h.matchedQty || 0),
             trades: Number(h.trades || 1)
           });

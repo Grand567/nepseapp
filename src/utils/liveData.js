@@ -2622,10 +2622,10 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     const id = String(b.brokerId || b.broker || b.brokerNo || b.id || b.memberId || '').trim();
     if (!id || id === '?') return null;
     const name = b.name || b.brokerName || getBrokerName(id);
-    const buyQty = Number(b.buyQty ?? b.volume ?? b.kitta ?? b.shares ?? 0);
-    const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0);
-    const sellQty = Number(b.sellQty ?? b.shares ?? 0);
-    const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.amount ?? 0);
+    const buyQty = Number(b.buyQty ?? b.buyVol ?? b.volume ?? b.kitta ?? b.shares ?? 0);
+    const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? b.buyTurnover ?? b.amount ?? 0);
+    const sellQty = Number(b.sellQty ?? b.sellVol ?? b.shares ?? 0);
+    const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnover ?? b.amount ?? 0);
     const netQty = Number(b.netQty !== undefined ? b.netQty : (buyQty - sellQty));
     const netAmt = Number(b.netAmt !== undefined ? b.netAmt : (buyAmt - sellAmt));
     const holdQty = Math.max(0, netQty);

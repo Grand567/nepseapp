@@ -2412,6 +2412,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   // AI State
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState('');
+  const [ledgerTelemetry, setLedgerTelemetry] = useState(null);
+
+  // Auto-fetch SQLite ledger telemetry row for this stock (used by AI Guru Quantitative Card)
+  useEffect(() => {
+    if (!d?.symbol) return;
+    const sym = String(d.symbol).toUpperCase().trim();
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`/api/stocks/${encodeURIComponent(sym)}/ledger-telemetry`, {
+          headers: { Accept: 'application/json' }
+        });
+        if (!cancelled && resp.ok) {
+          const data = await resp.json();
+          if (data?.ledgerRow) setLedgerTelemetry(data.ledgerRow);
+        }
+      } catch (_) { /* silently ignore — AI Guru has its own fallback */ }
+    })();
+    return () => { cancelled = true; };
+  }, [d?.symbol]);
 
   const generateAi = async () => {
     setAiLoading(true);
@@ -2430,6 +2450,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           holidayName: marketStatus?.holidayName
         },
         candles: realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || []),
+        ledgerTelemetry,
         broker5DRawPayload: realBrokerAnalysis
       });
 
@@ -6662,6 +6683,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   holidayName: marketStatus?.holidayName
                 }}
                 historicalCandles={realPriceHistory && realPriceHistory.length > 0 ? realPriceHistory : (history || [])}
+                ledgerTelemetry={ledgerTelemetry}
                 broker5DPayload={realBrokerAnalysis}
               />
             </div>
