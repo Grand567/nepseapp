@@ -46,6 +46,78 @@ function tableExists(db: Database.Database, name: string): boolean {
 
 export { normalize5DBrokerPayloadForAi } from "../../services/aiGuru/runAiQuantitativeAssessment";
 
+export function getLatestSignalTelemetryForSymbol(rawSymbol: string): LedgerTelemetryRow | null {
+  const db = getDrabyashreeDb();
+  const symbol = rawSymbol.trim().toUpperCase();
+  const signalTable = tableExists(db, "signal_ledger")
+    ? "signal_ledger"
+    : tableExists(db, "algorithmic_signal_ledger")
+    ? "algorithmic_signal_ledger"
+    : null;
+
+  if (!signalTable) return null;
+  try {
+    return (
+      (db
+        .prepare(
+          `SELECT
+            symbol,
+            COALESCE(strategy_name, strategy) AS strategy_name,
+            COALESCE(entry_vwap, broker_vwap, entry_price, 0) AS entry_vwap,
+            COALESCE(settlement_unlock_date, t2_unlock_date, 'POST_DASHAIN_T2') AS settlement_unlock_date,
+            COALESCE(mfe_pct, max_gain_pct, 0) AS mfe_pct,
+            COALESCE(mae_pct, 0) AS mae_pct,
+            COALESCE(nepse_alpha_pct, 0) AS nepse_alpha_pct,
+            COALESCE(broker_anomaly_score, 1.0) AS broker_anomaly_score,
+            COALESCE(avg_ticket_kitta, 0) AS avg_ticket_kitta,
+            COALESCE(ratchet_triggered, is_ratchet_armed, 0) AS ratchet_triggered,
+            status
+          FROM ${signalTable}
+          WHERE UPPER(symbol) = ?
+          ORDER BY rowid DESC
+          LIMIT 1`
+        )
+        .get(symbol) as LedgerTelemetryRow) || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function get5DBrokerSummaryForSymbol(rawSymbol: string): unknown {
+  const db = getDrabyashreeDb();
+  const symbol = rawSymbol.trim().toUpperCase();
+  if (tableExists(db, "floorsheet_broker_summary")) {
+    try {
+      return db
+        .prepare(
+          `SELECT
+            broker_no AS brokerId,
+            SUM(buy_kitta) AS buyKitta,
+            SUM(sell_kitta) AS sellKitta,
+            SUM(buy_kitta - sell_kitta) AS netKitta,
+            COUNT(*) AS trades,
+            AVG(broker_anomaly_score) AS anomalyScore,
+            AVG(avg_ticket_kitta) AS avgTicketKitta
+          FROM floorsheet_broker_summary
+          WHERE UPPER(symbol) = ?
+            AND trade_date IN (
+              SELECT DISTINCT trade_date
+              FROM floorsheet_broker_summary
+              WHERE UPPER(symbol) = ?
+              ORDER BY trade_date DESC
+              LIMIT 5
+            )
+          GROUP BY broker_no`
+        )
+        .all(symbol, symbol);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 /**
  * Fetches SQLite telemetry with holiday-safe 5-session floor-sheet query (Hardened Patch B)
  */

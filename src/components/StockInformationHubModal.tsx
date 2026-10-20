@@ -12,6 +12,7 @@ import {
 } from "../services/aiGuru/runAiQuantitativeAssessment";
 import { AiGuruQuantitativeCard } from "./AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "./StockFundamentalsAndLockInTab";
+import { useUnifiedStockTelemetry } from "../hooks/useUnifiedStockTelemetry";
 import type { RawFundamentalRecord, CorporateActionRow } from "../services/fundamentals/nepseRegulatoryEngine";
 
 export type StockInfoTabKey =
@@ -67,26 +68,61 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     ledgerTelemetry?.symbol
   );
 
-  // Single atomic calculation feeding all 6 tabs
+  // Self-hydrating unified telemetry from SQLite / API
+  const { data: remoteTelemetry, loading } = useUnifiedStockTelemetry(resolvedSymbol);
+
+  // Merge passed-in props with atomic SQLite telemetry automatically:
+  const effectiveQuote = quoteData ?? remoteTelemetry?.quoteData ?? null;
+  const effectiveCandles =
+    historicalCandles.length > 0
+      ? historicalCandles
+      : remoteTelemetry?.historicalCandles ?? [];
+  const effectiveLedger = ledgerTelemetry ?? remoteTelemetry?.ledgerTelemetry ?? null;
+  const effectiveContracts =
+    rawFloorsheetContracts.length > 0
+      ? rawFloorsheetContracts
+      : remoteTelemetry?.rawFloorsheetContracts ?? [];
+  const effectiveDepth = liveDepth ?? remoteTelemetry?.liveDepth ?? null;
+  const effectiveBroker5D = broker5DPayload ?? remoteTelemetry?.broker5DPayload ?? null;
+  const effectiveFundamentals = rawFundamentals ?? remoteTelemetry?.rawFundamentals ?? null;
+  const effectiveCorporateActions =
+    corporateActions.length > 0
+      ? corporateActions
+      : remoteTelemetry?.corporateActions ?? [];
+
+  // Single atomic calculation feeding all 7 tabs
   const telemetry = useMemo(
-    () =>
-      buildUnifiedStockTabTelemetry({
+    () => {
+      if (
+        remoteTelemetry?.tabTelemetry &&
+        !quoteData &&
+        historicalCandles.length === 0 &&
+        rawFloorsheetContracts.length === 0
+      ) {
+        return remoteTelemetry.tabTelemetry;
+      }
+      return buildUnifiedStockTabTelemetry({
         symbol: resolvedSymbol,
-        quote: quoteData,
-        candles: historicalCandles,
-        ledgerTelemetry,
-        rawContracts: rawFloorsheetContracts,
-        liveDepth,
-        broker5DRawPayload: broker5DPayload,
-      }),
+        quote: effectiveQuote,
+        candles: effectiveCandles,
+        ledgerTelemetry: effectiveLedger,
+        rawContracts: effectiveContracts,
+        liveDepth: effectiveDepth,
+        broker5DRawPayload: effectiveBroker5D,
+      });
+    },
     [
       resolvedSymbol,
+      remoteTelemetry,
       quoteData,
       historicalCandles,
-      ledgerTelemetry,
       rawFloorsheetContracts,
-      liveDepth,
-      broker5DPayload,
+      effectiveQuote,
+      effectiveCandles,
+      effectiveLedger,
+      effectiveContracts,
+      effectiveDepth,
+      effectiveBroker5D,
     ]
   );
 
@@ -563,6 +599,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
             symbol={telemetry.symbol}
             verifiedPrice={telemetry.overview.verifiedPrice}
             rawFundamentals={
+              effectiveFundamentals ||
               rawFundamentals || {
                 sector: selectedScrip?.sector || (quoteData as any)?.sector,
                 epsTtm: (selectedScrip as any)?.eps ?? (quoteData as any)?.eps,
@@ -574,7 +611,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                 promoterUnlockDate: (selectedScrip as any)?.promoterUnlockDate ?? (quoteData as any)?.promoterUnlockDate,
               }
             }
-            corporateActions={corporateActions}
+            corporateActions={effectiveCorporateActions}
           />
         )}
 
@@ -582,10 +619,10 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         {activeTab === "AI_GURU_TOOLS" && (
           <AiGuruQuantitativeCard
             symbol={telemetry.symbol}
-            quoteData={quoteData}
-            historicalCandles={historicalCandles}
-            ledgerTelemetry={ledgerTelemetry}
-            broker5DPayload={broker5DPayload}
+            quoteData={effectiveQuote}
+            historicalCandles={effectiveCandles}
+            ledgerTelemetry={effectiveLedger}
+            broker5DPayload={effectiveBroker5D}
           />
         )}
       </div>
