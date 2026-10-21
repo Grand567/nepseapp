@@ -39,6 +39,64 @@ import StockDetailModal from './StockDetailModal';
 import BrokerSmartFlowTracker from './BrokerSmartFlowTracker';
 import PortfolioBrokerShield from './PortfolioBrokerShield';
 
+// ── Pure-Equity Guard: Excludes Mutual Funds (e.g., NIBLPF), Debentures, and Promoter Shares ──
+export function isPureNepseEquity(stockOrSym: any, sectorStr?: string): boolean {
+  const sym = String(
+    typeof stockOrSym === 'string'
+      ? stockOrSym
+      : stockOrSym?.symbol || stockOrSym?.stockSymbol || ''
+  )
+    .toUpperCase()
+    .trim();
+  const sec = String(
+    sectorStr ??
+      (typeof stockOrSym === 'object' ? stockOrSym?.sector || stockOrSym?.sectorName : '') ??
+      ''
+  )
+    .toUpperCase()
+    .trim();
+  const name = String(
+    typeof stockOrSym === 'object' ? stockOrSym?.companyName || stockOrSym?.name || '' : ''
+  )
+    .toUpperCase()
+    .trim();
+
+  if (!sym) return false;
+  // 1. Sector-level exclusion
+  if (
+    sec.includes('MUTUAL') ||
+    sec.includes('DEBENTURE') ||
+    sec.includes('BOND') ||
+    sec.includes('PROMOTER') ||
+    sec.includes('PREFERENCE')
+  ) {
+    return false;
+  }
+  // 2. Company name exclusion
+  if (
+    name.includes('MUTUAL FUND') ||
+    name.includes('DEBENTURE') ||
+    name.includes('PROMOTER') ||
+    name.includes('YOJANA') ||
+    name.includes('SCHEME')
+  ) {
+    return false;
+  }
+  // 3. Symbol pattern exclusion: Debentures (contain digits like 85, 2088), Known Mutual Fund suffixes, Promoter suffixes
+  if (/\d/.test(sym)) return false;
+  if (
+    /^(NIBLPF|NIBSF|CMBF|NICGF|NICBF|NMB50|NMBHF|SFMF|SEF|SAEF|SLCF|KEF|LUK|RMF|RBBMF|PSF|GIMES|C30MF|MMF|H8020|KSY|NSY|SSY|SAGF|PRSF|LVF)$/i.test(
+      sym
+    )
+  ) {
+    return false;
+  }
+  if (sym.length >= 5 && (sym.endsWith('PF') || sym.endsWith('SF') || sym.endsWith('MF') || sym.endsWith('PO'))) {
+    return false;
+  }
+  return true;
+}
+
 const STAGE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   STEALTH: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
   PUMP: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6', border: 'rgba(59, 130, 246, 0.3)' },
@@ -681,6 +739,7 @@ export function AccumulationDistributionRadar({
     }
   };
 
+  // FIX BUG-A2-01: Populate both `sym` and `${sym}_${radarDays}` keys when switching session dates
   const handleRadarDateChange = async (dt: string) => {
     setRadarDate(dt);
     setLoading(true);
@@ -688,12 +747,23 @@ export function AccumulationDistributionRadar({
     try {
       const brokerMap = await fetchMarketWideBrokerSummaryMap(radarDays, { date: dt, refresh: true });
       if (brokerMap && typeof brokerMap === 'object') {
-        setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
+        const keyedMap: Record<string, any> = {};
+        for (const [k, v] of Object.entries(brokerMap)) {
+          const symU = String(k).toUpperCase().trim();
+          keyedMap[symU] = v;
+          keyedMap[`${symU}_${radarDays}`] = v;
+        }
+        setStockBrokerDataMap(prev => ({ ...prev, ...keyedMap }));
       }
       if (selectedStockSymbol) {
-        const res = await fetchRealBrokerAnalysis(selectedStockSymbol, radarDays, { date: dt, refresh: true }).catch(() => null);
+        const symU = selectedStockSymbol.toUpperCase().trim();
+        const res = await fetchRealBrokerAnalysis(symU, radarDays, { date: dt, refresh: true }).catch(() => null);
         if (res) {
-          setStockBrokerDataMap(prev => ({ ...prev, [selectedStockSymbol.toUpperCase()]: res }));
+          setStockBrokerDataMap(prev => ({
+            ...prev,
+            [symU]: res,
+            [`${symU}_${radarDays}`]: res
+          }));
         }
       }
     } catch (_) {
@@ -860,17 +930,21 @@ export function AccumulationDistributionRadar({
     event.target.value = '';
   };
 
-  // Dynamically fetch authentic broker data and real price history for the inspected stock
+  // FIX BUG-A2-01: Write both base symbol key and horizon-scoped key (`${sym}_${daysToFetch}`)
   useEffect(() => {
     if (!selectedStockSymbol) return;
-    const sym = selectedStockSymbol.toUpperCase();
+    const sym = selectedStockSymbol.toUpperCase().trim();
     let active = true;
 
     const daysToFetch = activeTab === 'diagnostic' ? diagnosticDays : radarDays;
     fetchRealBrokerAnalysis(sym, daysToFetch, { refresh: false })
       .then(res => {
         if (active && res && (res.topBuyers?.length > 0 || res.topNetBuyers?.length > 0)) {
-          setStockBrokerDataMap(prev => ({ ...prev, [sym]: res }));
+          setStockBrokerDataMap(prev => ({
+            ...prev,
+            [sym]: res,
+            [`${sym}_${daysToFetch}`]: res
+          }));
         }
       })
       .catch(() => {});
@@ -930,11 +1004,80 @@ export function AccumulationDistributionRadar({
     return map;
   }, [floorsheet]);
 
-  // Compute analysis for each stock
+  // Unified Step 4 Smart-Money Evaluation Helper (Fixes BUG-A2-03 discrepancy between Table & Diagnostic)
+  const evaluateUnifiedStep4Flow = React.useCallback(
+    (
+      brokerData: any,
+      intradayPChange: number,
+      wyckoffStage: string = '',
+      hasRealBrokerAnalysis: boolean = false,
+      tradeCount: number = 0
+    ) => {
+      const totalBuyVol = Number(brokerData?.totalBuyVolume || 0);
+      const totalSellVol = Number(brokerData?.totalSellVolume || 1);
+      const isSampleValid =
+        brokerData?.status !== 'insufficient_sample' &&
+        totalBuyVol >= 200 &&
+        (hasRealBrokerAnalysis ? true : tradeCount >= 5 || totalBuyVol >= 500);
+
+      const bcr3Buy = isSampleValid ? Number(brokerData?.bcr3BuyPct || 0) : 0;
+      const bcr3Sell = isSampleValid ? Number(brokerData?.bcr3SellPct || 0) : 0;
+      const topSellers = brokerData?.topSellerBrokers || brokerData?.topSellers || [];
+      const topBuyers = brokerData?.topBuyerBrokers || brokerData?.topBuyers || [];
+
+      const hasSellingAsymmetry = bcr3Sell >= 45.0 && bcr3Sell - bcr3Buy >= 10.0;
+      const topSellerNetDumping =
+        isSampleValid &&
+        topSellers.slice(0, 3).some((sel: any) => {
+          const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
+          return sel.volume > buyOfSel && sel.volume - buyOfSel > totalSellVol * 0.2;
+        }) &&
+        hasSellingAsymmetry;
+
+      const isSellerDominant =
+        isSampleValid &&
+        (hasSellingAsymmetry ||
+          topSellerNetDumping ||
+          (brokerData?.smartMoneyBias === 'Operator Offloading' && bcr3Sell > bcr3Buy));
+
+      const isDumping = Boolean(
+        isSampleValid &&
+          (isSellerDominant ||
+            (brokerData?.adSignal === 'Distribution' &&
+              (Number(brokerData?.adStrength || 0) >= 30 ||
+                Number(brokerData?.adRatio || 0) <= -0.08) &&
+              bcr3Sell > bcr3Buy))
+      );
+
+      const isTrap = isDumping && (intradayPChange >= 0 || wyckoffStage.includes('PUMP'));
+      const isAccumulation =
+        isSampleValid &&
+        (bcr3Buy >= 40.0 || (Number(brokerData?.bcr5BuyPct || 0) >= 50.0 && bcr3Buy >= 36.0)) &&
+        bcr3Buy - bcr3Sell >= 5.0 &&
+        !isDumping;
+
+      return {
+        isSampleValid,
+        bcr3Buy,
+        bcr3Sell,
+        topBuyers,
+        topSellers,
+        isSellerDominant,
+        isDumping,
+        isTrap,
+        isAccumulation,
+      };
+    },
+    []
+  );
+
+  // FIX BUG-A2-02 & BUG-A2-08: Pure-Equity Filter & preserve `intradayPChange` for ±15% circuit checks
   const analyzedStocks = useMemo(() => {
-    return stocks.map((s) => {
+    return stocks
+      .filter((s) => isPureNepseEquity(s))
+      .map((s) => {
       const sym = s.symbol;
-      const symUpper = sym ? String(sym).toUpperCase() : '';
+      const symUpper = sym ? String(sym).toUpperCase().trim() : '';
       const cachedHist = getCachedRealPriceHistory(sym);
       const historyCandles: Candle[] = Array.isArray(s.history) && s.history.length >= 10
         ? s.history.map((h: any) => ({
@@ -956,23 +1099,33 @@ export function AccumulationDistributionRadar({
           }))
         : [];
 
-      // When analyzing across multi-day horizons, resolve multi-day broker metrics
-      const stockBrokerAnalysis = stockBrokerDataMap[`${symUpper}_${radarDays}`] || getCachedRealBrokerAnalysis(sym, radarDays) || (radarDays === 1 ? (stockBrokerDataMap[sym] || stockBrokerDataMap[symUpper]) : null) || s.realBrokerAnalysis || s.brokerAnalysis;
-      
-      // If multi-day horizon (radarDays > 1), compute multi-day return and volume from authentic historical candles
+      const stockBrokerAnalysis =
+        stockBrokerDataMap[`${symUpper}_${radarDays}`] ||
+        getCachedRealBrokerAnalysis(sym, radarDays) ||
+        stockBrokerDataMap[symUpper] ||
+        s.realBrokerAnalysis ||
+        s.brokerAnalysis;
+
       const multiDayCandles = historyCandles.length >= 2
         ? historyCandles.slice(-Math.min(historyCandles.length, radarDays))
         : historyCandles;
-      const effectivePChange = (radarDays > 1 && multiDayCandles.length >= 2)
-        ? Number((((multiDayCandles[multiDayCandles.length - 1].close - multiDayCandles[0].open) / (multiDayCandles[0].open || 1)) * 100).toFixed(2))
-        : Number(s.pChange || 0);
+
+      const intradayPChange = Number(s.pChange || 0);
+      const baseClose = Number(multiDayCandles[0]?.close || multiDayCandles[0]?.open || 0);
+      const latestClose = Number(multiDayCandles[multiDayCandles.length - 1]?.close || s.ltp || 0);
+
+      const effectivePChange = (radarDays > 1 && multiDayCandles.length >= 2 && baseClose > 0)
+        ? Number((((latestClose - baseClose) / baseClose) * 100).toFixed(2))
+        : intradayPChange;
+
       const effectiveVolume = (radarDays > 1 && multiDayCandles.length >= 2)
         ? multiDayCandles.reduce((acc, c) => acc + (c.volume || 0), 0)
         : Number(s.volume || s.totalTradedQuantity || 0);
 
-      const stockSummaryWithBroker = stockBrokerAnalysis 
-        ? { ...s, pChange: effectivePChange, volume: effectiveVolume, realBrokerAnalysis: stockBrokerAnalysis } 
-        : { ...s, pChange: effectivePChange, volume: effectiveVolume };
+      const stockSummaryWithBroker = stockBrokerAnalysis
+        ? { ...s, pChange: effectivePChange, intradayPChange, volume: effectiveVolume, realBrokerAnalysis: stockBrokerAnalysis }
+        : { ...s, pChange: effectivePChange, intradayPChange, volume: effectiveVolume };
+
       const stockTrades = floorsheetBySymbol.get(symUpper) || [];
       const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker);
       const wyckoff = classifyWyckoffStage(stockSummaryWithBroker, historyCandles, brokerData);
@@ -980,66 +1133,61 @@ export function AccumulationDistributionRadar({
       const streak = whaleStreakMap.get(symUpper);
       const distStreak = whaleStreakMap.get(symUpper + '_DIST');
 
-      const isSampleValid = brokerData?.status !== 'insufficient_sample' && 
-        (brokerData?.totalBuyVolume || 0) >= 200 &&
-        (stockSummaryWithBroker?.realBrokerAnalysis ? true : (stockTrades.length >= 5 || (brokerData?.totalBuyVolume || 0) >= 500));
-      const bcr3Buy = isSampleValid ? (brokerData?.bcr3BuyPct || 0) : 0;
-      const bcr3Sell = isSampleValid ? (brokerData?.bcr3SellPct || 0) : 0;
-      const topSellers = brokerData?.topSellerBrokers || [];
-      const topBuyers = brokerData?.topBuyerBrokers || [];
-      const hasSellingAsymmetry = bcr3Sell >= 45.0 && (bcr3Sell - bcr3Buy) >= 10.0;
-      const topSellerNetDumping = isSampleValid && (
-        topSellers.slice(0, 3).some((sel: any) => {
-          const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
-          return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((brokerData?.totalSellVolume || 1) * 0.20);
-        }) && hasSellingAsymmetry
+      const step4 = evaluateUnifiedStep4Flow(
+        brokerData,
+        intradayPChange,
+        wyckoff?.stage || '',
+        Boolean(stockSummaryWithBroker?.realBrokerAnalysis),
+        stockTrades.length
       );
-      const pChange = effectivePChange;
-      const isSellerDominant = isSampleValid && (
-        hasSellingAsymmetry ||
-        topSellerNetDumping ||
-        (brokerData?.smartMoneyBias === 'Operator Offloading' && bcr3Sell > bcr3Buy)
-      );
-      const isDumping = Boolean(
-        isSampleValid && (
-          isSellerDominant ||
-          (brokerData?.adSignal === 'Distribution' && (Number(brokerData?.adStrength || 0) >= 30 || Number(brokerData?.adRatio || 0) <= -0.08) && bcr3Sell > bcr3Buy)
-        )
-      );
-      const isTrap = isDumping && (pChange >= 0 || wyckoff.stage.includes('PUMP'));
-      const isAccumulation = isSampleValid && (bcr3Buy >= 40.0 || (brokerData?.bcr5BuyPct >= 50.0 && bcr3Buy >= 36.0)) && (bcr3Buy - bcr3Sell) >= 5.0 && !isDumping;
 
-      // Compute rolling-window multi-day diagnostics
       const dailyHistory = buildDailyHistoryFromStockData(stockSummaryWithBroker, stockBrokerAnalysis, historyCandles);
       const multiDayDiag = calculateMultiDayDiagnostics(dailyHistory, radarDays);
-      const phase = multiDayDiag?.phase || (isTrap ? 'BULL_TRAP' : isDumping ? 'DISTRIBUTION_DANGER' : isAccumulation ? 'STEALTH_ACCUMULATION' : 'NEUTRAL_RETAIL');
+      const phase =
+        multiDayDiag?.phase ||
+        (step4.isTrap
+          ? 'BULL_TRAP'
+          : step4.isDumping
+          ? 'DISTRIBUTION_DANGER'
+          : step4.isAccumulation
+          ? 'STEALTH_ACCUMULATION'
+          : 'NEUTRAL_RETAIL');
 
       const partialStock = {
         ...s,
+        intradayPChange,
         pChange: effectivePChange,
         volume: effectiveVolume,
         timeframeDays: radarDays,
         multiDayDiag,
         phase,
-        phaseLabel: multiDayDiag?.phaseLabel || (isTrap ? 'Bull Trap' : isDumping ? 'Distribution Danger' : isAccumulation ? 'Stealth Accumulation' : 'Normal Retail Flow'),
+        phaseLabel:
+          multiDayDiag?.phaseLabel ||
+          (step4.isTrap
+            ? 'Bull Trap'
+            : step4.isDumping
+            ? 'Distribution Danger'
+            : step4.isAccumulation
+            ? 'Stealth Accumulation'
+            : 'Normal Retail Flow'),
         bigBrokerVWAP: multiDayDiag?.bigBrokerVWAP || 0,
         bcr5NetPct: multiDayDiag?.bcr5NetPct || (brokerData?.bcr5BuyPct || 0),
         scr3NetPct: multiDayDiag?.scr3NetPct || (brokerData?.bcr3SellPct || 0),
-        grossBuyConcentrationPct: multiDayDiag?.grossBuyConcentrationPct || bcr3Buy,
-        grossSellConcentrationPct: multiDayDiag?.grossSellConcentrationPct || bcr3Sell,
-        smartMoneyNetFlowPct: multiDayDiag?.smartMoneyNetFlowPct || (bcr3Buy - bcr3Sell),
+        grossBuyConcentrationPct: multiDayDiag?.grossBuyConcentrationPct || step4.bcr3Buy,
+        grossSellConcentrationPct: multiDayDiag?.grossSellConcentrationPct || step4.bcr3Sell,
+        smartMoneyNetFlowPct: multiDayDiag?.smartMoneyNetFlowPct || (step4.bcr3Buy - step4.bcr3Sell),
         buyZoneMin: multiDayDiag?.buyZoneMin || +(Number(s.ltp || s.closePrice || 100) * 0.98).toFixed(1),
         buyZoneMax: multiDayDiag?.buyZoneMax || +(Number(s.ltp || s.closePrice || 100) * 1.02).toFixed(1),
         entryStatus: multiDayDiag?.entryStatus || '',
         entryDescription: multiDayDiag?.entryDescription || '',
         wyckoff,
         brokerData,
-        isTrap,
-        isDumping,
-        isSellerDominant,
-        isAccumulation,
-        bcr3Buy,
-        bcr3Sell,
+        isTrap: step4.isTrap,
+        isDumping: step4.isDumping,
+        isSellerDominant: step4.isSellerDominant,
+        isAccumulation: step4.isAccumulation,
+        bcr3Buy: step4.bcr3Buy,
+        bcr3Sell: step4.bcr3Sell,
         whaleStreak: streak || null,
         whaleDistStreak: distStreak || null
       };
@@ -1051,7 +1199,7 @@ export function AccumulationDistributionRadar({
         corneringAnalysis
       };
     });
-  }, [stocks, floorsheetBySymbol, stockBrokerDataMap, whaleStreakMap, radarDays]);
+  }, [stocks, floorsheetBySymbol, stockBrokerDataMap, whaleStreakMap, radarDays, evaluateUnifiedStep4Flow]);
 
   // Sector-by-Sector #1 Smart Money Accumulation Champions
   const sectorChampions = useMemo(() => {
@@ -1180,13 +1328,12 @@ export function AccumulationDistributionRadar({
     });
   }, [analyzedStocks, searchQuery, selectedSector, selectedStage, sortBy, step4Filter]);
 
-  // Currently inspected stock for Deep Diagnostic (strictly reactive to diagnosticDays)
+  // Currently inspected stock for Deep Diagnostic (strictly reactive to diagnosticDays & close-to-close return)
   const activeStock = useMemo(() => {
-    const base = (
+    const base =
       analyzedStocks.find((s) => s.symbol === selectedStockSymbol) ||
       analyzedStocks[0] ||
-      null
-    );
+      null;
     if (!base) return null;
 
     if (diagnosticDays === radarDays) {
@@ -1194,37 +1341,64 @@ export function AccumulationDistributionRadar({
     }
 
     const sym = base.symbol;
-    const symUpper = sym ? sym.toUpperCase() : '';
-    const diagBrokerAnalysis = stockBrokerDataMap[`${symUpper}_${diagnosticDays}`] || getCachedRealBrokerAnalysis(sym, diagnosticDays);
+    const symUpper = sym ? sym.toUpperCase().trim() : '';
+    const diagBrokerAnalysis =
+      stockBrokerDataMap[`${symUpper}_${diagnosticDays}`] ||
+      getCachedRealBrokerAnalysis(sym, diagnosticDays) ||
+      stockBrokerDataMap[symUpper];
 
     const cachedHist = getCachedRealPriceHistory(sym);
-    const historyCandles: Candle[] = Array.isArray(base.history) && base.history.length >= 10
-      ? base.history
-      : Array.isArray(cachedHist) && cachedHist.length >= 10
-      ? cachedHist
-      : [];
+    const historyCandles: Candle[] =
+      Array.isArray(base.history) && base.history.length >= 10
+        ? base.history
+        : Array.isArray(cachedHist) && cachedHist.length >= 10
+        ? cachedHist
+        : [];
 
-    const multiDayCandles = historyCandles.length >= 2
-      ? historyCandles.slice(-Math.min(historyCandles.length, diagnosticDays))
-      : historyCandles;
+    const multiDayCandles =
+      historyCandles.length >= 2
+        ? historyCandles.slice(-Math.min(historyCandles.length, diagnosticDays))
+        : historyCandles;
 
-    const effectivePChange = (diagnosticDays > 1 && multiDayCandles.length >= 2)
-      ? Number((((multiDayCandles[multiDayCandles.length - 1].close - multiDayCandles[0].open) / (multiDayCandles[0].open || 1)) * 100).toFixed(2))
-      : Number(base.pChange || 0);
+    const intradayPChange = Number(base.intradayPChange ?? base.pChange ?? 0);
+    const baseClose = Number(multiDayCandles[0]?.close || multiDayCandles[0]?.open || 0);
+    const latestClose = Number(
+      multiDayCandles[multiDayCandles.length - 1]?.close || base.ltp || 0
+    );
 
-    const effectiveVolume = (diagnosticDays > 1 && multiDayCandles.length >= 2)
-      ? multiDayCandles.reduce((acc: number, c: any) => acc + (c.volume || 0), 0)
-      : Number(base.volume || base.totalTradedQuantity || 0);
+    const effectivePChange =
+      diagnosticDays > 1 && multiDayCandles.length >= 2 && baseClose > 0
+        ? Number((((latestClose - baseClose) / baseClose) * 100).toFixed(2))
+        : intradayPChange;
+
+    const effectiveVolume =
+      diagnosticDays > 1 && multiDayCandles.length >= 2
+        ? multiDayCandles.reduce((acc: number, c: any) => acc + (c.volume || 0), 0)
+        : Number(base.volume || base.totalTradedQuantity || 0);
 
     const stockSummaryWithBroker = diagBrokerAnalysis
-      ? { ...base, pChange: effectivePChange, volume: effectiveVolume, realBrokerAnalysis: diagBrokerAnalysis }
-      : { ...base, pChange: effectivePChange, volume: effectiveVolume };
+      ? {
+          ...base,
+          intradayPChange,
+          pChange: effectivePChange,
+          volume: effectiveVolume,
+          realBrokerAnalysis: diagBrokerAnalysis,
+        }
+      : { ...base, intradayPChange, pChange: effectivePChange, volume: effectiveVolume };
 
-    // For multi-day diagnostic, single-day live floorsheet must NOT contaminate multi-day cumulative metrics!
-    const stockTrades = diagnosticDays === 1 ? (floorsheetBySymbol.get(symUpper) || []) : [];
-    const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker, diagBrokerAnalysis);
+    const stockTrades = diagnosticDays === 1 ? floorsheetBySymbol.get(symUpper) || [] : [];
+    const brokerData = calculateBrokerConcentration(
+      stockTrades,
+      sym,
+      stockSummaryWithBroker,
+      diagBrokerAnalysis
+    );
 
-    const dailyHistory = buildDailyHistoryFromStockData(stockSummaryWithBroker, diagBrokerAnalysis, historyCandles);
+    const dailyHistory = buildDailyHistoryFromStockData(
+      stockSummaryWithBroker,
+      diagBrokerAnalysis,
+      historyCandles
+    );
     const multiDayDiag = calculateMultiDayDiagnostics(dailyHistory, diagnosticDays);
 
     const stockLtp = Number(base.ltp || base.closePrice || 100);
@@ -1233,6 +1407,7 @@ export function AccumulationDistributionRadar({
 
     return {
       ...base,
+      intradayPChange,
       pChange: effectivePChange,
       volume: effectiveVolume,
       timeframeDays: diagnosticDays,
@@ -1242,16 +1417,31 @@ export function AccumulationDistributionRadar({
       buyZoneMax,
       bcr5NetPct: multiDayDiag?.bcr5NetPct ?? brokerData?.bcr5BuyPct ?? base.bcr5NetPct,
       scr3NetPct: multiDayDiag?.scr3NetPct ?? brokerData?.bcr3SellPct ?? base.scr3NetPct,
-      grossBuyConcentrationPct: multiDayDiag?.grossBuyConcentrationPct ?? brokerData?.bcr3BuyPct ?? base.grossBuyConcentrationPct,
-      grossSellConcentrationPct: multiDayDiag?.grossSellConcentrationPct ?? brokerData?.bcr3SellPct ?? base.grossSellConcentrationPct,
-      smartMoneyNetFlowPct: multiDayDiag?.smartMoneyNetFlowPct ?? ((brokerData?.bcr3BuyPct || 0) - (brokerData?.bcr3SellPct || 0)),
+      grossBuyConcentrationPct:
+        multiDayDiag?.grossBuyConcentrationPct ??
+        brokerData?.bcr3BuyPct ??
+        base.grossBuyConcentrationPct,
+      grossSellConcentrationPct:
+        multiDayDiag?.grossSellConcentrationPct ??
+        brokerData?.bcr3SellPct ??
+        base.grossSellConcentrationPct,
+      smartMoneyNetFlowPct:
+        multiDayDiag?.smartMoneyNetFlowPct ??
+        (brokerData?.bcr3BuyPct || 0) - (brokerData?.bcr3SellPct || 0),
       bigBrokerVWAP: multiDayDiag?.bigBrokerVWAP || base.bigBrokerVWAP || 0,
       phase: multiDayDiag?.phase || base.phase,
       phaseLabel: multiDayDiag?.phaseLabel || base.phaseLabel,
       entryStatus: multiDayDiag?.entryStatus || base.entryStatus,
-      entryDescription: multiDayDiag?.entryDescription || base.entryDescription
+      entryDescription: multiDayDiag?.entryDescription || base.entryDescription,
     };
-  }, [analyzedStocks, selectedStockSymbol, diagnosticDays, radarDays, stockBrokerDataMap, floorsheetBySymbol]);
+  }, [
+    analyzedStocks,
+    selectedStockSymbol,
+    diagnosticDays,
+    radarDays,
+    stockBrokerDataMap,
+    floorsheetBySymbol,
+  ]);
 
   const runZeroSumVerification = async (symToVerify?: string) => {
     const targetSym = (symToVerify || selectedStockSymbol || 'NABIL').toUpperCase().trim();
@@ -3485,34 +3675,24 @@ export function AccumulationDistributionRadar({
               </div>
             </div>
 
-            {/* ── STEP 4: SMART MONEY BROKER FLOW AUDIT CARD ── */}
+            {/* ── STEP 4: SMART MONEY BROKER FLOW AUDIT CARD (Fixes BUG-A2-07 ReferenceError) ── */}
             {(() => {
-              const isSampleValid = activeStock.brokerData?.status !== 'insufficient_sample' && (activeStock.brokerData?.totalBuyVolume || 0) >= 300;
-              const bcr3Buy = isSampleValid ? (activeStock.brokerData?.bcr3BuyPct || 0) : 0;
-              const bcr3Sell = isSampleValid ? (activeStock.brokerData?.bcr3SellPct || 0) : 0;
-              const pChange = Number(activeStock.pChange || 0);
-              const topSellers = activeStock.brokerData?.topSellerBrokers || activeStock.brokerData?.topSellers || [];
-              const topBuyers = activeStock.brokerData?.topBuyerBrokers || activeStock.brokerData?.topBuyers || [];
-              const hasSellingAsymmetry = bcr3Sell >= 45.0 && (bcr3Sell - bcr3Buy) >= 10.0;
-              const topSellerNetDumping = isSampleValid && (
-                topSellers.slice(0, 3).some((sel: any) => {
-                  const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
-                  return sel.volume > buyOfSel && (sel.volume - buyOfSel) > ((activeStock.brokerData?.totalSellVolume || 1) * 0.20);
-                }) && (bcr3Sell > bcr3Buy)
+              const pChange = Number(activeStock.intradayPChange ?? activeStock.pChange ?? 0);
+              const step4 = evaluateUnifiedStep4Flow(
+                activeStock.brokerData,
+                pChange,
+                activeStock.wyckoff?.stage || '',
+                Boolean(activeStock.realBrokerAnalysis),
+                (floorsheetBySymbol.get(String(activeStock.symbol || '').toUpperCase().trim()) || []).length
               );
-              const isSellerDominant = isSampleValid && (
-                hasSellingAsymmetry ||
-                topSellerNetDumping ||
-                (activeStock.brokerData?.smartMoneyBias === 'Operator Offloading' && bcr3Sell > bcr3Buy)
-              );
-              const isDumping = Boolean(
-                isSampleValid && (
-                  isSellerDominant ||
-                  (activeStock.brokerData?.adSignal === 'Distribution' && (Number(activeStock.brokerData?.adStrength || 0) >= 30 || Number(activeStock.brokerData?.adRatio || 0) <= -0.08) && bcr3Sell > bcr3Buy)
-                )
-              );
-              const isTrap = isDumping && (pChange >= 0 || activeStock.wyckoff?.stage?.includes('PUMP'));
-              const isAccumulation = isSampleValid && (bcr3Buy >= 40.0 || (activeStock.brokerData?.bcr5BuyPct >= 50.0 && bcr3Buy >= 36.0)) && (bcr3Buy > bcr3Sell) && !isDumping;
+              const isSampleValid = step4.isSampleValid;
+              const bcr3Buy = step4.bcr3Buy;
+              const bcr3Sell = step4.bcr3Sell;
+              const isTrap = step4.isTrap;
+              const isDumping = step4.isDumping;
+              const isAccumulation = step4.isAccumulation;
+              const topSellers = step4.topSellers;
+              const topBuyers = step4.topBuyers;
 
               return (
                 <div className={`p-2.5 sm:p-5 rounded-xl sm:rounded-2xl border shadow-xl space-y-4 ${
@@ -3933,7 +4113,9 @@ export function AccumulationDistributionRadar({
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
                   <div className="text-slate-400">T+2 Settlement Trap Risk</div>
                   <div className="font-bold text-white mt-0.5">
-                    {activeStock.pChange >= 13.5 ? '🔴 Severe (±15% Circuit Overhang)' : '🟢 Normal Settlement'}
+                    {Number(activeStock.intradayPChange ?? activeStock.pChange ?? 0) >= 13.5
+                      ? '🔴 Severe (±15.0% Circuit Overhang)'
+                      : '🟢 Normal Settlement (< +13.5% Intraday)'}
                   </div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
@@ -4084,13 +4266,19 @@ export function AccumulationDistributionRadar({
         </div>
       )}
 
-      {modalStock && !onSelectStock && (
-        <StockDetailModal
-          stock={modalStock}
-          allStocks={stocks}
-          onClose={() => setModalStock(null)}
-        />
-      )}
+      {modalStock && !onSelectStock && (() => {
+        const sym = String(modalStock.symbol || '').toUpperCase().trim();
+        const latestAnalyzed = analyzedStocks.find(s => String(s.symbol || '').toUpperCase().trim() === sym);
+        const latestLive = sym ? liveStocksMap[sym] : null;
+        const syncedModalStock = { ...modalStock, ...(latestLive || {}), ...(latestAnalyzed || {}) };
+        return (
+          <StockDetailModal
+            stock={syncedModalStock}
+            allStocks={stocks}
+            onClose={() => setModalStock(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

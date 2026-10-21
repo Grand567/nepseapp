@@ -61,14 +61,37 @@ function synthesizeGuruQuantReport({
   const ltp = Number(price.closePrice || price.lastTradedPrice || price.ltp || 100);
   const pChg = Number(price.percentageChange || price.pChange || 0);
   const vol = Number(price.totalTradedQuantity || price.volume || 10000);
-  const eps = Number(financials?.data?.eps || price.eps || 0);
-  const bvps = Number(financials?.data?.bvps || financials?.data?.bookValuePerShare || financials?.data?.bookValue || price.bvps || 100);
-  const pe = Number(financials?.data?.pe || price.pe || (eps > 0 ? ltp / eps : 0));
+  const finData = financials?.data || {};
+  const eps = Number(finData.eps ?? price.eps ?? 0);
+  const bvps = Number(finData.bvps ?? finData.bookValuePerShare ?? finData.bookValue ?? price.bvps ?? 100);
+  const pe = Number(finData.pe ?? price.pe ?? (eps > 0 ? ltp / eps : 0));
   const rsi = Number(technical?.indicators?.rsi || resolveDynamicStockRSI({ ...price, symbol, ltp, pChange: pChg, candles }));
+  const sector = String(price.sector || finData.sector || '').toLowerCase();
+
+  // ── Statutory & Regulatory Hard Veto Checks ──────────────────────────────
+  const nplPct = Number(finData.npl ?? finData.nplPct ?? price.npl ?? NaN);
+  const carPct = Number(finData.car ?? finData.carPct ?? price.car ?? NaN);
+  const costPerMW = Number(finData.costPerMW ?? finData.capexPerMw ?? price.costPerMW ?? NaN);
+  const codCompleted = finData.codCompleted ?? price.codCompleted ?? true;
+
+  let daysToLockIn = Number(finData.daysToLockInExpiry ?? price.daysToLockInExpiry ?? NaN);
+  const lockInDateStr = finData.promoterUnlockDate || finData.lockInExpiryDate || price.promoterUnlockDate || price.lockInExpiryDate;
+  if (Number.isNaN(daysToLockIn) && lockInDateStr) {
+    const diffMs = new Date(lockInDateStr).getTime() - Date.now();
+    daysToLockIn = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  const isLockInVeto = Number.isFinite(daysToLockIn) && daysToLockIn >= 0 && daysToLockIn < 120;
+  const isBfiSector = /bank|finance|microfinance/i.test(sector);
+  const isBfiRegulatoryVeto =
+    isBfiSector &&
+    ((Number.isFinite(nplPct) && nplPct >= 5.0) || (Number.isFinite(carPct) && carPct > 0 && carPct < 11.0));
+  const isHydroSector = /hydro/i.test(sector);
+  const isHydroCapexVeto =
+    isHydroSector &&
+    ((Number.isFinite(costPerMW) && costPerMW > 20.0) || codCompleted === false);
 
   // ── Candlestick & Market Structure Analysis ───────────────────────────────
-  // Use real OHLCV candles to detect pattern and market structure.
-  // These results are new — previously never surfaced in the Guru AI card.
   let candlestickPattern = null;
   let marketStructure = null;
   let priceActionSummary = null;
@@ -87,19 +110,33 @@ function synthesizeGuruQuantReport({
     } catch (_) {}
   }
 
-  // Derive final recommendation based on quantitative convergence
+  // Derive final recommendation based on quantitative convergence & hard regulatory vetoes
   let rec = 'HOLD';
   let conf = 78;
   let riskLvl = 'MEDIUM';
   let sentiment = 'NEUTRAL';
 
-  // Hard gates: Counter-Trend Bounce, Hydro Dry Season, or Broker Dumping override bullish signals
   const isCounterTrendBounce = zone.zone === 'Counter-Trend Bounce';
   const isSeasonalityCaution = zone.zone === 'Seasonality Caution';
   const hasHeavyBrokerDumping = zone.brokerScore?.adSignal === 'Distribution' && (zone.brokerScore?.adStrength >= 40 || zone.brokerScore?.scoreDelta <= -15);
-  const isSeverelyOvervalued = graham.marginOfSafetyPct <= -50; // Price > 50% above intrinsic value
+  const isSeverelyOvervalued = graham.marginOfSafetyPct <= -50;
 
-  if (isCounterTrendBounce) {
+  if (isLockInVeto) {
+    rec = `VETO / AVOID (LOCK-IN EXPIRY IN ${daysToLockIn}D)`;
+    conf = 92;
+    riskLvl = 'VERY_HIGH';
+    sentiment = 'VERY_BEARISH';
+  } else if (isBfiRegulatoryVeto) {
+    rec = 'VETO / AVOID (NRB NPL/CAR BREACH)';
+    conf = 90;
+    riskLvl = 'VERY_HIGH';
+    sentiment = 'VERY_BEARISH';
+  } else if (isHydroCapexVeto) {
+    rec = 'VETO / AVOID (HYDRO CAPEX > 20 Cr/MW)';
+    conf = 88;
+    riskLvl = 'VERY_HIGH';
+    sentiment = 'VERY_BEARISH';
+  } else if (isCounterTrendBounce) {
     rec = 'REDUCE / AVOID NEW ENTRY';
     conf = 78;
     riskLvl = 'HIGH';
@@ -150,25 +187,26 @@ function synthesizeGuruQuantReport({
 
   // Dynamic Three-Pillar Quantitative Scores (1–10 scale)
   let fundScore = 5;
-  if (graham.marginOfSafetyPct > 20) fundScore = 9;
+  if (isBfiRegulatoryVeto || isHydroCapexVeto || isLockInVeto) fundScore = 1;
+  else if (graham.marginOfSafetyPct > 20) fundScore = 9;
   else if (graham.marginOfSafetyPct > 5) fundScore = 8;
   else if (graham.marginOfSafetyPct >= -10) fundScore = 6;
   else if (graham.marginOfSafetyPct >= -30) fundScore = 5;
   else if (graham.marginOfSafetyPct >= -100) fundScore = 4;
   else if (graham.marginOfSafetyPct >= -300) fundScore = 3;
-  else fundScore = 2; // e.g. -649% margin of safety gives 2/10
+  else fundScore = 2;
 
   let techScore = 5;
   if (zone.zone === 'Entry Zone') techScore = 8;
   else if (zone.zone === 'Buying Zone') techScore = 7;
-  else if (isCounterTrendBounce) techScore = 3; // Price below 50 EMA in downtrend
+  else if (isCounterTrendBounce) techScore = 3;
   else if (zone.zone === 'Exit Zone') techScore = 4;
   else if (zone.zone === 'Selling Zone') techScore = 2;
 
   let smartScore = 5;
   if (zone.brokerScore?.adSignal === 'Accumulation') smartScore = Math.min(9, 6 + Math.round(zone.brokerScore.adStrength / 25));
   else if (hasHeavyBrokerDumping) smartScore = 2;
-  else if (vol < 1000 || (volumeZ?.zScore && volumeZ.zScore < -1.0)) smartScore = 3; // Thin volume participation
+  else if (vol < 1000 || (volumeZ?.zScore && volumeZ.zScore < -1.0)) smartScore = 3;
 
   // Key institutional reasons
   const reasons = [];
@@ -176,7 +214,6 @@ function synthesizeGuruQuantReport({
   if (wyckoff.phase) reasons.push(`Wyckoff Cycle: ${wyckoff.phase} (${wyckoff.action})`);
   if (graham.valuationStatus) reasons.push(`Graham Intrinsic Value: Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% Margin of Safety)`);
 
-  // Floorsheet broker accumulation reason
   if (zone?.brokerScore?.label && zone.brokerScore.scoreDelta !== 0) {
     reasons.push(`Floorsheet Broker Flow: ${zone.brokerScore.label} — ${zone.brokerScore.detail}`);
   }
@@ -188,7 +225,6 @@ function synthesizeGuruQuantReport({
   if (marketStructure) reasons.push(`Market Structure: ${marketStructure.description}`);
   if (isCounterTrendBounce) reasons.push(`⚠️ Hard Trend Ceiling Active: Price is below 50 EMA — rallies into this zone are institutionally sold, not bought.`);
 
-  // Hydro seasonality reason
   if (zone?.hydroSeason?.isHydro && zone.hydroSeason.isDrySeason) {
     reasons.push(`Hydrology Season: ${zone.hydroSeason.seasonLabel} — Run-of-River output depressed.`);
   }
@@ -203,6 +239,15 @@ function synthesizeGuruQuantReport({
     `Daily individual stock circuit band of ±15% on NEPSE NOTS`
   ];
 
+  if (isLockInVeto) {
+    risks.unshift(`🚨 REGULATORY VETO: Promoter lock-in expires in ${daysToLockIn} days (< 120-day safety threshold). High institutional supply overhang.`);
+  }
+  if (isBfiRegulatoryVeto) {
+    risks.unshift(`🚨 NRB PRUDENTIAL VETO: NPL (${Number.isFinite(nplPct) ? nplPct + '%' : 'N/A'}) >= 5.0% or CAR (${Number.isFinite(carPct) ? carPct + '%' : 'N/A'}) < 11.0% breaches NRB dividend/capital floor.`);
+  }
+  if (isHydroCapexVeto) {
+    risks.unshift(`🚨 HYDRO CAPEX/COD VETO: Project Capex (${Number.isFinite(costPerMW) ? 'Rs. ' + costPerMW + ' Cr/MW' : 'Incomplete COD'}) exceeds Rs. 20 Cr/MW equity viability ceiling.`);
+  }
   if (hasHeavyBrokerDumping && brokerAnalysis?.topDistributor?.brokerName) {
     risks.push(`Top Broker Seller: ${brokerAnalysis.topDistributor.brokerName} (dumped ${Number(brokerAnalysis.topDistributor.netQty || 0).toLocaleString()} shares @ Rs. ${brokerAnalysis.topDistributor.avgRate || 'N/A'})`);
   }
@@ -211,7 +256,9 @@ function synthesizeGuruQuantReport({
   }
 
   let actionZoneBadge = zone.zoneBadge;
-  if (isCounterTrendBounce) {
+  if (isLockInVeto || isBfiRegulatoryVeto || isHydroCapexVeto) {
+    actionZoneBadge = '🚨 REGULATORY HARD VETO (DO NOT ENTER)';
+  } else if (isCounterTrendBounce) {
     actionZoneBadge = '⚠️ COUNTER-TREND BOUNCE (RESISTANCE AHEAD)';
   } else if (zone.zone.includes('Downtrend') || zone.isConfirmedBearishStructure) {
     actionZoneBadge = '🔴 BEARISH STRUCTURE (BELOW 50 EMA)';
@@ -220,6 +267,7 @@ function synthesizeGuruQuantReport({
   }
 
   return {
+    symbol,
     recommendation: rec,
     actionZone: zone.zone,
     actionZoneBadge,
@@ -233,7 +281,6 @@ function synthesizeGuruQuantReport({
       technical: techScore,
       smartMoney: smartScore
     },
-    // Candlestick & Market Structure (NEW — previously missing entirely)
     candlestickPattern,
     marketStructure,
     priceActionSummary,
@@ -270,8 +317,8 @@ function synthesizeGuruQuantReport({
     analysis: `${symbol} is currently positioned in the ${zone.zone} with ${wyckoff.phase}. Quantitative analysis confirms ${adi.trend.toLowerCase()} at Rs. ${ltp}. Benjamin Graham valuation indicates an intrinsic baseline of Rs. ${graham.intrinsicValue} (${graham.marginOfSafetyPct >= 0 ? '+' : ''}${graham.marginOfSafetyPct}% margin of safety). With an initial ATR swing target of ${targets.target1.label} against a capital risk floor of ${targets.stopLoss.label}, the calculated Risk-to-Reward ratio stands at ${rrr.rrr}:1.`,
     keyReasons: reasons,
     risks,
-    investmentTips: isCounterTrendBounce
-      ? `Do NOT enter. Price is below the 50 EMA structural ceiling. Await a confirmed weekly close above EMA before any allocation.`
+    investmentTips: isCounterTrendBounce || isLockInVeto || isBfiRegulatoryVeto || isHydroCapexVeto
+      ? `Do NOT enter. Hard structural or regulatory veto active (${actionZoneBadge}). Preserve capital for compliant Stage-2 setups.`
       : `Accumulate within ${targets.entryZone.label}. Place hard stop-loss at ${targets.stopLoss.label} and trail stops higher as targets are achieved.`,
     nepseSpecific: `Keep individual stock circuit limits (±15%) and index halt rules in mind. In the Nepal market, volume spikes above 1.5x on flat price indicate silent institutional absorption prior to breakout notices.`,
     circuitMetrics: circuitMetrics || null,
@@ -1547,7 +1594,22 @@ export default function AiAnalyst({
         brokerTop3Pct: brokerData.concentrationPct ? brokerData.concentrationPct / 100 : null
       });
       const rrr = calculateRiskRewardRatio(ltp, targets.target1.price, targets.stopLoss.price);
-      const volumeZ = calculateVolumeZScore(volume, volume * 0.7, volume * 0.25);
+      const priorVolCandles = (dynCandles || [])
+        .slice(-21, -1)
+        .map((c) => Number(c.volume ?? c.totalTradedQuantity ?? 0))
+        .filter((v) => Number.isFinite(v) && v > 0);
+      const volMean20 =
+        priorVolCandles.length >= 3
+          ? priorVolCandles.reduce((a, b) => a + b, 0) / priorVolCandles.length
+          : volume;
+      const volStd20 =
+        priorVolCandles.length >= 3
+          ? Math.sqrt(
+              priorVolCandles.reduce((acc, v) => acc + Math.pow(v - volMean20, 2), 0) /
+                priorVolCandles.length
+            )
+          : Math.max(1, volume * 0.25);
+      const volumeZ = calculateVolumeZScore(volume, volMean20, Math.max(1, volStd20));
 
       // NEPSE Circuit-Breaker & Liquidity Shield
       const circuitMetrics = calculateCircuitAndLiquidityMetrics(
@@ -1630,26 +1692,40 @@ export default function AiAnalyst({
           signal: AbortSignal.timeout(20000)
         });
 
+        const clampToCircuit = (val, fallbackVal) => {
+          const num = Number(val);
+          if (!Number.isFinite(num) || num <= 0) return fallbackVal;
+          const floor15 = Number((ltp * 0.85).toFixed(2));
+          const ceil15 = Number((ltp * 1.15).toFixed(2));
+          return Math.max(floor15, Math.min(ceil15, num));
+        };
+
         if (predictRes.ok) {
           const pred = await predictRes.json();
           if (pred && (pred.verdict || pred.confidenceScore)) {
+            const safeStop = clampToCircuit(pred.riskReward?.stopLoss, targets.stopLoss.price);
+            const verifiedStop = safeStop < ltp ? safeStop : targets.stopLoss.price;
+            const safeT1 = clampToCircuit(pred.riskReward?.target1, targets.target1.price);
+            const verifiedT1 = safeT1 > ltp ? safeT1 : targets.target1.price;
+            const safeT2 = Math.max(verifiedT1, clampToCircuit(pred.riskReward?.target2, targets.target2.price));
+
             finalData = {
               ...synthesizedReport,
-              verdict: pred.verdict || synthesizedReport.recommendation,
-              recommendation: pred.verdict || synthesizedReport.recommendation,
+              verdict: synthesizedReport.recommendation.startsWith('VETO')
+                ? synthesizedReport.recommendation
+                : (pred.verdict || synthesizedReport.recommendation),
+              recommendation: synthesizedReport.recommendation.startsWith('VETO')
+                ? synthesizedReport.recommendation
+                : (pred.verdict || synthesizedReport.recommendation),
               confidenceScore: pred.confidenceScore ?? synthesizedReport.confidence,
               confidence: pred.confidenceScore ?? synthesizedReport.confidence,
-              scores: pred.scores || {
-                fundamental: pred.intrinsicValue?.marginOfSafetyPct > 15 ? 8 : 6,
-                technical: pred.confidenceScore > 80 ? 8 : 6,
-                smartMoney: 8
-              },
+              scores: pred.scores || synthesizedReport.scores,
               targetPrice: {
-                oneMonth: pred.riskReward?.target1 || targets.target1.price,
-                threeMonths: pred.riskReward?.target2 || targets.target2.price,
+                oneMonth: verifiedT1,
+                threeMonths: safeT2,
                 sixMonths: targets.target3.price
               },
-              stopLoss: pred.riskReward?.stopLoss || targets.stopLoss.price,
+              stopLoss: verifiedStop,
               entryZone: pred.riskReward?.entryTarget ? `Rs. ${pred.riskReward.entryTarget}` : targets.entryZone.label,
               riskRewardRatio: pred.riskReward?.rrr || rrr.rrr,
               analysis: pred.summaryReasoning || synthesizedReport.analysis,
@@ -1676,6 +1752,11 @@ export default function AiAnalyst({
               finalData = {
                 ...synthesizedReport,
                 ...aiData,
+                recommendation: synthesizedReport.recommendation.startsWith('VETO')
+                  ? synthesizedReport.recommendation
+                  : (aiData.recommendation || synthesizedReport.recommendation),
+                targetPrice: synthesizedReport.targetPrice,
+                stopLoss: synthesizedReport.stopLoss,
                 accumulationDistribution: synthesizedReport.accumulationDistribution,
                 grahamValuation: synthesizedReport.grahamValuation,
                 targetLabels: synthesizedReport.targetLabels,
@@ -2612,7 +2693,17 @@ Format as plain text (not JSON) for this conversational response.`;
             {(() => {
               const ltp = Number(paperModalScrip.currentPrice || 100);
               const totalVal = paperShares * ltp;
-              const comm = totalVal * 0.0036;
+              const commRate =
+                totalVal <= 50000
+                  ? 0.0036
+                  : totalVal <= 500000
+                  ? 0.0033
+                  : totalVal <= 2000000
+                  ? 0.0031
+                  : totalVal <= 10000000
+                  ? 0.0027
+                  : 0.0024;
+              const comm = Math.max(10, totalVal * commRate);
               const sebon = totalVal * 0.00015;
               const dp = 25;
               const totalSimCost = totalVal + comm + sebon + dp;

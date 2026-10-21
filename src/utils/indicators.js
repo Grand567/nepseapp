@@ -107,6 +107,7 @@ export function calculateMACD(prices, shortPeriod = 12, longPeriod = 26, signalP
 
   return {
     line:      latestMacd   !== null ? +latestMacd.toFixed(2)   : null,
+    macd:      latestMacd   !== null ? +latestMacd.toFixed(2)   : null,
     signal:    latestSignal !== null ? +latestSignal.toFixed(2) : null,
     histogram: latestHisto  !== null ? +latestHisto.toFixed(2)  : null,
     isInsufficient: false,
@@ -116,74 +117,90 @@ export function calculateMACD(prices, shortPeriod = 12, longPeriod = 26, signalP
   };
 }
 
-// ── RSI (Wilder's Smoothed Method — unchanged, was already correct) ────────────
-export function calculateRSI(prices, period = 14) {
-  if (!prices || prices.length <= period) {
-    return null; // B6: return null instead of 50 to avoid misleading "neutral" signal
-  }
+/**
+ * Wilder's Smoothed RSI(14) with strict division-by-zero and flat-market guards.
+ * Expects chronological closes (oldest -> newest).
+ */
+export function calculateRSI(closes, period = 14) {
+  if (!Array.isArray(closes) || closes.length < period + 1) return null;
+  const nums = closes.map(Number).filter(v => Number.isFinite(v) && v > 0);
+  if (nums.length < period + 1) return null;
 
-  let gains = 0;
-  let losses = 0;
-
+  let avgGain = 0;
+  let avgLoss = 0;
   for (let i = 1; i <= period; i++) {
-    const diff = prices[i] - prices[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
+    const diff = nums[i] - nums[i - 1];
+    if (diff > 0) avgGain += diff;
+    else if (diff < 0) avgLoss += Math.abs(diff);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  for (let i = period + 1; i < nums.length; i++) {
+    const diff = nums[i] - nums[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
 
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
-  for (let i = period + 1; i < prices.length; i++) {
-    const diff = prices[i] - prices[i - 1];
-    const currentGain = diff >= 0 ? diff : 0;
-    const currentLoss = diff < 0 ? -diff : 0;
-    avgGain = (avgGain * (period - 1) + currentGain) / period;
-    avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
-  }
-
-  if (avgLoss === 0) return 100;
-  if (avgGain === 0) return 0;
+  if (avgGain === 0 && avgLoss === 0) return 50.0;
+  if (avgLoss === 0) return 100.0;
+  if (avgGain === 0) return 0.0;
 
   const rs = avgGain / avgLoss;
-  return Number((100 - 100 / (1 + rs)).toFixed(2));
+  return +Number(100 - 100 / (1 + rs)).toFixed(2);
 }
+
+export const calculateWilderRSI = calculateRSI;
 
 // ── B3: Bollinger Bands ───────────────────────────────────────────────────────
 /**
- * Calculates Bollinger Bands.
- * @param {number[]} prices - Array of closing prices
- * @param {number} period   - Lookback period (default 20)
- * @param {number} stdDevMult - Standard deviation multiplier (default 2)
- * @returns {{ upper, middle, lower, bandwidth, squeeze, percentB } | null}
+ * Calculates Bollinger Bands with stdDev, bandwidth, percentB, and squeeze flags.
  */
-export function calculateBollingerBands(prices, period = 20, stdDevMult = 2) {
-  if (!prices || prices.length < period) return null;
+export function calculateBollingerBands(closes, period = 20, stdDevMult = 2) {
+  if (!Array.isArray(closes) || closes.length < period) return null;
+  const slice = closes.slice(-period).map(Number).filter(Number.isFinite);
+  if (slice.length < period) return null;
 
-  const slice = prices.slice(prices.length - period);
-  const middle = slice.reduce((a, b) => a + b, 0) / period;
-  const variance = slice.reduce((a, b) => a + (b - middle) ** 2, 0) / period;
-  const stdDev = Math.sqrt(variance);
+  const mean = slice.reduce((a, b) => a + b, 0) / period;
+  if (mean <= 0) return null;
 
-  const upper = +(middle + stdDevMult * stdDev).toFixed(2);
-  const lower = +(middle - stdDevMult * stdDev).toFixed(2);
-  const bandwidth = middle > 0 ? +((upper - lower) / middle * 100).toFixed(2) : 0;
-  const lastPrice = prices[prices.length - 1];
+  const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
+  const stdDev = Math.sqrt(Math.max(0, variance));
+
+  const upper = +(mean + stdDevMult * stdDev).toFixed(2);
+  const lower = +Math.max(0.01, mean - stdDevMult * stdDev).toFixed(2);
+  const bandwidth = +(((upper - lower) / mean) * 100).toFixed(2);
+  const lastPrice = slice[slice.length - 1];
   const percentB = (upper - lower) > 0
     ? +((lastPrice - lower) / (upper - lower) * 100).toFixed(2)
     : 50;
 
-  // Squeeze: bandwidth in the bottom 20th percentile historically (simple proxy: < 5%)
-  const squeeze = bandwidth < 5;
-
   return {
     upper,
-    middle: +middle.toFixed(2),
+    middle: +mean.toFixed(2),
     lower,
+    stdDev: +stdDev.toFixed(2),
     bandwidth,
     percentB,
-    squeeze,
+    squeeze: bandwidth <= 8.5,
+    isSqueeze: bandwidth <= 8.5,
   };
+}
+
+export function calculateVolumeZScore(volumes, period = 20) {
+  if (!Array.isArray(volumes) || volumes.length < period) return 0;
+  const slice = volumes.slice(-period).map(Number).filter(v => Number.isFinite(v) && v >= 0);
+  if (slice.length < period) return 0;
+
+  const currentVol = slice[slice.length - 1];
+  const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+  const variance = slice.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / slice.length;
+  const stdDev = Math.sqrt(Math.max(0, variance));
+
+  if (stdDev <= 1e-9) return 0;
+  return +((currentVol - mean) / stdDev).toFixed(2);
 }
 
 // ── B4: Average True Range (ATR) ─────────────────────────────────────────────

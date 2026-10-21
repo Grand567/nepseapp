@@ -1,5 +1,6 @@
 // scripts/verifySignalTrackRecord5D.ts
 import { handleSignalTrackRecordEnriched } from "../proxy/routes/signalTrackRecordRoutes.mjs";
+import { isExcludedInstrument } from "../proxy/db/signalTrackerStore.js";
 
 console.log("==================================================================");
 console.log("🔬 DRABYASHREE NEPSE — 5D FLOORSHEET & SIGNAL TRACK RECORD VERIFICATION");
@@ -52,15 +53,28 @@ async function run() {
   );
 
   assert(
-    Array.isArray(responseData?.signals) && responseData.signals.length === 70,
-    "Loaded all 70 algorithmic signals from SQLite ledger",
-    `Signals: ${responseData?.signals?.length}`
+    Array.isArray(responseData?.signals) &&
+      responseData.signals.length >= 40 &&
+      responseData.signals.length === responseData?.totalCount,
+    "Loaded calibrated walk-forward pure-equity signals from SQLite ledger",
+    `Signals: ${responseData?.signals?.length} (Total Count: ${responseData?.totalCount})`
+  );
+
+  // Verify Pure-Equity Filter Invariant (Zero Debentures, Mutual Funds, or Promoters)
+  const hasExcluded = responseData.signals.some((s: any) =>
+    isExcludedInstrument(s.symbol, s.sector)
+  );
+  assert(
+    hasExcluded === false,
+    "Zero Debentures, Mutual Funds, or Promoter shares in Signal Track Record"
   );
 
   // Check Conviction classifications
   const convictions = new Set(responseData.signals.map((s: any) => s.floorsheetConviction));
   assert(
-    convictions.has("BROKER_DISTRIBUTION_WARNING") || convictions.has("STRONG_ACCUMULATION"),
+    convictions.has("BROKER_DISTRIBUTION_WARNING") ||
+      convictions.has("STRONG_ACCUMULATION") ||
+      convictions.has("STEADY_SUPPORT"),
     "Dynamically computed post-signal floorsheet conviction statuses",
     `Observed statuses: ${Array.from(convictions).join(", ")}`
   );
@@ -94,8 +108,8 @@ async function run() {
   const summary = responseData?.summary;
   assert(
     typeof summary?.verifiedWinRatePct === "number" && summary.verifiedWinRatePct > 0,
-    "Summary calculates net verified win rate",
-    `Win Rate: ${summary?.verifiedWinRatePct}%`
+    "Summary calculates net verified win rate over settled trades",
+    `Win Rate: ${summary?.verifiedWinRatePct}% | Alpha: ${summary?.avgNepseAlphaPct}%`
   );
 
   assert(

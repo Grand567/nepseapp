@@ -2,12 +2,6 @@
  * NEPSE Agent Tool Aggregator & Dossier Assembly Engine
  * ─────────────────────────────────────────────────────────────────────────────
  * proxy/agentTools.mjs
- *
- * Implements Phase 2 & 3 of the Drabyashree NEPSE Agent:
- * - Aggregates authentic exchange prices, historical candles, broker flow, and fundamentals.
- * - Computes quantitative indicators using deterministic mathematical engines.
- * - Formulates structured, anti-hallucination dossiers for Gemini 3.1 Pro / Pro models.
- * - Never fabricates mock values or guesses price targets without mathematical models.
  */
 
 import {
@@ -18,23 +12,192 @@ import {
 } from '../src/utils/indicators.js';
 import { calculateATR } from '../src/utils/quantEngine.js';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
-import { getOrFetchBrokerAnalysis } from './brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, isNonEquityInstrument } from './brokerVault.mjs';
+
+const STATUTORY_SEBON_SLABS = [
+  { max: 50_000, rate: 0.0036 },
+  { max: 500_000, rate: 0.0033 },
+  { max: 2_000_000, rate: 0.0031 },
+  { max: 10_000_000, rate: 0.0027 },
+  { max: Infinity, rate: 0.0024 },
+];
 
 /**
- * Gathers authentic market data, calculates quantitative indicators,
- * and assembles a unified scrip dossier for agent reasoning.
- *
- * @param {string} symbol - Sanitized stock ticker (e.g. "KBL", "HDL")
- * @param {object} helpers - { getStockDetailInternal, getPriceHistoryInternal }
- * @returns {Promise<object>} Complete validated analytical dossier
+ * Computes exact statutory NEPSE round-trip fee friction % and net return % after 5-slab brokerage,
+ * 0.015% SEBON fee, Rs. 25 DP fee per leg, and 7.5% short-term retail CGT on net gain.
  */
+export function computeStatutoryNetReturnPct(entryPrice, exitPrice, kitta = 100, holdingDays = 15) {
+  const ePx = Number(entryPrice) || 0;
+  const xPx = Number(exitPrice) || 0;
+  const qty = Math.max(10, Math.floor(Number(kitta) || 100));
+  if (ePx <= 0 || xPx <= 0) return { feeFrictionPct: 0.85, netReturnPct: 0 };
+
+  const calcComm = (amt) => {
+    const slab = STATUTORY_SEBON_SLABS.find(s => amt <= s.max) || STATUTORY_SEBON_SLABS[4];
+    return Math.max(10, amt * slab.rate);
+  };
+
+  const buyGross = ePx * qty;
+  const buyFees = calcComm(buyGross) + buyGross * 0.00015 + 25;
+  const totalBuyCost = buyGross + buyFees;
+
+  const sellGross = xPx * qty;
+  const sellFees = calcComm(sellGross) + sellGross * 0.00015 + 25;
+  const netBeforeTax = sellGross - sellFees;
+
+  const taxableGain = Math.max(0, netBeforeTax - totalBuyCost);
+  const cgtRate = holdingDays >= 365 ? 0.05 : 0.075;
+  const cgtTax = taxableGain * cgtRate;
+
+  const netReceivable = netBeforeTax - cgtTax;
+  const netProfit = netReceivable - totalBuyCost;
+  const feeFrictionPct = +(((buyFees + sellFees) / buyGross) * 100).toFixed(2);
+  const netReturnPct = +((netProfit / totalBuyCost) * 100).toFixed(2);
+
+  return { feeFrictionPct, netReturnPct };
+}
+
+/**
+ * Computes Half-Kelly Position Sizing with Stop-Loss Inversion Guard and 1% Portfolio Risk Cap
+ */
+export function computeHalfKellyPosition({
+  entryPrice,
+  stopLossPrice,
+  targetPrice,
+  winProb = 0.635,
+  portfolioCapitalNpr = 1_000_000,
+  maxPortfolioRiskPct = 0.01,
+  maxSingleSlotPct = 0.20,
+}) {
+  const entry = Number(entryPrice) || 0;
+  const stop = Number(stopLossPrice) || 0;
+  const target = Number(targetPrice) || 0;
+
+  // Mandatory Stop-Loss Inversion Guard: StopLoss must be strictly below Entry Price
+  if (entry <= 0 || stop <= 0 || stop >= entry || target <= entry) {
+    return {
+      isValidStop: false,
+      rewardToRiskRatio: 0,
+      halfKellyFractionPct: 0,
+      suggestedKitta: 0,
+      capitalAllocatedNpr: 0,
+      riskAmountNpr: 0,
+      guardReason: stop >= entry
+        ? 'STOP_LOSS_INVERTED: Stop-Loss is >= Entry Price (0 kitta enforced)'
+        : 'INVALID_GEOMETRY: Target must exceed Entry Price and Stop-Loss must be positive'
+    };
+  }
+
+  const riskPerShare = entry - stop;
+  const rewardPerShare = target - entry;
+  const b = rewardPerShare / riskPerShare;
+  const p = Math.min(0.95, Math.max(0.05, Number(winProb) || 0.635));
+  const q = 1 - p;
+
+  const fullKelly = p - q / b;
+  const halfKelly = Math.max(0, 0.5 * fullKelly);
+
+  if (halfKelly <= 0) {
+    return {
+      isValidStop: true,
+      rewardToRiskRatio: +b.toFixed(2),
+      halfKellyFractionPct: 0,
+      suggestedKitta: 0,
+      capitalAllocatedNpr: 0,
+      riskAmountNpr: 0,
+      guardReason: 'NEGATIVE_EXPECTANCY_KELLY: Payoff ratio insufficient for positive Half-Kelly allocation'
+    };
+  }
+
+  const maxRiskNpr = portfolioCapitalNpr * maxPortfolioRiskPct; // 1% portfolio risk ceiling
+  const kittaByRiskCap = Math.floor(maxRiskNpr / riskPerShare);
+
+  const effectiveSlotFraction = Math.min(maxSingleSlotPct, halfKelly);
+  const kittaByCapitalSlot = Math.floor((portfolioCapitalNpr * effectiveSlotFraction) / entry);
+
+  const suggestedKitta = Math.max(0, Math.min(kittaByRiskCap, kittaByCapitalSlot));
+  const capitalAllocatedNpr = Math.round(suggestedKitta * entry);
+  const riskAmountNpr = Math.round(suggestedKitta * riskPerShare);
+
+  return {
+    isValidStop: true,
+    rewardToRiskRatio: +b.toFixed(2),
+    halfKellyFractionPct: +(halfKelly * 100).toFixed(2),
+    suggestedKitta,
+    capitalAllocatedNpr,
+    riskAmountNpr,
+    guardReason: 'VERIFIED'
+  };
+}
+
+/**
+ * Evaluates Mandatory Regulatory & Fundamental Veto Gates:
+ * 1. Non-Equity Veto (Mutual Funds, Debentures, Promoter Shares)
+ * 2. Promoter Lock-In < 120 Days Cliff Veto
+ * 3. Commercial Bank / BFI NPL >= 5.0% or CAR < 11.0% Veto
+ * 4. Hydropower Capex > Rs. 20 Cr/MW or Delayed COD Veto
+ */
+export function evaluateRegulatoryVetoGates(symbol, stock = {}) {
+  const vetoes = [];
+  const sym = String(symbol || '').toUpperCase().trim();
+  const sector = String(stock?.sector || '').toLowerCase();
+
+  if (isNonEquityInstrument(sym)) {
+    vetoes.push({
+      code: 'NON_EQUITY_INSTRUMENT_VETO',
+      reason: `${sym} is classified as a Mutual Fund, Debenture, or Promoter share and is excluded from pure-equity momentum signals.`
+    });
+  }
+
+  const lockinDays = stock?.promoterLockinDaysRemaining ?? stock?.daysRemaining ?? null;
+  if (lockinDays !== null && Number(lockinDays) > 0 && Number(lockinDays) < 120) {
+    vetoes.push({
+      code: 'PROMOTER_LOCKIN_120D_VETO',
+      reason: `Hard Veto: Promoter share lock-in expires in ${lockinDays} days (< 120-day supply flood threshold).`
+    });
+  }
+
+  const isBfi = sector.includes('bank') || sector.includes('finance') || sector.includes('microfinance');
+  const npl = stock?.npl ?? stock?.nplPct ?? null;
+  const car = stock?.car ?? stock?.carPct ?? null;
+
+  if (isBfi && npl !== null && Number(npl) >= 5.0) {
+    vetoes.push({
+      code: 'NRB_NPL_CEILING_VETO',
+      reason: `Hard Veto: BFI Non-Performing Loan (NPL ${Number(npl).toFixed(2)}%) breaches NRB 5.0% prudential limit.`
+    });
+  }
+  if (isBfi && car !== null && Number(car) > 0 && Number(car) < 11.0) {
+    vetoes.push({
+      code: 'NRB_CAR_FLOOR_VETO',
+      reason: `Hard Veto: BFI Capital Adequacy Ratio (CAR ${Number(car).toFixed(2)}%) is below NRB 11.0% minimum requirement.`
+    });
+  }
+
+  const isHydro = sector.includes('hydro');
+  const capexPerMwCr = stock?.capexPerMwCr ?? stock?.costPerMwCr ?? null;
+  const delayedCod = Boolean(stock?.isDelayedCod || stock?.delayedCod);
+  if (isHydro && ((capexPerMwCr !== null && Number(capexPerMwCr) > 20.0) || delayedCod)) {
+    vetoes.push({
+      code: 'HYDRO_CAPEX_COD_VETO',
+      reason: delayedCod
+        ? 'Hard Veto: Hydropower project has a delayed Commercial Operation Date (COD).'
+        : `Hard Veto: Hydropower project capex (Rs. ${Number(capexPerMwCr).toFixed(1)} Cr/MW) exceeds Rs. 20 Cr/MW threshold.`
+    });
+  }
+
+  return {
+    isVetoed: vetoes.length > 0,
+    vetoes
+  };
+}
+
 export async function assembleScripDossier(symbol, helpers) {
   const normSym = String(symbol || '').toUpperCase().trim();
   if (!normSym) throw new Error('Invalid stock symbol');
 
   const { getStockDetailInternal, getPriceHistoryInternal, getDividendHistoryInternal } = helpers;
 
-  // 1. Fetch live detail, candle history, broker analytics, and dividends in parallel
   const [stockDetailResult, historyResult, brokerResult, dividendResult] = await Promise.allSettled([
     getStockDetailInternal(normSym, false),
     getPriceHistoryInternal(normSym, 120),
@@ -52,7 +215,6 @@ export async function assembleScripDossier(symbol, helpers) {
     throw new Error(`No authentic market data found for scrip: ${normSym}`);
   }
 
-  // 2. Sort and clean ascending daily candles
   const candles = rawCandles
     .map(c => ({
       date: c.date || c.t || '',
@@ -66,11 +228,17 @@ export async function assembleScripDossier(symbol, helpers) {
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const closes = candles.map(c => c.close);
-  const ltp = Number(stock?.ltp || stock?.closePrice || (closes.length > 0 ? closes[closes.length - 1] : 0));
-  const prevClose = Number(stock?.previousClose || stock?.prevClose || (closes.length > 1 ? closes[closes.length - 2] : ltp));
+  const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+  const ltp = Number(stock?.ltp || stock?.closePrice || latestCandle?.close || 0);
+  const openPx = Number(stock?.openPrice || stock?.open || latestCandle?.open || ltp);
+  const prevClose = Number(stock?.previousClose || stock?.prevClose || (candles.length > 1 ? candles[candles.length - 2].close : ltp));
   const pChange = Number(stock?.pChange ?? stock?.percentageChange ?? (prevClose > 0 ? +(((ltp - prevClose) / prevClose) * 100).toFixed(2) : 0));
 
-  // 3. Technical Indicators (Deterministic quantitative mathematics)
+  // Statutory ±15.0% Circuit Limits (Fourth Amendment 2082)
+  const refCloseForCircuit = prevClose > 0 ? prevClose : ltp;
+  const circuitFloor = refCloseForCircuit > 0 ? +(refCloseForCircuit * 0.85).toFixed(2) : null;
+  const circuitCeiling = refCloseForCircuit > 0 ? +(refCloseForCircuit * 1.15).toFixed(2) : null;
+
   let rsi = null;
   if (closes.length >= 15) {
     const rawRsi = calculateRSI(closes, 14);
@@ -82,10 +250,10 @@ export async function assembleScripDossier(symbol, helpers) {
     const rawMacd = calculateMACD(closes, 12, 26, 9);
     if (rawMacd) {
       macd = {
-        macdLine: +Number(rawMacd.macdLine || 0).toFixed(2),
-        signalLine: +Number(rawMacd.signalLine || 0).toFixed(2),
-        histogram: +Number(rawMacd.histogram || 0).toFixed(2),
-        isBullishCross: (rawMacd.histogram || 0) >= 0
+        macdLine: +Number(rawMacd.macdLine ?? rawMacd.macd ?? 0).toFixed(2),
+        signalLine: +Number(rawMacd.signalLine ?? rawMacd.signal ?? 0).toFixed(2),
+        histogram: +Number(rawMacd.histogram ?? 0).toFixed(2),
+        isBullishCross: (rawMacd.histogram ?? 0) >= 0
       };
     }
   }
@@ -120,16 +288,14 @@ export async function assembleScripDossier(symbol, helpers) {
   const atrRaw = closes.length >= 15 ? Number(calculateATR(candles.slice(-30), 14)) : NaN;
   const atr = isFinite(atrRaw) && atrRaw > 0 ? +atrRaw.toFixed(1) : null;
 
-  // 4. Volume & RVOL Analysis
-  const recent20Vols = candles.slice(-21, -1).map(c => c.volume);
+  const recent20Vols = candles.slice(-21, -1).map(c => c.volume).filter(v => v > 0);
   const avg20Vol = recent20Vols.length > 0
     ? Math.round(recent20Vols.reduce((a, b) => a + b, 0) / recent20Vols.length)
     : null;
-  const currentVolRaw = Number(stock?.volume || stock?.totalTradedQuantity || (candles.length > 0 ? candles[candles.length - 1].volume : 0));
+  const currentVolRaw = Number(stock?.volume || stock?.totalTradedQuantity || latestCandle?.volume || 0);
   const currentVol = currentVolRaw > 0 ? currentVolRaw : null;
-  const rvol = (avg20Vol && currentVol) ? +Number(currentVol / avg20Vol).toFixed(2) : null;
+  const rvol = (avg20Vol && avg20Vol > 0 && currentVol) ? +Number(currentVol / avg20Vol).toFixed(2) : null;
 
-  // 5. Broker Cornering & Smart Money Concentration (BCR3 & BCR5) — real feed only
   const topBuyers = (broker?.topBuyers || broker?.buyers || []).slice(0, 5);
   const topSellers = (broker?.topSellers || broker?.sellers || []).slice(0, 5);
   const top3BuyVol = topBuyers.slice(0, 3).reduce((acc, b) => acc + Number(b.buyQty || b.volume || b.shares || 0), 0);
@@ -148,45 +314,90 @@ export async function assembleScripDossier(symbol, helpers) {
   const bcr3SellRaw = Number(broker?.bcr3SellPct || directBcr3Sell || 0);
   const bcr3Sell = bcr3SellRaw > 0 ? bcr3SellRaw : null;
 
-  // 6. Actionable Execution Geometry (Setup Analyzer Engine) — real levels only
+  const regulatoryGate = evaluateRegulatoryVetoGates(normSym, stock);
+
   let entryExitPlan = null;
   try {
     entryExitPlan = candles.length >= 20
       ? generateEntryExitPlan(stock || { ltp, pChange }, candles, verifiedDividends, { maxHoldDays: 20 })
       : null;
-  } catch (e) { entryExitPlan = null; }
+  } catch (_) {
+    entryExitPlan = null;
+  }
 
   const levels = entryExitPlan?.levels || {};
   const hasLevels = entryExitPlan && entryExitPlan.supported !== false && levels.stopLoss?.price != null && levels.target1?.price != null;
 
+  const clampSingleDayBand = (px) => {
+    const n = Number(px);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (circuitFloor && circuitCeiling) {
+      return +Math.min(circuitCeiling, Math.max(circuitFloor, n)).toFixed(2);
+    }
+    return +n.toFixed(2);
+  };
+
   const executionPlan = (() => {
-    if (!hasLevels) {
+    const baseFeeInfo = computeStatutoryNetReturnPct(ltp, ltp * 1.08, 100, 15);
+    if (!hasLevels || regulatoryGate.isVetoed) {
       return {
         available: false,
-        reason: entryExitPlan?.reason || `Only ${candles.length} sessions of history — at least 20 are required for entry/exit levels.`,
-        stance: 'INSUFFICIENT DATA',
+        reason: regulatoryGate.isVetoed
+          ? regulatoryGate.vetoes.map(v => v.reason).join(' | ')
+          : (entryExitPlan?.reason || `Only ${candles.length} sessions of history — at least 20 are required for entry/exit levels.`),
+        stance: regulatoryGate.isVetoed ? 'REGULATORY VETO — AVOID' : 'INSUFFICIENT DATA',
         setupScore: null,
         pullbackZone: null,
         breakoutZone: null,
         stopLoss: null,
         targets: [],
-        feeFrictionPct: 0.73,
+        halfKellySizing: { suggestedKitta: 0, halfKellyFractionPct: 0, isValidStop: false },
+        feeFrictionPct: baseFeeInfo.feeFrictionPct,
         cgtTaxRatePct: 7.5
       };
     }
+
+    const rawSlPx = Number(levels.stopLoss.price);
+    // Stop-Loss Inversion Guard: Ensure StopLoss < LTP and >= circuitFloor
+    const safeSlPx = rawSlPx > 0 && rawSlPx < ltp
+      ? (circuitFloor ? Math.max(circuitFloor, +rawSlPx.toFixed(2)) : +rawSlPx.toFixed(2))
+      : +(ltp * 0.94).toFixed(2);
+
+    const slPct = +(((ltp - safeSlPx) / ltp) * 100).toFixed(2);
+
+    const formatTarget = (t, label, clampToDailyBand = false) => {
+      if (t?.price == null) return null;
+      const rawTgtPx = Number(t.price);
+      if (rawTgtPx <= ltp) return null;
+      const finalPx = clampToDailyBand ? clampSingleDayBand(rawTgtPx) : +rawTgtPx.toFixed(2);
+      const grossUpsidePct = +(((finalPx - ltp) / ltp) * 100).toFixed(2);
+      const { netReturnPct } = computeStatutoryNetReturnPct(ltp, finalPx, 100, 15);
+      return {
+        price: finalPx,
+        grossUpsidePct,
+        netReturnPct,
+        label
+      };
+    };
+
+    const t1Obj = formatTarget(levels.target1, 'Target 1 (Circuit-Clamped)', true);
+    const t2Obj = formatTarget(levels.target2, 'Target 2 (Swing)', false);
+    const targets = [t1Obj, t2Obj].filter(Boolean);
+
     const pivot = levels.breakoutZone?.pivot ?? levels.breakoutPivot ?? null;
-    const cap = levels.breakoutZone?.chaseCap ?? levels.chaseCap ?? null;
-    const slPx = levels.stopLoss.price;
-    const slPct = levels.stopLoss.pct ?? +(((ltp - slPx) / ltp) * 100).toFixed(1);
-    const tgt = (t, label) => t?.price != null ? {
-      price: t.price,
-      grossUpsidePct: t.upsidePct ?? +(((t.price - ltp) / ltp) * 100).toFixed(1),
-      netReturnPct: t.netReturnPct ?? null,
-      label
-    } : null;
+    const rawCap = levels.breakoutZone?.chaseCap ?? levels.chaseCap ?? null;
+    const cap = rawCap != null ? clampSingleDayBand(rawCap) : circuitCeiling;
+
+    const halfKellySizing = computeHalfKellyPosition({
+      entryPrice: ltp,
+      stopLossPrice: rawSlPx, // Pass rawSlPx so if original model stop was inverted, suggestedKitta is strictly 0
+      targetPrice: t1Obj?.price || ltp * 1.08,
+      winProb: 0.635,
+    });
+
     return {
       available: true,
-      stance: entryExitPlan.verdict || 'HOLD / WAIT',
+      stance: halfKellySizing.isValidStop ? (entryExitPlan.verdict || 'HOLD / WAIT') : 'STAND ASIDE (STOP INVERTED)',
       setupScore: entryExitPlan.setupScore ?? null,
       pullbackZone: levels.pullbackZone ? {
         low: levels.pullbackZone.low,
@@ -200,11 +411,12 @@ export async function assembleScripDossier(symbol, helpers) {
         chaseCap: cap,
         label: `> Rs. ${pivot}${cap != null ? ` (Cap: Rs. ${cap})` : ''}`
       } : null,
-      stopLoss: { price: slPx, pct: slPct, label: `Rs. ${slPx} (-${slPct}%)` },
-      targets: [tgt(levels.target1, 'Target 1'), tgt(levels.target2, 'Target 2')].filter(Boolean),
-      riskPerShare: levels.riskPerShare ?? null,
-      rewardToTarget1: levels.rewardToTarget1 ?? null,
-      feeFrictionPct: 0.73,
+      stopLoss: { price: safeSlPx, pct: slPct, label: `Rs. ${safeSlPx} (-${slPct}%)` },
+      targets,
+      halfKellySizing,
+      riskPerShare: +(ltp - safeSlPx).toFixed(2),
+      rewardToTarget1: t1Obj ? +(t1Obj.price - ltp).toFixed(2) : null,
+      feeFrictionPct: baseFeeInfo.feeFrictionPct,
       cgtTaxRatePct: 7.5
     };
   })();
@@ -215,8 +427,10 @@ export async function assembleScripDossier(symbol, helpers) {
     symbol: normSym,
     companyName: stock?.companyName || stock?.name || normSym,
     sector: stock?.sector || 'Others',
+    regulatoryGate,
     quote: {
       ltp,
+      open: openPx,
       prevClose,
       pChange,
       volume: currentVol,
@@ -224,8 +438,8 @@ export async function assembleScripDossier(symbol, helpers) {
       turnover: num(stock?.turnover || stock?.totalTurnover) ?? (currentVol ? Math.round(currentVol * ltp) : null),
       high52w: num(stock?.high52w),
       low52w: num(stock?.low52w),
-      circuitCeiling: prevClose > 0 ? +(prevClose * 1.15).toFixed(1) : null,
-      circuitFloor: prevClose > 0 ? +(prevClose * 0.85).toFixed(1) : null
+      circuitCeiling,
+      circuitFloor
     },
     technicals: {
       rsi14: rsi,
@@ -271,10 +485,6 @@ export async function assembleScripDossier(symbol, helpers) {
   };
 }
 
-/**
- * Builds the strict, anti-hallucination prompt for Gemini models.
- * Injects observed facts, calculated technicals, broker flow, and execution levels.
- */
 export function buildAgentAnalysisPrompt(dossier, customUserQuery = '') {
   return `You are the Drabyashree NEPSE Analysis Agent, an institutional-grade quantitative equity research engine for the Nepal Stock Exchange (NEPSE).
 
@@ -285,7 +495,7 @@ Every number provided is authentic and computed from real exchange data.
 VERIFIED NEPSE DOSSIER:
 - Symbol: ${dossier.symbol} | Sector: ${dossier.sector}
 - Current LTP: Rs. ${dossier.quote.ltp} (Change: ${dossier.quote.pChange}%)
-- Session Range: Open Rs. ${dossier.quote.prevClose} | Circuit Limits: Floor Rs. ${dossier.quote.circuitFloor} – Ceiling Rs. ${dossier.quote.circuitCeiling} (±15% limit)
+- Session Reference: Open Rs. ${dossier.quote.open ?? dossier.quote.ltp} | Prev Close Rs. ${dossier.quote.prevClose} | Circuit Limits: Floor Rs. ${dossier.quote.circuitFloor} – Ceiling Rs. ${dossier.quote.circuitCeiling} (±15.0% Fourth Amendment 2082)
 - Volume: ${dossier.quote.volume?.toLocaleString() ?? 'N/A'} shares | 20-Day Avg Volume: ${dossier.quote.avgVolume20D?.toLocaleString() ?? 'N/A'} shares | RVOL: ${dossier.technicals.rvol20 ?? 'N/A'}x
 - Technical Momentum: RSI(14): ${dossier.technicals.rsi14 ?? 'N/A'} | MACD Histogram: ${dossier.technicals.macd?.histogram ?? 'N/A'} (Bullish: ${dossier.technicals.macd?.isBullishCross ?? false})
 - Moving Averages: 20-EMA Rs. ${dossier.technicals.ema20 ?? 'N/A'} | 50-EMA Rs. ${dossier.technicals.ema50 ?? 'N/A'} | Posture: ${dossier.technicals.trendStructure}
@@ -295,9 +505,10 @@ VERIFIED NEPSE DOSSIER:
   * BCR5 (Top 5 Buyers %): ${dossier.brokerFlow.bcr5BuyPct ?? 'N/A'}%
   * BCR3 Sell (Top 3 Sellers %): ${dossier.brokerFlow.bcr3SellPct ?? 'N/A'}%
   * Smart Money Bias: ${dossier.brokerFlow.smartMoneyBias}
+- Regulatory Veto Status: ${dossier.regulatoryGate?.isVetoed ? dossier.regulatoryGate.vetoes.map(v => v.reason).join('; ') : 'PASSED ALL GATES'}
 - Valuation: P/E: ${dossier.fundamentals.pe ? dossier.fundamentals.pe + 'x' : 'N/A'} | EPS: Rs. ${(dossier.fundamentals.eps !== undefined && dossier.fundamentals.eps !== null) ? dossier.fundamentals.eps : 'N/A'} | Book Value: Rs. ${dossier.fundamentals.bookValue ? dossier.fundamentals.bookValue : 'N/A'}
-- Model Execution Geometry:
-${(() => { const ep = dossier.executionPlan || {}; if (!ep.available) return `  * UNAVAILABLE: ${ep.reason || 'insufficient data'} — do NOT propose specific entry/stop/target prices.`; const t = (x) => x ? `Rs. ${x.price}${x.netReturnPct != null ? ` (net ${x.netReturnPct}%)` : ''}` : 'N/A'; return [`  * Stance: ${ep.stance} (Setup Score: ${ep.setupScore ?? 'N/A'}/100)`, `  * Pullback Zone: ${ep.pullbackZone?.label ?? 'N/A'} (${ep.pullbackZone?.supportRef ?? ''})`, `  * Breakout: ${ep.breakoutZone?.label ?? 'N/A'}`, `  * Stop-Loss: ${ep.stopLoss?.label ?? 'N/A'}`, `  * Target 1: ${t(ep.targets?.[0])}`, `  * Target 2: ${t(ep.targets?.[1])}`].join('\n'); })()}
+- Model Execution Geometry & Half-Kelly Sizing:
+${(() => { const ep = dossier.executionPlan || {}; if (!ep.available) return `  * UNAVAILABLE: ${ep.reason || 'insufficient data'} — do NOT propose specific entry/stop/target prices.`; const t = (x) => x ? `Rs. ${x.price}${x.netReturnPct != null ? ` (net ${x.netReturnPct}%)` : ''}` : 'N/A'; return [`  * Stance: ${ep.stance} (Setup Score: ${ep.setupScore ?? 'N/A'}/100)`, `  * Pullback Zone: ${ep.pullbackZone?.label ?? 'N/A'} (${ep.pullbackZone?.supportRef ?? ''})`, `  * Breakout: ${ep.breakoutZone?.label ?? 'N/A'}`, `  * Stop-Loss: ${ep.stopLoss?.label ?? 'N/A'}`, `  * Target 1: ${t(ep.targets?.[0])}`, `  * Target 2: ${t(ep.targets?.[1])}`, `  * Half-Kelly Sizing (p=0.635, 1% Risk Cap): ${ep.halfKellySizing?.suggestedKitta ?? 0} kitta (${ep.halfKellySizing?.halfKellyFractionPct ?? 0}%)`].join('\n'); })()}
 ════════════════════════════════════════════════════════════════
 
 USER INQUIRY: "${customUserQuery || 'Provide institutional analysis, trade execution plan, and risk scenarios for this scrip.'}"

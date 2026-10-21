@@ -1,4 +1,4 @@
-﻿// proxy/quant/macroCache.mjs
+// proxy/quant/macroCache.mjs
 // Shared in-memory store for NRB macro indicators.
 // Populated by a periodic scraper in server.mjs.
 // Read by featureEngine.mjs when the DB macro_indicators table is empty.
@@ -9,6 +9,15 @@ const _defaults = {
   cpi_inflation_pct: 4.25,
   npr_usd_rate: 134.8,
   remittance_growth_pct: 16.4,
+  cdRatio: 81.5,
+  cd_ratio_pct: 81.5,
+  ibor: 4.5,
+  interbankRate: 4.5,
+  interbank_rate_pct: 4.5,
+  tbill91d: 4.2,
+  tbill_91d_pct: 4.2,
+  repoRate: 5.0,
+  repo_rate_pct: 5.0,
 };
 
 let _cache = { ..._defaults };
@@ -32,7 +41,7 @@ export function setMacroCache(indicators) {
 
 /** Returns the current macro indicator snapshot (defaults if never updated). */
 export function getMacroCache() {
-  return { ..._cache };
+  return { ..._defaults, ..._cache };
 }
 
 /** ISO timestamp of last successful update, or null if never updated. */

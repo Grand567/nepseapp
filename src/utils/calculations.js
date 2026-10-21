@@ -136,6 +136,154 @@ export function calculateDividendYield(cashDivPerShare, ltp) {
   return Number(((cashDivPerShare / ltp) * 100).toFixed(2));
 }
 
+export const SEBON_5_SLAB_EQUITY_TIERS = [
+  { maxAmount: 50_000, rate: 0.0036 },       // <= Rs. 50,000: 0.36%
+  { maxAmount: 500_000, rate: 0.0033 },      // Rs. 50,001 - 500,000: 0.33%
+  { maxAmount: 2_000_000, rate: 0.0031 },    // Rs. 500,001 - 2,000,000: 0.31%
+  { maxAmount: 10_000_000, rate: 0.0027 },   // Rs. 2,000,001 - 10,000,000: 0.27%
+  { maxAmount: Infinity, rate: 0.0024 },     // > Rs. 10,000,000: 0.24%
+];
+
+export const SEBON_EQUITY_COMMISSION_TIERS = SEBON_5_SLAB_EQUITY_TIERS;
+export const SEBON_FEE_RATE = 0.00015;       // 0.015%
+export const CDSC_DP_CHARGE_NPR = 25;        // Flat Rs. 25 per transaction settlement
+export const MIN_BROKERAGE_NPR = 10;         // Minimum Rs. 10 brokerage floor
+export const NEPSE_CIRCUIT_LIMIT_PCT = 15.0; // ±15.0% Fourth Amendment 2082
+
+export function clampToNepseCircuitBand(referenceClose, targetPrice) {
+  const ref = Number(referenceClose) || 0;
+  const tgt = Number(targetPrice) || 0;
+  if (ref <= 0 || tgt <= 0) return Math.max(0, tgt);
+  const floor = +(ref * 0.85).toFixed(2);
+  const ceiling = +(ref * 1.15).toFixed(2);
+  return +Math.min(ceiling, Math.max(floor, tgt)).toFixed(2);
+}
+
+export function calculateBrokerageCommission(grossAmount) {
+  const amt = Math.max(0, Number(grossAmount) || 0);
+  if (amt <= 0) return { rate: 0, commission: 0 };
+  const tier =
+    SEBON_5_SLAB_EQUITY_TIERS.find(t => amt <= t.maxAmount) ||
+    SEBON_5_SLAB_EQUITY_TIERS[SEBON_5_SLAB_EQUITY_TIERS.length - 1];
+  const commission = +Math.max(MIN_BROKERAGE_NPR, amt * tier.rate).toFixed(2);
+  return { rate: tier.rate, commission };
+}
+
+/**
+ * Calculates exact NEPSE Net Return & CGT after deducting both Buy and Sell commissions,
+ * SEBON 0.015% fees, and Rs. 25 DP charges.
+ */
+export function calculateNepseNetTrade({
+  quantity = 100,
+  buyPrice,
+  sellPrice,
+  holdingDays = 2,
+  isCorporate = false,
+  nepseIndexReturnPct = 0,
+}) {
+  const kitta = Math.max(0, Math.floor(Number(quantity) || 0));
+  const bPx = Number(buyPrice) || 0;
+  const sPx = Number(sellPrice) || 0;
+
+  if (kitta <= 0 || bPx <= 0 || sPx <= 0) {
+    return {
+      grossBuy: 0,
+      totalBuyCost: 0,
+      grossSell: 0,
+      netReceivable: 0,
+      cgtTax: 0,
+      netProfit: 0,
+      netReturnPct: 0,
+      nepseAlphaPct: 0,
+      isT2Compliant: Number(holdingDays) >= 2,
+    };
+  }
+
+  const grossBuy = +(kitta * bPx).toFixed(2);
+  const { commission: buyComm } = calculateBrokerageCommission(grossBuy);
+  const buySebon = +(grossBuy * SEBON_FEE_RATE).toFixed(2);
+  const buyDp = CDSC_DP_CHARGE_NPR;
+  const totalBuyCost = +(grossBuy + buyComm + buySebon + buyDp).toFixed(2);
+
+  const grossSell = +(kitta * sPx).toFixed(2);
+  const { commission: sellComm } = calculateBrokerageCommission(grossSell);
+  const sellSebon = +(grossSell * SEBON_FEE_RATE).toFixed(2);
+  const sellDp = CDSC_DP_CHARGE_NPR;
+  const netSellBeforeTax = +(grossSell - sellComm - sellSebon - sellDp).toFixed(2);
+
+  // CGT is strictly levied on Net Capital Gain AFTER deducting buy & sell commissions, SEBON fees, and DP charges
+  const netCapitalGain = Math.max(0, netSellBeforeTax - totalBuyCost);
+  const cgtRate = isCorporate ? 0.10 : (Number(holdingDays) >= 365 ? 0.05 : 0.075);
+  const cgtTax = +(netCapitalGain * cgtRate).toFixed(2);
+
+  const netReceivable = +(netSellBeforeTax - cgtTax).toFixed(2);
+  const netProfit = +(netReceivable - totalBuyCost).toFixed(2);
+  const netReturnPct = totalBuyCost > 0 ? +((netProfit / totalBuyCost) * 100).toFixed(2) : 0;
+  const nepseAlphaPct = +(netReturnPct - (Number(nepseIndexReturnPct) || 0)).toFixed(2);
+
+  return {
+    grossBuy,
+    buyComm,
+    buySebon,
+    buyDp,
+    totalBuyCost,
+    grossSell,
+    sellComm,
+    sellSebon,
+    sellDp,
+    cgtRatePct: +(cgtRate * 100).toFixed(1),
+    cgtTax,
+    netReceivable,
+    netProfit,
+    netReturnPct,
+    nepseAlphaPct,
+    isT2Compliant: Number(holdingDays) >= 2,
+  };
+}
+
+/**
+ * Evaluates Day T+1 Execution Fill at VWAP (turnover / volume) with +14.9% Circuit Gap-Trap Filter
+ */
+export function evaluateDayTPlus1VwapFill(signalCloseDayT, candleDayTPlus1) {
+  const sigClose = Number(signalCloseDayT) || 0;
+  if (!candleDayTPlus1 || sigClose <= 0) {
+    return { status: 'PENDING_T1_SESSION', entryVwap: null, gapPct: 0 };
+  }
+
+  const vol = Number(candleDayTPlus1.totalVolume ?? candleDayTPlus1.volume ?? 0);
+  const turnover = Number(candleDayTPlus1.totalTurnover ?? candleDayTPlus1.turnover ?? 0);
+  const openPx = Number(candleDayTPlus1.openPrice ?? candleDayTPlus1.open ?? 0);
+  const closePx = Number(candleDayTPlus1.closePrice ?? candleDayTPlus1.close ?? 0);
+
+  if (vol <= 0 || (turnover <= 0 && closePx <= 0)) {
+    return { status: 'UNFILLABLE_SKIP', reason: 'ZERO_LIQUIDITY_T1', entryVwap: null, gapPct: 0 };
+  }
+
+  const t1Vwap = turnover > 0 ? +(turnover / vol).toFixed(2) : +closePx.toFixed(2);
+  const checkPrice = openPx > 0 ? Math.max(openPx, t1Vwap) : t1Vwap;
+  const gapPct = +(((checkPrice - sigClose) / sigClose) * 100).toFixed(2);
+
+  // Gap trap >= +14.9% (upper circuit lock on Day T+1) -> UNFILLABLE_SKIP
+  if (gapPct >= 14.9) {
+    return {
+      status: 'UNFILLABLE_SKIP',
+      reason: `GAP_TRAP_CIRCUIT_LOCK (+${gapPct}% >= +14.9% ceiling)`,
+      entryVwap: null,
+      gapPct,
+    };
+  }
+
+  return {
+    status: 'FILLED_AT_T1_VWAP',
+    entryVwap: t1Vwap,
+    gapPct,
+  };
+}
+
+export const SEBON_REGULATORY_FEE_RATE = 0.00015; // 0.015%
+export const CDSC_DP_FEE_NPR = 25;                // Flat Rs. 25 per transaction settlement
+export const MIN_BROKER_COMMISSION_NPR = 10;      // Minimum Rs. 10 brokerage
+
 export function getNepseBrokerCommissionRate(orderAmount) {
   const amt = Number(orderAmount || 0);
   if (amt <= 50000) return 0.0036;       // 0.36% (<= Rs 50,000)
@@ -145,11 +293,28 @@ export function getNepseBrokerCommissionRate(orderAmount) {
   return 0.0024;                         // 0.24% (> Rs 10,000,000)
 }
 
-export function calculateBrokerCommission(amount) {
-  if (amount <= 0) return 0;
-  const rate = getNepseBrokerCommissionRate(amount);
-  const commission = amount * rate;
-  return +Math.max(10, commission).toFixed(2);
+/**
+ * Returns the statutory SEBON broker commission rate and rupee amount.
+ * When returnDetails is true, returns { rate, commission }. Otherwise returns numeric commission amount.
+ */
+export function calculateBrokerCommission(amountNpr, returnDetails = false) {
+  const amt = Math.max(0, Number(amountNpr) || 0);
+  if (amt <= 0) return returnDetails ? { rate: 0, commission: 0 } : 0;
+
+  const tier =
+    SEBON_EQUITY_COMMISSION_TIERS.find(t => amt <= t.maxAmount) ||
+    SEBON_EQUITY_COMMISSION_TIERS[SEBON_EQUITY_COMMISSION_TIERS.length - 1];
+
+  const rawCommission = amt * tier.rate;
+  const commission = Number(Math.max(MIN_BROKER_COMMISSION_NPR, rawCommission).toFixed(2));
+  if (returnDetails) {
+    return { rate: tier.rate, commission };
+  }
+  return commission;
+}
+
+export function calculateBrokerCommissionDetails(amountNpr) {
+  return calculateBrokerCommission(amountNpr, true);
 }
 
 /**
@@ -1220,4 +1385,90 @@ export function generateSparkline() {
 /** Market news: returns empty array; real news is fetched via servicesApi */
 export function getMarketNews() {
   return [];
+}
+
+
+/**
+ * Full Statutory Round-Trip Trade & Capital Gains Tax (CGT) Calculator for NEPSE
+ */
+export function calculateNepseStatutoryTrade({
+  quantity,
+  buyPrice,
+  sellPrice,
+  holdingDays = 30,
+  investorType = "INDIVIDUAL", // 'INDIVIDUAL' | 'INSTITUTIONAL'
+  includeDpFee = true,
+}) {
+  const kitta = Math.max(0, Math.floor(Number(quantity) || 0));
+  const bPrice = Math.max(0, Number(buyPrice) || 0);
+  const sPrice = Math.max(0, Number(sellPrice) || 0);
+
+  if (kitta <= 0 || bPrice <= 0) {
+    return {
+      grossBuyAmount: 0,
+      buyCommission: 0,
+      buySebonFee: 0,
+      buyDpFee: 0,
+      totalBuyCost: 0,
+      waccPerShare: 0,
+      grossSellAmount: 0,
+      sellCommission: 0,
+      sellSebonFee: 0,
+      sellDpFee: 0,
+      cgtRatePct: 0,
+      cgtAmount: 0,
+      netReceivable: 0,
+      netProfit: 0,
+      netReturnPct: 0,
+    };
+  }
+
+  // 1. Buy Leg
+  const grossBuyAmount = Number((kitta * bPrice).toFixed(2));
+  const { commission: buyCommission } = calculateBrokerCommission(grossBuyAmount, true);
+  const buySebonFee = Number((grossBuyAmount * SEBON_REGULATORY_FEE_RATE).toFixed(2));
+  const buyDpFee = includeDpFee ? CDSC_DP_FEE_NPR : 0;
+  const totalBuyCost = Number((grossBuyAmount + buyCommission + buySebonFee + buyDpFee).toFixed(2));
+  const waccPerShare = Number((totalBuyCost / kitta).toFixed(4));
+
+  // 2. Sell Leg
+  const grossSellAmount = Number((kitta * sPrice).toFixed(2));
+  const { commission: sellCommission } = calculateBrokerCommission(grossSellAmount, true);
+  const sellSebonFee = Number((grossSellAmount * SEBON_REGULATORY_FEE_RATE).toFixed(2));
+  const sellDpFee = sPrice > 0 && includeDpFee ? CDSC_DP_FEE_NPR : 0;
+
+  // 3. Taxable Capital Gain & Statutory CGT Deduction
+  // Per CDSC/NEPSE WACC rules: Capital Gain = Gross Sell - Sell Commission - Sell SEBON - Sell DP - Total Buy Cost
+  const netProceedsBeforeTax = grossSellAmount - sellCommission - sellSebonFee - sellDpFee;
+  const taxableGain = Math.max(0, netProceedsBeforeTax - totalBuyCost);
+
+  let cgtRate = 0.075; // Default 7.5% Short-Term Individual (<= 365 days)
+  if (String(investorType).toUpperCase() === "INSTITUTIONAL") {
+    cgtRate = 0.10; // 10.0% Corporate/Institutional
+  } else if (Number(holdingDays) > 365) {
+    cgtRate = 0.05; // 5.0% Long-Term Individual (> 365 days)
+  }
+
+  const cgtAmount = taxableGain > 0 ? Number((taxableGain * cgtRate).toFixed(2)) : 0;
+  const netReceivable = Number((netProceedsBeforeTax - cgtAmount).toFixed(2));
+  const netProfit = Number((netReceivable - totalBuyCost).toFixed(2));
+  const netReturnPct = totalBuyCost > 0 ? Number(((netProfit / totalBuyCost) * 100).toFixed(2)) : 0;
+
+  return {
+    grossBuyAmount,
+    buyCommission,
+    buySebonFee,
+    buyDpFee,
+    totalBuyCost,
+    waccPerShare,
+    grossSellAmount,
+    sellCommission,
+    sellSebonFee,
+    sellDpFee,
+    cgtRatePct: Number((cgtRate * 100).toFixed(1)),
+    cgtAmount,
+    netReceivable,
+    netProfit,
+    netReturnPct,
+  };
 }

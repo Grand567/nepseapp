@@ -16,42 +16,51 @@ import {
 } from './featureEngine.mjs';
 import { pool } from '../db.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
+import { isExcludedInstrument } from '../db/signalTrackerStore.js';
 
 export const ROUND_TRIP_FRICTION_HURDLE = 0.0085; // 0.85% statutory round-trip hurdle
 
 /**
  * Computes NRB Monetary Macro Multiplier for equity valuation & breakout conviction.
- * High interest rates / tight CD ratios discount bullish probability and raise breakout conviction thresholds.
+ * Aligns strictly with NRB statutory IBOR & CD Ratio thresholds:
+ * - CRISIS: IBOR > 8.5% or CD Ratio > 89.0%
+ * - TIGHTENING: IBOR > 6.5% or CD Ratio > 86.0%
+ * - EASING: IBOR < 3.0% and CD Ratio <= 83.5%
+ * - NEUTRAL: 3.0% <= IBOR <= 6.5%
  */
 export function evaluateNrbMacroMultiplier(nrbMetrics = {}) {
-  const cdRatio = Number(nrbMetrics.cdRatio ?? 81.5);
-  const ibor = Number(nrbMetrics.ibor ?? nrbMetrics.interbankRate ?? 4.5);
-  const tbill91d = Number(nrbMetrics.tbill91d ?? 4.2);
-  const repoRate = Number(nrbMetrics.repoRate ?? 5.0);
+  const cdRatio = Number(nrbMetrics.cdRatio ?? nrbMetrics.cd_ratio_pct ?? 81.5);
+  const ibor = Number(
+    nrbMetrics.ibor ?? nrbMetrics.interbankRate ?? nrbMetrics.interbank_rate_pct ?? 4.5
+  );
+  const tbill91d = Number(nrbMetrics.tbill91d ?? nrbMetrics.tbill_91d_pct ?? 4.2);
+  const repoRate = Number(
+    nrbMetrics.repoRate ?? nrbMetrics.repo_rate_pct ?? nrbMetrics.interest_rate_pct ?? 5.0
+  );
 
   let probabilityMultiplier = 1.0;
   let breakoutConvictionThreshold = 60.0; // baseline 60% probability required
   let valuationDiscountPct = 0.0;
   let regimeLabel = 'NEUTRAL_LIQUIDITY';
 
-  if (cdRatio > 87.0 || ibor > 7.0 || tbill91d > 7.5) {
-    // Severe Liquidity Crunch
-    probabilityMultiplier = 0.78;
-    breakoutConvictionThreshold = 72.0;
-    valuationDiscountPct = 15.0;
-    regimeLabel = 'TIGHT_LIQUIDITY_CRUNCH';
-  } else if (cdRatio > 85.0 || ibor > 6.0 || repoRate > 6.5) {
-    // Moderate Tightening
-    probabilityMultiplier = 0.88;
-    breakoutConvictionThreshold = 66.0;
-    valuationDiscountPct = 8.0;
-    regimeLabel = 'CAUTIOUS_MONETARY_REGIME';
-  } else if (cdRatio < 82.0 && ibor <= 4.5 && tbill91d <= 4.5) {
-    // Excess Banking Liquidity Expansion
-    probabilityMultiplier = 1.06;
-    breakoutConvictionThreshold = 58.0;
+  if (ibor > 8.5 || cdRatio > 89.0 || tbill91d > 8.5) {
+    // Severe Liquidity Crisis
+    probabilityMultiplier = 0.72;
+    breakoutConvictionThreshold = 75.0;
+    valuationDiscountPct = 18.0;
+    regimeLabel = 'CRISIS_LIQUIDITY_CRUNCH';
+  } else if (ibor > 6.5 || cdRatio > 86.0 || repoRate > 6.5 || tbill91d > 7.0) {
+    // Monetary Tightening
+    probabilityMultiplier = 0.85;
+    breakoutConvictionThreshold = 68.0;
+    valuationDiscountPct = 10.0;
+    regimeLabel = 'TIGHTENING_MONETARY_REGIME';
+  } else if (ibor < 3.0 && cdRatio <= 83.5 && tbill91d <= 4.0) {
+    // Excess Banking Liquidity Expansion (EASING)
+    probabilityMultiplier = 1.08;
+    breakoutConvictionThreshold = 56.0;
     valuationDiscountPct = 0.0;
-    regimeLabel = 'EXPANSIONARY_LIQUIDITY';
+    regimeLabel = 'EASING_LIQUIDITY_EXPANSION';
   }
 
   return {
@@ -189,6 +198,16 @@ export async function predictIndexDirection(options = {}) {
   const date = features.date;
   const memoryHistory = options.memoryHistory || null;
 
+  if (features.status === 'insufficient_history' || !Number.isFinite(Number(features.latest_close)) || Number(features.latest_close) <= 0) {
+    return {
+      success: false,
+      status: 'insufficient_history',
+      error: features.error || 'Insufficient authentic NEPSE index history to generate prediction.',
+      prediction: null,
+      trackRecord: { totalPredictions: 0, evaluatedCount: 0, winRatePct: 0, history: [] }
+    };
+  }
+
   // 1. Technical component (-1.0 to +1.0)
   let techScore = 0;
 
@@ -306,42 +325,37 @@ export async function predictIndexDirection(options = {}) {
   const confidence = Math.min(92, Math.max(55, Math.round(55 + Math.abs(rawScore) * 45)));
 
   // Target Calculations based on 14-day Index ATR
-  const close = features.latest_close || 2650;
-  const atr = features.index_atr || 32.0;
+  const close = Number(features.latest_close || 2650);
+  const atr = Number(features.index_atr || 32.0);
   let target1, target2, stopFloor, rrr, marketRegime;
 
   // ── 15% MANDATORY DAILY CIRCUIT BAND ENFORCEMENT ──────────────────
-  const circuitLimitPct = 15.0; // Securities Trading Operation Fourth Amendment Regulations 2082
-  const prevClose = Number(features.prev_close || (features.latest_close ? (features.latest_close - (features.headline_p_change ? (features.latest_close * features.headline_p_change / 100) : 0)) : close)) || close;
-  const circuitCeiling = +(prevClose * (1 + circuitLimitPct / 100)).toFixed(1);
-  const circuitFloor = +(prevClose * (1 - circuitLimitPct / 100)).toFixed(1);
+  // Next-session targets are bounded by ±15% from today's closing level (Fourth Amendment 2082)
+  const circuitLimitPct = 15.0;
+  const circuitReferenceClose = close > 0 ? close : Number(features.prev_close || 2650);
+  const circuitCeiling = +(circuitReferenceClose * (1 + circuitLimitPct / 100)).toFixed(1);
+  const circuitFloor = +(circuitReferenceClose * (1 - circuitLimitPct / 100)).toFixed(1);
 
   if (direction === 'up') {
     target1 = +(close + atr * 1.5).toFixed(1);
     target2 = +(close + atr * 3.2).toFixed(1);
     stopFloor = +(close - atr * 1.2).toFixed(1);
-    rrr = +((atr * 1.5) / (atr * 1.2)).toFixed(2);
     marketRegime = features.is_above_200_ema ? 'Primary Bull Market Expansion' : 'Early Trend Recovery';
   } else if (direction === 'down') {
     target1 = +(close - atr * 1.5).toFixed(1);
     target2 = +(close - atr * 3.2).toFixed(1);
     stopFloor = +(close + atr * 1.2).toFixed(1);
-    rrr = +((atr * 1.5) / (atr * 1.2)).toFixed(2);
     marketRegime = features.is_above_200_ema === false ? 'Primary Bear Market Cycle' : 'Intermediate Correction';
   } else {
     if (hardCeilingApplied) {
       target1 = +(features.ema_50 || (close + atr)).toFixed(1);
       target2 = +(close + atr * 1.8).toFixed(1);
       stopFloor = +(close - atr * 1.4).toFixed(1);
-      const upside = Math.max(1, target1 - close);
-      const downside = Math.max(1, close - stopFloor);
-      rrr = +(upside / downside).toFixed(2);
       marketRegime = 'Counter-Trend Bounce (Resistance at 50 EMA)';
     } else {
       target1 = +(close + atr * 1.2).toFixed(1);
       target2 = +(close + atr * 2.4).toFixed(1);
       stopFloor = +(close - atr * 1.2).toFixed(1);
-      rrr = 1.0;
       marketRegime = 'Rangebound Consolidation';
     }
   }
@@ -350,6 +364,13 @@ export async function predictIndexDirection(options = {}) {
   target1 = Math.max(circuitFloor, Math.min(circuitCeiling, target1));
   target2 = Math.max(circuitFloor, Math.min(circuitCeiling, target2));
   stopFloor = Math.max(circuitFloor, Math.min(circuitCeiling, stopFloor));
+
+  // Recompute Risk-to-Reward Ratio post-clamp so RRR reflects actual circuit-bounded targets
+  const clampedReward = Math.max(0.1, Math.abs(target1 - close));
+  const clampedRisk = Math.max(0.1, Math.abs(close - stopFloor));
+  rrr = direction === 'consolidate' && !hardCeilingApplied
+    ? 1.0
+    : +(clampedReward / clampedRisk).toFixed(2);
 
   // ── PROBABILISTIC EXPECTED RETURN RANGE (Strict 15% Circuit Bounded) ─
   // NEPSE forecasts are modeled as probabilistic return distributions bounded
@@ -663,6 +684,7 @@ export async function scoreAllStocks(stocksList = []) {
   for (const s of stocksList) {
     const symbol = String(s.symbol || '').toUpperCase().trim();
     if (!symbol) continue;
+    if (isExcludedInstrument(symbol, s.sector)) continue;
 
     const feat = await computeStockFeatures(symbol, 30, s);
     if (!feat) continue;

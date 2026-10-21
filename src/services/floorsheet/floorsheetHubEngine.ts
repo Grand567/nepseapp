@@ -3,16 +3,15 @@ import {
   safeNum,
   resolveValidNepseSymbol,
   resolveVerifiedPrice,
-  normalize5DBrokerPayloadForAi,
   type RawQuotePayload,
   type HistoricalCandle,
   type LedgerTelemetryRow,
-} from "../aiGuru/runAiQuantitativeAssessment";
+} from "@/services/aiGuru/runAiQuantitativeAssessment";
+import { normalize5DBrokerPayloadForAi } from "@/lib/db/drabyashreeDb";
 
 export interface RawFloorsheetContract {
   contractNo?: string | number;
   contract_no?: string | number;
-  contractId?: string | number;
   symbol?: string;
   stockSymbol?: string;
   tradeDate?: string;
@@ -36,12 +35,6 @@ export interface RawFloorsheetContract {
   contractRate?: number | string;
   amount?: number | string;
   contractAmount?: number | string;
-  aggressor?: "BUY" | "SELL" | "NEUTRAL";
-  aggressor_side?: "BUY" | "SELL" | "NEUTRAL";
-  isInternalCross?: boolean | number;
-  is_internal_cross?: boolean | number;
-  isWhalePrint?: boolean | number;
-  is_whale_print?: boolean | number;
 }
 
 export interface EnrichedFloorsheetContract {
@@ -56,7 +49,8 @@ export interface EnrichedFloorsheetContract {
   amount: number;
   aggressor: "BUY" | "SELL" | "NEUTRAL";
   isInternalCross: boolean; // buyerBroker === sellerBroker
-  isWhalePrint: boolean;    // kitta >= 500 or amount >= Rs 500,000
+  isWhalePrint: boolean;    // kitta >= 200 or amount >= Rs. 100,000 (1 Lakh)
+  isMegaBlock: boolean;     // kitta >= 500 or amount >= Rs. 500,000 (5 Lakh)
 }
 
 export interface DepthLevel {
@@ -72,6 +66,8 @@ export interface MarketDepthTelemetry {
   totalBidKitta: number;
   totalAskKitta: number;
   bidRatioPct: number;
+  obir: number; // Order Book Imbalance Ratio = TotalBidKitta / TotalAskKitta
+  obirSignal: "STRONG_DEMAND" | "MODERATE_DEMAND" | "BALANCED" | "SUPPLY_OVERHANG";
   bids: DepthLevel[];
   asks: DepthLevel[];
 }
@@ -82,7 +78,7 @@ export interface VolumeProfileNode {
   buyKitta: number;
   sellKitta: number;
   pctOfTotalVolume: number;
-  isPoc: boolean; // Point of Control (highest volume node)
+  isPoc: boolean;
 }
 
 export interface UnifiedStockTabTelemetry {
@@ -93,12 +89,13 @@ export interface UnifiedStockTabTelemetry {
     priceSource: string;
     priceAsOfLabel: string;
     sessionVwap: number;
-    vwapSpreadPct: number; // (LTP - VWAP) / VWAP %
+    vwapSpreadPct: number;
     totalSessionKitta: number;
     totalSessionTurnover: number;
     totalContracts: number;
     avgContractKitta: number;
     whaleContractCount: number;
+    megaBlockCount: number;
     internalCrossVolumePct: number;
     buyAggressorPct: number;
     sellAggressorPct: number;
@@ -112,8 +109,35 @@ export interface UnifiedStockTabTelemetry {
   smartMoney5D: ReturnType<typeof normalize5DBrokerPayloadForAi>;
 }
 
+// src/services/floorsheet/floorsheetHubEngine.ts (Add Pure-Equity Guard)
+export function isPureEquitySymbol(rawSymbol?: string | null, sector?: string | null): boolean {
+  const sym = String(rawSymbol || "").toUpperCase().trim();
+  const sec = String(sector || "").toUpperCase().trim();
+  if (!sym || /\d/.test(sym)) return false; // Excludes Debentures with maturity/coupon digits
+  if (
+    sec.includes("MUTUAL") ||
+    sec.includes("DEBENTURE") ||
+    sec.includes("PROMOTER") ||
+    sec.includes("PREFERENCE")
+  ) {
+    return false;
+  }
+  if (
+    /^(NIBLPF|NIBSF|CMBF|NICGF|NICBF|NMB50|NMBHF|SFMF|SEF|SAEF|SLCF|KEF|LUK|RMF|RBBMF|PSF|GIMES|C30MF|MMF|H8020|KSY|NSY|SSY|SAGF|PRSF|LVF)$/i.test(
+      sym
+    )
+  ) {
+    return false;
+  }
+  if (sym.length >= 5 && (sym.endsWith("PF") || sym.endsWith("SF") || sym.endsWith("MF") || sym.endsWith("PO"))) {
+    return false;
+  }
+  return true;
+}
+
 /**
- * Normalizes raw floorsheet rows and runs the chronological Tick-Test Aggressor algorithm
+ * Normalizes raw floorsheet rows and runs the chronological Tick-Test Aggressor algorithm.
+ * Fixes BUG-A2-04 & BUG-A2-08: Excludes non-equities and flags Whale Prints at >= Rs. 100,000 or >= 200 kitta.
  */
 export function enrichFloorsheetContracts(
   rawRows: RawFloorsheetContract[],
@@ -121,10 +145,14 @@ export function enrichFloorsheetContracts(
 ): EnrichedFloorsheetContract[] {
   if (!Array.isArray(rawRows) || rawRows.length === 0) return [];
 
-  // Sort chronologically (oldest contract first) to infer uptick/downtick direction
-  const chronological = [...rawRows].sort((a, b) => {
-    const cA = String(a.contractNo ?? a.contract_no ?? a.contractId ?? "");
-    const cB = String(b.contractNo ?? b.contract_no ?? b.contractId ?? "");
+  const filtered = rawRows.filter((r) => {
+    const s = r.symbol ?? r.stockSymbol ?? fallbackSymbol;
+    return isPureEquitySymbol(s);
+  });
+
+  const chronological = [...filtered].sort((a, b) => {
+    const cA = String(a.contractNo ?? a.contract_no ?? "");
+    const cB = String(b.contractNo ?? b.contract_no ?? "");
     return cA.localeCompare(cB, undefined, { numeric: true });
   });
 
@@ -132,23 +160,43 @@ export function enrichFloorsheetContracts(
   let lastDirection: "BUY" | "SELL" | "NEUTRAL" = "NEUTRAL";
 
   const enriched: EnrichedFloorsheetContract[] = chronological.map((row, idx) => {
-    const contractNo = String(row.contractNo ?? row.contract_no ?? row.contractId ?? `FS-${idx + 1}`);
-    const symbol = resolveValidNepseSymbol(row.symbol, row.stockSymbol, fallbackSymbol) || fallbackSymbol;
-    const tradeDate = String(row.tradeDate ?? row.trade_date ?? row.businessDate ?? new Date().toISOString().slice(0, 10));
+    const contractNo = String(row.contractNo ?? row.contract_no ?? `FS-${idx + 1}`);
+    const symbol =
+      resolveValidNepseSymbol(row.symbol ?? row.stockSymbol, fallbackSymbol) ||
+      fallbackSymbol;
+    const tradeDate = String(
+      row.tradeDate ??
+        row.trade_date ??
+        row.businessDate ??
+        new Date().toISOString().slice(0, 10)
+    );
     const tradeTime = String(row.tradeTime ?? row.trade_time ?? "");
-    const buyerBroker = Math.round(safeNum(row.buyerBroker ?? row.buyer_broker ?? row.buyerMemberId ?? row.buyer, 0));
-    const sellerBroker = Math.round(safeNum(row.sellerBroker ?? row.seller_broker ?? row.sellerMemberId ?? row.seller, 0));
-    const kitta = Math.round(safeNum(row.kitta ?? row.quantity ?? row.contractQuantity, 0));
+    const buyerBroker = Math.round(
+      safeNum(
+        row.buyerBroker ?? row.buyer_broker ?? row.buyerMemberId ?? row.buyer,
+        0
+      )
+    );
+    const sellerBroker = Math.round(
+      safeNum(
+        row.sellerBroker ??
+          row.seller_broker ??
+          row.sellerMemberId ??
+          row.seller,
+        0
+      )
+    );
+    const kitta = Math.round(
+      safeNum(row.kitta ?? row.quantity ?? row.contractQuantity, 0)
+    );
     const rate = safeNum(row.rate ?? row.price ?? row.contractRate, 0);
-    const amount = safeNum(row.amount ?? row.contractAmount, Number((kitta * rate).toFixed(2)));
+    const amount = safeNum(
+      row.amount ?? row.contractAmount,
+      Number((kitta * rate).toFixed(2))
+    );
 
     let aggressor: "BUY" | "SELL" | "NEUTRAL" = lastDirection;
-    if (row.aggressor || row.aggressor_side) {
-      const explicit = String(row.aggressor || row.aggressor_side).toUpperCase();
-      if (explicit === "BUY" || explicit === "SELL" || explicit === "NEUTRAL") {
-        aggressor = explicit as "BUY" | "SELL" | "NEUTRAL";
-      }
-    } else if (prevRate !== null && rate > 0) {
+    if (prevRate !== null && rate > 0) {
       if (rate > prevRate) {
         aggressor = "BUY";
         lastDirection = "BUY";
@@ -159,16 +207,9 @@ export function enrichFloorsheetContracts(
     }
     if (rate > 0) prevRate = rate;
 
-    const isInternalCross = Boolean(
-      row.isInternalCross ||
-      row.is_internal_cross ||
-      (buyerBroker > 0 && buyerBroker === sellerBroker)
-    );
-    const isWhalePrint = Boolean(
-      row.isWhalePrint ||
-      row.is_whale_print ||
-      (kitta >= 500 || amount >= 500_000)
-    );
+    const isInternalCross = buyerBroker > 0 && buyerBroker === sellerBroker;
+    const isWhalePrint = kitta >= 200 || amount >= 100_000;
+    const isMegaBlock = kitta >= 500 || amount >= 500_000;
 
     return {
       contractNo,
@@ -183,16 +224,13 @@ export function enrichFloorsheetContracts(
       aggressor,
       isInternalCross,
       isWhalePrint,
+      isMegaBlock,
     };
   });
 
-  // Return newest contracts first for UI table display
   return enriched.reverse();
 }
 
-/**
- * Computes Price-by-Volume (Volume Profile) & Point of Control (POC) from floorsheet contracts
- */
 export function buildVolumeProfileFromFloorsheet(
   contracts: EnrichedFloorsheetContract[]
 ): { pocPrice: number | null; nodes: VolumeProfileNode[] } {
@@ -209,7 +247,11 @@ export function buildVolumeProfileFromFloorsheet(
   for (const c of contracts) {
     if (c.rate <= 0 || c.kitta <= 0) continue;
     const bucket = Math.round(c.rate);
-    const cur = bucketMap.get(bucket) || { totalKitta: 0, buyKitta: 0, sellKitta: 0 };
+    const cur = bucketMap.get(bucket) || {
+      totalKitta: 0,
+      buyKitta: 0,
+      sellKitta: 0,
+    };
     cur.totalKitta += c.kitta;
     if (c.aggressor === "BUY") cur.buyKitta += c.kitta;
     if (c.aggressor === "SELL") cur.sellKitta += c.kitta;
@@ -243,10 +285,27 @@ export function buildVolumeProfileFromFloorsheet(
   return { pocPrice, nodes };
 }
 
-/**
- * Resolves L2 Market Depth with automatic fallback to Floorsheet Volume-at-Price (VAP) liquidity walls
- * when the exchange L2 feed is offline after 3:00 PM NPT or on NEPSE holidays.
- */
+function classifyObir(
+  totalBid: number,
+  totalAsk: number
+): { obir: number; obirSignal: MarketDepthTelemetry["obirSignal"] } {
+  const obir =
+    totalAsk > 0
+      ? Number((totalBid / totalAsk).toFixed(2))
+      : totalBid > 0
+      ? 3.0
+      : 1.0;
+  const obirSignal =
+    obir >= 1.8
+      ? "STRONG_DEMAND"
+      : obir >= 1.25
+      ? "MODERATE_DEMAND"
+      : obir < 0.8
+      ? "SUPPLY_OVERHANG"
+      : "BALANCED";
+  return { obir, obirSignal };
+}
+
 export function resolveMarketDepthWithFloorsheetFallback(params: {
   liveDepth?: {
     bids?: Array<{ price?: number; kitta?: number; quantity?: number; orders?: number }>;
@@ -276,23 +335,25 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
     .filter((a) => a.price > 0 && a.kitta > 0)
     .slice(0, 5);
 
-  // Stage 1: Genuine Live L2 Order Book available
   if (cleanBids.length > 0 || cleanAsks.length > 0) {
     const totalBidKitta = cleanBids.reduce((s, b) => s + b.kitta, 0);
     const totalAskKitta = cleanAsks.reduce((s, a) => s + a.kitta, 0);
     const total = totalBidKitta + totalAskKitta;
+    const { obir, obirSignal } = classifyObir(totalBidKitta, totalAskKitta);
     return {
       source: "LIVE_L2_ORDERBOOK",
       asOfLabel: "Live NEPSE L2 Order Book (Top 5 Bid/Ask)",
       totalBidKitta,
       totalAskKitta,
-      bidRatioPct: total > 0 ? Number(((totalBidKitta / total) * 100).toFixed(1)) : 50,
+      bidRatioPct:
+        total > 0 ? Number(((totalBidKitta / total) * 100).toFixed(1)) : 50,
+      obir,
+      obirSignal,
       bids: cleanBids,
       asks: cleanAsks,
     };
   }
 
-  // Stage 2: Offline / Holiday Fallback -> Reconstruct Support (Demand) & Resistance (Supply) walls from Floorsheet VAP
   const refPrice = params.verifiedPrice ?? 0;
   if (refPrice > 0 && params.contracts.length > 0) {
     const levelMap = new Map<number, { kitta: number; orders: number }>();
@@ -312,13 +373,11 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
       isSyntheticVap: true,
     }));
 
-    // Demand Zones (at or below reference price, sorted highest price first)
     const vapBids = allLevels
       .filter((l) => l.price <= refPrice)
       .sort((a, b) => b.price - a.price)
       .slice(0, 5);
 
-    // Supply Zones (strictly above reference price, sorted lowest price first)
     const vapAsks = allLevels
       .filter((l) => l.price > refPrice)
       .sort((a, b) => a.price - b.price)
@@ -327,13 +386,18 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
     const totalBidKitta = vapBids.reduce((s, b) => s + b.kitta, 0);
     const totalAskKitta = vapAsks.reduce((s, a) => s + a.kitta, 0);
     const total = totalBidKitta + totalAskKitta;
+    const { obir, obirSignal } = classifyObir(totalBidKitta, totalAskKitta);
 
     return {
       source: "FLOORSHEET_VAP_DEPTH",
-      asOfLabel: "Floorsheet Volume-at-Price (VAP) Liquidity Walls (L2 Feed Closed)",
+      asOfLabel:
+        "Floorsheet Volume-at-Price (VAP) Liquidity Walls (L2 Feed Closed)",
       totalBidKitta,
       totalAskKitta,
-      bidRatioPct: total > 0 ? Number(((totalBidKitta / total) * 100).toFixed(1)) : 50,
+      bidRatioPct:
+        total > 0 ? Number(((totalBidKitta / total) * 100).toFixed(1)) : 50,
+      obir,
+      obirSignal,
       bids: vapBids,
       asks: vapAsks,
     };
@@ -345,14 +409,13 @@ export function resolveMarketDepthWithFloorsheetFallback(params: {
     totalBidKitta: 0,
     totalAskKitta: 0,
     bidRatioPct: 50,
+    obir: 1.0,
+    obirSignal: "BALANCED",
     bids: [],
     asks: [],
   };
 }
 
-/**
- * Master Builder for all Stock Information Modal Tabs & Service Hub Cards
- */
 export function buildUnifiedStockTabTelemetry(params: {
   symbol?: string | null;
   fallbackSymbol?: string | null;
@@ -391,6 +454,7 @@ export function buildUnifiedStockTabTelemetry(params: {
   let sellAggressorKitta = 0;
   let internalCrossKitta = 0;
   let whaleContractCount = 0;
+  let megaBlockCount = 0;
 
   for (const c of enrichedContracts) {
     totalSessionKitta += c.kitta;
@@ -399,6 +463,7 @@ export function buildUnifiedStockTabTelemetry(params: {
     if (c.aggressor === "SELL") sellAggressorKitta += c.kitta;
     if (c.isInternalCross) internalCrossKitta += c.kitta;
     if (c.isWhalePrint) whaleContractCount += 1;
+    if (c.isMegaBlock) megaBlockCount += 1;
   }
 
   const sessionVwap =
@@ -417,9 +482,7 @@ export function buildUnifiedStockTabTelemetry(params: {
       ? Number(((buyAggressorKitta / directionalKitta) * 100).toFixed(1))
       : 50;
   const sellAggressorPct =
-    directionalKitta > 0
-      ? Number((100 - buyAggressorPct).toFixed(1))
-      : 50;
+    directionalKitta > 0 ? Number((100 - buyAggressorPct).toFixed(1)) : 50;
 
   const internalCrossVolumePct =
     totalSessionKitta > 0
@@ -434,7 +497,6 @@ export function buildUnifiedStockTabTelemetry(params: {
     contracts: enrichedContracts,
   });
 
-  // If 5D broker payload wasn't passed separately, synthesize it directly from the floorsheet contracts
   const effectiveBrokerPayload =
     params.broker5DRawPayload &&
     Array.isArray((params.broker5DRawPayload as Record<string, unknown>)?.["5D"])
@@ -460,6 +522,7 @@ export function buildUnifiedStockTabTelemetry(params: {
           ? Math.round(totalSessionKitta / enrichedContracts.length)
           : 0,
       whaleContractCount,
+      megaBlockCount,
       internalCrossVolumePct,
       buyAggressorPct,
       sellAggressorPct,
@@ -471,9 +534,6 @@ export function buildUnifiedStockTabTelemetry(params: {
   };
 }
 
-/**
- * Helper: Aggregates raw floorsheet contracts by broker ID when 5D broker table is empty
- */
 function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) {
   const map = new Map<
     number,

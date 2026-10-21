@@ -178,20 +178,40 @@ async function getShareSansarSession() {
   }
 }
 
+const KNOWN_MUTUAL_FUNDS_AND_DEBT = new Set([
+  'NIBLPF', 'NIBSF2', 'NIBLGF', 'NMB50', 'NMBHF1', 'NMBSBF', 'NMBSF1',
+  'NICGF', 'NICBF', 'NICFC', 'NICSF', 'SFMF', 'SIGS2', 'SIGS3',
+  'SIDDHI', 'SAEF', 'SEF', 'NBF2', 'NBF3', 'CMBF', 'LAXMF', 'LVF1', 'LVF2',
+  'KSLY', 'KSY', 'NSY', 'PSF', 'RMF1', 'RMF2', 'GIMES1', 'GIBF1',
+  'C30MF', 'PRSF', 'SBCF', 'MMF1', 'H8020', 'LUK', 'SAGF', 'MNMF1'
+]);
+
+const KNOWN_PURE_EQUITIES_ENDING_P_OR_D = new Set([
+  'UPPER', 'SHPC', 'NHPC', 'CHCL', 'AHPC', 'RHPL', 'UNHPL', 'MHNL', 'DHPL',
+  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI'
+]);
+
 /**
- * Detects corporate debentures, mutual funds, or promoter units that have naturally low trading frequency.
- * Prevents redundant scraping attempts for non-existent trading sessions.
+ * Strictly identifies Mutual Funds (e.g. NIBLPF), Corporate Debentures, and Promoter Shares
+ * so pure-equity floorsheet alerts and institutional radar rankings are never polluted.
  */
-export function isIlliquidDebtOrMutualFund(symbol) {
-  if (!symbol) return false;
+export function isNonEquityInstrument(symbol) {
+  if (!symbol) return true;
   const sym = String(symbol).toUpperCase().trim();
+  if (KNOWN_PURE_EQUITIES_ENDING_P_OR_D.has(sym)) return false;
+  if (KNOWN_MUTUAL_FUNDS_AND_DEBT.has(sym)) return true;
+
   return (
-    /^\d|[0-9]{2,}|D\d{2}|DEB|MF|PF|P$/i.test(sym) ||
-    sym.endsWith('D') ||
+    /^\d|[0-9]{2,}|D\d{2}|DEB|BOND|MF\d*$|PF\d*$|GF\d*$|BF\d*$|SF\d*$|SY$|PO$/i.test(sym) ||
+    (sym.endsWith('P') && sym.length >= 5) || // Promoter shares e.g. NABILP, EBLCP, SLBBLP
     sym.includes('DEB') ||
-    sym.includes('BOND')
+    sym.includes('BOND') ||
+    sym.includes('FUND')
   );
 }
+
+// Keep alias for backward compatibility across vault callers
+export const isIlliquidDebtOrMutualFund = isNonEquityInstrument;
 
 /**
  * Fetches available trading dates for a symbol (newest first) using Chukul historydata API.
@@ -747,64 +767,59 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   let washTradesFiltered = 0;
   const brokerMap = {};
   const dateMap = {};
-  let totalTradedQty = 0;
-  let totalTradedAmt = 0;
-  let largeBlockTradedAmt = 0; // Orders with quantity >= 1000 shares (LBAS)
+  let sumBuyQty = 0;
+  let sumSellQty = 0;
+  let sumBuyAmt = 0;
+  let sumSellAmt = 0;
+  let largeBlockTradedAmt = 0;
   let totalTradesCount = 0;
 
+  const ensureBrokerEntry = (mapObj, idStr) => {
+    if (!mapObj[idStr]) {
+      mapObj[idStr] = {
+        brokerId: idStr,
+        broker: idStr,
+        id: idStr,
+        brokerName: getBrokerName(idStr),
+        name: getBrokerName(idStr),
+        buyQty: 0,
+        sellQty: 0,
+        matchedQty: 0,
+        buyAmt: 0,
+        sellAmt: 0,
+        matchedAmt: 0,
+        buyTrades: 0,
+        sellTrades: 0
+      };
+    }
+    return mapObj[idStr];
+  };
+
   uniqueRows.forEach(r => {
-    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
-    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
+    const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').replace(/^0+/, '').trim();
+    const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').replace(/^0+/, '').trim();
     const q = Number(r.qty || r.contractQuantity || r.quantity || 0);
     const rate = Number(r.rate || r.contractRate || 0);
     const amt = Number(r.amount || r.contractAmount || (q * rate) || 0);
     const d = String(r.businessDate || r.date || r.date_ || '').trim();
 
-    if (q <= 0) return;
+    if (q <= 0 || (!b && !s)) return;
 
     if (b) {
-      if (!brokerMap[b]) {
-        brokerMap[b] = {
-          brokerId: b,
-          broker: b,
-          id: b,
-          brokerName: getBrokerName(b),
-          name: getBrokerName(b),
-          buyQty: 0,
-          sellQty: 0,
-          matchedQty: 0,
-          buyAmt: 0,
-          sellAmt: 0,
-          matchedAmt: 0,
-          buyTrades: 0,
-          sellTrades: 0
-        };
-      }
-      brokerMap[b].buyQty += q;
-      brokerMap[b].buyAmt += amt;
-      brokerMap[b].buyTrades += 1;
+      const bEntry = ensureBrokerEntry(brokerMap, b);
+      bEntry.buyQty += q;
+      bEntry.buyAmt += amt;
+      bEntry.buyTrades += 1;
+      sumBuyQty += q;
+      sumBuyAmt += amt;
     }
     if (s) {
-      if (!brokerMap[s]) {
-        brokerMap[s] = {
-          brokerId: s,
-          broker: s,
-          id: s,
-          brokerName: getBrokerName(s),
-          name: getBrokerName(s),
-          buyQty: 0,
-          sellQty: 0,
-          matchedQty: 0,
-          buyAmt: 0,
-          sellAmt: 0,
-          matchedAmt: 0,
-          buyTrades: 0,
-          sellTrades: 0
-        };
-      }
-      brokerMap[s].sellQty += q;
-      brokerMap[s].sellAmt += amt;
-      brokerMap[s].sellTrades += 1;
+      const sEntry = ensureBrokerEntry(brokerMap, s);
+      sEntry.sellQty += q;
+      sEntry.sellAmt += amt;
+      sEntry.sellTrades += 1;
+      sumSellQty += q;
+      sumSellAmt += amt;
     }
 
     if (b && s && b === s) {
@@ -813,18 +828,10 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
       brokerMap[b].matchedAmt += amt;
     }
 
-    // Zero-Sum Conservation Guard:
-    // Standard two-sided contract rows have both buyer (b) and seller (s) -> count once.
-    // Reconstructed one-sided matrix rows have only buyer OR seller -> count only on the buy side
-    // so totalTradedQty === sumBuyQty === sumSellQty.
     const isOneSidedSellReconstruction = !b && Boolean(s);
     if (!isOneSidedSellReconstruction) {
-      totalTradedQty += q;
-      totalTradedAmt += amt;
       totalTradesCount++;
-      if (q >= 1000) {
-        largeBlockTradedAmt += amt;
-      }
+      if (q >= 1000) largeBlockTradedAmt += amt;
     }
 
     if (d) {
@@ -877,6 +884,33 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     }
   });
 
+  // Zero-Sum Conservation Balancing for Reconstructed One-Sided Feeds:
+  // Ensures sum(buyQty) === sum(sellQty) === totalTradedQty identically
+  if (sumBuyQty !== sumSellQty) {
+    const residualBroker = ensureBrokerEntry(brokerMap, '999');
+    residualBroker.brokerName = 'Residual Retail / Other Desks';
+    residualBroker.name = 'Residual Retail / Other Desks';
+    if (sumBuyQty > sumSellQty) {
+      const diffQ = sumBuyQty - sumSellQty;
+      const diffA = Math.max(0, sumBuyAmt - sumSellAmt);
+      residualBroker.sellQty += diffQ;
+      residualBroker.sellAmt += diffA;
+      residualBroker.sellTrades += 1;
+      sumSellQty += diffQ;
+      sumSellAmt += diffA;
+    } else {
+      const diffQ = sumSellQty - sumBuyQty;
+      const diffA = Math.max(0, sumSellAmt - sumBuyAmt);
+      residualBroker.buyQty += diffQ;
+      residualBroker.buyAmt += diffA;
+      residualBroker.buyTrades += 1;
+      sumBuyQty += diffQ;
+      sumBuyAmt += diffA;
+    }
+  }
+
+  const totalTradedQty = sumBuyQty;
+  const totalTradedAmt = sumBuyAmt;
   const safeTotalQty = totalTradedQty || 1;
 
   const brokers = Object.values(brokerMap).map(x => {
@@ -930,23 +964,36 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
   // Large-Block Absorption Share (LBAS): share of rupee turnover from lots >= 1000 shares
   const lbas = totalTradedAmt > 0 ? +(largeBlockTradedAmt / totalTradedAmt).toFixed(3) : 0;
 
-  // Top-3 and Top-5 Buyer & Seller Volumes
-  const top3BuyTotal = topBuyers.slice(0, 3).reduce((s, b) => s + b.buyQty, 0);
-  const top5BuyTotal = topBuyers.slice(0, 5).reduce((s, b) => s + b.buyQty, 0);
-  const top3SellTotal = topSellers.slice(0, 3).reduce((s, b) => s + b.sellQty, 0);
-  const top5SellTotal = topSellers.slice(0, 5).reduce((s, b) => s + b.sellQty, 0);
+    // Wash-Deflated Genuine Volume for Gross Concentration (BCR3 / BCR5)
+  const totalMatchedQty = Object.values(brokerMap).reduce((s, b) => s + (b.matchedQty || 0), 0);
+  const genuineTradedQty = Math.max(1, totalTradedQty - totalMatchedQty);
 
-  // Net Broker Accumulation Ratio (NBAR): Top-5 buyers quantity vs Top-5 sellers quantity
+  const genuineTopBuyers = [...brokers]
+    .map(b => ({ ...b, genuineBuyQty: Math.max(0, b.buyQty - (b.matchedQty || 0)) }))
+    .filter(b => b.genuineBuyQty > 0)
+    .sort((a, b) => b.genuineBuyQty - a.genuineBuyQty);
+
+  const genuineTopSellers = [...brokers]
+    .map(b => ({ ...b, genuineSellQty: Math.max(0, b.sellQty - (b.matchedQty || 0)) }))
+    .filter(b => b.genuineSellQty > 0)
+    .sort((a, b) => b.genuineSellQty - a.genuineSellQty);
+
+  const top3BuyTotal = genuineTopBuyers.slice(0, 3).reduce((s, b) => s + b.genuineBuyQty, 0);
+  const top5BuyTotal = genuineTopBuyers.slice(0, 5).reduce((s, b) => s + b.genuineBuyQty, 0);
+  const top3SellTotal = genuineTopSellers.slice(0, 3).reduce((s, b) => s + b.genuineSellQty, 0);
+  const top5SellTotal = genuineTopSellers.slice(0, 5).reduce((s, b) => s + b.genuineSellQty, 0);
+
+  // Net Broker Accumulation Ratio (NBAR): Top-5 genuine buyers vs Top-5 genuine sellers
   const nbar = top5SellTotal > 0 ? +(top5BuyTotal / top5SellTotal).toFixed(2) : (top5BuyTotal > 0 ? 3.0 : 1.0);
 
   // Top-5 Buyer Concentration (CR_B_5)
-  const crb5 = totalTradedQty > 0 ? +(top5BuyTotal / totalTradedQty).toFixed(3) : 0;
+  const crb5 = totalTradedQty > 0 ? +(top5BuyTotal / genuineTradedQty).toFixed(3) : 0;
 
-  // True BCR3 & BCR5 (Gross)
-  const bcr3BuyPct = totalTradedQty > 0 ? +((top3BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
-  const bcr5BuyPct = totalTradedQty > 0 ? +((top5BuyTotal / totalTradedQty) * 100).toFixed(2) : 0;
-  const bcr3SellPct = totalTradedQty > 0 ? +((top3SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
-  const bcr5SellPct = totalTradedQty > 0 ? +((top5SellTotal / totalTradedQty) * 100).toFixed(2) : 0;
+  // True Wash-Deflated BCR3 & BCR5 (Gross)
+  const bcr3BuyPct = totalTradedQty > 0 ? +((top3BuyTotal / genuineTradedQty) * 100).toFixed(2) : 0;
+  const bcr5BuyPct = totalTradedQty > 0 ? +((top5BuyTotal / genuineTradedQty) * 100).toFixed(2) : 0;
+  const bcr3SellPct = totalTradedQty > 0 ? +((top3SellTotal / genuineTradedQty) * 100).toFixed(2) : 0;
+  const bcr5SellPct = totalTradedQty > 0 ? +((top5SellTotal / genuineTradedQty) * 100).toFixed(2) : 0;
 
   // True Net Absorption & Seller Concentration (Net)
   const top3NetBuyVol = topNetBuyers.slice(0, 3).reduce((s, b) => s + b.netQty, 0);
@@ -1407,7 +1454,8 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
     const q = Number(t.contractQuantity || t.quantity || t.qty || 0);
     const amt = Number(t.contractAmount || t.amount || (q * Number(t.contractRate || t.rate || 0)));
 
-    if (!sym || q <= 0 || amt <= 0) return;
+    // Pure-Equity Filter: Exclude Mutual Funds (e.g. NIBLPF), Debentures, and Promoter Shares from equity floorsheet alerts
+    if (!sym || isNonEquityInstrument(sym) || q <= 0 || amt <= 0) return;
 
     // Track Scrip Totals
     if (!scripTotals[sym]) scripTotals[sym] = { symbol: sym, totalAmt: 0, totalQty: 0, trades: 0 };
@@ -2009,8 +2057,7 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
       }
     }
 
-    // If multi-day horizon requested, combine with per-symbol vault files
-    // Zero-Sum Multi-Day Guard: Ensure dates already in fullTrades are NEVER re-added from disk vault
+        // If multi-day horizon requested, combine with per-symbol vault files capped strictly at numDays sessions
     if (numDays > 1 && fs.existsSync(VAULT_DIR)) {
       try {
         const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
@@ -2019,20 +2066,28 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
           try {
             const vData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
             if (vData?.rowsByDate) {
-              const allDates = Object.keys(vData.rowsByDate).sort((a, b) => b.localeCompare(a));
               if (!symbolGroups[sym]) symbolGroups[sym] = [];
-              
+
+              const includedDatesForSym = new Set();
               const existingContractIds = new Set();
               for (const t of symbolGroups[sym]) {
+                const d = String(t.businessDate || t.date || '').trim();
+                if (d) includedDatesForSym.add(d);
                 const cid = String(t.contractId || t.contract_no || '').trim();
                 if (cid) existingContractIds.add(cid);
               }
 
+              const allDates = Object.keys(vData.rowsByDate)
+                .filter(d => Array.isArray(vData.rowsByDate[d]) && vData.rowsByDate[d].length > 0)
+                .sort((a, b) => b.localeCompare(a));
+
               for (const dt of allDates) {
-                // Skip if this date was already included from fullTrades
-                if (fullTradeDates.has(dt)) continue;
+                if (includedDatesForSym.size >= numDays) break;
+                if (fullTradeDates.has(dt) || includedDatesForSym.has(dt)) continue;
+
                 const dtRows = vData.rowsByDate[dt];
-                if (Array.isArray(dtRows)) {
+                if (Array.isArray(dtRows) && dtRows.length > 0) {
+                  includedDatesForSym.add(dt);
                   for (const r of dtRows) {
                     const cid = String(r.contractId || r.contract_no || '').trim();
                     if (cid && existingContractIds.has(cid)) continue;

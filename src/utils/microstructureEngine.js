@@ -858,3 +858,62 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     syndicateBrokers: diag3d.syndicateBrokers || []
   };
 }
+
+
+/**
+ * Classifies Wyckoff Phase & Evaluates Master 100 Gate 5 + Anti-Distribution Veto
+ */
+export function evaluateWyckoffAndGate5({
+  bcr3GrossPct = 0,
+  bcr5NetPct = 0,
+  scr3NetPct = 0,
+  priceChangePct = 0,
+  smartMoneyNetFlowPct = 0,
+}) {
+  const bcr3 = Number(bcr3GrossPct) || 0;
+  const bcr5 = Number(bcr5NetPct) || 0;
+  const scr3 = Number(scr3NetPct) || 0;
+  const dP = Number(priceChangePct) || 0;
+  const netFlow = Number(smartMoneyNetFlowPct) || 0;
+
+  // 1. Anti-Distribution / Bull-Trap Veto:
+  // Rejects stocks if top brokers are heavily distributing (SCR3 >= 20% or SCR3 > BCR5) into retail price gains (dP > 2.5%)
+  const isBullTrap = scr3 >= 20.0 && dP > 2.5 && scr3 > bcr5;
+  const isDistributionIntoStrength = dP > 1.5 && scr3 > bcr5 * 1.15 && netFlow < 0;
+  const antiDistributionVeto = isBullTrap || isDistributionIntoStrength;
+
+  // 2. Wyckoff Phase Classification
+  let phase = "NEUTRAL_EQUILIBRIUM";
+  let phaseLabel = "Neutral Equilibrium";
+
+  if (isBullTrap) {
+    phase = "BULL_TRAP_DISTRIBUTION";
+    phaseLabel = "Bull Trap (Institutional Distribution into Retail Buying)";
+  } else if (bcr5 >= 18.0 && scr3 < 14.0 && Math.abs(dP) <= 4.5) {
+    phase = "STEALTH_ACCUMULATION";
+    phaseLabel = "Stealth Accumulation (High BCR5, Low Price Impact)";
+  } else if (bcr5 >= 15.0 && dP > 4.5 && !antiDistributionVeto) {
+    phase = "ACTIVE_MARKUP";
+    phaseLabel = "Active Institutional Markup";
+  } else if (scr3 >= 18.0 && dP < -2.0) {
+    phase = "ACTIVE_MARKDOWN";
+    phaseLabel = "Institutional Markdown / Supply Dominance";
+  }
+
+  // 3. Master 100% Profit Model — Gate 5 Verification
+  // Gate 5 requires BCR3 >= 40.0% (or strong net institutional absorption) AND zero Anti-Distribution Veto
+  const gate5Passed = bcr3 >= 40.0 && !antiDistributionVeto && bcr5 > scr3;
+
+  return {
+    phase,
+    phaseLabel,
+    isBullTrap,
+    antiDistributionVeto,
+    gate5Passed,
+    gate5Reason: antiDistributionVeto
+      ? `VETOED: Top-3 Seller Concentration (${scr3.toFixed(1)}%) distributing into +${dP.toFixed(2)}% retail price gain.`
+      : gate5Passed
+      ? `PASSED: BCR3 (${bcr3.toFixed(1)}%) >= 40.0% with net institutional accumulation (BCR5 ${bcr5.toFixed(1)}% vs SCR3 ${scr3.toFixed(1)}%).`
+      : `BELOW THRESHOLD: BCR3 is ${bcr3.toFixed(1)}% (Requires >= 40.0%).`,
+  };
+}

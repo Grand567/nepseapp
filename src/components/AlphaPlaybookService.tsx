@@ -136,19 +136,76 @@ export function AlphaPlaybookService() {
     } catch (_) {}
   };
 
-  // Interactive 1.5% Risk Position Sizing Calculator state
+  // Interactive Half-Kelly & 1.0% Risk Position Sizing Calculator state
   const [accountSize, setAccountSize] = useState<number>(500000);
   const [entryPrice, setEntryPrice] = useState<number>(295);
   const [stopLossPrice, setStopLossPrice] = useState<number>(285);
   const [target1Price, setTarget1Price] = useState<number>(315);
 
-  const riskPerShare = Math.max(0.1, entryPrice - stopLossPrice);
-  const maxRiskAmount = +(accountSize * 0.015).toFixed(2); // 1.5%
-  const sharesToBuy = Math.max(10, Math.floor(maxRiskAmount / riskPerShare));
-  const totalCapitalRequired = +(sharesToBuy * entryPrice).toFixed(2);
-  const capitalAllocationPct = accountSize > 0 ? +((totalCapitalRequired / accountSize) * 100).toFixed(1) : 0;
-  const rewardPerShare = Math.max(0.1, target1Price - entryPrice);
-  const riskRewardRatio = +(rewardPerShare / riskPerShare).toFixed(2);
+  const positionSizing = useMemo(() => {
+    const validAccount = Math.max(0, Number(accountSize) || 0);
+    const validEntry = Number(entryPrice) || 0;
+    const validStop = Number(stopLossPrice) || 0;
+    // Clamp single-day target within [Close * 0.85, Close * 1.15] statutory circuit band if needed
+    const validTarget = Number(target1Price) || 0;
+
+    // MANDATORY STOP-LOSS INVERSION GUARD: StopLoss MUST be strictly less than EntryPrice
+    const isStopLossInvalid =
+      validEntry <= 0 ||
+      validStop <= 0 ||
+      validStop >= validEntry ||
+      validTarget <= validEntry;
+
+    if (isStopLossInvalid || validAccount <= 0) {
+      return {
+        isStopLossInvalid: true,
+        riskPerShare: 0,
+        rewardPerShare: 0,
+        riskRewardRatio: 0,
+        halfKellyFractionPct: 0,
+        maxRiskAmount: +(validAccount * 0.01).toFixed(2),
+        sharesToBuy: 0,
+        totalCapitalRequired: 0,
+        capitalAllocationPct: 0,
+      };
+    }
+
+    const riskPerShare = +(validEntry - validStop).toFixed(2);
+    const rewardPerShare = +(validTarget - validEntry).toFixed(2);
+    const b = rewardPerShare / riskPerShare; // Payoff odds
+
+    // Half-Kelly Formula: f*_half = 0.5 * (p - (1 - p) / b) with institutional base win-rate p = 0.635
+    const p = 0.635;
+    const q = 1 - p;
+    const fullKelly = p - q / b;
+    const halfKelly = Math.max(0, 0.5 * fullKelly);
+    // Cap single-slot capital allocation at min(Half-Kelly, 25% slot limit)
+    const effectiveSlotFraction = Math.min(halfKelly, 0.25);
+
+    // Cap total portfolio risk per trade strictly at 1.0% of total equity
+    const maxRiskAmount = +(validAccount * 0.01).toFixed(2);
+    const kittaByRiskCap = Math.floor(maxRiskAmount / riskPerShare);
+    const kittaByHalfKellySlot = Math.floor(
+      (validAccount * effectiveSlotFraction) / validEntry
+    );
+
+    const sharesToBuy = Math.max(0, Math.min(kittaByRiskCap, kittaByHalfKellySlot));
+    const totalCapitalRequired = +(sharesToBuy * validEntry).toFixed(2);
+    const capitalAllocationPct =
+      validAccount > 0 ? +((totalCapitalRequired / validAccount) * 100).toFixed(1) : 0;
+
+    return {
+      isStopLossInvalid: false,
+      riskPerShare,
+      rewardPerShare,
+      riskRewardRatio: +b.toFixed(2),
+      halfKellyFractionPct: +(halfKelly * 100).toFixed(2),
+      maxRiskAmount,
+      sharesToBuy,
+      totalCapitalRequired,
+      capitalAllocationPct,
+    };
+  }, [accountSize, entryPrice, stopLossPrice, target1Price]);
 
   const handleLaunchService = (serviceId: string) => {
     try {
@@ -364,7 +421,7 @@ export function AlphaPlaybookService() {
           { id: 'routine', label: '⏰ 4-Step Daily Routine' },
           { id: 'cycles', label: '🗓️ Seasonal Market Cycles' },
           { id: 'matrix', label: '⚡ Quick Decision Matrix' },
-          { id: 'calculator', label: '🧮 1.5% Risk Position Sizer' }
+          { id: 'calculator', label: '🧮 Half-Kelly & 1.0% Risk Position Sizer' }
         ].map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -920,7 +977,7 @@ export function AlphaPlaybookService() {
         </div>
       )}
 
-      {/* ── TAB 5: 1.5% RISK POSITION SIZER ── */}
+      {/* ── TAB 5: HALF-KELLY & 1.0% RISK POSITION SIZER ── */}
       {activeTab === 'calculator' && (
         <div style={{
           background: 'rgba(15, 23, 42, 0.65)',
@@ -931,12 +988,27 @@ export function AlphaPlaybookService() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Scale style={{ width: 20, height: 20, color: '#818cf8' }} />
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#ffffff' }}>
-              1.5% Portfolio Risk & Zero-Loss Position Sizer
+              Half-Kelly & 1.0% Portfolio Risk Position Sizer
             </h3>
           </div>
           <p style={{ margin: '0 0 16px', fontSize: 12, color: '#94a3b8' }}>
-            Never risk more than 1.5% of your total account on any single trade. Enter your parameters below:
+            Strict Stop-Loss Inversion Guard (StopLoss &lt; Entry), institutional win-rate (p = 0.635), Half-Kelly optimal allocation cap (max 25%), and 1.0% portfolio risk limit:
           </p>
+
+          {positionSizing.isStopLossInvalid && (
+            <div style={{
+              marginBottom: 16,
+              padding: '10px 14px',
+              borderRadius: 10,
+              background: 'rgba(244, 63, 94, 0.15)',
+              border: '1px solid rgba(244, 63, 94, 0.4)',
+              color: '#fda4af',
+              fontSize: 12,
+              fontWeight: 700
+            }}>
+              ⚠️ INVALID PARAMETERS: Stop Loss must be strictly below Entry Price (StopLoss &lt; Entry), and Target must exceed Entry. Sizing clamped to 0 units.
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
             <div>
@@ -994,7 +1066,7 @@ export function AlphaPlaybookService() {
                   padding: '9px 12px',
                   borderRadius: 10,
                   background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  border: positionSizing.isStopLossInvalid ? '1px solid rgba(244, 63, 94, 0.6)' : '1px solid rgba(255,255,255,0.12)',
                   color: '#ffffff',
                   fontSize: 13,
                   fontWeight: 700
@@ -1027,35 +1099,39 @@ export function AlphaPlaybookService() {
           {/* Sizing Output Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
             <div style={{ background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 700 }}>Max Dollar Risk (1.5%)</div>
+              <div style={{ fontSize: 12, color: '#a5b4fc', fontWeight: 700 }}>Max Portfolio Risk (1.0%)</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                Rs. {maxRiskAmount.toLocaleString()}
+                Rs. {positionSizing.maxRiskAmount.toLocaleString()}
               </div>
               <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Cap on total possible loss</div>
             </div>
 
             <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: 12, color: '#34d399', fontWeight: 700 }}>Shares to Buy</div>
+              <div style={{ fontSize: 12, color: '#34d399', fontWeight: 700 }}>Optimal Sizing (Half-Kelly)</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#34d399', marginTop: 2 }}>
-                {sharesToBuy.toLocaleString()} Units
+                {positionSizing.sharesToBuy.toLocaleString()} Units
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Risk/share: Rs. {riskPerShare.toFixed(1)}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                {positionSizing.isStopLossInvalid ? 'Invalid SL' : `Risk/share: Rs. ${positionSizing.riskPerShare.toFixed(1)}`}
+              </div>
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 12 }}>
               <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Capital Required</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                Rs. {totalCapitalRequired.toLocaleString()}
+                Rs. {positionSizing.totalCapitalRequired.toLocaleString()}
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{capitalAllocationPct}% of portfolio</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                {positionSizing.capitalAllocationPct}% (Kelly: {positionSizing.halfKellyFractionPct}%)
+              </div>
             </div>
 
             <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 12, padding: 12 }}>
               <div style={{ fontSize: 12, color: '#38bdf8', fontWeight: 700 }}>Risk/Reward to T1</div>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#38bdf8', marginTop: 2 }}>
-                {riskRewardRatio} : 1
+                {positionSizing.riskRewardRatio} : 1
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Reward: Rs. {rewardPerShare.toFixed(1)}/share</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Reward: Rs. {positionSizing.rewardPerShare.toFixed(1)}/share</div>
             </div>
           </div>
 
@@ -1071,7 +1147,13 @@ export function AlphaPlaybookService() {
             lineHeight: 1.5
           }}>
             <span style={{ fontWeight: 800, color: '#34d399' }}>Zero-Loss Execution Plan: </span>
-            Buy {sharesToBuy} shares at Rs. {entryPrice}. When price hits Rs. {target1Price} (Target 1), sell {Math.floor(sharesToBuy / 2)} shares (+Rs. {(Math.floor(sharesToBuy / 2) * rewardPerShare).toFixed(0)} gain) and move Stop Loss to Rs. {entryPrice} on the remaining {Math.ceil(sharesToBuy / 2)} shares. Your trade is now mathematically risk-free.
+            {positionSizing.sharesToBuy > 0 ? (
+              <>
+                Buy {positionSizing.sharesToBuy} shares at Rs. {entryPrice}. When price hits Rs. {target1Price} (Target 1), sell {Math.floor(positionSizing.sharesToBuy / 2)} shares (+Rs. {(Math.floor(positionSizing.sharesToBuy / 2) * positionSizing.rewardPerShare).toFixed(0)} gain) and move Stop Loss to Rs. {entryPrice} on the remaining {Math.ceil(positionSizing.sharesToBuy / 2)} shares. Your trade is now mathematically risk-free.
+              </>
+            ) : (
+              <span>Position sizing is currently 0 units. Ensure Entry, Structural Stop-Loss, and Target are valid and strictly non-inverted.</span>
+            )}
           </div>
         </div>
       )}

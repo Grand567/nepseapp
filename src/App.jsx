@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   LayoutDashboard, Wallet, ShieldCheck, Layers,
   LayoutGrid, BrainCircuit, BookOpen, TrendingUp,
@@ -518,12 +518,20 @@ function AppInner() {
             setStocks(prev => {
               if (prev && prev === currentStocks) return prev;
               if (!prev || prev.length !== currentStocks.length) return currentStocks;
-              const prevTurnover = prev.reduce((acc, s) => acc + (s.turnover || 0), 0);
-              const curTurnover = currentStocks.reduce((acc, s) => acc + (s.turnover || 0), 0);
+              const prevTurnover = prev.reduce((acc, s) => acc + (Number(s.turnover) || 0), 0);
+              const curTurnover = currentStocks.reduce((acc, s) => acc + (Number(s.turnover) || 0), 0);
               if (prevTurnover > 0 && prevTurnover === curTurnover) {
-                const prevVol = prev.reduce((acc, s) => acc + (s.volume || 0), 0);
-                const curVol = currentStocks.reduce((acc, s) => acc + (s.volume || 0), 0);
-                if (prevVol === curVol) {
+                const prevVol = prev.reduce((acc, s) => acc + (Number(s.volume) || 0), 0);
+                const curVol = currentStocks.reduce((acc, s) => acc + (Number(s.volume) || 0), 0);
+                const prevPriceChecksum = prev.reduce(
+                  (acc, s) => acc + (Number(s.ltp || s.close) || 0) + (Number(s.pChange) || 0),
+                  0
+                );
+                const curPriceChecksum = currentStocks.reduce(
+                  (acc, s) => acc + (Number(s.ltp || s.close) || 0) + (Number(s.pChange) || 0),
+                  0
+                );
+                if (prevVol === curVol && Math.abs(prevPriceChecksum - curPriceChecksum) < 0.001) {
                   return prev;
                 }
               }
@@ -778,6 +786,16 @@ function AppInner() {
     setApiStatus('offline');
     setActiveTab('dashboard');
   };
+
+  const synchronizedSelectedStock = useMemo(() => {
+    if (!selectedStock) return null;
+    const targetSym = String(selectedStock.symbol || '').toUpperCase().trim();
+    if (!targetSym || !Array.isArray(stocks) || stocks.length === 0) return selectedStock;
+    const liveMatch = stocks.find(
+      s => String(s.symbol || '').toUpperCase().trim() === targetSym
+    );
+    return liveMatch ? { ...selectedStock, ...liveMatch } : selectedStock;
+  }, [selectedStock, stocks]);
 
   // ── Auth checking splash ──
   if (user === undefined) {
@@ -1569,10 +1587,10 @@ function AppInner() {
               />
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}
-              {selectedStock && (
+              {synchronizedSelectedStock && (
                 <React.Suspense fallback={null}>
                   <StockDetailModal
-                    stock={selectedStock}
+                    stock={synchronizedSelectedStock}
                     allStocks={stocks}
                     onClose={closeStockDetail}
                     marketStatus={marketStatus}

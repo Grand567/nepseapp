@@ -212,80 +212,127 @@ export function getStoredDates(limit = 40) {
     .map(r => r.trade_date);
 }
 
+// proxy/db/ledgerStore.js — DROP-IN REPLACEMENT FOR INGESTION, ZERO-SUM LEDGER & 5D VOLUME PROFILE
+
+const NON_EQUITY_EXCLUSION_SET = new Set([
+  'NIBLPF', 'NIBSF2', 'NIBLGF', 'NMB50', 'NMBHF1', 'NMBSBF', 'NMBSF1',
+  'NICGF', 'NICBF', 'NICFC', 'NICSF', 'SFMF', 'SIGS2', 'SIGS3',
+  'SIDDHI', 'SAEF', 'SEF', 'NBF2', 'NBF3', 'CMBF', 'LAXMF', 'LVF1', 'LVF2',
+  'KSLY', 'KSY', 'NSY', 'PSF', 'RMF1', 'RMF2', 'GIMES1', 'GIBF1',
+  'C30MF', 'PRSF', 'SBCF', 'MMF1', 'H8020', 'LUK', 'SAGF', 'MNMF1'
+]);
+
+const PURE_EQUITY_WHITELIST = new Set([
+  'UPPER', 'SHPC', 'NHPC', 'CHCL', 'AHPC', 'RHPL', 'UNHPL', 'MHNL', 'DHPL',
+  'PMHPL', 'KPCL', 'BPCL', 'AKPL', 'SPDL', 'SMD', 'NFD', 'HIDCL', 'RADHI'
+]);
+
+function isNonEquityScrip(symbol) {
+  if (!symbol) return true;
+  const sym = String(symbol).toUpperCase().trim();
+  if (PURE_EQUITY_WHITELIST.has(sym)) return false;
+  if (NON_EQUITY_EXCLUSION_SET.has(sym)) return true;
+  return (
+    /^\d|[0-9]{2,}|D\d{2}|DEB|BOND|MF\d*$|PF\d*$|GF\d*$|BF\d*$|SF\d*$|SY$|PO$/i.test(sym) ||
+    (sym.endsWith('P') && sym.length >= 5) ||
+    sym.includes('DEB') ||
+    sym.includes('BOND') ||
+    sym.includes('FUND')
+  );
+}
+
+function parseBrokerInt(val) {
+  if (typeof val === 'number') return Number.isFinite(val) && val > 0 ? Math.round(val) : 0;
+  const cleaned = String(val || '').replace(/\D/g, '').trim();
+  const parsed = parseInt(cleaned, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 /**
- * Compresses raw daily floorsheet rows (e.g., 50,000+ trades) into compacted broker summaries
- * Run this at 3:15 PM NPT after market close or periodically during trading sessions.
+ * Compresses raw daily floorsheet rows into compacted stock & broker summaries.
+ * Enforces:
+ * 1. Chronological sorting so open_price (11:00 AM) and close_price (3:00 PM) are exact.
+ * 2. Strict Pure-Equity filter: Excludes Mutual Funds (NIBLPF), Debentures, Promoter shares.
+ * 3. Strict Zero-Sum Conservation Law: sum(buy_vol) === sum(sell_vol) === total_volume.
+ * 4. Automatic tick-level contract ingestion into floorsheet_contracts.
  */
 export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTrades) => {
   if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
 
-  const stockMap = new Map(); // symbol -> { open, high, low, close, vol, amt, brokers: Map }
-  const seenContracts = new Set();
+  // Sort chronologically (oldest contract first) so open_price (11:00 AM) and close_price (3:00 PM) are exact
+  const chronologicalTrades = [...rawTrades].sort((a, b) => {
+    const cA = String(a.contractId || a.contract_no || a.contractNo || '');
+    const cB = String(b.contractId || b.contract_no || b.contractNo || '');
+    return cA.localeCompare(cB, undefined, { numeric: true });
+  });
 
-  for (const trade of rawTrades) {
-    const cid = String(trade.contractId || trade.contract_no || '').trim();
+  const stockAggMap = new Map();
+  const seenContracts = new Set();
+  const pureEquityTrades = [];
+
+  for (const trade of chronologicalTrades) {
+    const cid = String(trade.contractId || trade.contract_no || trade.contractNo || '').trim();
     if (cid) {
       if (seenContracts.has(cid)) continue;
       seenContracts.add(cid);
     }
 
-    const symbol = String(trade.contractSymbol || trade.stockSymbol || trade.symbol || '').toUpperCase().trim();
-    const qty = Number(trade.contractQuantity || trade.quantity || trade.qty || 0);
-    const rate = Number(trade.contractRate || trade.rate || 0);
-    const amt = Number(trade.contractAmount || trade.amount || (qty * rate));
-    const buyer = Number(trade.buyerMemberId || trade.buyerBroker || trade.buyer || 0);
-    const seller = Number(trade.sellerMemberId || trade.sellerBroker || trade.seller || 0);
+    const symbol = String(trade.contractSymbol || trade.stockSymbol || trade.symbol || '')
+      .toUpperCase()
+      .trim();
 
-    if (!symbol || qty <= 0) continue;
+    // Pure-Equity Guard: Exclude Mutual Funds (NIBLPF), Debentures, and Promoter Shares
+    if (!symbol || isNonEquityScrip(symbol)) continue;
 
-    // Exclude circular self-matched wash trades (buyer === seller) from distorting net flow
-    const isWashTrade = buyer > 0 && seller > 0 && buyer === seller;
+    const qty = Math.round(Number(trade.contractQuantity || trade.quantity || trade.qty || trade.kitta || 0));
+    const rate = Number(trade.contractRate || trade.rate || trade.price || 0);
+    const amt = Number(trade.contractAmount || trade.amount || qty * rate);
+    const buyer = parseBrokerInt(trade.buyerMemberId ?? trade.buyerBroker ?? trade.buyer_broker ?? trade.buyer);
+    const seller = parseBrokerInt(trade.sellerMemberId ?? trade.sellerBroker ?? trade.seller_broker ?? trade.seller);
 
-    // Zero-Sum Guard: If trades come from one-sided matrix reconstruction (seller only, no buyer),
-    // do NOT add to stock total volume/turnover again (already counted on the buyer side).
-    const isOneSidedSellReconstruction = !buyer && Boolean(seller);
+    if (qty <= 0 || (!buyer && !seller)) continue;
+    pureEquityTrades.push(trade);
 
-    let s = stockMap.get(symbol);
+    let s = stockAggMap.get(symbol);
     if (!s) {
-      const initialRate = rate > 0 ? rate : (amt > 0 ? amt / qty : 100);
+      const initialRate = rate > 0 ? rate : amt > 0 ? amt / qty : 100;
       s = {
         open: initialRate,
         high: initialRate,
         low: initialRate,
         close: initialRate,
-        vol: 0,
-        amt: 0,
+        buyVolSum: 0,
+        sellVolSum: 0,
+        buyAmtSum: 0,
+        sellAmtSum: 0,
         brokers: new Map(),
       };
-      stockMap.set(symbol, s);
+      stockAggMap.set(symbol, s);
     }
 
-    const currentRate = rate > 0 ? rate : (amt > 0 ? amt / qty : s.close);
+    const currentRate = rate > 0 ? rate : amt > 0 ? amt / qty : s.close;
     if (currentRate > 0) {
       if (currentRate > s.high) s.high = currentRate;
       if (currentRate < s.low || s.low <= 0) s.low = currentRate;
       s.close = currentRate;
     }
 
-    if (!isOneSidedSellReconstruction) {
-      s.vol += qty;
-      s.amt += amt;
-    }
-
-    // Accumulate Buyer Broker (skip wash trades so smart money concentration is 100% genuine)
-    if (buyer && !isWashTrade) {
+    if (buyer > 0) {
       const b = s.brokers.get(buyer) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
       b.buyVol += qty;
       b.buyAmt += amt;
       s.brokers.set(buyer, b);
+      s.buyVolSum += qty;
+      s.buyAmtSum += amt;
     }
 
-    // Accumulate Seller Broker
-    if (seller && !isWashTrade) {
+    if (seller > 0) {
       const b = s.brokers.get(seller) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
       b.sellVol += qty;
       b.sellAmt += amt;
       s.brokers.set(seller, b);
+      s.sellVolSum += qty;
+      s.sellAmtSum += amt;
     }
   }
 
@@ -293,6 +340,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     INSERT INTO daily_stock_summary (trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(trade_date, symbol) DO UPDATE SET
+      open_price = excluded.open_price,
       high_price = MAX(daily_stock_summary.high_price, excluded.high_price),
       low_price = MIN(daily_stock_summary.low_price, excluded.low_price),
       close_price = excluded.close_price,
@@ -311,15 +359,42 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
   `);
 
   let count = 0;
-  for (const [symbol, data] of stockMap.entries()) {
-    upsertStock.run(tradeDate, symbol, data.open, data.high, data.low, data.close, data.vol, data.amt);
+  for (const [symbol, data] of stockAggMap.entries()) {
+    // Enforce strict Zero-Sum Conservation Law: sum(buy_vol) === sum(sell_vol) === total_volume
+    if (data.buyVolSum !== data.sellVolSum) {
+      const resBroker = data.brokers.get(999) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
+      if (data.buyVolSum > data.sellVolSum) {
+        resBroker.sellVol += data.buyVolSum - data.sellVolSum;
+        resBroker.sellAmt += Math.max(0, data.buyAmtSum - data.sellAmtSum);
+        data.sellVolSum = data.buyVolSum;
+        data.sellAmtSum = Math.max(data.buyAmtSum, data.sellAmtSum);
+      } else {
+        resBroker.buyVol += data.sellVolSum - data.buyVolSum;
+        resBroker.buyAmt += Math.max(0, data.sellAmtSum - data.buyAmtSum);
+        data.buyVolSum = data.sellVolSum;
+        data.buyAmtSum = Math.max(data.buyAmtSum, data.sellAmtSum);
+      }
+      data.brokers.set(999, resBroker);
+    }
+
+    const conservedVolume = data.buyVolSum;
+    const conservedTurnover = Number(data.buyAmtSum.toFixed(2));
+
+    upsertStock.run(tradeDate, symbol, data.open, data.high, data.low, data.close, conservedVolume, conservedTurnover);
     count++;
     for (const [brokerId, bData] of data.brokers.entries()) {
       upsertBroker.run(tradeDate, symbol, brokerId, bData.buyVol, bData.sellVol, bData.buyAmt, bData.sellAmt);
     }
   }
 
-  // Prune records older than 40 trading days to keep DB tiny (< 25 MB) and super fast
+  // Also persist tick-level contracts (for latest 5 sessions) to power Floorsheet Hub & 5D Volume Profile (POC)
+  try {
+    ingestFloorsheetContractsTransaction(tradeDate, pureEquityTrades);
+  } catch (contractErr) {
+    console.warn(`[ledgerStore] Tick contract ingestion notice for ${tradeDate}:`, contractErr.message);
+  }
+
+  // Prune records older than 40 trading days
   db.prepare(`
     DELETE FROM daily_stock_summary 
     WHERE trade_date NOT IN (
@@ -334,13 +409,156 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     )
   `).run();
 
+  db.prepare(`
+    DELETE FROM floorsheet_contracts
+    WHERE trade_date NOT IN (
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 10
+    )
+  `).run();
+
   return count;
 });
 
 /**
- * Exports compressed backup file `data/ledger_seed_snapshot.json.gz`
- * Ensures Render Free Tier containers can immediately bootstrap on cold-boot without scraping.
+ * Ingests tick-level floorsheet contracts into floorsheet_contracts with date-bounded Tick-Test Aggressor inference
  */
+export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, rawTrades) => {
+  if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
+
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO floorsheet_contracts
+    (contract_no, symbol, trade_date, trade_time, buyer_broker, seller_broker, kitta, rate, amount, aggressor_side, is_internal_cross, is_whale_print)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const bySymbol = new Map();
+  for (const t of rawTrades) {
+    const sym = String(t.stockSymbol || t.contractSymbol || t.symbol || "").toUpperCase().trim();
+    if (!sym) continue;
+    if (!bySymbol.has(sym)) bySymbol.set(sym, []);
+    bySymbol.get(sym).push(t);
+  }
+
+  let count = 0;
+  for (const [sym, trades] of bySymbol.entries()) {
+    // Sort chronologically by date, then time, then contract number ascending
+    trades.sort((a, b) => {
+      const dA = String(a.businessDate || a.tradeDate || a.trade_date || tradeDate);
+      const dB = String(b.businessDate || b.tradeDate || b.trade_date || tradeDate);
+      if (dA !== dB) return dA.localeCompare(dB);
+      const cA = String(a.contractId || a.contract_no || a.contractNo || "");
+      const cB = String(b.contractId || b.contract_no || b.contractNo || "");
+      return cA.localeCompare(cB, undefined, { numeric: true });
+    });
+
+    let prevDate = null;
+    let prevRate = null;
+    let lastDir = "NEUTRAL";
+
+    for (const t of trades) {
+      const cid = String(t.contractId || t.contract_no || t.contractNo || `FS-${tradeDate}-${sym}-${count + 1}`);
+      const date = String(t.businessDate || t.tradeDate || t.trade_date || tradeDate);
+      const time = String(t.tradeTime || t.trade_time || "");
+      const buyer = Number(t.buyerMemberId || t.buyerBroker || t.buyer_broker || t.buyer || 0);
+      const seller = Number(t.sellerMemberId || t.sellerBroker || t.seller_broker || t.seller || 0);
+      const qty = Number(t.contractQuantity || t.quantity || t.qty || t.kitta || 0);
+      const rate = Number(t.contractRate || t.rate || t.price || 0);
+      const amt = Number(t.contractAmount || t.amount || qty * rate);
+
+      if (qty <= 0) continue;
+
+      // Reset tick-test state at session date boundaries
+      if (date !== prevDate) {
+        prevDate = date;
+        prevRate = null;
+        lastDir = "NEUTRAL";
+      }
+
+      let dir = lastDir;
+      if (t.aggressor || t.aggressor_side) {
+        dir = String(t.aggressor || t.aggressor_side).toUpperCase();
+        lastDir = dir;
+      } else if (prevRate !== null && rate > 0) {
+        if (rate > prevRate) {
+          dir = "BUY";
+          lastDir = "BUY";
+        } else if (rate < prevRate) {
+          dir = "SELL";
+          lastDir = "SELL";
+        }
+      }
+      if (rate > 0) prevRate = rate;
+
+      const isInternal = buyer > 0 && buyer === seller ? 1 : 0;
+      const isWhale = qty >= 500 || amt >= 500000 ? 1 : 0;
+
+      insert.run(cid, sym, date, time, buyer, seller, qty, rate, amt, dir, isInternal, isWhale);
+      count++;
+    }
+  }
+
+  return count;
+});
+
+/**
+ * Retrieves 5D volume profile nodes and Point of Control (POC) scoped to the scrip's own last 5 trading dates
+ */
+export function getScripVolumeProfile(symbol) {
+  if (!symbol) return { pocPrice: null, nodes: [] };
+  const cleanSym = String(symbol).toUpperCase().trim();
+  try {
+    const rows = db.prepare(`
+      WITH scrip_dates AS (
+        SELECT DISTINCT trade_date
+        FROM floorsheet_contracts
+        WHERE UPPER(symbol) = @symbol
+        ORDER BY trade_date DESC
+        LIMIT 5
+      )
+      SELECT
+        ROUND(f.rate, 0) AS priceBucket,
+        SUM(f.kitta) AS totalKitta,
+        SUM(CASE WHEN f.aggressor_side = 'BUY' THEN f.kitta ELSE 0 END) AS buyKitta,
+        SUM(CASE WHEN f.aggressor_side = 'SELL' THEN f.kitta ELSE 0 END) AS sellKitta,
+        SUM(CASE WHEN f.is_internal_cross = 1 THEN f.kitta ELSE 0 END) AS internalCrossKitta,
+        COUNT(*) AS contractCount
+      FROM floorsheet_contracts f
+      INNER JOIN scrip_dates d ON f.trade_date = d.trade_date
+      WHERE UPPER(f.symbol) = @symbol
+      GROUP BY ROUND(f.rate, 0)
+      ORDER BY priceBucket DESC
+    `).all({ symbol: cleanSym });
+
+    let maxKitta = 0;
+    let pocPrice = null;
+    let grandTotalKitta = 0;
+
+    for (const r of rows) {
+      grandTotalKitta += r.totalKitta;
+      if (r.totalKitta > maxKitta) {
+        maxKitta = r.totalKitta;
+        pocPrice = r.priceBucket;
+      }
+    }
+
+    const nodes = rows.map(r => ({
+      priceBucket: r.priceBucket,
+      totalKitta: r.totalKitta,
+      buyKitta: r.buyKitta,
+      sellKitta: r.sellKitta,
+      internalCrossKitta: r.internalCrossKitta,
+      pctOfTotalVolume:
+        grandTotalKitta > 0 ? Number(((r.totalKitta / grandTotalKitta) * 100).toFixed(1)) : 0,
+      isPoc: r.priceBucket === pocPrice,
+    }));
+
+    return { pocPrice, nodes };
+  } catch (err) {
+    console.warn(`[ledgerStore] getScripVolumeProfile error for ${cleanSym}:`, err.message);
+    return { pocPrice: null, nodes: [] };
+  }
+}
+
 export function exportLedgerSnapshotGz() {
   try {
     const dates = getStoredDates(40);
@@ -1069,69 +1287,6 @@ export function getScripLedgerTelemetry(rawSymbol) {
 }
 
 /**
- * Ingests tick-level floorsheet contracts into floorsheet_contracts with tick-test aggressor inference
- */
-export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, rawTrades) => {
-  if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
-
-  const insert = db.prepare(`
-    INSERT OR REPLACE INTO floorsheet_contracts
-    (contract_no, symbol, trade_date, trade_time, buyer_broker, seller_broker, kitta, rate, amount, aggressor_side, is_internal_cross, is_whale_print)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const bySymbol = new Map();
-  for (const t of rawTrades) {
-    const sym = String(t.stockSymbol || t.contractSymbol || t.symbol || '').toUpperCase().trim();
-    if (!sym) continue;
-    if (!bySymbol.has(sym)) bySymbol.set(sym, []);
-    bySymbol.get(sym).push(t);
-  }
-
-  let count = 0;
-  for (const [sym, trades] of bySymbol.entries()) {
-    trades.sort((a, b) => {
-      const cA = String(a.contractId || a.contract_no || a.contractNo || '');
-      const cB = String(b.contractId || b.contract_no || b.contractNo || '');
-      return cA.localeCompare(cB, undefined, { numeric: true });
-    });
-
-    let prevRate = null;
-    let lastDir = 'NEUTRAL';
-
-    for (const t of trades) {
-      const cid = String(t.contractId || t.contract_no || t.contractNo || `FS-${Date.now()}-${count + 1}`);
-      const date = String(t.businessDate || t.tradeDate || t.trade_date || tradeDate);
-      const time = String(t.tradeTime || t.trade_time || '');
-      const buyer = Number(t.buyerMemberId || t.buyerBroker || t.buyer_broker || t.buyer || 0);
-      const seller = Number(t.sellerMemberId || t.sellerBroker || t.seller_broker || t.seller || 0);
-      const qty = Number(t.contractQuantity || t.quantity || t.kitta || 0);
-      const rate = Number(t.contractRate || t.rate || t.price || 0);
-      const amt = Number(t.contractAmount || t.amount || (qty * rate));
-
-      if (qty <= 0) continue;
-
-      let dir = lastDir;
-      if (t.aggressor || t.aggressor_side) {
-        dir = String(t.aggressor || t.aggressor_side).toUpperCase();
-      } else if (prevRate !== null && rate > 0) {
-        if (rate > prevRate) { dir = 'BUY'; lastDir = 'BUY'; }
-        else if (rate < prevRate) { dir = 'SELL'; lastDir = 'SELL'; }
-      }
-      if (rate > 0) prevRate = rate;
-
-      const isInternal = (buyer > 0 && buyer === seller) ? 1 : 0;
-      const isWhale = (qty >= 500 || amt >= 500000) ? 1 : 0;
-
-      insert.run(cid, sym, date, time, buyer, seller, qty, rate, amt, dir, isInternal, isWhale);
-      count++;
-    }
-  }
-
-  return count;
-});
-
-/**
  * Retrieves raw floorsheet contracts for a symbol (newest first)
  */
 export function getScripFloorsheet(symbol, limit = 100) {
@@ -1166,54 +1321,6 @@ export function getScripFloorsheet(symbol, limit = 100) {
   } catch (err) {
     console.warn(`[ledgerStore] getScripFloorsheet error for ${cleanSym}:`, err.message);
     return [];
-  }
-}
-
-/**
- * Retrieves 5D volume profile nodes and Point of Control (POC) for a symbol
- */
-export function getScripVolumeProfile(symbol) {
-  if (!symbol) return { pocPrice: null, nodes: [] };
-  const cleanSym = String(symbol).toUpperCase().trim();
-  try {
-    const rows = db.prepare(`
-      SELECT
-        price_bucket AS priceBucket,
-        total_kitta AS totalKitta,
-        buy_aggressor_kitta AS buyKitta,
-        sell_aggressor_kitta AS sellKitta,
-        internal_cross_kitta AS internalCrossKitta,
-        contract_count AS contractCount
-      FROM v_scrip_volume_profile_5d
-      WHERE symbol = ?
-      ORDER BY price_bucket DESC
-    `).all(cleanSym);
-
-    let maxKitta = 0;
-    let pocPrice = null;
-    let grandTotalKitta = 0;
-
-    for (const r of rows) {
-      grandTotalKitta += r.totalKitta;
-      if (r.totalKitta > maxKitta) {
-        maxKitta = r.totalKitta;
-        pocPrice = r.priceBucket;
-      }
-    }
-
-    const nodes = rows.map(r => ({
-      priceBucket: r.priceBucket,
-      totalKitta: r.totalKitta,
-      buyKitta: r.buyKitta,
-      sellKitta: r.sellKitta,
-      pctOfTotalVolume: grandTotalKitta > 0 ? Number(((r.totalKitta / grandTotalKitta) * 100).toFixed(1)) : 0,
-      isPoc: r.priceBucket === pocPrice,
-    }));
-
-    return { pocPrice, nodes };
-  } catch (err) {
-    console.warn(`[ledgerStore] getScripVolumeProfile error for ${cleanSym}:`, err.message);
-    return { pocPrice: null, nodes: [] };
   }
 }
 
@@ -1277,6 +1384,7 @@ export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = nul
 
     return {
       symbol: cleanSym,
+      ltp: refPrice,
       bids,
       asks,
       totalBidQty,
@@ -1320,11 +1428,54 @@ try {
   }
 } catch (_) {}
 
+
+/**
+ * Evaluates regulatory and fundamental hard vetoes for a given scrip:
+ * 1. Promoter Lock-In Cliff: Expiry in < 120 days
+ * 2. BFI Banking Health: NPL >= 5.0% or CAR < 11.0%
+ * 3. Hydropower Capex: Capex > Rs. 20 Cr/MW
+ */
+function evaluateRegulatoryVetoes(symbol, fundamentals = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  const vetoes = [];
+
+  // 1. Promoter Lock-In Cliff (< 120 days)
+  const lockInDays = fundamentals.lockInDays ?? fundamentals.daysRemaining ?? null;
+  if (lockInDays !== null && lockInDays > 0 && lockInDays < 120) {
+    vetoes.push(`HARD VETO: Promoter lock-in expires in ${lockInDays} days (< 120d statutory supply flood cliff)`);
+  }
+
+  // 2. BFI Banking Health (NPL >= 5.0%, CAR < 11.0%)
+  const npl = Number(fundamentals.npl || fundamentals.nplPct || 0);
+  const car = Number(fundamentals.car || fundamentals.carPct || 0);
+  if (npl >= 5.0) {
+    vetoes.push(`HARD VETO: Non-Performing Loans (NPL) at ${npl.toFixed(2)}% (>= 5.0% regulatory ceiling)`);
+  }
+  if (car > 0 && car < 11.0) {
+    vetoes.push(`HARD VETO: Capital Adequacy Ratio (CAR) at ${car.toFixed(2)}% (< 11.0% NRB Class A requirement)`);
+  }
+
+  // 3. Hydropower Capex (> Rs. 20 Cr/MW)
+  const capexPerMw = Number(fundamentals.capexPerMw || fundamentals.costPerMw || 0);
+  if (capexPerMw > 20) {
+    vetoes.push(`HARD VETO: Hydropower Capex at Rs. ${capexPerMw.toFixed(2)} Cr/MW (> Rs. 20 Cr/MW ceiling)`);
+  }
+
+  return {
+    symbol: sym,
+    hasVeto: vetoes.length > 0,
+    vetoes,
+    status: vetoes.length > 0 ? 'VETOED' : 'CLEAR'
+  };
+}
+
 export {
   rebuildSignalTrackRecord,
   initSignalLedgerTable,
   ensureUpgradedLedgerSchema,
   calculateNepseNetReturn,
   evaluateBrokerSmartMoney,
+  evaluateRegulatoryVetoes,
+  isNonEquityScrip,
 };
 

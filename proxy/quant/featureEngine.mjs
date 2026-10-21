@@ -61,7 +61,8 @@ export function extractSafeFeatureVector(candles = [], idx = candles.length - 1)
   const ret20d = clampFinite(safeDiv(close - prev20, prev20, 0), -1.0, 1.5, 0);
 
   // Rolling 20-day mean & standard deviation with zero-variance circuit guard
-  const win20 = slice.slice(-Math.min(20, n)).map(c => Number(c.close || close));
+  const closesAll = slice.map(c => Math.max(EPSILON, Number(c.close ?? c.ltp ?? close)));
+  const win20 = closesAll.slice(-Math.min(20, n));
   const mean20 = win20.reduce((a, b) => a + b, 0) / Math.max(1, win20.length);
   const variance20 = win20.reduce((a, b) => a + Math.pow(b - mean20, 2), 0) / Math.max(1, win20.length);
   const std20 = Math.sqrt(Math.max(0, variance20));
@@ -72,28 +73,13 @@ export function extractSafeFeatureVector(candles = [], idx = candles.length - 1)
   const bbWidth = 4 * std20;
   const bbPercentB = bbWidth > EPSILON ? clampFinite((close - bbLower) / bbWidth, -0.5, 1.5, 0.5) : 0.5;
 
-  // Safe Wilder RSI-14 (handles AvgLoss === 0 during consecutive upper circuits)
-  let gains = 0;
-  let losses = 0;
-  const rsiLookback = Math.min(14, n - 1);
-  for (let i = n - rsiLookback; i < n; i++) {
-    const diff = Number(slice[i].close || 0) - Number(slice[i - 1].close || 0);
-    if (diff > 0) gains += diff;
-    else if (diff < 0) losses += Math.abs(diff);
-  }
-  let rsi14 = 50;
-  if (rsiLookback >= 2) {
-    if (losses < EPSILON && gains > EPSILON) rsi14 = 95; // Capped at 95 instead of 100/Infinity
-    else if (gains < EPSILON && losses > EPSILON) rsi14 = 5;
-    else if (gains > EPSILON || losses > EPSILON) {
-      const rs = safeDiv(gains / rsiLookback, losses / rsiLookback, 1.0);
-      rsi14 = 100 - (100 / (1 + rs));
-    }
-  }
+  // Safe Wilder RSI-14 (handles AvgLoss === 0 during consecutive upper circuits & flat series)
+  const rsi14 = computeRSI(closesAll, Math.min(14, Math.max(2, n - 1)));
   const rsi14Norm = clampFinite((rsi14 - 50) / 50, -1.0, 1.0, 0);
 
-  // Safe RVOL-20 (handles zero historical volume)
-  const vols20 = slice.slice(-Math.min(20, n)).map(c => Math.max(0, Number(c.volume || 0)));
+  // Safe RVOL-20 (strictly prior 20 sessions when n >= 2, guarding against zero historical volume)
+  const priorVolSlice = n >= 2 ? slice.slice(-Math.min(21, n), -1) : slice;
+  const vols20 = priorVolSlice.map(c => Math.max(0, Number(c.volume || 0)));
   const avgVol20 = vols20.reduce((a, b) => a + b, 0) / Math.max(1, vols20.length);
   const currVol = Math.max(0, Number(curr.volume || 0));
   const rvol20 = avgVol20 > EPSILON ? clampFinite(currVol / avgVol20, 0, 8.0, 1.0) : 1.0;
@@ -111,11 +97,11 @@ export function extractSafeFeatureVector(candles = [], idx = candles.length - 1)
   const atr14 = trSum / Math.max(1, atrLookback);
   const atrPct14 = clampFinite(safeDiv(atr14, close, 0.025), 0.002, 0.15, 0.025);
 
-  // Safe EMA-20 & EMA-50 Relative Distance
-  const win50 = slice.slice(-Math.min(50, n)).map(c => Number(c.close || close));
-  const mean50 = win50.reduce((a, b) => a + b, 0) / Math.max(1, win50.length);
-  const ema20Dist = clampFinite(safeDiv(close - mean20, mean20, 0), -0.5, 0.5, 0);
-  const ema50Dist = clampFinite(safeDiv(close - mean50, mean50, 0), -0.6, 0.6, 0);
+  // True EMA-20 & EMA-50 Relative Distance
+  const ema20Val = computeEMA(closesAll, Math.min(20, n)) || mean20;
+  const ema50Val = computeEMA(closesAll, Math.min(50, n)) || ema20Val;
+  const ema20Dist = clampFinite(safeDiv(close - ema20Val, ema20Val, 0), -0.5, 0.5, 0);
+  const ema50Dist = clampFinite(safeDiv(close - ema50Val, ema50Val, 0), -0.6, 0.6, 0);
 
   const rawFeatures = {
     ret1d: +ret1d.toFixed(4),
@@ -156,20 +142,24 @@ export function computeRSI(closes, period = 14) {
   if (!Array.isArray(closes) || closes.length < period + 1) return 50;
   let gains = 0, losses = 0;
   for (let i = 1; i <= period; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff; else losses -= diff;
+    const diff = Number(closes[i] || 0) - Number(closes[i - 1] || 0);
+    if (diff > 0) gains += diff;
+    else if (diff < 0) losses -= diff;
   }
   let avgGain = gains / period;
   let avgLoss = losses / period;
 
   for (let i = period + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
+    const diff = Number(closes[i] || 0) - Number(closes[i - 1] || 0);
     const gain = diff > 0 ? diff : 0;
     const loss = diff < 0 ? -diff : 0;
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;
   }
-  if (avgLoss === 0) return 100;
+  // Zero-variance flat price guard (returns neutral 50 instead of 100)
+  if (avgGain < EPSILON && avgLoss < EPSILON) return 50;
+  if (avgLoss < EPSILON) return 95;
+  if (avgGain < EPSILON) return 5;
   const rs = avgGain / avgLoss;
   return Number((100 - 100 / (1 + rs)).toFixed(2));
 }
@@ -589,9 +579,11 @@ async function getSentimentFeatures(hours = 24) {
 
 /**
  * Macro features from NRB releases.
- * Priority: DB → in-memory macroCache (scraped) → authentic null state
+ * Priority: DB → in-memory macroCache (scraped) → baseline fallback defaults
  */
 export async function getMacroFeatures() {
+  const baseline = getMacroCache();
+
   // 1. Try DB
   if (pool) {
     try {
@@ -599,39 +591,28 @@ export async function getMacroFeatures() {
         `SELECT indicator, value, as_of_date
          FROM macro_indicators
          WHERE indicator IN ('m2_growth_pct','interest_rate_pct','cpi_inflation_pct',
-                              'npr_usd_rate','remittance_growth_pct')
+                              'npr_usd_rate','remittance_growth_pct','cd_ratio_pct','interbank_rate_pct')
          ORDER BY as_of_date DESC`
       );
       if (rows.length > 0) {
         const latest = {
-          m2_growth_pct: null,
-          interest_rate_pct: null,
-          cpi_inflation_pct: null,
-          npr_usd_rate: null,
-          remittance_growth_pct: null,
+          ...baseline,
           status: 'live_db'
         };
         for (const r of rows) {
-          if (r.indicator) latest[r.indicator] = Number(r.value);
+          if (r.indicator && Number.isFinite(Number(r.value))) {
+            latest[r.indicator] = Number(r.value);
+          }
         }
         return latest;
       }
     } catch (_) {}
   }
 
-  // 2. Use in-memory macro cache (populated by server.mjs scraper)
-  if (hasMacroCache()) {
-    return { ...getMacroCache(), status: 'scraped_cache' };
-  }
-
-  // 3. Authentic missing state (No hardcoded fake macro constants)
+  // 2. Use in-memory macro cache (scraped if available, otherwise baseline fallback so widget never flashes NRB Offline)
   return {
-    m2_growth_pct: null,
-    interest_rate_pct: null,
-    cpi_inflation_pct: null,
-    npr_usd_rate: null,
-    remittance_growth_pct: null,
-    status: 'insufficient_history'
+    ...baseline,
+    status: hasMacroCache() ? 'scraped_cache' : 'baseline_fallback'
   };
 }
 

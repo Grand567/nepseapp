@@ -9,7 +9,9 @@ import {
 
 export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const isNe = lang === 'ne';
-  const [waccLots, setWaccLots] = useState({ lot1: true, lot2: true });
+  const [waccLots, setWaccLots] = useState({ lot1: true, lot2: true, bonusLot: false, rightLot: false });
+  const [bonusPct, setBonusPct] = useState(10);
+  const [rightPct, setRightPct] = useState(20);
   const [sellingPrice, setSellingPrice] = useState(585);
   const [taxRegime, setTaxRegime] = useState('long'); // 'long', 'short', 'corp'
 
@@ -17,24 +19,34 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
   const lot1Cost = lot1Kitta * 100.00;
 
   const lot2Kitta = waccLots.lot2 ? 400 : 0;
-  const lot2Cost = lot2Kitta * 510.00;
+  const lot2Cost = lot2Kitta > 0 ? calculateBuyDetails(lot2Kitta, 510.00).totalAmount : 0;
 
-  const totalKitta = lot1Kitta + lot2Kitta;
-  const totalCost = lot1Cost + lot2Cost;
+  const baseKitta = lot1Kitta + lot2Kitta;
+  const bonusKitta = waccLots.bonusLot ? Math.floor((baseKitta * Math.max(0, Number(bonusPct) || 0)) / 100) : 0;
+  const bonusCost = 0; // Economic cost of bonus shares is Rs. 0 (dilutes WACC proportionally)
+
+  const rightKitta = waccLots.rightLot ? Math.floor((baseKitta * Math.max(0, Number(rightPct) || 0)) / 100) : 0;
+  const rightCost = rightKitta * 100.00; // Right shares subscribed at Rs. 100 par value
+
+  const totalKitta = baseKitta + bonusKitta + rightKitta;
+  const totalCost = lot1Cost + lot2Cost + bonusCost + rightCost;
   const waccRate = totalKitta > 0 ? (totalCost / totalKitta) : 0;
 
   const grossTurnover = totalKitta * sellingPrice;
-  const capitalGain = Math.max(0, grossTurnover - totalCost);
+  const brokerComm = totalKitta > 0 && grossTurnover > 0 ? calculateBrokerCommission(grossTurnover) : 0;
+  const sebonFee = totalKitta > 0 && grossTurnover > 0 ? calculateSebonFee(grossTurnover) : 0;
+  const dpFee = totalKitta > 0 ? DP_CHARGE : 0;
+  const effectiveBrokerRatePct = grossTurnover > 0 ? ((brokerComm / grossTurnover) * 100).toFixed(2) : '0.36';
 
-  const brokerComm = grossTurnover * 0.0034;
-  const sebonFee = grossTurnover * 0.00015;
-  const dpFee = totalKitta > 0 ? 25.00 : 0;
+  // Statutory IRD / CDSC Rule: CGT is levied on Net Gain after deducting sell-side statutory fees
+  const netSellProceedsBeforeTax = Math.max(0, grossTurnover - brokerComm - sebonFee - dpFee);
+  const capitalGain = Math.max(0, netSellProceedsBeforeTax - totalCost);
 
   const cgtRates = { long: 0.05, short: 0.075, corp: 0.10 };
-  const cgtTax = capitalGain * cgtRates[taxRegime];
+  const cgtTax = +(capitalGain * cgtRates[taxRegime]).toFixed(2);
 
-  const netPayout = Math.max(0, grossTurnover - (brokerComm + sebonFee + dpFee + cgtTax));
-  const netProfit = netPayout - totalCost;
+  const netPayout = Math.max(0, +(netSellProceedsBeforeTax - cgtTax).toFixed(2));
+  const netProfit = +(netPayout - totalCost).toFixed(2);
 
   const toggleLot = (lotKey) => {
     setWaccLots(prev => ({ ...prev, [lotKey]: !prev[lotKey] }));
@@ -56,7 +68,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
         <p className="text-xs text-slate-300 leading-relaxed">
           {isNe
             ? 'WACC ले तपाईंले सेयर किनेको भारित औसत मूल्य देखाउँछ। यसबाट बेच्दा कति ब्रोकर कमिसन र लाभकर (CGT) कट्टी भएर बैंक खातामा पैसा आउँछ, यहाँ यकिन गर्नुहोस्।'
-            : 'WACC reflects your weighted average cost per share. Calculate the exact broker commission and Capital Gain Tax (CGT) deducted upon settlement.'}
+            : 'WACC reflects your weighted average cost per share including bonus/right dilution. Calculate the exact tiered SEBON broker commission and Capital Gain Tax (CGT) deducted upon settlement.'}
         </p>
       </div>
 
@@ -71,7 +83,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
               NPR {waccRate.toFixed(2)}
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">
-              {isNe ? 'प्रति कित्ता लागत (Formula: कुल खरिद ÷ कुल कित्ता)' : 'Per share cost (Total Cost ÷ Total Shares)'}
+              {isNe ? 'प्रति कित्ता लागत (Formula: कुल खरिद ÷ कुल कित्ता)' : 'Per share cost (Total Cost ÷ Total Diluted Shares)'}
             </div>
           </div>
           <div className="text-right">
@@ -84,7 +96,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
         {/* Lots Breakdown with Checkboxes */}
         <div className="border-t border-white/[0.06] pt-3 space-y-2">
           <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-            <span>{isNe ? 'Verified MeroShare Lots (तपाईंको खरिद लटहरू):' : 'Verified MeroShare Purchase Lots:'}</span>
+            <span>{isNe ? 'Verified MeroShare Lots (तपाईंको खरिद लटहरू):' : 'Verified MeroShare Purchase & Corporate Action Lots:'}</span>
             <span className="text-[10px] text-sky-400 font-mono">EDIS Verified</span>
           </div>
 
@@ -105,7 +117,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
                 className="rounded accent-sky-500 pointer-events-none"
               />
               <div>
-                <div className="font-semibold text-white">Lot #1: IPO / Bonus Shares</div>
+                <div className="font-semibold text-white">Lot #1: Primary IPO Allotment</div>
                 <div className="text-[10px] text-slate-400 font-mono">
                   {isNe ? '200 Kitta @ NPR 100.00 • 742 दिन (दीर्घकालीन)' : '200 Kitta @ NPR 100.00 • 742 Days (Long)'}
                 </div>
@@ -135,13 +147,81 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
               <div>
                 <div className="font-semibold text-white">Lot #2: Secondary Market (Broker 58)</div>
                 <div className="text-[10px] text-slate-400 font-mono">
-                  {isNe ? '400 Kitta @ NPR 510.00 • 114 दिन (अल्पकालीन)' : '400 Kitta @ NPR 510.00 • 114 Days (Short)'}
+                  {isNe ? '400 Kitta @ NPR 510.00 (+ कमिसन/शुल्क) • 114 दिन' : '400 Kitta @ NPR 510.00 (+ Tiered Fees) • 114 Days (Short)'}
                 </div>
               </div>
             </div>
             <span className="text-[10px] font-bold font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
               &lt;365d (7.5% CGT)
             </span>
+          </div>
+
+          {/* Bonus Share Dilution Lot */}
+          <div
+            onClick={() => toggleLot('bonusLot')}
+            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
+              waccLots.bonusLot
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
+                : 'bg-[#0B0F17] border-white/[0.04] text-slate-500 opacity-60'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={waccLots.bonusLot}
+                readOnly
+                className="rounded accent-emerald-500 pointer-events-none"
+              />
+              <div>
+                <div className="font-semibold text-white">Bonus Share Dilution ({bonusPct}% Bonus)</div>
+                <div className="text-[10px] text-slate-400 font-mono">
+                  +{bonusKitta} Kitta @ NPR 0.00 Economic Outlay
+                </div>
+              </div>
+            </div>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={bonusPct}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setBonusPct(Math.max(0, Number(e.target.value) || 0))}
+              className="w-16 rounded-lg border border-white/[0.1] bg-[#0B0F17] px-2 py-1 text-right font-mono text-xs text-emerald-400"
+            />
+          </div>
+
+          {/* Right Share Dilution Lot */}
+          <div
+            onClick={() => toggleLot('rightLot')}
+            className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
+              waccLots.rightLot
+                ? 'bg-indigo-500/10 border-indigo-500/30 text-white'
+                : 'bg-[#0B0F17] border-white/[0.04] text-slate-500 opacity-60'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <input
+                type="checkbox"
+                checked={waccLots.rightLot}
+                readOnly
+                className="rounded accent-indigo-500 pointer-events-none"
+              />
+              <div>
+                <div className="font-semibold text-white">Right Share Subscription ({rightPct}% Right)</div>
+                <div className="text-[10px] text-slate-400 font-mono">
+                  +{rightKitta} Kitta @ NPR 100.00 Par Value
+                </div>
+              </div>
+            </div>
+            <input
+              type="number"
+              min="0"
+              max="200"
+              value={rightPct}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setRightPct(Math.max(0, Number(e.target.value) || 0))}
+              className="w-16 rounded-lg border border-white/[0.1] bg-[#0B0F17] px-2 py-1 text-right font-mono text-xs text-indigo-400"
+            />
           </div>
         </div>
       </div>
@@ -245,7 +325,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
           </span>
         </div>
         <div className="flex justify-between text-slate-400">
-          <span>{isNe ? 'सकल पुँजीगत नाफा (Gross Profit):' : 'Gross Capital Gain:'}</span>
+          <span>{isNe ? 'कर योग्य खुद नाफा (Net Taxable Gain):' : 'Net Taxable Capital Gain:'}</span>
           <span className="text-emerald-400 font-bold">
             +रु {capitalGain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
@@ -253,7 +333,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
 
         <div className="border-t border-white/[0.04] pt-1.5 space-y-1 text-[11px] text-slate-400">
           <div className="flex justify-between">
-            <span>• {isNe ? 'ब्रोकर कमिसन (Broker Fee ~0.34%):' : 'Broker Fee (~0.34%):'}</span>
+            <span>• {isNe ? `ब्रोकर कमिसन (SEBON Tier ${effectiveBrokerRatePct}%):` : `Broker Fee (SEBON Tier ${effectiveBrokerRatePct}%):`}</span>
             <span className="text-rose-400">- रु {brokerComm.toFixed(2)}</span>
           </div>
           <div className="flex justify-between">
@@ -265,7 +345,7 @@ export function WaccTaxCalculator({ onBack, lang = 'ne' }) {
             <span className="text-rose-400">- रु {dpFee.toFixed(2)}</span>
           </div>
           <div className="flex justify-between">
-            <span>• {isNe ? `लाभकर (Capital Gain Tax ${cgtRates[taxRegime] * 100}%):` : `CGT (${cgtRates[taxRegime] * 100}%):`}</span>
+            <span>• {isNe ? `लाभकर (Capital Gain Tax ${cgtRates[taxRegime] * 100}%):` : `CGT (${cgtRates[taxRegime] * 100}% on Net Gain):`}</span>
             <span className="text-rose-400 font-bold">- रु {cgtTax.toFixed(2)}</span>
           </div>
         </div>

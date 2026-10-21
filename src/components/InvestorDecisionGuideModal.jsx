@@ -138,6 +138,7 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
           scrollbarWidth: 'none'
         }}>
           {[
+            { id: 'roadmap', label: '🧭 ५-चरण संस्थागत छनोट (5-Step Roadmap)', color: '#10B981' },
             { id: 'index', label: '🎯 इन्डेक्स हेरेर निर्णय', color: '#6366F1' },
             { id: 'buy', label: '🟢 कहिले किन्ने? (Buy)', color: '#10B981' },
             { id: 'sell', label: '🔴 कहिले बेच्ने? (Sell)', color: '#F43F5E' },
@@ -180,6 +181,109 @@ export default function InvestorDecisionGuideModal({ isOpen, onClose, initialTab
           fontSize: 13,
           lineHeight: 1.6
         }}>
+          {/* TAB: INSTITUTIONAL 5-STEP STOCK SELECTION ROADMAP */}
+          {activeTab === 'roadmap' && (
+            <>
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                borderRadius: 14,
+                padding: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 900, color: '#34d399', fontSize: 15 }}>
+                  <Sparkles size={20} />
+                  संस्थागत ५-चरण सेयर छनोट कार्यविधि (Institutional 5-Step Selection Pipeline)
+                </div>
+                <p style={{ margin: '8px 0 0', color: '#cbd5e1', fontSize: 12.5, lineHeight: 1.5 }}>
+                  नेप्सेमा बिना योजना किन्दा ठूलो घाटा (Tail Risk) हुन्छ। Drabyashree NEPSE को यो ५-चरण गणितीय पाइपलाइनले मात्र बजारका उत्कृष्ट ५% सेयर छनोट गर्छ र पुँजीको सुरक्षा गर्छ।
+                </p>
+              </div>
+
+              {/* STEP 1 */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#38bdf8', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Activity size={17} color="#38bdf8" />
+                  चरण १: समष्टिगत तरलता तथा बजार अवस्था (Top-Down Macro & Liquidity Regime)
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  नेपाल राष्ट्र बैंकको मौद्रिक सूचक र तरलता हेरेर मात्र पुँजी बाँडफाँड गर्नुहोस्:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    <li><strong>🟢 Bullish / Easing (IBOR &le; 4.50%, CD Ratio &le; 83%):</strong> कुल पुँजीको <strong>८०%–१००%</strong> सम्म सेयरमा लगानी गर्नुहोस्।</li>
+                    <li><strong>🟡 Neutral (IBOR 4.5%–6.0%, CD Ratio 83%–86%):</strong> बढीमा <strong>५०%–६०%</strong> मात्र लगानी गर्नुहोस्। कमजोर सेयर नकिन्नुहोस्।</li>
+                    <li><strong>🔴 Tightening (IBOR &gt; 6.0% वा CD Ratio &gt; 87%):</strong> बढीमा <strong>२५%</strong> लगानी, ७५% नगद (Cash) सुरक्षित राख्नुहोस्।</li>
+                    <li><strong>इन्डेक्स पुष्टि:</strong> Advance/Decline अनुपात <strong>&gt; 1.15</strong> र नेप्से २०-EMA भन्दा माथि हुनु अनिवार्य छ।</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* STEP 2 */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#a78bfa', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <TrendingUp size={17} color="#a78bfa" />
+                  चरण २: प्राविधिक मोमेन्टम तथा स्टेज २ फिल्टर (Minervini Stage 2 & Accumulation)
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  म्युचुअल फण्ड र ऋणपत्र बाहेकका २५०+ साधारण सेयरलाई मिनर्विनी ट्रेन्ड टेम्प्लेटमा जाँच्नुहोस्:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    <li><strong>ट्रेन्ड टेम्प्लेट:</strong> LTP &gt; 20-EMA &gt; 50-EMA &gt; 200-SMA, र मूल्य ५२-हप्ताको उच्चतम बिन्दुको १५% भित्र र न्यून बिन्दुको ३०% माथि।</li>
+                    <li><strong>RSI दायरा:</strong> Wilder RSI(14) strictly <strong>५२ देखि ६८</strong> भित्र (बलियो गति तर Overbought नभएको)।</li>
+                    <li><strong>वाइकोफ एक्युमुलेसन:</strong> Stealth Accumulation (Top 5 खुद खरिद BCR5 &ge; १८%, SCR3 &lt; १४%) भएका सेयर मात्र छनोट।</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* STEP 3 */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#34d399', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <BarChart3 size={17} color="#34d399" />
+                  चरण ३: फ्लोरशिट स्मार्ट मनी पदचिन्ह (Floorsheet Smart Money & 5D POC)
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  ब्रोकर फ्लो र टिक-लेभल फ्लोरशिटको भोल्युम प्रोफाइल विश्लेषण गर्नुहोस्:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    <li><strong>ब्रोकर एकाग्रता (BCR3 &ge; ४०%):</strong> मुख्य ३ ब्रोकरले कम्तिमा ४०% सेयर एक्लै खरिद गरेको पुष्टि गर्नुहोस्।</li>
+                    <li><strong>बिक्रेता दबाब निषेध:</strong> Top 3 खुद बिक्रेताको हिस्सा SCR3 &lt; १४% र आन्तरिक क्रस (Self-Wash) &lt; ५% हुनुपर्छ।</li>
+                    <li><strong>५-दिने POC (Point of Control) पर्खाल:</strong> सेयरको बजार मूल्य पछिल्लो ५ दिनको सर्वाधिक कारोबार भएको मूल्य (5D POC) र संस्थागत VWAP भन्दा माथि अडिएको हुनुपर्छ।</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* STEP 4 */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fb7185', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ShieldAlert size={17} color="#fb7185" />
+                  चरण ४: ४ वटा कडा नियमन तथा वित्तीय भिटो (Mandatory Hard Veto Gates)
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  कुनै पनि एउटा भिटो लागेमा उक्त सेयर जतिसुकै राम्रो भए पनि तत्काल त्याग गर्नुहोस्:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    <li><strong>🚨 संस्थापक लक-इन भिटो:</strong> ३ वर्षे लक-इन खुल्न <strong>१२० दिनभन्दा कम</strong> बाँकी भएमा सिधै अस्वीकार।</li>
+                    <li><strong>🚨 बैंक तथा वित्तीय संस्था भिटो:</strong> खराब कर्जा NPL &ge; ५.०% वा पुँजी पर्याप्तता अनुपात CAR &lt; ११.०% भएमा अस्वीकार।</li>
+                    <li><strong>🚨 जलविद्युत लागत भिटो:</strong> निर्माण लागत <strong>रु. २० करोड प्रति मेगावाट</strong> भन्दा बढी वा व्यापारिक उत्पादन (COD) ढिलाइ भएमा अस्वीकार।</li>
+                    <li><strong>🚨 ग्राहम भ्यालुएसन:</strong> १२ महिनाको खुद प्रतिसेयर आम्दानी (EPS) धनात्मक हुनु अनिवार्य छ।</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* STEP 5 */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fbbf24', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Target size={17} color="#fbbf24" />
+                  चरण ५: खरिद कार्यान्वयन, हाफ-केली साइजिङ र नाफा सुरक्षित (Execution, Half-Kelly & Ratchet Shield)
+                </div>
+                <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  अनुशासित गणितीय नियम अनुसार मात्र खरिद अर्डर राख्नुहोस्:
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    <li><strong>T+1 VWAP खरिद दायरा:</strong> अघिल्लो दिनको सिफारिसलाई भोलिपल्टको औसत मूल्य (Day T+1 VWAP) र 5D POC दायराभित्र मात्र किन्नुहोस्। +१४.९% सर्किट पासोमा कहिल्यै नदौडिनुहोस्।</li>
+                    <li><strong>हाफ-केली कित्ता साइजिङ:</strong> कुल पोर्टफोलियोको <strong>बढीमा १.०% मात्र जोखिम (1% Portfolio Risk Ceiling)</strong> लिनुहोस्। StopLoss &ge; Entry भएमा कित्ता ० हुन्छ।</li>
+                    <li><strong>T+2 राचेट शिल्ड (Ratchet Shield):</strong> T+2 राफसाफपछि नाफा +१.२R पुग्नासाथ स्टप-लस बढाएर Entry &times; १.०१२ मा सार्नुहोस् जसले गर्दा ब्रोकर कमिसन र ७.५% पुँजीगत लाभकर कटाएर पनि नाफा पूर्ण सुरक्षित हुन्छ।</li>
+                    <li><strong>५०% नाफा बुक:</strong> पहिलो टार्गेट (+२.०R, दैनिक &plusmn;१५% सर्किट सीमा) मा ५०% सेयर बेच्नुहोस् र बाँकी ५०% सेयर २०-EMA को रेखामा पछ्याउँदै नाफा बढ्न दिनुहोस्।</li>
+                  </ul>
+                </div>
+              </div>
+            </>
+          )}
+
           {/* TAB 0: HOW TO INVEST USING NEPSE INDEX PREDICTION */}
           {activeTab === 'index' && (
             <>

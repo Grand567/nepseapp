@@ -1471,47 +1471,29 @@ function Dashboard({
     }
   }, [stocks, showSignalTrackerModal]);
 
-  // Pre-load verified track record stats from localStorage (or institutional baseline) so button never flashes 0%
-  const [backendTrackerSummary, setBackendTrackerSummary] = useState(() => {
-    try {
-      const cached = localStorage.getItem('drabyashree_verified_win_rate');
-      if (cached) return JSON.parse(cached);
-    } catch (_) {}
-    return {
-      total: 70,
-      openCount: 18,
-      closedCount: 52,
-      winRate: 63.5,
-    };
-  });
-
+  // BUG FIX (Dashboard badge 0% Win Rate): Also load backend summary for the dashboard badge.
+  // The local signalTracker uses localStorage and may show 0% when the SQLite backend has real data.
+  const [backendTrackerSummary, setBackendTrackerSummary] = useState(null);
   useEffect(() => {
     let active = true;
+    // Only fetch once per session (module-level cache)
+    if (window._dashboardBackendWinRate != null) {
+      setBackendTrackerSummary(window._dashboardBackendWinRate);
+      return;
+    }
     import('../utils/liveData.js').then(({ getProxyBase }) => {
       const base = getProxyBase() || 'https://nepseapp.onrender.com';
       fetch(`${base}/api/radar/signal-track-record`, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (!active || !data) return;
-          const s = data.summary || {};
-          let verifiedWinRate = 63.5;
-          if (Array.isArray(data.strategyMetrics) && data.strategyMetrics.length > 0) {
-            const totalTradable = data.strategyMetrics.reduce((acc, m) => acc + Number(m.total_tradable_signals || m.total || 0), 0);
-            const weightedSum = data.strategyMetrics.reduce((acc, m) => acc + (Number(m.verified_win_rate_pct || 0) * Number(m.total_tradable_signals || m.total || 0)), 0);
-            if (totalTradable > 0) verifiedWinRate = Number((weightedSum / totalTradable).toFixed(1));
-          } else if (s.verifiedWinRatePct != null && s.verifiedWinRatePct > 0) {
-            verifiedWinRate = Number(s.verifiedWinRatePct);
-          }
-
+          if (!active || !data?.summary) return;
+          const s = data.summary;
           const summary = {
-            total: s.totalSignals ?? 70,
-            openCount: s.openSignals ?? 18,
-            closedCount: s.closedSignals ?? 52,
-            winRate: verifiedWinRate || 63.5,
+            total: s.totalSignals ?? 0,
+            openCount: s.openSignals ?? 0,
+            closedCount: s.closedSignals ?? 0,
+            winRate: s.verifiedWinRatePct != null ? Math.round(s.verifiedWinRatePct) : null,
           };
-          try {
-            localStorage.setItem('drabyashree_verified_win_rate', JSON.stringify(summary));
-          } catch (_) {}
           window._dashboardBackendWinRate = summary;
           setBackendTrackerSummary(summary);
         })
@@ -1525,28 +1507,12 @@ function Dashboard({
     if (backendTrackerSummary && (backendTrackerSummary.total > 0 || backendTrackerSummary.closedCount > 0)) {
       return {
         ...backendTrackerSummary,
-        openCount: backendTrackerSummary.openCount || signalTrackerStats?.openCount || 18,
+        // Fall back to local open count if backend doesn't have it
+        openCount: backendTrackerSummary.openCount || signalTrackerStats?.openCount || 0,
       };
     }
-    return signalTrackerStats || { total: 70, openCount: 18, closedCount: 52, winRate: 63.5 };
+    return signalTrackerStats;
   }, [backendTrackerSummary, signalTrackerStats]);
-
-  const trackSummary = useMemo(() => {
-    const totalSignals = effectiveTrackerStats?.total ?? 70;
-    const settledSignals = effectiveTrackerStats?.closedCount ?? 52;
-    const activeSignals = effectiveTrackerStats?.openCount ?? 18;
-    const winRate = effectiveTrackerStats?.winRate ?? 63.5;
-    const totalBrokers = 37;
-    const profitFactor = 1.04;
-    return {
-      winRate,
-      totalSignals,
-      settledSignals,
-      activeSignals,
-      totalBrokers,
-      profitFactor,
-    };
-  }, [effectiveTrackerStats]);
   const [showTVModal, setShowTVModal] = useState(false);
   const [isHeroFullscreen, setIsHeroFullscreen] = useState(false);
 
@@ -3476,63 +3442,51 @@ function Dashboard({
           </div>
         </div>
 
-        {/* Restored Persistent NRB Macro & Signal Track Record Telemetry Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 my-3 pt-2 border-t border-slate-800/60">
-          {/* LEFT SIDE: Restored NRB Macro + Signal Track Record Quick-Stats Strip */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* NRB Macro Pill (Never shows plain 'NRB Offline') */}
-            <div className="inline-flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-2.5 py-1 rounded-lg text-slate-300">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span className="font-semibold text-white">NRB Macro:</span>
-              <span>CD Ratio <strong className="text-emerald-400">78.4%</strong></span>
-              <span className="text-slate-600">&bull;</span>
-              <span>Interbank <strong className="text-sky-400">3.00%</strong></span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                Cached
-              </span>
-            </div>
-
-            {/* Restored Signal Track Record Quick-Stats Strip */}
-            <div
+        {/* NRB Macro Regime (liquidity) — primary driver of NEPSE direction */}
+        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <NRBMacroWidget compact />
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
               onClick={() => {
                 setIsSearching(false);
                 setShowSignalTrackerModal(true);
               }}
-              className="inline-flex flex-wrap items-center gap-2 bg-emerald-950/25 hover:bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 rounded-lg cursor-pointer transition"
-              title="Click to view full Algorithmic Signal Track Record"
+              style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.22) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                borderRadius: 20,
+                padding: '5px 14px',
+                fontSize: 12,
+                fontWeight: 800,
+                color: '#34d399',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.12)'
+              }}
             >
-              <span className="text-emerald-400 font-bold">
-                ⚡ {trackSummary.winRate}% Strategy Win Rate
-              </span>
-              <span className="text-slate-600">&bull;</span>
-              <span className="text-slate-300">
-                <strong>{trackSummary.totalSignals}</strong> Signals ({trackSummary.settledSignals} Settled • {trackSummary.activeSignals} T+2 Active)
-              </span>
-              <span className="text-slate-600">&bull;</span>
-              <span className="text-indigo-300">
-                <strong>{trackSummary.totalBrokers}</strong> Tracked Brokers
-              </span>
-              <span className="text-slate-600">&bull;</span>
-              <span className="text-amber-300 font-mono">
-                PF <strong>{trackSummary.profitFactor}x</strong>
-              </span>
-            </div>
+              <span>📊</span>
+              <span>Algorithmic Signal Track Record</span>
+              {(effectiveTrackerStats || signalTrackerStats) && ((effectiveTrackerStats?.total ?? signalTrackerStats?.total ?? 0) > 0 || (effectiveTrackerStats?.openCount ?? 0) > 0) && (
+                <span style={{
+                  background: 'rgba(16, 185, 129, 0.25)',
+                  border: '1px solid rgba(16, 185, 129, 0.45)',
+                  borderRadius: 12,
+                  padding: '1px 8px',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  color: '#6ee7b7'
+                }}>
+                  {/* BUG FIX: Use backend summary win rate (effectiveTrackerStats) so the badge
+                      shows real audited win rate from SQLite, not 0% from empty localStorage */}
+                  {(effectiveTrackerStats?.closedCount ?? signalTrackerStats.closedCount) > 0
+                    ? `${effectiveTrackerStats?.winRate ?? signalTrackerStats.winRate}% Win Rate`
+                    : `${effectiveTrackerStats?.openCount ?? signalTrackerStats.openCount} Active`}
+                </span>
+              )}
+            </button>
           </div>
-
-          {/* RIGHT SIDE: Algorithmic Signal Track Record Button with Real Win Rate */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsSearching(false);
-              setShowSignalTrackerModal(true);
-            }}
-            className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 text-xs font-semibold text-slate-200 transition self-start lg:self-auto shadow-sm cursor-pointer"
-          >
-            <span>📊 Algorithmic Signal Track Record</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
-              {trackSummary.winRate}% Win Rate
-            </span>
-          </button>
         </div>
 
         {/* SEBON Market-Wide Index Circuit Breaker Telemetry Alert (5% & 8% Thresholds) */}

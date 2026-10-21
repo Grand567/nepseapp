@@ -39,27 +39,43 @@ export function CapitalRiskSimulatorView({
   }, [capital]);
 
   const tierConfig = getCapitalTierConfig(capital);
-  const maxRiskRs = Math.round(capital * tierConfig.riskPerTradePct);
+  // Enforce strict 1% maximum portfolio risk cap alongside tier configuration
+  const effectiveRiskPct = Math.min(tierConfig.riskPerTradePct, 0.01);
+  const maxRiskRs = Math.round(capital * effectiveRiskPct);
   const maxSlotCapitalRs = Math.round(capital * tierConfig.maxSlotAllocationPct);
   const cashReserveRs = Math.round(capital * tierConfig.tacticalCashReservePct);
   const commissionRate = getNepseBrokerCommissionRate(maxSlotCapitalRs);
 
-  // Position Sizing Calculations for Sandbox
-  const perShareRisk = Math.max(0.5, testPrice - testStopLoss);
-  const theoreticalUnits = perShareRisk > 0 ? maxRiskRs / perShareRisk : 0;
-  // Constraint 1: Risk limit
-  // Constraint 2: Max slot capital limit
-  const maxUnitsBySlot = testPrice > 0 ? Math.floor(maxSlotCapitalRs / testPrice) : 0;
-  const rawUnits = Math.min(theoreticalUnits, maxUnitsBySlot);
-  // NEPSE standard 10-kitta lot
-  const suggestedKitta = Math.max(10, Math.floor(rawUnits / 10) * 10);
+  // Stop-Loss Inversion Guard & Half-Kelly Position Sizing (p = 0.635)
+  const isStopValid = Number(testPrice) > 0 && Number(testStopLoss) > 0 && Number(testStopLoss) < Number(testPrice);
+  const isTargetValid = Number(testTarget) > Number(testPrice);
+  const perShareRisk = isStopValid ? (testPrice - testStopLoss) : 0;
+  const perShareGain = isTargetValid ? (testTarget - testPrice) : 0;
+  const bRatio = isStopValid && perShareRisk > 0 ? perShareGain / perShareRisk : 0;
+
+  // Half-Kelly fraction: f*_half = 0.5 * (p - (1 - p) / b) with p = 0.635
+  const winProb = 0.635;
+  const fullKelly = bRatio > 0 ? (winProb - (1 - winProb) / bRatio) : 0;
+  const halfKellyFraction = fullKelly > 0 ? Math.min(tierConfig.maxSlotAllocationPct, fullKelly * 0.5) : 0;
+  const effectiveSlotCeilingRs = Math.min(maxSlotCapitalRs, Math.round(capital * halfKellyFraction));
+
+  const theoreticalUnits = isStopValid && halfKellyFraction > 0 && perShareRisk > 0 ? (maxRiskRs / perShareRisk) : 0;
+  const maxUnitsBySlot = isStopValid && halfKellyFraction > 0 && testPrice > 0 ? Math.floor(effectiveSlotCeilingRs / testPrice) : 0;
+  const rawUnits = isStopValid && halfKellyFraction > 0 ? Math.max(0, Math.min(theoreticalUnits, maxUnitsBySlot)) : 0;
+
+  // Invalid stops (StopLoss >= Price) or negative Kelly expectancy strictly yield 0 suggested kitta
+  const suggestedKitta = !isStopValid || halfKellyFraction <= 0
+    ? 0
+    : rawUnits >= 10
+    ? Math.floor(rawUnits / 10) * 10
+    : Math.floor(rawUnits);
+
   const totalOutlay = suggestedKitta * testPrice;
   const actualRiskRs = Math.round(suggestedKitta * perShareRisk);
-  const perShareGain = Math.max(0, testTarget - testPrice);
   const totalGainRs = Math.round(suggestedKitta * perShareGain);
-  const riskRewardRatio = perShareRisk > 0 ? (perShareGain / perShareRisk).toFixed(2) : '0';
-  const estimatedBrokerFee = calculateDynamicBrokerFee(totalOutlay);
-  const sebonFee = Math.round(totalOutlay * NEPSE_FRICTION_FY2083.sebonFeeRate * 100) / 100;
+  const riskRewardRatio = isStopValid && perShareRisk > 0 ? (perShareGain / perShareRisk).toFixed(2) : '0.00';
+  const estimatedBrokerFee = totalOutlay > 0 ? calculateDynamicBrokerFee(totalOutlay) : 0;
+  const sebonFee = totalOutlay > 0 ? Math.round(totalOutlay * NEPSE_FRICTION_FY2083.sebonFeeRate * 100) / 100 : 0;
 
   return (
     <div className={`space-y-5 p-4 max-w-6xl mx-auto ${className}`}>

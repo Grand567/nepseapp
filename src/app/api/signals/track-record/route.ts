@@ -21,12 +21,13 @@ export interface EnrichedSignalLedgerRow {
   sector: string;
   signalDate: string;
   signalType: "BUY" | "ACCUMULATE" | "WATCH" | "AVOID";
-  status: "OPEN_T1_LOCKED" | "OPEN_T2_LOCKED" | "OPEN_SETTLED" | "CLOSED_WIN" | "CLOSED_LOSS" | "RATCHET_SAVED";
+  status: "UNFILLABLE_SKIP" | "OPEN_T1_LOCKED" | "OPEN_T2_LOCKED" | "OPEN_SETTLED" | "CLOSED_WIN" | "CLOSED_LOSS" | "RATCHET_SAVED";
   entryVwap: number;
   currentLtp: number;
   stopLossPrice: number;
   targetPrice: number;
   netReturnPct: number;        // Post-NEPSE fee & CGT net return %
+  authenticAlphaPct?: number;   // Authentic Alpha = Net Return - NEPSE Benchmark Return
   mfePct: number;              // Maximum Favorable Excursion %
   maePct: number;              // Maximum Adverse Excursion %
   ratchetActive: boolean;      // True when MFE >= 1.2R locked trailing shield
@@ -294,46 +295,113 @@ export async function GET(request: NextRequest) {
       if (!symbol) continue;
       if (symbolFilter && !symbol.includes(symbolFilter)) continue;
 
-      const entryVwap = Math.max(1, safeNum(row.entry_vwap ?? row.entry_price ?? row.vwap, 500));
-      const currentLtp = Math.max(1, safeNum(row.ltp ?? row.current_price ?? row.exit_price ?? row.current_ltp, entryVwap));
-      const atr14 = Math.max(entryVwap * 0.02, safeNum(row.atr_14 ?? row.atr, entryVwap * 0.025));
-      const stopLossPrice = safeNum(row.stop_loss ?? row.sl_price ?? row.stop_loss_price, Number((entryVwap - 1.5 * atr14).toFixed(2)));
-      const targetPrice = safeNum(row.target_price ?? row.tp_price ?? row.target1_price, Number((entryVwap + 3.0 * atr14).toFixed(2)));
+      const signalDayClose = Math.max(
+        1,
+        safeNum(row.signal_close ?? row.close_t0 ?? row.entry_price, 500)
+      );
+      // Day T+1 Execution Fill: strictly evaluates at Day T+1 VWAP (turnover / volume), NOT Signal Day T0 close
+      const t1Turnover = safeNum(row.t1_turnover ?? row.execution_turnover, 0);
+      const t1Volume = safeNum(row.t1_volume ?? row.execution_volume, 0);
+      const computedT1Vwap =
+        t1Turnover > 0 && t1Volume > 0
+          ? Number((t1Turnover / t1Volume).toFixed(2))
+          : safeNum(row.t1_vwap ?? row.entry_vwap, signalDayClose);
 
-      // Gross & Post-Fee Net Return (accounting for ~0.65% round-trip NEPSE broker + SEBON + DP fees)
+      const t1OpenPrice = safeNum(row.t1_open ?? row.open_t1, computedT1Vwap);
+      const t1GapPct =
+        signalDayClose > 0
+          ? Number((((t1OpenPrice - signalDayClose) / signalDayClose) * 100).toFixed(2))
+          : 0;
+
+      // Statutory Fourth Amendment 2082 Upper Circuit Gap-Trap Guard (>= +14.9%)
+      const isUnfillableGapTrap =
+        Boolean(row.is_unfillable_skip) ||
+        t1GapPct >= 14.9 ||
+        ((computedT1Vwap - signalDayClose) / signalDayClose) * 100 >= 14.9;
+
+      const entryVwap = Math.max(1, computedT1Vwap);
+      const currentLtp = Math.max(
+        1,
+        safeNum(row.ltp ?? row.current_price ?? row.exit_price ?? row.current_ltp, entryVwap)
+      );
+      const atr14 = Math.max(
+        entryVwap * 0.02,
+        safeNum(row.atr_14 ?? row.atr, entryVwap * 0.025)
+      );
+      // Clamp Stop-Loss (1.75x ATR) and Target within statutory circuit/swing bounds
+      const stopLossPrice = safeNum(
+        row.stop_loss ?? row.sl_price ?? row.stop_loss_price,
+        Number((entryVwap - 1.75 * atr14).toFixed(2))
+      );
+      const targetPrice = safeNum(
+        row.target_price ?? row.tp_price ?? row.target1_price,
+        Number(Math.min(entryVwap * 1.15, entryVwap + 3.0 * atr14).toFixed(2))
+      );
+
+      // Post-Commission & SEBON/DP Fee Net Return
       const grossReturnPct = ((currentLtp - entryVwap) / entryVwap) * 100;
-      const netReturnPct = safeNum(
-        row.net_return_pct ?? row.net_pnl_after_fees_pct,
-        Number((grossReturnPct - 0.65).toFixed(2))
-      );
+      const netReturnPct = isUnfillableGapTrap
+        ? 0
+        : safeNum(
+            row.net_return_pct ?? row.net_pnl_after_fees_pct,
+            Number((grossReturnPct - 0.65).toFixed(2))
+          );
 
-      const mfePct = Math.max(
-        netReturnPct,
-        safeNum(row.mfe_pct ?? row.max_favorable_excursion_pct ?? row.max_gain_pct, Math.max(0, netReturnPct + 1.8))
+      // Authentic Alpha = Net Return - NEPSE Index Return over the same holding window
+      const nepseBenchmarkReturnPct = safeNum(
+        row.nepse_return_pct ?? row.benchmark_return_pct,
+        0.45
       );
-      const maePct = Math.min(
-        0,
-        safeNum(row.mae_pct ?? row.max_adverse_excursion_pct, Math.min(0, netReturnPct - 1.1))
-      );
+      const authenticAlphaPct = isUnfillableGapTrap
+        ? 0
+        : Number((netReturnPct - nepseBenchmarkReturnPct).toFixed(2));
+
+      const mfePct = isUnfillableGapTrap
+        ? 0
+        : Math.max(
+            netReturnPct,
+            safeNum(row.mfe_pct ?? row.max_favorable_excursion_pct ?? row.max_gain_pct, Math.max(0, netReturnPct + 1.8))
+          );
+      const maePct = isUnfillableGapTrap
+        ? 0
+        : Math.min(
+            0,
+            safeNum(row.mae_pct ?? row.max_adverse_excursion_pct, Math.min(0, netReturnPct - 1.1))
+          );
 
       const oneR = Math.max(1, entryVwap - stopLossPrice);
       const maxGainRs = (mfePct / 100) * entryVwap;
       const ratchetActive =
         Boolean(row.ratchet_locked ?? row.is_ratchet_saved ?? row.is_ratchet_armed) || maxGainRs >= 1.2 * oneR;
 
-      const holdingDays = Math.max(0, Math.round(safeNum(row.holding_days ?? row.days_held, 2)));
+      const holdingDays = Math.max(
+        0,
+        Math.round(safeNum(row.holding_days ?? row.days_held, 2))
+      );
+      // T+2 Settlement Lock: Shares cannot be sold until holdingDays >= 2
       const t2SettlementUnlocked = holdingDays >= 2;
 
       const rawStatus = String(row.status ?? "").toUpperCase();
-      let status: EnrichedSignalLedgerRow["status"] = "OPEN_SETTLED";
-      if (rawStatus.includes("WIN") || netReturnPct >= 4.0) {
+      let status:
+        | "UNFILLABLE_SKIP"
+        | "OPEN_T1_LOCKED"
+        | "OPEN_T2_LOCKED"
+        | "OPEN_SETTLED"
+        | "CLOSED_WIN"
+        | "CLOSED_LOSS"
+        | "RATCHET_SAVED" = "OPEN_SETTLED";
+
+      if (isUnfillableGapTrap || rawStatus === "UNFILLABLE_SKIP") {
+        status = "UNFILLABLE_SKIP";
+      } else if (!t2SettlementUnlocked) {
+        // Hard T+2 Settlement Lock: Never allow a signal with holdingDays < 2 to close prematurely
+        status = holdingDays === 0 ? "OPEN_T1_LOCKED" : "OPEN_T2_LOCKED";
+      } else if (rawStatus.includes("WIN") || netReturnPct >= 4.0) {
         status = "CLOSED_WIN";
       } else if (ratchetActive && netReturnPct > 0.2 && rawStatus.includes("CLOSED")) {
         status = "RATCHET_SAVED";
       } else if (rawStatus.includes("LOSS") || rawStatus.includes("STOPPED") || currentLtp <= stopLossPrice) {
         status = "CLOSED_LOSS";
-      } else if (holdingDays === 0 || holdingDays === 1) {
-        status = holdingDays <= 1 ? "OPEN_T1_LOCKED" : "OPEN_T2_LOCKED";
       }
 
       if (statusFilter !== "ALL") {
@@ -406,6 +474,7 @@ export async function GET(request: NextRequest) {
         stopLossPrice: Number(stopLossPrice.toFixed(2)),
         targetPrice: Number(targetPrice.toFixed(2)),
         netReturnPct,
+        authenticAlphaPct,
         mfePct: Number(mfePct.toFixed(2)),
         maePct: Number(maePct.toFixed(2)),
         ratchetActive,
