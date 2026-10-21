@@ -17,7 +17,8 @@
   <body class="bg-dark text-white font-sans overflow-x-hidden antialiased">
     <div id="root"></div>
     <script>
-      if (window.location.protocol === 'file:') {
+      // Only warn if opened directly in an external desktop browser via file:// (not Electron, not Capacitor)
+      if (window.location.protocol === 'file:' && !navigator.userAgent.includes('Electron') && !window.Capacitor) {
         setTimeout(function() {
           var root = document.getElementById('root');
           if (root && (!root.children || root.children.length === 0)) {
@@ -30,7 +31,7 @@
               'To run on mobile, install <b>Drabyashree-NEPSE-release.apk</b>.' +
               '</p></div>';
           }
-        }, 1500);
+        }, 3000);
       }
     </script>
     <script type="module" src="/src/main.jsx"></script>

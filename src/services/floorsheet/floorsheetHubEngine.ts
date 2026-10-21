@@ -3,11 +3,11 @@ import {
   safeNum,
   resolveValidNepseSymbol,
   resolveVerifiedPrice,
+  normalize5DBrokerPayloadForAi,
   type RawQuotePayload,
   type HistoricalCandle,
   type LedgerTelemetryRow,
 } from "@/services/aiGuru/runAiQuantitativeAssessment";
-import { normalize5DBrokerPayloadForAi } from "@/lib/db/drabyashreeDb";
 
 export interface RawFloorsheetContract {
   contractNo?: string | number;
