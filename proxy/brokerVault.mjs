@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
-import { ingestDailyFloorsheetTransaction, rebuildHotCache } from './db/ledgerStore.js';
+import { ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb } from './db/ledgerStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

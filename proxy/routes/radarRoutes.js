@@ -16,7 +16,9 @@ import {
   seedFromSnapshotGz,
   getSymbolHistoryFromDb,
   getLedgerStatusInfo,
-  getScripLedgerTelemetry
+  getScripLedgerTelemetry,
+  db,
+  rebuildSignalTrackRecord
 } from "../db/ledgerStore.js";
 import { calculateMultiDayDiagnostics } from "../utils/microstructureEngine.js";
 
@@ -511,6 +513,13 @@ router.get(["/radar/early-ignition", "/early-ignition"], handleEarlyIgnition);
  */
 export async function handleSignalTrackRecord(req, res) {
   await ensureHotCacheReady();
+  if (!HOT_CACHE.signalTrackRecord || !HOT_CACHE.signalTrackRecord.signals?.length) {
+    try {
+      rebuildSignalTrackRecord(db, HOT_CACHE);
+    } catch (err) {
+      console.warn("[RadarRoutes] On-demand rebuildSignalTrackRecord failed:", err.message);
+    }
+  }
   const trackRecord = HOT_CACHE.signalTrackRecord || { summary: {}, strategyBreakdown: {}, brokerLeaderboard: [], signals: [] };
   let signals = trackRecord.signals || [];
 
@@ -920,27 +929,62 @@ router.post(["/radar/portfolio-shield", "/portfolio-shield"], handlePortfolioShi
 router.get("/diagnostics/:symbol", async (req, res) => {
   const symbol = String(req.params.symbol || "").toUpperCase().trim();
   const validDays = resolveValidTimeframe(req.query.days, 30);
+  const reqDate = req.query.date ? String(req.query.date).trim() : null;
+  const fromDate = req.query.fromDate ? String(req.query.fromDate).trim() : null;
+  const toDate = req.query.toDate ? String(req.query.toDate).trim() : null;
 
   await ensureHotCacheReady();
 
-  let data = HOT_CACHE.stockDiagnostics.get(`${symbol}_${validDays}`);
   const storedDates = getStoredDates(40);
   const backfill = getBackfillStatus(30);
+  let data = null;
+
+  // If specific date or custom date range is requested, calculate dynamically from SQLite
+  if (reqDate || (fromDate && toDate)) {
+    try {
+      const fullHistory = getSymbolHistoryFromDb(symbol, 40);
+      let filteredHistory = fullHistory;
+      if (reqDate) {
+        filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) === reqDate);
+      } else if (fromDate && toDate) {
+        filteredHistory = fullHistory.filter(d => {
+          const dt = d.date || d.trade_date;
+          return dt >= fromDate && dt <= toDate;
+        });
+      }
+      if (filteredHistory && filteredHistory.length > 0) {
+        const diag = calculateMultiDayDiagnostics(filteredHistory, filteredHistory.length);
+        if (diag) {
+          data = { symbol, ...diag, availableDates: storedDates.slice(0, 30) };
+        }
+      }
+    } catch (e) {
+      console.warn(`[RadarRoutes] Custom date diagnostic failed for ${symbol}:`, e.message);
+    }
+  }
+
+  if (!data) {
+    data = HOT_CACHE.stockDiagnostics.get(`${symbol}_${validDays}`);
+  }
 
   // Dynamic on-demand SQLite fallback if symbol was missed in precomputed HOT_CACHE
   if (!data) {
     try {
-      const history = getSymbolHistoryFromDb(symbol, validDays);
+      const history = getSymbolHistoryFromDb(symbol, Math.max(validDays, 30));
       if (history && history.length > 0) {
         const diag = calculateMultiDayDiagnostics(history, validDays);
         if (diag) {
-          data = { symbol, ...diag };
+          data = { symbol, ...diag, availableDates: storedDates.slice(0, 30) };
           HOT_CACHE.stockDiagnostics.set(`${symbol}_${validDays}`, data);
         }
       }
     } catch (e) {
       console.warn(`[RadarRoutes] On-demand fallback calculation failed for ${symbol}:`, e.message);
     }
+  }
+
+  if (data && (!data.availableDates || data.availableDates.length === 0)) {
+    data.availableDates = storedDates.slice(0, 30);
   }
 
   if (!data) {

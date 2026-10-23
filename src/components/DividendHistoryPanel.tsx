@@ -83,11 +83,12 @@ export function DividendHistoryPanel({
   }, []);
 
   useEffect(() => {
-    const target = initialSymbol || symbol || defaultSym;
+    const target = (initialSymbol || propSymbol || symbol || defaultSym || '').trim();
     if (target) {
+      setSymbol(target);
       analyze(target);
     }
-  }, [initialSymbol, analyze]);
+  }, [initialSymbol, propSymbol, analyze]);
 
   const dividends  = result?.dividends || [];
   const latest     = latestDividendRecord(dividends);

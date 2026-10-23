@@ -11,6 +11,7 @@ import {
   redeemVoucherKey,
   getFreeSubscription,
   getDeviceLicenseId,
+  SUBSCRIPTION_STORAGE_KEY,
   PRO_PLANS
 } from '../utils/subscription';
 import { syncUserDataToCloud, getLocalSession } from '../utils/firebase';
@@ -25,11 +26,18 @@ export function SubscriptionProvider({ children }) {
 
   // Periodically re-evaluate expiration (every 60 seconds)
   useEffect(() => {
+    // Ensure lifetime Pro subscription is immediately persisted on first launch across PC and Mobile platforms
+    try {
+      if (typeof window !== 'undefined' && !localStorage.getItem(SUBSCRIPTION_STORAGE_KEY)) {
+        saveStoredSubscription(subState);
+      }
+    } catch (_) {}
+
     const timer = setInterval(() => {
       setSubState(prev => normalizeSubscription(prev));
     }, 60000);
     return () => clearInterval(timer);
-  }, []);
+  }, [subState]);
 
   // Compute live metrics
   const metrics = useMemo(() => computeSubscriptionMetrics(subState), [subState]);

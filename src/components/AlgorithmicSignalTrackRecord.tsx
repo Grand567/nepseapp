@@ -289,11 +289,17 @@ export function AlgorithmicSignalTrackRecord({
 
   // Fetch signals if propSignals not provided
   const fetchTrackRecord = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
       setIsRefreshing(true);
       setError(null);
       const base = getProxyBase() || '';
-      const res = await fetch(`${base}/api/radar/signal-track-record`);
+      const res = await fetch(`${base}/api/radar/signal-track-record`, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' }
+      });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
@@ -363,6 +369,15 @@ export function AlgorithmicSignalTrackRecord({
 
         setFetchedSignals(normalized);
         setServerSummary(data.summary || null);
+        try {
+          localStorage.setItem('drabyashree_signal_track_record', JSON.stringify({
+            signals: normalized,
+            summary: data.summary || null,
+            strategyMetrics: data.strategyMetrics || data.summary?.strategyMetrics || [],
+            brokerLeaderboard: data.brokerLeaderboard || [],
+            savedAt: Date.now()
+          }));
+        } catch (_) {}
         if (Array.isArray(data.strategyMetrics) && data.strategyMetrics.length > 0) {
           setFetchedStrategyMetrics(data.strategyMetrics);
         } else if (Array.isArray(data.summary?.strategyMetrics) && data.summary.strategyMetrics.length > 0) {
@@ -409,8 +424,22 @@ export function AlgorithmicSignalTrackRecord({
     }
   };
 
+  // Immediate hydration from localStorage on mount so modal never hangs on blank spinner
   useEffect(() => {
     if (!propSignals || propSignals.length === 0) {
+      try {
+        const cachedStr = localStorage.getItem('drabyashree_signal_track_record');
+        if (cachedStr) {
+          const cachedData = JSON.parse(cachedStr);
+          if (Array.isArray(cachedData.signals) && cachedData.signals.length > 0) {
+            setFetchedSignals(cachedData.signals);
+            if (cachedData.summary) setServerSummary(cachedData.summary);
+            if (Array.isArray(cachedData.strategyMetrics)) setFetchedStrategyMetrics(cachedData.strategyMetrics);
+            if (Array.isArray(cachedData.brokerLeaderboard)) setFetchedBrokerLeaderboard(cachedData.brokerLeaderboard);
+            setIsLoading(false);
+          }
+        }
+      } catch (_) {}
       setIsLoading(true);
       fetchTrackRecord();
     }

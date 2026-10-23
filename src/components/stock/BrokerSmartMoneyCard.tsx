@@ -1,5 +1,6 @@
 // File: src/components/stock/BrokerSmartMoneyCard.tsx
 import React, { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from 'react';
+import { getProxyBase } from '../../utils/liveData';
 
 export type SmartMoneyTimeframe = '1D' | '5D' | '1M';
 
@@ -356,6 +357,15 @@ function BrokerSmartMoneyCardInner({
   const [warningBanner, setWarningBanner] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData && !cached1DPayload) {
+      setCached1DPayload(initialData);
+    }
+    if (initialData && !rawPayload) {
+      setRawPayload(initialData);
+    }
+  }, [initialData]);
+
+  useEffect(() => {
     if (!cleanSymbol) return;
     let isMounted = true;
 
@@ -377,7 +387,7 @@ function BrokerSmartMoneyCardInner({
       setLoading(true);
       setWarningBanner(null);
 
-      const days = timeframe === '5D' ? 5 : timeframe === '1M' ? 20 : 1;
+      const days = timeframe === '5D' ? 5 : timeframe === '1M' ? 30 : 1;
 
       try {
         let responseData: any;
@@ -387,7 +397,7 @@ function BrokerSmartMoneyCardInner({
         } else {
           // Standard fetch with both timeframe=5D and days=5 query params for backend compatibility
           const res = await fetch(
-            `/api/stocks/${encodeURIComponent(
+            `${(typeof getProxyBase === "function" ? getProxyBase() : "") || ""}/api/stocks/${encodeURIComponent(
               cleanSymbol
             )}/smart-money?timeframe=${timeframe}&tf=${tfLower}&days=${days}`,
             { headers: { Accept: 'application/json' } }
@@ -407,7 +417,15 @@ function BrokerSmartMoneyCardInner({
           brokerBaselineShares
         );
 
-        if (normalizedCheck.length === 0 && timeframe !== '1D' && cached1DPayload) {
+        if (normalizedCheck.length === 0) {
+          if (cached1DPayload) {
+            setWarningBanner(
+              `${timeframe} multi-day floor-sheet aggregation is currently syncing for ${cleanSymbol}. Showing latest verified session telemetry.`
+            );
+            setRawPayload(cached1DPayload);
+          } else if (initialData) {
+            setRawPayload(initialData);
+          }
           // Graceful fallback if 5D/1M floor-sheet table isn't backfilled for this scrip yet
           setWarningBanner(
             `${timeframe} multi-day floor-sheet aggregation is currently syncing for ${cleanSymbol}. Showing latest verified session telemetry.`
@@ -483,6 +501,21 @@ function BrokerSmartMoneyCardInner({
     const leadSmartBroker =
       [...accumulators].sort((a, b) => b.anomalyScore - a.anomalyScore)[0] || null;
 
+    // Top Holding Broker & Total Shares Held
+    const totalSharesHeldTillNow = allBrokers
+      .filter((b) => b.netVolume > 0)
+      .reduce((s, b) => s + b.netVolume, 0);
+
+    const topHoldingBroker = accumulators[0] || null;
+
+    // Weighted Smart-Money Sell VWAP across Top 5 Distributors
+    const top5SellTurnover = distributors.reduce((s, b) => s + b.sellTurnoverNpr, 0);
+    const top5GrossSellVol = distributors.reduce((s, b) => s + b.sellVolume, 0);
+    const smartMoneySellVwap =
+      top5GrossSellVol > 0 && top5SellTurnover > 0
+        ? Number((top5SellTurnover / top5GrossSellVol).toFixed(2))
+        : 0;
+
     // Profit cushion of smart money relative to current LTP
     const vwapCushionPct =
       currentPrice > 0 && smartMoneyBuyVwap > 0
@@ -495,6 +528,9 @@ function BrokerSmartMoneyCardInner({
       summaryMetrics: {
         top5NetBuyVol,
         top5NetSellVol,
+        totalSharesHeldTillNow,
+        topHoldingBroker,
+        smartMoneySellVwap,
         accumulationPressurePct,
         smartMoneyBuyVwap,
         vwapCushionPct,
@@ -538,7 +574,7 @@ function BrokerSmartMoneyCardInner({
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                 } ${loading ? 'opacity-60 cursor-wait' : ''}`}
               >
-                {tf === '1D' ? '1D (Session)' : tf === '5D' ? '5D (Weekly)' : '1M (20D)'}
+                {tf === '1D' ? '1D (Session)' : tf === '5D' ? '5D (Weekly)' : '1M (30D)'}
               </button>
             );
           })}
@@ -561,9 +597,40 @@ function BrokerSmartMoneyCardInner({
 
       {/* 2. SMART-MONEY SUMMARY TELEMETRY STRIP */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Top Holding Broker Till Now */}
+        <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3">
+          <div className="text-[11px] uppercase tracking-wider text-sky-400 font-semibold">
+            Top Holding Broker ({timeframe})
+          </div>
+          <div className="text-base md:text-lg font-bold text-white mt-1">
+            {summaryMetrics.topHoldingBroker
+              ? `Broker #${summaryMetrics.topHoldingBroker.brokerId}`
+              : '—'}
+          </div>
+          <div className="text-[11px] text-sky-300 mt-0.5 font-medium">
+            {summaryMetrics.topHoldingBroker
+              ? `+${formatInt(summaryMetrics.topHoldingBroker.netVolume)} kitta held • Avg: Rs ${summaryMetrics.topHoldingBroker.buyVwap}`
+              : 'No net accumulators'}
+          </div>
+        </div>
+
+        {/* Total Shares Held Till Now */}
+        <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-3">
+          <div className="text-[11px] uppercase tracking-wider text-emerald-400 font-semibold">
+            Total Shares Held Till Now
+          </div>
+          <div className="text-base md:text-lg font-bold font-mono text-emerald-400 mt-1">
+            +{formatInt(summaryMetrics.totalSharesHeldTillNow)} kitta
+          </div>
+          <div className="text-[11px] text-slate-400 mt-0.5">
+            Top-5 Net: +{formatInt(summaryMetrics.top5NetBuyVol)} kitta
+          </div>
+        </div>
+
+        {/* Smart-Money Buy VWAP */}
         <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3">
           <div className="text-[11px] uppercase tracking-wider text-slate-400">
-            Smart-Money Buy VWAP ({timeframe})
+            Avg Buying Price (Buy VWAP)
           </div>
           <div className="text-base md:text-lg font-bold font-mono text-white mt-1">
             {formatPrice(summaryMetrics.smartMoneyBuyVwap)}
@@ -587,43 +654,16 @@ function BrokerSmartMoneyCardInner({
           </div>
         </div>
 
+        {/* Smart-Money Sell VWAP */}
         <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">
-            Lead Anomaly Broker
-          </div>
-          <div className="text-base md:text-lg font-bold text-indigo-300 mt-1">
-            {summaryMetrics.leadSmartBroker
-              ? `Broker #${summaryMetrics.leadSmartBroker.brokerId} (${summaryMetrics.leadSmartBroker.anomalyScore}x)`
-              : '—'}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            {summaryMetrics.leadSmartBroker
-              ? `Avg Ticket: ${summaryMetrics.leadSmartBroker.avgBuyTicketKitta} kitta/trade`
-              : 'No outlier accumulation'}
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">
-            Top-5 Net Accumulation
-          </div>
-          <div className="text-base md:text-lg font-bold font-mono text-emerald-400 mt-1">
-            +{formatInt(summaryMetrics.top5NetBuyVol)} kitta
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            Absorbed by top 5 buyers
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 border border-slate-800/90 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wider text-slate-400">
-            Top-5 Net Distribution
+          <div className="text-[11px] uppercase tracking-wider text-rose-400 font-semibold">
+            Avg Selling Price (Sell VWAP)
           </div>
           <div className="text-base md:text-lg font-bold font-mono text-rose-400 mt-1">
-            -{formatInt(summaryMetrics.top5NetSellVol)} kitta
+            {formatPrice(summaryMetrics.smartMoneySellVwap)}
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5">
-            Offloaded by top 5 sellers
+            Top-5 Net Dump: -{formatInt(summaryMetrics.top5NetSellVol)} kitta
           </div>
         </div>
       </div>

@@ -1752,8 +1752,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             isToday: true,
             isReal: true
           };
-        } else if (liveVol > 0) {
-          // ONLY push a new candle if there is genuine active volume (prevents weekend/holiday 0-volume corruption)
+        } else if (!marketStatus?.isHoliday && !marketStatus?.isWeekend && liveVol > 0 && liveVol !== Number(last.volume) && todayDate !== last.date) {
+          // ONLY push a new candle if genuine trading occurred today (prevents holiday/weekend 0% duplicate rows)
           fullHistory.push({
             date: todayDate,
             open: Number(d.open) || todayLtp,
@@ -1870,6 +1870,32 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     setBrokerDate(newDate);
     fetchBrokerAnalysisData(brokerDays, newDate, { refresh: true });
   }, [fetchBrokerAnalysisData, brokerDays]);
+
+  const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
+    try {
+      const res = await fetchFromBackend(`/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, 6000);
+      if (res?.data && res.data.length > 0) return res;
+    } catch (_) {}
+    const fallback = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
+    if (fallback?.topBuyers?.length || fallback?.brokers?.length) {
+      return fallback;
+    }
+    return null;
+  }, []);
+
+  const rawFundamentalsForHub = useMemo(() => {
+    return {
+      symbol: d?.symbol,
+      sector: (d?.sector && d?.sector !== 'Unknown') ? d.sector : (liveDetail?.sector || 'Others'),
+      epsTtm: Number(d?.eps ?? liveDetail?.eps ?? 0),
+      bookValuePerShare: Number(d?.bookValue ?? liveDetail?.bookValue ?? 100),
+      paidUpCapital: Number(d?.paidUpCapital ?? liveDetail?.paidUpCapital ?? (d?.listedShares ? d.listedShares * 100 : 0)),
+      promoterSharePct: Number(d?.promoterPercentage ?? liveDetail?.promoterPercentage ?? 51),
+      publicSharePct: Number(d?.publicPercentage ?? liveDetail?.publicPercentage ?? 49),
+      fiscalQuarter: d?.quarter || liveDetail?.quarter || 'Q4 2082/83',
+      ...liveDetail,
+    };
+  }, [d, liveDetail]);
 
   // Broker Accumulation History: fetch when depth tab active or period selector changes
   useEffect(() => {
@@ -3177,6 +3203,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   symbol={d.symbol}
                   currentPrice={d.ltp}
                   initialData={realBrokerAnalysis}
+                  onFetchSmartMoney={handleFetchSmartMoney}
                 />
               </CardLocalErrorBoundary>
 
@@ -3663,6 +3690,37 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     >
                       Broker Analysis <ArrowRight style={{ width: 13, height: 13 }} />
                     </button>
+                  </div>
+                </div>
+
+                {/* 4-Stat Metric Summary Bar (Top Holder, Held Shares, Avg Buy, Avg Sell) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+                  <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>Top Holding Broker</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
+                      {(() => {
+                        const topHolder = (brokerConcentration.topNetAccumulators || brokerConcentration.topBuyerBrokers || [])[0];
+                        return topHolder ? `#${topHolder.broker} (${Number(topHolder.netQty || topHolder.volume || 0).toLocaleString()} sh)` : '—';
+                      })()}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Total Shares Held</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#10b981', marginTop: 2 }}>
+                      {Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || (brokerConcentration.topNetAccumulators || []).reduce((s, b) => s + (b.netQty || 0), 0)).toLocaleString()} sh
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>Avg Buying Price</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
+                      {Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (quote?.ltp ? `Rs. ${quote.ltp}` : '—')}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#fb7185', textTransform: 'uppercase' }}>Avg Selling Price</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
+                      {Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice).toFixed(1)}` : (quote?.ltp ? `Rs. ${quote.ltp}` : '—')}
+                    </div>
                   </div>
                 </div>
 
@@ -4735,7 +4793,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             ...(realFloorsheet?.availableDates || []),
             ...(realBrokerAnalysis?.availableDates || []),
             ...(realPriceHistory || []).slice(-30).map(h => h.date).filter(Boolean).reverse()
-          ])).filter(Boolean);
+          ])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 30);
 
           const activeFsDate = floorsheetDate || realFloorsheet?.businessDate || fsAvailDates[0] || '';
           const fsRows = Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows : floorsheet;
@@ -5737,6 +5795,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 ledgerTelemetry={ledgerTelemetry}
                 rawFloorsheetContracts={realFloorsheet?.rows || []}
                 liveDepth={marketDepth}
+                broker5DPayload={realBrokerAnalysis}
+                rawFundamentals={rawFundamentalsForHub}
+                corporateActions={liveDetail?.corporateActions || []}
+                peerStocks={allStocks || peerStocks || []}
               />
             </div>
           </div>
@@ -6916,6 +6978,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               ledgerTelemetry={ledgerTelemetry}
               rawFloorsheetContracts={realFloorsheet?.rows || []}
               liveDepth={marketDepth}
+              broker5DPayload={realBrokerAnalysis}
+              rawFundamentals={rawFundamentalsForHub}
+              corporateActions={liveDetail?.corporateActions || []}
+              peerStocks={allStocks || peerStocks || []}
               onClose={() => setShowHubModal(false)}
             />
           </div>

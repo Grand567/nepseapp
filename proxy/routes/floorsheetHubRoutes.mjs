@@ -108,6 +108,27 @@ export function handleFloorsheetHub(req, res) {
     let rawContracts = [];
     let asOfDate = new Date().toISOString().slice(0, 10);
     let source = 'EMPTY';
+    let availableDates = [];
+
+    // Distinct trading dates for date dropdown (up to 30 dates sorted descending)
+    if (tableExists(db, 'floorsheet_contracts')) {
+      try {
+        availableDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 30`)
+          .all()
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+    if (availableDates.length === 0 && tableExists(db, 'floorsheet_broker_summary')) {
+      try {
+        availableDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_broker_summary ORDER BY trade_date DESC LIMIT 30`)
+          .all()
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+
+    const requestedDate = req.query.date || null;
 
     // 1. Primary Path: Query tick-level `floorsheet_contracts` table
     if (tableExists(db, 'floorsheet_contracts')) {
@@ -115,8 +136,9 @@ export function handleFloorsheetHub(req, res) {
         .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_contracts`)
         .get();
 
-      if (latestDateRow?.latest_date) {
-        asOfDate = latestDateRow.latest_date;
+      const chosenDate = requestedDate || (availableDates.length > 0 ? availableDates[0] : latestDateRow?.latest_date);
+      if (chosenDate) {
+        asOfDate = chosenDate;
         source = 'SQLITE_CONTRACTS';
 
         const clauses = [`trade_date = ?`];
@@ -374,6 +396,7 @@ export function handleFloorsheetHub(req, res) {
     const responsePayload = {
       ok: true,
       asOfDate,
+      availableDates,
       source,
       summary: {
         totalContracts: allEnriched.length,
@@ -395,6 +418,7 @@ export function handleFloorsheetHub(req, res) {
     return res.status(200).json({
       ok: false,
       asOfDate: new Date().toISOString().slice(0, 10),
+      availableDates: [],
       source: 'EMPTY',
       error: err instanceof Error ? err.message : 'Failed to load Floorsheet Hub',
       summary: {

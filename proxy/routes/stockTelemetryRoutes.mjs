@@ -140,46 +140,125 @@ export function handleStockTelemetry(req, res) {
       }
     }
 
-    // 4. Fetch 5-Session Smart-Money Broker Rollup
+    // Available distinct trading dates up to 30 days sorted descending
+    let availableFloorsheetDates = [];
+    if (tableExists(db, 'floorsheet_contracts')) {
+      try {
+        availableFloorsheetDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 30`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+    if (availableFloorsheetDates.length === 0 && tableExists(db, 'floorsheet_broker_summary')) {
+      try {
+        availableFloorsheetDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_broker_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 30`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+
+    const requestedDate = req.query.date || null;
+    const requestedDays = Math.max(1, Math.min(30, parseInt(req.query.days || 30, 10)));
+
+    // 4. Fetch 30-Day Smart-Money Broker Rollup with Total Holding & Buy/Sell Prices
     let broker5DPayload = null;
+    let topHoldingBroker = null;
+    let totalSharesHeldTillNow = 0;
+    let avgAccumulatorBuyPrice = null;
+    let avgDistributorSellPrice = null;
+
     if (tableExists(db, 'floorsheet_broker_summary')) {
       try {
-        broker5DPayload = db
+        const targetDates = requestedDate
+          ? [requestedDate]
+          : availableFloorsheetDates.slice(0, requestedDays);
+
+        const placeholders = targetDates.map(() => '?').join(',');
+        const queryParams = [validSymbol, ...targetDates];
+
+        const brokerRows = db
           .prepare(
             `SELECT
               broker_no AS brokerId,
               SUM(buy_kitta) AS buyKitta,
               SUM(sell_kitta) AS sellKitta,
               SUM(buy_kitta - sell_kitta) AS netKitta,
+              MAX(0, SUM(buy_kitta - sell_kitta)) AS holdKitta,
+              SUM(buy_amount) AS buyAmount,
+              SUM(sell_amount) AS sellAmount,
+              ROUND(SUM(buy_amount) / NULLIF(SUM(buy_kitta), 0), 2) AS avgBuyPrice,
+              ROUND(SUM(sell_amount) / NULLIF(SUM(sell_kitta), 0), 2) AS avgSellPrice,
+              ROUND((SUM(buy_amount) + SUM(sell_amount)) / NULLIF(SUM(buy_kitta) + SUM(sell_kitta), 0), 2) AS vwap,
               COUNT(*) AS trades,
               AVG(broker_anomaly_score) AS anomalyScore,
               AVG(avg_ticket_kitta) AS avgTicketKitta
             FROM floorsheet_broker_summary
             WHERE UPPER(symbol) = ?
-              AND trade_date IN (
-                SELECT DISTINCT trade_date
-                FROM floorsheet_broker_summary
-                WHERE UPPER(symbol) = ?
-                ORDER BY trade_date DESC
-                LIMIT 5
-              )
+              ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
             GROUP BY broker_no`
           )
-          .all(validSymbol, validSymbol);
-      } catch {
+          .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+
+        if (Array.isArray(brokerRows) && brokerRows.length > 0) {
+          broker5DPayload = brokerRows;
+
+          // Compute Stock-Level Cumulative Holdings & Prices Till Now
+          let totalBuyAmtAcc = 0;
+          let totalBuyQtyAcc = 0;
+          let totalSellAmtDist = 0;
+          let totalSellQtyDist = 0;
+
+          const accumulators = brokerRows
+            .filter(b => b.netKitta > 0)
+            .sort((a, b) => b.netKitta - a.netKitta);
+
+          const distributors = brokerRows
+            .filter(b => b.netKitta < 0)
+            .sort((a, b) => a.netKitta - b.netKitta);
+
+          for (const b of accumulators) {
+            totalSharesHeldTillNow += b.netKitta;
+            totalBuyAmtAcc += (b.buyAmount || 0);
+            totalBuyQtyAcc += (b.buyKitta || 0);
+          }
+
+          for (const b of distributors) {
+            totalSellAmtDist += (b.sellAmount || 0);
+            totalSellQtyDist += (b.sellKitta || 0);
+          }
+
+          avgAccumulatorBuyPrice = totalBuyQtyAcc > 0 ? Number((totalBuyAmtAcc / totalBuyQtyAcc).toFixed(2)) : null;
+          avgDistributorSellPrice = totalSellQtyDist > 0 ? Number((totalSellAmtDist / totalSellQtyDist).toFixed(2)) : null;
+
+          if (accumulators.length > 0) {
+            const topAcc = accumulators[0];
+            const retentionPct = topAcc.buyKitta > 0 ? Number(((topAcc.netKitta / topAcc.buyKitta) * 100).toFixed(1)) : 0;
+            topHoldingBroker = {
+              brokerId: topAcc.brokerId,
+              holdKitta: topAcc.netKitta,
+              buyKitta: topAcc.buyKitta,
+              sellKitta: topAcc.sellKitta,
+              avgBuyPrice: topAcc.avgBuyPrice,
+              avgSellPrice: topAcc.avgSellPrice,
+              retentionPct,
+              shareOfTotalHoldPct: totalSharesHeldTillNow > 0 ? Number(((topAcc.netKitta / totalSharesHeldTillNow) * 100).toFixed(1)) : 0
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[stockTelemetry] broker summary aggregation notice:', err.message);
         broker5DPayload = null;
       }
     }
 
-    // 5. Fetch Tick-by-Tick Floorsheet Contracts
+    // 5. Fetch Tick-by-Tick Floorsheet Contracts (multi-date or specific date)
     let rawFloorsheetContracts = [];
     if (tableExists(db, 'floorsheet_contracts')) {
       try {
-        const latestSessionRow = db
-          .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_contracts WHERE UPPER(symbol) = ?`)
-          .get(validSymbol);
-
-        if (latestSessionRow?.latest_date) {
+        const targetDate = requestedDate || (availableFloorsheetDates.length > 0 ? availableFloorsheetDates[0] : null);
+        if (targetDate) {
           rawFloorsheetContracts = db
             .prepare(
               `SELECT
@@ -197,7 +276,7 @@ export function handleStockTelemetry(req, res) {
               ORDER BY contract_no DESC
               LIMIT 500`
             )
-            .all(validSymbol, latestSessionRow.latest_date);
+            .all(validSymbol, targetDate);
         }
       } catch {
         // Synthesis fallback below
@@ -559,6 +638,11 @@ export function handleStockTelemetry(req, res) {
       rawFloorsheetContracts,
       liveDepth,
       broker5DPayload,
+      availableFloorsheetDates,
+      topHoldingBroker,
+      totalSharesHeldTillNow,
+      avgAccumulatorBuyPrice,
+      avgDistributorSellPrice,
       rawFundamentals,
       corporateActions,
       tabTelemetry,

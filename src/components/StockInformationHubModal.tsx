@@ -15,6 +15,8 @@ import {
 } from "@/services/aiGuru/runAiQuantitativeAssessment";
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
+import { DividendHistoryPanel } from "./DividendHistoryPanel";
+import StockReportsAnnouncementsCard from "./StockReportsAnnouncementsCard";
 import type {
   CorporateActionRow,
   RawFundamentalRecord,
@@ -1067,29 +1069,36 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                 </div>
               </div>
             </div>
+            {/* Live Dividend, Bonus & Right Share History Table */}
+            <div className="mt-4 pt-3 border-t border-slate-800">
+              <DividendHistoryPanel symbol={telemetry.symbol} hideSearch={true} />
+            </div>
           </div>
         )}
 
         {/* TAB 9: REPORTS & ANNOUNCEMENTS */}
         {activeTab === "REPORTS_ANNOUNCEMENTS" && (
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
-            <div className="font-bold text-white text-sm">
-              📰 Quarterly Financial Disclosures &amp; Book Closure Notices ({telemetry.symbol})
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                <div className="text-emerald-400 font-semibold">Latest Unaudited Quarterly Report</div>
-                <div className="text-slate-300 mt-1">
-                  Q4 / Q1 Financial Statement filed per SEBON &amp; NRB disclosure schedule. Verify EPS and NPL progression in the Fundamentals tab.
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
+              <div className="font-bold text-white text-sm">
+                📰 Quarterly Financial Disclosures &amp; Book Closure Notices ({telemetry.symbol})
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-emerald-400 font-semibold">Latest Unaudited Quarterly Report</div>
+                  <div className="text-slate-300 mt-1">
+                    Q4 / Q1 Financial Statement filed per SEBON &amp; NRB disclosure schedule. Verify EPS and NPL progression in the Fundamentals tab.
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-amber-300 font-semibold">AGM &amp; Book Closure Status</div>
+                  <div className="text-slate-300 mt-1">
+                    Monitor Mangsir–Magh AGM window. Avoid buying on the final day before book closure solely for cash dividends due to ex-dividend price adjustment.
+                  </div>
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                <div className="text-amber-300 font-semibold">AGM &amp; Book Closure Status</div>
-                <div className="text-slate-300 mt-1">
-                  Monitor Mangsir–Magh AGM window. Avoid buying on the final day before book closure solely for cash dividends due to ex-dividend price adjustment.
-                </div>
-              </div>
             </div>
+            <StockReportsAnnouncementsCard symbol={telemetry.symbol} companyName={telemetry.companyName} />
           </div>
         )}
 

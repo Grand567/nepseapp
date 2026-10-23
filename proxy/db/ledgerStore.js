@@ -155,14 +155,21 @@ db.exec(`
   CREATE VIEW IF NOT EXISTS signal_ledger AS
   SELECT * FROM algorithmic_signal_ledger;
 
-  CREATE VIEW IF NOT EXISTS floorsheet_broker_summary AS
+  DROP VIEW IF EXISTS floorsheet_broker_summary;
+  CREATE VIEW floorsheet_broker_summary AS
   SELECT
     trade_date,
     symbol,
     broker_id AS broker_no,
     buy_vol AS buy_kitta,
     sell_vol AS sell_kitta,
-    ROUND((buy_amt + sell_amt) / NULLIF(buy_vol + sell_vol, 0), 2) AS vwap
+    buy_amt AS buy_amount,
+    sell_amt AS sell_amount,
+    ROUND(buy_amt / NULLIF(buy_vol, 0), 2) AS avg_buy_price,
+    ROUND(sell_amt / NULLIF(sell_vol, 0), 2) AS avg_sell_price,
+    ROUND((buy_amt + sell_amt) / NULLIF(buy_vol + sell_vol, 0), 2) AS vwap,
+    0 AS avg_ticket_kitta,
+    0 AS broker_anomaly_score
   FROM daily_broker_ledger;
 `);
 
@@ -412,7 +419,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
   db.prepare(`
     DELETE FROM floorsheet_contracts
     WHERE trade_date NOT IN (
-      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 10
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 40
     )
   `).run();
 
@@ -1289,11 +1296,30 @@ export function getScripLedgerTelemetry(rawSymbol) {
 /**
  * Retrieves raw floorsheet contracts for a symbol (newest first)
  */
-export function getScripFloorsheet(symbol, limit = 100) {
-  if (!symbol) return [];
+export function getScripFloorsheet(symbol, limit = 500, options = {}) {
+  if (!symbol) return Object.assign([], { rows: [], availableDates: [], totalCount: 0 });
   const cleanSym = String(symbol).toUpperCase().trim();
+  const date = typeof options === 'string' ? options : options.date || null;
+  const days = Math.max(1, parseInt(options.days || 30, 10));
+  const fromDate = options.fromDate || null;
+  const toDate = options.toDate || null;
+
   try {
-    const rows = db.prepare(`
+    const symbolDates = db.prepare(`
+      SELECT DISTINCT trade_date
+      FROM floorsheet_contracts
+      WHERE UPPER(symbol) = ?
+      ORDER BY trade_date DESC
+      LIMIT 30
+    `).all(cleanSym).map(r => r.trade_date);
+
+    const globalDates = getStoredDates(30);
+    const availableDates = Array.from(new Set([...symbolDates, ...globalDates]))
+      .filter(Boolean)
+      .sort((a, b) => String(b).localeCompare(String(a)))
+      .slice(0, 30);
+
+    let sql = `
       SELECT
         contract_no AS contractNo,
         symbol,
@@ -1309,18 +1335,39 @@ export function getScripFloorsheet(symbol, limit = 100) {
         is_whale_print AS isWhalePrint
       FROM floorsheet_contracts
       WHERE UPPER(symbol) = ?
-      ORDER BY trade_date DESC, trade_time DESC, contract_no DESC
-      LIMIT ?
-    `).all(cleanSym, limit);
+    `;
+    const params = [cleanSym];
 
-    return rows.map(r => ({
+    if (date) {
+      sql += ` AND trade_date = ?`;
+      params.push(date);
+    } else if (fromDate && toDate) {
+      sql += ` AND trade_date >= ? AND trade_date <= ?`;
+      params.push(fromDate, toDate);
+    } else if (days && days < 40 && availableDates.length > 0) {
+      const targetDates = availableDates.slice(0, days);
+      const oldestTarget = targetDates[targetDates.length - 1];
+      sql += ` AND trade_date >= ?`;
+      params.push(oldestTarget);
+    }
+
+    sql += ` ORDER BY trade_date DESC, trade_time DESC, contract_no DESC LIMIT ?`;
+    params.push(Number(limit) || 500);
+
+    const rows = db.prepare(sql).all(...params).map(r => ({
       ...r,
       isInternalCross: Boolean(r.isInternalCross),
       isWhalePrint: Boolean(r.isWhalePrint),
     }));
+
+    return Object.assign(rows, {
+      rows,
+      availableDates,
+      totalCount: rows.length
+    });
   } catch (err) {
     console.warn(`[ledgerStore] getScripFloorsheet error for ${cleanSym}:`, err.message);
-    return [];
+    return Object.assign([], { rows: [], availableDates: [], totalCount: 0 });
   }
 }
 
@@ -1408,8 +1455,12 @@ export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = nul
 try {
   const fsContractsCount = db.prepare(`SELECT COUNT(*) as c FROM floorsheet_contracts`).get()?.c || 0;
   if (fsContractsCount === 0) {
-    const candidateFiles = ['floorsheet-full-2026-10-16.json', 'floorsheet-full-2026-10-15.json'];
-    for (const f of candidateFiles) {
+    let candidateFiles = ['floorsheet-full-2026-10-16.json', 'floorsheet-full-2026-10-15.json'];
+    try {
+      const discovered = fs.readdirSync(DATA_DIR).filter(f => /^floorsheet-full-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse();
+      if (discovered.length > 0) candidateFiles = discovered;
+    } catch (_) {}
+    for (const f of candidateFiles.slice(0, 30)) {
       const p = path.join(DATA_DIR, f);
       if (fs.existsSync(p)) {
         try {

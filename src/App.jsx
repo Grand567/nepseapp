@@ -59,7 +59,7 @@ export default function App() {
 
 function AppInner() {
   const { activeTab, setActiveTab, selectedStock, closeStockDetail, openStockDetail, exitToast } = useNavigation();
-  const { isPro, daysRemaining, planDuration, deviceId, openSubscriptionModal, syncFromCloud } = useSubscription();
+  const { isPro, daysRemaining, isLifetime, planDuration, deviceId, openSubscriptionModal, syncFromCloud } = useSubscription();
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [marketTrend, setMarketTrend] = useState('flat');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1004,7 +1004,7 @@ function AppInner() {
               id="btn-pro-subscription"
               className="icon-btn header-pro-btn"
               onClick={() => openSubscriptionModal()}
-              title={isPro ? `⭐ Pro Active (${daysRemaining}d remaining)` : '⚡ Upgrade to Pro (1m, 2m...)'}
+              title={isPro ? (isLifetime ? '⭐ Pro Active (Lifetime Unlimited Access)' : `⭐ Pro Active (${daysRemaining}d remaining)`) : '⚡ Upgrade to Pro (1m, 2m...)'}
               style={{
                 height: 30,
                 padding: '0 8px',
@@ -1022,7 +1022,7 @@ function AppInner() {
               }}
             >
               <Crown style={{ width: 13, height: 13, color: isPro ? '#f59e0b' : '#fbbf24' }} />
-              <span>PRO{isPro && <span className="header-pro-days"> ({daysRemaining}d)</span>}</span>
+              <span>PRO{isPro && <span className="header-pro-days"> ({isLifetime ? 'Lifetime' : `${daysRemaining}d`})</span>}</span>
             </button>
 
             {/* Resources button */}
@@ -1124,12 +1124,12 @@ function AppInner() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <Crown style={{ width: 12, height: 12, color: '#f59e0b' }} />
                         <span style={{ fontSize: 12, fontWeight: 800, color: isPro ? '#f59e0b' : 'var(--text-secondary)' }}>
-                          {isPro ? `PRO (${planDuration || 'Active'})` : 'FREE PLAN'}
+                          {isPro ? `PRO (${isLifetime ? 'Lifetime' : (planDuration || 'Active')})` : 'FREE PLAN'}
                         </span>
                       </div>
                       {isPro && (
                         <span style={{ fontSize: 12, fontWeight: 800, color: '#10B981', background: 'rgba(16, 185, 129, 0.12)', padding: '1px 5px', borderRadius: 4 }}>
-                          {daysRemaining}d left
+                          {isLifetime ? 'Lifetime Unlocked' : `${daysRemaining}d left`}
                         </span>
                       )}
                     </div>

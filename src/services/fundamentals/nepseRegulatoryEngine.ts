@@ -102,18 +102,18 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
 }): EvaluatedFundamentalTelemetry {
   const validSymbol =
     resolveValidNepseSymbol(params.symbol, params.rawFundamentals?.symbol) || "NEPSE";
-  const raw = params.rawFundamentals || {};
-  const sector = String(raw.sector || "Commercial Banks");
-  const fiscalQuarter = String(raw.fiscalQuarter ?? raw.fiscal_quarter ?? "Q4 2082/83");
+  const raw: any = params.rawFundamentals || {};
+  const sector = String(raw.sector || raw.sectorName || "Others");
+  const fiscalQuarter = String(raw.fiscalQuarter ?? raw.fiscal_quarter ?? raw.quarter ?? "Q4 2082/83");
 
-  const epsTtm = safeNum(raw.epsTtm ?? raw.eps_ttm, 18.5);
+  const epsTtm = safeNum(raw.epsTtm ?? raw.eps_ttm ?? raw.eps, 0);
   const distributableEps = safeNum(
     raw.distributableEps ?? raw.distributable_eps,
     epsTtm * 0.75
   );
   const bookValuePerShare = Math.max(
     1,
-    safeNum(raw.bookValuePerShare ?? raw.book_value_per_share, 165)
+    safeNum(raw.bookValuePerShare ?? raw.book_value_per_share ?? raw.bookValue ?? raw.bvps, 100)
   );
   const roePct = safeNum(
     raw.roePct ?? raw.roe_pct,
@@ -131,9 +131,9 @@ export function evaluateNepseFundamentalsAndLockIn(params: {
     rawCapex !== undefined && rawCapex !== null ? safeNum(rawCapex, 16.5) : null;
   const hydroCodDelayed = Boolean(raw.hydroCodDelayed ?? raw.hydro_cod_delayed ?? false);
 
-  const promoterSharePct = safeNum(raw.promoterSharePct ?? raw.promoter_share_pct, 51);
+  const promoterSharePct = safeNum(raw.promoterSharePct ?? raw.promoter_share_pct ?? raw.promoterPercentage ?? raw.promoterPct, 51);
   const publicSharePct = safeNum(
-    raw.publicSharePct ?? raw.public_share_pct,
+    raw.publicSharePct ?? raw.public_share_pct ?? raw.publicPercentage ?? raw.publicPct,
     100 - promoterSharePct
   );
   const paidUpCapital = safeNum(raw.paidUpCapital ?? raw.paid_up_capital, 5_000_000_000);

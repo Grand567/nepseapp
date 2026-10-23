@@ -21,7 +21,11 @@ function normaliseBackendRow(s) {
     TIME_STOP_STALE: 'expired', TIME_EXPIRED: 'expired',
     UNFILLABLE_SKIP: 'expired',
   };
-  const mappedStatus = statusMap[String(s.status || '').toUpperCase()] || 'expired';
+  let mappedStatus = statusMap[String(s.status || '').toUpperCase()] || 'expired';
+  const rawRet = Number((s.gross_return_pct ?? s.gross_pnl_pct ?? 0).toFixed(2));
+  if (mappedStatus === 'hit_target' && rawRet < 0) {
+    mappedStatus = 'expired';
+  }
   return {
     id: s.signal_id || `${s.symbol}_${s.signal_date}`,
     symbol: s.symbol,
@@ -91,10 +95,10 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
         });
         merged.sort((a, b) => new Date(b.signalDate || 0) - new Date(a.signalDate || 0));
 
-        // Recompute stats from merged set
-        const closed = merged.filter(s => s.status !== 'open' && s.status !== 'expired');
-        const wins = closed.filter(s => s.status === 'hit_target');
-        const losses = closed.filter(s => s.status === 'hit_stop');
+        // Recompute stats from merged set (including expired trades in denominator)
+        const closed = merged.filter(s => s.status !== 'open');
+        const wins = closed.filter(s => s.status === 'hit_target' || (s.status === 'expired' && (s.outcome?.returnPct ?? 0) > 0));
+        const losses = closed.filter(s => s.status === 'hit_stop' || (s.status === 'expired' && (s.outcome?.returnPct ?? 0) <= 0));
         const openCount = merged.filter(s => s.status === 'open').length;
         const winRate = closed.length > 0 ? (wins.length / closed.length) * 100 : 0;
         const avgReturnPct = closed.length > 0
@@ -403,7 +407,9 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
             color: '#c084fc',
             marginTop: 2
           }}>
-            {closedCount > 0 && profitFactor ? `${profitFactor}x` : '—'}
+            {closedCount > 0 && profitFactor != null && !isNaN(profitFactor)
+              ? (profitFactor === Infinity ? '>99x' : `${profitFactor.toFixed(2)}x`)
+              : '0.00x'}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
             Gains vs Losses
@@ -421,13 +427,13 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
             fontSize: 15,
             fontWeight: 900,
             fontFamily: 'var(--font-mono, monospace)',
-            color: '#34d399',
+            color: (bestTrade?.returnPct ?? 0) >= 0 ? '#34d399' : '#f43f5e',
             marginTop: 4
           }}>
-            {bestTrade?.returnPct != null ? `+${bestTrade.returnPct}%` : '—'}
+            {bestTrade?.returnPct != null ? `${bestTrade.returnPct >= 0 ? '+' : ''}${bestTrade.returnPct}%` : '—'}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            {bestTrade?.netReturnPct != null ? `+${bestTrade.netReturnPct}% Net` : 'Max gain'}
+            {bestTrade?.netReturnPct != null ? `${bestTrade.netReturnPct >= 0 ? '+' : ''}${bestTrade.netReturnPct}% Net` : 'Max gain'}
           </div>
         </div>
       </div>

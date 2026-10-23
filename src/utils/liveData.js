@@ -2325,7 +2325,7 @@ function buildFloorsheetResult(rawList, { sym, date, page, size, buyer, seller, 
     totalTrades: totalElements,
     symbol: sym,
     businessDate: date,
-    availableDates: availableDates.length > 0 ? availableDates : [date],
+    availableDates: Array.from(new Set([...(availableDates || []), date])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 30),
     priceVolumeBreakdown,
     bulkTransactions,
     isReal: true,
@@ -2378,9 +2378,9 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   const todayIso = formatNptDateIso(new Date());
   const lastTradingIso = mkt.lastTradingDay ? formatNptDateIso(mkt.lastTradingDay) : getLatestTradingDateStr();
   const dateCandidates = date
-    ? [date, lastTradingIso, todayIso, '2026-10-14', '2026-10-13', '2026-10-12', '2026-10-09'].filter(Boolean)
-    : (mkt.isOpen ? [todayIso, lastTradingIso, '2026-10-14', '2026-10-13', '2026-10-12'] : [lastTradingIso, todayIso, '2026-10-14', '2026-10-13', '2026-10-12']).filter(Boolean);
-  const uniqueDates = Array.from(new Set(dateCandidates));
+    ? [date, lastTradingIso, todayIso].filter(Boolean)
+    : (mkt.isOpen ? [todayIso, lastTradingIso] : [lastTradingIso, todayIso]).filter(Boolean);
+  const uniqueDates = Array.from(new Set(dateCandidates)).sort((a, b) => String(b).localeCompare(String(a)));
 
   // Direct authentic Chukul exchange floorsheet fallback for individual equities
   if (sym && sym !== 'ALL' && days === 1 && !fromDate && !toDate) {
@@ -2685,6 +2685,22 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
           topSellers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
           topNetBuyers: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
           topNetSellers: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          brokers: (fd.allBrokers || fd.brokers || []).map(normalizeBrokerItem).filter(Boolean),
+          dailyFlow: Array.isArray(fd.dailyFlow) ? fd.dailyFlow : [],
+          dateWiseBrokers: Array.isArray(fd.dateWiseBrokers) ? fd.dateWiseBrokers : (Array.isArray(fd.dailyFlow) ? fd.dailyFlow : []),
+          availableDates: Array.isArray(fd.availableDates) ? fd.availableDates : [],
+          tradingDays: fd.tradingDays || fd.timeframeDays || numDays,
+          fromDate: fd.fromDate || '',
+          toDate: fd.toDate || '',
+          businessDate: fd.toDate || fd.date || '',
+          date: fd.date || fd.toDate || '',
+          topHoldings: Array.isArray(fd.topHoldings) ? fd.topHoldings.map(normalizeBrokerItem).filter(Boolean) : (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
+          totalSharesHeldTillNow: fd.totalSharesHeldTillNow || fd.summary?.totalSharesHeldTillNow || 0,
+          topHoldingBroker: fd.topHoldingBroker || fd.summary?.topHoldingBroker || null,
+          topHoldingBrokerDetails: fd.topHoldingBrokerDetails || fd.summary?.topHoldingBrokerDetails || null,
+          avgAccumulatorBuyPrice: fd.avgAccumulatorBuyPrice || fd.summary?.avgAccumulatorBuyPrice || null,
+          avgDistributorSellPrice: fd.avgDistributorSellPrice || fd.summary?.avgDistributorSellPrice || null,
+          summary: fd.summary || null,
           bigBrokerVWAP: fd.bigBrokerVWAP,
           buyZoneMin: fd.buyZoneMin,
           buyZoneMax: fd.buyZoneMax,

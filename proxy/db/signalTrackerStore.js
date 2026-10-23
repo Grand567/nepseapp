@@ -749,7 +749,7 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
           exitDate = dates[latestDateIndex];
         } else if (holdingDays >= 12 || i < cutoffSession8d) {
           const gainPct = Number((((peakPrice - entryPrice) / entryPrice) * 100).toFixed(2));
-          if ((latestDateIndex >= i + 2 && gainPct >= 4.5) || latestClose >= entryPrice * 1.02) {
+          if (latestClose >= entryPrice * 1.02) {
             status = "WIN_T1";
             exitPrice = Number(latestClose.toFixed(2));
           } else {

@@ -168,18 +168,23 @@ export function computeSubscriptionMetrics(sub) {
   const remainingMs = Math.max(0, norm.expiresAt - now);
   const daysRemaining = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
   const isExpired = norm.expiresAt > 0 && norm.expiresAt <= now;
+  const isLifetime = Boolean(norm.isPro && (daysRemaining > 3650 || norm.planDuration === 'unlimited' || norm.voucherCode === 'LIFETIME_PRO'));
 
   let formattedExpiry = 'Never';
   if (norm.expiresAt > 0) {
-    try {
-      const d = new Date(norm.expiresAt);
-      formattedExpiry = d.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-    } catch (_) {
-      formattedExpiry = 'Unknown';
+    if (isLifetime) {
+      formattedExpiry = 'Lifetime Unlimited';
+    } else {
+      try {
+        const d = new Date(norm.expiresAt);
+        formattedExpiry = d.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      } catch (_) {
+        formattedExpiry = 'Unknown';
+      }
     }
   }
 
@@ -187,8 +192,9 @@ export function computeSubscriptionMetrics(sub) {
     ...norm,
     daysRemaining,
     isExpired,
+    isLifetime,
     formattedExpiry,
-    badgeLabel: norm.isPro ? `PRO (${norm.planDuration || 'Active'})` : 'FREE'
+    badgeLabel: norm.isPro ? `PRO (${isLifetime ? 'Lifetime' : (norm.planDuration || 'Active')})` : 'FREE'
   };
 }
 

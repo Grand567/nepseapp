@@ -33,6 +33,7 @@ export default function SubscriptionModal() {
   const {
     isPro,
     daysRemaining,
+    isLifetime,
     formattedExpiry,
     planDuration,
     voucherCode,
@@ -326,12 +327,12 @@ export default function SubscriptionModal() {
                   background: isPro ? '#10B981' : '#64748b'
                 }} />
                 <span style={{ fontSize: 13, fontWeight: 800, color: isPro ? '#10B981' : 'var(--text-secondary)' }}>
-                  {isPro ? `Active Pro (${planDuration || 'Monthly'})` : 'Free Plan (Pro Locked)'}
+                  {isPro ? `Active Pro (${isLifetime ? 'Lifetime Access' : (planDuration || 'Monthly')})` : 'Free Plan (Pro Locked)'}
                 </span>
               </div>
               {isPro ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Expires: <strong style={{ color: '#fff' }}>{formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{daysRemaining} days remaining</strong>
+                  Expires: <strong style={{ color: '#fff' }}>{isLifetime ? 'Lifetime Unlimited' : formattedExpiry}</strong> · <strong style={{ color: '#10B981' }}>{isLifetime ? 'Unlimited Pro Access' : `${daysRemaining} days remaining`}</strong>
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>

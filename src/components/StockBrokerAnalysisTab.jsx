@@ -64,22 +64,21 @@ export default function StockBrokerAnalysisTab({
   const effectiveDays = onDaysChange ? selectedDays : localDays;
   const effectiveDate = onDateChange ? selectedDate : localDate;
 
-  // Auto-fetch if brokerData is missing or empty
+  // Auto-fetch if brokerData is missing, empty, or from a different timeframe
   useEffect(() => {
     let active = true;
     if (!symbol) return;
-    const hasPropBrokers = brokerData && (
-      (Array.isArray(brokerData.brokers) && brokerData.brokers.length > 0) ||
-      (Array.isArray(brokerData.topBuyers) && brokerData.topBuyers.length > 0) ||
-      (Array.isArray(brokerData.dailyFlow) && brokerData.dailyFlow.length > 0)
+    const propMatchesTimeframe = brokerData && (
+      (brokerData.timeframeDays === effectiveDays || (!brokerData.timeframeDays && effectiveDays === 1)) &&
+      (Array.isArray(brokerData.brokers) && brokerData.brokers.length > 0)
     );
-    if (hasPropBrokers) {
+    if (propMatchesTimeframe && !effectiveDate) {
       setInternalBrokerData(null);
       return;
     }
 
     setInternalLoading(true);
-    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: effectiveDate })
+    fetchRealBrokerAnalysis(symbol, effectiveDays, { date: effectiveDate, refresh: true })
       .then(res => {
         if (active && res && (res.brokers?.length > 0 || res.topBuyers?.length > 0 || res.dailyFlow?.length > 0)) {
           setInternalBrokerData(res);
@@ -93,11 +92,10 @@ export default function StockBrokerAnalysisTab({
     return () => { active = false; };
   }, [symbol, effectiveDays, effectiveDate, brokerData]);
 
-  const activeBrokerData = (brokerData && (
-    (Array.isArray(brokerData.brokers) && brokerData.brokers.length > 0) ||
-    (Array.isArray(brokerData.topBuyers) && brokerData.topBuyers.length > 0) ||
-    (Array.isArray(brokerData.dailyFlow) && brokerData.dailyFlow.length > 0)
-  )) ? brokerData : (internalBrokerData || brokerData);
+  const activeBrokerData = (internalBrokerData && (
+    (Array.isArray(internalBrokerData.brokers) && internalBrokerData.brokers.length > 0) ||
+    (Array.isArray(internalBrokerData.dailyFlow) && internalBrokerData.dailyFlow.length > 0)
+  )) ? internalBrokerData : (brokerData || null);
 
   const isTabLoading = Boolean(loading || internalLoading);
 
@@ -1578,18 +1576,18 @@ export default function StockBrokerAnalysisTab({
                           </td>
                           <td style={{ padding: '8px 6px', color: '#10b981', fontWeight: 700 }}>
                             {(() => {
-                              const acc = df.topAccumulator || df.topHolder || df.topBuyer;
+                              const acc = df.topAccumulator || df.topHolder || df.topBuyer || (Array.isArray(df.brokers) ? [...df.brokers].sort((a,b) => (b.netQty || b.buyQty) - (a.netQty || a.buyQty))[0] : null);
                               const accId = acc?.broker || acc?.brokerId || acc?.id;
-                              const accVal = acc ? (acc.netQty != null && acc.netQty !== 0 ? acc.netQty : (acc.buyQty || 0)) : 0;
-                              return accId ? `#${accId} (+${formatCompactQty(accVal)})` : '—';
+                              const accVal = acc ? (acc.netQty != null && acc.netQty !== 0 ? acc.netQty : (acc.buyQty || acc.buyVol || 0)) : 0;
+                              return accId ? `#${accId} (+${formatCompactQty(Math.abs(accVal))})` : '—';
                             })()}
                           </td>
                           <td style={{ padding: '8px 6px', color: '#f43f5e', fontWeight: 700 }}>
                             {(() => {
-                              const dist = df.topDistributor || df.topSeller;
+                              const dist = df.topDistributor || df.topSeller || (Array.isArray(df.brokers) ? [...df.brokers].sort((a,b) => (a.netQty || a.sellQty) - (b.netQty || b.sellQty))[0] : null);
                               const distId = dist?.broker || dist?.brokerId || dist?.id;
-                              const distVal = dist ? (dist.sellQty || Math.abs(dist.netQty || 0)) : 0;
-                              return distId ? `#${distId} (-${formatCompactQty(distVal)})` : '—';
+                              const distVal = dist ? (dist.sellQty || dist.sellVol || Math.abs(dist.netQty || 0)) : 0;
+                              return distId ? `#${distId} (-${formatCompactQty(Math.abs(distVal))})` : '—';
                             })()}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: net >= 0 ? '#10b981' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>

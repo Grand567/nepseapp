@@ -253,10 +253,14 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
         dailySeries: []
       };
 
-      const bVol = Number(b.buyVol || b.buyQty || b.shares || 0);
-      const sVol = Number(b.sellVol || b.sellQty || 0);
-      const bAmt = Number(b.buyAmt || b.buyAmount || b.amount || (bVol * Number(b.avgBuyPrice || b.rate || 0)));
-      const sAmt = Number(b.sellAmt || b.sellAmount || (sVol * Number(b.avgSellPrice || b.rate || 0)));
+      const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
+      const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
+      const bAmt = bVol > 0
+        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
+        : 0;
+      const sAmt = sVol > 0
+        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
+        : 0;
 
       prev.buyVol += bVol;
       prev.sellVol += sVol;
@@ -459,6 +463,128 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   const activeSyndicateBrokers = topNetBuyers.filter(b => b.netVol > 0 && b.consistencyPct >= 40);
   const isSyndicateCoAccumulation = activeSyndicateBrokers.length >= 3;
 
+  // Extract all available trading dates sorted strictly descending
+  const availableDates = Array.from(
+    new Set(
+      dailyHistory
+        .map((d) => String(d.date || d.trade_date || d.businessDate || ''))
+        .filter(Boolean)
+    )
+  ).sort().reverse().slice(0, 30);
+
+  // Compute total shares held till now and enriched topHoldings
+  const totalSharesHeldTillNow = topNetBuyers.reduce((s, b) => s + b.netVol, 0);
+
+  const topHoldings = topNetBuyers.map((b) => ({
+    ...b,
+    holdQty: b.netVol,
+    holdAmt: Math.max(0, b.netAmt),
+    buyQty: b.buyVol,
+    sellQty: b.sellVol,
+    avgBuyRate: b.avgBuyPrice,
+    avgSellRate: b.avgSellPrice,
+    retentionPct: b.retentionPct,
+    shareOfTotalHoldPct: totalSharesHeldTillNow > 0 ? Number(((b.netVol / totalSharesHeldTillNow) * 100).toFixed(1)) : 0,
+    shareOfTotalVol: totalVolume > 0 ? Number(((b.buyVol / totalVolume) * 100).toFixed(1)) : 0
+  }));
+
+  const topHolder = topHoldings[0] || null;
+  const topHoldingBrokerDetails = topHolder ? {
+    brokerId: topHolder.brokerId,
+    brokerName: topHolder.brokerName,
+    holdQty: topHolder.holdQty,
+    holdAmt: topHolder.holdAmt,
+    buyQty: topHolder.buyQty,
+    sellQty: topHolder.sellQty,
+    avgBuyRate: topHolder.avgBuyRate,
+    avgSellRate: topHolder.avgSellRate,
+    retentionPct: topHolder.retentionPct,
+    shareOfTotalHoldPct: topHolder.shareOfTotalHoldPct,
+    shareOfTotalVolPct: topHolder.shareOfTotalVol
+  } : null;
+
+  const accBuyVol = topNetBuyers.reduce((s, b) => s + b.buyVol, 0);
+  const accBuyAmt = topNetBuyers.reduce((s, b) => s + b.buyAmt, 0);
+  const avgAccumulatorBuyPrice = accBuyVol > 0 ? Number((accBuyAmt / accBuyVol).toFixed(2)) : (topHolder?.avgBuyRate || marketVWAP);
+
+  const distSellVol = topNetSellers.reduce((s, b) => s + b.sellVol, 0);
+  const distSellAmt = topNetSellers.reduce((s, b) => s + b.sellAmt, 0);
+  const avgDistributorSellPrice = distSellVol > 0 ? Number((distSellAmt / distSellVol).toFixed(2)) : (topNetSellers[0]?.avgSellPrice || marketVWAP);
+
+  const summary = {
+    totalVolume,
+    totalAmount: Number(totalTurnover.toFixed(2)),
+    totalTurnover: Number(totalTurnover.toFixed(2)),
+    totalTrades: windowData.reduce((s, d) => s + (d.totalTrades || 0), 0) || 1,
+    vwap: marketVWAP,
+    activeBrokers: brokersArray.length,
+    totalHoldQty: totalSharesHeldTillNow,
+    totalSharesHeldTillNow,
+    topHoldingBroker: topHolder?.brokerId || null,
+    topHoldingBrokerDetails,
+    avgAccumulatorBuyPrice,
+    avgBuyingPrice: avgAccumulatorBuyPrice,
+    avgDistributorSellPrice,
+    avgSellingPrice: avgDistributorSellPrice
+  };
+
+  // Construct session-by-session flow for date-wise drilldown across all requested timeframes
+  const dailyFlow = windowData.map((day) => {
+    const dayBrokers = (day.brokers || []).map((b) => {
+      const bId = String(b.brokerId || b.broker || b.id || '').trim();
+      const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
+      const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
+      const bAmt = bVol > 0
+        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
+        : 0;
+      const sAmt = sVol > 0
+        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
+        : 0;
+      return {
+        brokerId: bId,
+        broker: bId,
+        id: bId,
+        brokerName: TOP_NEPSE_BROKERS[bId] || b.brokerName || b.name || `Broker #${bId}`,
+        name: TOP_NEPSE_BROKERS[bId] || b.brokerName || b.name || `Broker #${bId}`,
+        buyQty: bVol,
+        buyVol: bVol,
+        sellQty: sVol,
+        sellVol: sVol,
+        netQty: bVol - sVol,
+        buyAmt: bAmt,
+        sellAmt: sAmt,
+        netAmt: bAmt - sAmt,
+        avgBuyRate: bVol > 0 ? Number((bAmt / bVol).toFixed(2)) : 0,
+        avgSellRate: sVol > 0 ? Number((sAmt / sVol).toFixed(2)) : 0,
+      };
+    });
+
+    const dayTopBuyers = [...dayBrokers].filter(b => b.buyQty > 0).sort((a, b) => b.buyQty - a.buyQty);
+    const dayTopSellers = [...dayBrokers].filter(b => b.sellQty > 0).sort((a, b) => b.sellQty - a.sellQty);
+    const dayTopHolders = [...dayBrokers].sort((a, b) => b.netQty - a.netQty);
+    const topAcc = dayTopHolders.filter(b => b.netQty > 0)[0] || dayTopBuyers[0] || null;
+    const topDist = [...dayBrokers].filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty)[0] || dayTopSellers[0] || null;
+    const dayVol = Math.max(Number(day.totalVolume || 0), dayBrokers.reduce((s, b) => s + b.buyQty, 0));
+    const dayTurnover = Number(day.totalTurnover || day.turnover || (dayVol * Number(day.closePrice || day.close || 0)));
+    const netFlow = (topAcc?.netQty || 0) - Math.abs(topDist?.netQty || 0);
+
+    return {
+      date: day.date,
+      buyVol: dayBrokers.reduce((s, b) => s + b.buyQty, 0) || dayVol,
+      sellVol: dayBrokers.reduce((s, b) => s + b.sellQty, 0) || dayVol,
+      turnover: dayTurnover,
+      totalVolume: dayVol,
+      vwap: dayVol > 0 ? Number((dayTurnover / dayVol).toFixed(2)) : Number(day.closePrice || 0),
+      netFlow,
+      topBuyer: dayTopBuyers[0] || null,
+      topSeller: dayTopSellers[0] || null,
+      topHolder: topAcc,
+      topAccumulator: topAcc,
+      topDistributor: topDist,
+      brokers: dayBrokers,
+    };
+  });
+
   return {
     timeframeDays: actualDays,
     scopeLabel:
@@ -511,6 +637,24 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     isSyndicateCoAccumulation,
     syndicateBrokers: activeSyndicateBrokers.slice(0, 5).map(b => b.brokerId),
     allBrokers: brokersArray,
+    brokers: brokersArray,
+    dailyFlow,
+    dateWiseBrokers: dailyFlow,
+    availableDates,
+    fromDate: oldestDay?.date || oldestDay?.trade_date || '',
+    toDate: latestDay?.date || latestDay?.trade_date || '',
+    businessDate: latestDay?.date || latestDay?.trade_date || '',
+    date: latestDay?.date || latestDay?.trade_date || '',
+    tradingDays: actualDays,
+    topHoldings,
+    totalSharesHeldTillNow,
+    topHoldingBroker: topHolder?.brokerId || null,
+    topHoldingBrokerDetails,
+    avgAccumulatorBuyPrice,
+    avgBuyingPrice: avgAccumulatorBuyPrice,
+    avgDistributorSellPrice,
+    avgSellingPrice: avgDistributorSellPrice,
+    summary,
   };
 }
 
@@ -574,8 +718,20 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
   const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers)
     ? realBrokerAnalysis.brokers
     : [
-        ...(realBrokerAnalysis?.topBuyers || []).map(b => ({ ...b, buyQty: b.volume || b.buyQty, sellQty: 0 })),
-        ...(realBrokerAnalysis?.topSellers || []).map(s => ({ ...s, buyQty: 0, sellQty: s.volume || s.sellQty }))
+        ...(realBrokerAnalysis?.topBuyers || []).map(b => ({
+          ...b,
+          buyQty: Number(b.volume ?? b.buyQty ?? b.shares ?? 0),
+          sellQty: 0,
+          buyAmt: Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0),
+          sellAmt: 0,
+        })),
+        ...(realBrokerAnalysis?.topSellers || []).map(s => ({
+          ...s,
+          buyQty: 0,
+          sellQty: Number(s.volume ?? s.sellQty ?? s.shares ?? 0),
+          buyAmt: 0,
+          sellAmt: Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? 0),
+        }))
       ];
 
   if (rawBrokers.length === 0) return [];

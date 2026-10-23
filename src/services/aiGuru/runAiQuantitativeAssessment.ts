@@ -46,21 +46,30 @@ export interface LedgerTelemetryRow {
   status?: "OPEN" | "LOCKED_T2" | "RATCHET_PROTECTED" | "CLOSED" | "TARGET_HIT" | "STOP_LOSS" | "ACTIVE";
 }
 
+export interface BrokerSmartMoneyItem {
+  brokerId: number | string;
+  netKitta: number;
+  anomalyScore: number;
+  avgTicketKitta: number;
+  buyKitta?: number;
+  sellKitta?: number;
+  holdKitta?: number;
+  buyAmount?: number;
+  sellAmount?: number;
+  avgBuyPrice?: number;
+  avgSellPrice?: number;
+  retentionPct?: number;
+}
+
 export interface BrokerSmartMoney5DSummary {
   netAccumulationRatio: number; // 0 to 100%
-  topAccumulators: Array<{
-    brokerId: number | string;
-    netKitta: number;
-    anomalyScore: number;
-    avgTicketKitta: number;
-  }>;
-  topDistributors: Array<{
-    brokerId: number | string;
-    netKitta: number;
-    anomalyScore: number;
-    avgTicketKitta: number;
-  }>;
+  topAccumulators: Array<BrokerSmartMoneyItem>;
+  topDistributors: Array<BrokerSmartMoneyItem>;
   dominantRegime: "INSTITUTIONAL_ACCUMULATION" | "RETAIL_CHURN" | "DISTRIBUTION" | "NEUTRAL";
+  totalSharesHeldTillNow?: number;
+  topHoldingBroker?: BrokerSmartMoneyItem | null;
+  avgBuyingPrice?: number | null;
+  avgSellingPrice?: number | null;
 }
 
 export interface AiQuantitativeAssessmentResult {
@@ -268,23 +277,50 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
       computedAnomaly
     );
 
+    const buyAmt = safeNum(item.buyAmount ?? item.buy_amount ?? item.buyAmt, 0);
+    const sellAmt = safeNum(item.sellAmount ?? item.sell_amount ?? item.sellAmt, 0);
+    const avgBuyPrice = safeNum(item.avgBuyPrice ?? item.avg_buy_price ?? item.avgBuyRate, buyKitta > 0 ? (buyAmt / buyKitta) : 0);
+    const avgSellPrice = safeNum(item.avgSellPrice ?? item.avg_sell_price ?? item.avgSellRate, sellKitta > 0 ? (sellAmt / sellKitta) : 0);
+    const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
+
     return {
       brokerId,
       netKitta,
+      buyKitta,
+      sellKitta,
+      holdKitta: Math.max(0, netKitta),
+      buyAmount: buyAmt,
+      sellAmount: sellAmt,
+      avgBuyPrice: Number(avgBuyPrice.toFixed(2)),
+      avgSellPrice: Number(avgSellPrice.toFixed(2)),
+      retentionPct,
       anomalyScore: Number(Math.max(0.1, rawAnomaly).toFixed(2)),
       avgTicketKitta: Math.round(avgTicketKitta),
     };
   });
 
-  const topAccumulators = normalizedRows
-    .filter((r) => r.netKitta > 0)
+  const accumulators = normalizedRows.filter((r) => r.netKitta > 0);
+  const distributors = normalizedRows.filter((r) => r.netKitta < 0);
+
+  const topAccumulators = [...accumulators]
     .sort((a, b) => b.netKitta * b.anomalyScore - a.netKitta * a.anomalyScore)
     .slice(0, 5);
 
-  const topDistributors = normalizedRows
-    .filter((r) => r.netKitta < 0)
+  const topDistributors = [...distributors]
     .sort((a, b) => Math.abs(b.netKitta) - Math.abs(a.netKitta))
     .slice(0, 5);
+
+  const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netKitta, 0);
+  const sortedByHold = [...accumulators].sort((a, b) => b.netKitta - a.netKitta);
+  const topHoldingBroker = sortedByHold[0] || null;
+
+  const totalAccBuyAmt = accumulators.reduce((s, b) => s + (b.buyAmount || 0), 0);
+  const totalAccBuyQty = accumulators.reduce((s, b) => s + (b.buyKitta || 0), 0);
+  const avgBuyingPrice = totalAccBuyQty > 0 ? Number((totalAccBuyAmt / totalAccBuyQty).toFixed(2)) : null;
+
+  const totalDistSellAmt = distributors.reduce((s, b) => s + (b.sellAmount || 0), 0);
+  const totalDistSellQty = distributors.reduce((s, b) => s + (b.sellKitta || 0), 0);
+  const avgSellingPrice = totalDistSellQty > 0 ? Number((totalDistSellAmt / totalDistSellQty).toFixed(2)) : null;
 
   const totalVolume = totalBuyKitta + totalSellKitta;
   const netAccumulationRatio =
@@ -307,6 +343,10 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     topAccumulators,
     topDistributors,
     dominantRegime,
+    totalSharesHeldTillNow,
+    topHoldingBroker,
+    avgBuyingPrice,
+    avgSellingPrice,
   };
 }
 
