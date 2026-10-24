@@ -3713,13 +3713,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>Avg Buying Price</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                      {Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (quote?.ltp ? `Rs. ${quote.ltp}` : '—')}
+                      {Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—')}
                     </div>
                   </div>
                   <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#fb7185', textTransform: 'uppercase' }}>Avg Selling Price</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                      {Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice).toFixed(1)}` : (quote?.ltp ? `Rs. ${quote.ltp}` : '—')}
+                      {Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgDistributorSellPrice || realBrokerAnalysis?.summary?.avgDistributorSellPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—')}
                     </div>
                   </div>
                 </div>
