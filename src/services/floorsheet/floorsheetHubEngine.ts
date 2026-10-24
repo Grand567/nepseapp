@@ -497,11 +497,24 @@ export function buildUnifiedStockTabTelemetry(params: {
     contracts: enrichedContracts,
   });
 
-  const effectiveBrokerPayload =
-    params.broker5DRawPayload &&
-    Array.isArray((params.broker5DRawPayload as Record<string, unknown>)?.["5D"])
-      ? params.broker5DRawPayload
-      : aggregateBrokersFromContracts(enrichedContracts);
+  const rawP = params.broker5DRawPayload as Record<string, unknown> | null | undefined;
+  const hasBrokerPayload =
+    Boolean(
+      rawP &&
+      typeof rawP === "object" &&
+      (Array.isArray(rawP) ||
+        Array.isArray(rawP["5D"]) ||
+        Array.isArray(rawP["5d"]) ||
+        Array.isArray(rawP["30D"]) ||
+        Array.isArray(rawP.brokers) ||
+        Array.isArray(rawP.topHoldings) ||
+        Array.isArray(rawP.topAccumulators) ||
+        Array.isArray(rawP.data))
+    );
+
+  const effectiveBrokerPayload = hasBrokerPayload
+    ? params.broker5DRawPayload
+    : aggregateBrokersFromContracts(enrichedContracts);
 
   const smartMoney5D = normalize5DBrokerPayloadForAi(effectiveBrokerPayload);
 
@@ -537,7 +550,7 @@ export function buildUnifiedStockTabTelemetry(params: {
 function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) {
   const map = new Map<
     number,
-    { brokerId: number; buyKitta: number; sellKitta: number; trades: number }
+    { brokerId: number; buyKitta: number; sellKitta: number; trades: number; buyAmount: number; sellAmount: number }
   >();
 
   for (const c of contracts) {
@@ -547,8 +560,11 @@ function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) 
         buyKitta: 0,
         sellKitta: 0,
         trades: 0,
+        buyAmount: 0,
+        sellAmount: 0,
       };
       b.buyKitta += c.kitta;
+      b.buyAmount += c.amount;
       b.trades += 1;
       map.set(c.buyerBroker, b);
     }
@@ -558,8 +574,11 @@ function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) 
         buyKitta: 0,
         sellKitta: 0,
         trades: 0,
+        buyAmount: 0,
+        sellAmount: 0,
       };
       s.sellKitta += c.kitta;
+      s.sellAmount += c.amount;
       s.trades += 1;
       map.set(c.sellerBroker, s);
     }

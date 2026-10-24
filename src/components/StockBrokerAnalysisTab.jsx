@@ -469,6 +469,7 @@ export default function StockBrokerAnalysisTab({
         list.sort((a, b) => b.sellQty - a.sellQty);
       }
     } else if (brokerRoleFilter === 'holdings') {
+      list = list.filter(b => (b.signedHoldQty || b.netQty || 0) > 0);
       if (rankingMetric === 'netFlow') {
         list.sort((a, b) => b.netAmt - a.netAmt);
       } else if (rankingMetric === 'netQty') {

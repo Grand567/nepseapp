@@ -59,12 +59,17 @@ export interface BrokerSmartMoneyItem {
   avgBuyPrice?: number;
   avgSellPrice?: number;
   retentionPct?: number;
+  brokerName?: string;
+  holdingSharePct?: number;
 }
 
 export interface BrokerSmartMoney5DSummary {
   netAccumulationRatio: number; // 0 to 100%
   topAccumulators: Array<BrokerSmartMoneyItem>;
   topDistributors: Array<BrokerSmartMoneyItem>;
+  allHoldings?: Array<BrokerSmartMoneyItem>;
+  allDistributors?: Array<BrokerSmartMoneyItem>;
+  totalHoldersCount?: number;
   dominantRegime: "INSTITUTIONAL_ACCUMULATION" | "RETAIL_CHURN" | "DISTRIBUTION" | "NEUTRAL";
   totalSharesHeldTillNow?: number;
   topHoldingBroker?: BrokerSmartMoneyItem | null;
@@ -233,6 +238,10 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     ? (obj["5d"] as unknown[])
     : Array.isArray(obj.brokers)
     ? (obj.brokers as unknown[])
+    : Array.isArray(obj.topHoldings)
+    ? (obj.topHoldings as unknown[])
+    : Array.isArray(obj["30D"])
+    ? (obj["30D"] as unknown[])
     : Array.isArray(obj.data)
     ? (obj.data as unknown[])
     : [];
@@ -282,6 +291,8 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     const avgBuyPrice = safeNum(item.avgBuyPrice ?? item.avg_buy_price ?? item.avgBuyRate, buyKitta > 0 ? (buyAmt / buyKitta) : 0);
     const avgSellPrice = safeNum(item.avgSellPrice ?? item.avg_sell_price ?? item.avgSellRate, sellKitta > 0 ? (sellAmt / sellKitta) : 0);
     const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
+    const rawBrokerName = String(item.brokerName ?? item.name ?? "").trim();
+    const brokerName = rawBrokerName || undefined;
 
     return {
       brokerId,
@@ -294,6 +305,7 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
       avgBuyPrice: Number(avgBuyPrice.toFixed(2)),
       avgSellPrice: Number(avgSellPrice.toFixed(2)),
       retentionPct,
+      brokerName,
       anomalyScore: Number(Math.max(0.1, rawAnomaly).toFixed(2)),
       avgTicketKitta: Math.round(avgTicketKitta),
     };
@@ -311,6 +323,14 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     .slice(0, 5);
 
   const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netKitta, 0);
+  const allHoldings = [...accumulators]
+    .map((b) => ({
+      ...b,
+      holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netKitta / totalSharesHeldTillNow) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.netKitta - a.netKitta);
+  const allDistributors = [...distributors].sort((a, b) => a.netKitta - b.netKitta);
+
   const sortedByHold = [...accumulators].sort((a, b) => b.netKitta - a.netKitta);
   const topHoldingBroker = sortedByHold[0] || null;
 
@@ -342,6 +362,9 @@ export function normalize5DBrokerPayloadForAi(rawPayload: unknown): BrokerSmartM
     netAccumulationRatio,
     topAccumulators,
     topDistributors,
+    allHoldings,
+    allDistributors,
+    totalHoldersCount: accumulators.length,
     dominantRegime,
     totalSharesHeldTillNow,
     topHoldingBroker,

@@ -16,6 +16,8 @@ import {
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
+import { getBrokerName } from "@/utils/accumulationDistributionEngine";
+import { Users, Search, Filter, ArrowUpDown, TrendingUp, TrendingDown, ShieldCheck, Award } from "lucide-react";
 import StockReportsAnnouncementsCard from "./StockReportsAnnouncementsCard";
 import type {
   CorporateActionRow,
@@ -241,6 +243,12 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   const [brokerFilterQuery, setBrokerFilterQuery] = useState("");
   const [selectedTradeDate, setSelectedTradeDate] = useState<string>("ALL");
 
+  // Tab 3: Brokers Holding Till Now States
+  const [brokerHoldingSearch, setBrokerHoldingSearch] = useState<string>("");
+  const [brokerHoldingFilter, setBrokerHoldingFilter] = useState<"ALL" | "WHALE" | "MAJOR" | "HIGH_RETENTION">("ALL");
+  const [brokerHoldingSort, setBrokerHoldingSort] = useState<"KITTA_DESC" | "VAL_DESC" | "BUY_PRICE_ASC" | "BUY_PRICE_DESC" | "RETENTION_DESC" | "BROKER_ASC">("KITTA_DESC");
+  const [brokerViewMode, setBrokerViewMode] = useState<"HOLDINGS" | "DISTRIBUTORS">("HOLDINGS");
+
   // Tab 1: Rupee Profit Simulator States (Supports 7.5% ST, 5.0% LT, and 10.0% Corporate CGT)
   const [simKitta, setSimKitta] = useState<number>(100);
   const [simTargetGainPct, setSimTargetGainPct] = useState<number>(8);
@@ -348,7 +356,138 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     [historicalCandles, ltp]
   );
 
-  // Bonus & Right Adjustment Formulas: P_adj_bonus = P_close / (1 + Bonus%/100), P_adj_right = (P_close + Right*100) / (1 + Right)
+  // Tab 3: Unified Brokers Holding Till Now & Distributors Calculation for Every Broker Holding the Stock
+  const { allHoldingsList, allDistributorsList, totalHeldKitta, totalHeldValRs, avgAccumBuyPrice, topHoldingBrokerItem } = useMemo(() => {
+    let candidateBrokers: any[] = [];
+    if (telemetry.smartMoney5D?.allHoldings && telemetry.smartMoney5D.allHoldings.length > 0) {
+      candidateBrokers = [
+        ...telemetry.smartMoney5D.allHoldings,
+        ...(telemetry.smartMoney5D?.allDistributors || [])
+      ];
+    } else {
+      const bPayload = broker5DPayload as any;
+      const rawList = Array.isArray(bPayload?.brokers)
+        ? bPayload.brokers
+        : Array.isArray(bPayload?.topHoldings)
+        ? bPayload.topHoldings
+        : Array.isArray(bPayload?.topNetBuyers)
+        ? bPayload.topNetBuyers
+        : Array.isArray(bPayload?.data)
+        ? bPayload.data
+        : [];
+      if (rawList.length > 0) {
+        candidateBrokers = rawList;
+      } else {
+        candidateBrokers = [
+          ...(telemetry.smartMoney5D?.topAccumulators || []),
+          ...(telemetry.smartMoney5D?.topDistributors || [])
+        ];
+      }
+    }
+
+    const normList = candidateBrokers.map((b: any) => {
+      const brokerId = String(b.brokerId ?? b.broker ?? b.id ?? "0").replace(/^0+/, "");
+      const buyKitta = Number(b.buyKitta ?? b.buyQty ?? b.buyVolume ?? 0);
+      const sellKitta = Number(b.sellKitta ?? b.sellQty ?? b.sellVolume ?? 0);
+      const netKitta = Number(b.netKitta ?? b.holdQty ?? b.netQty ?? (buyKitta - sellKitta));
+      const buyAmount = Number(b.buyAmount ?? b.buyAmt ?? 0);
+      const sellAmount = Number(b.sellAmount ?? b.sellAmt ?? 0);
+      const avgBuyPrice = Number(b.avgBuyPrice ?? b.avgBuyRate ?? (buyKitta > 0 ? buyAmount / buyKitta : 0));
+      const avgSellPrice = Number(b.avgSellPrice ?? b.avgSellRate ?? (sellKitta > 0 ? sellAmount / sellKitta : 0));
+      const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
+      const rawName = String(b.brokerName ?? b.name ?? "").trim();
+      const brokerName = rawName && !rawName.startsWith("Broker #") ? rawName : getBrokerName(brokerId);
+      const anomalyScore = Number(b.anomalyScore ?? 1.0);
+      const avgTicketKitta = Number(b.avgTicketKitta ?? 0);
+
+      return {
+        brokerId,
+        brokerName,
+        netKitta,
+        buyKitta,
+        sellKitta,
+        holdKitta: Math.max(0, netKitta),
+        buyAmount,
+        sellAmount,
+        avgBuyPrice: Number(avgBuyPrice.toFixed(2)),
+        avgSellPrice: Number(avgSellPrice.toFixed(2)),
+        retentionPct,
+        anomalyScore: Number(anomalyScore.toFixed(2)),
+        avgTicketKitta: Math.round(avgTicketKitta),
+      };
+    });
+
+    const accumulators = normList.filter((b) => b.netKitta > 0);
+    const distributors = normList.filter((b) => b.netKitta < 0);
+
+    const totalHeld = accumulators.reduce((s, b) => s + b.netKitta, 0);
+    const totalVal = totalHeld * (ltp || 0);
+
+    const totalBuyAmt = accumulators.reduce((s, b) => s + (b.buyAmount || 0), 0);
+    const totalBuyQty = accumulators.reduce((s, b) => s + (b.buyKitta || 0), 0);
+    const avgBuy = totalBuyQty > 0 ? Number((totalBuyAmt / totalBuyQty).toFixed(2)) : (telemetry.smartMoney5D?.avgBuyingPrice || null);
+
+    const holdingsWithShare = accumulators.map((b) => ({
+      ...b,
+      holdingSharePct: totalHeld > 0 ? Number(((b.netKitta / totalHeld) * 100).toFixed(2)) : 0,
+      holdingValueRs: b.netKitta * (ltp || 0),
+    })).sort((a, b) => b.netKitta - a.netKitta);
+
+    const distributorsSorted = distributors.map((b) => ({
+      ...b,
+      holdingSharePct: 0,
+      holdingValueRs: Math.abs(b.netKitta) * (ltp || 0),
+    })).sort((a, b) => a.netKitta - b.netKitta);
+
+    return {
+      allHoldingsList: holdingsWithShare,
+      allDistributorsList: distributorsSorted,
+      totalHeldKitta: totalHeld,
+      totalHeldValRs: totalVal,
+      avgAccumBuyPrice: avgBuy,
+      topHoldingBrokerItem: holdingsWithShare[0] || null,
+    };
+  }, [telemetry.smartMoney5D, broker5DPayload, ltp]);
+
+  const filteredAndSortedBrokers = useMemo(() => {
+    let list = brokerViewMode === "HOLDINGS" ? [...allHoldingsList] : [...allDistributorsList];
+
+    if (brokerHoldingSearch.trim() !== "") {
+      const q = brokerHoldingSearch.trim().toLowerCase();
+      list = list.filter((b) =>
+        b.brokerId.toLowerCase().includes(q) ||
+        b.brokerName.toLowerCase().includes(q)
+      );
+    }
+
+    if (brokerViewMode === "HOLDINGS") {
+      if (brokerHoldingFilter === "WHALE") {
+        list = list.filter((b) => b.netKitta >= 10000);
+      } else if (brokerHoldingFilter === "MAJOR") {
+        list = list.filter((b) => b.netKitta >= 2000);
+      } else if (brokerHoldingFilter === "HIGH_RETENTION") {
+        list = list.filter((b) => b.retentionPct >= 60);
+      }
+    }
+
+    if (brokerHoldingSort === "KITTA_DESC") {
+      list.sort((a, b) => Math.abs(b.netKitta) - Math.abs(a.netKitta));
+    } else if (brokerHoldingSort === "VAL_DESC") {
+      list.sort((a, b) => b.holdingValueRs - a.holdingValueRs);
+    } else if (brokerHoldingSort === "BUY_PRICE_ASC") {
+      list.sort((a, b) => (a.avgBuyPrice || 999999) - (b.avgBuyPrice || 999999));
+    } else if (brokerHoldingSort === "BUY_PRICE_DESC") {
+      list.sort((a, b) => (b.avgBuyPrice || 0) - (a.avgBuyPrice || 0));
+    } else if (brokerHoldingSort === "RETENTION_DESC") {
+      list.sort((a, b) => (b.retentionPct || 0) - (a.retentionPct || 0));
+    } else if (brokerHoldingSort === "BROKER_ASC") {
+      list.sort((a, b) => Number(a.brokerId) - Number(b.brokerId));
+    }
+
+    return list;
+  }, [allHoldingsList, allDistributorsList, brokerViewMode, brokerHoldingSearch, brokerHoldingFilter, brokerHoldingSort]);
+
+    // Bonus & Right Adjustment Formulas: P_adj_bonus = P_close / (1 + Bonus%/100), P_adj_right = (P_close + Right*100) / (1 + Right)
   const priceAdjustments = useMemo(() => {
     const bonusAdjustedPrice = Number((ltp / (1 + Math.max(0, adjBonusPct) / 100)).toFixed(2));
     const rightRatio = Math.max(0, adjRightPct) / 100;
@@ -392,7 +531,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
     { key: "TECHNICALS", label: "2. Technicals", badge: `RSI ${technicals.rsi14}` },
     {
       key: "BROKER_FLOW",
-      label: "3. Broker Flow",
+      label: "3. Broker Flow & Smart Money",
       badge: `${telemetry.smartMoney5D.netAccumulationRatio}%`,
     },
     {

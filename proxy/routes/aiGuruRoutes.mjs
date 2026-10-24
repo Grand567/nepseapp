@@ -1,6 +1,7 @@
 // proxy/routes/aiGuruRoutes.mjs
 import express from 'express';
 import { getScripLedgerTelemetry, getSmartMoneyAggregatedFlow } from '../db/ledgerStore.js';
+import { getBrokerName } from '../brokerVault.mjs';
 
 const router = express.Router();
 
@@ -142,6 +143,9 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
     netAccumulationRatio: 50,
     topAccumulators: [],
     topDistributors: [],
+    allHoldings: [],
+    allDistributors: [],
+    totalHoldersCount: 0,
     dominantRegime: 'NEUTRAL',
   };
 
@@ -156,6 +160,10 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
     ? obj['5d']
     : Array.isArray(obj.brokers)
     ? obj.brokers
+    : Array.isArray(obj.topHoldings)
+    ? obj.topHoldings
+    : Array.isArray(obj['30D'])
+    ? obj['30D']
     : Array.isArray(obj.data)
     ? obj.data
     : [];
@@ -200,23 +208,61 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
       computedAnomaly
     );
 
+    const buyAmt = safeNum(item.buyAmount ?? item.buy_amount ?? item.buyAmt, 0);
+    const sellAmt = safeNum(item.sellAmount ?? item.sell_amount ?? item.sellAmt, 0);
+    const avgBuyPrice = safeNum(item.avgBuyPrice ?? item.avg_buy_price ?? item.avgBuyRate, buyKitta > 0 ? (buyAmt / buyKitta) : 0);
+    const avgSellPrice = safeNum(item.avgSellPrice ?? item.avg_sell_price ?? item.avgSellRate, sellKitta > 0 ? (sellAmt / sellKitta) : 0);
+    const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
+    const rawBrokerName = String(item.brokerName ?? item.name ?? '').trim();
+    const brokerName = rawBrokerName || (typeof getBrokerName === 'function' ? getBrokerName(brokerId) : 'Broker #' + brokerId);
+
     return {
       brokerId,
+      brokerName,
       netKitta,
+      buyKitta,
+      sellKitta,
+      holdKitta: Math.max(0, netKitta),
+      buyAmount: buyAmt,
+      sellAmount: sellAmt,
+      avgBuyPrice: Number(avgBuyPrice.toFixed(2)),
+      avgSellPrice: Number(avgSellPrice.toFixed(2)),
+      retentionPct,
       anomalyScore: Number(Math.max(0.1, rawAnomaly).toFixed(2)),
       avgTicketKitta: Math.round(avgTicketKitta),
     };
   });
 
-  const topAccumulators = normalizedRows
-    .filter((r) => r.netKitta > 0)
+  const accumulators = normalizedRows.filter((r) => r.netKitta > 0);
+  const distributors = normalizedRows.filter((r) => r.netKitta < 0);
+
+  const topAccumulators = [...accumulators]
     .sort((a, b) => b.netKitta * b.anomalyScore - a.netKitta * a.anomalyScore)
     .slice(0, 5);
 
-  const topDistributors = normalizedRows
-    .filter((r) => r.netKitta < 0)
+  const topDistributors = [...distributors]
     .sort((a, b) => Math.abs(b.netKitta) - Math.abs(a.netKitta))
     .slice(0, 5);
+
+  const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netKitta, 0);
+  const allHoldings = [...accumulators]
+    .map((b) => ({
+      ...b,
+      holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netKitta / totalSharesHeldTillNow) * 100).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.netKitta - a.netKitta);
+  const allDistributors = [...distributors].sort((a, b) => a.netKitta - b.netKitta);
+
+  const sortedByHold = [...accumulators].sort((a, b) => b.netKitta - a.netKitta);
+  const topHoldingBroker = sortedByHold[0] || null;
+
+  const totalAccBuyAmt = accumulators.reduce((s, b) => s + (b.buyAmount || 0), 0);
+  const totalAccBuyQty = accumulators.reduce((s, b) => s + (b.buyKitta || 0), 0);
+  const avgBuyingPrice = totalAccBuyQty > 0 ? Number((totalAccBuyAmt / totalAccBuyQty).toFixed(2)) : null;
+
+  const totalDistSellAmt = distributors.reduce((s, b) => s + (b.sellAmount || 0), 0);
+  const totalDistSellQty = distributors.reduce((s, b) => s + (b.sellKitta || 0), 0);
+  const avgSellingPrice = totalDistSellQty > 0 ? Number((totalDistSellAmt / totalDistSellQty).toFixed(2)) : null;
 
   const totalVolume = totalBuyKitta + totalSellKitta;
   const netAccumulationRatio =
@@ -226,7 +272,7 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
 
   const topAcc = topAccumulators[0];
   let dominantRegime = 'NEUTRAL';
-  if (topAcc && topAcc.anomalyScore >= 1.75 && topAcc.avgTicketKitta >= 300 && netAccumulationRatio >= 54) {
+  if (topAcc && (topAcc.anomalyScore >= 1.75 || topAcc.anomalyScore >= 1.4) && topAcc.avgTicketKitta >= 300 && netAccumulationRatio >= 54) {
     dominantRegime = 'INSTITUTIONAL_ACCUMULATION';
   } else if (netAccumulationRatio <= 45) {
     dominantRegime = 'DISTRIBUTION';
@@ -238,7 +284,14 @@ export function normalize5DBrokerPayloadForAi(rawPayload) {
     netAccumulationRatio,
     topAccumulators,
     topDistributors,
+    allHoldings,
+    allDistributors,
+    totalHoldersCount: accumulators.length,
     dominantRegime,
+    totalSharesHeldTillNow,
+    topHoldingBroker,
+    avgBuyingPrice,
+    avgSellingPrice,
   };
 }
 
