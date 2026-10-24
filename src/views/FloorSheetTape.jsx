@@ -300,7 +300,7 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
               className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-sky-500 cursor-pointer"
             >
               <option value="">{isNe ? 'पछिल्लो सत्र' : 'Latest Session'} ({daysMap[timeframe] || 1}D)</option>
-              {Array.isArray(floorsheetData.availableDates) && floorsheetData.availableDates.slice(0, 500).map((dt) => (
+              {Array.isArray(floorsheetData.availableDates) && Array.from(new Set(floorsheetData.availableDates)).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map((dt) => (
                 <option key={dt} value={dt}>{dt}</option>
               ))}
             </select>

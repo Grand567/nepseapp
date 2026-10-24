@@ -4548,8 +4548,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                             onChange={(e) => handleBrokerDateChange(e.target.value)}
                             style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none', cursor: 'pointer' }}
                           >
-                            <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>Latest / Aggregate ({((realBrokerAnalysis || ba)?.availableDates || [])[0]})</option>
-                            {((realBrokerAnalysis || ba)?.availableDates || []).slice(0, 500).map(dt => (
+                            <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>Latest / Aggregate ({(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || 'Today'})</option>
+                            {Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map(dt => (
                               <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>{dt}</option>
                             ))}
                           </select>

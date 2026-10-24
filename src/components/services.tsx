@@ -3266,7 +3266,7 @@ export function BrokerHeatmapService() {
                 className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
               >
                 <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
-                {data.availableDates.slice(0, 500).map((dt: string) => (
+                {Array.from(new Set(data.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                   <option key={dt} value={dt}>{dt}</option>
                 ))}
               </select>
@@ -4364,7 +4364,7 @@ export function BrokerAnalysisService({
               className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
             >
               <option value="">Latest Session ({daysMap[timeframe] || 30}D Cumulative)</option>
-              {brokerData.availableDates.slice(0, 500).map((dt: string) => (
+              {Array.from(new Set(brokerData.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                 <option key={dt} value={dt}>{dt}</option>
               ))}
             </select>
@@ -6042,7 +6042,7 @@ export function MarketDepthService() {
                   className="px-2 py-1 text-xs font-semibold rounded-lg bg-slate-950 text-slate-200 border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
                   <option value="">Latest Session ({brokerDays}D Cumulative)</option>
-                  {brokerAccumData.availableDates.slice(0, 500).map((dt: string) => (
+                  {Array.from(new Set(brokerAccumData.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                     <option key={dt} value={dt}>{dt}</option>
                   ))}
                 </select>
