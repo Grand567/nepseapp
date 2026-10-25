@@ -368,6 +368,27 @@ export default function StockBrokerAnalysisTab({
       }
     }
 
+    // Incorporate multi-day cumulative ledger accumulators holding this scrip
+    if (cumulativeHoldingMap && typeof cumulativeHoldingMap === 'object') {
+      for (const [id, c] of Object.entries(cumulativeHoldingMap)) {
+        const normId = String(id).replace(/^0+/, '');
+        if (!map.has(normId) && !map.has(id) && c && (c.totalHeldQty > 0 || c.netQty > 0)) {
+          map.set(normId, {
+            id: normId,
+            name: c.name || getBrokerName(normId),
+            buyQty: c.totalBuyQty || c.totalHeldQty || 0,
+            buyAmt: c.totalBuyQty ? (c.totalBuyQty * (c.avgBuyRate || ltp || 100)) : 0,
+            sellQty: c.totalSellQty || 0,
+            sellAmt: c.totalSellQty ? (c.totalSellQty * (c.avgSellRate || ltp || 100)) : 0,
+            matchedQty: 0,
+            matchedAmt: 0,
+            trades: 0,
+            isHistoricalHolderOnly: true
+          });
+        }
+      }
+    }
+
     const totalBuyVol = Array.from(map.values()).reduce((sum, r) => sum + r.buyQty, 0) || 1;
     const totalSellVol = Array.from(map.values()).reduce((sum, r) => sum + r.sellQty, 0) || 1;
 
@@ -598,8 +619,14 @@ export default function StockBrokerAnalysisTab({
       const q = filterQuery.toLowerCase().trim();
       list = list.filter(b => b.id.toLowerCase().includes(q) || b.name.toLowerCase().includes(q));
     }
+
+    // In Session Flow view, only show brokers who actively traded in this session
+    if (viewMode === 'compact' && tableHoldingView === 'session') {
+      list = list.filter(b => !b.isHistoricalHolderOnly);
+    }
+
     return list;
-  }, [brokerRecords, brokerRoleFilter, chartTab, filterQuery, rankingMetric]);
+  }, [brokerRecords, brokerRoleFilter, chartTab, filterQuery, rankingMetric, viewMode, tableHoldingView]);
 
   // Summary Totals (Share Hub strip: Total Amount | Total Quantity | Total Broker Holding | Transactions)
   const totalVolume = Number(activeBrokerData?.totalVolume) || brokerRecords.reduce((s, b) => s + b.buyQty, 0);

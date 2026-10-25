@@ -25,5 +25,19 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Drabyashree NEPSE"
-  }
+  },
+  "extraResources": [
+    {
+      "from": "proxy",
+      "to": "proxy",
+      "filter": [
+        "**/*.mjs",
+        "**/*.js",
+        "**/*.json",
+        "data/**/*",
+        "!node_modules/**/*",
+        "!scratch/**/*"
+      ]
+    }
+  ]
 }
