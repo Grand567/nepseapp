@@ -119,9 +119,9 @@ export default function StockBrokerAnalysisTab({
       return false;
     };
 
-    // Parallel fetch: Smart-Money endpoint (for authentic cumulative holdings & top accumulators)
+    // Parallel fetch: All-Time Smart-Money endpoint (for authentic multi-year cumulative holdings & top accumulators till today)
     // + Diagnostics endpoint (for complete multi-session dailyFlow and vwap telemetry)
-    const p1 = fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=30`, 10000).catch(() => null);
+    const p1 = fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
     const p2 = fetchFromBackend(`/api/diagnostics/${encodeURIComponent(symbol)}?days=30`, 10000).catch(() => null);
 
     Promise.all([p1, p2]).then(([resSm, resDiag]) => {
@@ -167,6 +167,27 @@ export default function StockBrokerAnalysisTab({
       const parsed = parseAndSetHoldings(primaryList, dates, flow);
       if (!parsed && listDiag.length > 0) {
         parseAndSetHoldings(listDiag, dates, flow);
+      }
+
+      // If symbol's all-time historical floorsheet is still syncing in the background, poll every 4s until complete
+      if (resSm && resSm.isCompleteHistory === false) {
+        const pollTimer = setTimeout(() => {
+          if (!active) return;
+          fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000)
+            .then(updatedSm => {
+              if (active && updatedSm && updatedSm.success) {
+                const updatedList = Array.isArray(updatedSm.data) ? updatedSm.data : (updatedSm.allHoldings || updatedSm.brokers || []);
+                if (updatedList.length > 0) {
+                  parseAndSetHoldings(updatedList, updatedSm.availableDates || dates, flow);
+                }
+                if (updatedSm.totalSharesHeldTillNow) {
+                  setTotalCumulativeHoldingKitta(Number(updatedSm.totalSharesHeldTillNow));
+                }
+              }
+            })
+            .catch(() => {});
+        }, 4000);
+        return () => clearTimeout(pollTimer);
       }
     });
 
@@ -800,23 +821,12 @@ export default function StockBrokerAnalysisTab({
         }
       }
     }
-    // Overlay or add brokers from brokerRecords
+    // Overlay or add brokers from brokerRecords only if not already in authoritative cumulativeHoldingMap
     for (const b of filteredBrokers) {
       const normId = String(b.id || '').replace(/^0+/, '');
       const cH = b.cumHoldQty !== undefined && b.cumHoldQty > 0 ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : 0);
       if (cH > 0) {
-        if (map.has(normId)) {
-          const existing = map.get(normId);
-          map.set(normId, {
-            ...existing,
-            ...b,
-            cumHoldQty: existing.cumHoldQty || cH,
-            cumHoldAmt: existing.cumHoldAmt || b.cumHoldAmt,
-            cumAvgBuy: existing.cumAvgBuy || b.cumAvgBuy || b.avgBuy,
-            cumAvgSell: existing.cumAvgSell || b.cumAvgSell || b.avgSell,
-            cumRetentionPct: existing.cumRetentionPct || b.cumRetentionPct || b.holdPctOfBuy,
-          });
-        } else {
+        if (!map.has(normId)) {
           map.set(normId, {
             ...b,
             cumHoldQty: cH,
@@ -1885,7 +1895,7 @@ export default function StockBrokerAnalysisTab({
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
-                    {tableHoldingView === 'session' ? `Session Flow (${effectiveDays}D • ${activeDateDisplay || 'Latest'})` : 'Total Broker Holding Till Today (All Time / 30D)'}
+                    {tableHoldingView === 'session' ? `Session Flow (${effectiveDays}D • ${activeDateDisplay || 'Latest'})` : 'Total Broker Holding Till Today (All Time / Till Today)'}
                   </span>
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
                     {tableHoldingView === 'session' ? `${filteredBrokers.length} Brokers in Session` : `Top ${sortedCumulativeBrokers.length} Accumulators Holding Stock`}

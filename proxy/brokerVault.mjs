@@ -11,6 +11,7 @@ import { ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getS
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const VAULT_DIR = path.join(__dirname, 'data', 'broker_vault');
+const ALLTIME_DIR = path.join(__dirname, 'data', 'broker_alltime');
 
 try {
   if (!fs.existsSync(VAULT_DIR)) {
@@ -18,6 +19,14 @@ try {
   }
 } catch (e) {
   console.warn('[brokerVault] Failed to create broker vault dir:', e.message);
+}
+
+try {
+  if (!fs.existsSync(ALLTIME_DIR)) {
+    fs.mkdirSync(ALLTIME_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[brokerVault] Failed to create broker alltime dir:', e.message);
 }
 
 export const BROKER_NAMES = {
@@ -227,22 +236,43 @@ export async function fetchSymbolTradingDates(symbol) {
 
   const dateSet = new Set();
 
-  // 1. Chukul historydata API
+  // 1. Chukul UDF multi-year historydata API (discovers up to 1,800+ historical sessions back to 2018)
   try {
-    const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
+    const udfRes = await axios.get(`https://chukul.com/api/data/historydata/data/?symbol=${encodeURIComponent(sym)}&resolution=1D&from=1400000000&to=1900000000`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      timeout: 7000,
+      timeout: 8000,
       validateStatus: () => true
     });
-    if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
-      for (const item of r.data) {
-        if (item && item.date && Number(item.volume || 0) > 0) {
-          dateSet.add(String(item.date).trim());
+    if (udfRes.status === 200 && udfRes.data && Array.isArray(udfRes.data.t)) {
+      const nepalOffset = 5.75 * 3600 * 1000;
+      for (let i = 0; i < udfRes.data.t.length; i++) {
+        const ts = udfRes.data.t[i];
+        const vol = Number(udfRes.data.vol?.[i] ?? udfRes.data.v?.[i] ?? 0);
+        const close = Number(udfRes.data.c?.[i] ?? 0);
+        if (ts && (vol > 0 || close > 0)) {
+          const dStr = new Date(ts * 1000 + nepalOffset).toISOString().slice(0, 10);
+          if (dStr) dateSet.add(dStr);
         }
       }
     }
-  } catch (e) {
-    console.warn(`[brokerVault] Chukul historydata failed for ${sym}:`, e.message);
+  } catch (eUdf) {
+    // Fallback to v2 historydata if UDF fails
+    try {
+      const r = await axios.get(`https://chukul.com/api/data/v2/historydata/?symbol=${encodeURIComponent(sym)}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        timeout: 7000,
+        validateStatus: () => true
+      });
+      if (r.status === 200 && Array.isArray(r.data) && r.data.length > 0) {
+        for (const item of r.data) {
+          if (item && item.date && Number(item.volume || 0) > 0) {
+            dateSet.add(String(item.date).trim());
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[brokerVault] Chukul historydata failed for ${sym}:`, e.message);
+    }
   }
 
   // 2. Query authentic NEPSE NOTS price history (length 500) via nepseClient
@@ -335,7 +365,7 @@ export async function fetchSymbolTradingDates(symbol) {
   }
 
   if (dateSet.size > 0) {
-    const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a)).slice(0, 500);
+    const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a)).slice(0, 1500);
     tradingDatesCache.set(sym, { timestamp: now, dates });
     return dates;
   }
@@ -1121,6 +1151,261 @@ export function aggregateFloorsheetRows(rows, symbol, availableDates = []) {
     source: 'authentic_multi_date_floorsheet',
     updatedAt: new Date().toISOString()
   };
+}
+
+const inFlightAllTimeSyncs = new Map();
+
+/**
+ * Returns the authoritative all-time cumulative broker holding summary ("Till Now") for a symbol.
+ * Computes exact cumulative kitta, buy/sell totals, average buy/sell rates, and trading span across all historical sessions.
+ * Background synchronizes missing historical sessions from Chukul floorsheets if needed.
+ */
+export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
+  const sym = String(symbol || '').toUpperCase().trim();
+  if (!sym) return null;
+
+  const alltimePath = path.join(ALLTIME_DIR, `${sym}.json`);
+  let alltimeObj = null;
+
+  if (fs.existsSync(alltimePath)) {
+    try {
+      alltimeObj = JSON.parse(fs.readFileSync(alltimePath, 'utf8'));
+    } catch (_) {}
+  }
+
+  if (!alltimeObj || !alltimeObj.dailyRollup) {
+    alltimeObj = {
+      symbol: sym,
+      version: 1,
+      updatedAt: null,
+      isCompleteHistory: false,
+      earliestDate: null,
+      latestDate: null,
+      sessionsCount: 0,
+      dailyRollup: {}
+    };
+
+    // Bootstrap from existing broker_vault if present
+    const vaultPath = path.join(VAULT_DIR, `${sym}.json`);
+    if (fs.existsSync(vaultPath)) {
+      try {
+        const vData = JSON.parse(fs.readFileSync(vaultPath, 'utf8'));
+        if (vData?.rowsByDate) {
+          for (const dt in vData.rowsByDate) {
+            alltimeObj.dailyRollup[dt] = {};
+            for (const r of vData.rowsByDate[dt]) {
+              const b = String(r.buyerBroker || r.buyerMemberId || r.buyer || '').trim();
+              const s = String(r.sellerBroker || r.sellerMemberId || r.seller || '').trim();
+              const q = Number(r.qty || r.quantity || 0);
+              const rate = Number(r.rate || 0);
+              const amt = Number(r.amount || q * rate || 0);
+              if (b) {
+                if (!alltimeObj.dailyRollup[dt][b]) alltimeObj.dailyRollup[dt][b] = [0, 0, 0, 0, 0];
+                alltimeObj.dailyRollup[dt][b][0] += q;
+                alltimeObj.dailyRollup[dt][b][2] += amt;
+                alltimeObj.dailyRollup[dt][b][4] += 1;
+              }
+              if (s) {
+                if (!alltimeObj.dailyRollup[dt][s]) alltimeObj.dailyRollup[dt][s] = [0, 0, 0, 0, 0];
+                alltimeObj.dailyRollup[dt][s][1] += q;
+                alltimeObj.dailyRollup[dt][s][3] += amt;
+              }
+            }
+          }
+          const dtKeys = Object.keys(alltimeObj.dailyRollup).sort((a, b) => b.localeCompare(a));
+          alltimeObj.earliestDate = dtKeys[dtKeys.length - 1] || null;
+          alltimeObj.latestDate = dtKeys[0] || null;
+          alltimeObj.sessionsCount = dtKeys.length;
+          fs.writeFileSync(alltimePath, JSON.stringify(alltimeObj), 'utf8');
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Aggregate broker totals across all available sessions in dailyRollup
+  const aggregateAllTime = (rollupObj) => {
+    const brokerAccum = {};
+    let totalVolume = 0;
+    let totalTurnover = 0;
+    const dates = Object.keys(rollupObj.dailyRollup || {}).sort((a, b) => b.localeCompare(a));
+
+    for (const dt of dates) {
+      const dayData = rollupObj.dailyRollup[dt];
+      for (const b in dayData) {
+        const [bQty, sQty, bAmt, sAmt, trades] = dayData[b];
+        if (!brokerAccum[b]) {
+          brokerAccum[b] = {
+            id: b,
+            brokerId: b,
+            name: getBrokerName(b),
+            brokerName: getBrokerName(b),
+            buyQty: 0,
+            sellQty: 0,
+            buyAmt: 0,
+            sellAmt: 0,
+            trades: 0
+          };
+        }
+        brokerAccum[b].buyQty += bQty;
+        brokerAccum[b].sellQty += sQty;
+        brokerAccum[b].buyAmt += bAmt;
+        brokerAccum[b].sellAmt += sAmt;
+        brokerAccum[b].trades += (trades || 0);
+        totalVolume += bQty;
+        totalTurnover += bAmt;
+      }
+    }
+
+    const brokers = Object.values(brokerAccum).map(b => {
+      const netQty = b.buyQty - b.sellQty;
+      const netAmt = b.buyAmt - b.sellAmt;
+      const avgBuyRate = b.buyQty > 0 ? +(b.buyAmt / b.buyQty).toFixed(2) : 0;
+      const avgSellRate = b.sellQty > 0 ? +(b.sellAmt / b.sellQty).toFixed(2) : 0;
+      const retentionPct = b.buyQty > 0 ? Number(((Math.max(0, netQty) / b.buyQty) * 100).toFixed(1)) : 0;
+      return {
+        ...b,
+        buyVolume: b.buyQty,
+        sellVolume: b.sellQty,
+        buyAmount: +b.buyAmt.toFixed(2),
+        sellAmount: +b.sellAmt.toFixed(2),
+        netQty,
+        netVolume: netQty,
+        holdQty: Math.max(0, netQty),
+        signedHoldQty: netQty,
+        totalHeldQty: Math.max(0, netQty),
+        netAmt: +netAmt.toFixed(2),
+        holdAmt: netQty > 0 ? +netAmt.toFixed(2) : 0,
+        totalHeldAmt: netQty > 0 ? +netAmt.toFixed(2) : 0,
+        avgBuyRate,
+        avgSellRate,
+        avgBuyPrice: avgBuyRate,
+        avgSellPrice: avgSellRate,
+        retentionPct
+      };
+    });
+
+    const accumulators = brokers.filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
+    const distributors = brokers.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+    const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netQty, 0);
+
+    const allHoldings = accumulators.map(b => ({
+      ...b,
+      holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netQty / totalSharesHeldTillNow) * 100).toFixed(2)) : 0
+    }));
+
+    const topAcc = accumulators[0] || null;
+    const totalBuyAmtAcc = accumulators.reduce((s, b) => s + b.buyAmount, 0);
+    const totalBuyQtyAcc = accumulators.reduce((s, b) => s + b.buyQty, 0);
+    const avgBuyingPrice = totalBuyQtyAcc > 0 ? Number((totalBuyAmtAcc / totalBuyQtyAcc).toFixed(2)) : null;
+
+    const totalSellAmtDist = distributors.reduce((s, b) => s + b.sellAmount, 0);
+    const totalSellQtyDist = distributors.reduce((s, b) => s + b.sellQty, 0);
+    const avgSellingPrice = totalSellQtyDist > 0 ? Number((totalSellAmtDist / totalSellQtyDist).toFixed(2)) : null;
+
+    return {
+      success: true,
+      symbol: sym,
+      timeframe: 'ALL',
+      isCompleteHistory: Boolean(rollupObj.isCompleteHistory),
+      totalSessionsCount: dates.length,
+      tradingDays: dates.length,
+      fromDate: dates[dates.length - 1] || '',
+      toDate: dates[0] || '',
+      totalSharesHeldTillNow,
+      topHoldingBroker: topAcc,
+      avgBuyingPrice,
+      avgSellingPrice,
+      allHoldings,
+      topHoldings: allHoldings,
+      allDistributors: distributors,
+      brokers,
+      allBrokers: brokers,
+      data: brokers,
+      availableDates: dates
+    };
+  };
+
+  // If already complete or background sync currently running, trigger sync or return immediately
+  const triggerBackgroundSync = () => {
+    if (alltimeObj.isCompleteHistory || inFlightAllTimeSyncs.has(sym)) return;
+
+    const syncPromise = (async () => {
+      try {
+        const allTradingDates = await fetchSymbolTradingDates(sym);
+        // Chukul floorsheet boundary starts around 2022-01-25 (capped at index 1100)
+        const validDates = allTradingDates.filter(d => d >= '2022-01-20');
+        const missingDates = validDates.filter(d => !alltimeObj.dailyRollup[d]);
+
+        if (missingDates.length === 0) {
+          alltimeObj.isCompleteHistory = true;
+          alltimeObj.updatedAt = new Date().toISOString();
+          fs.writeFileSync(alltimePath, JSON.stringify(alltimeObj), 'utf8');
+          return;
+        }
+
+        const BATCH_SIZE = 25;
+        let didUpdate = false;
+        for (let i = 0; i < missingDates.length; i += BATCH_SIZE) {
+          const batch = missingDates.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map(async dt => {
+            try {
+              const res = await axios.get(`https://chukul.com/api/data/floorsheet/?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(dt)}`, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                timeout: 7000,
+                validateStatus: () => true
+              });
+              return { dt, rows: Array.isArray(res.data) ? res.data : [] };
+            } catch (_) { return { dt, rows: [] }; }
+          }));
+
+          for (const { dt, rows } of results) {
+            alltimeObj.dailyRollup[dt] = {};
+            for (const r of rows) {
+              const b = String(r.buyer || r.buyerBroker || '').trim();
+              const s = String(r.seller || r.sellerBroker || '').trim();
+              const q = Number(r.quantity || r.qty || 0);
+              const rate = Number(r.rate || 0);
+              const amt = Number(r.amount || q * rate || 0);
+              if (b) {
+                if (!alltimeObj.dailyRollup[dt][b]) alltimeObj.dailyRollup[dt][b] = [0, 0, 0, 0, 0];
+                alltimeObj.dailyRollup[dt][b][0] += q;
+                alltimeObj.dailyRollup[dt][b][2] += amt;
+                alltimeObj.dailyRollup[dt][b][4] += 1;
+              }
+              if (s) {
+                if (!alltimeObj.dailyRollup[dt][s]) alltimeObj.dailyRollup[dt][s] = [0, 0, 0, 0, 0];
+                alltimeObj.dailyRollup[dt][s][1] += q;
+                alltimeObj.dailyRollup[dt][s][3] += amt;
+              }
+            }
+          }
+          didUpdate = true;
+          await new Promise(r => setTimeout(r, 40));
+        }
+
+        if (didUpdate) {
+          const sortedDts = Object.keys(alltimeObj.dailyRollup).sort((a, b) => b.localeCompare(a));
+          alltimeObj.updatedAt = new Date().toISOString();
+          alltimeObj.isCompleteHistory = true;
+          alltimeObj.earliestDate = sortedDts[sortedDts.length - 1];
+          alltimeObj.latestDate = sortedDts[0];
+          alltimeObj.sessionsCount = sortedDts.length;
+          fs.writeFileSync(alltimePath, JSON.stringify(alltimeObj), 'utf8');
+          console.log(`[brokerVault] All-time holding sync complete for ${sym}: ${sortedDts.length} sessions stored.`);
+        }
+      } catch (err) {
+        console.warn(`[brokerVault] Background all-time sync error for ${sym}:`, err.message);
+      } finally {
+        inFlightAllTimeSyncs.delete(sym);
+      }
+    })();
+
+    inFlightAllTimeSyncs.set(sym, syncPromise);
+  };
+
+  triggerBackgroundSync();
+
+  return aggregateAllTime(alltimeObj);
 }
 
 /**

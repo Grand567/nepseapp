@@ -35,7 +35,7 @@ import {
   getSymbolHistoryFromDb,
 } from './db/ledgerStore.js';
 import { calculateMultiDayDiagnostics } from './utils/microstructureEngine.js';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot, getOrFetchAllTimeBrokerHoldings } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
   getSmartAlertHistory, 
@@ -3363,11 +3363,23 @@ function enrichWithMicrostructure(symbol, days, vaultData) {
 app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
+  const isAllTime = req.query.days === 'all' || req.query.days === 'ALL' || parseInt(req.query.days, 10) >= 300;
   const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 730);
   const date = String(req.query.date || '').trim();
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
   const refresh = req.query.refresh === 'true';
+
+  // Fast path for all-time holding requests
+  if (isAllTime && !date && !fromDate && !toDate) {
+    try {
+      const allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
+      if (allTimeResult && (allTimeResult.brokers?.length > 0 || allTimeResult.totalSharesHeldTillNow > 0)) {
+        return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, allTimeResult), source: 'broker_alltime_authentic' });
+      }
+    } catch (_) {}
+  }
+
   const cacheKey = `broker-analysis-${symbol}-${days}-${date}-${fromDate}-${toDate}`;
   if (!refresh) {
     const cached = getCache(cacheKey);
