@@ -384,7 +384,7 @@ export function evaluateBrokerSmartMoney(
  * persists the results in SQLite table `algorithmic_signal_ledger`, and attaches the computed
  * track record to HOT_CACHE.signalTrackRecord.
  */
-export function rebuildSignalTrackRecord(db, HOT_CACHE) {
+export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
   const t0 = Date.now();
   if (!db) return null;
 
@@ -401,6 +401,14 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
       `[SignalTracker] Insufficient trading dates (${dates.length} dates). Need at least 6 dates for walk-forward scan.`
     );
     return null;
+  }
+
+  // Fast-Path: If algorithmic_signal_ledger already has computed signals and force is not set,
+  // load the precomputed signals directly from SQLite in ~3ms without allocating 365k broker rows in V8 heap.
+  const existingCount = db.prepare("SELECT COUNT(*) as c FROM algorithmic_signal_ledger").get()?.c || 0;
+  if (existingCount > 0 && !options.force) {
+    const signals = db.prepare("SELECT * FROM algorithmic_signal_ledger").all();
+    return finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates, t0);
   }
 
   // 2. Single bulk pull of all summaries & broker rows from SQLite
@@ -964,7 +972,14 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE) {
   });
 
   persistTx(signals);
+  return finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates, t0);
+}
 
+/**
+ * Computes performance aggregates, leaderboard rankings, and strategy breakdown
+ * from a list of signals (either freshly audited or loaded in 2ms from algorithmic_signal_ledger).
+ */
+export function finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates = [], t0 = Date.now()) {
   // 6. Compute Aggregates & Performance Telemetry (Fixes BUG-A3-03: Unified Settled Post-Fee Win Rate)
   const closed = signals.filter(
     (s) => s.status !== "OPEN_ACTIVE" && s.status !== "ACTIVE" && s.status !== "UNFILLABLE_SKIP"

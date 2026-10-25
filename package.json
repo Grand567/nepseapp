@@ -7,7 +7,7 @@
   "author": "Rexsh K Suwal (+977 9841576936)",
   "main": "electron/main.cjs",
   "scripts": {
-    "start": "node proxy/server.mjs",
+    "start": "node --max-old-space-size=450 proxy/server.mjs",
     "dev": "concurrently \"vite\" \"npm run start --prefix proxy\"",
     "build": "vite build",
     "test": "node tests/runAll.mjs",

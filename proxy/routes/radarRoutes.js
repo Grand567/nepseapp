@@ -45,6 +45,19 @@ try {
   }
 } catch (_) {}
 
+/**
+ * Bounded diagnostic cache setter to prevent unbounded memory growth on Render Free Tier
+ */
+function setCachedDiagnostic(key, value) {
+  if (HOT_CACHE?.stockDiagnostics) {
+    if (HOT_CACHE.stockDiagnostics.size >= 120) {
+      const oldestKey = HOT_CACHE.stockDiagnostics.keys().next().value;
+      if (oldestKey) HOT_CACHE.stockDiagnostics.delete(oldestKey);
+    }
+    HOT_CACHE.stockDiagnostics.set(key, value);
+  }
+}
+
 // Helper to snap any requested days to the closest precomputed HOT_CACHE bucket [1, 3, 5, 15, 30]
 export function resolveValidTimeframe(rawDays, defaultDays = 30) {
   const num = Number(rawDays);
@@ -664,14 +677,14 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
             const d30 = calculateMultiDayDiagnostics(hist30, 30);
             if (d30) {
               diag30 = { symbol: sym, ...d30 };
-              HOT_CACHE.stockDiagnostics.set(`${sym}_30`, diag30);
+              setCachedDiagnostic(`${sym}_30`, diag30);
             }
           }
           if (!diag5) {
             const d5 = calculateMultiDayDiagnostics(hist30, 5);
             if (d5) {
               diag5 = { symbol: sym, ...d5 };
-              HOT_CACHE.stockDiagnostics.set(`${sym}_5`, diag5);
+              setCachedDiagnostic(`${sym}_5`, diag5);
             }
           }
           if (!diag) {
@@ -680,7 +693,7 @@ export function evaluatePortfolioShield(itemsInput, rawDays = 30) {
               const dv = calculateMultiDayDiagnostics(hist30, validDays);
               if (dv) {
                 diag = { symbol: sym, ...dv };
-                HOT_CACHE.stockDiagnostics.set(`${sym}_${validDays}`, diag);
+                setCachedDiagnostic(`${sym}_${validDays}`, diag);
               }
             }
           }
@@ -975,7 +988,7 @@ router.get("/diagnostics/:symbol", async (req, res) => {
         const diag = calculateMultiDayDiagnostics(history, validDays);
         if (diag) {
           data = { symbol, ...diag, availableDates: storedDates.slice(0, 30) };
-          HOT_CACHE.stockDiagnostics.set(`${symbol}_${validDays}`, data);
+          setCachedDiagnostic(`${symbol}_${validDays}`, data);
         }
       }
     } catch (e) {
@@ -1007,7 +1020,7 @@ router.get("/diagnostics/:symbol", async (req, res) => {
           const dDiag = calculateMultiDayDiagnostics(hist, d);
           if (dDiag) {
             tData = { symbol, ...dDiag };
-            HOT_CACHE.stockDiagnostics.set(`${symbol}_${d}`, tData);
+            setCachedDiagnostic(`${symbol}_${d}`, tData);
           }
         }
       } catch (_) {}

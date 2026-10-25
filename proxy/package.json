@@ -5,7 +5,7 @@
   "type": "module",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node --max-old-space-size=450 server.mjs",
     "keepalive": "node keepalive.mjs"
   },
   "dependencies": {
