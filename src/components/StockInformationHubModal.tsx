@@ -1,7 +1,7 @@
 // src/components/StockInformationHubModal.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   buildUnifiedStockTabTelemetry,
   type RawFloorsheetContract,
@@ -16,6 +16,7 @@ import {
 import { AiGuruQuantitativeCard } from "@/components/AiGuruQuantitativeCard";
 import { StockFundamentalsAndLockInTab } from "@/components/StockFundamentalsAndLockInTab";
 import { DividendHistoryPanel } from "./DividendHistoryPanel";
+import { fetchFromBackend } from "@/utils/liveData";
 import { getBrokerName } from "@/utils/accumulationDistributionEngine";
 import { Users, Search, Filter, ArrowUpDown, TrendingUp, TrendingDown, ShieldCheck, Award } from "lucide-react";
 import StockReportsAnnouncementsCard from "./StockReportsAnnouncementsCard";
@@ -357,9 +358,29 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   );
 
   // Tab 3: Unified Brokers Holding Till Now & Distributors Calculation for Every Broker Holding the Stock
+  const [internalHoldings, setInternalHoldings] = useState<any[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    if (!resolvedSymbol) return;
+    fetchFromBackend(`/api/stock/${encodeURIComponent(resolvedSymbol)}/smart-money?days=30`, 8000)
+      .then((res: any) => {
+        if (!active || !res) return;
+        const payload = res.data || res;
+        const list = payload?.allHoldings || payload?.allBrokers || payload?.brokers || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setInternalHoldings(list);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [resolvedSymbol]);
+
   const { allHoldingsList, allDistributorsList, totalHeldKitta, totalHeldValRs, avgAccumBuyPrice, topHoldingBrokerItem } = useMemo(() => {
     let candidateBrokers: any[] = [];
-    if (telemetry.smartMoney5D?.allHoldings && telemetry.smartMoney5D.allHoldings.length > 0) {
+    if (internalHoldings.length > 0) {
+      candidateBrokers = internalHoldings;
+    } else if (telemetry.smartMoney5D?.allHoldings && telemetry.smartMoney5D.allHoldings.length > 0) {
       candidateBrokers = [
         ...telemetry.smartMoney5D.allHoldings,
         ...(telemetry.smartMoney5D?.allDistributors || [])

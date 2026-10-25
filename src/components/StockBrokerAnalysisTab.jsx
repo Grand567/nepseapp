@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistributionEngine';
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
-import { fetchRealBrokerAnalysis } from '../utils/liveData';
+import { fetchRealBrokerAnalysis, fetchFromBackend } from '../utils/liveData';
 
 function formatCompactQty(val) {
   const n = Math.abs(Number(val) || 0);
@@ -67,50 +67,74 @@ export default function StockBrokerAnalysisTab({
   const effectiveDays = onDaysChange ? selectedDays : localDays;
   const effectiveDate = onDateChange ? selectedDate : localDate;
 
-  // Prefetch 30-Day Cumulative Broker Holding Baseline Till Today
+  // Prefetch Multi-Day / 30-Day Cumulative Broker Holding Baseline Till Today
   useEffect(() => {
     let active = true;
     if (!symbol) return;
-    fetchRealBrokerAnalysis(symbol, 30, { refresh: false })
+
+    const parseAndSetHoldings = (bList, dateList = []) => {
+      if (!Array.isArray(bList) || bList.length === 0) return false;
+      const map = {};
+      for (const b of bList) {
+        const id = String(b.brokerId || b.broker || b.id || b.brokerNo || '').replace(/^0+/, '');
+        if (!id) continue;
+        const buyQty = Number(b.buyQty ?? b.buyVol ?? b.buyKitta ?? 0);
+        const sellQty = Number(b.sellQty ?? b.sellVol ?? b.sellKitta ?? 0);
+        const netQty = Number(b.netQty ?? b.netKitta ?? b.signedHoldQty ?? b.netVol ?? (buyQty - sellQty));
+        const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? 0);
+        const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? 0);
+        const avgBuy = Number(b.avgBuyRate ?? b.avgBuyPrice ?? (buyQty > 0 ? buyAmt / buyQty : 0));
+        const avgSell = Number(b.avgSellRate ?? b.avgSellPrice ?? (sellQty > 0 ? sellAmt / sellQty : 0));
+        const holdAmt = netQty > 0 ? (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100)) : 0;
+        const retention = buyQty > 0 ? Number(((Math.max(0, netQty) / buyQty) * 100).toFixed(1)) : 0;
+        map[id] = {
+          totalHeldQty: Math.max(0, netQty),
+          netQty,
+          totalHeldAmt: holdAmt,
+          avgBuyRate: +avgBuy.toFixed(2),
+          avgSellRate: +avgSell.toFixed(2),
+          retentionPct: retention,
+          totalBuyQty: buyQty,
+          totalSellQty: sellQty,
+        };
+      }
+      if (Object.keys(map).length > 0) {
+        setCumulativeHoldingMap(map);
+        if (Array.isArray(dateList) && dateList.length > 0) {
+          setAllStoredDates(dateList);
+        }
+        return true;
+      }
+      return false;
+    };
+
+    // 1. Direct query to Smart Money / holdings endpoint (queries SQLite ledger with 30-40 dates)
+    fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=30`, 10000)
       .then(res => {
         if (!active || !res) return;
-        if (Array.isArray(res.availableDates) && res.availableDates.length > 0) {
-          setAllStoredDates(res.availableDates);
+        const payload = res.data || res;
+        const list = payload.allHoldings || payload.allBrokers || payload.brokers || payload.topHoldings || [];
+        const parsed = parseAndSetHoldings(list, payload.availableDates);
+        if (!parsed) {
+          fetchRealBrokerAnalysis(symbol, 30, { refresh: false })
+            .then(res2 => {
+              if (!active || !res2) return;
+              const bList2 = res2.allBrokers || res2.brokers || res2.topHoldings || [];
+              parseAndSetHoldings(bList2, res2.availableDates);
+            })
+            .catch(() => {});
         }
-        const bList = Array.isArray(res.allBrokers)
-          ? res.allBrokers
-          : Array.isArray(res.brokers)
-          ? res.brokers
-          : Array.isArray(res.topHoldings)
-          ? res.topHoldings
-          : [];
-        const map = {};
-        for (const b of bList) {
-          const id = String(b.brokerId || b.broker || b.id || '').replace(/^0+/, '');
-          if (!id) continue;
-          const buyQty = Number(b.buyQty ?? b.buyVol ?? b.buyKitta ?? 0);
-          const sellQty = Number(b.sellQty ?? b.sellVol ?? b.sellKitta ?? 0);
-          const netQty = Number(b.netQty ?? b.signedHoldQty ?? b.netVol ?? (buyQty - sellQty));
-          const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? 0);
-          const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? 0);
-          const avgBuy = Number(b.avgBuyRate ?? b.avgBuyPrice ?? (buyQty > 0 ? buyAmt / buyQty : 0));
-          const avgSell = Number(b.avgSellRate ?? b.avgSellPrice ?? (sellQty > 0 ? sellAmt / sellQty : 0));
-          const holdAmt = netQty > 0 ? (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100)) : 0;
-          const retention = buyQty > 0 ? Number(((Math.max(0, netQty) / buyQty) * 100).toFixed(1)) : 0;
-          map[id] = {
-            totalHeldQty: Math.max(0, netQty),
-            netQty,
-            totalHeldAmt: holdAmt,
-            avgBuyRate: +avgBuy.toFixed(2),
-            avgSellRate: +avgSell.toFixed(2),
-            retentionPct: retention,
-            totalBuyQty: buyQty,
-            totalSellQty: sellQty,
-          };
-        }
-        setCumulativeHoldingMap(map);
       })
-      .catch(() => {});
+      .catch(() => {
+        fetchRealBrokerAnalysis(symbol, 30, { refresh: false })
+          .then(res2 => {
+            if (!active || !res2) return;
+            const bList2 = res2.allBrokers || res2.brokers || res2.topHoldings || [];
+            parseAndSetHoldings(bList2, res2.availableDates);
+          })
+          .catch(() => {});
+      });
+
     return () => { active = false; };
   }, [symbol, ltp]);
 
@@ -361,8 +385,9 @@ export default function StockBrokerAnalysisTab({
       const buyPct = totalTrade > 0 ? Math.round((r.buyQty / totalTrade) * 100) : 0;
       const sellPct = totalTrade > 0 ? (100 - buyPct) : 0;
 
-      const cum = cumulativeHoldingMap[String(r.id)] || {};
-      const cumHold = cum.totalHeldQty !== undefined ? cum.totalHeldQty : Math.max(0, netQty);
+      const idKey = String(r.id || '').replace(/^0+/, '');
+      const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || {};
+      const cumHold = (cum.totalHeldQty !== undefined && cum.totalHeldQty > 0) ? cum.totalHeldQty : (cum.totalHeldQty === 0 ? 0 : Math.max(0, netQty));
       const cumAmt = cum.totalHeldAmt !== undefined ? cum.totalHeldAmt : holdAmt;
       const cumBuyPx = cum.avgBuyRate !== undefined ? cum.avgBuyRate : avgBuy;
       const cumSellPx = cum.avgSellRate !== undefined ? cum.avgSellRate : avgSell;
@@ -393,7 +418,7 @@ export default function StockBrokerAnalysisTab({
 
     // Sort by holdQty descending, then totalTrade descending
     return list.sort((a, b) => b.signedHoldQty - a.signedHoldQty || b.totalTrade - a.totalTrade);
-  }, [floorsheetData, activeBrokerData, ltp]);
+  }, [floorsheetData, activeBrokerData, ltp, cumulativeHoldingMap]);
 
   // Top Chart Data (TOP HOLDINGS | TOP BUYERS | TOP SELLERS) dynamically driven by rankingMetric
   const chartItems = useMemo(() => {
@@ -576,11 +601,55 @@ export default function StockBrokerAnalysisTab({
     return list;
   }, [brokerRecords, brokerRoleFilter, chartTab, filterQuery, rankingMetric]);
 
-  // Summary Totals (Share Hub strip: Total Amount | Total Quantity | Transactions)
+  // Summary Totals (Share Hub strip: Total Amount | Total Quantity | Total Broker Holding | Transactions)
   const totalVolume = Number(activeBrokerData?.totalVolume) || brokerRecords.reduce((s, b) => s + b.buyQty, 0);
   const totalAmount = Number(activeBrokerData?.totalAmount) || brokerRecords.reduce((s, b) => s + b.buyAmt, 0);
   const totalTransactions = Number(activeBrokerData?.totalTrades) || (Array.isArray(floorsheetData?.rows) ? floorsheetData.totalElements || floorsheetData.rows.length : (Array.isArray(floorsheetData) ? floorsheetData.length : brokerRecords.reduce((s, b) => s + (b.trades || 0), 0)));
   const totalHold = brokerRecords.reduce((s, b) => s + b.holdQty, 0);
+
+  // Aggregated totals across all brokers (Session & Till Today Cumulative Baseline)
+  const brokerHoldingTotals = useMemo(() => {
+    let sessionBuy = 0;
+    let sessionSell = 0;
+    let sessionMatched = 0;
+    let sessionHold = 0;
+    let cumHold = 0;
+    let cumHoldAmt = 0;
+    let totalBuyAmt = 0;
+    let totalSellAmt = 0;
+
+    for (const b of brokerRecords) {
+      sessionBuy += (b.buyQty || 0);
+      sessionSell += (b.sellQty || 0);
+      sessionMatched += (b.matchedQty || 0);
+      if (b.signedHoldQty > 0) {
+        sessionHold += b.signedHoldQty;
+      }
+      const cH = b.cumHoldQty !== undefined && b.cumHoldQty > 0 ? b.cumHoldQty : Math.max(0, b.signedHoldQty || 0);
+      if (cH > 0) {
+        cumHold += cH;
+        cumHoldAmt += (b.cumHoldAmt || (cH * (b.cumAvgBuy || b.avgBuy || ltp || 100)));
+      }
+      totalBuyAmt += (b.buyAmt || 0);
+      totalSellAmt += (b.sellAmt || 0);
+    }
+
+    const weightedAvgBuy = sessionBuy > 0 ? +(totalBuyAmt / sessionBuy).toFixed(2) : 0;
+    const weightedAvgSell = sessionSell > 0 ? +(totalSellAmt / sessionSell).toFixed(2) : 0;
+    const overallRetention = sessionBuy > 0 ? Math.round((sessionHold / sessionBuy) * 100) : 0;
+
+    return {
+      sessionBuy,
+      sessionSell,
+      sessionMatched,
+      sessionHold,
+      cumHold: cumHold > 0 ? cumHold : sessionHold,
+      cumHoldAmt,
+      weightedAvgBuy,
+      weightedAvgSell,
+      overallRetention
+    };
+  }, [brokerRecords, ltp]);
 
   // Daily flow records for Date-Wise Broker Buying/Selling table
   const dailyFlowList = useMemo(() => {
@@ -1141,14 +1210,14 @@ export default function StockBrokerAnalysisTab({
             )}
           </div>
 
-          {/* 2. Share Hub 3-Column Summary Strip: Total Amount | Total Quantity | Transactions */}
+          {/* 2. Share Hub Summary Strip: Total Amount | Traded Quantity | Total Broker Holding (Till Today) | Transactions */}
           <div style={{
             background: '#111827',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: 14,
             padding: '12px 16px',
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
             textAlign: 'center',
             gap: 8
           }}>
@@ -1159,9 +1228,18 @@ export default function StockBrokerAnalysisTab({
               </div>
             </div>
             <div style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 3 }}>Total Quantity</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 3 }}>Traded Volume</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#ffffff', fontFamily: 'var(--font-mono)' }}>
                 {totalVolume.toLocaleString()}
+              </div>
+            </div>
+            <div style={{ borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgba(16, 185, 129, 0.06)', borderRadius: 8, padding: '2px 4px' }}>
+              <div style={{ fontSize: 11, color: '#10b981', fontWeight: 800, marginBottom: 3 }}>Total Broker Holding (Till Today)</div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                +{brokerHoldingTotals.cumHold.toLocaleString()} <span style={{ fontSize: 11, color: '#34d399', fontWeight: 700 }}>kitta</span>
+              </div>
+              <div style={{ fontSize: 9.5, color: '#64748b' }}>
+                Session: +{brokerHoldingTotals.sessionHold.toLocaleString()} kitta
               </div>
             </div>
             <div>
@@ -1468,6 +1546,32 @@ export default function StockBrokerAnalysisTab({
                       })
                   )}
                 </tbody>
+                {tableHoldingView === 'session' ? (
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid rgba(56, 189, 248, 0.4)', background: 'rgba(15, 23, 42, 0.9)', fontWeight: 800 }}>
+                      <td style={{ padding: '10px 6px', color: '#38bdf8' }}>TOTAL (All Brokers)</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionBuy.toLocaleString()}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionSell.toLocaleString()}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.sessionMatched.toLocaleString()}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.sessionHold.toLocaleString()}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.cumHold.toLocaleString()}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgBuy > 0 ? brokerHoldingTotals.weightedAvgBuy.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgSell > 0 ? brokerHoldingTotals.weightedAvgSell.toFixed(2) : '—'}</td>
+                    </tr>
+                  </tfoot>
+                ) : (
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid rgba(16, 185, 129, 0.4)', background: 'rgba(15, 23, 42, 0.9)', fontWeight: 800 }}>
+                      <td style={{ padding: '10px 6px', color: '#64748b' }}>Σ</td>
+                      <td style={{ padding: '10px 6px', color: '#10b981' }}>TOTAL ACCUMULATED (Till Today)</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#10b981', fontWeight: 900, fontFamily: 'var(--font-mono)' }}>+{brokerHoldingTotals.cumHold.toLocaleString()} kitta</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>{formatShareHubCurrency(brokerHoldingTotals.cumHoldAmt)}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgBuy > 0 ? 'Rs. ' + brokerHoldingTotals.weightedAvgBuy.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.weightedAvgSell > 0 ? 'Rs. ' + brokerHoldingTotals.weightedAvgSell.toFixed(2) : '—'}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{brokerHoldingTotals.overallRetention}%</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           )}
@@ -1600,6 +1704,11 @@ export default function StockBrokerAnalysisTab({
                     <div style={{ fontSize: 13, fontWeight: 800, color: isNetPositive ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
                       {b.signedHoldQty.toLocaleString()}
                     </div>
+                    {b.cumHoldQty > 0 && (
+                      <div style={{ fontSize: 10, color: '#10b981', fontWeight: 700, marginTop: 1 }}>
+                        Till Today: +{b.cumHoldQty.toLocaleString()}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Hold Amount</div>

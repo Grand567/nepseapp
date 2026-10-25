@@ -32,7 +32,9 @@ import {
   getScripFloorsheet,
   getScripVolumeProfile,
   reconstructMarketDepthFromFloorsheet,
+  getSymbolHistoryFromDb,
 } from './db/ledgerStore.js';
+import { calculateMultiDayDiagnostics } from './utils/microstructureEngine.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
@@ -171,7 +173,7 @@ app.use(express.json({ limit: '25mb' }));
 app.use('/api/sync', syncRouter);
 app.use('/api/ai-guru', aiGuruRouter);
 app.use('/api/floorsheet/hub', floorsheetHubRouter);
-app.use('/api/stocks', stockTelemetryRouter);
+app.use(['/api/stocks', '/api/stock'], stockTelemetryRouter);
 app.use('/api/signals', signalTrackRecordRouter);
 app.use('/api', radarRouter);
 app.use('/admin', radarRouter);
@@ -3419,6 +3421,30 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     }
   } catch (vaultErr) {
     console.warn(`[broker-analysis] BrokerVault error for ${symbol}:`, vaultErr.message);
+  }
+
+  // Tier 1.5: Query verified SQLite ledger (contains 365,159 records across 32 days for all 367 stocks)
+  try {
+    const fullHistory = getSymbolHistoryFromDb(symbol, Math.max(days, 30));
+    let filteredHistory = fullHistory;
+    if (date) {
+      filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) === date);
+    } else if (fromDate && toDate) {
+      filteredHistory = fullHistory.filter(d => {
+        const dt = d.date || d.trade_date;
+        return dt >= fromDate && dt <= toDate;
+      });
+    }
+    if (filteredHistory && filteredHistory.length > 0) {
+      const diag = calculateMultiDayDiagnostics(filteredHistory, filteredHistory.length);
+      if (diag && (diag.brokers?.length > 0 || diag.allBrokers?.length > 0)) {
+        const enrichedDb = enrichWithMicrostructure(symbol, days, diag);
+        setCache(cacheKey, enrichedDb, 10 * 60 * 1000);
+        return res.json({ success: true, data: enrichedDb, source: 'sqlite_ledger_verified' });
+      }
+    }
+  } catch (dbErr) {
+    console.warn(`[broker-analysis] SQLite ledger fallback error for ${symbol}:`, dbErr.message);
   }
 
   try {
