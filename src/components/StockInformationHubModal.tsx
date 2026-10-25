@@ -880,7 +880,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
         {/* TAB 3: BROKER FLOW & SMART MONEY */}
         {activeTab === "BROKER_FLOW" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div className="rounded-lg border border-emerald-500/20 bg-slate-900 p-3">
               <div className="font-semibold text-emerald-300 mb-2">
                 Top 5 Institutional Accumulators (Baseline-Deflated)
@@ -916,6 +917,145 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* All Brokers Holding Till Now Telemetry Table */}
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/90 p-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-sky-400" />
+                <span className="font-bold text-slate-100 text-sm">
+                  All Brokers Holding Till Now (Full Ledger Telemetry)
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                  Total: +{totalHeldKitta.toLocaleString()} kitta ({allHoldingsList.length} holders)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setBrokerViewMode("HOLDINGS")}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
+                    brokerViewMode === "HOLDINGS"
+                      ? "bg-sky-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Holders ({allHoldingsList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBrokerViewMode("DISTRIBUTORS")}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition ${
+                    brokerViewMode === "DISTRIBUTORS"
+                      ? "bg-rose-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Distributors ({allDistributorsList.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Filters & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search broker # or name..."
+                  value={brokerHoldingSearch}
+                  onChange={(e) => setBrokerHoldingSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-500 text-xs focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {brokerViewMode === "HOLDINGS" && (
+                <select
+                  value={brokerHoldingFilter}
+                  onChange={(e: any) => setBrokerHoldingFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs focus:outline-none focus:border-sky-500"
+                >
+                  <option value="ALL">All Position Sizes</option>
+                  <option value="WHALE">Whale Accumulators (&ge; 10k kitta)</option>
+                  <option value="MAJOR">Major Holders (&ge; 2k kitta)</option>
+                  <option value="HIGH_RETENTION">High Retention (&ge; 60%)</option>
+                </select>
+              )}
+
+              <select
+                value={brokerHoldingSort}
+                onChange={(e: any) => setBrokerHoldingSort(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs focus:outline-none focus:border-sky-500"
+              >
+                <option value="KITTA_DESC">Sort: Held Kitta (Highest First)</option>
+                <option value="VAL_DESC">Sort: Rupee Value (Highest First)</option>
+                <option value="BUY_PRICE_ASC">Sort: Buy Price (Lowest First)</option>
+                <option value="BUY_PRICE_DESC">Sort: Buy Price (Highest First)</option>
+                <option value="RETENTION_DESC">Sort: Retention Rate (%)</option>
+                <option value="BROKER_ASC">Sort: Broker # (Ascending)</option>
+              </select>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto max-h-72 overflow-y-auto rounded-lg border border-slate-800">
+              <table className="w-full text-left">
+                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="py-2 px-2.5">#</th>
+                    <th className="py-2 px-2.5">Broker</th>
+                    <th className="py-2 px-2.5 text-right">{brokerViewMode === "HOLDINGS" ? "Held Kitta" : "Net Dumped"}</th>
+                    {brokerViewMode === "HOLDINGS" && (
+                      <th className="py-2 px-2.5 text-right">% of Total Hold</th>
+                    )}
+                    <th className="py-2 px-2.5 text-right">Holding Value</th>
+                    <th className="py-2 px-2.5 text-right">Avg Buy Price</th>
+                    <th className="py-2 px-2.5 text-right">Avg Sell Price</th>
+                    <th className="py-2 px-2.5 text-right">Retention</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {filteredAndSortedBrokers.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-6 text-center text-slate-400 font-sans">
+                        No brokers matched the current search / filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAndSortedBrokers.map((b, idx) => (
+                      <tr key={b.brokerId} className="hover:bg-slate-800/40">
+                        <td className="py-1.5 px-2.5 text-slate-500">{idx + 1}</td>
+                        <td className="py-1.5 px-2.5 font-sans font-medium text-white">
+                          Broker #{b.brokerId} <span className="text-slate-400 text-[11px]">({b.brokerName})</span>
+                        </td>
+                        <td className={`py-1.5 px-2.5 text-right font-bold ${b.netKitta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {b.netKitta >= 0 ? `+${b.netKitta.toLocaleString()}` : b.netKitta.toLocaleString()}
+                        </td>
+                        {brokerViewMode === "HOLDINGS" && (
+                          <td className="py-1.5 px-2.5 text-right text-sky-300 font-semibold">
+                            {b.holdingSharePct}%
+                          </td>
+                        )}
+                        <td className="py-1.5 px-2.5 text-right text-slate-200">
+                          Rs {(b.holdingValueRs / 100000).toFixed(2)} L
+                        </td>
+                        <td className="py-1.5 px-2.5 text-right text-emerald-300">
+                          {b.avgBuyPrice > 0 ? `Rs ${b.avgBuyPrice}` : "—"}
+                        </td>
+                        <td className="py-1.5 px-2.5 text-right text-rose-300">
+                          {b.avgSellPrice > 0 ? `Rs ${b.avgSellPrice}` : "—"}
+                        </td>
+                        <td className="py-1.5 px-2.5 text-right text-indigo-300">
+                          {b.retentionPct}%
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
           </div>
         )}
 

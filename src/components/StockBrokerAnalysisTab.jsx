@@ -51,6 +51,9 @@ export default function StockBrokerAnalysisTab({
   const [localToDate, setLocalToDate] = useState('');
   const [internalBrokerData, setInternalBrokerData] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
+  const [tableHoldingView, setTableHoldingView] = useState('session'); // 'session' | 'cumulative'
+  const [cumulativeHoldingMap, setCumulativeHoldingMap] = useState({});
+  const [allStoredDates, setAllStoredDates] = useState([]);
 
   // Sync props to local state
   useEffect(() => {
@@ -63,6 +66,53 @@ export default function StockBrokerAnalysisTab({
 
   const effectiveDays = onDaysChange ? selectedDays : localDays;
   const effectiveDate = onDateChange ? selectedDate : localDate;
+
+  // Prefetch 30-Day Cumulative Broker Holding Baseline Till Today
+  useEffect(() => {
+    let active = true;
+    if (!symbol) return;
+    fetchRealBrokerAnalysis(symbol, 30, { refresh: false })
+      .then(res => {
+        if (!active || !res) return;
+        if (Array.isArray(res.availableDates) && res.availableDates.length > 0) {
+          setAllStoredDates(res.availableDates);
+        }
+        const bList = Array.isArray(res.allBrokers)
+          ? res.allBrokers
+          : Array.isArray(res.brokers)
+          ? res.brokers
+          : Array.isArray(res.topHoldings)
+          ? res.topHoldings
+          : [];
+        const map = {};
+        for (const b of bList) {
+          const id = String(b.brokerId || b.broker || b.id || '').replace(/^0+/, '');
+          if (!id) continue;
+          const buyQty = Number(b.buyQty ?? b.buyVol ?? b.buyKitta ?? 0);
+          const sellQty = Number(b.sellQty ?? b.sellVol ?? b.sellKitta ?? 0);
+          const netQty = Number(b.netQty ?? b.signedHoldQty ?? b.netVol ?? (buyQty - sellQty));
+          const buyAmt = Number(b.buyAmt ?? b.buyAmount ?? 0);
+          const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? 0);
+          const avgBuy = Number(b.avgBuyRate ?? b.avgBuyPrice ?? (buyQty > 0 ? buyAmt / buyQty : 0));
+          const avgSell = Number(b.avgSellRate ?? b.avgSellPrice ?? (sellQty > 0 ? sellAmt / sellQty : 0));
+          const holdAmt = netQty > 0 ? (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100)) : 0;
+          const retention = buyQty > 0 ? Number(((Math.max(0, netQty) / buyQty) * 100).toFixed(1)) : 0;
+          map[id] = {
+            totalHeldQty: Math.max(0, netQty),
+            netQty,
+            totalHeldAmt: holdAmt,
+            avgBuyRate: +avgBuy.toFixed(2),
+            avgSellRate: +avgSell.toFixed(2),
+            retentionPct: retention,
+            totalBuyQty: buyQty,
+            totalSellQty: sellQty,
+          };
+        }
+        setCumulativeHoldingMap(map);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [symbol, ltp]);
 
   // Auto-fetch if brokerData is missing, empty, or from a different timeframe
   useEffect(() => {
@@ -142,6 +192,7 @@ export default function StockBrokerAnalysisTab({
   // Extract available trading dates from activeBrokerData or floorsheetData
   const availableDates = useMemo(() => {
     const set = new Set();
+    allStoredDates.forEach(d => d && set.add(String(d)));
     const bd = activeBrokerData;
     if (Array.isArray(bd?.availableDates)) {
       bd.availableDates.forEach(d => d && set.add(String(d)));
@@ -310,6 +361,13 @@ export default function StockBrokerAnalysisTab({
       const buyPct = totalTrade > 0 ? Math.round((r.buyQty / totalTrade) * 100) : 0;
       const sellPct = totalTrade > 0 ? (100 - buyPct) : 0;
 
+      const cum = cumulativeHoldingMap[String(r.id)] || {};
+      const cumHold = cum.totalHeldQty !== undefined ? cum.totalHeldQty : Math.max(0, netQty);
+      const cumAmt = cum.totalHeldAmt !== undefined ? cum.totalHeldAmt : holdAmt;
+      const cumBuyPx = cum.avgBuyRate !== undefined ? cum.avgBuyRate : avgBuy;
+      const cumSellPx = cum.avgSellRate !== undefined ? cum.avgSellRate : avgSell;
+      const cumRet = cum.retentionPct !== undefined ? cum.retentionPct : holdPctOfBuy;
+
       return {
         ...r,
         netQty,
@@ -324,7 +382,12 @@ export default function StockBrokerAnalysisTab({
         avgSell,
         totalTrade,
         buyMktShare: +((r.buyQty / totalBuyVol) * 100).toFixed(2),
-        sellMktShare: +((r.sellQty / totalSellVol) * 100).toFixed(2)
+        sellMktShare: +((r.sellQty / totalSellVol) * 100).toFixed(2),
+        cumHoldQty: cumHold,
+        cumHoldAmt: cumAmt,
+        cumAvgBuy: cumBuyPx,
+        cumAvgSell: cumSellPx,
+        cumRetentionPct: cumRet,
       };
     });
 
@@ -1253,54 +1316,157 @@ export default function StockBrokerAnalysisTab({
               background: '#111827',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: 16,
-              padding: '12px 14px',
-              overflowX: 'auto'
+              padding: '14px 16px',
+              overflowX: 'auto',
+              marginBottom: 16
             }}>
+              {/* Header Switcher between Session Flow & Total Holding Till Today */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: '#f8fafc' }}>
+                    {tableHoldingView === 'session' ? `Session Flow (${effectiveDays}D • ${activeDateDisplay || 'Latest'})` : 'Total Broker Holding Till Today (All Time / 30D)'}
+                  </span>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 9999, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
+                    {tableHoldingView === 'session' ? `${filteredBrokers.length} Brokers in Session` : `Top ${filteredBrokers.filter(b => (b.cumHoldQty || b.signedHoldQty) > 0).length} Accumulators Holding Stock`}
+                  </span>
+                </div>
+
+                <div style={{ display: 'inline-flex', background: '#0a0f1d', padding: 3, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTableHoldingView('session')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: tableHoldingView === 'session' ? '#0284c7' : 'transparent',
+                      color: tableHoldingView === 'session' ? '#ffffff' : '#94a3b8',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    ⚡ Session Activity ({effectiveDays}D)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTableHoldingView('cumulative')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: tableHoldingView === 'cumulative' ? '#059669' : 'transparent',
+                      color: tableHoldingView === 'cumulative' ? '#ffffff' : '#94a3b8',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    🏆 Total Holding Till Today
+                  </button>
+                </div>
+              </div>
+
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11 }}>
-                    <th style={{ padding: '8px 6px', textAlign: 'left' }}>BROKER</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>BUY QTY</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>SELL QTY</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>MATCHED</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>HOLD QTY</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>HOLD AMT</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG BUY</th>
-                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG SELL</th>
-                  </tr>
-                </thead>
+                {tableHoldingView === 'session' ? (
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11 }}>
+                      <th style={{ padding: '8px 6px', textAlign: 'left' }}>BROKER</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>BUY QTY</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>SELL QTY</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>MATCHED</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>SESSION HOLD</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right', color: '#38bdf8' }}>TOTAL HELD TILL TODAY</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG BUY</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG SELL</th>
+                    </tr>
+                  </thead>
+                ) : (
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11 }}>
+                      <th style={{ padding: '8px 6px', textAlign: 'left' }}>#</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'left' }}>BROKER</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981' }}>TOTAL HELD (KITTA)</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right', color: '#38bdf8' }}>HOLD VALUE (RS.)</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG BUY (TILL TODAY)</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>AVG SELL (TILL TODAY)</th>
+                      <th style={{ padding: '8px 6px', textAlign: 'right' }}>RETENTION RATE</th>
+                    </tr>
+                  </thead>
+                )}
                 <tbody>
-                  {filteredBrokers.slice(0, 60).map(b => {
-                    const isNetPos = b.signedHoldQty >= 0;
-                    return (
-                      <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 700 }}>
-                          #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                          {b.buyQty.toLocaleString()}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                          {b.sellQty.toLocaleString()}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
-                          {b.matchedQty.toLocaleString()}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: isNetPos ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                          {b.signedHoldQty.toLocaleString()}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: isNetPos ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                          {formatShareHubCurrency(b.holdAmt)}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                          {b.avgBuy > 0 ? b.avgBuy.toFixed(2) : '0.00'}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
-                          {b.avgSell > 0 ? b.avgSell.toFixed(2) : '0.00'}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {tableHoldingView === 'session' ? (
+                    filteredBrokers.slice(0, 60).map(b => {
+                      const isNetPos = b.signedHoldQty >= 0;
+                      return (
+                        <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 700 }}>
+                            #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                            {b.buyQty.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                            {b.sellQty.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
+                            {b.matchedQty.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: isNetPos ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                            {b.signedHoldQty.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                            {b.cumHoldQty > 0 ? `+${b.cumHoldQty.toLocaleString()}` : (isNetPos ? `+${b.signedHoldQty.toLocaleString()}` : '—')}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+                            {b.avgBuy > 0 ? b.avgBuy.toFixed(2) : '0.00'}
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
+                            {b.avgSell > 0 ? b.avgSell.toFixed(2) : '0.00'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    [...filteredBrokers]
+                      .sort((a, b) => (b.cumHoldQty || b.signedHoldQty || 0) - (a.cumHoldQty || a.signedHoldQty || 0))
+                      .filter(b => (b.cumHoldQty || b.signedHoldQty || 0) > 0)
+                      .slice(0, 60)
+                      .map((b, idx) => {
+                        const holdQty = b.cumHoldQty || Math.max(0, b.signedHoldQty);
+                        const holdVal = b.cumHoldAmt || (holdQty * (b.cumAvgBuy || b.avgBuy || ltp || 100));
+                        const avgBuy = b.cumAvgBuy || b.avgBuy || 0;
+                        const avgSell = b.cumAvgSell || b.avgSell || 0;
+                        const ret = b.cumRetentionPct || b.holdPctOfBuy || 0;
+                        return (
+                          <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td style={{ padding: '8px 6px', color: '#64748b', fontSize: 11 }}>
+                              {idx + 1}
+                            </td>
+                            <td style={{ padding: '8px 6px', color: '#ffffff', fontWeight: 700 }}>
+                              #{b.id} <span style={{ color: '#94a3b8', fontWeight: 500 }}>{b.name}</span>
+                            </td>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                              +{holdQty.toLocaleString()}
+                            </td>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                              {formatShareHubCurrency(holdVal)}
+                            </td>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                              {avgBuy > 0 ? `Rs. ${avgBuy.toFixed(2)}` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
+                              {avgSell > 0 ? `Rs. ${avgSell.toFixed(2)}` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', color: '#a78bfa', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                              {ret}%
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
                 </tbody>
               </table>
             </div>

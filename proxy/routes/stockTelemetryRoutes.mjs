@@ -158,6 +158,22 @@ export function handleStockTelemetry(req, res) {
           .map(r => r.trade_date);
       } catch (_) {}
     }
+    if (availableFloorsheetDates.length === 0 && tableExists(db, 'daily_broker_ledger')) {
+      try {
+        availableFloorsheetDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+    if (availableFloorsheetDates.length === 0 && tableExists(db, 'daily_stock_summary')) {
+      try {
+        availableFloorsheetDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
 
     const requestedDate = req.query.date || null;
     const requestedDays = Math.max(1, Math.min(30, parseInt(req.query.days || 30, 10)));
@@ -169,7 +185,10 @@ export function handleStockTelemetry(req, res) {
     let avgAccumulatorBuyPrice = null;
     let avgDistributorSellPrice = null;
 
-    if (tableExists(db, 'floorsheet_broker_summary')) {
+    const hasBrokerLedger = tableExists(db, 'daily_broker_ledger');
+    const hasSummaryTable = tableExists(db, 'floorsheet_broker_summary');
+
+    if (hasSummaryTable || hasBrokerLedger) {
       try {
         const targetDates = requestedDate
           ? [requestedDate]
@@ -178,28 +197,54 @@ export function handleStockTelemetry(req, res) {
         const placeholders = targetDates.map(() => '?').join(',');
         const queryParams = [validSymbol, ...targetDates];
 
-        const brokerRows = db
-          .prepare(
-            `SELECT
-              broker_no AS brokerId,
-              SUM(buy_kitta) AS buyKitta,
-              SUM(sell_kitta) AS sellKitta,
-              SUM(buy_kitta - sell_kitta) AS netKitta,
-              MAX(0, SUM(buy_kitta - sell_kitta)) AS holdKitta,
-              SUM(buy_amount) AS buyAmount,
-              SUM(sell_amount) AS sellAmount,
-              ROUND(SUM(buy_amount) / NULLIF(SUM(buy_kitta), 0), 2) AS avgBuyPrice,
-              ROUND(SUM(sell_amount) / NULLIF(SUM(sell_kitta), 0), 2) AS avgSellPrice,
-              ROUND((SUM(buy_amount) + SUM(sell_amount)) / NULLIF(SUM(buy_kitta) + SUM(sell_kitta), 0), 2) AS vwap,
-              COUNT(*) AS trades,
-              AVG(broker_anomaly_score) AS anomalyScore,
-              AVG(avg_ticket_kitta) AS avgTicketKitta
-            FROM floorsheet_broker_summary
-            WHERE UPPER(symbol) = ?
-              ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
-            GROUP BY broker_no`
-          )
-          .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+        let brokerRows = [];
+        if (hasSummaryTable) {
+          brokerRows = db
+            .prepare(
+              `SELECT
+                broker_no AS brokerId,
+                SUM(buy_kitta) AS buyKitta,
+                SUM(sell_kitta) AS sellKitta,
+                SUM(buy_kitta - sell_kitta) AS netKitta,
+                MAX(0, SUM(buy_kitta - sell_kitta)) AS holdKitta,
+                SUM(buy_amount) AS buyAmount,
+                SUM(sell_amount) AS sellAmount,
+                ROUND(SUM(buy_amount) / NULLIF(SUM(buy_kitta), 0), 2) AS avgBuyPrice,
+                ROUND(SUM(sell_amount) / NULLIF(SUM(sell_kitta), 0), 2) AS avgSellPrice,
+                ROUND((SUM(buy_amount) + SUM(sell_amount)) / NULLIF(SUM(buy_kitta) + SUM(sell_kitta), 0), 2) AS vwap,
+                COUNT(*) AS trades,
+                AVG(broker_anomaly_score) AS anomalyScore,
+                AVG(avg_ticket_kitta) AS avgTicketKitta
+              FROM floorsheet_broker_summary
+              WHERE UPPER(symbol) = ?
+                ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
+              GROUP BY broker_no`
+            )
+            .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+        } else if (hasBrokerLedger) {
+          brokerRows = db
+            .prepare(
+              `SELECT
+                broker_id AS brokerId,
+                SUM(buy_vol) AS buyKitta,
+                SUM(sell_vol) AS sellKitta,
+                SUM(buy_vol - sell_vol) AS netKitta,
+                MAX(0, SUM(buy_vol - sell_vol)) AS holdKitta,
+                SUM(buy_amt) AS buyAmount,
+                SUM(sell_amt) AS sellAmount,
+                ROUND(SUM(buy_amt) / NULLIF(SUM(buy_vol), 0), 2) AS avgBuyPrice,
+                ROUND(SUM(sell_amt) / NULLIF(SUM(sell_vol), 0), 2) AS avgSellPrice,
+                ROUND((SUM(buy_amt) + SUM(sell_amt)) / NULLIF(SUM(buy_vol) + SUM(sell_vol), 0), 2) AS vwap,
+                COUNT(*) AS trades,
+                1.0 AS anomalyScore,
+                ROUND(SUM(buy_vol + sell_vol) / 10) AS avgTicketKitta
+              FROM daily_broker_ledger
+              WHERE UPPER(symbol) = ?
+                ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
+              GROUP BY broker_id`
+            )
+            .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+        }
 
         if (Array.isArray(brokerRows) && brokerRows.length > 0) {
           broker5DPayload = brokerRows;
@@ -662,5 +707,180 @@ export function handleStockTelemetry(req, res) {
 
 router.get('/:symbol/telemetry', handleStockTelemetry);
 router.get('/telemetry', handleStockTelemetry);
+
+export async function handleStockSmartMoney(req, res) {
+  try {
+    const rawSymbol = req.params.symbol || req.query.symbol || '';
+    const validSymbol = sanitizeSymbol(rawSymbol);
+    if (!validSymbol) {
+      return res.status(400).json({ success: false, message: 'Valid symbol required' });
+    }
+    const db = getLedgerDb();
+    if (!db) {
+      return res.status(503).json({ success: false, message: 'Database ledger unavailable' });
+    }
+
+    const requestedTf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
+    const rawDays = parseInt(req.query.days || (requestedTf === '5D' ? 5 : requestedTf === '1M' || requestedTf === '30D' ? 30 : 1), 10);
+    const requestedDays = Math.max(1, Math.min(60, rawDays || 1));
+    const requestedDate = req.query.date ? String(req.query.date).trim() : null;
+
+    let availableDates = [];
+    if (tableExists(db, 'daily_broker_ledger')) {
+      try {
+        availableDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+    if (availableDates.length === 0 && tableExists(db, 'daily_stock_summary')) {
+      try {
+        availableDates = db
+          .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 40`)
+          .all(validSymbol)
+          .map(r => r.trade_date);
+      } catch (_) {}
+    }
+
+    const targetDates = requestedDate
+      ? [requestedDate]
+      : availableDates.slice(0, requestedDays);
+
+    const placeholders = targetDates.map(() => '?').join(',');
+    const queryParams = [validSymbol, ...targetDates];
+
+    let brokerRows = [];
+    const hasBrokerLedger = tableExists(db, 'daily_broker_ledger');
+    const hasSummaryTable = tableExists(db, 'floorsheet_broker_summary');
+
+    if (hasBrokerLedger) {
+      brokerRows = db
+        .prepare(
+          `SELECT
+            broker_id AS brokerId,
+            SUM(buy_vol) AS buyKitta,
+            SUM(sell_vol) AS sellKitta,
+            SUM(buy_vol - sell_vol) AS netKitta,
+            MAX(0, SUM(buy_vol - sell_vol)) AS holdKitta,
+            SUM(buy_amt) AS buyAmount,
+            SUM(sell_amt) AS sellAmount,
+            ROUND(SUM(buy_amt) / NULLIF(SUM(buy_vol), 0), 2) AS avgBuyPrice,
+            ROUND(SUM(sell_amt) / NULLIF(SUM(sell_vol), 0), 2) AS avgSellPrice,
+            ROUND((SUM(buy_amt) + SUM(sell_amt)) / NULLIF(SUM(buy_vol) + SUM(sell_vol), 0), 2) AS vwap,
+            COUNT(*) AS trades
+          FROM daily_broker_ledger
+          WHERE UPPER(symbol) = ?
+            ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
+          GROUP BY broker_id`
+        )
+        .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+    } else if (hasSummaryTable) {
+      brokerRows = db
+        .prepare(
+          `SELECT
+            broker_no AS brokerId,
+            SUM(buy_kitta) AS buyKitta,
+            SUM(sell_kitta) AS sellKitta,
+            SUM(buy_kitta - sell_kitta) AS netKitta,
+            MAX(0, SUM(buy_kitta - sell_kitta)) AS holdKitta,
+            SUM(buy_amount) AS buyAmount,
+            SUM(sell_amount) AS sellAmount,
+            ROUND(SUM(buy_amount) / NULLIF(SUM(buy_kitta), 0), 2) AS avgBuyPrice,
+            ROUND(SUM(sell_amount) / NULLIF(SUM(sell_kitta), 0), 2) AS avgSellPrice,
+            ROUND((SUM(buy_amount) + SUM(sell_amount)) / NULLIF(SUM(buy_kitta) + SUM(sell_kitta), 0), 2) AS vwap,
+            COUNT(*) AS trades
+          FROM floorsheet_broker_summary
+          WHERE UPPER(symbol) = ?
+            ${targetDates.length > 0 ? `AND trade_date IN (${placeholders})` : ''}
+          GROUP BY broker_no`
+        )
+        .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
+    }
+
+    const enriched = brokerRows.map(b => {
+      const bId = String(b.brokerId);
+      const bName = getBrokerName(bId);
+      const buyKitta = Number(b.buyKitta || 0);
+      const sellKitta = Number(b.sellKitta || 0);
+      const netKitta = Number(b.netKitta || (buyKitta - sellKitta));
+      const buyAmt = Number(b.buyAmount || 0);
+      const sellAmt = Number(b.sellAmount || 0);
+      const avgBuy = Number(b.avgBuyPrice || (buyKitta > 0 ? buyAmt / buyKitta : 0));
+      const avgSell = Number(b.avgSellPrice || (sellKitta > 0 ? sellAmt / sellKitta : 0));
+      const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
+
+      return {
+        ...b,
+        brokerId: bId,
+        brokerName: bName,
+        name: bName,
+        buyVolume: buyKitta,
+        sellVolume: sellKitta,
+        buyQty: buyKitta,
+        sellQty: sellKitta,
+        netVolume: netKitta,
+        netQty: netKitta,
+        holdQty: Math.max(0, netKitta),
+        signedHoldQty: netKitta,
+        buyTurnoverNpr: buyAmt,
+        sellTurnoverNpr: sellAmt,
+        buyAmt,
+        sellAmt,
+        avgBuyRate: +avgBuy.toFixed(2),
+        avgSellRate: +avgSell.toFixed(2),
+        retentionPct,
+        anomalyScore: 1.0,
+        avgTicketKitta: Math.round((buyKitta + sellKitta) / 10),
+      };
+    });
+
+    const accumulators = enriched.filter(b => b.netKitta > 0).sort((a, b) => b.netKitta - a.netKitta);
+    const distributors = enriched.filter(b => b.netKitta < 0).sort((a, b) => a.netKitta - b.netKitta);
+
+    const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netKitta, 0);
+    const allHoldings = accumulators.map(b => ({
+      ...b,
+      holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netKitta / totalSharesHeldTillNow) * 100).toFixed(2)) : 0,
+    }));
+
+    const topAcc = accumulators[0] || null;
+    const totalBuyAmtAcc = accumulators.reduce((s, b) => s + (b.buyAmount || 0), 0);
+    const totalBuyQtyAcc = accumulators.reduce((s, b) => s + (b.buyKitta || 0), 0);
+    const avgBuyingPrice = totalBuyQtyAcc > 0 ? Number((totalBuyAmtAcc / totalBuyQtyAcc).toFixed(2)) : null;
+
+    const totalSellAmtDist = distributors.reduce((s, b) => s + (b.sellAmount || 0), 0);
+    const totalSellQtyDist = distributors.reduce((s, b) => s + (b.sellKitta || 0), 0);
+    const avgSellingPrice = totalSellQtyDist > 0 ? Number((totalSellAmtDist / totalSellQtyDist).toFixed(2)) : null;
+
+    res.setHeader('Cache-Control', 'public, max-age=30');
+    return res.json({
+      success: true,
+      symbol: validSymbol,
+      timeframe: requestedTf,
+      days: requestedDays,
+      availableDates,
+      data: enriched,
+      brokers: enriched,
+      allBrokers: enriched,
+      topHoldings: allHoldings,
+      allHoldings,
+      allDistributors: distributors,
+      totalSharesHeldTillNow,
+      topHoldingBroker: topAcc,
+      avgBuyingPrice,
+      avgSellingPrice,
+      tradingDays: targetDates.length,
+      fromDate: targetDates[targetDates.length - 1] || '',
+      toDate: targetDates[0] || '',
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+router.get('/:symbol/smart-money', handleStockSmartMoney);
+router.get('/:symbol/holdings', handleStockSmartMoney);
+
 
 export default router;

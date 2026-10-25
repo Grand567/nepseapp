@@ -134,7 +134,13 @@ export function normalizeAndAggregateBrokerData(
       payload[`days_${daysKey}`] ??
       payload?.data?.[tfUpper] ??
       payload?.data?.[tfLower] ??
+      payload?.data?.allBrokers ??
+      payload?.data?.topHoldings ??
+      payload?.data?.topNetBuyers ??
       payload?.data?.brokers ??
+      payload?.allBrokers ??
+      payload?.topHoldings ??
+      payload?.topNetBuyers ??
       payload?.data ??
       payload?.brokers ??
       payload?.rows ??
@@ -354,6 +360,7 @@ function BrokerSmartMoneyCardInner({
   const [rawPayload, setRawPayload] = useState<any>(initialData ?? null);
   const [cached1DPayload, setCached1DPayload] = useState<any>(initialData ?? null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [showAllHolders, setShowAllHolders] = useState<boolean>(false);
   const [warningBanner, setWarningBanner] = useState<string | null>(null);
 
   useEffect(() => {
@@ -464,6 +471,7 @@ function BrokerSmartMoneyCardInner({
   const {
     topAccumulators,
     topDistributors,
+    allHoldersList,
     summaryMetrics,
   } = useMemo(() => {
     const allBrokers = normalizeAndAggregateBrokerData(
@@ -522,9 +530,19 @@ function BrokerSmartMoneyCardInner({
         ? Number((((currentPrice - smartMoneyBuyVwap) / smartMoneyBuyVwap) * 100).toFixed(2))
         : null;
 
+    const allHoldersList = allBrokers
+      .filter((b) => b.netVolume > 0)
+      .sort((a, b) => b.netVolume - a.netVolume)
+      .map((b) => ({
+        ...b,
+        shareOfHoldPct: totalSharesHeldTillNow > 0 ? Number(((b.netVolume / totalSharesHeldTillNow) * 100).toFixed(1)) : 0,
+        holdValueRs: b.netVolume * (currentPrice || b.buyVwap || 100),
+      }));
+
     return {
       topAccumulators: accumulators,
       topDistributors: distributors,
+      allHoldersList,
       summaryMetrics: {
         top5NetBuyVol,
         top5NetSellVol,
@@ -598,13 +616,24 @@ function BrokerSmartMoneyCardInner({
       {/* 2. SMART-MONEY SUMMARY TELEMETRY STRIP */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Top Holding Broker Till Now */}
-        <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wider text-sky-400 font-semibold">
-            Top Holding Broker ({timeframe})
+        <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3 relative group">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] uppercase tracking-wider text-sky-400 font-semibold">
+              Top Holding Broker ({timeframe})
+            </div>
+            {allHoldersList && allHoldersList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAllHolders(!showAllHolders)}
+                className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 border border-sky-500/30 transition"
+              >
+                {showAllHolders ? 'Hide All' : `View All (${allHoldersList.length})`}
+              </button>
+            )}
           </div>
           <div className="text-base md:text-lg font-bold text-white mt-1">
             {summaryMetrics.topHoldingBroker
-              ? `Broker #${summaryMetrics.topHoldingBroker.brokerId}`
+              ? `Broker #${summaryMetrics.topHoldingBroker.brokerId} (${getBrokerName(summaryMetrics.topHoldingBroker.brokerId)})`
               : '—'}
           </div>
           <div className="text-[11px] text-sky-300 mt-0.5 font-medium">
@@ -667,6 +696,73 @@ function BrokerSmartMoneyCardInner({
           </div>
         </div>
       </div>
+
+      {/* 2B. COMPREHENSIVE ALL BROKER HOLDINGS TILL NOW TABLE */}
+      {showAllHolders && allHoldersList && allHoldersList.length > 0 && (
+        <div className="bg-slate-900/95 border border-sky-500/30 rounded-xl p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div>
+              <span className="text-sm font-bold text-sky-300">
+                All Brokers Holding Till Now ({timeframe} Window)
+              </span>
+              <span className="text-xs text-slate-400 ml-2">
+                Total Held: <strong className="text-emerald-400">+{formatInt(summaryMetrics.totalSharesHeldTillNow)} kitta</strong> across {allHoldersList.length} brokers
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAllHolders(false)}
+              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/80 text-slate-400 sticky top-0 border-b border-slate-800">
+                <tr>
+                  <th className="py-1.5 px-2">#</th>
+                  <th className="py-1.5 px-2">Broker</th>
+                  <th className="py-1.5 px-2 text-right">Held Kitta</th>
+                  <th className="py-1.5 px-2 text-right">% of Total</th>
+                  <th className="py-1.5 px-2 text-right">Hold Value</th>
+                  <th className="py-1.5 px-2 text-right">Avg Buy</th>
+                  <th className="py-1.5 px-2 text-right">Avg Sell</th>
+                  <th className="py-1.5 px-2 text-right">Retention</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {allHoldersList.map((b, idx) => (
+                  <tr key={b.brokerId} className="hover:bg-slate-800/40">
+                    <td className="py-1.5 px-2 text-slate-500">{idx + 1}</td>
+                    <td className="py-1.5 px-2 font-sans font-medium text-white">
+                      Broker #{b.brokerId} <span className="text-slate-400 text-[11px]">({getBrokerName(b.brokerId)})</span>
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-bold text-emerald-400">
+                      +{formatInt(b.netVolume)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-sky-300 font-semibold">
+                      {b.shareOfHoldPct}%
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-slate-200">
+                      Rs {(b.holdValueRs / 100000).toFixed(2)} L
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-emerald-300">
+                      {b.buyVwap > 0 ? `Rs ${b.buyVwap}` : '—'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-rose-300">
+                      {b.sellVwap > 0 ? `Rs ${b.sellVwap}` : '—'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-indigo-300">
+                      {b.retentionRatePct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 3. ACCUMULATION VS DISTRIBUTION PRESSURE GAUGE */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 space-y-1.5">
@@ -826,4 +922,4 @@ export function BrokerSmartMoneyCard(props: BrokerSmartMoneyCardProps) {
     </BrokerSmartMoneyErrorBoundary>
   );
 }
-
+
