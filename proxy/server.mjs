@@ -3375,7 +3375,14 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     try {
       const allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
       if (allTimeResult && (allTimeResult.brokers?.length > 0 || allTimeResult.totalSharesHeldTillNow > 0)) {
-        return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, allTimeResult), source: 'broker_alltime_authentic' });
+        const enrichedAllTime = {
+          ...allTimeResult,
+          topBuyers: allTimeResult.allHoldings ? allTimeResult.allHoldings.slice(0, 15) : (allTimeResult.topHoldings?.slice(0, 15) || []),
+          topSellers: allTimeResult.allDistributors ? allTimeResult.allDistributors.slice(0, 15) : [],
+          topNetBuyers: allTimeResult.allHoldings ? allTimeResult.allHoldings.slice(0, 15) : (allTimeResult.topHoldings?.slice(0, 15) || []),
+          topNetSellers: allTimeResult.allDistributors ? allTimeResult.allDistributors.slice(0, 15) : []
+        };
+        return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, enrichedAllTime), source: 'broker_alltime_authentic' });
       }
     } catch (_) {}
   }

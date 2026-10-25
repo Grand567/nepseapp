@@ -2,7 +2,7 @@
 import React, { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from 'react';
 import { getProxyBase } from '../../utils/liveData';
 
-export type SmartMoneyTimeframe = '1D' | '5D' | '1M';
+export type SmartMoneyTimeframe = '1D' | '5D' | '1M' | 'ALL';
 
 export interface RawBrokerFlowItem {
   brokerId?: number | string;
@@ -121,7 +121,7 @@ export function normalizeAndAggregateBrokerData(
 
   const tfUpper = timeframe.toUpperCase();
   const tfLower = timeframe.toLowerCase();
-  const daysKey = timeframe === '5D' ? '5' : timeframe === '1M' ? '30' : '1';
+  const daysKey = timeframe === 'ALL' ? 'all' : (timeframe === '5D' ? '5' : timeframe === '1M' ? '30' : '1');
 
   // 1. Extract raw array from any nested structure
   let rawList: RawBrokerFlowItem[] = [];
@@ -394,7 +394,7 @@ function BrokerSmartMoneyCardInner({
       setLoading(true);
       setWarningBanner(null);
 
-      const days = timeframe === '5D' ? 5 : timeframe === '1M' ? 30 : 1;
+      const days: any = timeframe === 'ALL' ? 'all' : (timeframe === '5D' ? 5 : timeframe === '1M' ? 30 : 1);
 
       try {
         let responseData: any;
@@ -578,7 +578,7 @@ function BrokerSmartMoneyCardInner({
 
         {/* Timeframe Selector Pills */}
         <div className="inline-flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
-          {(['1D', '5D', '1M'] as SmartMoneyTimeframe[]).map((tf) => {
+          {(['1D', '5D', '1M', 'ALL'] as SmartMoneyTimeframe[]).map((tf) => {
             const isActive = timeframe === tf;
             return (
               <button
@@ -592,7 +592,7 @@ function BrokerSmartMoneyCardInner({
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                 } ${loading ? 'opacity-60 cursor-wait' : ''}`}
               >
-                {tf === '1D' ? '1D (Session)' : tf === '5D' ? '5D (Weekly)' : '1M (30D)'}
+                {tf === '1D' ? '1D (Session)' : tf === '5D' ? '5D (Weekly)' : tf === '1M' ? '1M (30D)' : '🏆 All-Time (Till Today)'}
               </button>
             );
           })}

@@ -2609,7 +2609,7 @@ export function LiveFloorsheetService() {
   const [viewMode, setViewMode] = useState<'ledger' | 'trades'>('ledger');
   const [refreshing, setRefreshing] = useState(false);
 
-  const daysMap: Record<string, number> = {
+  const daysMap: Record<string, number | string> = {
     '1D': 1,
     '1W': 7,
     '15D': 15,
@@ -2618,7 +2618,7 @@ export function LiveFloorsheetService() {
     '3M': 90,
     '6M': 180,
     '1Y': 260,
-    'ALL': 500,
+    'ALL': 'all',
   };
 
   const loadData = async (activeTf = timeframe) => {
@@ -3049,7 +3049,7 @@ export function BrokerHeatmapService() {
 
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  const daysMap: Record<string, number> = {
+  const daysMap: Record<string, number | string> = {
     '1D': 1,
     '1W': 7,
     '15D': 15,
@@ -3058,7 +3058,7 @@ export function BrokerHeatmapService() {
     '3M': 90,
     '6M': 180,
     '1Y': 260,
-    'ALL': 500,
+    'ALL': 'all',
   };
 
   const sectorsList = [
@@ -4232,7 +4232,7 @@ export function BrokerAnalysisService({
   const [brokerData, setBrokerData] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  const daysMap: Record<string, number> = {
+  const daysMap: Record<string, number | string> = {
     '1D': 1,
     '1W': 7,
     '15D': 15,
@@ -4241,7 +4241,7 @@ export function BrokerAnalysisService({
     '3M': 90,
     '6M': 180,
     '1Y': 260,
-    'ALL': 500,
+    'ALL': 'all',
   };
 
   const loadData = async (activeDate = selectedDate) => {
@@ -4558,6 +4558,7 @@ export function BrokerAnalysisService({
                     <tr>
                       <th className="py-2">Broker</th>
                       <th className="py-2 text-right font-mono tabular-nums">Buy Qty</th>
+                      <th className="py-2 text-right font-mono tabular-nums text-emerald-400">Total Held (Till Today)</th>
                       <th className="py-2 text-right font-mono tabular-nums">Avg Rate</th>
                       <th className="py-2 text-right font-mono tabular-nums">Turnover</th>
                     </tr>
@@ -4572,6 +4573,9 @@ export function BrokerAnalysisService({
                           </span>
                         </td>
                         <td className="py-2 text-right font-mono tabular-nums font-bold text-white">{b.buyQty.toLocaleString()}</td>
+                        <td className="py-2 text-right font-mono tabular-nums font-extrabold text-emerald-400">
+                          +{Number(b.netQty > 0 ? b.netQty : (b.holdQty || 0)).toLocaleString()} kitta
+                        </td>
                         <td className="py-2 text-right font-mono tabular-nums text-slate-300">Rs. {b.avgRate}</td>
                         <td className="py-2 text-right font-mono tabular-nums font-bold text-emerald-400">Rs. {(b.buyAmount / 1e5).toFixed(1)}L</td>
                       </tr>

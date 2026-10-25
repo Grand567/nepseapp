@@ -503,16 +503,19 @@ export default function StockBrokerAnalysisTab({
 
     if (chartTab === 'holdings') {
       if (rankingMetric === 'netFlow') {
-        const withNet = brokerRecords.filter(b => b.netAmt > 0);
-        const list = withNet.length > 0 ? withNet : brokerRecords;
+        const enriched = brokerRecords.map(b => ({
+          ...b,
+          effectiveHoldAmt: (b.cumHoldAmt !== undefined && b.cumHoldAmt > 0) ? b.cumHoldAmt : Math.max(0, b.netAmt || 0)
+        })).filter(b => b.effectiveHoldAmt > 0);
+        const list = enriched.length > 0 ? enriched : brokerRecords;
         return [...list]
-          .sort((a, b) => b.netAmt - a.netAmt)
+          .sort((a, b) => b.effectiveHoldAmt - a.effectiveHoldAmt)
           .slice(0, 10)
           .map(b => ({
             id: b.id,
             name: b.name,
-            value: b.netAmt,
-            displayVal: formatShareHubCurrency(b.netAmt),
+            value: b.effectiveHoldAmt,
+            displayVal: formatShareHubCurrency(b.effectiveHoldAmt),
             color: '#0284c7'
           }));
       }
@@ -540,18 +543,21 @@ export default function StockBrokerAnalysisTab({
             color: '#0284c7'
           }));
       }
-      // Default: netQty
-      const withHoldings = brokerRecords.filter(b => b.signedHoldQty > 0);
-      const list = withHoldings.length > 0 ? withHoldings : brokerRecords;
+      // Default: netQty (Actual Total Kitta Held Till Today!)
+      const enriched = brokerRecords.map(b => ({
+        ...b,
+        effectiveHoldQty: (b.cumHoldQty !== undefined && b.cumHoldQty > 0) ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : (b.totalHeldQty || b.buyQty || 0))
+      })).filter(b => b.effectiveHoldQty > 0);
+      const list = enriched.length > 0 ? enriched : brokerRecords;
       return [...list]
-        .sort((a, b) => (b.signedHoldQty > 0 ? (b.signedHoldQty - a.signedHoldQty) : (b.buyQty - a.buyQty)))
+        .sort((a, b) => b.effectiveHoldQty - a.effectiveHoldQty)
         .slice(0, 10)
         .map(b => ({
           id: b.id,
           name: b.name,
-          value: b.signedHoldQty > 0 ? b.signedHoldQty : b.buyQty,
-          displayVal: formatCompactQty(b.signedHoldQty > 0 ? b.signedHoldQty : b.buyQty),
-          color: '#0284c7'
+          value: b.effectiveHoldQty,
+          displayVal: `${formatCompactQty(b.effectiveHoldQty)} kitta`,
+          color: '#10b981'
         }));
     }
 
@@ -961,9 +967,14 @@ export default function StockBrokerAnalysisTab({
             { days: 90, label: '3M' },
             { days: 180, label: '6M' },
             { days: 260, label: '1Y' },
-            { days: 500, label: '2Y/All' }
+            { days: 'all', label: '🏆 All-Time (Till Today)' }
           ].map(item => {
-            const isActive = !effectiveDate && !localFromDate && !localToDate && Number(effectiveDays) === item.days;
+            const isAll = item.days === 'all' || item.days === 'ALL';
+            const isActive = !effectiveDate && !localFromDate && !localToDate && (
+              isAll
+                ? (effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300)
+                : (Number(effectiveDays) === item.days)
+            );
             return (
               <button
                 key={item.days}
@@ -972,9 +983,9 @@ export default function StockBrokerAnalysisTab({
                 style={{
                   padding: '6px 11px',
                   borderRadius: 8,
-                  border: isActive ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.08)',
-                  background: isActive ? 'rgba(2, 132, 199, 0.25)' : 'rgba(255,255,255,0.03)',
-                  color: isActive ? '#38bdf8' : '#94a3b8',
+                  border: isActive ? (isAll ? '1.5px solid #10b981' : '1px solid #38bdf8') : '1px solid rgba(255,255,255,0.08)',
+                  background: isActive ? (isAll ? 'rgba(16, 185, 129, 0.28)' : 'rgba(2, 132, 199, 0.25)') : (isAll ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.03)'),
+                  color: isActive ? (isAll ? '#34d399' : '#38bdf8') : (isAll ? '#6ee7b7' : '#94a3b8'),
                   fontSize: 11.5,
                   fontWeight: 800,
                   cursor: 'pointer'
@@ -1240,6 +1251,119 @@ export default function StockBrokerAnalysisTab({
       {/* ── Sub-tab 1: Broker Cards & Top Bar Chart Layout (Exact Share Hub Visuals) ── */}
       {activeSubTab === 'brokers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* ── 0. Authentic All-Time Broker Holding Ledger Banner & Top Accumulators Grid ── */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(6, 78, 59, 0.35))',
+            border: '1.5px solid rgba(16, 185, 129, 0.5)',
+            borderRadius: 16,
+            padding: '16px 18px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4), 0 0 20px rgba(16, 185, 129, 0.12)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>🏆</span>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#ffffff', letterSpacing: '-0.01em' }}>
+                    Total Holding Till Today: Multi-Year Accumulator Pool ({symbol})
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                    Authentic NEPSE Floorsheet Archive • Full Session History since 2022
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  borderRadius: 10,
+                  padding: '6px 14px',
+                  textAlign: 'right'
+                }}>
+                  <div style={{ fontSize: 10, color: '#a7f3d0', fontWeight: 800, textTransform: 'uppercase' }}>
+                    Total Locked by Accumulators
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                    +{(totalCumulativeHoldingKitta || brokerHoldingTotals.cumHold || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDaysSelect('all')}
+                  style={{
+                    background: (effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300) ? '#10b981' : 'rgba(16, 185, 129, 0.2)',
+                    color: (effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300) ? '#0f172a' : '#34d399',
+                    border: '1px solid #10b981',
+                    borderRadius: 8,
+                    padding: '7px 14px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  {(effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300) ? '✓ Viewing All-Time' : 'View All-Time Data'}
+                </button>
+              </div>
+            </div>
+
+            {/* Top 5 Accumulators Row */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 10
+            }}>
+              {sortedCumulativeBrokers.slice(0, 5).map((b, idx) => {
+                const totalHeld = b.cumHoldQty || b.holdQty || 0;
+                const poolTotal = totalCumulativeHoldingKitta || brokerHoldingTotals.cumHold || 1;
+                const sharePct = poolTotal > 0 ? ((totalHeld / poolTotal) * 100).toFixed(1) : '0.0';
+                return (
+                  <div
+                    key={b.id}
+                    onClick={() => setFilterQuery(filterQuery === b.id ? '' : b.id)}
+                    title={`Click to filter view to Broker #${b.id}`}
+                    style={{
+                      background: idx === 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                      border: idx === 0 ? '1.5px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 12,
+                      padding: '11px 13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '2px 7px',
+                        borderRadius: 6,
+                        background: idx === 0 ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
+                        color: idx === 0 ? '#064e3b' : '#ffffff'
+                      }}>
+                        #{b.id} {idx === 0 ? '👑 #1 HOLDER' : ''}
+                      </span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#38bdf8' }}>
+                        {sharePct}% of pool
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 4 }}>
+                      {b.name}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                      +{totalHeld.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 700, color: '#a7f3d0' }}>kitta</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
+                      <span>Avg: Rs. {b.cumAvgBuy > 0 ? b.cumAvgBuy.toFixed(1) : (b.avgBuy > 0 ? b.avgBuy.toFixed(1) : '—')}</span>
+                      <span>Val: {formatShareHubCurrency(b.cumHoldAmt || (totalHeld * (b.cumAvgBuy || ltp || 100)))}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           {/* 1. Share Hub Top Bar Chart Card: TOP HOLDINGS | TOP BUYERS | TOP SELLERS + Date */}
           <div style={{
             background: '#111827',
@@ -1484,9 +1608,14 @@ export default function StockBrokerAnalysisTab({
                 { days: 30, label: '1M (30D)' },
                 { days: 60, label: '2M' },
                 { days: 90, label: '3M' },
-                { days: 500, label: 'All' }
+                { days: 'all', label: '🏆 All-Time (Till Today)' }
               ].map(item => {
-                const isActive = !effectiveDate && !localFromDate && !localToDate && Number(effectiveDays) === item.days;
+                const isAll = item.days === 'all' || item.days === 'ALL';
+                const isActive = !effectiveDate && !localFromDate && !localToDate && (
+                  isAll
+                    ? (effectiveDays === 'all' || effectiveDays === 'ALL' || Number(effectiveDays) >= 300)
+                    : (Number(effectiveDays) === item.days)
+                );
                 return (
                   <button
                     key={item.days}
@@ -1495,9 +1624,9 @@ export default function StockBrokerAnalysisTab({
                     style={{
                       padding: '4px 9px',
                       borderRadius: 6,
-                      border: isActive ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.08)',
-                      background: isActive ? 'rgba(2, 132, 199, 0.25)' : 'rgba(255,255,255,0.03)',
-                      color: isActive ? '#38bdf8' : '#94a3b8',
+                      border: isActive ? (isAll ? '1.5px solid #10b981' : '1px solid #38bdf8') : '1px solid rgba(255,255,255,0.08)',
+                      background: isActive ? (isAll ? 'rgba(16, 185, 129, 0.28)' : 'rgba(2, 132, 199, 0.25)') : (isAll ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.03)'),
+                      color: isActive ? (isAll ? '#34d399' : '#38bdf8') : (isAll ? '#6ee7b7' : '#94a3b8'),
                       fontSize: 11,
                       fontWeight: 800,
                       cursor: 'pointer'
@@ -2236,14 +2365,19 @@ export default function StockBrokerAnalysisTab({
                   paddingTop: 6,
                   borderTop: '1px solid rgba(255,255,255,0.06)'
                 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Hold Volume</div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: isNetPositive ? '#38bdf8' : '#f43f5e', fontFamily: 'var(--font-mono)' }}>
-                      {b.signedHoldQty.toLocaleString()}
+                  <div style={{
+                    background: (b.cumHoldQty > 0 || b.signedHoldQty > 0) ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                    border: (b.cumHoldQty > 0 || b.signedHoldQty > 0) ? '1px solid rgba(16, 185, 129, 0.25)' : 'none',
+                    borderRadius: 8,
+                    padding: '4px 6px'
+                  }}>
+                    <div style={{ fontSize: 10.5, color: '#10b981', fontWeight: 800 }}>🏆 Total Held Till Today</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
+                      +{(b.cumHoldQty > 0 ? b.cumHoldQty : (effectiveDays === 'all' ? Math.max(0, b.signedHoldQty) : (b.totalHeldQty || Math.max(0, b.signedHoldQty)))).toLocaleString()} kitta
                     </div>
-                    {b.cumHoldQty > 0 && (
-                      <div style={{ fontSize: 10, color: '#10b981', fontWeight: 700, marginTop: 1 }}>
-                        Till Today: +{b.cumHoldQty.toLocaleString()}
+                    {effectiveDays !== 'all' && (
+                      <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 1 }}>
+                        Session: {isNetPositive ? '+' : ''}{b.signedHoldQty.toLocaleString()}
                       </div>
                     )}
                   </div>

@@ -548,7 +548,8 @@ export const realBrokerAnalysisCache = new Map();
 export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
   const normSym = String(sym || '').toUpperCase().trim();
   if (!normSym) return null;
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const isAllTime = days === 'all' || days === 'ALL' || days === 'all-time' || options?.timeframe === 'all' || Number(days) >= 300;
+  const numDays = isAllTime ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
     if (realBrokerAnalysisCache.has(normSym)) {
       return realBrokerAnalysisCache.get(normSym);
@@ -559,17 +560,18 @@ export function getCachedRealBrokerAnalysis(sym, days = 1, options = {}) {
       return fromHistory;
     }
   }
-  return getCachedRealBrokerAnalysisHistory(sym, days, options);
+  return getCachedRealBrokerAnalysisHistory(sym, numDays, options);
 }
 
 export function setCachedRealBrokerAnalysis(sym, data, days = 1, options = {}) {
   if (!sym || !data) return;
   const normSym = String(sym || '').toUpperCase().trim();
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const isAllTime = days === 'all' || days === 'ALL' || days === 'all-time' || options?.timeframe === 'all' || Number(days) >= 300;
+  const numDays = isAllTime ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   if (numDays === 1 && !options?.date && !options?.fromDate && !options?.toDate) {
     realBrokerAnalysisCache.set(normSym, data);
   }
-  setCachedRealBrokerAnalysisHistory(sym, data, days, options);
+  setCachedRealBrokerAnalysisHistory(sym, data, numDays, options);
 }
 
 export function invalidateSymbolCache(sym) {
@@ -2610,12 +2612,14 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
 export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
-  const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
+  const isAllTime = days === 'all' || days === 'ALL' || days === 'all-time' || options?.timeframe === 'all' || Number(days) >= 300;
+  const numDays = isAllTime ? 'all' : Math.max(1, parseInt(days || 1, 10) || 1);
   const date = String(options?.date || '').trim();
   const fromDate = String(options?.fromDate || '').trim();
   const toDate = String(options?.toDate || '').trim();
   const refresh = Boolean(options?.refresh);
   const cached = !refresh ? getCachedRealBrokerAnalysis(sym, numDays, options) : null;
+  if (cached) return cached;
 
   const normalizeBrokerItem = (b) => {
     if (!b) return null;
@@ -2660,7 +2664,8 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   };
 
   // Tier 1 Fast Path: Query in-memory hot cache for single stock diagnostic (< 5ms response)
-  if (!date && !fromDate && !toDate) {
+  // ONLY for short/numeric days, NEVER for 'all' / all-time!
+  if (!isAllTime && !date && !fromDate && !toDate) {
     try {
       const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 5000);
       if (fastDiag?.success && fastDiag.data) {
@@ -2729,23 +2734,25 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
     const res = await fetchFromBackend(`/api/broker-analysis/${encodeURIComponent(sym)}?${params.toString()}`, 20000);
     const d = res?.data || res;
     const isSyntheticFallback = res?.source === 'trading-profile-fallback' || d?.source === 'trading-profile-fallback' || res?.source === 'empty_no_floorsheet_records';
-    if (!isSyntheticFallback && d && (d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0)) {
-      const normalizedBrokers = (d.brokers || []).map(normalizeBrokerItem).filter(Boolean);
-      const normalizedBuyers = (d.topBuyers || d.buyers || []).map(normalizeBrokerItem).filter(Boolean);
-      const normalizedSellers = (d.topSellers || d.sellers || []).map(normalizeBrokerItem).filter(Boolean);
-      const normalizedHoldings = (d.topHoldings || []).map(normalizeBrokerItem).filter(Boolean);
-      const normalizedNetBuyers = (d.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean);
-      const normalizedNetSellers = (d.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean);
+    if (!isSyntheticFallback && d && (d.brokers?.length > 0 || d.topBuyers?.length > 0 || d.buyers?.length > 0 || d.dailyFlow?.length > 0 || d.topHoldings?.length > 0 || d.allHoldings?.length > 0 || d.totalSharesHeldTillNow > 0)) {
+      const normalizedBrokers = (d.brokers || d.allBrokers || []).map(normalizeBrokerItem).filter(Boolean);
+      const normalizedBuyers = (d.topBuyers || d.buyers || d.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean);
+      const normalizedSellers = (d.topSellers || d.sellers || d.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean);
+      const normalizedHoldings = (d.topHoldings || d.allHoldings || []).map(normalizeBrokerItem).filter(Boolean);
+      const normalizedNetBuyers = (d.topNetBuyers || normalizedHoldings).map(normalizeBrokerItem).filter(Boolean);
+      const normalizedNetSellers = (d.topNetSellers || d.allDistributors || []).map(normalizeBrokerItem).filter(Boolean);
 
       const enriched = {
         ...d,
         symbol: sym,
-        brokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : []),
-        topBuyers: normalizedBuyers,
-        topSellers: normalizedSellers,
+        brokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings : [])),
+        topBuyers: normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings.slice(0, 15) : []),
+        topSellers: normalizedSellers.length > 0 ? normalizedSellers : (normalizedNetSellers.length > 0 ? normalizedNetSellers.slice(0, 15) : []),
         topHoldings: normalizedHoldings.length > 0 ? normalizedHoldings : normalizedBrokers.filter(b => b.signedHoldQty > 0).sort((a,b) => b.signedHoldQty - a.signedHoldQty),
         topNetBuyers: normalizedNetBuyers,
         topNetSellers: normalizedNetSellers,
+        totalSharesHeldTillNow: d.totalSharesHeldTillNow || (normalizedHoldings.reduce((sum, h) => sum + (h.holdQty || h.netQty || 0), 0)),
+        topHoldingBroker: d.topHoldingBroker || (normalizedHoldings[0] || null),
         isReal: true
       };
       setCachedRealBrokerAnalysis(sym, enriched, numDays, options);
