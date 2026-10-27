@@ -1,6 +1,6 @@
 # Drabyashree NEPSE: Walk-Forward Parameter Optimization Report
 
-**Generated At:** 2026-10-27T08:16:28.811Z  
+**Generated At:** 2026-10-27T09:04:23.667Z  
 **Historical Horizon:** 33 NEPSE Trading Sessions  
 **Validation Methodology:** Rolling 60% In-Sample Training / 40% Out-of-Sample Forward Testing  
 **Frictional Deductions:** 5-Tier SEBON Brokerage, 0.015% SEBON fee, Rs. 25 DP fee, 7.5% CGT, Slippage, and T+2 Demat Lock.

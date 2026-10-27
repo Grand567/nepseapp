@@ -652,23 +652,28 @@ function AppInner() {
       try {
         const liveIdx = await fetchMarketIndices();
         if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
-          setIndices(prev => {
-            if (
-              prev?.nepse?.value === liveIdx.nepse.value &&
-              prev?.nepse?.turnover === liveIdx.nepse.turnover &&
-              prev?.nepse?.change === liveIdx.nepse.change
-            ) {
-              return prev;
-            }
-            return { ...prev, ...liveIdx };
-          });
-          saveCachedIndices(liveIdx);
+          const todayIso = formatNptDateIso(new Date());
+          const isStale = (status.isOpen || status.isPreOpen || (status.nptTotalMinutes >= 11 * 60)) &&
+            liveIdx.asOfDate && liveIdx.asOfDate !== todayIso;
+          if (!isStale) {
+            setIndices(prev => {
+              if (
+                prev?.nepse?.value === liveIdx.nepse.value &&
+                prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+                prev?.nepse?.change === liveIdx.nepse.change
+              ) {
+                return prev;
+              }
+              return { ...prev, ...liveIdx };
+            });
+            saveCachedIndices(liveIdx);
+          }
         }
       } catch (_) {}
 
       if (!isMounted) return;
-      // High frequency continuous interval: 1.5s during market, 2.5s pre-open, 5s off-market
-      const interval = status.isOpen ? 1500 : (status.isPreOpen ? 2500 : 5000);
+      // High frequency continuous interval: 2.5s during market, 4s pre-open, 8s off-market
+      const interval = status.isOpen ? 2500 : (status.isPreOpen ? 4000 : 8000);
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
@@ -757,7 +762,7 @@ function AppInner() {
         return null;
       });
 
-      const [rawStatus, response, liveIndices] = await Promise.all([
+      const [rawStatus, response, liveIndices, intradayPts] = await Promise.all([
         pStatus,
         pLiveMarket,
         pIndices,
@@ -767,20 +772,53 @@ function AppInner() {
       const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
       if (status) setMarketStatus(status);
 
-      // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
-      const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
+      const todayIso = formatNptDateIso(new Date());
+      const isStale = (status.isOpen || status.isPreOpen || (status.nptTotalMinutes >= 11 * 60)) &&
+        liveIndices?.asOfDate && liveIndices.asOfDate !== todayIso;
+      const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
+
       if (!hasFreshIndices) {
-        setIndices(prev => {
-          if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder) {
-            return prev; // PRESERVE authentic live index! Never revert to yesterday!
+        // Direct synthesis from live exchange intraday ticks if available
+        if (Array.isArray(intradayPts) && intradayPts.length > 0) {
+          const latestTick = intradayPts[intradayPts.length - 1];
+          const firstTick = intradayPts[0];
+          const liveVal = Number(latestTick?.close || latestTick?.value || 0);
+          if (liveVal > 0) {
+            setIndices(prev => {
+              const prevClose = Number(prev?.nepse?.prevClose || firstTick?.open || 2629.82);
+              const chg = +(liveVal - prevClose).toFixed(2);
+              const pChg = +(prevClose > 0 ? (chg / prevClose) * 100 : 0).toFixed(2);
+              const to = Number(response?.turnover || prev?.nepse?.turnover || currentStocks?.reduce((acc, s) => acc + (s.turnover || 0), 0) || 0);
+              const synthNepse = {
+                index: 'NEPSE Index',
+                value: liveVal,
+                change: chg,
+                pChange: pChg,
+                prevClose,
+                open: Number(firstTick?.open || prevClose),
+                high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveVal))),
+                low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveVal))),
+                turnover: to
+              };
+              const updated = { ...prev, nepse: synthNepse };
+              saveCachedIndices(updated);
+              return updated;
+            });
+            hasFreshData = true;
           }
-          if (currentStocks && currentStocks.length > 0) {
-            const computed = calculateIndices(currentStocks);
-            if (!computed.isPlaceholder) saveCachedIndices(computed);
-            return { ...computed };
-          }
-          return prev;
-        });
+        } else {
+          setIndices(prev => {
+            if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder) {
+              return prev; // PRESERVE authentic live index! Never revert to yesterday!
+            }
+            if (currentStocks && currentStocks.length > 0) {
+              const computed = calculateIndices(currentStocks);
+              if (!computed.isPlaceholder) saveCachedIndices(computed);
+              return { ...computed };
+            }
+            return prev;
+          });
+        }
       }
 
       if (hasFreshData) {

@@ -180,17 +180,25 @@ app.use('/api', radarRouter);
 app.use('/admin', radarRouter);
 
 // ── A7: Rate limiting — prevents API abuse and protects upstream data sources ──
-// General API: 200 req/min per IP (generous for legitimate use)
+// General API: 600 req/min per IP (supports continuous background live tickers)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Rate limit exceeded. Please wait a minute.' },
   skip: (req) => {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
-    return req.path === '/api/ping' || req.path === '/ping' || req.path === '/health';
+    if (req.path === '/api/ping' || req.path === '/ping' || req.path === '/health') return true;
+    if (
+      req.path.startsWith('/api/market-indices') ||
+      req.path.startsWith('/api/indices') ||
+      req.path.startsWith('/api/nepse/intraday-graph') ||
+      req.path.startsWith('/api/market/summary') ||
+      req.path.startsWith('/api/live-market')
+    ) return true;
+    return false;
   }
 });
 // Limiter for data scraping endpoints (floorsheet, price-history, broker-analysis)
@@ -825,43 +833,98 @@ export async function getMarketIndicesInternal() {
       headers: HEADERS,
       timeout: 10000
     });
-    const $ = cheerio.load(response.data);
-    const indices = {};
-    const subIndices = [];
-    
-    $('table tbody tr').each((i, el) => {
-      const tds = $(el).find('td');
-      if (tds.length >= 7) {
-        const index = $(tds[0]).text().trim();
-        const open = parseMoney($(tds[1]).text());
-        const high = parseMoney($(tds[2]).text());
-        const low = parseMoney($(tds[3]).text());
-        const value = parseMoney($(tds[4]).text()); // Actual current index value
-        const change = parseMoney($(tds[5]).text()); // Point change
-        const pChange = parseMoney($(tds[6]).text()); // % change
-        const turnover = parseMoney($(tds[7]).text()); // Turnover
-        
-        if (index && !isNaN(value) && value > 0) {
-          const val = { value, change, pChange: +(pChange).toFixed(2), open, high, low, turnover, prevClose: +(value - change).toFixed(2) };
-          if (index === 'NEPSE Index') indices.nepse = val;
-          else if (index === 'Float Index') indices.float = val;
-          else if (index === 'Sensitive Index') indices.sensitive = val;
-          else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
-          else {
-            subIndices.push({ index, ...val });
+    const asOfMatch = response.data.match(/As of\s*(?:<[^>]+>)?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})/i);
+    const asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : null;
+    const isTradingSession = currentStatus?.isOpen || currentStatus?.isPreOpen || (currentStatus?.nptTotalMinutes >= 11 * 60);
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+
+    if (isTradingSession && asOfDate && asOfDate !== todayIso) {
+      console.warn(`[proxy] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
+    } else {
+      const $ = cheerio.load(response.data);
+      const indices = {};
+      const subIndices = [];
+      
+      $('table tbody tr').each((i, el) => {
+        const tds = $(el).find('td');
+        if (tds.length >= 7) {
+          const index = $(tds[0]).text().trim();
+          const open = parseMoney($(tds[1]).text());
+          const high = parseMoney($(tds[2]).text());
+          const low = parseMoney($(tds[3]).text());
+          const value = parseMoney($(tds[4]).text()); // Actual current index value
+          const change = parseMoney($(tds[5]).text()); // Point change
+          const pChange = parseMoney($(tds[6]).text()); // % change
+          const turnover = parseMoney($(tds[7]).text()); // Turnover
+          
+          if (index && !isNaN(value) && value > 0) {
+            const val = { value, change, pChange: +(pChange).toFixed(2), open, high, low, turnover, prevClose: +(value - change).toFixed(2) };
+            if (index === 'NEPSE Index') indices.nepse = val;
+            else if (index === 'Float Index') indices.float = val;
+            else if (index === 'Sensitive Index') indices.sensitive = val;
+            else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
+            else {
+              subIndices.push({ index, ...val });
+            }
           }
         }
+      });
+      
+      indices.subIndices = subIndices;
+      indices.asOfDate = asOfDate || todayIso;
+      if (indices.nepse && indices.nepse.value > 0) {
+        setCache(cacheKey, indices, indexTtl);
+        LAST_GOOD_INDICES = indices;
+        return indices;
       }
-    });
-    
-    indices.subIndices = subIndices;
-    if (indices.nepse && indices.nepse.value > 0) {
-      setCache(cacheKey, indices, indexTtl);
-      LAST_GOOD_INDICES = indices;
-      return indices;
     }
   } catch (err) {
     console.warn('[proxy] ShareSansar market table error:', err.message);
+  }
+
+  // Fallback 1.5: Direct NOTS Intraday Graph + MeroLagani Live Summary
+  try {
+    const [rawGraph, meroRes] = await Promise.allSettled([
+      nepseClient.getNepseIndexDailyGraph(),
+      axios.get('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', { headers: HEADERS, timeout: 6000 })
+    ]);
+    const graphData = rawGraph.status === 'fulfilled' && Array.isArray(rawGraph.value) ? rawGraph.value : [];
+    const meroSum = meroRes.status === 'fulfilled' ? meroRes.value?.data : null;
+    if (graphData.length > 0) {
+      const latestPt = graphData[graphData.length - 1];
+      const firstPt = graphData[0];
+      const liveClose = Number(Array.isArray(latestPt) ? latestPt[1] : (latestPt?.close || latestPt?.value || 0));
+      const firstVal = Number(Array.isArray(firstPt) ? firstPt[1] : (firstPt?.open || firstPt?.close || liveClose));
+      if (liveClose > 0) {
+        const prevClose = Number(LAST_GOOD_INDICES?.nepse?.prevClose || firstVal || 2629.82);
+        const change = +(liveClose - prevClose).toFixed(2);
+        const pChange = +(prevClose > 0 ? (change / prevClose) * 100 : 0).toFixed(2);
+        const turnover = Number(meroSum?.overall?.t || LAST_GOOD_INDICES?.nepse?.turnover || 0);
+        const nepseVal = {
+          value: liveClose,
+          change,
+          pChange,
+          open: firstVal,
+          high: Math.max(...graphData.map(p => Number(Array.isArray(p) ? p[1] : (p.high || p.close || liveClose)))),
+          low: Math.min(...graphData.map(p => Number(Array.isArray(p) ? p[1] : (p.low || p.close || liveClose)))),
+          turnover,
+          prevClose
+        };
+        const synth = {
+          nepse: nepseVal,
+          float: LAST_GOOD_INDICES?.float || null,
+          sensitive: LAST_GOOD_INDICES?.sensitive || null,
+          sensitiveFloat: LAST_GOOD_INDICES?.sensitiveFloat || null,
+          subIndices: LAST_GOOD_INDICES?.subIndices || [],
+          asOfDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' })
+        };
+        setCache(cacheKey, synth, indexTtl);
+        LAST_GOOD_INDICES = synth;
+        return synth;
+      }
+    }
+  } catch (err) {
+    console.warn('[proxy] Intraday fallback synthesis error:', err.message);
   }
 
   // Fallback 2: Fast MeroLagani Market Summary (enrich turnover if needed)

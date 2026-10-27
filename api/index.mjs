@@ -638,33 +638,42 @@ app.get('/api/market-indices', async (req, res) => {
       timeout: 7000
     });
 
-    const $ = cheerio.load(response.data);
+    const asOfMatch = response.data.match(/As of\s*(?:<[^>]+>)?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})/i);
+    const asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : null;
+    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
-    $('table tbody tr').each((_, row) => {
-      const tds = $(row).find('td');
-      if (tds.length >= 7) {
-        const index = $(tds[0]).text().trim();
-        const open = parseMoney($(tds[1]).text());
-        const high = parseMoney($(tds[2]).text());
-        const low = parseMoney($(tds[3]).text());
-        const value = parseMoney($(tds[4]).text());
-        const change = parseMoney($(tds[5]).text());
-        const pChange = parseMoney($(tds[6]).text());
-        const turnover = parseMoney($(tds[7]).text());
+    if (asOfDate && asOfDate !== todayIso) {
+      console.warn(`[market-indices] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
+    } else {
+      const $ = cheerio.load(response.data);
 
-        if (index && !isNaN(value) && value > 0) {
-          const val = { value, change, pChange, open, high, low, turnover };
-          if (index === 'NEPSE Index') indices.nepse = val;
-          else if (index === 'Float Index') indices.float = val;
-          else if (index === 'Sensitive Index') indices.sensitive = val;
-          else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
-          else {
-            subIndices.push({ index, ...val });
+      $('table tbody tr').each((_, row) => {
+        const tds = $(row).find('td');
+        if (tds.length >= 7) {
+          const index = $(tds[0]).text().trim();
+          const open = parseMoney($(tds[1]).text());
+          const high = parseMoney($(tds[2]).text());
+          const low = parseMoney($(tds[3]).text());
+          const value = parseMoney($(tds[4]).text());
+          const change = parseMoney($(tds[5]).text());
+          const pChange = parseMoney($(tds[6]).text());
+          const turnover = parseMoney($(tds[7]).text());
+
+          if (index && !isNaN(value) && value > 0) {
+            const val = { value, change, pChange, open, high, low, turnover };
+            if (index === 'NEPSE Index') indices.nepse = val;
+            else if (index === 'Float Index') indices.float = val;
+            else if (index === 'Sensitive Index') indices.sensitive = val;
+            else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
+            else {
+              subIndices.push({ index, ...val });
+            }
           }
         }
-      }
-    });
-    indices.subIndices = subIndices;
+      });
+      indices.subIndices = subIndices;
+      indices.asOfDate = asOfDate || todayIso;
+    }
   } catch (error) {
     console.warn('[market-indices] ShareSansar failed:', error.message);
   }

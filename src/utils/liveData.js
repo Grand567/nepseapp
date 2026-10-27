@@ -1825,20 +1825,20 @@ export const DEFAULT_OFFICIAL_INDICES = {
   status: 'complete',
   nepse: {
     index: 'NEPSE Index',
-    value: 2624.41,
-    change: -5.40,
-    pChange: -0.20,
+    value: 2625.16,
+    change: -4.66,
+    pChange: -0.18,
     prevClose: 2629.82,
-    open: 2629.82,
+    open: 2628.15,
     high: 2631.22,
     low: 2618.41,
-    turnover: 3605119768.61
+    turnover: 4393393963.36
   },
   sensitive: {
     index: 'Sensitive Index',
-    value: 474.92,
-    change: -0.85,
-    pChange: -0.18,
+    value: 474.59,
+    change: -1.18,
+    pChange: -0.25,
     prevClose: 475.78,
     open: 475.78,
     high: 476.36,
@@ -1847,20 +1847,20 @@ export const DEFAULT_OFFICIAL_INDICES = {
   },
   float: {
     index: 'Float Index',
-    value: 181.83,
-    change: -0.38,
-    pChange: -0.21,
+    value: 181.73,
+    change: -0.48,
+    pChange: -0.26,
     prevClose: 182.22,
     open: 182.22,
     high: 182.25,
     low: 181.36,
-    turnover: 5216090156.60
+    turnover: 4393393963.36
   },
   sensitiveFloat: {
     index: 'Sensitive Float Index',
-    value: 160.50,
-    change: -0.45,
-    pChange: -0.28,
+    value: 160.36,
+    change: -0.59,
+    pChange: -0.37,
     prevClose: 160.96,
     open: 160.96,
     high: 161.06,
@@ -1868,19 +1868,19 @@ export const DEFAULT_OFFICIAL_INDICES = {
     turnover: 2219221573.60
   },
   subIndices: [
-    { index: 'Banking SubIndex', value: 1504.77, change: 6.9, pChange: 0.46, prevClose: 1497.87, turnover: 730917037.20 },
-    { index: 'Development Bank Index', value: 5444.56, change: 0.73, pChange: 0.01, prevClose: 5443.83, turnover: 238439864.00 },
-    { index: 'Finance Index', value: 2233.28, change: 2.23, pChange: 0.10, prevClose: 2231.05, turnover: 145146196.20 },
-    { index: 'Hotels And Tourism', value: 7171.19, change: 9.32, pChange: 0.13, prevClose: 7161.87, turnover: 123117195.30 },
-    { index: 'HydroPower Index', value: 3603.41, change: 4.68, pChange: 0.13, prevClose: 3598.73, turnover: 1898422053.20 },
-    { index: 'Investment', value: 96.65, change: 0.10, pChange: 0.10, prevClose: 96.55, turnover: 262843153.70 },
-    { index: 'Life Insurance', value: 11884.47, change: 82.59, pChange: 0.70, prevClose: 11801.88, turnover: 84034534.60 },
-    { index: 'Manufacturing And Processing', value: 10833.44, change: 194.88, pChange: 1.83, prevClose: 10638.56, turnover: 1429705487.80 },
-    { index: 'Microfinance Index', value: 4558.70, change: 27.62, pChange: 0.61, prevClose: 4531.08, turnover: 210044345.60 },
-    { index: 'Mutual Fund', value: 19.67, change: 0.08, pChange: 0.42, prevClose: 19.59, turnover: 46410490.20 },
-    { index: 'Non Life Insurance', value: 9633.81, change: -31.89, pChange: -0.33, prevClose: 9665.70, turnover: 35959882.70 },
-    { index: 'Others Index', value: 1830.60, change: 0.73, pChange: 0.04, prevClose: 1829.87, turnover: 50621733.30 },
-    { index: 'Trading Index', value: 3270.07, change: 31.42, pChange: 0.97, prevClose: 3238.65, turnover: 6838673.00 }
+    { index: 'Banking SubIndex', value: 1566.63, change: -7.83, pChange: -0.49, prevClose: 1574.46, turnover: 790797179.40 },
+    { index: 'Development Bank Index', value: 5444.10, change: -66.91, pChange: -1.21, prevClose: 5511.01, turnover: 89923517.20 },
+    { index: 'Finance Index', value: 2191.44, change: -7.85, pChange: -0.35, prevClose: 2199.29, turnover: 81929090.80 },
+    { index: 'Hotels And Tourism', value: 6879.62, change: -33.76, pChange: -0.48, prevClose: 6913.38, turnover: 73973674.50 },
+    { index: 'HydroPower Index', value: 3570.62, change: 8.75, pChange: 0.24, prevClose: 3561.87, turnover: 1860724485.70 },
+    { index: 'Investment', value: 94.52, change: -0.29, pChange: -0.31, prevClose: 94.81, turnover: 95820974.50 },
+    { index: 'Life Insurance', value: 11886.38, change: -53.23, pChange: -0.44, prevClose: 11939.61, turnover: 63512467.20 },
+    { index: 'Manufacturing And Processing', value: 10699.67, change: 109.74, pChange: 1.03, prevClose: 10589.93, turnover: 635300487.60 },
+    { index: 'Microfinance Index', value: 4491.77, change: -15.40, pChange: -0.34, prevClose: 4507.17, turnover: 132560435.20 },
+    { index: 'Mutual Fund', value: 19.76, change: 0.00, pChange: 0.03, prevClose: 19.76, turnover: 3441043.57 },
+    { index: 'Non Life Insurance', value: 9510.52, change: -61.86, pChange: -0.64, prevClose: 9572.38, turnover: 58655092.20 },
+    { index: 'Others Index', value: 1770.51, change: -5.53, pChange: -0.31, prevClose: 1776.04, turnover: 61358337.60 },
+    { index: 'Trading Index', value: 3223.45, change: 35.56, pChange: 1.11, prevClose: 3187.89, turnover: 6792893.40 }
   ]
 };
 DEFAULT_OFFICIAL_INDICES.data = DEFAULT_OFFICIAL_INDICES;
@@ -1999,7 +1999,8 @@ export async function fetchMarketIndices() {
     let indicesData = null;
 
     const calStatus = getDetailedMarketStatus();
-    const isTradingSession = calStatus.isOpen || calStatus.isPreOpen;
+    const isTradingSession = calStatus.isOpen || calStatus.isPreOpen || (calStatus.nptTotalMinutes >= 11 * 60);
+    const todayIso = formatNptDateIso(new Date());
 
     // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data
     const tryFastBackend = async () => {
@@ -2007,6 +2008,10 @@ export async function fetchMarketIndices() {
         const fastRes = await fetchFromBackend('/api/market-indices', isServerWarm() ? 6000 : 3500);
         const d = fastRes?.data || fastRes;
         if (d && d.nepse && Number(d.nepse.value) > 0) {
+          // Reject stale data from previous trading sessions
+          if (isTradingSession && d.asOfDate && d.asOfDate !== todayIso) {
+            return null;
+          }
           return {
             nepse: {
               ...d.nepse,
@@ -2019,8 +2024,53 @@ export async function fetchMarketIndices() {
             sensitive: d.sensitive || null,
             float: d.float || null,
             sensitiveFloat: d.sensitiveFloat || null,
-            subIndices: Array.isArray(d.subIndices) ? d.subIndices : []
+            subIndices: Array.isArray(d.subIndices) ? d.subIndices : [],
+            asOfDate: d.asOfDate || todayIso
           };
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    // 2. High-Precision Intraday Exchange Ticks (Direct NOTS / MeroLagani handler)
+    const tryIntradayTicks = async () => {
+      try {
+        const [intradayRes, summaryRes] = await Promise.allSettled([
+          tryFetchJSON(`${getProxyBase()}/api/nepse/intraday-graph`, 4500).then(r => r?.data || r),
+          tryFetchJSON('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', 4000)
+        ]);
+
+        const pts = intradayRes.status === 'fulfilled' && Array.isArray(intradayRes.value) ? intradayRes.value : [];
+        if (pts.length > 0) {
+          const latest = pts[pts.length - 1];
+          const first = pts[0];
+          const liveClose = Number(latest?.close || latest?.value || 0);
+          if (liveClose > 0) {
+            const sumData = summaryRes.status === 'fulfilled' ? summaryRes.value : null;
+            const liveTurnover = Number(sumData?.overall?.t || MEM_SUMMARY?.totalTurnover || 0);
+            const prevClose = Number(DEFAULT_OFFICIAL_INDICES.nepse.prevClose || first?.open || 2629.82);
+            const chg = +(liveClose - prevClose).toFixed(2);
+            const pChg = +(prevClose > 0 ? (chg / prevClose) * 100 : 0).toFixed(2);
+
+            return {
+              nepse: {
+                index: 'NEPSE Index',
+                value: liveClose,
+                change: chg,
+                pChange: pChg,
+                prevClose,
+                open: Number(first?.open || prevClose),
+                high: Math.max(...pts.map(p => Number(p.high || p.close || liveClose))),
+                low: Math.min(...pts.map(p => Number(p.low || p.close || liveClose))),
+                turnover: liveTurnover > 0 ? liveTurnover : Number(DEFAULT_OFFICIAL_INDICES.nepse.turnover)
+              },
+              sensitive: DEFAULT_OFFICIAL_INDICES.sensitive,
+              float: DEFAULT_OFFICIAL_INDICES.float,
+              sensitiveFloat: DEFAULT_OFFICIAL_INDICES.sensitiveFloat,
+              subIndices: DEFAULT_OFFICIAL_INDICES.subIndices || [],
+              asOfDate: todayIso
+            };
+          }
         }
       } catch (_) {}
       return null;
@@ -2032,12 +2082,9 @@ export async function fetchMarketIndices() {
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            // During trading session, reject ShareSansar if its "As of" date is yesterday or stale
-            if (isTradingSession && parsedSS.asOfDate) {
-              const todayIso = formatNptDateIso(new Date());
-              if (parsedSS.asOfDate !== todayIso) {
-                return null;
-              }
+            // Strictly reject stale ShareSansar if its "As of" date is from a previous calendar day
+            if (isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate !== todayIso) {
+              return null;
             }
             return parsedSS;
           }
@@ -2046,8 +2093,8 @@ export async function fetchMarketIndices() {
       return null;
     };
 
-    // Execute concurrently, prioritizing live NOTS backend
-    const directResults = await Promise.allSettled([tryFastBackend(), tryShareSansar()]);
+    // Execute concurrently, prioritizing authentic live NOTS backend & intraday ticks
+    const directResults = await Promise.allSettled([tryFastBackend(), tryIntradayTicks(), tryShareSansar()]);
     for (const r of directResults) {
       if (r.status === 'fulfilled' && r.value?.nepse?.value > 0) {
         indicesData = r.value;
@@ -2055,7 +2102,7 @@ export async function fetchMarketIndices() {
       }
     }
 
-    // 2. Secondary Fallback: Multi-endpoint query if initial parallel race missed
+    // 3. Secondary Fallback: Multi-endpoint query if initial parallel race missed
     if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
       try {
         const [indicesRes, sectorRes, summaryRes] = await Promise.all([
@@ -2122,7 +2169,8 @@ export async function fetchMarketIndices() {
               sensitive: buildIndexObj(sensitiveItem) || null,
               float: buildIndexObj(floatItem) || null,
               sensitiveFloat: buildIndexObj(sensFloatItem) || null,
-              subIndices
+              subIndices,
+              asOfDate: todayIso
             };
           }
         }
@@ -2132,7 +2180,7 @@ export async function fetchMarketIndices() {
           const sumData = summaryRes?.data || summaryRes;
           const authNepse = Number(sumData?.nepseIndex || 0);
           if (authNepse > 0) {
-            indicesData = { subIndices: [] };
+            indicesData = { subIndices: [], asOfDate: todayIso };
             const authChg  = Number(sumData?.change ?? 0);
             const authPChg = Number(sumData?.changePercent ?? 0);
             const authTo   = Number(sumData?.totalTurnover || 0);
@@ -2152,42 +2200,16 @@ export async function fetchMarketIndices() {
       } catch (_) {}
     }
 
-    // 3. Fallback: Secondary ShareSansar attempt if previous missed
+    // 4. Fallback: Secondary ShareSansar attempt if previous missed (with strict date guard)
     if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
       try {
         const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 5000);
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            indicesData = parsedSS;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 4. Fallback to Intraday Graph latest tick
-    if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
-      try {
-        const intradayRes = await fetchFromBackend('/api/nepse/intraday-graph', 5000);
-        const intradayPts = intradayRes?.data ?? (Array.isArray(intradayRes) ? intradayRes : null);
-        if (Array.isArray(intradayPts) && intradayPts.length > 0) {
-          const latest = intradayPts[intradayPts.length - 1];
-          const liveClose = Number(latest?.close || latest?.value || 0);
-          if (liveClose > 0) {
-            if (!indicesData) indicesData = { nepse: {}, subIndices: [] };
-            if (!indicesData.nepse) indicesData.nepse = {};
-            const truePrevClose = Number(intradayPts[0]?.open || liveClose);
-            const chg = +(liveClose - truePrevClose).toFixed(2);
-            indicesData.nepse = {
-              value: liveClose,
-              change: chg,
-              pChange: truePrevClose > 0 ? +((chg / truePrevClose) * 100).toFixed(2) : 0,
-              prevClose: truePrevClose,
-              open: truePrevClose,
-              high: Math.max(...intradayPts.map(p => Number(p.high || p.close || liveClose))),
-              low: Math.min(...intradayPts.map(p => Number(p.low || p.close || liveClose))),
-              turnover: Number(latest.turnover || 0)
-            };
+            if (!(isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate !== todayIso)) {
+              indicesData = parsedSS;
+            }
           }
         }
       } catch (_) {}
