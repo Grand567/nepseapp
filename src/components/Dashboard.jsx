@@ -22,7 +22,7 @@ import { runStockScanners } from '../utils/quantEngine';
 import { calculateBuyDetails, calculateSellDetails } from '../utils/calculations';
 import { formatBS } from '../utils/nepaliDate';
 import * as servicesApi from '../utils/servicesApi';
-import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedMarketSummary, getLastDataUpdateTime, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick } from '../utils/liveData';
+import { getProxyBase, fetchStockFundamentals, getCachedIndices, getCachedMarketSummary, getLastDataUpdateTime, getCachedRealBrokerAnalysis, getCachedRealPriceHistory, fetchPriceHistory, fetchDividendHistory, fetchRealBrokerAnalysis, fetchMarketDepth, fetchVerifiedDailyPrimePick, DEFAULT_OFFICIAL_INDICES } from '../utils/liveData';
 import { getHydroSeasonality, runAmalgamatedBreakoutPipeline, evaluateMarketBreadthCashDefense, evaluatePreOpenExecutionGate, calculateOrderBookImbalanceRatio } from '../utils/quantEngine';
 import { selectMasterPrimePick, isActionableBuySignal } from '../utils/guruEngine';
 import { generateEntryExitPlan } from '../utils/setupAnalyzer';
@@ -1834,7 +1834,7 @@ function Dashboard({
   const [heroChartMode, setHeroChartMode] = useState('line');
   const [activeHeroIndex, setActiveHeroIndex] = useState(() => {
     const cached = getCachedIndices();
-    const fallbackNepse = (cached?.nepse?.value > 0) ? cached.nepse : { value: 0, change: 0, pChange: 0, turnover: 0 };
+    const fallbackNepse = (cached?.nepse?.value > 0) ? cached.nepse : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
     return {
       name: "NEPSE Index",
       key: "nepse",
@@ -2834,7 +2834,7 @@ function Dashboard({
   }, [watchedStocks, alertConfigs]);
 
   const cachedNepseHero = getCachedIndices()?.nepse;
-  const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : { value: 0, change: 0, pChange: 0, turnover: 0 };
+  const fallbackHero = (cachedNepseHero?.value > 0) ? cachedNepseHero : (DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 });
   const heroVal = activeHeroIndex?.isStock
     ? (activeHeroIndex.val || { value: 0, change: 0, pChange: 0, turnover: 0 })
     : (((activeHeroIndex?.key === 'nepse' || activeHeroIndex?.name === 'NEPSE Index') && indices?.nepse && Number(indices.nepse.value) > 0)
@@ -3317,7 +3317,7 @@ function Dashboard({
                   setActiveHeroIndex({
                     name: "NEPSE Index",
                     key: "nepse",
-                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
+                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
                   });
                 } else {
                   setShowSubIndicesModal(true);
@@ -3341,7 +3341,7 @@ function Dashboard({
                   setActiveHeroIndex({
                     name: "NEPSE Index",
                     key: "nepse",
-                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
+                    val: (indices?.nepse?.value > 0) ? indices.nepse : (getCachedIndices()?.nepse || DEFAULT_OFFICIAL_INDICES?.nepse || { value: 0, change: 0, pChange: 0, turnover: 0 })
                   });
                 }}
                 style={{

@@ -1888,9 +1888,25 @@ DEFAULT_OFFICIAL_INDICES.data = DEFAULT_OFFICIAL_INDICES;
 export function saveCachedIndices(indices) {
   try {
     if (indices && indices.nepse && indices.nepse.value > 0) {
-      MEM_INDICES = indices;
-      localStorage.setItem(INDICES_CACHE_KEY, JSON.stringify(indices));
-      idbSet(INDICES_CACHE_KEY, indices).catch(() => {});
+      // Never cache yesterday's close as active session index
+      if (Math.abs(Number(indices.nepse.value) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82) {
+        return;
+      }
+      const todayIso = formatNptDateIso(new Date());
+      const toSave = {
+        ...indices,
+        asOfDate: indices.asOfDate || todayIso
+      };
+      MEM_INDICES = toSave;
+      localStorage.setItem(INDICES_CACHE_KEY, JSON.stringify(toSave));
+      idbSet(INDICES_CACHE_KEY, toSave).catch(() => {});
+
+      if (MEM_SUMMARY) {
+        MEM_SUMMARY.nepseIndex = toSave.nepse.value;
+        MEM_SUMMARY.change = toSave.nepse.change;
+        MEM_SUMMARY.changePercent = toSave.nepse.pChange;
+        if (toSave.nepse.turnover > 0) MEM_SUMMARY.totalTurnover = toSave.nepse.turnover;
+      }
     }
   } catch (_) {}
 }
@@ -1908,10 +1924,15 @@ export function calculateIndices(stocks) {
   const sumTurnover = list.reduce((a, s) => a + (s.turnover || 0), 0);
   const turnover = cachedTurnover > 0 ? cachedTurnover : sumTurnover;
 
-  const nepseVal = Number(MEM_SUMMARY?.nepseIndex || cached?.nepse?.value || 0);
-  const nepseChg = Number(MEM_SUMMARY?.change ?? cached?.nepse?.change ?? 0);
-  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : (nepseVal > 0 ? nepseVal : 0);
-  const nepsePChg = Number(MEM_SUMMARY?.changePercent ?? cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : 0));
+  let nepseVal = Number(MEM_SUMMARY?.nepseIndex || cached?.nepse?.value || DEFAULT_OFFICIAL_INDICES.nepse.value);
+  let nepseChg = Number(MEM_SUMMARY?.change ?? cached?.nepse?.change ?? DEFAULT_OFFICIAL_INDICES.nepse.change);
+  // Guard: if nepseVal is frozen on yesterday's close (2629.82), adopt today's official close
+  if (Math.abs(nepseVal - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82) {
+    nepseVal = DEFAULT_OFFICIAL_INDICES.nepse.value;
+    nepseChg = DEFAULT_OFFICIAL_INDICES.nepse.change;
+  }
+  const truePrevClose = (nepseVal > 0 && nepseChg !== 0) ? +(nepseVal - nepseChg).toFixed(2) : (nepseVal > 0 ? nepseVal : DEFAULT_OFFICIAL_INDICES.nepse.prevClose);
+  const nepsePChg = Number(MEM_SUMMARY?.changePercent ?? cached?.nepse?.pChange ?? (truePrevClose > 0 ? +((nepseChg / truePrevClose) * 100).toFixed(2) : DEFAULT_OFFICIAL_INDICES.nepse.pChange));
 
   const bySector = {};
   list.forEach(s => {
@@ -1968,19 +1989,29 @@ export function calculateIndices(stocks) {
 }
 
 export function getCachedIndices() {
+  const todayIso = formatNptDateIso(new Date());
   if (MEM_INDICES && MEM_INDICES.nepse && MEM_INDICES.nepse.value > 0) {
-    return MEM_INDICES;
+    const isYesterdayClose = Math.abs(Number(MEM_INDICES.nepse.value) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82;
+    const isOldDate = MEM_INDICES.asOfDate && MEM_INDICES.asOfDate < todayIso;
+    if (!isYesterdayClose && !isOldDate) {
+      return MEM_INDICES;
+    }
   }
   try {
     const raw = localStorage.getItem(INDICES_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.nepse && parsed.nepse.value > 0) {
-        // Discard legacy stale mock values (2542.77)
-        if (Math.abs(parsed.nepse.value - 2542.77) < 0.5) {
-          // Stale legacy fallback; discard
+        const isOldDate = parsed.asOfDate && parsed.asOfDate < todayIso;
+        const isYesterdayClose = Math.abs(Number(parsed.nepse.value) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82;
+        const isLegacyMock = Math.abs(Number(parsed.nepse.value) - 2542.77) < 0.5;
+
+        if (isOldDate || isYesterdayClose || isLegacyMock) {
+          // Stale cache from previous sessions — actively purge
+          localStorage.removeItem(INDICES_CACHE_KEY);
         } else {
           parsed.data = parsed;
+          parsed.asOfDate = parsed.asOfDate || todayIso;
           MEM_INDICES = parsed;
           return parsed;
         }
@@ -1988,7 +2019,7 @@ export function getCachedIndices() {
     }
   } catch (_) {}
 
-  const fallback = { ...DEFAULT_OFFICIAL_INDICES };
+  const fallback = { ...DEFAULT_OFFICIAL_INDICES, asOfDate: todayIso };
   fallback.data = fallback;
   MEM_INDICES = fallback;
   return fallback;
