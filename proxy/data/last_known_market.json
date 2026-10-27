@@ -1,22 +1,70 @@
 {
-  "timestamp": 1793092814681,
-  "savedAt": "2026-10-27T09:20:14.681Z",
-  "summary": [
+  "timestamp": 1793098309401,
+  "savedAt": "2026-10-27T10:51:49.401Z",
+  "indices": [
     {
-      "detail": "Total Turnover Rs:",
-      "value": 5799330203.01
+      "id": 57,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-27T15:24:19.067",
+      "index": "Sensitive Index",
+      "close": 475.78,
+      "high": 476.3587,
+      "low": 473.7176,
+      "previousClose": 475.4721,
+      "change": -0.3,
+      "perChange": -0.06,
+      "fiftyTwoWeekHigh": 507,
+      "fiftyTwoWeekLow": 439.44,
+      "currentValue": 475.47
     },
     {
-      "detail": "Total Traded Shares",
-      "value": 15346226
+      "id": 58,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-27T15:24:19.067",
+      "index": "NEPSE Index",
+      "close": 2629.82,
+      "high": 2631.224,
+      "low": 2618.4055,
+      "previousClose": 2630.7699,
+      "change": 0.94,
+      "perChange": 0.03,
+      "fiftyTwoWeekHigh": 2960.4,
+      "fiftyTwoWeekLow": 2513.42,
+      "currentValue": 2630.76
     },
     {
-      "detail": "Total Transactions",
-      "value": 53030
+      "id": 62,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-27T15:24:19.07",
+      "index": "Float Index",
+      "close": 182.22,
+      "high": 182.2489,
+      "low": 181.3646,
+      "previousClose": 182.1148,
+      "change": -0.1,
+      "perChange": -0.05,
+      "fiftyTwoWeekHigh": 204.21,
+      "fiftyTwoWeekLow": 172.25,
+      "currentValue": 182.11
     },
     {
-      "detail": "Total Scrips Traded",
-      "value": 360
+      "id": 63,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-27T15:24:19.07",
+      "index": "Sensitive Float Index",
+      "close": 160.96,
+      "high": 161.0614,
+      "low": 160.1984,
+      "previousClose": 160.6926,
+      "change": -0.26,
+      "perChange": -0.16,
+      "fiftyTwoWeekHigh": 173.41,
+      "fiftyTwoWeekLow": 148.93,
+      "currentValue": 160.69
     }
   ]
 }

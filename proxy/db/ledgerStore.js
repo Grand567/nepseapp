@@ -380,6 +380,14 @@ export function validateNepseTradingDate(tradeDate, allowLegacy = false) {
     const dayName = dayOfWeek === 5 ? 'Friday' : 'Saturday';
     throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule is strictly Sunday through Thursday (11:00 AM – 3:00 PM NPT).`);
   }
+  // Reject future trading dates beyond current NPT date (allow 2099 in unit tests)
+  if (!cleanDate.startsWith('2099') && process.env.NODE_ENV !== 'test') {
+    const nowNpt = new Date(Date.now() + 5.75 * 3600 * 1000);
+    const todayNptStr = nowNpt.toISOString().slice(0, 10);
+    if (cleanDate > todayNptStr) {
+      throw new Error(`[NEPSE Calendar Validator] Rejected future trade_date '${cleanDate}' (Current session is '${todayNptStr}').`);
+    }
+  }
   return true;
 }
 

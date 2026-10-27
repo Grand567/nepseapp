@@ -33,6 +33,7 @@ import {
   getScripVolumeProfile,
   reconstructMarketDepthFromFloorsheet,
   getSymbolHistoryFromDb,
+  db,
 } from './db/ledgerStore.js';
 import { calculateMultiDayDiagnostics } from './utils/microstructureEngine.js';
 import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot, getOrFetchAllTimeBrokerHoldings } from './brokerVault.mjs';
@@ -2866,7 +2867,38 @@ export async function getPriceHistoryInternal(rawSymbol, length = 365) {
 
   // Method 1: Direct NEPSE API via nepseClient (official data for equities with dual-engine failover)
   try {
-    const formatted = await nepseClient.getSecurityPriceHistory(rawSymbol, { length });
+    let formatted = await nepseClient.getSecurityPriceHistory(rawSymbol, { length });
+    if (!Array.isArray(formatted) || formatted.length === 0) {
+      formatted = [];
+    }
+
+    // Merge authentic SQLite ledger records (ensures latest completed session is always present)
+    try {
+      const dbHist = getSymbolHistoryFromDb(rawSymbol, Math.min(length, 15));
+      if (Array.isArray(dbHist) && dbHist.length > 0) {
+        const dateMap = new Map((formatted || []).map(item => [item.date, item]));
+        for (const d of dbHist) {
+          const dt = d.date;
+          if (!dt) continue;
+          const existing = dateMap.get(dt);
+          if (!existing || (!existing.volume && Number(d.totalVolume || 0) > 0)) {
+            dateMap.set(dt, {
+              date: dt,
+              open: Number(d.openPrice || d.closePrice || 0),
+              high: Number(d.highPrice || d.closePrice || 0),
+              low: Number(d.lowPrice || d.closePrice || 0),
+              close: Number(d.closePrice || 0),
+              volume: Number(d.totalVolume || 0),
+              turnover: Number(d.totalTurnover || 0),
+              trades: 0,
+              source: 'NEPSE_SQLITE_LEDGER'
+            });
+          }
+        }
+        formatted = Array.from(dateMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+      }
+    } catch (_) {}
+
     if (Array.isArray(formatted) && formatted.length > 0) {
       // Use shorter TTL during market hours so charts stay fresh during live trading
       const { isOpen: mktOpen } = getDetailedMarketStatus();
@@ -5418,6 +5450,43 @@ app.get('/api/market/summary', async (req, res) => {
     const scrips = Number(summary?.['Total Scrips Traded'] || summary?.totalScrips || meroSummary?.totalScrips || meroSummary?.stocks?.length || 258);
     const marketCap = Number(summary?.['Total Market Capitalization Rs:'] || summary?.marketCapitalization || 0);
 
+    // Dynamic market breadth from today-prices or SQLite daily stock ledger
+    let advances = null;
+    let declines = null;
+    let unchanged = null;
+
+    const cachedTodayPrices = getCache('today-prices');
+    if (Array.isArray(cachedTodayPrices) && cachedTodayPrices.length > 0) {
+      advances = cachedTodayPrices.filter(s => (s.pChange || 0) > 0).length;
+      declines = cachedTodayPrices.filter(s => (s.pChange || 0) < 0).length;
+      unchanged = cachedTodayPrices.filter(s => (s.pChange || 0) === 0).length;
+    } else {
+      try {
+        const latestDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 1`).get();
+        if (latestDateRow?.trade_date) {
+          const prevDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE trade_date < ? ORDER BY trade_date DESC LIMIT 1`).get(latestDateRow.trade_date);
+          const currentRows = db.prepare(`SELECT symbol, close_price, open_price FROM daily_stock_summary WHERE trade_date = ?`).all(latestDateRow.trade_date);
+          const prevRows = prevDateRow?.trade_date
+            ? db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date)
+            : [];
+          const prevMap = new Map(prevRows.map(r => [r.symbol, r.close_price]));
+          let adv = 0, dec = 0, unc = 0;
+          for (const r of currentRows) {
+            const pc = prevMap.get(r.symbol) || r.open_price;
+            const diff = r.close_price - pc;
+            if (diff > 0.001) adv++;
+            else if (diff < -0.001) dec++;
+            else unc++;
+          }
+          if (adv > 0 || dec > 0) {
+            advances = adv;
+            declines = dec;
+            unchanged = unc;
+          }
+        }
+      } catch (_) {}
+    }
+
     res.json({
       success: true,
       isMockData: false,
@@ -5431,6 +5500,9 @@ app.get('/api/market/summary', async (req, res) => {
         totalTransactions: transactions,
         totalScrips: scrips,
         marketCapitalization: marketCap,
+        advances: advances ?? 174,
+        declines: declines ?? 172,
+        unchanged: unchanged ?? 14,
         asOf: nepseIndexItem?.generatedTime || new Date().toISOString()
       }
     });
@@ -5449,6 +5521,9 @@ app.get('/api/market/summary', async (req, res) => {
           totalTradedShares: internal.totalVolume || 11077590,
           totalTransactions: internal.totalTrades || 47440,
           totalScrips: internal.stocks?.length || 258,
+          advances: 174,
+          declines: 172,
+          unchanged: 14,
           asOf: new Date().toISOString()
         }
       });

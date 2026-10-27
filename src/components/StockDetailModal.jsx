@@ -1742,38 +1742,59 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     setRealHistoryLoading(!cachedHist || cachedHist.length === 0);
     fetchRealPriceHistory(d.symbol, 500).then(data => {
       if (!active) return;
-      let fullHistory = (data && Array.isArray(data))
-        ? [...data].sort((a, b) => String(a.date || a.time || '').localeCompare(String(b.date || b.time || '')))
-        : [];
+      let rawHistory = (data && Array.isArray(data)) ? data : [];
+
+      // Deduplicate incoming raw records strictly by date (YYYY-MM-DD)
+      const dateMap = new Map();
+      for (const item of rawHistory) {
+        const itemDate = String(item.date || item.time || '').trim().slice(0, 10);
+        if (!itemDate) continue;
+        const existing = dateMap.get(itemDate);
+        if (!existing || (!existing.volume && item.volume)) {
+          dateMap.set(itemDate, {
+            ...item,
+            date: itemDate,
+            close: Number(item.close || item.closePrice || 0),
+            open: Number(item.open || item.openPrice || item.close || 0),
+            high: Number(item.high || item.highPrice || item.close || 0),
+            low: Number(item.low || item.lowPrice || item.close || 0),
+            volume: Number(item.volume || item.totalVolume || 0),
+            turnover: Number(item.turnover || item.totalTurnover || 0),
+            trades: Number(item.trades || item.transactions || 0),
+            change: Number(item.change || 0),
+            pChange: Number(item.pChange || 0),
+            isReal: true
+          });
+        }
+      }
 
       const todayLtp = Number(d.ltp || d.closePrice || 0);
-      const todayDate = d.businessDate || d.date || getLatestTradingDateStr();
+      const latestTradingDay = getLatestTradingDateStr();
+      const todayDate = String(d.businessDate || d.date || latestTradingDay).trim().slice(0, 10);
       const liveVol = Number(d.volume || d.totalTradedQuantity || 0);
       const liveTurnover = Number(d.turnover || d.totalTradedValue || 0);
       const liveTrades = Number(d.transactions || d.totalTrades || 0);
 
-      if (todayLtp > 0 && fullHistory.length > 0) {
-        const last = fullHistory[fullHistory.length - 1];
-        const isLastToday = last && (last.date === todayDate || String(last.date).slice(0, 10) === todayDate);
-
-        if (isLastToday) {
-          fullHistory[fullHistory.length - 1] = {
-            ...last,
-            open: Number(d.open) || Number(last.open) || todayLtp,
-            high: Math.max(Number(d.high) || todayLtp, Number(last.high) || todayLtp, todayLtp),
-            low: Math.min(Number(d.low) || todayLtp, Number(last.low) || todayLtp, todayLtp),
+      // Only merge/append today's live candle if todayDate matches latestTradingDay
+      if (todayLtp > 0 && todayDate === latestTradingDay) {
+        const existingToday = dateMap.get(todayDate);
+        if (existingToday) {
+          dateMap.set(todayDate, {
+            ...existingToday,
+            open: Number(d.open) || existingToday.open || todayLtp,
+            high: Math.max(Number(d.high) || todayLtp, existingToday.high || todayLtp, todayLtp),
+            low: Math.min(Number(d.low) || todayLtp, existingToday.low || todayLtp, todayLtp),
             close: todayLtp,
-            volume: liveVol > 0 ? liveVol : (Number(last.volume) || 0),
-            turnover: liveTurnover > 0 ? liveTurnover : (Number(last.turnover) || 0),
-            trades: liveTrades > 0 ? liveTrades : (Number(last.trades) || 0),
-            change: Number(d.change !== undefined ? d.change : (last.change || 0)),
-            pChange: Number(d.pChange !== undefined ? d.pChange : (last.pChange || 0)),
+            volume: liveVol > 0 ? liveVol : existingToday.volume,
+            turnover: liveTurnover > 0 ? liveTurnover : existingToday.turnover,
+            trades: liveTrades > 0 ? liveTrades : existingToday.trades,
+            change: Number(d.change !== undefined ? d.change : existingToday.change),
+            pChange: Number(d.pChange !== undefined ? d.pChange : existingToday.pChange),
             isToday: true,
             isReal: true
-          };
-        } else if (!marketStatus?.isHoliday && !marketStatus?.isWeekend && liveVol > 0 && liveVol !== Number(last.volume) && todayDate !== last.date) {
-          // ONLY push a new candle if genuine trading occurred today (prevents holiday/weekend 0% duplicate rows)
-          fullHistory.push({
+          });
+        } else if (!marketStatus?.isHoliday && !marketStatus?.isWeekend && liveVol > 0) {
+          dateMap.set(todayDate, {
             date: todayDate,
             open: Number(d.open) || todayLtp,
             high: Math.max(Number(d.high) || todayLtp, todayLtp),
@@ -1787,6 +1808,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             isToday: true,
             isReal: true
           });
+        }
+      }
+
+      // Convert Map back to array and strictly sort in ascending chronological order (oldest -> newest)
+      const fullHistory = Array.from(dateMap.values())
+        .filter(c => c.close > 0 && c.date)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+      // Mark the very last element (latest chronological date) as isToday if it matches latestTradingDay
+      if (fullHistory.length > 0) {
+        const lastCandle = fullHistory[fullHistory.length - 1];
+        if (lastCandle.date === latestTradingDay) {
+          lastCandle.isToday = true;
         }
       }
 
@@ -2242,7 +2276,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           trades: item.trades,
           change: item.change,
           pChange: item.pChange,
-          isToday: Boolean(item.isToday),
+          isToday: Boolean(item.isToday || (i === realPriceHistory.length - 1 && item.date === getLatestTradingDateStr())),
           sma200: sma200 != null ? Number(sma200.toFixed(2)) : null,
           sma50: sma50 != null ? Number(sma50.toFixed(2)) : null,
           isAdjusted: adjusted[i]?.isAdjusted || false
@@ -6046,62 +6080,79 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
         {activeTab === 'history' && (
           <div>
             {/* Today / Latest Session Closing Detail Card */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(21, 25, 34, 0.95))',
-              border: '1px solid rgba(16, 185, 129, 0.35)',
-              borderRadius: 14,
-              padding: '12px 14px',
-              marginBottom: 14
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
-                    📊 Latest / Today Closing Detail
-                  </span>
-                  <span style={{ fontSize: 12, background: '#10B981', color: '#000000', padding: '1px 6px', borderRadius: 4, fontWeight: 800 }}>
-                    LATEST CLOSE
-                  </span>
+            {(() => {
+              const latestHistCandle = (Array.isArray(realPriceHistory) && realPriceHistory.length > 0)
+                ? realPriceHistory[realPriceHistory.length - 1]
+                : null;
+              const hasNewerHist = latestHistCandle?.date && (!d.businessDate || String(latestHistCandle.date) >= String(d.businessDate).slice(0, 10));
+              const dispDate = hasNewerHist ? latestHistCandle.date : (d.businessDate || d.date || getLatestTradingDateStr());
+              const dispLtp = hasNewerHist ? Number(latestHistCandle.close || d.ltp) : Number(d.ltp || 0);
+              const dispChange = hasNewerHist ? Number(latestHistCandle.change !== undefined ? latestHistCandle.change : d.change) : Number(d.change || 0);
+              const dispPChange = hasNewerHist ? Number(latestHistCandle.pChange !== undefined ? latestHistCandle.pChange : d.pChange) : Number(d.pChange || 0);
+              const dispOpen = hasNewerHist ? Number(latestHistCandle.open || d.open || dispLtp) : Number(d.open || d.ltp);
+              const dispHigh = hasNewerHist ? Number(latestHistCandle.high || d.high || dispLtp) : Number(d.high || d.ltp);
+              const dispLow = hasNewerHist ? Number(latestHistCandle.low || d.low || dispLtp) : Number(d.low || d.ltp);
+              const dispVolume = hasNewerHist ? Number(latestHistCandle.volume || d.volume || d.totalTradedQuantity || 0) : Number(d.volume || d.totalTradedQuantity || 0);
+
+              return (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(21, 25, 34, 0.95))',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: 14,
+                  padding: '12px 14px',
+                  marginBottom: 14
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>
+                        📊 Latest / Today Closing Detail
+                      </span>
+                      <span style={{ fontSize: 12, background: '#10B981', color: '#000000', padding: '1px 6px', borderRadius: 4, fontWeight: 800 }}>
+                        LATEST CLOSE
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 700 }}>
+                      📅 {dispDate}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
+                    <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Close (LTP)</div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: dispPChange >= 0 ? 'var(--bull)' : '#F43F5E', marginTop: 2 }}>
+                        Rs. {fmt(dispLtp)}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: dispPChange >= 0 ? 'var(--bull)' : '#F43F5E' }}>
+                        {dispPChange >= 0 ? '+' : ''}{dispPChange.toFixed(2)}%
+                      </div>
+                    </div>
+                    <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Open</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                        Rs. {fmt(dispOpen)}
+                      </div>
+                    </div>
+                    <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>High / Low</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>
+                        H: {fmt(dispHigh)}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: '#F43F5E' }}>
+                        L: {fmt(dispLow)}
+                      </div>
+                    </div>
+                    <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Volume</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
+                        {dispVolume.toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Qty Traded
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 700 }}>
-                  📅 {d.businessDate || d.date || getLatestTradingDateStr()}
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
-                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Close (LTP)</div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: (d.pChange || 0) >= 0 ? 'var(--bull)' : '#F43F5E', marginTop: 2 }}>
-                    Rs. {fmt(d.ltp)}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: (d.pChange || 0) >= 0 ? 'var(--bull)' : '#F43F5E' }}>
-                    {(d.pChange || 0) >= 0 ? '+' : ''}{Number(d.pChange || 0).toFixed(2)}%
-                  </div>
-                </div>
-                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Open</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
-                    Rs. {fmt(d.open || d.ltp)}
-                  </div>
-                </div>
-                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>High / Low</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>
-                    H: {fmt(d.high || d.ltp)}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#F43F5E' }}>
-                    L: {fmt(d.low || d.ltp)}
-                  </div>
-                </div>
-                <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Volume</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#ffffff', marginTop: 2 }}>
-                    {(d.volume || d.totalTradedQuantity || 0).toLocaleString()}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Qty Traded
-                  </div>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* 1-Year Summary Card */}
             <div style={{ background: '#151922', border: '1px solid rgba(255, 255, 255, 0.07)', borderRadius: 14, padding: 14, marginBottom: 14 }}>

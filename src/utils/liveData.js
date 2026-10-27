@@ -126,12 +126,21 @@ if (typeof window !== 'undefined') {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function getCachedStocks() {
-  if (MEM_STOCKS && MEM_STOCKS.length) return MEM_STOCKS;
+  if (MEM_STOCKS && MEM_STOCKS.length) {
+    const isCold = MEM_STOCKS.slice(0, 10).every(s => (s.volume || 0) === 0 && (s.pChange || 0) === 0);
+    if (!isCold) return MEM_STOCKS;
+  }
   try {
     const raw = localStorage.getItem(LS_STOCKS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 50) { MEM_STOCKS = parsed; return parsed; }
+      if (Array.isArray(parsed) && parsed.length > 50) {
+        const isCold = parsed.slice(0, 10).every(s => (s.volume || 0) === 0 && (s.pChange || 0) === 0);
+        if (!isCold) {
+          MEM_STOCKS = parsed;
+          return parsed;
+        }
+      }
     }
   } catch { /* ignore */ }
   return [];
@@ -236,6 +245,7 @@ function buildEnrichedSnapshot() {
   const advances = stocks.filter(s => s.pChange > 0).length;
   const declines = stocks.filter(s => s.pChange < 0).length;
   const unchanged = stocks.length - advances - declines;
+  const hasGenuineBreadth = (advances > 0 || declines > 0);
   const cachedIdx = getCachedIndices();
   const sumStocksTurnover = stocks.reduce((a, s) => a + (s.turnover || 0), 0);
   const totalTurnover = Number(cachedIdx?.nepse?.turnover || sumStocksTurnover);
@@ -251,7 +261,9 @@ function buildEnrichedSnapshot() {
   const summary = {
     nepseIndex, change, changePercent,
     totalTurnover, totalTradedShares: totalVol, totalTransactions: totalTx,
-    advances, declines, unchanged,
+    advances: hasGenuineBreadth ? advances : null,
+    declines: hasGenuineBreadth ? declines : null,
+    unchanged: hasGenuineBreadth ? unchanged : null,
     marketStatus: isOpen ? 'OPEN' : 'CLOSED',
     isOpen, asOf: new Date().toISOString(),
     bsFormattedNp: marketStatusObj.bsFormattedNp,
@@ -276,7 +288,8 @@ function ensureSnapshot() {
     return;
   }
   const { stocks, summary } = buildEnrichedSnapshot();
-  persistStocks(stocks);
+  // Cold fallback universe should remain in memory only — never poison persistent cache with 0-volume data!
+  MEM_STOCKS = stocks;
   MEM_SUMMARY = summary;
 }
 
@@ -1277,6 +1290,9 @@ export async function fetchMarketSummary() {
         if (d.totalTurnover) MEM_SUMMARY.totalTurnover = Number(d.totalTurnover);
         if (d.totalTradedShares) MEM_SUMMARY.totalTradedShares = Number(d.totalTradedShares);
         if (d.totalTransactions) MEM_SUMMARY.totalTransactions = Number(d.totalTransactions);
+        if (d.advances != null && (d.advances > 0 || d.declines > 0)) MEM_SUMMARY.advances = Number(d.advances);
+        if (d.declines != null && (d.advances > 0 || d.declines > 0)) MEM_SUMMARY.declines = Number(d.declines);
+        if (d.unchanged != null) MEM_SUMMARY.unchanged = Number(d.unchanged);
       }
       const cachedNepse = getCachedIndices()?.nepse;
       return {
@@ -1288,7 +1304,9 @@ export async function fetchMarketSummary() {
           totalTradedShares: Number(d.totalTradedShares || MEM_SUMMARY?.totalTradedShares || 0),
           totalTransactions: Number(d.totalTransactions || MEM_SUMMARY?.totalTransactions || 0),
           marketStatus: marketStatus.isEmergencyHalt ? 'EMERGENCY_HALT' : (marketStatus.isOpen ? 'OPEN' : 'CLOSED'),
-          advances: MEM_SUMMARY?.advances, declines: MEM_SUMMARY?.declines, unchanged: MEM_SUMMARY?.unchanged,
+          advances: (d.advances != null && (d.advances > 0 || d.declines > 0)) ? Number(d.advances) : (MEM_SUMMARY?.advances ?? null),
+          declines: (d.declines != null && (d.advances > 0 || d.declines > 0)) ? Number(d.declines) : (MEM_SUMMARY?.declines ?? null),
+          unchanged: d.unchanged != null ? Number(d.unchanged) : (MEM_SUMMARY?.unchanged ?? null),
         },
         source: defaultSource,
       };
@@ -1466,8 +1484,12 @@ export async function fetchPriceHistory(symbol, days = 365) {
 
   const appendTodayIfMissing = (list) => {
     if (!Array.isArray(list) || list.length === 0 || !(px > 0)) return list;
-    const out = [...list];
-    const last = out[out.length - 1];
+    // Strictly deduplicate incoming candles by date
+    const dateMap = new Map();
+    for (const item of list) {
+      const dt = String(item.date || item.time || '').trim().slice(0, 10);
+      if (dt) dateMap.set(dt, { ...item, date: dt });
+    }
 
     const mktStatus = getDetailedMarketStatus();
     const isMarketActive = mktStatus.isOpen && !mktStatus.isEmergencyHalt && !mktStatus.isHoliday && !mktStatus.isWeekend;
@@ -1475,42 +1497,47 @@ export async function fetchPriceHistory(symbol, days = 365) {
     const turnoverNum = Number(stockObj.turnover || 0);
     const tradesNum = Number(stockObj.transactions || 0);
     const hasTodayTrades = (volNum > 0 || turnoverNum > 0 || tradesNum > 0);
+    const officialToday = getLatestTradingDateStr();
 
-    // If market is not currently open/active and no trades took place,
-    // NEVER append a zero-volume fake bar that breaks analyzers and signals!
-    if (!isMarketActive && !hasTodayTrades) {
-      return out;
-    }
-
-    const isLastToday = last && (last.date === latestTradingDate || String(last.date).slice(0, 10) === latestTradingDate);
-    if (!hasTodayTrades && !isLastToday) {
-      return out;
-    }
-
-    const todayCandle = {
-      date: latestTradingDate,
-      open: Number(stockObj.open || px),
-      high: Number(stockObj.high || Math.max(px, Number(stockObj.open || px))),
-      low: Number(stockObj.low || Math.min(px, Number(stockObj.open || px))),
-      close: px,
-      volume: volNum,
-      turnover: turnoverNum || Math.round(volNum * px),
-      trades: tradesNum,
-      change: Number(stockObj.change || 0),
-      pChange: Number(stockObj.pChange || 0),
-      isReal: true,
-      isToday: true
-    };
-    if (isLastToday) {
-      // Only overwrite the finalized OHLCV bar while market is actively trading.
-      // After 15:00 NST the NEPSE API bar is authoritative — don't clobber it with stale ticker data.
-      if (hasTodayTrades && isMarketActive) {
-        out[out.length - 1] = { ...last, ...todayCandle };
+    // Only inject/merge if stockObj date matches officialToday or market is active
+    if (hasTodayTrades && (latestTradingDate === officialToday || isMarketActive)) {
+      const existing = dateMap.get(officialToday);
+      if (existing) {
+        if (isMarketActive) {
+          dateMap.set(officialToday, {
+            ...existing,
+            open: Number(stockObj.open || existing.open || px),
+            high: Math.max(px, Number(stockObj.high || existing.high || px)),
+            low: Math.min(px, Number(stockObj.low || existing.low || px)),
+            close: px,
+            volume: volNum > 0 ? volNum : existing.volume,
+            turnover: turnoverNum > 0 ? turnoverNum : existing.turnover,
+            trades: tradesNum > 0 ? tradesNum : existing.trades,
+            change: Number(stockObj.change || existing.change || 0),
+            pChange: Number(stockObj.pChange || existing.pChange || 0),
+            isReal: true,
+            isToday: true
+          });
+        }
+      } else {
+        dateMap.set(officialToday, {
+          date: officialToday,
+          open: Number(stockObj.open || px),
+          high: Math.max(px, Number(stockObj.open || px)),
+          low: Math.min(px, Number(stockObj.open || px)),
+          close: px,
+          volume: volNum,
+          turnover: turnoverNum || Math.round(volNum * px),
+          trades: tradesNum,
+          change: Number(stockObj.change || 0),
+          pChange: Number(stockObj.pChange || 0),
+          isReal: true,
+          isToday: true
+        });
       }
-    } else if (hasTodayTrades) {
-      out.push(todayCandle);
     }
-    return out;
+
+    return Array.from(dateMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   };
 
   // 1. Check local persistent cache of real historical candles (IDB-aware async read)

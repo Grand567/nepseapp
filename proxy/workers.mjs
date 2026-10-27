@@ -161,11 +161,12 @@ export async function runFullUniversePrimePick() {
         return Number(b.turnover || 0) - Number(a.turnover || 0);
       });
 
-    console.log(`[PrimePickWorker] Scanning ${candidates.length} stocks through Entry/Exit Analyzer...`);
+    const candidatesToScan = candidates.slice(0, 45);
+    console.log(`[PrimePickWorker] Scanning top ${candidatesToScan.length} liquid & breakout stocks through Entry/Exit Analyzer...`);
 
-    // Step 3: Run generateEntryExitPlan on every candidate with real history
+    // Step 3: Run generateEntryExitPlan on top liquid candidates with real history
     const qualifiedCandidates = [];
-    for (const cand of candidates) {
+    for (const cand of candidatesToScan) {
       const sym = String(cand.symbol || cand.scrip || '').toUpperCase().trim();
       if (!sym) continue;
 
@@ -307,6 +308,7 @@ export async function runFullUniversePrimePick() {
 }
 
 let lastPostMarketSessionAnalyzed = null;
+let isPostMarketAnalysisRunning = false;
 
 /**
  * Synchronizes daily price records and floorsheet contracts into persistent SQLite storage.
@@ -347,24 +349,30 @@ export async function runPostMarketCloseAnalysis(force = false) {
     return;
   }
 
-  // STRICT USER DIRECTIVE: Day Prime Pick is selected ONCE after market close (>= 15:15 NPT)
-  // after collecting all present & past data. Once picked, it MUST remain the same until tomorrow before trading.
-  if (!force && lastPostMarketSessionAnalyzed === targetDate && cachedPostMarketPrimePick) {
-    console.log(`[Post-Market Worker] Day Prime Pick already finalized for ${targetDate} (${cachedPostMarketPrimePick.symbol}) — maintaining sealed pick.`);
+  if (isPostMarketAnalysisRunning) {
+    console.log(`[Post-Market Worker] Post-market scan already running — skipping concurrent trigger.`);
     return;
   }
 
+  // STRICT USER DIRECTIVE: Day Prime Pick is selected ONCE after market close (>= 15:15 NPT)
+  // after collecting all present & past data. Once picked, it MUST remain the same until tomorrow before trading.
+  if (!force && lastPostMarketSessionAnalyzed === targetDate) {
+    console.log(`[Post-Market Worker] Post-market analysis already completed for session: ${targetDate}`);
+    return;
+  }
+
+  isPostMarketAnalysisRunning = true;
   console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
     await syncDailyFloorsheetAndPrices(targetDate);
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
-    if (cachedPostMarketPrimePick) {
-      lastPostMarketSessionAnalyzed = targetDate;
-    }
+    lastPostMarketSessionAnalyzed = targetDate;
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
+  } finally {
+    isPostMarketAnalysisRunning = false;
   }
 }
 

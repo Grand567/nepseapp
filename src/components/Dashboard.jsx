@@ -2005,9 +2005,32 @@ function Dashboard({
 
   // Breadth Statistics — dynamically harmonized with official NEPSE exchange summary
   const cachedSummaryForBreadth = getCachedMarketSummary();
-  const advancedCount = useMemo(() => cachedSummaryForBreadth?.advances != null ? cachedSummaryForBreadth.advances : stocks.filter(s => (s.pChange || 0) > 0).length, [stocks, cachedSummaryForBreadth]);
-  const declinedCount = useMemo(() => cachedSummaryForBreadth?.declines != null ? cachedSummaryForBreadth.declines : stocks.filter(s => (s.pChange || 0) < 0).length, [stocks, cachedSummaryForBreadth]);
-  const unchangedCount = useMemo(() => cachedSummaryForBreadth?.unchanged != null ? cachedSummaryForBreadth.unchanged : stocks.filter(s => (s.pChange || 0) === 0).length, [stocks, cachedSummaryForBreadth]);
+  const advancedCount = useMemo(() => {
+    if (cachedSummaryForBreadth?.advances != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
+      return cachedSummaryForBreadth.advances;
+    }
+    const fromStocks = stocks.filter(s => (s.pChange || 0) > 0).length;
+    if (fromStocks > 0) return fromStocks;
+    return cachedSummaryForBreadth?.advances || 0;
+  }, [stocks, cachedSummaryForBreadth]);
+
+  const declinedCount = useMemo(() => {
+    if (cachedSummaryForBreadth?.declines != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
+      return cachedSummaryForBreadth.declines;
+    }
+    const fromStocks = stocks.filter(s => (s.pChange || 0) < 0).length;
+    if (fromStocks > 0) return fromStocks;
+    return cachedSummaryForBreadth?.declines || 0;
+  }, [stocks, cachedSummaryForBreadth]);
+
+  const unchangedCount = useMemo(() => {
+    if (cachedSummaryForBreadth?.unchanged != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) {
+      return cachedSummaryForBreadth.unchanged;
+    }
+    const fromStocks = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+    if (fromStocks > 0) return fromStocks;
+    return cachedSummaryForBreadth?.unchanged || 0;
+  }, [stocks, cachedSummaryForBreadth]);
   const circuitPosCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'pos')).length, [stocks]);
   const circuitNegCount = useMemo(() => stocks.filter(s => isCircuitStock(s, 'neg')).length, [stocks]);
 
@@ -2758,9 +2781,14 @@ function Dashboard({
       totalTrades = Number(cachedSummaryForBreadth?.totalTransactions || 0);
     }
 
-    const adv = cachedSummaryForBreadth?.advances != null ? cachedSummaryForBreadth.advances : stocks.filter(s => (s.pChange || 0) > 0).length;
-    const dec = cachedSummaryForBreadth?.declines != null ? cachedSummaryForBreadth.declines : stocks.filter(s => (s.pChange || 0) < 0).length;
-    const unc = cachedSummaryForBreadth?.unchanged != null ? cachedSummaryForBreadth.unchanged : stocks.filter(s => (s.pChange || 0) === 0).length;
+    const hasCachedBreadth = cachedSummaryForBreadth?.advances != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0);
+    const stockAdv = stocks.filter(s => (s.pChange || 0) > 0).length;
+    const stockDec = stocks.filter(s => (s.pChange || 0) < 0).length;
+    const stockUnc = stocks.filter(s => (s.pChange || 0) === 0 && ((s.volume || 0) > 0 || (s.turnover || 0) > 0)).length;
+
+    const adv = hasCachedBreadth ? cachedSummaryForBreadth.advances : (stockAdv > 0 || stockDec > 0 ? stockAdv : (cachedSummaryForBreadth?.advances || 0));
+    const dec = hasCachedBreadth ? cachedSummaryForBreadth.declines : (stockAdv > 0 || stockDec > 0 ? stockDec : (cachedSummaryForBreadth?.declines || 0));
+    const unc = hasCachedBreadth ? cachedSummaryForBreadth.unchanged : (stockAdv > 0 || stockDec > 0 ? stockUnc : (cachedSummaryForBreadth?.unchanged || 0));
     const breadthRatio = dec > 0 ? (adv / dec).toFixed(2) : (adv > 0 ? `${adv}:0` : '1.0');
 
     const floatVal = indices?.float?.value || 174.35;
@@ -3618,9 +3646,13 @@ function Dashboard({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Activity style={{ width: 14, height: 14, color: 'var(--primary-light)' }} />
                 <span style={{ fontSize: 13, fontWeight: 900, color: '#ffffff' }}>Market Breadth & Circuits</span>
-                {cachedSummaryForBreadth?.advances != null ? (
+                {(cachedSummaryForBreadth?.advances != null && (cachedSummaryForBreadth.advances > 0 || cachedSummaryForBreadth.declines > 0)) ? (
                   <span style={{ fontSize: 11, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '1px 7px', borderRadius: 6, fontWeight: 700 }}>
                     Official NEPSE: {cachedSummaryForBreadth.advances} Adv / {cachedSummaryForBreadth.declines} Dec / {cachedSummaryForBreadth.unchanged} Unc
+                  </span>
+                ) : (advancedCount > 0 || declinedCount > 0) ? (
+                  <span style={{ fontSize: 11, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '1px 7px', borderRadius: 6, fontWeight: 700 }}>
+                    Traded Breadth: {advancedCount} Adv / {declinedCount} Dec / {unchangedCount} Unc
                   </span>
                 ) : (
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({totalBreadth} Scrips Traded)</span>
