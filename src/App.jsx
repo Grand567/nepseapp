@@ -475,9 +475,8 @@ function AppInner() {
     };
   }, []);
 
-  // ── Market data fetching (Adaptive Polling with Market Hours & Backoff) ──
+  // ── Market data fetching (Continuous Autonomous Poller for ALL Users) ──
   useEffect(() => {
-    if (!user) return; // Don't fetch if not logged in
     let isMounted = true;
     let timerId = null;
     let consecutiveErrors = 0;
@@ -552,7 +551,9 @@ function AppInner() {
 
         const pIndices = fetchMarketIndices().then(liveIdx => {
           if (!isMounted || !liveIdx) return liveIdx;
-          const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
+          const todayIso = formatNptDateIso(new Date());
+          const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso);
+          const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
           if (hasFresh) {
             setIndices(prev => {
               if (
@@ -586,7 +587,9 @@ function AppInner() {
         }
 
         // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
-        const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
+        const todayIso = formatNptDateIso(new Date());
+        const isStale = Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso);
+        const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
         if (!hasFreshIndices) {
           setIndices(prev => {
             if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder) {
@@ -618,16 +621,16 @@ function AppInner() {
 
       if (!isMounted) return;
 
-      // Adaptive intervals with continuous background self-refresh:
-      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 8s
-      // - Pre-Open Session (10:30 - 11:00 AM NPT): 15s
-      // - Post-Close Reconciliation (3:00 - 4:00 PM NPT): 20s
-      // - Off-Hours / Weekend: 30s (fast responsive background self-refresh)
+      // Ultra-responsive autonomous background self-refresh:
+      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 3s
+      // - Pre-Open Session (10:30 - 11:00 AM NPT): 4s
+      // - Post-Close Reconciliation (3:00 - 3:30 PM NPT): 5s
+      // - Off-Hours / Evening / Weekend: 8s
       const isRecon = !isMarketOpen && (status?.isPostCloseReconciling || (status?.nptTotalMinutes >= 15 * 60 && status?.nptTotalMinutes < 16 * 60));
-      const baseInterval = isMarketOpen ? 8000 : (isPreOpen ? 15000 : (isRecon ? 20000 : 30000));
+      const baseInterval = isMarketOpen ? 3000 : (isPreOpen ? 4000 : (isRecon ? 5000 : 8000));
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
-        nextInterval = Math.min(baseInterval * Math.pow(1.4, Math.min(consecutiveErrors, 4)), 45000);
+        nextInterval = Math.min(baseInterval * Math.pow(1.2, Math.min(consecutiveErrors, 3)), 15000);
       }
 
       scheduleNext(nextInterval);
@@ -639,9 +642,9 @@ function AppInner() {
       isMounted = false;
       if (timerId) clearTimeout(timerId);
     };
-  }, [user]); // Re-run when user logs in/out
+  }, [user]); // Re-run when user changes, but starts automatically on mount for everyone
 
-  // ── High-Frequency NEPSE Live Index Micro-Ticker (Continuous Self-Refresh) ──
+  // ── High-Frequency NEPSE Live Index Micro-Ticker (Sub-Second Autonomous Self-Refresh) ──
   // Decoupled from the heavy 350+ stock universe fetch to deliver sub-second index responsiveness
   useEffect(() => {
     let isMounted = true;
@@ -653,8 +656,7 @@ function AppInner() {
         const liveIdx = await fetchMarketIndices();
         if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
           const todayIso = formatNptDateIso(new Date());
-          const isStale = (status.isOpen || status.isPreOpen || (status.nptTotalMinutes >= 11 * 60)) &&
-            liveIdx.asOfDate && liveIdx.asOfDate !== todayIso;
+          const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso);
           if (!isStale) {
             setIndices(prev => {
               if (
@@ -667,17 +669,18 @@ function AppInner() {
               return { ...prev, ...liveIdx };
             });
             saveCachedIndices(liveIdx);
+            setLastSyncTime(new Date());
           }
         }
       } catch (_) {}
 
       if (!isMounted) return;
-      // High frequency continuous interval: 2.5s during market, 4s pre-open, 8s off-market
-      const interval = status.isOpen ? 2500 : (status.isPreOpen ? 4000 : 8000);
+      // High-frequency continuous self-refresh: 1.5s during market, 2.5s pre-open, 3.5s off-market
+      const interval = status.isOpen ? 1500 : (status.isPreOpen ? 2500 : 3500);
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
-    tickerTimer = setTimeout(tickFastIndex, 500);
+    tickerTimer = setTimeout(tickFastIndex, 300);
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -741,7 +744,9 @@ function AppInner() {
 
       const pIndices = fetchMarketIndices().then(liveIdx => {
         if (!liveIdx) return liveIdx;
-        const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder;
+        const todayIso = formatNptDateIso(new Date());
+        const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso);
+        const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
         if (hasFresh) {
           setIndices(prev => {
             if (
@@ -773,8 +778,7 @@ function AppInner() {
       if (status) setMarketStatus(status);
 
       const todayIso = formatNptDateIso(new Date());
-      const isStale = (status.isOpen || status.isPreOpen || (status.nptTotalMinutes >= 11 * 60)) &&
-        liveIndices?.asOfDate && liveIndices.asOfDate !== todayIso;
+      const isStale = Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso);
       const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
 
       if (!hasFreshIndices) {

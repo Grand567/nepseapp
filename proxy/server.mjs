@@ -838,7 +838,7 @@ export async function getMarketIndicesInternal() {
     const isTradingSession = currentStatus?.isOpen || currentStatus?.isPreOpen || (currentStatus?.nptTotalMinutes >= 11 * 60);
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
-    if (isTradingSession && asOfDate && asOfDate !== todayIso) {
+    if (asOfDate && asOfDate < todayIso) {
       console.warn(`[proxy] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
     } else {
       const $ = cheerio.load(response.data);

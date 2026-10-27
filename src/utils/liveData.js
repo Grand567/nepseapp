@@ -1825,14 +1825,14 @@ export const DEFAULT_OFFICIAL_INDICES = {
   status: 'complete',
   nepse: {
     index: 'NEPSE Index',
-    value: 2625.16,
-    change: -4.66,
-    pChange: -0.18,
+    value: 2630.76,
+    change: 0.94,
+    pChange: 0.03,
     prevClose: 2629.82,
-    open: 2628.15,
+    open: 2629.82,
     high: 2631.22,
     low: 2618.41,
-    turnover: 4393393963.36
+    turnover: 5799330203.01
   },
   sensitive: {
     index: 'Sensitive Index',
@@ -2009,7 +2009,7 @@ export async function fetchMarketIndices() {
         const d = fastRes?.data || fastRes;
         if (d && d.nepse && Number(d.nepse.value) > 0) {
           // Reject stale data from previous trading sessions
-          if (isTradingSession && d.asOfDate && d.asOfDate !== todayIso) {
+          if (d.asOfDate && d.asOfDate < todayIso) {
             return null;
           }
           return {
@@ -2083,7 +2083,7 @@ export async function fetchMarketIndices() {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
             // Strictly reject stale ShareSansar if its "As of" date is from a previous calendar day
-            if (isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate !== todayIso) {
+            if (parsedSS.asOfDate && parsedSS.asOfDate < todayIso) {
               return null;
             }
             return parsedSS;
@@ -2207,7 +2207,7 @@ export async function fetchMarketIndices() {
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            if (!(isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate !== todayIso)) {
+            if (!(parsedSS.asOfDate && parsedSS.asOfDate < todayIso)) {
               indicesData = parsedSS;
             }
           }

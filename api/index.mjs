@@ -695,7 +695,12 @@ app.get('/api/market-indices', async (req, res) => {
           const tds = $m(row).find('td');
           if (tds.length >= 5) {
             const sn = $m(tds[0]).text().trim();
+            const dateStr = $m(tds[1]).text().trim().replace(/\//g, '-');
             if (sn === '1') {
+              if (dateStr && dateStr < todayIso) {
+                // Row 1 is from yesterday; discard stale record
+                return;
+              }
               todayVal = parseMoney($m(tds[2]).text());
               todayChg = parseMoney($m(tds[3]).text());
               todayPChg = parseMoney($m(tds[4]).text().replace('%', ''));
