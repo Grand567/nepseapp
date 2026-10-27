@@ -88,7 +88,7 @@ export async function GET(
     // 1. Fetch Latest Signal Ledger Row (Verified T+1 VWAP, ATR, Sector, NEPSE Alpha)
     const ledgerTelemetry = getLatestSignalTelemetryForSymbol(validSymbol);
 
-    // 2. Fetch Latest Market Quote Snapshot (if `market_quotes` or `stock_quotes` exists)
+    // 2. Fetch Latest Market Quote Snapshot (including authoritative `daily_stock_summary` fallback)
     let quoteData: RawQuotePayload | null = null;
     for (const quoteTable of ["market_quotes", "stock_quotes", "live_quotes"]) {
       if (tableExists(db, quoteTable)) {
@@ -115,6 +115,40 @@ export async function GET(
         } catch {
           // Continue to next candidate table
         }
+      }
+    }
+
+    if (!quoteData && tableExists(db, "daily_stock_summary")) {
+      try {
+        const recentRows = db
+          .prepare(
+            `SELECT * FROM daily_stock_summary
+             WHERE UPPER(symbol) = ? AND COALESCE(calendar_status, 'VALID') != 'PARTIAL_SESSION'
+             ORDER BY trade_date DESC LIMIT 2`
+          )
+          .all(validSymbol) as Array<Record<string, unknown>>;
+        if (recentRows.length > 0) {
+          const latest = recentRows[0];
+          const prev = recentRows[1];
+          const vol = safeNum(latest.total_volume, 0);
+          const turn = safeNum(latest.total_turnover, 0);
+          const closePx = safeNum(latest.close_price, 0);
+          quoteData = {
+            symbol: validSymbol,
+            ltp: closePx,
+            close: closePx,
+            previousClose: safeNum(prev?.close_price ?? latest.open_price, closePx),
+            open: safeNum(latest.open_price, closePx),
+            high: safeNum(latest.high_price, closePx),
+            low: safeNum(latest.low_price, closePx),
+            volume: vol,
+            vwap: vol > 0 ? Number((turn / vol).toFixed(2)) : closePx,
+            sector: String(ledgerTelemetry?.sector ?? ""),
+            asOf: String(latest.trade_date ?? ""),
+          };
+        }
+      } catch {
+        // Ignore fallback error
       }
     }
 
@@ -160,6 +194,43 @@ export async function GET(
       }
     }
 
+    if (historicalCandles.length === 0 && tableExists(db, "daily_stock_summary")) {
+      try {
+        const rows = db
+          .prepare(
+            `SELECT
+              trade_date AS date,
+              open_price AS open,
+              high_price AS high,
+              low_price AS low,
+              close_price AS close,
+              total_volume AS volume,
+              CASE WHEN total_volume > 0 THEN ROUND(total_turnover / total_volume, 2) ELSE close_price END AS vwap
+            FROM daily_stock_summary
+            WHERE UPPER(symbol) = ? AND COALESCE(calendar_status, 'VALID') != 'PARTIAL_SESSION'
+            ORDER BY trade_date DESC
+            LIMIT 60`
+          )
+          .all(validSymbol) as Array<Record<string, unknown>>;
+
+        if (rows.length > 0) {
+          historicalCandles = rows
+            .map((r) => ({
+              date: String(r.date ?? ""),
+              open: safeNum(r.open, 0),
+              high: safeNum(r.high, 0),
+              low: safeNum(r.low, 0),
+              close: safeNum(r.close, 0),
+              volume: safeNum(r.volume, 0),
+              vwap: safeNum(r.vwap ?? r.close, 0),
+            }))
+            .reverse();
+        }
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
     // 4. Fetch 5-Session Smart-Money Broker Rollup
     const broker5DPayload = get5DBrokerSummaryForSymbol(validSymbol);
 
@@ -187,11 +258,12 @@ export async function GET(
                 seller_broker AS sellerBroker,
                 kitta,
                 rate,
-                amount
+                amount,
+                aggressor_side AS aggressor
               FROM floorsheet_contracts
               WHERE UPPER(symbol) = ? AND trade_date = ?
-              ORDER BY contract_no DESC
-              LIMIT 500`
+              ORDER BY trade_time DESC, contract_no DESC
+              LIMIT 25000`
             )
             .all(validSymbol, latestSessionRow.latest_date) as RawFloorsheetContract[];
         }

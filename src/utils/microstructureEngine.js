@@ -12,133 +12,9 @@
  * 7. Wyckoff phase classification & Safe Buy Zone bounds
  */
 
-export const PHASE_DEFINITIONS = {
-  STEALTH_ACCUMULATION: {
-    title: "Stealth Accumulation",
-    badge: "🟢 Institutional Quiet Buying",
-    criteria: "Top-5 Net Buyer Absorption ≥ 18% | Top-3 Seller Concentration < 14% | Price Change within ±4.5%",
-    explanation: "Big brokers are quietly absorbing supply over multiple sessions while keeping the price compressed so retail traders do not notice the breakout setup yet."
-  },
-  ACTIVE_MARKUP: {
-    title: "Active Markup",
-    badge: "🚀 Institutional Momentum",
-    criteria: "Top-5 Net Buyer Absorption ≥ 15% | Price Change > +4.5% | Price > Big Broker VWAP",
-    explanation: "Accumulation is complete and institutional buyers are actively bidding up the price with strong volume support."
-  },
-  DISTRIBUTION_DANGER: {
-    title: "Distribution Danger",
-    badge: "🔴 Smart Money Exit",
-    criteria: "Top-3 Seller Concentration (SCR3) ≥ 18% | Net Smart Money Flow < -6%",
-    explanation: "Top institutional holders are systematically offloading large blocks into retail demand."
-  },
-  BULL_TRAP: {
-    title: "Bull Trap / Retail Hype",
-    badge: "⚠️ High Trap Risk",
-    criteria: "SCR3 ≥ 20% while Price rises > +2.5% on dispersed retail buying",
-    explanation: "Price is rising temporarily, but heavy top-seller concentration shows smart money is using the green candle as exit liquidity."
-  },
-  NEUTRAL_RETAIL: {
-    title: "Normal Retail Flow",
-    badge: "⚪ Balanced Order Book",
-    criteria: "Evenly dispersed buy/sell orders without dominant broker cornering",
-    explanation: "Trading is distributed across broad retail participants without asymmetric institutional dominance."
-  }
-};
+import { aggregateBrokerMicrostructure, TOP_NEPSE_BROKERS, PHASE_DEFINITIONS, getBrokerName } from './sharedBrokerAggregationEngine.js';
 
-export const TOP_NEPSE_BROKERS = {
-  "1": "Kumari Securities (#1)",
-  "3": "Arun Securities (#3)",
-  "4": "Opal Securities (#4)",
-  "5": "Market Securities (#5)",
-  "6": "Agrawal Securities (#6)",
-  "7": "J.F. Securities (#7)",
-  "8": "Ashutosh Brokerage (#8)",
-  "10": "Pragyan Securities (#10)",
-  "11": "Malla & Malla (#11)",
-  "13": "Thrive Brokerage (#13)",
-  "14": "Nepal Stock House (#14)",
-  "16": "Primo Securities (#16)",
-  "17": "ABC Securities (#17)",
-  "18": "Sagarmatha Securities (#18)",
-  "19": "Nepal Investment (#19)",
-  "20": "Sipla Securities (#20)",
-  "21": "Midas Stock Broking (#21)",
-  "22": "Siprabi Securities (#22)",
-  "25": "Sweta Securities (#25)",
-  "26": "Asian Securities (#26)",
-  "28": "Shree Krishna Securities (#28)",
-  "29": "Trishul Securities (#29)",
-  "32": "Premier Securities (#32)",
-  "33": "Dakshinkali Securities (#33)",
-  "34": "Vision Securities (#34)",
-  "35": "Kohinoor Investment (#35)",
-  "36": "Secured Securities (#36)",
-  "37": "Swarna Laxmi (#37)",
-  "38": "Dipshikha Dhitopatra (#38)",
-  "39": "Sumeru Securities (#39)",
-  "40": "Creative Securities (#40)",
-  "41": "Linch Stock Market (#41)",
-  "42": "Sani Securities (#42)",
-  "43": "South Asian Bulls (#43)",
-  "44": "Dynamic Money (#44)",
-  "45": "Imperial Securities (#45)",
-  "46": "Kalika Securities (#46)",
-  "47": "Neev Securities (#47)",
-  "48": "Trishakti Securities (#48)",
-  "49": "Online Securities (#49)",
-  "50": "Crystal Kanchenjunga (#50)",
-  "51": "Oxford Securities (#51)",
-  "52": "Sundhara Securities (#52)",
-  "53": "Investment Management (#53)",
-  "54": "Sewa Securities (#54)",
-  "55": "Bhrikuti Stock (#55)",
-  "56": "Sri Hari Securities (#56)",
-  "57": "Aryatara Investment (#57)",
-  "58": "Naasa Securities (#58)",
-  "59": "Divya Securities (#59)",
-  "60": "Nagarik Stock Dealer (#60)",
-  "61": "Bhole Ganesh (#61)",
-  "62": "Capital Max (#62)",
-  "63": "Himalayan Brokerage (#63)",
-  "64": "Sun Securities (#64)",
-  "65": "Sharepro Securities (#65)",
-  "66": "Miyo Securities (#66)",
-  "67": "Property Wizard (#67)",
-  "68": "Elite Stock House (#68)",
-  "69": "Index Securities (#69)",
-  "70": "Infinity Securities (#70)",
-  "71": "Shubhakamana (#71)",
-  "72": "Hatemalo Financial (#72)",
-  "73": "Money World (#73)",
-  "74": "Kalash Stock (#74)",
-  "75": "Mega Stock Markets (#75)",
-  "76": "Machhapuchchhre (#76)",
-  "77": "Nabil Stock Dealer (#77)",
-  "78": "Garima Securities (#78)",
-  "79": "Pahi Investment (#79)",
-  "80": "Indira Securities (#80)",
-  "81": "Aakashbhairab (#81)",
-  "82": "N.M.B. Securities (#82)",
-  "83": "Sanima Securities (#83)",
-  "84": "Milky Way (#84)",
-  "85": "Capital Hub (#85)",
-  "86": "Stoxkart Securities (#86)",
-  "87": "S.P.S.A. Securities (#87)",
-  "88": "Blue Chip Securities (#88)",
-  "89": "JBNL Securities (#89)",
-  "90": "Sajilo Broker (#90)",
-  "91": "CBIL Securities (#91)",
-  "92": "Roadshow Securities (#92)",
-  "93": "Beni Securities (#93)",
-  "94": "K.B.L. Securities (#94)",
-  "95": "Magnet Securities (#95)",
-  "96": "Himalayan Securities (#96)",
-  "97": "R.B.B. Securities (#97)",
-  "98": "Trademow Securities (#98)",
-  "99": "Prabhu Stock Market (#99)",
-  "100": "Sunrise Securities (#100)",
-  "101": "Apple Securities (#101)"
-};
+export { TOP_NEPSE_BROKERS, PHASE_DEFINITIONS, getBrokerName };
 
 /**
  * Finds the exact trading date (YYYY-MM-DD) when a broker or top syndicate
@@ -217,226 +93,13 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
 export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   if (!Array.isArray(dailyHistory) || dailyHistory.length === 0) return null;
 
-  // 1. Slice the exact N-day window (fallback to available days if history < N)
+  const agg = aggregateBrokerMicrostructure({ windowData: dailyHistory, days });
+  if (!agg) return null;
+
   const windowData = dailyHistory.slice(0, Math.max(1, parseInt(days || 1, 10)));
   const actualDays = windowData.length;
-
-  let totalVolume = 0;
-  let totalTurnover = 0;
-  let sessionsWithPositiveSmartFlow = 0;
-
-  // Map to track cumulative volume & turnover per broker across N days
-  // Key: brokerId, Value: { brokerId, buyVol, sellVol, buyAmt, sellAmt, name, dailySeries }
-  const brokerLedger = new Map();
-
-  for (const day of windowData) {
-    totalVolume += Number(day.totalVolume || 0);
-    totalTurnover += Number(day.totalTurnover || 0);
-
-    let dayTopBuyerVol = 0;
-    let dayTopSellerVol = 0;
-
-    const dt = String(day.date || day.trade_date || day.businessDate || '').trim();
-
-    // Loop through each broker's activity for that trading session
-    for (const b of day.brokers || []) {
-      const brokerId = String(b.brokerId || b.broker || b.id || '').trim();
-      if (!brokerId) continue;
-
-      const prev = brokerLedger.get(brokerId) || {
-        brokerId,
-        brokerName: TOP_NEPSE_BROKERS[brokerId] || b.brokerName || b.name || `Broker #${brokerId}`,
-        buyVol: 0,
-        sellVol: 0,
-        buyAmt: 0,
-        sellAmt: 0,
-        dailySeries: []
-      };
-
-      const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
-      const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
-      const bAmt = bVol > 0
-        ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
-        : 0;
-      const sAmt = sVol > 0
-        ? Number(b.sellAmt ?? b.sellAmount ?? (bVol === 0 && b.amount ? b.amount : 0) ?? (sVol * Number(b.avgSellPrice || b.rate || 0)))
-        : 0;
-
-      prev.buyVol += bVol;
-      prev.sellVol += sVol;
-      prev.buyAmt += bAmt;
-      prev.sellAmt += sAmt;
-
-      prev.dailySeries.push({
-        date: dt,
-        buyVol: bVol,
-        sellVol: sVol,
-        netVol: bVol - sVol,
-        buyAmt: bAmt,
-        sellAmt: sAmt,
-        avgBuyPrice: bVol > 0 ? Number((bAmt / bVol).toFixed(2)) : 0,
-        avgSellPrice: sVol > 0 ? Number((sAmt / sVol).toFixed(2)) : 0,
-        close: Number(day.closePrice || day.close || day.ltp || 0)
-      });
-
-      brokerLedger.set(brokerId, prev);
-
-      dayTopBuyerVol += bVol;
-      dayTopSellerVol += sVol;
-    }
-
-    if (dayTopBuyerVol >= dayTopSellerVol && dayTopBuyerVol > 0) {
-      sessionsWithPositiveSmartFlow++;
-    }
-  }
-
-  if (totalVolume === 0) return null;
-
-  const marketVWAP = totalVolume > 0 ? Number((totalTurnover / totalVolume).toFixed(2)) : 0;
-  const latestDay = windowData[0];
-  const oldestDay = windowData[windowData.length - 1];
-  const latestClose = Number(latestDay.close || latestDay.closePrice || latestDay.close_price || latestDay.ltp || marketVWAP);
-  const oldestOpen = Number(oldestDay.open || oldestDay.openPrice || oldestDay.open_price || latestClose);
-  const priceChangePct = oldestOpen > 0 ? Number((((latestClose - oldestOpen) / oldestOpen) * 100).toFixed(2)) : 0;
-
-  // 2. Calculate Net Positions per Broker over the N-day window
-  // True multi-day netting cancels wash trading across sessions
-  const brokersArray = Array.from(brokerLedger.values()).map((b) => {
-    const netVol = b.buyVol - b.sellVol; // Remaining Quantity
-    const netAmt = b.buyAmt - b.sellAmt; // Net Inflow / Outflow Amount (NPR)
-    const avgBuyPrice = b.buyVol > 0 ? b.buyAmt / b.buyVol : 0;
-    const avgSellPrice = b.sellVol > 0 ? b.sellAmt / b.sellVol : 0;
-    const retentionPct = b.buyVol > 0 ? Math.max(0, Math.min(100, (netVol / b.buyVol) * 100)) : 0;
-
-    const direction = netVol >= 0 ? "ACCUMULATING" : "DUMPING";
-    const cycleInfo = detectCycleStartDate(b.dailySeries || [], direction);
-
-    let brokerActionLabel = "Neutral Churn";
-    if (netVol > 0) {
-      if (cycleInfo.consistencyPct >= 55 && retentionPct >= 50) {
-        brokerActionLabel = "Slowly Accumulating";
-      } else if (priceChangePct > 4.5) {
-        brokerActionLabel = "Aggressive Pumping";
-      } else {
-        brokerActionLabel = "Net Accumulating";
-      }
-    } else if (netVol < 0) {
-      if (cycleInfo.consistencyPct >= 55) {
-        brokerActionLabel = "Slowly Dumping";
-      } else if (priceChangePct < -3.5) {
-        brokerActionLabel = "Aggressive Dumping";
-      } else {
-        brokerActionLabel = "Net Dumping";
-      }
-    }
-
-    const unrealizedProfitPct = avgBuyPrice > 0
-      ? Number((((latestClose - avgBuyPrice) / avgBuyPrice) * 100).toFixed(2))
-      : 0;
-
-    return {
-      brokerId: b.brokerId,
-      brokerName: TOP_NEPSE_BROKERS[b.brokerId] || b.brokerName || `Broker #${b.brokerId}`,
-      buyVol: b.buyVol,
-      sellVol: b.sellVol,
-      remainingQty: netVol,
-      netVol,
-      absNetVol: Math.abs(netVol),
-      buyAmt: Number(b.buyAmt.toFixed(2)),
-      sellAmt: Number(b.sellAmt.toFixed(2)),
-      netAmt: Number(netAmt.toFixed(2)),
-      totalAmount: Number((b.buyAmt + b.sellAmt).toFixed(2)),
-      avgBuyPrice: Number(avgBuyPrice.toFixed(2)),
-      avgSellPrice: Number(avgSellPrice.toFixed(2)),
-      retentionPct: Number(retentionPct.toFixed(1)),
-      direction,
-      brokerActionLabel,
-      startDate: cycleInfo.startDate,
-      streakDays: cycleInfo.streakDays,
-      activeDaysCount: cycleInfo.activeDaysCount,
-      consistencyPct: cycleInfo.consistencyPct,
-      unrealizedProfitPct,
-      dailySeries: b.dailySeries
-    };
-  });
-
-  // Sort for Top Net Buyers (Smart Money Accumulation) & Top Net Sellers (Supply Pressure)
-  const topNetBuyers = [...brokersArray]
-    .filter((b) => b.netVol > 0)
-    .sort((a, b) => b.netVol - a.netVol);
-
-  const topNetSellers = [...brokersArray]
-    .filter((b) => b.netVol < 0)
-    .sort((a, b) => a.netVol - b.netVol); // Most negative first
-
-  // 3. Calculate Core Quality Gate Metrics
-  const topGrossBuyers = [...brokersArray].sort((a, b) => b.buyVol - a.buyVol);
-  const topGrossSellers = [...brokersArray].sort((a, b) => b.sellVol - a.sellVol);
-  const top5GrossBuyers = topGrossBuyers.slice(0, 5);
-  const top5GrossSellers = topGrossSellers.slice(0, 5);
-
-  const top3NetBuyVol = topNetBuyers.slice(0, 3).reduce((sum, b) => sum + b.netVol, 0);
-  const top5NetBuyVol = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + b.netVol, 0);
-  const top3NetSellVol = topNetSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netVol), 0);
-
-  const top3GrossBuyVol = topGrossBuyers.slice(0, 3).reduce((sum, b) => sum + b.buyVol, 0);
-  const top5GrossBuyVol = topGrossBuyers.slice(0, 5).reduce((sum, b) => sum + b.buyVol, 0);
-  const top3GrossSellVol = topGrossSellers.slice(0, 3).reduce((sum, b) => sum + b.sellVol, 0);
-
-  const bcr3NetPct = Number(((top3NetBuyVol / totalVolume) * 100).toFixed(1));
-  const bcr5NetPct = Number(((top5NetBuyVol / totalVolume) * 100).toFixed(1));
-  const scr3NetPct = Number(((top3NetSellVol / totalVolume) * 100).toFixed(1));
-
-  const bcr3BuyPct = Number(((top3GrossBuyVol / totalVolume) * 100).toFixed(1));
-  const bcr5BuyPct = Number(((top5GrossBuyVol / totalVolume) * 100).toFixed(1));
-  const scr3SellPct = Number(((top3GrossSellVol / totalVolume) * 100).toFixed(1));
-
-  const grossBuyConcentrationPct = bcr5BuyPct;
-  const grossSellConcentrationPct = scr3SellPct;
-  const smartMoneyNetFlowPct = Number((bcr5NetPct - scr3NetPct).toFixed(1));
-
-  // Multi-Day Institutional VWAP anchored to Net Retained Accumulation
-  const top5NetTurnover = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + (b.netVol * b.avgBuyPrice), 0);
-  const top5GrossTurnover = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + b.buyAmt, 0);
-  const top5GrossVol = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + b.buyVol, 0);
-
-  const bigBrokerVWAP = top5NetBuyVol > 0
-    ? Number((top5NetTurnover / top5NetBuyVol).toFixed(2))
-    : (top5GrossVol > 0 ? Number((top5GrossTurnover / top5GrossVol).toFixed(2)) : marketVWAP);
-
-  // Price Volatility Compression (High-Low spread over window)
-  const highestPrice = Math.max(
-    ...windowData.map((d) => Number(d.highPrice || d.high || d.closePrice || d.close || latestClose))
-  );
-  const lowestPrice = Math.min(
-    ...windowData.map((d) => Number(d.lowPrice || d.low || d.closePrice || d.close || latestClose))
-  );
-  const rangePct = lowestPrice > 0 ? ((highestPrice - lowestPrice) / lowestPrice) * 100 : 0;
-
-  // 4. Classify Phase for Accumulation & Distribution Radar + Search Filter Tabs
-  let phase = "NEUTRAL_RETAIL";
-  let phaseLabel = "Normal Retail Flow";
-
-  if (scr3NetPct >= 20.0 && priceChangePct > 2.5) {
-    phase = "BULL_TRAP";
-    phaseLabel = "Bull Trap (Retail Buying Top)";
-  } else if (scr3NetPct >= 18.0) {
-    phase = "DISTRIBUTION_DANGER";
-    phaseLabel = "Distribution Danger";
-  } else if (bcr5NetPct >= 18.0 && scr3NetPct < 14.0 && Math.abs(priceChangePct) <= 4.5) {
-    phase = "STEALTH_ACCUMULATION";
-    phaseLabel = "Stealth Accumulation";
-  } else if (bcr5NetPct >= 15.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP) {
-    phase = "ACTIVE_MARKUP";
-    phaseLabel = "Active Markup";
-  }
-
-  const isInstitutionalDumping = phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP" || scr3NetPct >= 20.0 || scr3SellPct >= 38.0;
-  const adSignal = (phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP")
-    ? "Accumulation"
-    : (isInstitutionalDumping ? "Distribution" : "Neutral");
-
-  // 5. Safe Buy Zone Bounds & Clear Conditional Copy (Overview Card 3)
+  const bigBrokerVWAP = agg.bigBrokerVWAP;
+  const latestClose = agg.latestClose;
   const buyZoneMin = Number((bigBrokerVWAP * 0.99).toFixed(1));
   const buyZoneMax = Number((bigBrokerVWAP * 1.035).toFixed(1));
   let entryStatus = "⚪ Neutral Entry";
@@ -453,20 +116,17 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     entryDescription = `Current price (Rs. ${latestClose}) is extended above the Safe Buy Zone (Rs. ${buyZoneMin}–${buyZoneMax}). Wait for pullback toward Rs. ${bigBrokerVWAP.toFixed(1)}.`;
   }
 
-  // Stock-Level Net Flow Summary & Syndicate Co-Accumulation
-  const top5NetInflowAmt = Number(topNetBuyers.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.netAmt), 0).toFixed(2));
-  const top5NetOutflowAmt = Number(topNetSellers.slice(0, 5).reduce((sum, b) => sum + Math.abs(b.netAmt), 0).toFixed(2));
+  const top5NetInflowAmt = Number(agg.topAccumulators.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.netAmt), 0).toFixed(2));
+  const top5NetOutflowAmt = Number(agg.topDistributors.slice(0, 5).reduce((sum, b) => sum + Math.abs(b.netAmt), 0).toFixed(2));
   const smartMoneyNetInflowAmt = Number((top5NetInflowAmt - top5NetOutflowAmt).toFixed(2));
-  const leadAccumulator = topNetBuyers[0] || null;
-  const leadDistributor = topNetSellers[0] || null;
-
-  const activeSyndicateBrokers = topNetBuyers.filter(b => b.netVol > 0 && b.consistencyPct >= 40);
+  const leadAccumulator = agg.topAccumulators[0] || null;
+  const leadDistributor = agg.topDistributors[0] || null;
+  const activeSyndicateBrokers = agg.topAccumulators.filter(b => b.netQty > 0);
   const isSyndicateCoAccumulation = activeSyndicateBrokers.length >= 3;
 
-  // Construct session-by-session flow for date-wise drilldown across all requested timeframes
   const dailyFlow = windowData.map((day) => {
     const dayBrokers = (day.brokers || []).map((b) => {
-      const bId = String(b.brokerId || b.broker || b.id || '').trim();
+      const bId = String(b.brokerId || b.broker || b.id || "").trim();
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
       const bAmt = bVol > 0
@@ -520,49 +180,64 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     };
   });
 
+  const availableDates = Array.from(
+    new Set(
+      dailyHistory
+        .map((d) => String(d.date || d.trade_date || d.businessDate || ''))
+        .filter(Boolean)
+    )
+  ).sort().reverse().slice(0, 30);
+
+  const totalSharesHeldTillNow = agg.topAccumulators.reduce((s, b) => s + Math.max(0, Number(b.netQty ?? b.netVol ?? 0)), 0);
+  const topHoldings = agg.topAccumulators.map((b) => ({
+    ...b,
+    holdQty: b.netQty,
+    holdAmt: Math.max(0, b.netAmt),
+    buyQty: b.buyVol,
+    sellQty: b.sellVol,
+    avgBuyRate: b.avgBuyPrice,
+    avgSellRate: b.avgSellPrice,
+    shareOfTotalHoldPct: totalSharesHeldTillNow > 0 ? Number(((b.netQty / totalSharesHeldTillNow) * 100).toFixed(1)) : 0,
+    shareOfTotalVol: agg.totalVolume > 0 ? Number(((b.buyVol / agg.totalVolume) * 100).toFixed(1)) : 0
+  }));
+
+  const topHolder = topHoldings[0] || null;
+  const accBuyVol = agg.topAccumulators.reduce((s, b) => s + b.buyVol, 0);
+  const accBuyAmt = agg.topAccumulators.reduce((s, b) => s + b.buyAmt, 0);
+  const avgAccumulatorBuyPrice = accBuyVol > 0 ? Number((accBuyAmt / accBuyVol).toFixed(2)) : (topHolder?.avgBuyRate || agg.marketVWAP);
+
+  const distSellVol = agg.topDistributors.reduce((s, b) => s + b.sellVol, 0);
+  const distSellAmt = agg.topDistributors.reduce((s, b) => s + b.sellAmt, 0);
+  const avgDistributorSellPrice = distSellVol > 0 ? Number((distSellAmt / distSellVol).toFixed(2)) : (agg.topDistributors[0]?.avgSellPrice || agg.marketVWAP);
+
   return {
+    ...agg,
     timeframeDays: actualDays,
     scopeLabel:
-      actualDays === 1
-        ? `Latest Trading Session (${windowData[0].date || "1D"}) — Intraday Microstructure`
-        : `Cumulative ${actualDays}-Day Window — Institutional Trend & Absorption`,
-    totalVolume,
-    totalTurnover,
-    latestClose,
-    marketVWAP,
-    priceChangePct,
-    bigBrokerVWAP,
+      actualDays < days
+        ? `INCOMPLETE HISTORY: ${actualDays} of ${days} sessions`
+        : (actualDays === 1
+            ? `Latest Trading Session (${windowData[0]?.date || "1D"}) — Intraday Microstructure`
+            : `Cumulative ${actualDays}-Day Window — Institutional Trend & Absorption`),
+    historyWarning: actualDays < days ? `INCOMPLETE HISTORY: ${actualDays} of ${days} sessions` : null,
+    isHistoryIncomplete: actualDays < days,
     buyZoneMin,
     buyZoneMax,
     entryStatus,
     entryDescription,
-    grossBuyConcentrationPct,
-    grossSellConcentrationPct,
-    bcr3NetPct,
-    bcr5NetPct,
-    scr3NetPct,
-    bcr3BuyPct,
-    bcr5BuyPct,
-    scr3SellPct,
-    isInstitutionalDumping,
-    adSignal,
-    smartMoneyNetFlowPct,
-    absorptionConsistency: `${sessionsWithPositiveSmartFlow}/${actualDays} Sessions`,
-    phase,
-    phaseLabel,
-    topBuyers: topNetBuyers.slice(0, 10),
-    topSellers: topNetSellers.slice(0, 10),
-    topAccumulators: topNetBuyers.slice(0, 10),
-    topDistributors: topNetSellers.slice(0, 10),
-    totalBuyersCount: topNetBuyers.length,
-    totalSellersCount: topNetSellers.length,
-    topGrossBuyers: top5GrossBuyers.map(b => ({
+    topBuyers: agg.topAccumulators,
+    topSellers: agg.topDistributors,
+    topAccumulators: agg.topAccumulators,
+    topDistributors: agg.topDistributors,
+    totalBuyersCount: agg.topAccumulators.length,
+    totalSellersCount: agg.topDistributors.length,
+    topGrossBuyers: agg.topGrossBuyers.map(b => ({
       ...b,
-      pct: Number(((b.buyVol / totalVolume) * 100).toFixed(1))
+      pct: Number(((b.buyVol / (agg.totalVolume || 1)) * 100).toFixed(1))
     })),
-    topGrossSellers: top5GrossSellers.map(s => ({
+    topGrossSellers: agg.topGrossSellers.map(s => ({
       ...s,
-      pct: Number(((s.sellVol / totalVolume) * 100).toFixed(1))
+      pct: Number(((s.sellVol / (agg.totalVolume || 1)) * 100).toFixed(1))
     })),
     top5NetInflowAmt,
     top5NetOutflowAmt,
@@ -571,9 +246,33 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     leadDistributor,
     isSyndicateCoAccumulation,
     syndicateBrokers: activeSyndicateBrokers.slice(0, 5).map(b => b.brokerId),
-    allBrokers: brokersArray,
-    brokers: brokersArray,
+    allBrokers: agg.allBrokers,
+    brokers: agg.allBrokers,
     dailyFlow,
+    dateWiseBrokers: dailyFlow,
+    availableDates,
+    fromDate: windowData[windowData.length - 1]?.date || '',
+    toDate: windowData[0]?.date || '',
+    tradingDays: actualDays,
+    topHoldings,
+    totalSharesHeldTillNow,
+    topHoldingBroker: topHolder?.brokerId || null,
+    avgAccumulatorBuyPrice,
+    avgBuyingPrice: avgAccumulatorBuyPrice,
+    avgDistributorSellPrice,
+    avgSellingPrice: avgDistributorSellPrice,
+    summary: {
+      totalVolume: agg.totalVolume,
+      totalTurnover: agg.totalTurnover,
+      vwap: agg.marketVWAP,
+      totalHoldQty: totalSharesHeldTillNow,
+      totalSharesHeldTillNow,
+      topHoldingBroker: topHolder?.brokerId || null,
+      avgAccumulatorBuyPrice,
+      avgBuyingPrice: avgAccumulatorBuyPrice,
+      avgDistributorSellPrice,
+      avgSellingPrice: avgDistributorSellPrice
+    }
   };
 }
 
@@ -633,25 +332,29 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
     }).filter((d) => d.totalVolume > 0 && d.brokers.length > 0);
   }
 
-  // 2. Single-Session Fallback (Strictly 1-Day Authentic Snapshot — NEVER clone Day 1 brokers onto past candles!)
-  const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers)
+  // 2. Single-Session Fallback (Strictly 1-Day Authentic Snapshot — merge topBuyers & topSellers by brokerId so netVol = buyVol - sellVol)
+  const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers) && realBrokerAnalysis.brokers.length > 0
     ? realBrokerAnalysis.brokers
-    : [
-        ...(realBrokerAnalysis?.topBuyers || []).map(b => ({
-          ...b,
-          buyQty: Number(b.volume ?? b.buyQty ?? b.shares ?? 0),
-          sellQty: 0,
-          buyAmt: Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0),
-          sellAmt: 0,
-        })),
-        ...(realBrokerAnalysis?.topSellers || []).map(s => ({
-          ...s,
-          buyQty: 0,
-          sellQty: Number(s.volume ?? s.sellQty ?? s.shares ?? 0),
-          buyAmt: 0,
-          sellAmt: Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? 0),
-        }))
-      ];
+    : (() => {
+        const merged = new Map();
+        for (const b of (realBrokerAnalysis?.topBuyers || [])) {
+          const id = String(b.broker || b.brokerId || b.id || '').trim();
+          if (!id) continue;
+          const cur = merged.get(id) || { brokerId: id, brokerName: b.brokerName || b.name, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+          cur.buyQty += Number(b.buyQty ?? b.buyKitta ?? b.volume ?? b.shares ?? 0);
+          cur.buyAmt += Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0);
+          merged.set(id, cur);
+        }
+        for (const s of (realBrokerAnalysis?.topSellers || [])) {
+          const id = String(s.broker || s.brokerId || s.id || '').trim();
+          if (!id) continue;
+          const cur = merged.get(id) || { brokerId: id, brokerName: s.brokerName || s.name, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+          cur.sellQty += Number(s.sellQty ?? s.sellKitta ?? s.volume ?? s.shares ?? 0);
+          cur.sellAmt += Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? 0);
+          merged.set(id, cur);
+        }
+        return Array.from(merged.values());
+      })();
 
   if (rawBrokers.length === 0) return [];
 
@@ -798,6 +501,14 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
   const avgGrossRetention = Number(diag3d.retentionPct || 80);
   const isWashTrap = (avgGrossRetention < 35 && rvol3d >= 1.2) || scr3NetPct >= 20 || diag3d.phase === 'BULL_TRAP';
 
+  // Single-day or 3-day spike under the ±15% circuit limit
+  const day0PriceChange = Array.isArray(dailyHistory) && dailyHistory.length > 0
+    ? Number(dailyHistory[0]?.priceChangePct || dailyHistory[0]?.pChange || 0)
+    : 0;
+  const isLargeSpike = day0PriceChange > 9.0 || priceChange3dPct > 9.0;
+  const isNearCircuit = priceChange3dPct >= 12.5 || day0PriceChange >= 12.5;
+  const isCircuitLocked = priceChange3dPct >= 14.8 || day0PriceChange >= 14.8;
+
   let ignitionStage = 'NEUTRAL_ACCUMULATION';
   let stageLabel = 'Neutral / No Ignition';
   let stageBadge = '⚪ Neutral / Base';
@@ -815,6 +526,7 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
   }
   // STAGE 2: Prime Ignition Entry (Supply Vacuum Ignition)
   else if (
+    !isLargeSpike &&
     rvol3d >= 1.6 &&
     smh3dPct >= 18 &&
     t2RetentionPct >= 85 &&
@@ -829,16 +541,8 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     entrySignal = 'PRIME_BUY';
     tacticalAdvice = `Supply vacuum confirmed! Smart money holding +${smh3dPct}% with ${t2RetentionPct}% T+2 retention. Operator margin is tight (+${operatorProfitMargin3d}%). Prime early entry window before public breakout.`;
   }
-  // Single-day or 3-day spike under the ±15% circuit limit
-  const day0PriceChange = Array.isArray(dailyHistory) && dailyHistory.length > 0
-    ? Number(dailyHistory[0]?.priceChangePct || dailyHistory[0]?.pChange || 0)
-    : 0;
-  const isLargeSpike = day0PriceChange > 9.0 || priceChange3dPct > 9.0;
-  const isNearCircuit = priceChange3dPct >= 12.5 || day0PriceChange >= 12.5;
-  const isCircuitLocked = priceChange3dPct >= 14.8 || day0PriceChange >= 14.8;
-
-  // STAGE 3: Breakout / Gap-Up Markup in Progress (Evaluated before Stealth Seeding to catch >9% spikes)
-  if (
+  // STAGE 3: Breakout / Gap-Up Markup in Progress (Evaluated as else-if so it never clobbers Stage 2 or Wash Trap)
+  else if (
     isLargeSpike ||
     (priceChange3dPct > 6.5 && smh3dPct >= 15)
   ) {

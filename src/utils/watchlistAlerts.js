@@ -201,6 +201,8 @@ export function deleteWatchlistAlertConfig(symbol) {
   }
 }
 
+export const removeWatchlistAlertConfig = deleteWatchlistAlertConfig;
+
 /**
  * Request notification permission if not yet granted
  */

@@ -147,6 +147,32 @@ export function Master100ProfitWorkstation({
     }
   };
 
+  const handleSendMorningDigest = async () => {
+    setTelegramTesting(true);
+    setTelegramTestMsg(null);
+    try {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/telegram/dispatch-morning-digest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramTestMsg({
+          type: 'success',
+          text: `🌅 Morning Trading Digest dispatched! (${data.buyPicksCount || 0} BUY picks for ${data.sessionDate})`
+        });
+      } else {
+        setTelegramTestMsg({ type: 'error', text: data.reason || data.error || 'Failed to dispatch morning digest.' });
+      }
+    } catch (err: any) {
+      setTelegramTestMsg({ type: 'error', text: err.message || 'Failed to dispatch morning digest.' });
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
+
   const [telegramDetecting, setTelegramDetecting] = useState(false);
 
   const handleAutoDetectChatId = async () => {
@@ -2013,6 +2039,27 @@ export function Master100ProfitWorkstation({
                   >
                     <Zap style={{ width: 16, height: 16 }} />
                     Trigger Sample 100K Alert
+                  </button>
+
+                  <button
+                    onClick={handleSendMorningDigest}
+                    disabled={telegramTesting}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      background: 'rgba(168, 85, 247, 0.15)',
+                      color: '#c084fc',
+                      border: '1px solid rgba(168, 85, 247, 0.4)',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Send style={{ width: 16, height: 16 }} />
+                    Dispatch Morning Digest
                   </button>
                 </div>
               </div>

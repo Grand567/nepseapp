@@ -46,6 +46,11 @@ import { FibonacciCalculatorService } from './FibonacciCalculatorService';
 import { SeasonalityAnalyticsService } from './SeasonalityAnalyticsService';
 import { PromoterSharesService } from './PromoterSharesService';
 import { StrategyLabService } from './StrategyLabService';
+import { BacktestReportScreen } from './BacktestReportScreen';
+import { PaperTradingJournalScreen } from './PaperTradingJournalScreen';
+import { StockSelectionScreener } from './StockSelectionScreener';
+import { BrokerAccumulationView } from './BrokerAccumulationView';
+import { WatchlistEntryAlertModal } from './WatchlistEntryAlertModal';
 import { PreferencesSettingsService } from './PreferencesSettingsService';
 import { GlossaryGuideService } from './GlossaryGuideService';
 import { BrokerFlowDominanceService } from './BrokerFlowDominanceService';
@@ -131,7 +136,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 export const getServiceCategory = (s: { id: string; cat: string }): string => {
-  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
+  if (['master-100-profit', 'multibagger-hunter', 'minervini-leaderboard', 'daily-prime-pick', 'short-term-profit-plan', 'entry-exit-analyzer', 'stock-momentum', 'decision-probability', 'stealth-accumulation-tracker', 'graham-intrinsic', 'dividend-history', 'seasonality', 'gdp-vs-nepse', 'strategy-lab', 'backtest-report', 'paper-trading-journal', 'stock-selection-screener', 'stock-screener', 'broker-accumulation-view', 'watchlist-entry-alerts', 'ai-agent-dossier', 'signals-track-record'].includes(s.id)) {
     return 'flagship';
   }
   if (['regulatory-hub', 'nrb-safety-shield', 'nrb-forex', 'bullion-rates', 'regulatory-circulars', 'nrb-indicators'].includes(s.id)) {
@@ -195,6 +200,11 @@ const ALL_SERVICES: ServiceDef[] = [
   { id: 'decision-probability',       name: 'Decision Probability Index (DPI 0–100)',       icon: Target,             color: 'purple',  cat: 'flagship', star: true },
   { id: 'seasonality',                name: 'NEPSE 10-Year Seasonality Analytics',          icon: Calendar,           color: 'cyan',    cat: 'flagship', star: true },
   { id: 'strategy-lab',               name: 'Strategy Lab Backtesting Engine',              icon: Brain,              color: 'orange',  cat: 'flagship', star: true },
+  { id: 'backtest-report',            name: 'Backtest Engine & Walk-Forward Report',        icon: BarChart3,          color: 'orange',  cat: 'flagship', star: true },
+  { id: 'paper-trading-journal',      name: 'Paper Trading Mode & Trade Journal',           icon: BookOpen,           color: 'emerald', cat: 'flagship', star: true },
+  { id: 'stock-selection-screener',   name: 'Stock Selection Screener & Scoring',          icon: Filter,             color: 'emerald', cat: 'flagship', star: true },
+  { id: 'broker-accumulation-view',   name: 'Broker Accumulation & CR5 Telemetry',          icon: Users,              color: 'purple',  cat: 'flagship', star: true },
+  { id: 'watchlist-entry-alerts',     name: 'Watchlist Entry & Risk Alerts',                icon: BellRing,           color: 'rose',    cat: 'flagship', star: true },
   { id: 'ai-agent-dossier',           name: 'Autonomous AI Scrip Intelligence Agent',      icon: Bot,                color: 'emerald', cat: 'flagship', star: true },
   { id: 'signals-track-record',       name: 'Algorithmic Signal Track Record & Audit',       icon: ShieldCheck,        color: 'teal',    cat: 'flagship', star: true },
 
@@ -1027,6 +1037,12 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   ),
   'comparable-stock': CompareStocks,
   'strategy-lab': StrategyLabService,
+  'backtest-report': BacktestReportScreen,
+  'paper-trading-journal': PaperTradingJournalScreen,
+  'stock-selection-screener': (props: any) => <StockSelectionScreener onSelectSymbol={props?.onSelectStock} />,
+  'stock-screener': (props: any) => <StockSelectionScreener onSelectSymbol={props?.onSelectStock} />,
+  'broker-accumulation-view': (props: any) => <BrokerAccumulationView initialSymbol={props?.selectedStock || 'SHIVM'} />,
+  'watchlist-entry-alerts': () => <WatchlistEntryAlertModal />,
   'smart-money': () => (
     <UniversalScreener
       filterFn={(s) => s.turnover > 10000000 && (s.nbar || 1) >= 1.05 && (s.adRatio ?? 0) >= 0}
@@ -1210,7 +1226,7 @@ export default function ServicesHub({
 
     return matched.map((sec) => {
       const live = livePriceMap.get(sec.symbol.toUpperCase());
-      const ltp = live?.lastTradedPrice ?? live?.closingPrice ?? live?.pointChange ?? null;
+      const ltp = live?.ltp ?? live?.lastTradedPrice ?? live?.close ?? live?.closePrice ?? live?.closingPrice ?? null;
       const pChange = live?.percentageChange ?? live?.pChange ?? (live?.previousClose && ltp ? ((ltp - live.previousClose) / live.previousClose) * 100 : 0);
       const turnover = live?.totalTurnover ?? live?.turnover ?? 0;
       return {
@@ -1756,7 +1772,7 @@ export default function ServicesHub({
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>NEPSE Official Data Feed — Live</span>
               </div>
               <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#94a3b8' }}>
-                Market hours: <strong style={{ color: '#ffffff' }}>Mon–Fri 11:00 AM – 3:00 PM NPT</strong>
+                Market hours: <strong style={{ color: '#ffffff' }}>Sun–Thu 11:00 AM – 3:00 PM NPT</strong>
                 {' '} · Live prices & indicators powered by <strong style={{ color: '#ffffff' }}>NEPSE NOTS API</strong>
               </p>
             </div>

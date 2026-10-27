@@ -22,11 +22,29 @@ const testFiles = [
   'lBatchShareHubParity.test.mjs',
   'stockyanAndFundamentalsParity.test.mjs',
   'testInstitutionalConfluencePipeline.mjs',
-  'testDynamicCapitalEngine.mjs'
+  'testDynamicCapitalEngine.mjs',
+  'mBatchCredentialSecurity.test.mjs',
+  'nBatchTradingCalendar.test.mjs',
+  'oBatchMacdSignalIntegrity.test.mjs',
+  'pBatchBacktestValidation.test.mjs',
+  'qBatchDataLayerReliability.test.mjs',
+  'rBatchBrokerFloorsheetSignals.test.mjs',
+  'sBatchTechnicalSignals.test.mjs',
+  'tBatchFundamentalSignals.test.mjs',
+  'uBatchMarketContextSignals.test.mjs',
+  'vBatchStockScoringSelection.test.mjs',
+  'wBatchBacktestEngine.test.mjs',
+  'xBatchPaperTradingTracker.test.mjs',
+  'yBatchScreensAndAlerts.test.mjs',
+  'zBatchSystemMonitoring.test.mjs',
+  'aaBatchWalkForwardOptimization.test.mjs',
+  'abBatchTelegramMorningDigest.test.mjs',
+  'acItem1LookAheadFix.test.mjs',
+  'adBrokerFloorsheetAudit.test.mjs'
 ];
 
 console.log('====================================================');
-console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (18 SUITES)  ');
+console.log(' RUNNING FULL NEPSE SUITE VERIFICATION (36 SUITES)  ');
 console.log('====================================================\n');
 
 let totalFailures = 0;

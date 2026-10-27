@@ -21,6 +21,7 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
 
       setLoading(true);
       setError(null);
+      setData((prev) => (prev && prev.symbol === validSymbol ? prev : null));
 
       try {
         const res = await fetch(
@@ -37,15 +38,19 @@ export function useUnifiedStockTelemetry(rawSymbol?: string | null) {
         if (!res.ok || !json.ok) {
           throw new Error(json.error || `Failed to load telemetry for ${validSymbol}`);
         }
-        setData(json);
+        if (!signal?.aborted) {
+          setData(json);
+        }
       } catch (err) {
-        if ((err as Error)?.name !== "AbortError") {
+        if ((err as Error)?.name !== "AbortError" && !signal?.aborted) {
           setError(
             err instanceof Error ? err.message : "Telemetry synchronization failed"
           );
         }
       } finally {
-        setLoading(false);
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
       }
     },
     [validSymbol]

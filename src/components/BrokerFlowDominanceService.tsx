@@ -473,40 +473,50 @@ export function BrokerFlowDominanceService({
 
     // B. 1D Horizon with active floorsheet
     if (floorsheet && floorsheet.length > 0) {
-      const brokerMap = new Map<string, { buy: number; sell: number; trades: number; scrips: Map<string, { buy: number; sell: number }> }>();
+      const brokerMap = new Map<string, { buy: number; sell: number; trades: number; scrips: Map<string, { buy: number; sell: number; buyQty: number; sellQty: number }> }>();
 
       // Pre-seed major brokers
       MAJOR_BROKERS.forEach(b => {
         brokerMap.set(b.id, { buy: 0, sell: 0, trades: 0, scrips: new Map() });
       });
 
+      const seenContracts = new Set<string>();
       floorsheet.forEach((t: any) => {
-        const bId = String(t.buyer || t.buyerBroker || '').trim();
-        const sId = String(t.seller || t.sellerBroker || '').trim();
+        const cid = String(t.contractId ?? t.contract_no ?? t.contractNo ?? t.id ?? '').trim();
+        if (cid) {
+          if (seenContracts.has(cid)) return;
+          seenContracts.add(cid);
+        }
+        const bId = String(t.buyer || t.buyerBroker || t.buyer_broker || '').trim();
+        const sId = String(t.seller || t.sellerBroker || t.seller_broker || '').trim();
         if (bId && sId && bId === sId) return; // Self-matching filter: ignore bilateral wash cross-trades
-        const amt = Number(t.amount || (Number(t.quantity || 0) * Number(t.rate || 0)) || 0);
-        const sym = String(t.symbol || t.stockSymbol || '').trim();
+        const qty = Math.round(Number(t.quantity || t.qty || t.kitta || t.contractQuantity || 0));
+        const rate = Number(t.rate || t.price || t.contractRate || 0);
+        const amt = Number(t.amount || t.contractAmount || (qty * rate) || 0);
+        const sym = String(t.symbol || t.stockSymbol || '').toUpperCase().trim();
 
-        if (bId) {
+        if (bId && qty > 0) {
           if (!brokerMap.has(bId)) brokerMap.set(bId, { buy: 0, sell: 0, trades: 0, scrips: new Map() });
           const bEntry = brokerMap.get(bId)!;
           bEntry.buy += amt;
           bEntry.trades += 1;
           if (sym) {
-            const sc = bEntry.scrips.get(sym) || { buy: 0, sell: 0 };
+            const sc = bEntry.scrips.get(sym) || { buy: 0, sell: 0, buyQty: 0, sellQty: 0 };
             sc.buy += amt;
+            sc.buyQty += qty;
             bEntry.scrips.set(sym, sc);
           }
         }
 
-        if (sId) {
+        if (sId && qty > 0) {
           if (!brokerMap.has(sId)) brokerMap.set(sId, { buy: 0, sell: 0, trades: 0, scrips: new Map() });
           const sEntry = brokerMap.get(sId)!;
           sEntry.sell += amt;
           sEntry.trades += 1;
           if (sym) {
-            const sc = sEntry.scrips.get(sym) || { buy: 0, sell: 0 };
+            const sc = sEntry.scrips.get(sym) || { buy: 0, sell: 0, buyQty: 0, sellQty: 0 };
             sc.sell += amt;
+            sc.sellQty += qty;
             sEntry.scrips.set(sym, sc);
           }
         }
@@ -532,12 +542,18 @@ export function BrokerFlowDominanceService({
           .map(([sSym, sc]) => {
             const matched = stocks.find(st => st.symbol === sSym);
             const net = sc.buy - sc.sell;
+            const netQty = sc.buyQty - sc.sellQty;
             return {
               symbol: sSym,
               name: matched?.companyName || matched?.name || sSym,
               buyAmount: Math.round(sc.buy),
               sellAmount: Math.round(sc.sell),
               netFlow: Math.round(net),
+              buyQty: sc.buyQty > 0 ? sc.buyQty : undefined,
+              sellQty: sc.sellQty > 0 ? sc.sellQty : undefined,
+              netQty: netQty !== 0 ? netQty : undefined,
+              avgBuyRate: sc.buyQty > 0 ? +(sc.buy / sc.buyQty).toFixed(2) : undefined,
+              avgSellRate: sc.sellQty > 0 ? +(sc.sell / sc.sellQty).toFixed(2) : undefined,
               bias: net > 500000 ? 'Accumulation' : net < -500000 ? 'Distribution' : 'Neutral'
             };
           });
@@ -545,6 +561,12 @@ export function BrokerFlowDominanceService({
         const topScrips = [...allScrips].sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
         const topAccumulation = [...allScrips].filter(s => s.buyAmount > 0).sort((x, y) => (y.netFlow !== x.netFlow ? y.netFlow - x.netFlow : y.buyAmount - x.buyAmount)).slice(0, 10);
         const topDistribution = [...allScrips].filter(s => s.sellAmount > 0).sort((x, y) => (x.netFlow !== y.netFlow ? x.netFlow - y.netFlow : y.sellAmount - x.sellAmount)).slice(0, 10);
+        const topByNetQty = [...allScrips].filter(s => (s.netQty || 0) > 0).sort((x, y) => (y.netQty || 0) - (x.netQty || 0)).slice(0, 10);
+        const topByGrossBuyAmt = [...allScrips].filter(s => s.buyAmount > 0).sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
+        const topByGrossBuyQty = [...allScrips].filter(s => (s.buyQty || 0) > 0).sort((x, y) => (y.buyQty || 0) - (x.buyQty || 0)).slice(0, 10);
+        const topDistByNetQty = [...allScrips].filter(s => (s.netQty || 0) < 0).sort((x, y) => (x.netQty || 0) - (y.netQty || 0)).slice(0, 10);
+        const topDistByGrossSellAmt = [...allScrips].filter(s => s.sellAmount > 0).sort((x, y) => y.sellAmount - x.sellAmount).slice(0, 10);
+        const topDistByGrossSellQty = [...allScrips].filter(s => (s.sellQty || 0) > 0).sort((x, y) => (y.sellQty || 0) - (x.sellQty || 0)).slice(0, 10);
 
         const buyAmount = Math.round(val.buy);
         const sellAmount = Math.round(val.sell);
@@ -568,6 +590,12 @@ export function BrokerFlowDominanceService({
           topScrips: topScrips.length > 0 ? topScrips : undefined,
           topAccumulation: topAccumulation.length > 0 ? topAccumulation : undefined,
           topDistribution: topDistribution.length > 0 ? topDistribution : undefined,
+          topByNetQty: topByNetQty.length > 0 ? topByNetQty : undefined,
+          topByGrossBuyAmt: topByGrossBuyAmt.length > 0 ? topByGrossBuyAmt : undefined,
+          topByGrossBuyQty: topByGrossBuyQty.length > 0 ? topByGrossBuyQty : undefined,
+          topDistByNetQty: topDistByNetQty.length > 0 ? topDistByNetQty : undefined,
+          topDistByGrossSellAmt: topDistByGrossSellAmt.length > 0 ? topDistByGrossSellAmt : undefined,
+          topDistByGrossSellQty: topDistByGrossSellQty.length > 0 ? topDistByGrossSellQty : undefined,
         });
       });
 
@@ -615,8 +643,8 @@ export function BrokerFlowDominanceService({
         const topBInfo = MAJOR_BROKERS.find(b => b.id === topBId);
         const topBName = rawB[0]?.brokerName || rawB[0]?.name || (topBInfo ? topBInfo.name : (topBId && topBId !== '—' ? `Broker #${topBId}` : 'Dispersed Flow'));
 
-        const bcr3Buy = Number(cachedRba.bcr3BuyPct || (cachedRba.crb5 ? cachedRba.crb5 * 100 : 0)) || 0;
-        const bcr3Sell = Number(cachedRba.bcr3SellPct || 0);
+        const bcr3Buy = Number(cachedRba.bcr3BuyPct ?? cachedRba.bcr5BuyPct ?? (cachedRba.crb5 ? cachedRba.crb5 * 100 : 0)) || 0;
+        const bcr3Sell = Number(cachedRba.bcr3SellPct ?? cachedRba.scr3SellPct ?? cachedRba.scr3NetPct ?? 0);
         const buyerBrokers = rawB.slice(0, 3).map((b: any) => `#${b.broker || b.brokerId || b.id}`);
         const sellerBrokers = rawS.slice(0, 3).map((s: any) => `#${s.broker || s.brokerId || s.id}`);
 

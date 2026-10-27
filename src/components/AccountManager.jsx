@@ -8,6 +8,7 @@ import { MEROSHARE_DP_LIST, pullMeroShareLivePortfolio } from '../services/meroS
 import { sanitizeMeroShareHoldings, stripHoldingForStorage, safeStorageSetItem } from '../utils/calculations';
 import { syncUserDataToCloud } from '../utils/firebase';
 import { Capacitor } from '@capacitor/core';
+import { encryptProfileCredentials, decryptProfileCredentials } from '../utils/credentialCrypto';
 
 // localStorage key for bulk IPO accounts
 const BULK_ACCOUNTS_KEY = 'nepse_hub_bulk_ipo_accounts';
@@ -17,8 +18,8 @@ function loadLocalAccounts(userId = null) {
     const bulkRaw = localStorage.getItem(BULK_ACCOUNTS_KEY);
     const userProfileKey = userId ? `nepse_hub_${userId}_profiles` : null;
     const userRaw = userProfileKey ? localStorage.getItem(userProfileKey) : null;
-    const bulk = bulkRaw ? JSON.parse(bulkRaw) : [];
-    const userAccs = userRaw ? JSON.parse(userRaw) : [];
+    const bulk = bulkRaw ? JSON.parse(bulkRaw).map(a => decryptProfileCredentials(a, userId || 'guest_local')) : [];
+    const userAccs = userRaw ? JSON.parse(userRaw).map(a => decryptProfileCredentials(a, userId || 'guest_local')) : [];
 
     const merged = Array.isArray(bulk) ? [...bulk] : [];
     if (Array.isArray(userAccs)) {
@@ -38,8 +39,9 @@ function loadLocalAccounts(userId = null) {
   }
 }
 
-function saveLocalAccounts(accounts) {
-  safeStorageSetItem(BULK_ACCOUNTS_KEY, accounts);
+function saveLocalAccounts(accounts, userId = 'guest_local') {
+  const encryptedAccounts = (accounts || []).map(a => encryptProfileCredentials(a, userId));
+  safeStorageSetItem(BULK_ACCOUNTS_KEY, encryptedAccounts);
 }
 
 export default function AccountManager({ userId = 'guest_local' }) {
@@ -164,9 +166,10 @@ export default function AccountManager({ userId = 'guest_local' }) {
         const saved = localStorage.getItem(profileKey) || '[]';
         const existingProfiles = JSON.parse(saved);
         updatedProfiles = [...existingProfiles.filter(p => p.boid !== boid), newAccount];
-        safeStorageSetItem(profileKey, JSON.stringify(updatedProfiles));
-        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(updatedProfiles) }));
-        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: updatedProfiles } }));
+        const encryptedProfiles = updatedProfiles.map(p => encryptProfileCredentials(p, userId));
+        safeStorageSetItem(profileKey, JSON.stringify(encryptedProfiles));
+        window.dispatchEvent(new StorageEvent('storage', { key: profileKey, newValue: JSON.stringify(encryptedProfiles) }));
+        window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: profileKey, profiles: encryptedProfiles } }));
       } catch (localErr) {
         console.warn('[AccountManager Sync]:', localErr.message);
       }

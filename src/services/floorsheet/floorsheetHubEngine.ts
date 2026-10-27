@@ -151,25 +151,39 @@ export function enrichFloorsheetContracts(
   });
 
   const chronological = [...filtered].sort((a, b) => {
+    const dA = String(a.tradeDate ?? a.trade_date ?? a.businessDate ?? "");
+    const dB = String(b.tradeDate ?? b.trade_date ?? b.businessDate ?? "");
+    if (dA && dB && dA !== dB) return dA.localeCompare(dB);
+    const tA = String(a.tradeTime ?? a.trade_time ?? "");
+    const tB = String(b.tradeTime ?? b.trade_time ?? "");
+    if (tA && tB && tA !== tB) return tA.localeCompare(tB);
     const cA = String(a.contractNo ?? a.contract_no ?? "");
     const cB = String(b.contractNo ?? b.contract_no ?? "");
     return cA.localeCompare(cB, undefined, { numeric: true });
   });
 
+  let prevDate: string | null = null;
   let prevRate: number | null = null;
   let lastDirection: "BUY" | "SELL" | "NEUTRAL" = "NEUTRAL";
+  const seenContracts = new Set<string>();
+  const enriched: EnrichedFloorsheetContract[] = [];
 
-  const enriched: EnrichedFloorsheetContract[] = chronological.map((row, idx) => {
-    const contractNo = String(row.contractNo ?? row.contract_no ?? `FS-${idx + 1}`);
-    const symbol =
+  for (let idx = 0; idx < chronological.length; idx++) {
+    const row = chronological[idx];
+    const contractNo = String(row.contractNo ?? row.contract_no ?? `FS-${idx + 1}`).trim();
+    if (seenContracts.has(contractNo)) continue;
+    seenContracts.add(contractNo);
+
+    const symbol = String(
       resolveValidNepseSymbol(row.symbol ?? row.stockSymbol, fallbackSymbol) ||
-      fallbackSymbol;
+      fallbackSymbol
+    ).toUpperCase().trim();
     const tradeDate = String(
       row.tradeDate ??
         row.trade_date ??
         row.businessDate ??
         new Date().toISOString().slice(0, 10)
-    );
+    ).slice(0, 10);
     const tradeTime = String(row.tradeTime ?? row.trade_time ?? "");
     const buyerBroker = Math.round(
       safeNum(
@@ -189,13 +203,26 @@ export function enrichFloorsheetContracts(
     const kitta = Math.round(
       safeNum(row.kitta ?? row.quantity ?? row.contractQuantity, 0)
     );
+    if (kitta <= 0) continue;
+
     const rate = safeNum(row.rate ?? row.price ?? row.contractRate, 0);
-    const amount = safeNum(
-      row.amount ?? row.contractAmount,
-      Number((kitta * rate).toFixed(2))
-    );
+    const rawAmount = safeNum(row.amount ?? row.contractAmount, 0);
+    const expectedAmount = kitta > 0 && rate > 0 ? Number((kitta * rate).toFixed(2)) : 0;
+    const amount =
+      expectedAmount > 0 && (rawAmount <= 0 || Math.abs(rawAmount - expectedAmount) > Math.max(1, expectedAmount * 0.01))
+        ? expectedAmount
+        : rawAmount > 0
+        ? Number(rawAmount.toFixed(2))
+        : expectedAmount;
+
+    if (tradeDate !== prevDate) {
+      prevDate = tradeDate;
+      prevRate = null;
+      lastDirection = "NEUTRAL";
+    }
 
     let aggressor: "BUY" | "SELL" | "NEUTRAL" = lastDirection;
+    const existingAgg = String((row as Record<string, unknown>).aggressor ?? (row as Record<string, unknown>).aggressor_side ?? "").toUpperCase();
     if (prevRate !== null && rate > 0) {
       if (rate > prevRate) {
         aggressor = "BUY";
@@ -203,7 +230,12 @@ export function enrichFloorsheetContracts(
       } else if (rate < prevRate) {
         aggressor = "SELL";
         lastDirection = "SELL";
+      } else if (existingAgg === "BUY" || existingAgg === "SELL" || existingAgg === "NEUTRAL") {
+        aggressor = existingAgg as "BUY" | "SELL" | "NEUTRAL";
       }
+    } else if (existingAgg === "BUY" || existingAgg === "SELL" || existingAgg === "NEUTRAL") {
+      aggressor = existingAgg as "BUY" | "SELL" | "NEUTRAL";
+      lastDirection = aggressor;
     }
     if (rate > 0) prevRate = rate;
 
@@ -211,7 +243,7 @@ export function enrichFloorsheetContracts(
     const isWhalePrint = kitta >= 200 || amount >= 100_000;
     const isMegaBlock = kitta >= 500 || amount >= 500_000;
 
-    return {
+    enriched.push({
       contractNo,
       symbol,
       tradeDate,
@@ -225,8 +257,8 @@ export function enrichFloorsheetContracts(
       isInternalCross,
       isWhalePrint,
       isMegaBlock,
-    };
-  });
+    });
+  }
 
   return enriched.reverse();
 }
@@ -550,22 +582,41 @@ export function buildUnifiedStockTabTelemetry(params: {
 function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) {
   const map = new Map<
     number,
-    { brokerId: number; buyKitta: number; sellKitta: number; trades: number; buyAmount: number; sellAmount: number }
+    {
+      brokerId: number;
+      buyKitta: number;
+      sellKitta: number;
+      netKitta: number;
+      crossKitta: number;
+      trades: number;
+      buyAmount: number;
+      sellAmount: number;
+      netAmt: number;
+      avgBuyPrice: number;
+      avgSellPrice: number;
+    }
   >();
 
   for (const c of contracts) {
+    const isSelfTrade = c.buyerBroker > 0 && c.buyerBroker === c.sellerBroker;
     if (c.buyerBroker > 0) {
       const b = map.get(c.buyerBroker) || {
         brokerId: c.buyerBroker,
         buyKitta: 0,
         sellKitta: 0,
+        netKitta: 0,
+        crossKitta: 0,
         trades: 0,
         buyAmount: 0,
         sellAmount: 0,
+        netAmt: 0,
+        avgBuyPrice: 0,
+        avgSellPrice: 0,
       };
       b.buyKitta += c.kitta;
       b.buyAmount += c.amount;
       b.trades += 1;
+      if (isSelfTrade) b.crossKitta += c.kitta;
       map.set(c.buyerBroker, b);
     }
     if (c.sellerBroker > 0) {
@@ -573,16 +624,28 @@ function aggregateBrokersFromContracts(contracts: EnrichedFloorsheetContract[]) 
         brokerId: c.sellerBroker,
         buyKitta: 0,
         sellKitta: 0,
+        netKitta: 0,
+        crossKitta: 0,
         trades: 0,
         buyAmount: 0,
         sellAmount: 0,
+        netAmt: 0,
+        avgBuyPrice: 0,
+        avgSellPrice: 0,
       };
       s.sellKitta += c.kitta;
       s.sellAmount += c.amount;
-      s.trades += 1;
+      // Do not double-count trade count when buyerBroker === sellerBroker
+      if (!isSelfTrade) s.trades += 1;
       map.set(c.sellerBroker, s);
     }
   }
 
-  return Array.from(map.values());
+  return Array.from(map.values()).map((b) => ({
+    ...b,
+    netKitta: b.buyKitta - b.sellKitta,
+    netAmt: Number((b.buyAmount - b.sellAmount).toFixed(2)),
+    avgBuyPrice: b.buyKitta > 0 ? Number((b.buyAmount / b.buyKitta).toFixed(2)) : 0,
+    avgSellPrice: b.sellKitta > 0 ? Number((b.sellAmount / b.sellKitta).toFixed(2)) : 0,
+  }));
 }

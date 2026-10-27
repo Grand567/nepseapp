@@ -435,6 +435,208 @@ export async function sendTelegramPrimePickAlert(winner) {
 }
 
 /**
+ * Dispatches Phase 1: 10:15 AM Pre-Market Institutional Morning Radar
+ */
+export async function sendTelegramPreMarketScan({
+  sessionDate,
+  breadthAdv = 0,
+  breadthDec = 0,
+  breadthPct = 50,
+  isCashDefense = false,
+  nepseValue = '2,634.17',
+  nepseChange = '+8.23',
+  candidates = []
+} = {}) {
+  const dateStr = sessionDate || new Date().toISOString().slice(0, 10);
+  const breadthEmoji = isCashDefense ? '🛡️' : '🟢';
+  const breadthStatus = isCashDefense
+    ? '⚠️ CASH DEFENSE ACTIVE (Hold 70–80% Cash)'
+    : '✅ GREEN LIGHT: Healthy Breadth & Capital Deployment';
+
+  const candidateLines = candidates.length > 0
+    ? candidates.map((c, idx) => {
+        return [
+          `<b>${idx + 1}. <code>${c.symbol}</code></b> (${c.sector || 'Equities'})`,
+          `• LTP: Rs. ${c.ltp} | Base Pivot: Rs. ${c.basePrice || c.ltp}`,
+          `• 🎯 Pullback Buy Zone: Rs. ${c.entryLow} – Rs. ${c.entryHigh}`,
+          `• ⚠️ Chase Cap (+2.5% max): Rs. ${c.chaseCap}`,
+          `• 🛡️ Stop-Loss Floor: Rs. ${c.stopLoss} (-${c.slPct || '4.8'}%)`,
+          `• 🚀 Target 1: Rs. ${c.target1} (+${c.t1Pct || '9.6'}%) | T2: Rs. ${c.target2}`,
+          `• Score: <b>${c.score || c.setupScore || 85}/100</b> | Float: ${c.floatM || '<15'}M shares`
+        ].join('\n');
+      }).join('\n\n')
+    : '<i>No candidates met all 8 institutional gates today. Preserving 100% cash!</i>';
+
+  const msg = [
+    `🌅 <b>DRAVYASHREE PRE-MARKET SCAN (PHASE 1)</b>`,
+    `<b>Date:</b> ${dateStr} | <b>Time:</b> 10:15 AM NPT`,
+    `──────────────────────────`,
+    `📊 <b>NEPSE Composite:</b> ${nepseValue} (${Number(nepseChange || 0) >= 0 ? '+' : ''}${nepseChange})`,
+    `📈 <b>Market Breadth:</b> ${breadthAdv} Adv / ${breadthDec} Dec (${breadthPct}% Bullish)`,
+    `${breadthEmoji} <b>Directive:</b> ${breadthStatus}`,
+    `──────────────────────────`,
+    `👑 <b>QUALIFIED 8-GATE CANDIDATES:</b>`,
+    candidateLines,
+    `──────────────────────────`,
+    `📌 <b>Execution Notice:</b> Pre-open depth check begins at 10:30 AM. Do NOT place market buy orders. Limit orders only!`
+  ].join('\n');
+
+  return await sendTelegramMessage(msg);
+}
+
+/**
+ * Dispatches Phase 2: 10:50 AM Pre-Open Order Book Gate & Chase Cap Check
+ */
+export async function sendTelegramPreOpenGate({
+  sessionDate,
+  symbol,
+  indicativeOpen,
+  basePivot,
+  chaseCap,
+  gapPct,
+  obir = '+0.00',
+  bidVolume = 0,
+  askVolume = 0,
+  verdict = 'CLEAR'
+} = {}) {
+  const isAbort = verdict === 'ABORT' || gapPct > 2.5;
+  const header = isAbort
+    ? `🚨 <b>DRAVYASHREE PRE-OPEN GATE: ABORT ORDER ($${symbol})</b>`
+    : `✅ <b>DRAVYASHREE PRE-OPEN GATE: GREEN LIGHT ($${symbol})</b>`;
+
+  const verdictText = isAbort
+    ? `❌ <b>VERDICT: ABORT / DO NOT CHASE</b>\nPrice gapped +${gapPct}% (exceeds +2.5% Chase Cap of Rs. ${chaseCap}). Chasing exposes your trade to the T+2 settlement dump trap!`
+    : `🟢 <b>VERDICT: CLEAR TO PLACE LIMIT ORDER</b>\nIndicative open is within the +2.5% safe band with positive buyer depth (OBIR = ${obir}).`;
+
+  const msg = [
+    header,
+    `<b>Session:</b> Pre-Open Final Check (10:50 AM NPT)`,
+    `──────────────────────────`,
+    `<b>Scrip:</b> <code>${symbol}</code>`,
+    `• Base Pivot: Rs. ${basePivot}`,
+    `• Indicative Open: Rs. ${indicativeOpen} (${Number(gapPct) >= 0 ? '+' : ''}${gapPct}%)`,
+    `• ⚠️ Chase Cap Ceiling: Rs. ${chaseCap} (+2.5% max)`,
+    `• 📊 Order Book Imbalance (OBIR): <b>${obir}</b>`,
+    `• Depth: ${Number(bidVolume).toLocaleString()} Bids vs ${Number(askVolume).toLocaleString()} Asks`,
+    `──────────────────────────`,
+    verdictText,
+    `──────────────────────────`,
+    `<i>Continuous trading begins at 11:00 AM NPT. Limit orders strictly at pullback support.</i>`
+  ].join('\n');
+
+  return await sendTelegramMessage(msg);
+}
+
+/**
+ * Formats the Morning Stock Selection & Quantitative Confluence Trading Digest for Telegram.
+ */
+export function formatMorningDigestHtml(buyPicks = [], watchPicks = [], sessionDate = '', options = {}) {
+  const dateStr = sessionDate || new Date().toISOString().slice(0, 10);
+  const normalizedBuy = (Array.isArray(buyPicks) ? buyPicks : []).map(p => p.result || p);
+  const normalizedWatch = (Array.isArray(watchPicks) ? watchPicks : []).map(p => p.result || p);
+
+  const topBuys = normalizedBuy.slice(0, 5);
+  const topWatch = normalizedWatch.slice(0, 5);
+
+  const sections = [];
+
+  // Header
+  sections.push(
+    `🌅 <b>DRABYASHREE NEPSE: MORNING STOCK SELECTION DIGEST</b>\n` +
+    `📅 <b>Target Session:</b> <code>${dateStr}</code> | ⏰ <b>Dispatch:</b> Pre-Market (10:45 AM NPT)\n` +
+    `──────────────────────────`
+  );
+
+  // Buy Candidates Section
+  if (topBuys.length === 0) {
+    sections.push(
+      `🛡️ <b>CAPITAL PRESERVATION DIRECTIVE</b>\n` +
+      `• No scrips cleared the strict <b>Score ≥ 70</b> quantitative confluence gate today.\n` +
+      `• <b>Action:</b> Hold 100% Cash. Capital protected; do not force trades in uncertain regimes.`
+    );
+  } else {
+    sections.push(`🎯 <b>TOP QUALIFIED BUY SETUPS (Score ≥ 70):</b>`);
+
+    topBuys.forEach((res, idx) => {
+      const sym = res.symbol || 'STOCK';
+      const sector = res.sector || 'Equities';
+      const score = res.compositeScore ?? 70;
+      const conf = res.confidence ?? 80;
+      const bkd = res.scoreBreakdown || {};
+      const plan = res.executionPlan || {};
+      const entryZone = Array.isArray(plan.entryZone) ? plan.entryZone : [plan.entryLtp || 0, plan.entryLtp || 0];
+      const entryLtp = plan.entryLtp ?? entryZone[0] ?? 0;
+      const sl = plan.stopLoss ?? Math.round(entryLtp * 0.95);
+      const riskPct = plan.riskPct ?? (entryLtp > 0 ? (((entryLtp - sl) / entryLtp) * 100).toFixed(1) : '5.0');
+      const t1 = plan.target1 ?? Math.round(entryLtp * 1.10);
+      const t2 = plan.target2 ?? Math.round(entryLtp * 1.18);
+      const rrr = plan.riskRewardRatio ?? 2.0;
+      const sizing = plan.positionSizing || {};
+      const shares = sizing.sharesKitta ?? 10;
+      const capNpr = sizing.capitalRequiredNpr ?? (shares * entryLtp);
+      const maxRisk = sizing.maxRiskNpr ?? (shares * Math.max(0, entryLtp - sl));
+
+      const buyBlock = [
+        `<b>#${idx + 1} <code>${sym}</code></b> (${sector})`,
+        `• <b>Score:</b> <b>${score}/100</b> | Confidence: ${conf}%`,
+        `• <b>Confluence:</b> Broker: ${bkd.brokerFloorsheet ?? '-'} | Tech: ${bkd.technical ?? '-'} | Fund: ${bkd.fundamental ?? '-'} | Market: ${bkd.marketContext ?? '-'}`,
+        `• 📍 <b>Entry Zone:</b> Rs. ${entryZone[0]} – ${entryZone[1]} (LTP: Rs. ${entryLtp})`,
+        `• 🛡️ <b>Stop-Loss:</b> Rs. ${sl} (-${riskPct}%)`,
+        `• 🎯 <b>Targets:</b> T1: Rs. ${t1} | 🚀 T2: Rs. ${t2} (RRR: ${rrr}:1)`,
+        `• 💼 <b>Position Size:</b> <b>${shares} kitta</b> (~Rs. ${Math.round(capNpr).toLocaleString()} | Max Risk: Rs. ${Math.round(maxRisk).toLocaleString()})`
+      ].join('\n');
+
+      sections.push(buyBlock);
+    });
+
+    if (normalizedBuy.length > 5) {
+      sections.push(`<i>...and ${normalizedBuy.length - 5} more qualified setups available in Screener app.</i>`);
+    }
+  }
+
+  // Watchlist Section
+  sections.push(`──────────────────────────`);
+  if (topWatch.length > 0) {
+    const watchLines = topWatch.map((w) => {
+      const sym = w.symbol || 'STOCK';
+      const sector = w.sector || 'Equities';
+      const score = w.compositeScore ?? 55;
+      const ltp = w.executionPlan?.entryLtp || w.stock?.ltp || '-';
+      return `• <code>${sym}</code> (${sector}) — Score: <b>${score}/100</b> (LTP: Rs. ${ltp})`;
+    }).join('\n');
+    sections.push(`👀 <b>HIGH-CONFLUENCE WATCHLIST (Score 50–69):</b>\n${watchLines}`);
+  } else {
+    sections.push(`👀 <b>WATCHLIST:</b> <i>No secondary watchlist candidates today.</i>`);
+  }
+
+  // NEPSE Microstructure Rules Footer
+  sections.push(
+    `──────────────────────────\n` +
+    `📌 <b>NEPSE Microstructure & Settlement Safeguards:</b>\n` +
+    `• ⏳ <b>T+2 Demat Lock:</b> Cannot exit on Day 1 or Day 2. Sizing clamped to 1.5% max capital risk.\n` +
+    `• 🚦 <b>Pre-Open Order Rule:</b> Never place Market Orders. Place Limit Orders strictly within Entry Zone.\n` +
+    `• ⚡ <b>Circuit Bands:</b> Stops and targets clamped within ±15% trading limits.`
+  );
+
+  return sections.join('\n\n');
+}
+
+/**
+ * Dispatches the Morning Stock Selection Digest to Telegram.
+ */
+export async function sendMorningStockSelectionDigest(buyPicks = [], watchPicks = [], sessionDate = '', options = {}) {
+  const html = formatMorningDigestHtml(buyPicks, watchPicks, sessionDate, options);
+  const res = await sendTelegramMessage(html, 'HTML');
+  return {
+    ...res,
+    messageLength: html.length,
+    sessionDate: sessionDate || new Date().toISOString().slice(0, 10),
+    buyCount: Array.isArray(buyPicks) ? buyPicks.length : 0,
+    watchCount: Array.isArray(watchPicks) ? watchPicks.length : 0
+  };
+}
+
+/**
  * Dispatches a Real-Time Exit / Sell / Stop-Loss Protection Alert to Telegram
  */
 export async function sendTelegramExitAlert({
@@ -579,6 +781,11 @@ async function handleTelegramCommand(text, {
   // 2. PING
   if (lower === '/ping' || lower === 'ping') {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
+  }
+
+  // 2.5 PLAYBOOK / GUIDE
+  if (lower === '/playbook' || lower === '/guide' || lower === 'playbook' || lower === 'guide') {
+    return await sendTelegramInvestorPlaybook();
   }
 
   // 3. LIST / STATUS

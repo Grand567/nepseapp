@@ -1231,6 +1231,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [fsExporting, setFsExporting] = useState(false);
   const [fsExportNotice, setFsExportNotice] = useState('');
   const [realBrokerAnalysis, setRealBrokerAnalysis] = useState(null);
+  const [allTimeBrokerAnalysis, setAllTimeBrokerAnalysis] = useState(null);
   const [brokerAnalysisLoading, setBrokerAnalysisLoading] = useState(false);
   const [brokerDays, setBrokerDays] = useState(1);
   const [brokerDate, setBrokerDate] = useState('');
@@ -1667,6 +1668,22 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     let active = true;
     if (!d?.symbol) return;
 
+    // Reset all symbol-scoped states immediately to prevent cross-stock state leakage
+    setLiveQuote(null);
+    setAllTimeBrokerAnalysis(null);
+    setBrokerAccumData(null);
+    setDividendHistory(null);
+    setQuarterlyReports([]);
+    setLedgerTelemetry(null);
+    setAiResult('');
+    setHistoryFilterDate('');
+    setFloorsheetDate('');
+    setFloorsheetBuyerInput('');
+    setFloorsheetSellerInput('');
+    setFloorsheetAppliedBuyer('');
+    setFloorsheetAppliedSeller('');
+    setBrokerDate('');
+
     // Keep real historical data intact by initializing from snapshot/fundamentals cache immediately
     const cachedSnap = getSnapshotCache(d.symbol);
     const cachedFund = cachedSnap || getCachedStockFundamentals(d.symbol);
@@ -1725,7 +1742,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     setRealHistoryLoading(!cachedHist || cachedHist.length === 0);
     fetchRealPriceHistory(d.symbol, 500).then(data => {
       if (!active) return;
-      let fullHistory = (data && Array.isArray(data)) ? [...data] : [];
+      let fullHistory = (data && Array.isArray(data))
+        ? [...data].sort((a, b) => String(a.date || a.time || '').localeCompare(String(b.date || b.time || '')))
+        : [];
 
       const todayLtp = Number(d.ltp || d.closePrice || 0);
       const todayDate = d.businessDate || d.date || getLatestTradingDateStr();
@@ -1811,6 +1830,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       }
     }).catch(() => {});
 
+    // Prefetch authentic all-time multi-year broker accumulator ledger till today
+    fetchRealBrokerAnalysis(d.symbol, 'all').then(data => {
+      if (active && data) {
+        setAllTimeBrokerAnalysis(data);
+      }
+    }).catch(() => {});
+
     // Check breaking news for corporate alerts (Zero-Dividend risk, fresh dividend proposal)
     setCorporateAlert(null);
     fetchMarketNews().then(news => {
@@ -1873,8 +1899,17 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
   const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
     try {
-      const res = await fetchFromBackend(`/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, 6000);
-      if (res?.data && res.data.length > 0) return res;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const resp = await fetch(`/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (resp.ok) {
+        const res = await resp.json();
+        if (res?.data && res.data.length > 0) return res;
+      }
     } catch (_) {}
     const fallback = await fetchRealBrokerAnalysis(sym, days, { refresh: false }).catch(() => null);
     if (fallback?.topBuyers?.length || fallback?.brokers?.length) {
@@ -1900,7 +1935,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   // Broker Accumulation History: fetch when depth tab active or period selector changes
   useEffect(() => {
     if ((activeTab !== 'market_depth' && activeTab !== 'depth_broker') || !d?.symbol) return;
-    const daysMap = { '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60, '1W': 7, '1M': 30, '2M': 60, '3M': 90, '6M': 180, '1Y': 260, '500D': 500, '2Y/All': 500 };
+    const daysMap = {
+      '1D': 1, '5D': 5, '15D': 15, '30D': 30, '60D': 60,
+      '90D': 90, '180D': 180, '260D': 260, '500D': 500,
+      '1W': 7, '1M': 30, '2M': 60, '3M': 90, '6M': 180, '1Y': 260, '2Y/All': 500
+    };
     const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
     setBrokerAccumLoading(true);
     fetchRealBrokerAnalysis(d.symbol, days, { refresh: true })
@@ -2115,20 +2154,26 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
         .map(r => {
           const bBroker = String(r.buyerBroker || r.buyer || r.buyerMemberId || r.buyerBrokerCode || '').trim();
           const sBroker = String(r.sellerBroker || r.seller || r.sellerMemberId || r.sellerBrokerCode || '').trim();
+          const qty = Number(r.qty || r.quantity || r.kitta || 0);
+          const rate = Number(r.rate || 0);
+          const rawAmount = Number(r.amount || 0);
+          const amount = rawAmount > 0 ? rawAmount : +(qty * rate).toFixed(2);
           return {
-            id: r.contractId || r.id,
+            id: r.contractId || r.contractNo || r.id,
+            contractId: r.contractId || r.contractNo || r.id,
             buyer: bBroker,
             seller: sBroker,
             buyerBroker: bBroker,
             sellerBroker: sBroker,
             buyerBrokerName: r.buyerBrokerName || (bBroker ? getBrokerName(bBroker) : '—'),
             sellerBrokerName: r.sellerBrokerName || (sBroker ? getBrokerName(sBroker) : '—'),
-            qty: Number(r.qty || r.quantity || 0),
-            quantity: Number(r.qty || r.quantity || 0),
-            rate: Number(r.rate || 0),
-            amount: Number(r.amount || 0),
+            qty,
+            quantity: qty,
+            rate,
+            amount,
             time: r.businessDate || r.time || '',
-            symbol: r.stockSymbol || r.symbol || cleanSym,
+            symbol: String(r.stockSymbol || r.symbol || cleanSym).toUpperCase().trim(),
+            isSelfTrade: Boolean(bBroker && sBroker && bBroker === sBroker),
             isReal: true
           };
         });
@@ -2193,6 +2238,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           high: item.high,
           low: item.low,
           volume: item.volume,
+          turnover: item.turnover,
+          trades: item.trades,
+          change: item.change,
+          pChange: item.pChange,
           isToday: Boolean(item.isToday),
           sma200: sma200 != null ? Number(sma200.toFixed(2)) : null,
           sma50: sma50 != null ? Number(sma50.toFixed(2)) : null,
@@ -2426,6 +2475,72 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [waccInput, setWaccInput] = useState(String(Number((d.ltp || 350) * 0.92).toFixed(1)));
   const [holdType, setHoldType] = useState('individual_short');
   const [calcMode, setCalcMode] = useState('buy');
+  const [investorType, setInvestorType] = useState('INDIVIDUAL'); // 'INDIVIDUAL' | 'INSTITUTIONAL'
+  const [holdingPeriod, setHoldingPeriod] = useState('SHORT_TERM'); // 'SHORT_TERM' (<365d) | 'LONG_TERM' (>=365d)
+
+  useEffect(() => {
+    if (d?.ltp > 0) {
+      setPriceInput(String(d.ltp));
+      setWaccInput(String(Number(d.ltp * 0.92).toFixed(1)));
+    }
+    setInvestorType('INDIVIDUAL');
+    setHoldingPeriod('SHORT_TERM');
+  }, [d?.symbol]);
+
+  // Statutory NEPSE WACC & CGT Breakdown Helper
+  const computeNepseRoundTripTrade = useCallback(({
+    qty = 0,
+    buyWacc = 0,
+    sellPrice = 0,
+    investor = 'INDIVIDUAL',
+    horizon = 'SHORT_TERM',
+  }) => {
+    const cleanQty = Math.max(0, Math.round(Number(qty) || 0));
+    const cleanWacc = Math.max(0, Number(buyWacc) || 0);
+    const cleanSell = Math.max(0, Number(sellPrice) || 0);
+    const grossSellAmt = cleanQty * cleanSell;
+    const totalCostBasis = cleanQty * cleanWacc;
+
+    let commRate = 0.0036;
+    if (grossSellAmt > 10_000_000) commRate = 0.0024;
+    else if (grossSellAmt > 2_000_000) commRate = 0.0027;
+    else if (grossSellAmt > 500_000) commRate = 0.0031;
+    else if (grossSellAmt > 50_000) commRate = 0.0033;
+
+    const brokerCommission = cleanQty > 0 && grossSellAmt > 0 ? Math.max(10, grossSellAmt * commRate) : 0;
+    const sebonFee = grossSellAmt * 0.00015;
+    const dpFee = cleanQty > 0 ? 25.0 : 0;
+
+    const netSellBeforeTax = grossSellAmt - brokerCommission - sebonFee - dpFee;
+    const taxableGain = Math.max(0, netSellBeforeTax - totalCostBasis);
+
+    const cgtRate =
+      investor === 'INSTITUTIONAL'
+        ? 0.10
+        : horizon === 'LONG_TERM'
+          ? 0.05
+          : 0.075;
+
+    const cgtAmount = Number((taxableGain * cgtRate).toFixed(2));
+    const netReceivable = Number((netSellBeforeTax - cgtAmount).toFixed(2));
+    const netProfit = Number((netReceivable - totalCostBasis).toFixed(2));
+    const netRoiPct = totalCostBasis > 0 ? Number(((netProfit / totalCostBasis) * 100).toFixed(2)) : 0;
+
+    return {
+      grossSellAmt: Number(grossSellAmt.toFixed(2)),
+      totalCostBasis: Number(totalCostBasis.toFixed(2)),
+      commRatePct: Number((commRate * 100).toFixed(2)),
+      brokerCommission: Number(brokerCommission.toFixed(2)),
+      sebonFee: Number(sebonFee.toFixed(2)),
+      dpFee,
+      taxableGain: Number(taxableGain.toFixed(2)),
+      cgtRatePct: Number((cgtRate * 100).toFixed(1)),
+      cgtAmount,
+      netReceivable,
+      netProfit,
+      netRoiPct,
+    };
+  }, []);
 
   const calcResult = useMemo(() => {
     const qty = parseFloat(qtyInput) || 0;
@@ -2433,9 +2548,23 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const wacc = parseFloat(waccInput) || 0;
     if (!qty || !price) return null;
     if (calcMode === 'buy') return calculateBuyDetails(qty, price);
-    if (calcMode === 'sell') return calculateSellDetails(qty, price, wacc, holdType);
+    if (calcMode === 'sell') {
+      const rt = computeNepseRoundTripTrade({
+        qty,
+        buyWacc: wacc,
+        sellPrice: price,
+        investor: investorType,
+        horizon: holdingPeriod,
+      });
+      return {
+        ...rt,
+        commission: rt.brokerCommission,
+        shareValue: rt.grossSellAmt,
+        profit: rt.netProfit,
+      };
+    }
     return null;
-  }, [qtyInput, priceInput, waccInput, calcMode, holdType]);
+  }, [qtyInput, priceInput, waccInput, calcMode, investorType, holdingPeriod, computeNepseRoundTripTrade]);
 
   // AI State
   const [aiLoading, setAiLoading] = useState(false);
@@ -2514,23 +2643,35 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const multiSessionFootprint = useMemo(() => {
     if (!d?.symbol) return null;
     const sessions = [];
-    if (realFloorsheet) {
-      if (Array.isArray(realFloorsheet.trades)) sessions.push(realFloorsheet.trades);
-      else if (Array.isArray(realFloorsheet)) sessions.push(realFloorsheet);
+    if (Array.isArray(floorsheet) && floorsheet.length > 0) {
+      sessions.push(floorsheet);
+    } else if (realFloorsheet) {
+      if (Array.isArray(realFloorsheet.rows) && realFloorsheet.rows.length > 0) sessions.push(realFloorsheet.rows);
+      else if (Array.isArray(realFloorsheet.trades) && realFloorsheet.trades.length > 0) sessions.push(realFloorsheet.trades);
+      else if (Array.isArray(realFloorsheet) && realFloorsheet.length > 0) sessions.push(realFloorsheet);
     }
     if (sessions.length === 0 && realBrokerAnalysis) {
+      const brokerList = Array.isArray(realBrokerAnalysis.brokers) && realBrokerAnalysis.brokers.length > 0
+        ? realBrokerAnalysis.brokers
+        : [...(realBrokerAnalysis.topBuyers || []), ...(realBrokerAnalysis.topSellers || [])];
       const synthTrades = [];
-      (realBrokerAnalysis.topBuyers || []).forEach(b => {
-        synthTrades.push({ buyer: b.broker || b.brokerId, qty: b.volume || b.kitta || 0, rate: d.ltp || 0 });
-      });
-      (realBrokerAnalysis.topSellers || []).forEach(s => {
-        synthTrades.push({ seller: s.broker || s.brokerId, qty: s.volume || s.kitta || 0, rate: d.ltp || 0 });
+      const seenBrokers = new Set();
+      brokerList.forEach(b => {
+        const bId = String(b.broker || b.brokerId || b.id || '').trim();
+        if (!bId || seenBrokers.has(bId)) return;
+        seenBrokers.add(bId);
+        const bQty = Number(b.buyQty ?? b.volume ?? b.kitta ?? 0);
+        const sQty = Number(b.sellQty ?? 0);
+        const bRate = Number(b.avgBuyRate || (b.buyAmt && bQty > 0 ? b.buyAmt / bQty : d.ltp || 0));
+        const sRate = Number(b.avgSellRate || (b.sellAmt && sQty > 0 ? b.sellAmt / sQty : d.ltp || 0));
+        if (bQty > 0) synthTrades.push({ buyer: bId, buyerBroker: bId, qty: bQty, quantity: bQty, rate: bRate, amount: bQty * bRate });
+        if (sQty > 0) synthTrades.push({ seller: bId, sellerBroker: bId, qty: sQty, quantity: sQty, rate: sRate, amount: sQty * sRate });
       });
       if (synthTrades.length > 0) sessions.push(synthTrades);
     }
     if (sessions.length === 0) return null;
     return calculateMultiSessionBrokerFootprint(sessions, d.symbol, d.ltp);
-  }, [d?.symbol, d?.ltp, realFloorsheet, realBrokerAnalysis]);
+  }, [d?.symbol, d?.ltp, floorsheet, realFloorsheet, realBrokerAnalysis]);
 
   // ── Category Definitions for Organized Navigation (Share Hub, Zerodha Kite & Groww Reference) ──
   const tabCategories = useMemo(() => [
@@ -3699,6 +3840,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>Top Holding Broker</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
                       {(() => {
+                        const topHolderAllTime = allTimeBrokerAnalysis?.topHoldingBroker || (allTimeBrokerAnalysis?.topHoldings || [])[0];
+                        if (topHolderAllTime) {
+                          const qty = Number(topHolderAllTime.netQty ?? topHolderAllTime.holdQty ?? topHolderAllTime.totalHeldQty ?? 0);
+                          const bId = topHolderAllTime.broker || topHolderAllTime.id || topHolderAllTime.brokerId;
+                          return `#${bId} (${qty.toLocaleString()} sh)`;
+                        }
                         const topHolder = (brokerConcentration.topNetAccumulators || brokerConcentration.topBuyerBrokers || [])[0];
                         return topHolder ? `#${topHolder.broker} (${Number(topHolder.netQty || topHolder.volume || 0).toLocaleString()} sh)` : '—';
                       })()}
@@ -3707,13 +3854,21 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Total Shares Held</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#10b981', marginTop: 2 }}>
-                      {Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || (brokerConcentration.topNetAccumulators || []).reduce((s, b) => s + (b.netQty || 0), 0)).toLocaleString()} sh
+                      {(() => {
+                        const totalAllTime = Number(allTimeBrokerAnalysis?.totalSharesHeldTillNow || 0);
+                        if (totalAllTime > 0) return `${totalAllTime.toLocaleString()} sh`;
+                        return `${Number(realBrokerAnalysis?.totalSharesHeldTillNow || realBrokerAnalysis?.summary?.totalHoldQty || (brokerConcentration.topNetAccumulators || []).reduce((s, b) => s + (b.netQty || 0), 0)).toLocaleString()} sh`;
+                      })()}
                     </div>
                   </div>
                   <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase' }}>Avg Buying Price</div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#ffffff', marginTop: 2 }}>
-                      {Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—')}
+                      {(() => {
+                        const avgBuyAllTime = Number(allTimeBrokerAnalysis?.avgBuyingPrice || allTimeBrokerAnalysis?.avgAccumulatorBuyPrice || allTimeBrokerAnalysis?.topHoldingBroker?.avgBuyPrice || 0);
+                        if (avgBuyAllTime > 0) return `Rs. ${avgBuyAllTime.toFixed(1)}`;
+                        return Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice || 0) > 0 ? `Rs. ${Number(realBrokerAnalysis?.avgAccumulatorBuyPrice || realBrokerAnalysis?.summary?.avgAccumulatorBuyPrice).toFixed(1)}` : (d?.ltp ? `Rs. ${fmt(d.ltp)}` : '—');
+                      })()}
                     </div>
                   </div>
                   <div style={{ background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 10, padding: '8px 10px' }}>
@@ -3733,26 +3888,32 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                       <span>BCR₃: {brokerConcentration.bcr3BuyPct ?? 0}%</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])).slice(0, 3).map((b, idx) => {
-                        const qtyVal = b.netQty !== undefined ? b.netQty : b.volume;
-                        return (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
-                            <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ color: '#94a3b8', fontSize: 12 }}>#{b.broker}</span>
-                              <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={b.brokerName}>
-                                {b.brokerName}
+                      {(() => {
+                        const accList = (allTimeBrokerAnalysis?.topHoldings?.length ? allTimeBrokerAnalysis.topHoldings : (brokerConcentration.topNetAccumulators?.length ? brokerConcentration.topNetAccumulators : (brokerConcentration.topBuyerBrokers || [])));
+                        if (!accList || accList.length === 0) {
+                          return <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>;
+                        }
+                        return accList.slice(0, 3).map((b, idx) => {
+                          const qtyVal = b.netQty !== undefined ? b.netQty : (b.holdQty !== undefined ? b.holdQty : b.volume);
+                          const bId = b.broker || b.id || b.brokerId;
+                          const bName = b.brokerName || b.name || getBrokerName(bId);
+                          const amtVal = b.holdAmt || b.amount || b.netAmt || b.buyAmt || 0;
+                          return (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5 }}>
+                              <span style={{ color: '#ffffff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ color: '#94a3b8', fontSize: 12 }}>#{bId}</span>
+                                <span style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={bName}>
+                                  {bName}
+                                </span>
                               </span>
-                            </span>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ color: '#34d399', fontWeight: 800 }}>+{Number(qtyVal || 0).toLocaleString()}</span>
-                              <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(b.amount || b.netAmt || b.buyAmt || 0)})</span>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ color: '#34d399', fontWeight: 800 }}>+{Number(qtyVal || 0).toLocaleString()}</span>
+                                <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 6 }}>({formatBrokerAmount(amtVal)})</span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                      {(!brokerConcentration.topNetAccumulators?.length && (!brokerConcentration.topBuyerBrokers || brokerConcentration.topBuyerBrokers.length === 0)) && (
-                        <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '8px 0' }}>No buyer records</div>
-                      )}
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -4397,8 +4558,10 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               const bias = ba?.smartMoneyBias || bc?.smartMoneyBias || (ba?.adSignal ? (ba.adSignal === 'Accumulation' ? 'Institutional Accumulation' : ba.adSignal === 'Distribution' ? 'Operator Distribution' : 'Balanced Flow') : '');
               const bcr3Buy = Number(ba?.bcr3BuyPct ?? bc?.bcr3BuyPct ?? 0);
               const bcr3Sell = Number(ba?.bcr3SellPct ?? bc?.bcr3SellPct ?? 0);
-              const totalBuyVol = Number(ba?.totalBuyVolume || ba?.totalVolume || bc?.totalBuyVolume || 0);
-              const totalSellVol = Number(ba?.totalSellVolume || bc?.totalSellVolume || ba?.totalVolume || 0);
+              const netAccumSum = netAccums.reduce((s, b) => s + Math.max(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || b.volume || 0) - (b.sellQty || 0)))), 0);
+              const netDistSum = netDists.reduce((s, b) => s + Math.abs(Math.min(0, Number(b.netQty !== undefined ? b.netQty : ((b.buyQty || 0) - (b.sellQty || b.volume || 0))))), 0);
+              const totalBuyVol = netAccumSum > 0 ? netAccumSum : Number(ba?.totalBuyVolume || ba?.totalVolume || bc?.totalBuyVolume || 0);
+              const totalSellVol = netDistSum > 0 ? netDistSum : Number(ba?.totalSellVolume || bc?.totalSellVolume || ba?.totalVolume || 0);
 
               const biasColor = bias.includes('Cornering') || bias.includes('Accumulation') || bias.includes('Institutional') ? '#10b981' : bias.includes('Offloading') || bias.includes('Distribution') ? '#f43f5e' : '#94a3b8';
               const PERIOD_ITEMS = [
@@ -4465,12 +4628,20 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 }
               }
 
-              // Whale VWAP computation (weighted avg rate of top accumulators)
+              // Whale VWAP computation (strictly Volume-Weighted Average Price: SUM(buyAmt) / SUM(buyQty) across top 5 accumulators)
               const whaleVwap = (() => {
                 const topB = netAccums.slice(0, 5);
-                const totAmt = topB.reduce((s, b) => s + (Number(b.avgBuyRate || (b.buyAmt && b.buyQty ? b.buyAmt / b.buyQty : 0)) * Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0)), 0);
-                const totQty = topB.reduce((s, b) => s + Number(b.netQty !== undefined ? b.netQty : b.buyQty || 0), 0);
-                return totQty > 0 ? +(totAmt / totQty).toFixed(1) : null;
+                let totAmt = 0;
+                let totQty = 0;
+                topB.forEach(b => {
+                  const grossBuyQty = Number(b.buyQty || b.volume || b.netQty || 0);
+                  const grossBuyAmt = Number(b.buyAmt || b.amount || (grossBuyQty * Number(b.avgBuyRate || 0)));
+                  if (grossBuyQty > 0 && grossBuyAmt > 0) {
+                    totQty += grossBuyQty;
+                    totAmt += grossBuyAmt;
+                  }
+                });
+                return totQty > 0 ? +(totAmt / totQty).toFixed(2) : null;
               })();
               const currentLtp = Number(d?.ltp || 0);
               const diffFromWhale = (whaleVwap && currentLtp > 0) ? +(((currentLtp - whaleVwap) / whaleVwap) * 100).toFixed(1) : null;
@@ -4796,7 +4967,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           ])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 30);
 
           const activeFsDate = floorsheetDate || realFloorsheet?.businessDate || fsAvailDates[0] || '';
-          const fsRows = Array.isArray(realFloorsheet?.rows) ? realFloorsheet.rows : floorsheet;
+          const fsRows = filteredFloorsheet.length > 0 || floorsheetMode !== 'all' || brokerFilter.trim() !== ''
+            ? filteredFloorsheet
+            : floorsheet;
           const totalFsPages = Math.max(1, Number(realFloorsheet?.totalPages || 1));
           const totalFsAmount = Number(realFloorsheet?.totalAmount) || fsRows.reduce((s, r) => s + Number(r.amount || 0), 0);
           const totalFsQty = Number(realFloorsheet?.totalQty) || fsRows.reduce((s, r) => s + Number(r.qty || r.quantity || 0), 0);
@@ -5811,6 +5984,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             <div style={{ marginBottom: 16 }}>
               <StockBrokerAnalysisTab
                 brokerData={realBrokerAnalysis}
+                allTimeHoldingData={allTimeBrokerAnalysis}
                 floorsheetData={realFloorsheet}
                 symbol={d.symbol}
                 ltp={d.ltp}
@@ -6099,11 +6273,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 </thead>
                 <tbody>
                   {(() => {
-                    const reversedList = [...(history12M || [])].reverse();
+                    // Enforce reverse chronological order for table (latest session at index 0) with O(1) prevClose binding
+                    const rawReversed = [...(history12M || [])].reverse();
+                    const reversedList = rawReversed.map((row, rIdx) => ({
+                      ...row,
+                      _revIdx: rIdx,
+                      _prevClose: Number(rawReversed[rIdx + 1]?.close ?? row.previousClose ?? row.open ?? row.close ?? 0),
+                    }));
                     const displayHistory = historyFilterDate
                       ? reversedList.filter(h => String(h.date || '').startsWith(historyFilterDate))
                       : reversedList;
-
                     if (displayHistory.length === 0) {
                       return (
                         <tr>
@@ -6113,40 +6292,45 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                         </tr>
                       );
                     }
-
                     return displayHistory.map((h, idx) => {
-                      const prevRow = reversedList[reversedList.indexOf(h) + 1];
-                      const prevCl = Number(prevRow?.close || h.open || h.close || 0);
-                      const chPct = prevCl > 0 ? +(((Number(h.close) - prevCl) / prevCl) * 100).toFixed(2) : 0;
-                      const rowBull = chPct > 0 || (chPct === 0 && h.close >= h.open);
+                      const closeVal = Number(h.close ?? h.closePrice ?? 0);
+                      const openVal = Number(h.open ?? h.openPrice ?? closeVal);
+                      const highVal = Number(h.high ?? h.highPrice ?? closeVal);
+                      const lowVal = Number(h.low ?? h.lowPrice ?? closeVal);
+                      const volVal = Number(h.volume ?? h.totalVolume ?? 0);
+                      const prevCl = h._prevClose > 0 ? h._prevClose : openVal || closeVal;
+                      const chPct = prevCl > 0 ? +(((closeVal - prevCl) / prevCl) * 100).toFixed(2) : 0;
+                      const rowBull = chPct > 0 || (chPct === 0 && closeVal >= openVal);
                       const rowBear = chPct < 0;
                       const rowBg = rowBull
                         ? 'rgba(16, 185, 129, 0.08)'
                         : rowBear
                           ? 'rgba(244, 63, 94, 0.08)'
                           : 'rgba(56, 189, 248, 0.05)';
-                      const turnoverVal = Number(h.turnover || (Number(h.close || 0) * Number(h.volume || 0)));
-
+                      const turnoverVal = Number(
+                        h.turnover ?? h.totalTurnover ?? (Number(h.vwap || closeVal || 0) * volVal)
+                      );
+                      const isLatestRow = Boolean(h.isToday ?? (h._revIdx === 0));
                       return (
                         <tr key={h.date || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: rowBg }}>
                           <td style={{ padding: '9px 8px', color: '#ffffff', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{h.date}</span>
-                              {h.isToday && (
+                              {isLatestRow && (
                                 <span style={{ fontSize: 10.5, background: 'rgba(16, 185, 129, 0.25)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.5)', padding: '1px 5px', borderRadius: 4, fontWeight: 800 }}>
                                   LATEST
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td style={{ padding: '9px 6px', textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{fmt(h.open)}</td>
-                          <td style={{ padding: '9px 6px', textAlign: 'right', color: 'var(--bull)', fontFamily: 'var(--font-mono)' }}>{fmt(h.high)}</td>
-                          <td style={{ padding: '9px 6px', textAlign: 'right', color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{fmt(h.low)}</td>
-                          <td style={{ padding: '9px 8px', textAlign: 'right', fontWeight: 800, color: rowBull ? 'var(--bull)' : rowBear ? '#F43F5E' : '#38bdf8', fontFamily: 'var(--font-mono)' }}>{fmt(h.close)}</td>
+                          <td style={{ padding: '9px 6px', textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{fmt(openVal)}</td>
+                          <td style={{ padding: '9px 6px', textAlign: 'right', color: 'var(--bull)', fontFamily: 'var(--font-mono)' }}>{fmt(highVal)}</td>
+                          <td style={{ padding: '9px 6px', textAlign: 'right', color: '#F43F5E', fontFamily: 'var(--font-mono)' }}>{fmt(lowVal)}</td>
+                          <td style={{ padding: '9px 8px', textAlign: 'right', fontWeight: 800, color: rowBull ? 'var(--bull)' : rowBear ? '#F43F5E' : '#38bdf8', fontFamily: 'var(--font-mono)' }}>{fmt(closeVal)}</td>
                           <td style={{ padding: '9px 6px', textAlign: 'right', fontWeight: 800, color: rowBull ? 'var(--bull)' : rowBear ? '#F43F5E' : '#38bdf8', fontFamily: 'var(--font-mono)' }}>
                             {chPct > 0 ? `+${chPct}` : chPct}%
                           </td>
-                          <td style={{ padding: '9px 8px', textAlign: 'right', color: '#e2e8f0', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{(h.volume || 0).toLocaleString()}</td>
+                          <td style={{ padding: '9px 8px', textAlign: 'right', color: '#e2e8f0', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{volVal.toLocaleString()}</td>
                           <td style={{ padding: '9px 8px', textAlign: 'right', color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>{fmtCr(turnoverVal)}</td>
                         </tr>
                       );
@@ -6900,15 +7084,92 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
               </div>
 
               {calcMode === 'sell' && (
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Purchase Rate / WACC (Rs.)</label>
-                  <input
-                    type="number"
-                    value={waccInput}
-                    onChange={e => setWaccInput(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 13, marginTop: 4 }}
-                  />
-                </div>
+                <>
+                  {/* Investor Type & Holding Period Statutory CGT Selector */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', background: '#0f131a', padding: 3, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <button
+                        type="button"
+                        onClick={() => setInvestorType('INDIVIDUAL')}
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: investorType === 'INDIVIDUAL' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                          color: investorType === 'INDIVIDUAL' ? '#10B981' : 'var(--text-muted)',
+                        }}
+                      >
+                        Individual (7.5% / 5%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInvestorType('INSTITUTIONAL')}
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: investorType === 'INSTITUTIONAL' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                          color: investorType === 'INSTITUTIONAL' ? '#38bdf8' : 'var(--text-muted)',
+                        }}
+                      >
+                        Institutional (10% CGT)
+                      </button>
+                    </div>
+
+                    {investorType === 'INDIVIDUAL' && (
+                      <div style={{ display: 'flex', background: '#0f131a', padding: 3, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <button
+                          type="button"
+                          onClick={() => setHoldingPeriod('SHORT_TERM')}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            borderRadius: 6,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: holdingPeriod === 'SHORT_TERM' ? 'rgba(244, 63, 94, 0.2)' : 'transparent',
+                            color: holdingPeriod === 'SHORT_TERM' ? '#F43F5E' : 'var(--text-muted)',
+                          }}
+                        >
+                          Short-Term (&lt;365d • 7.5%)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHoldingPeriod('LONG_TERM')}
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            borderRadius: 6,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: holdingPeriod === 'LONG_TERM' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                            color: holdingPeriod === 'LONG_TERM' ? '#10B981' : 'var(--text-muted)',
+                          }}
+                        >
+                          Long-Term (&ge;365d • 5.0%)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>Purchase Rate / WACC (Rs.)</label>
+                    <input
+                      type="number"
+                      value={waccInput}
+                      onChange={e => setWaccInput(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 13, marginTop: 4 }}
+                    />
+                  </div>
+                </>
               )}
 
               {calcResult && (
@@ -6918,13 +7179,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     <span style={{ fontWeight: 800, color: '#ffffff' }}>Rs. {fmt(calcResult.shareValue || calcResult.sellValue || calcResult.shareAmount || calcResult.grossAmount || (parseFloat(qtyInput || 0) * parseFloat(priceInput || 0)))}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Broker Commission:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Broker Commission ({calcResult.commRatePct ? `${calcResult.commRatePct}%` : 'Tiered'}):</span>
                     <span style={{ color: '#ffffff' }}>Rs. {fmt(calcResult.commission)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ color: 'var(--text-muted)' }}>SEBON Fee + DP:</span>
                     <span style={{ color: '#ffffff' }}>Rs. {fmt((calcResult.sebonFee || 0) + (calcResult.dpFee || 25))}</span>
                   </div>
+                  {calcMode === 'sell' && calcResult.cgtAmount != null && calcResult.cgtAmount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Capital Gains Tax ({calcResult.cgtRatePct}%):</span>
+                      <span style={{ color: '#F43F5E' }}>Rs. {fmt(calcResult.cgtAmount)}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.07)', fontSize: 13, fontWeight: 900 }}>
                     <span>{calcMode === 'buy' ? 'Total Cost Payable:' : 'Net Receivable:'}</span>
                     <span style={{ color: 'var(--bull)' }}>Rs. {fmt(calcResult.totalAmount || calcResult.netReceivable)}</span>
@@ -6932,7 +7199,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   {calcMode === 'sell' && calcResult.profit != null && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: calcResult.profit >= 0 ? 'var(--bull)' : '#F43F5E', fontWeight: 900 }}>
                       <span>Net Profit / Loss:</span>
-                      <span>Rs. {fmt(calcResult.profit)}</span>
+                      <span>Rs. {fmt(calcResult.profit)} {calcResult.netRoiPct != null ? `(${calcResult.netRoiPct >= 0 ? '+' : ''}${calcResult.netRoiPct}%)` : ''}</span>
                     </div>
                   )}
                 </div>

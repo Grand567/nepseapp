@@ -6,7 +6,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
-import { ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb } from './db/ledgerStore.js';
+import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet } from './db/ledgerStore.js';
+import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
+import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
+import { recordScraperMetric } from './utils/monitoringService.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -438,15 +441,19 @@ export async function fetchShareSansarFloorsheet(symbol, maxRecords = 50000, dat
     while (start < totalRecords && allRows.length < maxRecords && draw <= 16) {
       const companyParam = sym ? `&company=${encodeURIComponent(sym)}` : '';
       const dateParam = dt ? `&date=${encodeURIComponent(dt)}` : '';
-      const floorRes = await client.get(`https://www.sharesansar.com/floorsheet?draw=${draw++}&start=${start}&length=${batchSize}${companyParam}${dateParam}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-Token': token,
-          'Referer': 'https://www.sharesansar.com/floorsheet'
-        },
-        timeout: 15000
-      });
+      const floorRes = await fetchWithRetryBackoff(
+        () => client.get(`https://www.sharesansar.com/floorsheet?draw=${draw}&start=${start}&length=${batchSize}${companyParam}${dateParam}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-Token': token,
+            'Referer': 'https://www.sharesansar.com/floorsheet'
+          },
+          timeout: 15000
+        }),
+        { maxRetries: 3, initialDelayMs: 400, backoffFactor: 2 }
+      );
+      draw++;
 
       if (floorRes.status === 200 && Array.isArray(floorRes.data?.data) && floorRes.data.data.length > 0) {
         totalRecords = floorRes.data.recordsTotal || floorRes.data.data.length;
@@ -1221,6 +1228,46 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
       } catch (_) {}
     }
   }
+
+  // Seamless SQLite sync: Merge any trading dates present in daily_broker_ledger but missing from dailyRollup
+  try {
+    if (db) {
+      const dbRows = db.prepare(`
+        SELECT trade_date, broker_id, buy_vol, sell_vol, buy_amt, sell_amt
+        FROM daily_broker_ledger
+        WHERE UPPER(symbol) = ?
+      `).all(sym);
+
+      if (Array.isArray(dbRows) && dbRows.length > 0) {
+        let mergedNewDate = false;
+        for (const row of dbRows) {
+          const dt = row.trade_date;
+          if (!dt) continue;
+          if (!alltimeObj.dailyRollup[dt]) {
+            alltimeObj.dailyRollup[dt] = {};
+            mergedNewDate = true;
+          }
+          const b = String(row.broker_id);
+          if (!alltimeObj.dailyRollup[dt][b]) {
+            alltimeObj.dailyRollup[dt][b] = [0, 0, 0, 0, 0];
+            alltimeObj.dailyRollup[dt][b][0] = row.buy_vol || 0;
+            alltimeObj.dailyRollup[dt][b][1] = row.sell_vol || 0;
+            alltimeObj.dailyRollup[dt][b][2] = row.buy_amt || 0;
+            alltimeObj.dailyRollup[dt][b][3] = row.sell_amt || 0;
+            mergedNewDate = true;
+          }
+        }
+        if (mergedNewDate) {
+          const dts = Object.keys(alltimeObj.dailyRollup).sort((a, b) => b.localeCompare(a));
+          alltimeObj.latestDate = dts[0] || null;
+          alltimeObj.earliestDate = dts[dts.length - 1] || null;
+          alltimeObj.sessionsCount = dts.length;
+          alltimeObj.updatedAt = new Date().toISOString();
+          try { fs.writeFileSync(alltimePath, JSON.stringify(alltimeObj), 'utf8'); } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
 
   // Aggregate broker totals across all available sessions in dailyRollup
   const aggregateAllTime = (rollupObj) => {
@@ -2062,42 +2109,51 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         const totalPages = Math.min(Math.ceil(totalElements / 500), 500);
         const allTrades = [...firstList];
         for (let p = 1; p < totalPages; p++) {
-          let list = null;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            try {
+          try {
+            const pageTrades = await fetchWithRetryBackoff(async () => {
               const pagePayload = { size: "500", page: String(p) };
               if (cleanDate) pagePayload.businessDate = cleanDate;
               const res = await session.post(endpoint, "floor", pagePayload);
-              list = res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
-              break;
-            } catch (_) {
-              if (typeof nepseClient?.init === 'function') {
-                try { await nepseClient.init(true); } catch (_) {}
+              return res?.floorsheets?.content || res?.content || (Array.isArray(res) ? res : []);
+            }, {
+              maxRetries: 3,
+              initialDelayMs: 300,
+              backoffFactor: 2,
+              onRetry: async () => {
+                if (typeof nepseClient?.init === 'function') {
+                  try { await nepseClient.init(true); } catch (_) {}
+                }
               }
-              await new Promise(r => setTimeout(r, 250 * attempt));
+            });
+            if (Array.isArray(pageTrades) && pageTrades.length > 0) {
+              allTrades.push(...pageTrades);
             }
-          }
-          if (list && list.length > 0) {
-            allTrades.push(...list);
-          }
-          await new Promise(r => setTimeout(r, 50));
+          } catch (_) {}
+          await new Promise(r => setTimeout(r, 40));
         }
 
-        // Deduplicate trades by contractId
-        const seenContracts = new Set();
-        const deduplicatedTrades = [];
-        for (const tr of allTrades) {
-          const cId = tr?.contractId ? String(tr.contractId) : null;
-          if (cId) {
-            if (seenContracts.has(cId)) continue;
-            seenContracts.add(cId);
-          }
-          deduplicatedTrades.push(tr);
-        }
+        // Deduplicate trades by contract number
+        const { deduplicatedTrades } = deduplicateFloorsheetContracts(allTrades, cleanDate || nptDate);
 
         const hasBrokerIds = deduplicatedTrades.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller));
         if (hasBrokerIds) {
           const recDate = deduplicatedTrades[0]?.businessDate || cleanDate || nptDate;
+          
+          // Completeness Check per Day: stored vs exchange reported count
+          recordDailyCompleteness(recDate, {
+            source: 'NEPSE_NOTS',
+            exchangeReportedCount: totalElements,
+            storedRowCount: deduplicatedTrades.length
+          });
+
+          // Daily Backup/Export of raw floorsheet so history is never lost
+          backupRawFloorsheet(recDate, deduplicatedTrades, {
+            source: 'NEPSE_NOTS',
+            exchangeReportedCount: totalElements
+          });
+
+          recordScraperMetric('floorsheet_scraper', true, 120, null, deduplicatedTrades.length);
+
           if ((!cleanDate || recDate === cleanDate) && deduplicatedTrades.length >= totalElements * 0.98) {
             const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
             try { 
@@ -2114,41 +2170,28 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     }
   } catch (err) {
     console.warn('[brokerVault] Full session floorsheet fetch failed:', err.message);
+    recordScraperMetric('floorsheet_scraper', false, 0, err.message);
   }
 
   // Tier 2: ShareSansar / Chukul Market-Wide Floorsheet Fallback
   try {
     const ssRows = await fetchShareSansarFloorsheet('', 25000, cleanDate);
       if (Array.isArray(ssRows) && ssRows.length > 0) {
-        const seenContracts = new Set();
-        const deduplicated = [];
-        for (const r of ssRows) {
-          const cid = String(r.contractId || r.contract_no || '').trim();
-          if (cid) {
-            if (seenContracts.has(cid)) continue;
-            seenContracts.add(cid);
-          }
-          deduplicated.push({
-            contractId: cid || `SS_${deduplicated.length + 1}`,
-            stockSymbol: String(r.stockSymbol || r.symbol || '').toUpperCase().trim(),
-            symbol: String(r.stockSymbol || r.symbol || '').toUpperCase().trim(),
-            buyerMemberId: String(r.buyerBroker || r.buyer || '').trim(),
-            buyerBroker: String(r.buyerBroker || r.buyer || '').trim(),
-            buyerBrokerName: r.buyerBrokerName || getBrokerName(r.buyerBroker || r.buyer),
-            sellerMemberId: String(r.sellerBroker || r.seller || '').trim(),
-            sellerBroker: String(r.sellerBroker || r.seller || '').trim(),
-            sellerBrokerName: r.sellerBrokerName || getBrokerName(r.sellerBroker || r.seller),
-            contractQuantity: Number(r.qty || r.quantity || 0),
-            quantity: Number(r.qty || r.quantity || 0),
-            contractRate: Number(r.rate || 0),
-            rate: Number(r.rate || 0),
-            contractAmount: Number(r.amount || 0),
-            amount: Number(r.amount || 0),
-            businessDate: r.businessDate || cleanDate || nptDate
-          });
-        }
+        const { deduplicatedTrades: deduplicated } = deduplicateFloorsheetContracts(ssRows, cleanDate || nptDate);
         if (deduplicated.length > 0) {
           const recDate = deduplicated[0]?.businessDate || cleanDate || nptDate;
+          
+          // Completeness Check & Raw Backup for fallback source
+          recordDailyCompleteness(recDate, {
+            source: 'SHARESANSAR',
+            exchangeReportedCount: ssRows.length,
+            storedRowCount: deduplicated.length
+          });
+          backupRawFloorsheet(recDate, deduplicated, {
+            source: 'SHARESANSAR',
+            exchangeReportedCount: ssRows.length
+          });
+
           const saveFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${recDate}.json`);
           try { 
             fs.writeFileSync(saveFile, JSON.stringify(deduplicated)); 

@@ -40,6 +40,11 @@ function resolveDataDir() {
 const DATA_DIR = resolveDataDir();
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+const RAW_BACKUP_DIR = path.join(DATA_DIR, "raw_floorsheet_backups");
+if (!fs.existsSync(RAW_BACKUP_DIR)) {
+  try { fs.mkdirSync(RAW_BACKUP_DIR, { recursive: true }); } catch (_) {}
+}
+
 const dbPath = path.join(DATA_DIR, "drabyashree_ledger.db");
 
 // Fast bootstrap: If SQLite DB doesn't exist or is empty (<100KB), attempt instant restore from drabyashree_ledger.db.gz
@@ -85,6 +90,10 @@ db.exec(`
     close_price REAL,
     total_volume INTEGER NOT NULL,
     total_turnover REAL NOT NULL,
+    is_quarantined INTEGER DEFAULT 0,
+    calendar_status TEXT DEFAULT 'VALID',
+    tape_scope TEXT DEFAULT 'EQUITY_ONLY',
+    source TEXT DEFAULT 'NOTS_FULL_DUMP',
     PRIMARY KEY (trade_date, symbol)
   );
 
@@ -96,6 +105,11 @@ db.exec(`
     sell_vol INTEGER DEFAULT 0,
     buy_amt REAL DEFAULT 0,
     sell_amt REAL DEFAULT 0,
+    cross_vol INTEGER DEFAULT 0,
+    is_quarantined INTEGER DEFAULT 0,
+    calendar_status TEXT DEFAULT 'VALID',
+    tape_scope TEXT DEFAULT 'EQUITY_ONLY',
+    source TEXT DEFAULT 'NOTS_FULL_DUMP',
     PRIMARY KEY (trade_date, symbol, broker_id)
   );
 
@@ -116,7 +130,9 @@ db.exec(`
     amount REAL NOT NULL,
     aggressor_side TEXT DEFAULT 'NEUTRAL',
     is_internal_cross INTEGER DEFAULT 0,
-    is_whale_print INTEGER DEFAULT 0
+    is_whale_print INTEGER DEFAULT 0,
+    is_quarantined INTEGER DEFAULT 0,
+    calendar_status TEXT DEFAULT 'VALID'
   );
 
   CREATE INDEX IF NOT EXISTS idx_fs_contracts_symbol_date
@@ -174,6 +190,28 @@ db.exec(`
     0 AS avg_ticket_kitta,
     0 AS broker_anomaly_score
   FROM daily_broker_ledger;
+
+  -- 5. Daily Data Ingestion & Completeness Audit Log
+  CREATE TABLE IF NOT EXISTS daily_ingestion_log (
+    trade_date TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    exchange_reported_count INTEGER DEFAULT 0,
+    stored_row_count INTEGER DEFAULT 0,
+    completeness_pct REAL DEFAULT 0,
+    status TEXT NOT NULL,
+    warning_message TEXT,
+    ingested_at TEXT NOT NULL
+  );
+
+  -- 6. Official Exchange Daily Benchmark Import Table (For Independent Reconciliation)
+  CREATE TABLE IF NOT EXISTS official_exchange_benchmarks (
+    trade_date TEXT PRIMARY KEY,
+    total_volume INTEGER NOT NULL,
+    total_turnover REAL NOT NULL,
+    total_transactions INTEGER,
+    source TEXT NOT NULL,
+    imported_at TEXT NOT NULL
+  );
 `);
 
 // In-Memory Tier-1 Hot Cache for < 1ms API responses
@@ -213,11 +251,71 @@ export function hasTradeDate(tradeDate) {
 }
 
 /**
+ * Imports official external NEPSE published floorsheet / market total for independent reconciliation (Item 2)
+ */
+export function importOfficialExchangeBenchmark(tradeDate, data = {}) {
+  const insert = db.prepare(`
+    INSERT OR REPLACE INTO official_exchange_benchmarks
+    (trade_date, total_volume, total_turnover, total_transactions, source, imported_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  insert.run(
+    String(tradeDate).trim(),
+    Math.round(Number(data.totalVolume || data.total_volume || data.volume || 0)),
+    Number(Number(data.totalTurnover || data.total_turnover || data.turnover || 0).toFixed(2)),
+    Number(data.totalTransactions || data.total_transactions || data.transactions || 0) || null,
+    String(data.source || 'OFFICIAL_NEPSE_PUBLISHED_BULLETIN').trim(),
+    new Date().toISOString()
+  );
+}
+
+/**
+ * Reconciles local floorsheet_contracts against official exchange benchmarks (Item 2)
+ */
+export function reconcileAgainstOfficialBenchmark(tradeDate) {
+  const benchmark = db.prepare(`
+    SELECT * FROM official_exchange_benchmarks WHERE trade_date = ?
+  `).get(tradeDate);
+
+  if (!benchmark) {
+    return {
+      status: 'NO INDEPENDENT RECONCILIATION',
+      tradeDate,
+      message: 'No official benchmark imported for this date'
+    };
+  }
+
+  const stored = db.prepare(`
+    SELECT 
+      SUM(kitta) as storedVolume,
+      SUM(amount) as storedTurnover,
+      COUNT(*) as storedContracts
+    FROM floorsheet_contracts
+    WHERE trade_date = ?
+  `).get(tradeDate);
+
+  const volDiff = (stored?.storedVolume || 0) - benchmark.total_volume;
+  const turnoverDiff = Number(((stored?.storedTurnover || 0) - benchmark.total_turnover).toFixed(2));
+
+  return {
+    status: (volDiff === 0 && Math.abs(turnoverDiff) < 1.0) ? 'RECONCILED_EXACT' : 'DISCREPANCY_DETECTED',
+    tradeDate,
+    storedVolume: stored?.storedVolume || 0,
+    officialVolume: benchmark.total_volume,
+    volumeDifference: volDiff,
+    storedTurnover: stored?.storedTurnover || 0,
+    officialTurnover: benchmark.total_turnover,
+    turnoverDifference: turnoverDiff,
+    source: benchmark.source
+  };
+}
+
+/**
  * Retrieves all distinct trading dates stored in SQLite in descending order
  */
 export function getStoredDates(limit = 40) {
   return db
-    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT ?`)
+    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT ?`)
     .all(limit)
     .map(r => r.trade_date);
 }
@@ -259,6 +357,33 @@ function parseBrokerInt(val) {
 }
 
 /**
+ * Strict NEPSE Trading Weekday Validator (Part A)
+ * Rejects any trade_date not on a statutory NEPSE trading weekday (Sunday=0 through Thursday=4).
+ * Rejects Friday (5) and Saturday (6) weekend closures.
+ */
+export const LEGACY_SCRAPE_DATE_ALLOWLIST = new Set(['2026-10-16']);
+
+export function validateNepseTradingDate(tradeDate, allowLegacy = false) {
+  if (!tradeDate || typeof tradeDate !== 'string') {
+    throw new Error(`[NEPSE Calendar Validator] trade_date is required (received '${tradeDate}').`);
+  }
+  const cleanDate = tradeDate.slice(0, 10);
+  const d = new Date(cleanDate + 'T12:00:00Z');
+  if (isNaN(d.getTime())) {
+    throw new Error(`[NEPSE Calendar Validator] Invalid ISO date string: '${tradeDate}'.`);
+  }
+  if (allowLegacy && LEGACY_SCRAPE_DATE_ALLOWLIST.has(cleanDate)) {
+    return true;
+  }
+  const dayOfWeek = d.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 4 = Thursday, 5 = Friday, 6 = Saturday
+  if (dayOfWeek === 5 || dayOfWeek === 6) {
+    const dayName = dayOfWeek === 5 ? 'Friday' : 'Saturday';
+    throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule is strictly Sunday through Thursday (11:00 AM – 3:00 PM NPT).`);
+  }
+  return true;
+}
+
+/**
  * Compresses raw daily floorsheet rows into compacted stock & broker summaries.
  * Enforces:
  * 1. Chronological sorting so open_price (11:00 AM) and close_price (3:00 PM) are exact.
@@ -268,9 +393,13 @@ function parseBrokerInt(val) {
  */
 export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTrades) => {
   if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
+  validateNepseTradingDate(tradeDate, LEGACY_SCRAPE_DATE_ALLOWLIST.has(String(tradeDate).slice(0, 10)));
 
-  // Sort chronologically (oldest contract first) so open_price (11:00 AM) and close_price (3:00 PM) are exact
+  // Sort chronologically by TIME (oldest trade first) so open_price (first trade by time) and close_price (last trade by time) are exact
   const chronologicalTrades = [...rawTrades].sort((a, b) => {
+    const tA = String(a.tradeTime || a.trade_time || a.time || '');
+    const tB = String(b.tradeTime || b.trade_time || b.time || '');
+    if (tA && tB && tA !== tB) return tA.localeCompare(tB);
     const cA = String(a.contractId || a.contract_no || a.contractNo || '');
     const cB = String(b.contractId || b.contract_no || b.contractNo || '');
     return cA.localeCompare(cB, undefined, { numeric: true });
@@ -296,12 +425,16 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
 
     const qty = Math.round(Number(trade.contractQuantity || trade.quantity || trade.qty || trade.kitta || 0));
     const rate = Number(trade.contractRate || trade.rate || trade.price || 0);
-    const amt = Number(trade.contractAmount || trade.amount || qty * rate);
+    const rawAmt = Number(trade.contractAmount || trade.amount || 0);
+    const expectedAmt = qty > 0 && rate > 0 ? Number((qty * rate).toFixed(2)) : 0;
+    const amt = (expectedAmt > 0 && (!Number.isFinite(rawAmt) || rawAmt <= 0 || Math.abs(rawAmt - expectedAmt) > Math.max(1, expectedAmt * 0.01)))
+      ? expectedAmt
+      : Number((rawAmt > 0 ? rawAmt : expectedAmt).toFixed(2));
     const buyer = parseBrokerInt(trade.buyerMemberId ?? trade.buyerBroker ?? trade.buyer_broker ?? trade.buyer);
     const seller = parseBrokerInt(trade.sellerMemberId ?? trade.sellerBroker ?? trade.seller_broker ?? trade.seller);
 
     if (qty <= 0 || (!buyer && !seller)) continue;
-    pureEquityTrades.push(trade);
+    pureEquityTrades.push({ ...trade, contractId: cid || undefined, amount: amt, rate, kitta: qty });
 
     let s = stockAggMap.get(symbol);
     if (!s) {
@@ -327,17 +460,21 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
       s.close = currentRate;
     }
 
+    const isInternalCross = (buyer > 0 && seller > 0 && buyer === seller);
     if (buyer > 0) {
-      const b = s.brokers.get(buyer) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
+      const b = s.brokers.get(buyer) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0, crossVol: 0 };
       b.buyVol += qty;
       b.buyAmt += amt;
+      if (isInternalCross) {
+        b.crossVol = (b.crossVol || 0) + qty;
+      }
       s.brokers.set(buyer, b);
       s.buyVolSum += qty;
       s.buyAmtSum += amt;
     }
 
     if (seller > 0) {
-      const b = s.brokers.get(seller) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0 };
+      const b = s.brokers.get(seller) || { buyVol: 0, sellVol: 0, buyAmt: 0, sellAmt: 0, crossVol: 0 };
       b.sellVol += qty;
       b.sellAmt += amt;
       s.brokers.set(seller, b);
@@ -351,21 +488,26 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(trade_date, symbol) DO UPDATE SET
       open_price = excluded.open_price,
-      high_price = MAX(daily_stock_summary.high_price, excluded.high_price),
-      low_price = MIN(daily_stock_summary.low_price, excluded.low_price),
+      high_price = MAX(COALESCE(daily_stock_summary.high_price, 0), excluded.high_price),
+      low_price = CASE
+        WHEN daily_stock_summary.low_price IS NULL OR daily_stock_summary.low_price <= 0 THEN excluded.low_price
+        WHEN excluded.low_price IS NULL OR excluded.low_price <= 0 THEN daily_stock_summary.low_price
+        ELSE MIN(daily_stock_summary.low_price, excluded.low_price)
+      END,
       close_price = excluded.close_price,
       total_volume = excluded.total_volume,
       total_turnover = excluded.total_turnover
   `);
 
   const upsertBroker = db.prepare(`
-    INSERT INTO daily_broker_ledger (trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO daily_broker_ledger (trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(trade_date, symbol, broker_id) DO UPDATE SET
       buy_vol = excluded.buy_vol,
       sell_vol = excluded.sell_vol,
       buy_amt = excluded.buy_amt,
-      sell_amt = excluded.sell_amt
+      sell_amt = excluded.sell_amt,
+      cross_vol = excluded.cross_vol
   `);
 
   let count = 0;
@@ -393,13 +535,17 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
     upsertStock.run(tradeDate, symbol, data.open, data.high, data.low, data.close, conservedVolume, conservedTurnover);
     count++;
     for (const [brokerId, bData] of data.brokers.entries()) {
-      upsertBroker.run(tradeDate, symbol, brokerId, bData.buyVol, bData.sellVol, bData.buyAmt, bData.sellAmt);
+      upsertBroker.run(tradeDate, symbol, brokerId, bData.buyVol, bData.sellVol, bData.buyAmt, bData.sellAmt, bData.crossVol || 0);
     }
   }
 
-  // Also persist tick-level contracts (for latest 5 sessions) to power Floorsheet Hub & 5D Volume Profile (POC)
+  // Also persist tick-level contracts to power Floorsheet Hub & 5D Volume Profile (POC)
   try {
     ingestFloorsheetContractsTransaction(tradeDate, pureEquityTrades);
+    const auditRes = verifyDailyThreeWayConservation(tradeDate);
+    if (!auditRes.ok) {
+      console.warn(`[Drabyashree 3-Way Audit Warning] ${tradeDate}:`, JSON.stringify(auditRes));
+    }
   } catch (contractErr) {
     console.warn(`[ledgerStore] Tick contract ingestion notice for ${tradeDate}:`, contractErr.message);
   }
@@ -430,15 +576,223 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
 });
 
 /**
+ * Ingests daily price OHLCV and volume/turnover summaries directly into daily_stock_summary.
+ * Guarantees daily price persistence regardless of whether tick-level floorsheet is synchronized.
+ */
+export const ingestDailyStockPrices = db.transaction((tradeDate, priceRows) => {
+  if (!tradeDate || !Array.isArray(priceRows) || priceRows.length === 0) return 0;
+
+  const upsert = db.prepare(`
+    INSERT INTO daily_stock_summary (trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(trade_date, symbol) DO UPDATE SET
+      open_price = COALESCE(excluded.open_price, daily_stock_summary.open_price),
+      high_price = MAX(COALESCE(daily_stock_summary.high_price, 0), COALESCE(excluded.high_price, 0)),
+      low_price = CASE 
+        WHEN daily_stock_summary.low_price IS NULL OR daily_stock_summary.low_price <= 0 THEN excluded.low_price
+        WHEN excluded.low_price IS NULL OR excluded.low_price <= 0 THEN daily_stock_summary.low_price
+        ELSE MIN(daily_stock_summary.low_price, excluded.low_price)
+      END,
+      close_price = excluded.close_price,
+      total_volume = excluded.total_volume,
+      total_turnover = excluded.total_turnover
+  `);
+
+  let count = 0;
+  for (const r of priceRows) {
+    const sym = String(r.symbol || r.scrip || '').toUpperCase().trim();
+    if (!sym || isNonEquityScrip(sym)) continue;
+    const ltp = Number(r.ltp || r.close || r.closePrice || r.lastTradedPrice || 0);
+    const open = Number(r.open || r.openPrice || ltp);
+    const high = Number(r.high || r.highPrice || ltp);
+    const low = Number(r.low || r.lowPrice || ltp);
+    const vol = Math.round(Number(r.volume || r.totalTradedQuantity || r.total_volume || 0));
+    const turnover = Number(r.turnover || r.totalTradedValue || r.total_turnover || 0);
+    if (ltp > 0 || vol > 0) {
+      upsert.run(tradeDate, sym, open, high, low, ltp, vol, turnover);
+      count++;
+    }
+  }
+  return count;
+});
+
+/**
+ * Records daily ingestion completeness audit metrics and logs warnings for missing rows.
+ */
+export function recordDailyCompleteness(tradeDate, {
+  source = 'NEPSE',
+  exchangeReportedCount = 0,
+  storedRowCount = 0,
+  warningMessage = null
+} = {}) {
+  if (!tradeDate) return null;
+  const reported = Number(exchangeReportedCount || 0);
+  const stored = Number(storedRowCount || 0);
+  const calcPct = reported > 0 
+    ? Number(((stored / reported) * 100).toFixed(2))
+    : (stored > 0 ? 100 : 0);
+
+  const status = calcPct >= 98 ? 'COMPLETE' : (stored > 0 ? 'PARTIAL_WARNING' : 'FAILED');
+  let finalWarning = warningMessage;
+  if (!finalWarning && calcPct < 98) {
+    finalWarning = `Data discrepancy: Stored ${stored} rows vs Exchange reported ${reported} trades (${calcPct}% completeness)`;
+  }
+
+  if (finalWarning) {
+    console.warn(`[DATA INGESTION WARNING] Date ${tradeDate}: ${finalWarning}`);
+  }
+
+  try {
+    const upsert = db.prepare(`
+      INSERT INTO daily_ingestion_log (trade_date, source, exchange_reported_count, stored_row_count, completeness_pct, status, warning_message, ingested_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(trade_date) DO UPDATE SET
+        source = excluded.source,
+        exchange_reported_count = excluded.exchange_reported_count,
+        stored_row_count = excluded.stored_row_count,
+        completeness_pct = excluded.completeness_pct,
+        status = excluded.status,
+        warning_message = excluded.warning_message,
+        ingested_at = excluded.ingested_at
+    `);
+
+    upsert.run(
+      tradeDate,
+      source,
+      reported,
+      stored,
+      calcPct,
+      status,
+      finalWarning,
+      new Date().toISOString()
+    );
+  } catch (err) {
+    console.warn(`[ledgerStore] Failed to record completeness for ${tradeDate}:`, err.message);
+  }
+
+  return {
+    tradeDate,
+    source,
+    exchangeReportedCount: reported,
+    storedRowCount: stored,
+    completenessPct: calcPct,
+    status,
+    warningMessage: finalWarning
+  };
+}
+
+/**
+ * Retrieves recorded completeness status for a given trading date.
+ */
+export function getDailyCompletenessStatus(tradeDate) {
+  if (!tradeDate) return null;
+  try {
+    return db.prepare(`SELECT * FROM daily_ingestion_log WHERE trade_date = ? LIMIT 1`).get(tradeDate) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Retrieves recent daily ingestion completeness audit logs.
+ */
+export function getRecentCompletenessLogs(limit = 10) {
+  try {
+    return db.prepare(`SELECT * FROM daily_ingestion_log ORDER BY trade_date DESC LIMIT ?`).all(Number(limit) || 10) || [];
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Archives raw floorsheet trades into an immutable, gzip-compressed snapshot so history is never lost.
+ */
+export function backupRawFloorsheet(tradeDate, rawTrades, metadata = {}) {
+  if (!tradeDate || !Array.isArray(rawTrades)) return null;
+  try {
+    if (!fs.existsSync(RAW_BACKUP_DIR)) {
+      fs.mkdirSync(RAW_BACKUP_DIR, { recursive: true });
+    }
+    const payload = JSON.stringify({
+      version: 1,
+      tradeDate,
+      exportedAt: new Date().toISOString(),
+      rowCount: rawTrades.length,
+      metadata,
+      trades: rawTrades
+    });
+    const compressed = zlib.gzipSync(Buffer.from(payload, 'utf8'), { level: 9 });
+    const targetFile = path.join(RAW_BACKUP_DIR, `floorsheet-raw-${tradeDate}.json.gz`);
+    fs.writeFileSync(targetFile, compressed);
+    console.log(`[RawFloorsheetVault] Archived ${rawTrades.length} trades for ${tradeDate} to ${targetFile} (${(compressed.length / 1024).toFixed(1)} KB)`);
+    return {
+      success: true,
+      path: targetFile,
+      tradeDate,
+      rowCount: rawTrades.length,
+      compressedBytes: compressed.length
+    };
+  } catch (err) {
+    console.warn(`[RawFloorsheetVault] Backup failed for ${tradeDate}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Restores a raw floorsheet archive for a given trade date.
+ */
+export function restoreRawFloorsheetBackup(tradeDate) {
+  if (!tradeDate) return null;
+  try {
+    const targetFile = path.join(RAW_BACKUP_DIR, `floorsheet-raw-${tradeDate}.json.gz`);
+    if (!fs.existsSync(targetFile)) return null;
+    const compressed = fs.readFileSync(targetFile);
+    const uncompressed = zlib.gunzipSync(compressed).toString('utf8');
+    return JSON.parse(uncompressed);
+  } catch (err) {
+    console.warn(`[RawFloorsheetVault] Restore failed for ${tradeDate}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Lists all available archived raw floorsheet backups.
+ */
+export function listRawFloorsheetBackups() {
+  try {
+    if (!fs.existsSync(RAW_BACKUP_DIR)) return [];
+    const files = fs.readdirSync(RAW_BACKUP_DIR).filter(f => f.startsWith('floorsheet-raw-') && f.endsWith('.json.gz'));
+    return files.map(f => {
+      const match = f.match(/floorsheet-raw-(\d{4}-\d{2}-\d{2})\.json\.gz/);
+      const stat = fs.statSync(path.join(RAW_BACKUP_DIR, f));
+      return {
+        filename: f,
+        tradeDate: match ? match[1] : null,
+        sizeBytes: stat.size,
+        modifiedAt: stat.mtime.toISOString()
+      };
+    }).sort((a, b) => (b.tradeDate || '').localeCompare(a.tradeDate || ''));
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
  * Ingests tick-level floorsheet contracts into floorsheet_contracts with date-bounded Tick-Test Aggressor inference
  */
 export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, rawTrades) => {
   if (!tradeDate || !Array.isArray(rawTrades) || rawTrades.length === 0) return 0;
+  validateNepseTradingDate(tradeDate, LEGACY_SCRAPE_DATE_ALLOWLIST.has(String(tradeDate).slice(0, 10)));
 
   const insert = db.prepare(`
-    INSERT OR REPLACE INTO floorsheet_contracts
+    INSERT INTO floorsheet_contracts
     (contract_no, symbol, trade_date, trade_time, buyer_broker, seller_broker, kitta, rate, amount, aggressor_side, is_internal_cross, is_whale_print)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(contract_no) DO UPDATE SET
+      amount = excluded.amount,
+      aggressor_side = excluded.aggressor_side,
+      is_internal_cross = excluded.is_internal_cross,
+      is_whale_print = excluded.is_whale_print
   `);
 
   const bySymbol = new Map();
@@ -456,6 +810,9 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
       const dA = String(a.businessDate || a.tradeDate || a.trade_date || tradeDate);
       const dB = String(b.businessDate || b.tradeDate || b.trade_date || tradeDate);
       if (dA !== dB) return dA.localeCompare(dB);
+      const tA = String(a.tradeTime || a.trade_time || "");
+      const tB = String(b.tradeTime || b.trade_time || "");
+      if (tA && tB && tA !== tB) return tA.localeCompare(tB);
       const cA = String(a.contractId || a.contract_no || a.contractNo || "");
       const cB = String(b.contractId || b.contract_no || b.contractNo || "");
       return cA.localeCompare(cB, undefined, { numeric: true });
@@ -464,18 +821,35 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
     let prevDate = null;
     let prevRate = null;
     let lastDir = "NEUTRAL";
+    const seenContractIds = new Set();
 
-    for (const t of trades) {
-      const cid = String(t.contractId || t.contract_no || t.contractNo || `FS-${tradeDate}-${sym}-${count + 1}`);
-      const date = String(t.businessDate || t.tradeDate || t.trade_date || tradeDate);
-      const time = String(t.tradeTime || t.trade_time || "");
-      const buyer = Number(t.buyerMemberId || t.buyerBroker || t.buyer_broker || t.buyer || 0);
-      const seller = Number(t.sellerMemberId || t.sellerBroker || t.seller_broker || t.seller || 0);
-      const qty = Number(t.contractQuantity || t.quantity || t.qty || t.kitta || 0);
+    for (let idx = 0; idx < trades.length; idx++) {
+      const t = trades[idx];
+      const date = String(t.businessDate || t.tradeDate || t.trade_date || tradeDate).slice(0, 10);
+      const time = String(t.tradeTime || t.trade_time || t.time || "14:59:59");
+      const buyer = parseBrokerInt(t.buyerMemberId ?? t.buyerBroker ?? t.buyer_broker ?? t.buyer);
+      const seller = parseBrokerInt(t.sellerMemberId ?? t.sellerBroker ?? t.seller_broker ?? t.seller);
+      const qty = Math.round(Number(t.contractQuantity || t.quantity || t.qty || t.kitta || 0));
       const rate = Number(t.contractRate || t.rate || t.price || 0);
-      const amt = Number(t.contractAmount || t.amount || qty * rate);
+      const rawAmt = Number(t.contractAmount || t.amount || 0);
+      const expectedAmt = qty > 0 && rate > 0 ? Number((qty * rate).toFixed(2)) : 0;
+      const amt = (expectedAmt > 0 && (!Number.isFinite(rawAmt) || rawAmt <= 0 || Math.abs(rawAmt - expectedAmt) > Math.max(1, expectedAmt * 0.01)))
+        ? expectedAmt
+        : Number((rawAmt > 0 ? rawAmt : expectedAmt).toFixed(2));
 
-      if (qty <= 0) continue;
+      const rawCid = String(t.contractId ?? t.contract_no ?? t.contractNo ?? "").trim();
+      const cid = rawCid || `SYN-${date}-${sym}-${buyer}-${seller}-${qty}-${rate}-${idx + 1}`;
+
+      if (seenContractIds.has(cid)) continue;
+      seenContractIds.add(cid);
+
+      if (
+        !cid || !sym || !date ||
+        buyer <= 0 || seller <= 0 || qty <= 0 ||
+        isNaN(rate) || rate <= 0 || isNaN(amt) || amt <= 0
+      ) {
+        continue;
+      }
 
       // Reset tick-test state at session date boundaries
       if (date !== prevDate) {
@@ -500,7 +874,8 @@ export const ingestFloorsheetContractsTransaction = db.transaction((tradeDate, r
       if (rate > 0) prevRate = rate;
 
       const isInternal = buyer > 0 && buyer === seller ? 1 : 0;
-      const isWhale = qty >= 500 || amt >= 500000 ? 1 : 0;
+      // Whale print threshold: >= 200 kitta OR >= Rs. 100,000 (1 Lakh)
+      const isWhale = qty >= 200 || amt >= 100000 ? 1 : 0;
 
       insert.run(cid, sym, date, time, buyer, seller, qty, rate, amt, dir, isInternal, isWhale);
       count++;
@@ -706,11 +1081,11 @@ export function seedFromSnapshotGz(force = false) {
 
       const insertBroker = db.prepare(`
         INSERT OR REPLACE INTO daily_broker_ledger 
-        (trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (trade_date, symbol, broker_id, buy_vol, sell_vol, buy_amt, sell_amt, cross_vol)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const b of brokerLedger) {
-        insertBroker.run(b.trade_date, b.symbol, b.broker_id, b.buy_vol, b.sell_vol, b.buy_amt, b.sell_amt);
+        insertBroker.run(b.trade_date, b.symbol, b.broker_id, b.buy_vol, b.sell_vol, b.buy_amt, b.sell_amt, b.cross_vol || 0);
       }
     });
 
@@ -790,6 +1165,7 @@ export function getLedgerStatusInfo() {
     const dates = getStoredDates(40);
     const stockSummaryCount = db.prepare(`SELECT COUNT(*) as c FROM daily_stock_summary`).get()?.c || 0;
     const brokerLedgerCount = db.prepare(`SELECT COUNT(*) as c FROM daily_broker_ledger`).get()?.c || 0;
+    const latestCompleteness = dates[0] ? getDailyCompletenessStatus(dates[0]) : null;
     return {
       success: true,
       tradingDatesCount: dates.length,
@@ -797,6 +1173,7 @@ export function getLedgerStatusInfo() {
       oldestTradeDate: dates[dates.length - 1] || null,
       stockSummaryRows: stockSummaryCount,
       brokerLedgerRows: brokerLedgerCount,
+      latestCompleteness,
       hotCacheDiagnosticCount: HOT_CACHE.stockDiagnostics.size,
       hotCacheRadarCount30D: (HOT_CACHE.radarByTimeframe[30] || []).length,
       lastUpdatedDate: HOT_CACHE.lastUpdatedDate || null
@@ -813,9 +1190,9 @@ export function getLedgerStatusInfo() {
 export function rebuildHotCache() {
   const startTime = Date.now();
 
-  // 1. Get last 30 distinct trading dates in descending order
+  // 1. Get last 30 distinct trading dates in descending order (excluding PARTIAL_SESSION)
   const dates = db
-    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30`)
+    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 30`)
     .all()
     .map((r) => r.trade_date);
 
@@ -823,7 +1200,7 @@ export function rebuildHotCache() {
     console.log("[Drabyashree Cache] No trading dates found in SQLite ledger. Attempting emergency restore from seed snapshot...");
     seedFromSnapshotGz(true);
     const retryDates = db
-      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 30`)
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 30`)
       .all()
       .map((r) => r.trade_date);
     if (retryDates.length === 0) {
@@ -834,11 +1211,12 @@ export function rebuildHotCache() {
   }
   const oldestDate = dates[dates.length - 1];
 
-  // 2. Streamline multi-day diagnostics symbol-by-symbol to keep V8 heap < 80MB on Render Free Tier
+  // 2. Streamline multi-day diagnostics symbol-by-symbol to keep V8 heap < 80MB on Render Free Tier (ordinary equities only)
   const symbols = db
     .prepare(`SELECT DISTINCT symbol FROM daily_stock_summary WHERE trade_date >= ?`)
     .all(oldestDate)
-    .map((r) => r.symbol);
+    .map((r) => r.symbol)
+    .filter((s) => !isNonEquityScrip(s));
 
   const stmtSummary = db.prepare(
     `SELECT * FROM daily_stock_summary WHERE symbol = ? AND trade_date >= ? ORDER BY trade_date DESC`
@@ -891,6 +1269,7 @@ export function rebuildHotCache() {
     for (const days of timeframes) {
       const diag = calculateMultiDayDiagnostics(dailyHistory, days);
       if (diag) {
+        nextDiagnostics.set(`${symbol}_${days}`, diag);
         if (days === 3) diag3 = diag;
         if (days === 30) diag30 = diag;
 
@@ -1207,10 +1586,11 @@ export function getSmartMoneyAggregatedFlow(symbol, sessionLimit = 5) {
         b.broker_id AS brokerId,
         SUM(b.buy_vol) AS buyVolume,
         SUM(b.sell_vol) AS sellVolume,
-        0 AS buyTrades,
-        0 AS sellTrades,
+        COUNT(CASE WHEN b.buy_vol > 0 THEN 1 END) AS buyTrades,
+        COUNT(CASE WHEN b.sell_vol > 0 THEN 1 END) AS sellTrades,
         SUM(b.buy_amt) AS buyAmount,
-        SUM(b.sell_amt) AS sellAmount
+        SUM(b.sell_amt) AS sellAmount,
+        SUM(COALESCE(b.cross_vol, 0)) AS crossVolume
       FROM daily_broker_ledger b
       INNER JOIN recent_dates r ON b.trade_date = r.trade_date
       WHERE b.symbol = @symbol
@@ -1265,7 +1645,7 @@ export function getScripLedgerTelemetry(rawSymbol) {
         total_volume AS volume,
         CASE WHEN total_volume > 0 THEN (total_turnover / total_volume) ELSE close_price END AS vwap
       FROM daily_stock_summary
-      WHERE UPPER(symbol) = ?
+      WHERE UPPER(symbol) = ? AND calendar_status != 'PARTIAL_SESSION'
       ORDER BY trade_date DESC
       LIMIT 30
     `).all(symbol) || [];
@@ -1512,4 +1892,89 @@ export {
   evaluateRegulatoryVetoes,
   isNonEquityScrip,
 };
+
+/**
+ * Verifies 3-way mathematical conservation across floorsheet_contracts,
+ * daily_stock_summary, and daily_broker_ledger for a given trade_date.
+ */
+export function verifyDailyThreeWayConservation(tradeDate) {
+  if (!tradeDate) return { ok: false, error: "tradeDate is required" };
+  const cleanDate = String(tradeDate).trim().slice(0, 10);
+
+  const fc = db.prepare(`
+    SELECT
+      COUNT(*) AS contractCount,
+      COALESCE(SUM(kitta), 0) AS totalKitta,
+      ROUND(COALESCE(SUM(amount), 0), 2) AS totalAmount,
+      SUM(CASE WHEN kitta > 0 AND rate > 0 AND ABS(amount - (kitta * rate)) > MAX(1.0, amount * 0.01) THEN 1 ELSE 0 END) AS corruptRowCount
+    FROM floorsheet_contracts
+    WHERE trade_date = ?
+  `).get(cleanDate);
+
+  const dss = db.prepare(`
+    SELECT
+      COUNT(*) AS scripCount,
+      COALESCE(SUM(total_volume), 0) AS totalVolume,
+      ROUND(COALESCE(SUM(total_turnover), 0), 2) AS totalTurnover
+    FROM daily_stock_summary
+    WHERE trade_date = ?
+  `).get(cleanDate);
+
+  const dbl = db.prepare(`
+    SELECT
+      COUNT(DISTINCT broker_id) AS activeBrokers,
+      COALESCE(SUM(buy_vol), 0) AS sumBuyVol,
+      COALESCE(SUM(sell_vol), 0) AS sumSellVol,
+      COALESCE(SUM(cross_vol), 0) AS sumCrossVol,
+      ROUND(COALESCE(SUM(buy_amt), 0), 2) AS sumBuyAmt,
+      ROUND(COALESCE(SUM(sell_amt), 0), 2) AS sumSellAmt
+    FROM daily_broker_ledger
+    WHERE trade_date = ?
+  `).get(cleanDate);
+
+  const contractsToSummaryVolDelta = (fc?.totalKitta || 0) - (dss?.totalVolume || 0);
+  const contractsToSummaryAmtDelta = Number(((fc?.totalAmount || 0) - (dss?.totalTurnover || 0)).toFixed(2));
+  const brokerZeroSumVolDelta = (dbl?.sumBuyVol || 0) - (dbl?.sumSellVol || 0);
+  const brokerToSummaryVolDelta = (dbl?.sumBuyVol || 0) - (dss?.totalVolume || 0);
+  const corruptRows = fc?.corruptRowCount || 0;
+
+  const isConserved =
+    (dss?.totalVolume || 0) > 0 &&
+    contractsToSummaryVolDelta === 0 &&
+    Math.abs(contractsToSummaryAmtDelta) < 1.0 &&
+    brokerZeroSumVolDelta === 0 &&
+    brokerToSummaryVolDelta === 0 &&
+    corruptRows === 0;
+
+  return {
+    ok: isConserved,
+    tradeDate: cleanDate,
+    status: isConserved ? "CONSERVED_EXACT" : "PARITY_DRIFT_DETECTED",
+    contracts: {
+      count: fc?.contractCount || 0,
+      volume: fc?.totalKitta || 0,
+      turnover: fc?.totalAmount || 0,
+      corruptRows,
+    },
+    stockSummary: {
+      scrips: dss?.scripCount || 0,
+      volume: dss?.totalVolume || 0,
+      turnover: dss?.totalTurnover || 0,
+    },
+    brokerLedger: {
+      activeBrokers: dbl?.activeBrokers || 0,
+      buyVolume: dbl?.sumBuyVol || 0,
+      sellVolume: dbl?.sumSellVol || 0,
+      crossVolume: dbl?.sumCrossVol || 0,
+      buyAmount: dbl?.sumBuyAmt || 0,
+      sellAmount: dbl?.sumSellAmt || 0,
+    },
+    deltas: {
+      contractsToSummaryVolDelta,
+      contractsToSummaryAmtDelta,
+      brokerZeroSumVolDelta,
+      brokerToSummaryVolDelta,
+    },
+  };
+}
 

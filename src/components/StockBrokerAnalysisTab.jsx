@@ -36,7 +36,8 @@ export default function StockBrokerAnalysisTab({
   selectedDate = '',
   onDaysChange = null,
   onDateChange = null,
-  loading = false
+  loading = false,
+  allTimeHoldingData = null
 }) {
   const [activeSubTab, setActiveSubTab] = useState('brokers'); // 'brokers' | 'acc_dist' | 'zero_sum'
   const [chartTab, setChartTab] = useState('holdings'); // 'holdings' | 'buyers' | 'sellers'
@@ -91,7 +92,7 @@ export default function StockBrokerAnalysisTab({
         const sellAmt = Number(b.sellAmt ?? b.sellAmount ?? b.sellTurnoverNpr ?? 0);
         const avgBuy = Number(b.avgBuyRate ?? b.avgBuyPrice ?? (buyQty > 0 ? buyAmt / buyQty : 0));
         const avgSell = Number(b.avgSellRate ?? b.avgSellPrice ?? (sellQty > 0 ? sellAmt / sellQty : 0));
-        const holdAmt = netQty > 0 ? (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100)) : 0;
+        const holdAmt = netQty > 0 ? (b.holdAmt || b.totalHeldAmt || (buyAmt - sellAmt > 0 ? buyAmt - sellAmt : netQty * (avgBuy || ltp || 100))) : 0;
         const retention = buyQty > 0 ? Number(((Math.max(0, netQty) / buyQty) * 100).toFixed(1)) : (b.retentionPct !== undefined ? Number(b.retentionPct) : 0);
         map[id] = {
           id,
@@ -119,12 +120,25 @@ export default function StockBrokerAnalysisTab({
       return false;
     };
 
-    // Parallel fetch: All-Time Smart-Money endpoint (for authentic multi-year cumulative holdings & top accumulators till today)
-    // + Diagnostics endpoint (for complete multi-session dailyFlow and vwap telemetry)
+    // Immediate hydration from allTimeHoldingData prop if provided
+    if (allTimeHoldingData) {
+      const propBrokers = allTimeHoldingData.allHoldings || allTimeHoldingData.topHoldings || allTimeHoldingData.brokers || [];
+      const propDates = allTimeHoldingData.availableDates || [];
+      const propFlow = allTimeHoldingData.dailyFlow || [];
+      if (propBrokers.length > 0) {
+        parseAndSetHoldings(propBrokers, propDates, propFlow);
+      }
+      if (allTimeHoldingData.totalSharesHeldTillNow) {
+        setTotalCumulativeHoldingKitta(Number(allTimeHoldingData.totalSharesHeldTillNow));
+      }
+    }
+
+    // Parallel fetch: All-Time Broker Vault + All-Time Smart-Money endpoint + Diagnostics endpoint
+    const p0 = fetchRealBrokerAnalysis(symbol, 'all', { refresh: false }).catch(() => null);
     const p1 = fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
     const p2 = fetchFromBackend(`/api/diagnostics/${encodeURIComponent(symbol)}?days=30`, 10000).catch(() => null);
 
-    Promise.all([p1, p2]).then(([resSm, resDiag]) => {
+    Promise.all([p0, p1, p2]).then(([resAll, resSm, resDiag]) => {
       if (!active) return;
 
       // Extract daily session flow (30 trading days)
@@ -132,19 +146,27 @@ export default function StockBrokerAnalysisTab({
         ? resDiag.data.dailyFlow
         : (Array.isArray(resDiag?.dailyFlow) && resDiag.dailyFlow.length > 0
             ? resDiag.dailyFlow
-            : (Array.isArray(resSm?.dailyFlow) ? resSm.dailyFlow : (Array.isArray(resSm?.data?.dailyFlow) ? resSm.data.dailyFlow : [])));
+            : (Array.isArray(resAll?.dailyFlow) && resAll.dailyFlow.length > 0
+                ? resAll.dailyFlow
+                : (Array.isArray(resSm?.dailyFlow) ? resSm.dailyFlow : (Array.isArray(resSm?.data?.dailyFlow) ? resSm.data.dailyFlow : []))));
       if (flow.length > 0) {
         setMultiDayDailyFlow(flow);
       }
 
-      // Extract all stored trading dates (32 trading days)
-      const dates = resSm?.availableDates || resSm?.data?.availableDates || resDiag?.data?.availableDates || resDiag?.availableDates || [];
+      // Extract all stored trading dates (full multi-year floorsheet dates)
+      const dates = (
+        (Array.isArray(resAll?.availableDates) && resAll.availableDates.length > 0) ? resAll.availableDates :
+        (Array.isArray(resSm?.availableDates) && resSm.availableDates.length > 0) ? resSm.availableDates :
+        (Array.isArray(resSm?.data?.availableDates) && resSm.data.availableDates.length > 0) ? resSm.data.availableDates :
+        (Array.isArray(resDiag?.data?.availableDates) ? resDiag.data.availableDates : (resDiag?.availableDates || []))
+      );
       if (Array.isArray(dates) && dates.length > 0) {
         setAllStoredDates(dates);
       }
 
-      // Extract total cumulative shares held till now
+      // Extract total cumulative shares held till now (authentic accumulator pool)
       const totalHeld = Number(
+        resAll?.totalSharesHeldTillNow ||
         resSm?.totalSharesHeldTillNow ||
         resSm?.data?.totalSharesHeldTillNow ||
         resDiag?.data?.totalSharesHeldTillNow ||
@@ -155,14 +177,15 @@ export default function StockBrokerAnalysisTab({
         setTotalCumulativeHoldingKitta(totalHeld);
       }
 
-      // Extract broker list
+      // Extract broker list (prioritize all-time holdings with full multi-year totals)
+      const listAll = (resAll?.allHoldings?.length ? resAll.allHoldings : (resAll?.topHoldings?.length ? resAll.topHoldings : (resAll?.brokers || [])));
       const listSm = Array.isArray(resSm)
         ? resSm
         : (Array.isArray(resSm?.data)
             ? resSm.data
             : (resSm?.allHoldings || resSm?.allBrokers || resSm?.topHoldings || resSm?.brokers || resSm?.data?.allBrokers || []));
       const listDiag = resDiag?.data?.allBrokers || resDiag?.data?.brokers || resDiag?.allBrokers || resDiag?.brokers || [];
-      const primaryList = (Array.isArray(listSm) && listSm.length > 0) ? listSm : listDiag;
+      const primaryList = (listAll.length > 0) ? listAll : ((Array.isArray(listSm) && listSm.length > 0) ? listSm : listDiag);
 
       const parsed = parseAndSetHoldings(primaryList, dates, flow);
       if (!parsed && listDiag.length > 0) {
@@ -289,7 +312,7 @@ export default function StockBrokerAnalysisTab({
       floorsheetData.availableDates.forEach(d => d && set.add(String(d)));
     }
     return Array.from(set).sort().reverse();
-  }, [activeBrokerData, floorsheetData]);
+  }, [activeBrokerData, floorsheetData, allStoredDates]);
 
   // Active display date / range string
   const activeDateDisplay = useMemo(() => {
@@ -758,7 +781,7 @@ export default function StockBrokerAnalysisTab({
     };
   }, [brokerRecords, cumulativeHoldingMap, totalCumulativeHoldingKitta, ltp]);
 
-  // Daily flow records for Date-Wise Broker Buying/Selling table (Full Month)
+  // Daily flow records for Date-Wise Broker Buying/Selling table (Full History)
   const dailyFlowList = useMemo(() => {
     const map = new Map();
     if (Array.isArray(multiDayDailyFlow)) {
@@ -767,8 +790,23 @@ export default function StockBrokerAnalysisTab({
     if (Array.isArray(activeBrokerData?.dailyFlow)) {
       activeBrokerData.dailyFlow.forEach(df => { if (df?.date) map.set(df.date, df); });
     }
+    // Incorporate all dates from availableDates so the entire historical matrix is visible & selectable
+    if (Array.isArray(availableDates)) {
+      for (const dt of availableDates) {
+        if (!map.has(dt)) {
+          map.set(dt, {
+            date: dt,
+            totalVolume: null,
+            turnover: null,
+            vwap: null,
+            totalTrades: null,
+            isHistoricalDate: true
+          });
+        }
+      }
+    }
     return Array.from(map.values());
-  }, [activeBrokerData, multiDayDailyFlow]);
+  }, [activeBrokerData, multiDayDailyFlow, availableDates]);
 
   // Full Month Date-Wise Sorted List
   const sortedDailyFlowList = useMemo(() => {
@@ -877,7 +915,7 @@ export default function StockBrokerAnalysisTab({
   }, [filteredBrokers, cumulativeHoldingMap, filterQuery, tableSortField, tableSortOrder, ltp]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 10 }}>
       {/* ── Sub-Navigation Bar (Share Hub Reference) ── */}
       <div style={{
         background: '#111827',
@@ -1042,7 +1080,7 @@ export default function StockBrokerAnalysisTab({
                 <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
                   Select Session ({availableDates[0]})
                 </option>
-                {availableDates.slice(0, 500).map(dt => (
+                {availableDates.map(dt => (
                   <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
                     {dt}
                   </option>

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS scrip_fundamentals (
   distributable_eps REAL DEFAULT NULL,     -- Post-regulatory reserve distributable EPS
   promoter_unlock_date TEXT DEFAULT NULL,  -- ISO Date YYYY-MM-DD for 3-year IPO lock-in expiry
   promoter_locked_kitta INTEGER DEFAULT 0,
+  release_date TEXT DEFAULT NULL,          -- Official quarterly filing publication date (YYYY-MM-DD)
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -35,3 +36,6 @@ CREATE TABLE IF NOT EXISTS scrip_corporate_actions (
 
 CREATE INDEX IF NOT EXISTS idx_corp_actions_symbol
   ON scrip_corporate_actions (UPPER(symbol), book_close_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_scrip_fundamentals_release
+  ON scrip_fundamentals (UPPER(symbol), release_date DESC);

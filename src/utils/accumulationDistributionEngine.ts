@@ -8,6 +8,7 @@
  */
 
 import { getCachedRealPriceHistory, getCachedBrokerData } from './historyCache.js';
+import { aggregateBrokerMicrostructure } from './sharedBrokerAggregationEngine.js';
 
 export interface Candle {
   date?: string;
@@ -63,6 +64,7 @@ export interface BrokerDetail {
   broker: string;
   brokerName: string;
   volume: number;
+  nonCrossVolume?: number;
   amount: number;
   pct: number;
   netQty: number;
@@ -84,7 +86,8 @@ export interface BrokerConcentrationResult {
   avgBuyTradeSize: number;
   avgSellTradeSize: number;
   tradeSizeRatio: number; // Avg Buy Size / Avg Sell Size
-  smartMoneyBias: 'Institutional Cornering' | 'Retail Absorption' | 'Operator Offloading' | 'Neutral' | 'Insufficient Data';
+  smartMoneyBias: 'Institutional Cornering' | 'Retail Absorption' | 'Operator Offloading' | 'Neutral' | 'Insufficient Data' | 'INSUFFICIENT ACTIVITY';
+  adSignal?: 'Accumulation' | 'Distribution' | 'Neutral' | 'INSUFFICIENT ACTIVITY';
   asymmetryRatio?: number; // BCR3 Buy / (BCR3 Sell || 1)
   netAbsorptionRatio?: number; // Net Buy / Gross Buy
   smartMoneyNetVolume?: number; // Real net volume accumulated by smart money players
@@ -802,566 +805,24 @@ export function calculateBrokerConcentration(
   stockSummary?: any,
   realBrokerAnalysis?: any
 ): BrokerConcentrationResult {
-  const normSym = String(targetSymbol || '').toUpperCase().trim();
+  const normSym = String(targetSymbol || "").toUpperCase().trim();
   const trades = Array.isArray(floorsheet)
     ? floorsheet.filter((t: any) => {
-        const s = String(t.symbol || t.stockSymbol || '').toUpperCase().trim();
-        return s === normSym;
+        const s = String(t.symbol || t.stockSymbol || t.contractSymbol || "").toUpperCase().trim();
+        return !normSym || !s || s === normSym;
       })
     : [];
 
   const rba = realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis || getCachedBrokerData(normSym);
-  const hasValidRba = Boolean(
-    rba && (
-      (Array.isArray(rba.topBuyers) && rba.topBuyers.length > 0) ||
-      (Array.isArray(rba.topNetBuyers) && rba.topNetBuyers.length > 0) ||
-      (Array.isArray(rba.topBuyerBrokers) && rba.topBuyerBrokers.length > 0) ||
-      (Array.isArray(rba.topGrossBuyers) && rba.topGrossBuyers.length > 0) ||
-      (Array.isArray(rba.buyers) && rba.buyers.length > 0) ||
-      (Array.isArray(rba.brokers) && rba.brokers.length > 0) ||
-      rba.isReal ||
-      rba.isRealFloorsheet ||
-      rba.grossBuyConcentrationPct !== undefined ||
-      rba.bcr3BuyPct !== undefined ||
-      rba.bcr5BuyPct !== undefined ||
-      rba.bcr5NetPct !== undefined
-    )
-  );
 
-  if (hasValidRba) {
-    const rbaBrokersMap = new Map<string, any>();
-    if (Array.isArray(rba.brokers)) {
-      rba.brokers.forEach((br: any) => {
-        const id = String(br.broker || br.brokerNo || br.memberId || br.id || br.brokerId || '').trim();
-        if (id) rbaBrokersMap.set(id, br);
-      });
-    }
-
-    const rawBuyers = rba.topBuyers || rba.topBuyerBrokers || rba.topGrossBuyers || rba.buyers || [];
-    const rawSellers = rba.topSellers || rba.topSellerBrokers || rba.topGrossSellers || rba.sellers || [];
-
-    const topBuyers: BrokerDetail[] = rawBuyers.slice(0, 5).map((b: any) => {
-      const id = String(b.broker || b.brokerNo || b.memberId || b.id || b.brokerId || '').trim();
-      const match = rbaBrokersMap.get(id);
-      const buyVol = Number(b.buyQty || b.shares || b.qty || b.volume || match?.buyQty || 0);
-      const sellVol = Number(b.sellQty || match?.sellQty || 0);
-      const amt = Number(b.buyAmt || b.amount || b.buyAmount || match?.buyAmt || match?.buyAmount || (buyVol * (stockSummary?.ltp || 0)));
-      const sellAmt = Number(b.sellAmt || b.sellAmount || match?.sellAmt || match?.sellAmount || (sellVol * (stockSummary?.ltp || 0)));
-      const trueNetQty = b.netQty !== undefined ? Number(b.netQty) : (match?.netQty !== undefined ? Number(match.netQty) : (buyVol - sellVol));
-      const trueNetAmt = b.netAmt !== undefined ? Number(b.netAmt) : (match?.netAmt !== undefined ? Number(match.netAmt) : (amt - sellAmt));
-      return {
-        broker: id,
-        brokerName: b.name || b.brokerName || match?.name || match?.brokerName || getBrokerName(id),
-        volume: buyVol,
-        amount: amt,
-        pct: Number(b.pct || match?.pct || 0),
-        netQty: trueNetQty,
-        netAmount: trueNetAmt
-      };
-    });
-
-    const topSellers: BrokerDetail[] = rawSellers.slice(0, 5).map((s: any) => {
-      const id = String(s.broker || s.brokerNo || s.memberId || s.id || s.brokerId || '').trim();
-      const match = rbaBrokersMap.get(id);
-      const sellVol = Number(s.sellQty || s.shares || s.qty || s.volume || match?.sellQty || 0);
-      const buyVol = Number(s.buyQty || match?.buyQty || 0);
-      const amt = Number(s.sellAmt || s.amount || s.sellAmount || match?.sellAmt || match?.sellAmount || (sellVol * (stockSummary?.ltp || 0)));
-      const buyAmt = Number(s.buyAmt || s.buyAmount || match?.buyAmt || match?.buyAmount || (buyVol * (stockSummary?.ltp || 0)));
-      const trueNetQty = s.netQty !== undefined ? Number(s.netQty) : (match?.netQty !== undefined ? Number(match.netQty) : (buyVol - sellVol));
-      const trueNetAmt = s.netAmt !== undefined ? Number(s.netAmt) : (match?.netAmt !== undefined ? Number(match.netAmt) : (buyAmt - amt));
-      return {
-        broker: id,
-        brokerName: s.name || s.brokerName || match?.name || match?.brokerName || getBrokerName(id),
-        volume: sellVol,
-        amount: amt,
-        pct: Number(s.pct || match?.pct || 0),
-        netQty: trueNetQty,
-        netAmount: trueNetAmt
-      };
-    });
-
-    const rawNetBuyers = rba.topNetBuyers && rba.topNetBuyers.length > 0
-      ? rba.topNetBuyers
-      : (Array.isArray(rba.brokers) && rba.brokers.length > 0
-          ? rba.brokers.filter((b: any) => {
-              const bVol = Number(b.buyQty || b.shares || b.qty || b.volume || 0);
-              const sVol = Number(b.sellQty || 0);
-              const n = b.netQty !== undefined ? Number(b.netQty) : (bVol - sVol);
-              return n > 0;
-            }).sort((a: any, b: any) => {
-              const na = a.netQty !== undefined ? Number(a.netQty) : (Number(a.buyQty || 0) - Number(a.sellQty || 0));
-              const nb = b.netQty !== undefined ? Number(b.netQty) : (Number(b.buyQty || 0) - Number(b.sellQty || 0));
-              return nb - na;
-            })
-          : topBuyers.filter(b => b.netQty > 0));
-
-    const topNetAccumulators: BrokerDetail[] = rawNetBuyers.slice(0, 5).map((b: any) => {
-      const id = String(b.broker || b.brokerNo || b.memberId || b.id || b.brokerId || '').trim();
-      const match = rbaBrokersMap.get(id);
-      const buyVol = Number(b.buyQty || b.shares || b.volume || match?.buyQty || 0);
-      const sellVol = Number(b.sellQty || match?.sellQty || 0);
-      const vol = b.netQty !== undefined ? Number(b.netQty) : (match?.netQty !== undefined ? Number(match.netQty) : (buyVol > 0 ? buyVol - sellVol : Number(b.volume || 0)));
-      const amt = Number(b.netAmt || b.buyAmt || b.amount || match?.netAmt || (vol * (stockSummary?.ltp || 0)));
-      return {
-        broker: id,
-        brokerName: b.name || b.brokerName || match?.name || match?.brokerName || getBrokerName(id),
-        volume: Number(b.buyQty || match?.buyQty || (vol > 0 ? vol : 0)),
-        amount: amt,
-        pct: Number(b.pct || match?.pct || 0),
-        netQty: vol,
-        netAmount: amt
-      };
-    });
-
-    const rawNetSellers = rba.topNetSellers && rba.topNetSellers.length > 0
-      ? rba.topNetSellers
-      : (Array.isArray(rba.brokers) && rba.brokers.length > 0
-          ? rba.brokers.filter((s: any) => {
-              const bVol = Number(s.buyQty || 0);
-              const sVol = Number(s.sellQty || s.shares || s.qty || s.volume || 0);
-              const n = s.netQty !== undefined ? Number(s.netQty) : (bVol - sVol);
-              return n < 0;
-            }).sort((a: any, b: any) => {
-              const na = a.netQty !== undefined ? Number(a.netQty) : (Number(a.buyQty || 0) - Number(a.sellQty || 0));
-              const nb = b.netQty !== undefined ? Number(b.netQty) : (Number(b.buyQty || 0) - Number(b.sellQty || 0));
-              return na - nb; // Most negative first
-            })
-          : topSellers.filter(s => s.netQty < 0));
-
-    const topNetDistributors: BrokerDetail[] = rawNetSellers.slice(0, 5).map((s: any) => {
-      const id = String(s.broker || s.brokerNo || s.memberId || s.id || s.brokerId || '').trim();
-      const match = rbaBrokersMap.get(id);
-      const buyVol = Number(s.buyQty || match?.buyQty || 0);
-      const sellVol = Number(s.sellQty || s.shares || s.volume || match?.sellQty || 0);
-      const rawNet = s.netQty !== undefined ? Number(s.netQty) : (match?.netQty !== undefined ? Number(match.netQty) : (buyVol - sellVol));
-      const vol = Math.abs(rawNet !== 0 ? rawNet : (sellVol || Number(s.volume || 0)));
-      const amt = Math.abs(Number(s.netAmt || s.sellAmt || s.amount || match?.netAmt || (vol * (stockSummary?.ltp || 0))));
-      return {
-        broker: id,
-        brokerName: s.name || s.brokerName || match?.name || match?.brokerName || getBrokerName(id),
-        volume: Number(s.sellQty || match?.sellQty || vol),
-        amount: amt,
-        pct: Number(s.pct || match?.pct || 0),
-        netQty: -vol,
-        netAmount: -amt
-      };
-    });
-
-    const top3BuyVol = topBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
-    const top5BuyVol = topBuyers.slice(0, 5).reduce((acc, b) => acc + b.volume, 0);
-    const top3SellVol = topSellers.slice(0, 3).reduce((acc, s) => acc + s.volume, 0);
-    const top5SellVol = topSellers.slice(0, 5).reduce((acc, s) => acc + s.volume, 0);
-
-    const stockTotalVol = Number(
-      stockSummary?.totalTradedQuantity ||
-      stockSummary?.volume ||
-      stockSummary?.totalVolume ||
-      0
-    );
-
-    // Identify True Total Volume for the period
-    const rbaTotalBuyVol = Number(
-      rba.totalBuyVol ||
-      rba.totalVolume ||
-      rba.totalTradedQty ||
-      rba.totalQty ||
-      (Array.isArray(rba.brokers) && rba.brokers.length > 5
-        ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.volume || 0), 0)
-        : 0) ||
-      (rawBuyers.length > 5
-        ? rawBuyers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.volume || b.shares || 0), 0)
-        : 0) ||
-      (stockTotalVol > top5BuyVol ? stockTotalVol : 0)
-    );
-
-    const rbaTotalSellVol = Number(
-      rba.totalSellVol ||
-      rba.totalVolume ||
-      rba.totalTradedQty ||
-      rba.totalQty ||
-      (Array.isArray(rba.brokers) && rba.brokers.length > 5
-        ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.volume || 0), 0)
-        : 0) ||
-      (rawSellers.length > 5
-        ? rawSellers.reduce((acc: number, s: any) => acc + Number(s.sellQty || s.volume || s.shares || 0), 0)
-        : 0) ||
-      (stockTotalVol > top5SellVol ? stockTotalVol : 0)
-    );
-
-    let bcr5BuyPct = 0;
-    let bcr3BuyPct = 0;
-    let bcr3SellPct = 0;
-
-    const authenticTop3to5Ratio = (top5BuyVol > 0 && top3BuyVol > 0) ? (top3BuyVol / top5BuyVol) : 0.72;
-
-    // 1. Check if authentic concentration was already calculated at server/vault level
-    if (rba.bcr3BuyPct !== undefined && Number(rba.bcr3BuyPct) > 0) {
-      bcr3BuyPct = Number(rba.bcr3BuyPct);
-      bcr5BuyPct = Number(rba.bcr5BuyPct || (bcr3BuyPct / authenticTop3to5Ratio).toFixed(1));
-    } else if (rba.grossBuyConcentrationPct !== undefined && Number(rba.grossBuyConcentrationPct) > 0) {
-      bcr3BuyPct = Number(rba.grossBuyConcentrationPct);
-      bcr5BuyPct = Number(rba.bcr5NetPct || (bcr3BuyPct / authenticTop3to5Ratio).toFixed(1));
-    } else if (rba.crb5 !== undefined && Number(rba.crb5) > 0) {
-      bcr5BuyPct = Number((Number(rba.crb5) * 100).toFixed(1));
-      bcr3BuyPct = Number((bcr5BuyPct * authenticTop3to5Ratio).toFixed(1));
-    } else if (rba.bcr5BuyPct !== undefined && Number(rba.bcr5BuyPct) > 0) {
-      bcr5BuyPct = Number(rba.bcr5BuyPct);
-      bcr3BuyPct = Number((bcr5BuyPct * authenticTop3to5Ratio).toFixed(1));
-    } else if (rba.concentrationPct !== undefined && Number(rba.concentrationPct) > 0) {
-      bcr3BuyPct = Number(rba.concentrationPct);
-      bcr5BuyPct = Number(Math.min(92.0, (bcr3BuyPct / authenticTop3to5Ratio)).toFixed(1));
-    } else {
-      // 2. Check if individual brokers have authentic pct shares whose sum is < 98%
-      const sumBuyerPct = topBuyers.reduce((acc, b) => acc + b.pct, 0);
-      if (sumBuyerPct > 0 && sumBuyerPct < 98.0) {
-        bcr5BuyPct = Number(sumBuyerPct.toFixed(1));
-        bcr3BuyPct = Number(topBuyers.slice(0, 3).reduce((acc, b) => acc + b.pct, 0).toFixed(1));
-      } else {
-        // 3. Compute from volumes against true total buy volume
-        const sumAllBrokersBuyVol = Array.isArray(rba?.brokers)
-          ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.buyQty || b.buyVol || 0), 0)
-          : 0;
-        const effectiveBuyVol = rbaTotalBuyVol > 0
-          ? rbaTotalBuyVol
-          : (stockTotalVol > 0 ? stockTotalVol : (sumAllBrokersBuyVol > 0 ? sumAllBrokersBuyVol : 0));
-
-        bcr5BuyPct = effectiveBuyVol > 0 ? Number(Math.min(100.0, (top5BuyVol / effectiveBuyVol) * 100).toFixed(1)) : 0;
-        bcr3BuyPct = effectiveBuyVol > 0 ? Number(Math.min(bcr5BuyPct, (top3BuyVol / effectiveBuyVol) * 100).toFixed(1)) : 0;
-      }
-    }
-
-    if (rba.bcr3SellPct !== undefined && Number(rba.bcr3SellPct) > 0) {
-      bcr3SellPct = Number(rba.bcr3SellPct);
-    } else if (rba.grossSellConcentrationPct !== undefined && Number(rba.grossSellConcentrationPct) > 0) {
-      bcr3SellPct = Number(rba.grossSellConcentrationPct);
-    } else if (rba.scr3NetPct !== undefined && Number(rba.scr3NetPct) > 0) {
-      bcr3SellPct = Number(rba.scr3NetPct);
-    } else {
-      const sumAllBrokersSellVol = Array.isArray(rba?.brokers)
-        ? rba.brokers.reduce((acc: number, b: any) => acc + Number(b.sellQty || b.sellVol || 0), 0)
-        : 0;
-      const effectiveSellVol = rbaTotalSellVol > 0
-        ? rbaTotalSellVol
-        : (stockTotalVol > 0 ? stockTotalVol : (sumAllBrokersSellVol > 0 ? sumAllBrokersSellVol : 0));
-      bcr3SellPct = effectiveSellVol > 0 ? Number(Math.min(100.0, (top3SellVol / effectiveSellVol) * 100).toFixed(1)) : 0;
-    }
-
-    // Fill in individual pct for buyers/sellers against true market base
-    const marketBuyBase = (rbaTotalBuyVol > 0 ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : (bcr5BuyPct > 0 ? Math.round(top5BuyVol / (bcr5BuyPct / 100)) : (top5BuyVol || 1)))) || 1;
-    topBuyers.forEach(b => {
-      b.pct = Number(((b.volume / marketBuyBase) * 100).toFixed(1));
-    });
-
-    const marketSellBase = (rbaTotalSellVol > 0 ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : (bcr3SellPct > 0 ? Math.round(top5SellVol / (bcr3SellPct / 100)) : (top5SellVol || 1)))) || 1;
-    topSellers.forEach(s => {
-      s.pct = Number(((s.volume / marketSellBase) * 100).toFixed(1));
-    });
-
-    const totalBuyVol = rbaTotalBuyVol > 0 ? rbaTotalBuyVol : (stockTotalVol > 0 ? stockTotalVol : top5BuyVol);
-    const totalSellVol = rbaTotalSellVol > 0 ? rbaTotalSellVol : (stockTotalVol > 0 ? stockTotalVol : top5SellVol);
-
-    const top3BuyerTradesCount = topBuyers.slice(0, 3).reduce((acc, b: any) => {
-      const match = rbaBrokersMap.get(b.broker);
-      return acc + Number(b.trades || b.tradesCount || b.count || b.transactions || match?.trades || match?.tradesCount || match?.count || match?.buyTrades || 0);
-    }, 0);
-
-    const top3SellerTradesCount = topSellers.slice(0, 3).reduce((acc, s: any) => {
-      const match = rbaBrokersMap.get(s.broker);
-      return acc + Number(s.trades || s.tradesCount || s.count || s.transactions || match?.trades || match?.tradesCount || match?.count || match?.sellTrades || 0);
-    }, 0);
-
-    const totalTradesCount = Number(stockSummary?.transactions || stockSummary?.totalTransactions || rba.totalTrades || 0);
-
-    const avgBuyTradeSize = top3BuyerTradesCount > 0 
-      ? Math.round(top3BuyVol / top3BuyerTradesCount) 
-      : (totalTradesCount > 0 ? Math.round(totalBuyVol / Math.max(1, Math.round(totalTradesCount / 2))) : Math.round(top3BuyVol / 3));
-
-    const avgSellTradeSize = top3SellerTradesCount > 0 
-      ? Math.round(top3SellVol / top3SellerTradesCount) 
-      : (totalTradesCount > 0 ? Math.round(totalSellVol / Math.max(1, Math.round(totalTradesCount / 2))) : Math.round(top3SellVol / 3));
-
-    const tradeSizeRatio = avgSellTradeSize > 0 ? Number((avgBuyTradeSize / avgSellTradeSize).toFixed(2)) : 1.0;
-
-    let smartMoneyBias: BrokerConcentrationResult['smartMoneyBias'] = 'Neutral';
-    if (bcr5BuyPct >= 48 && tradeSizeRatio >= 1.40) {
-      smartMoneyBias = 'Institutional Cornering';
-    } else if (bcr3SellPct >= 42 && tradeSizeRatio <= 0.70) {
-      smartMoneyBias = 'Operator Offloading';
-    } else if (bcr5BuyPct > bcr3SellPct && tradeSizeRatio >= 1.05) {
-      smartMoneyBias = 'Retail Absorption';
-    }
-
-    const effectiveSellConc = bcr3SellPct > 0 ? bcr3SellPct : 15.0;
-    const asymmetryRatio = Number((bcr3BuyPct / effectiveSellConc).toFixed(2));
-    const top3NetBuy = topBuyers.slice(0, 3).reduce((acc, b) => acc + Math.max(0, b.netQty !== undefined ? b.netQty : b.volume), 0);
-    const top3GrossBuy = topBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
-    const netAbsorptionRatio = top3GrossBuy > 0 ? Number((top3NetBuy / top3GrossBuy).toFixed(2)) : 1.0;
-    const smartMoneyNetKitta = topNetAccumulators.reduce((acc, b) => acc + (b.netQty > 0 ? b.netQty : 0), 0);
-
-    return {
-      symbol: normSym,
-      totalBuyVolume: totalBuyVol,
-      totalSellVolume: totalSellVol,
-      netVolume: smartMoneyNetKitta > 0 ? smartMoneyNetKitta : (totalBuyVol - totalSellVol),
-      smartMoneyNetVolume: smartMoneyNetKitta,
-      totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
-      bcr3BuyPct,
-      bcr5BuyPct,
-      bcr3SellPct,
-      topBuyerBrokers: topBuyers,
-      topSellerBrokers: topSellers,
-      topNetAccumulators,
-      topNetDistributors,
-      avgBuyTradeSize,
-      avgSellTradeSize,
-      tradeSizeRatio,
-      smartMoneyBias,
-      asymmetryRatio,
-      netAbsorptionRatio,
-      status: 'complete'
-    };
-  }
-
-  if (trades.length > 0) {
-
-  const buyersMap = new Map<string, { volume: number; amount: number; count: number }>();
-  const sellersMap = new Map<string, { volume: number; amount: number; count: number }>();
-  let totalBuyVol = 0;
-  let totalSellVol = 0;
-  let totalBuyTrades = 0;
-  let totalSellTrades = 0;
-
-  trades.forEach((t: any) => {
-    const qty = Number(t.quantity || t.qty || 0);
-    const rate = Number(t.rate || t.price || 0);
-    const amt = Number(t.amount || (qty * rate) || 0);
-    const bId = String(t.buyer || t.buyerBroker || '').replace(/^0+/, '').trim();
-    const sId = String(t.seller || t.sellerBroker || '').replace(/^0+/, '').trim();
-
-    if (bId && qty > 0) {
-      if (!buyersMap.has(bId)) buyersMap.set(bId, { volume: 0, amount: 0, count: 0 });
-      const b = buyersMap.get(bId)!;
-      b.volume += qty;
-      b.amount += amt;
-      b.count += 1;
-      totalBuyVol += qty;
-      totalBuyTrades += 1;
-    }
-
-    if (sId && qty > 0) {
-      if (!sellersMap.has(sId)) sellersMap.set(sId, { volume: 0, amount: 0, count: 0 });
-      const s = sellersMap.get(sId)!;
-      s.volume += qty;
-      s.amount += amt;
-      s.count += 1;
-      totalSellVol += qty;
-      totalSellTrades += 1;
-    }
+  const res = aggregateBrokerMicrostructure({
+    contracts: trades,
+    symbol: normSym,
+    stockSummary,
+    realBrokerAnalysis: rba
   });
 
-  const sortedBuyers: BrokerDetail[] = Array.from(buyersMap.entries())
-    .map(([broker, data]) => {
-      const sData = sellersMap.get(broker) || { volume: 0, amount: 0, count: 0 };
-      return {
-        broker,
-        brokerName: getBrokerName(broker),
-        volume: data.volume,
-        amount: data.amount,
-        pct: totalBuyVol > 0 ? Number(((data.volume / totalBuyVol) * 100).toFixed(1)) : 0,
-        netQty: data.volume - sData.volume,
-        netAmount: data.amount - sData.amount
-      };
-    })
-    .sort((a, b) => b.volume - a.volume);
-
-  const sortedSellers: BrokerDetail[] = Array.from(sellersMap.entries())
-    .map(([broker, data]) => {
-      const bData = buyersMap.get(broker) || { volume: 0, amount: 0, count: 0 };
-      return {
-        broker,
-        brokerName: getBrokerName(broker),
-        volume: data.volume,
-        amount: data.amount,
-        pct: totalSellVol > 0 ? Number(((data.volume / totalSellVol) * 100).toFixed(1)) : 0,
-        netQty: bData.volume - data.volume,
-        netAmount: bData.amount - data.amount
-      };
-    })
-    .sort((a, b) => b.volume - a.volume);
-
-  // Top Net Accumulators (Net Buyers: buyVol > sellVol)
-  const allBrokers = Array.from(new Set([...buyersMap.keys(), ...sellersMap.keys()]));
-  const enrichedBrokers = allBrokers.map(bId => {
-    const b = buyersMap.get(bId) || { volume: 0, amount: 0, count: 0 };
-    const s = sellersMap.get(bId) || { volume: 0, amount: 0, count: 0 };
-    const netQty = b.volume - s.volume;
-    const netAmount = b.amount - s.amount;
-    return {
-      broker: bId,
-      brokerName: getBrokerName(bId),
-      volume: b.volume,
-      amount: b.amount,
-      pct: totalBuyVol > 0 ? Number(((b.volume / totalBuyVol) * 100).toFixed(1)) : 0,
-      netQty,
-      netAmount
-    };
-  });
-
-  const topNetAccumulators: BrokerDetail[] = enrichedBrokers
-    .filter(b => b.netQty > 0)
-    .sort((a, b) => b.netQty - a.netQty)
-    .slice(0, 5);
-
-  const topNetDistributors: BrokerDetail[] = enrichedBrokers
-    .filter(b => b.netQty < 0)
-    .sort((a, b) => a.netQty - b.netQty) // Most negative first
-    .map(b => {
-      const s = sellersMap.get(b.broker) || { volume: 0, amount: 0, count: 0 };
-      return {
-        ...b,
-        volume: s.volume,
-        amount: s.amount,
-        pct: totalSellVol > 0 ? Number(((s.volume / totalSellVol) * 100).toFixed(1)) : 0
-      };
-    })
-    .slice(0, 5);
-
-  const top3BuyVol = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
-  const top5BuyVol = sortedBuyers.slice(0, 5).reduce((acc, b) => acc + b.volume, 0);
-  const top3SellVol = sortedSellers.slice(0, 3).reduce((acc, s) => acc + s.volume, 0);
-
-  const stockTotalVol = Number(stockSummary?.totalTradedQuantity || stockSummary?.volume || 0);
-  // Only use whole-day stockTotalVol if this floorsheet dataset represents >= 75% of total session volume.
-  // Otherwise use totalBuyVol of the trades so we don't compute an artificial 1.6% ratio on a 25-trade sample.
-  const effectiveMarketBuyVol = (stockTotalVol > 0 && totalBuyVol >= stockTotalVol * 0.75) ? stockTotalVol : (totalBuyVol > 0 ? totalBuyVol : 1);
-  const effectiveMarketSellVol = (stockTotalVol > 0 && totalSellVol >= stockTotalVol * 0.75) ? stockTotalVol : (totalSellVol > 0 ? totalSellVol : 1);
-
-  let bcr3BuyPct = 0;
-  let bcr5BuyPct = 0;
-  let bcr3SellPct = 0;
-
-  if (effectiveMarketBuyVol > 0) {
-    bcr5BuyPct = Number(Math.min(100.0, (top5BuyVol / effectiveMarketBuyVol) * 100).toFixed(1));
-    bcr3BuyPct = Number(Math.min(bcr5BuyPct, (top3BuyVol / effectiveMarketBuyVol) * 100).toFixed(1));
-  }
-
-  if (effectiveMarketSellVol > 0) {
-    bcr3SellPct = Number(Math.min(100.0, (top3SellVol / effectiveMarketSellVol) * 100).toFixed(1));
-  }
-
-
-  const top3BuyerTradesCount = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + (buyersMap.get(b.broker)?.count || 0), 0);
-  const top3SellerTradesCount = sortedSellers.slice(0, 3).reduce((acc, s) => acc + (sellersMap.get(s.broker)?.count || 0), 0);
-  const avgBuyTradeSize = top3BuyerTradesCount > 0 
-    ? Math.round(top3BuyVol / top3BuyerTradesCount) 
-    : (totalBuyTrades > 0 ? Math.round(totalBuyVol / totalBuyTrades) : 0);
-  const avgSellTradeSize = top3SellerTradesCount > 0 
-    ? Math.round(top3SellVol / top3SellerTradesCount) 
-    : (totalSellTrades > 0 ? Math.round(totalSellVol / totalSellTrades) : 0);
-  const tradeSizeRatio = avgSellTradeSize > 0 ? Number((avgBuyTradeSize / avgSellTradeSize).toFixed(2)) : 1.0;
-
-  let smartMoneyBias: BrokerConcentrationResult['smartMoneyBias'] = 'Neutral';
-  if (bcr5BuyPct >= 45 && tradeSizeRatio >= 1.5) {
-    smartMoneyBias = 'Institutional Cornering';
-  } else if (bcr3SellPct >= 45 && tradeSizeRatio <= 0.65) {
-    smartMoneyBias = 'Operator Offloading';
-  } else if (bcr5BuyPct > bcr3SellPct) {
-    smartMoneyBias = 'Retail Absorption';
-  }
-
-  const effectiveSellConc = bcr3SellPct > 0 ? bcr3SellPct : 15.0;
-  const asymmetryRatio = Number((bcr3BuyPct / effectiveSellConc).toFixed(2));
-  const top3NetBuy = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + Math.max(0, b.netQty !== undefined ? b.netQty : b.volume), 0);
-  const top3GrossBuy = sortedBuyers.slice(0, 3).reduce((acc, b) => acc + b.volume, 0);
-  const netAbsorptionRatio = top3GrossBuy > 0 ? Number((top3NetBuy / top3GrossBuy).toFixed(2)) : 1.0;
-
-  const isInsufficientSample = (trades.length <= 1 && totalBuyVol < 500) || totalBuyVol < 200;
-  if (isInsufficientSample) {
-    return {
-      symbol: normSym,
-      totalBuyVolume: totalBuyVol,
-      totalSellVolume: totalSellVol,
-      netVolume: 0,
-      smartMoneyNetVolume: 0,
-      totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
-      bcr3BuyPct: 0,
-      bcr5BuyPct: 0,
-      bcr3SellPct: 0,
-      topBuyerBrokers: sortedBuyers.slice(0, 5),
-      topSellerBrokers: sortedSellers.slice(0, 5),
-      topNetAccumulators: [],
-      topNetDistributors: [],
-      avgBuyTradeSize: Math.round(totalBuyVol / Math.max(1, totalBuyTrades)),
-      avgSellTradeSize: Math.round(totalSellVol / Math.max(1, totalSellTrades)),
-      tradeSizeRatio: 1.0,
-      smartMoneyBias: 'Insufficient Data',
-      asymmetryRatio: 1.0,
-      netAbsorptionRatio: 1.0,
-      status: 'insufficient_sample',
-      isInsufficientSample: true,
-      sampleValidity: 'INSUFFICIENT_SAMPLE',
-      description: `Insufficient trade sample (${trades.length} trades, ${totalBuyVol} kitta). Thin volume prevents statistically valid broker concentration calculation.`
-    };
-  }
-
-  // Cross-Trade / Internal Matched Transfer Filter
-  const isMatchedCrossTrade = (bcr3BuyPct >= 95 && bcr3SellPct >= 95 && sortedBuyers[0]?.broker === sortedSellers[0]?.broker);
-  const finalBias = isMatchedCrossTrade ? 'Neutral' : smartMoneyBias;
-  const smartMoneyNetKitta = topNetAccumulators.reduce((acc, b) => acc + (b.netQty > 0 ? b.netQty : 0), 0);
-
-  return {
-    symbol: normSym,
-    totalBuyVolume: totalBuyVol,
-    totalSellVolume: totalSellVol,
-    netVolume: smartMoneyNetKitta > 0 ? smartMoneyNetKitta : (totalBuyVol - totalSellVol),
-    smartMoneyNetVolume: smartMoneyNetKitta,
-    totalSessionVolume: Math.max(totalBuyVol, stockTotalVol),
-    bcr3BuyPct: isMatchedCrossTrade ? Math.min(bcr3BuyPct, 45) : bcr3BuyPct,
-    bcr5BuyPct: isMatchedCrossTrade ? Math.min(bcr5BuyPct, 50) : bcr5BuyPct,
-    bcr3SellPct: isMatchedCrossTrade ? Math.min(bcr3SellPct, 45) : bcr3SellPct,
-    topBuyerBrokers: sortedBuyers.slice(0, 5),
-    topSellerBrokers: sortedSellers.slice(0, 5),
-    topNetAccumulators,
-    topNetDistributors,
-    avgBuyTradeSize,
-    avgSellTradeSize,
-    tradeSizeRatio,
-    smartMoneyBias: finalBias,
-    asymmetryRatio,
-    netAbsorptionRatio,
-    status: 'complete',
-    isInsufficientSample: false,
-    sampleValidity: isMatchedCrossTrade ? 'CROSS_TRADE' : 'VALID',
-    description: isMatchedCrossTrade
-      ? `Neutral / Bilateral Block Transfer: Broker #${sortedBuyers[0]?.broker} matched both buy and sell sides. Not indicative of market cornering.`
-      : `${finalBias}: Top 3 buyers hold ${bcr3BuyPct}% concentration with ticket ratio ${tradeSizeRatio}x.`
-  };
-  }
-
-  // Fiduciary Standard: When neither authentic floorsheet trades nor real broker analysis exist,
-  // return an honest awaiting sync payload. NEVER manufacture fake broker footprints or PRNG seeds.
-  return {
-    symbol: normSym,
-    totalBuyVolume: 0,
-    totalSellVolume: 0,
-    netVolume: 0,
-    bcr3BuyPct: 0,
-    bcr5BuyPct: 0,
-    bcr3SellPct: 0,
-    topBuyerBrokers: [],
-    topSellerBrokers: [],
-    topNetAccumulators: [],
-    topNetDistributors: [],
-    avgBuyTradeSize: 0,
-    avgSellTradeSize: 0,
-    tradeSizeRatio: 1.0,
-    smartMoneyBias: 'Neutral',
-    asymmetryRatio: 1.0,
-    netAbsorptionRatio: 1.0,
-    isEstimated: true,
-    status: 'Awaiting Floorsheet Sync',
-    description: 'Awaiting Floorsheet Sync: No genuine floorsheet trades or broker concentration records have been ingested for this scrip.'
-  };
+  return res as unknown as BrokerConcentrationResult;
 }
 
 export function formatBrokerAmount(amount: number): string {
@@ -1960,9 +1421,9 @@ export function calculateMultiSessionBrokerFootprint(
         seenContracts.add(contractKey);
       }
 
-      const buyer = String(t.buyerBroker || t.buyerMemberId || t.buyer || '').trim();
-      const seller = String(t.sellerBroker || t.sellerMemberId || t.seller || '').trim();
-      const qty = Number(t.contractQuantity || t.quantity || t.qty || 0);
+      const buyer = String(t.buyerBroker || t.buyer_broker || t.buyerMemberId || t.buyer || '').trim();
+      const seller = String(t.sellerBroker || t.seller_broker || t.sellerMemberId || t.seller || '').trim();
+      const qty = Number(t.contractQuantity || t.quantity || t.qty || t.kitta || 0);
       const rate = Number(t.contractRate || t.rate || t.price || ltp || 0);
       const amt = Number(t.contractAmount || t.amount || (qty * rate));
 
@@ -2480,10 +1941,10 @@ export function detectSyndicateCluster(brokerData: any): SyndicateClusterAnalysi
     };
   }
 
-  // Extract buyers, sellers, or full broker roster from any common shape (BrokerAnalysisService, BrokerConcentrationResult, or raw API)
-  const rawBuyers: any[] = brokerData.buyers || brokerData.topBuyerBrokers || brokerData.topBuyers || [];
-  const rawSellers: any[] = brokerData.sellers || brokerData.topSellerBrokers || brokerData.topSellers || [];
-  const fullBrokers: any[] = Array.isArray(brokerData.brokers) ? brokerData.brokers : [];
+  // Extract buyers, sellers, or full broker roster from any common shape (BrokerAnalysisService, BrokerConcentrationResult, smartMoney5D, or raw API)
+  const rawBuyers: any[] = brokerData.buyers || brokerData.topBuyerBrokers || brokerData.topBuyers || brokerData.topAccumulators || [];
+  const rawSellers: any[] = brokerData.sellers || brokerData.topSellerBrokers || brokerData.topSellers || brokerData.topDistributors || [];
+  const fullBrokers: any[] = Array.isArray(brokerData.brokers) ? brokerData.brokers : (Array.isArray(brokerData.allBrokers) ? brokerData.allBrokers : []);
 
   if (rawBuyers.length === 0 && rawSellers.length === 0 && fullBrokers.length === 0) {
     return {
@@ -2531,9 +1992,9 @@ export function detectSyndicateCluster(brokerData: any): SyndicateClusterAnalysi
       const bId = br.brokerId ?? br.broker ?? br.id ?? br.brokerNo ?? br.memberId ?? '';
       if (!bId) continue;
       const entry = getOrInit(bId, br.brokerName || br.name || getBrokerName(bId));
-      entry.buyQty += Number(br.buyQty || br.shares || br.volume || 0);
-      entry.buyAmount += Number(br.buyAmount || br.buyAmt || br.amount || 0);
-      entry.sellQty += Number(br.sellQty || 0);
+      entry.buyQty += Number(br.buyQty || br.buyVol || br.buyKitta || br.shares || br.volume || 0);
+      entry.buyAmount += Number(br.buyAmount || br.buyAmt || br.turnover || br.amount || 0);
+      entry.sellQty += Number(br.sellQty || br.sellVol || br.sellKitta || 0);
       entry.sellAmount += Number(br.sellAmount || br.sellAmt || 0);
     }
   } else {
@@ -2541,16 +2002,16 @@ export function detectSyndicateCluster(brokerData: any): SyndicateClusterAnalysi
       const bId = b.brokerId ?? b.broker ?? b.id ?? '';
       if (!bId) continue;
       const entry = getOrInit(bId, b.brokerName || b.name || '');
-      entry.buyQty += Number(b.buyQty || b.volume || 0);
-      entry.buyAmount += Number(b.buyAmount || b.buyAmt || b.amount || 0);
+      entry.buyQty += Number(b.buyQty || b.buyVol || b.buyKitta || b.volume || 0);
+      entry.buyAmount += Number(b.buyAmount || b.buyAmt || b.turnover || b.amount || 0);
     }
 
     for (const s of rawSellers) {
       const sId = s.brokerId ?? s.broker ?? s.id ?? '';
       if (!sId) continue;
       const entry = getOrInit(sId, s.brokerName || s.name || '');
-      entry.sellQty += Number(s.sellQty || s.volume || 0);
-      entry.sellAmount += Number(s.sellAmount || s.sellAmt || s.amount || 0);
+      entry.sellQty += Number(s.sellQty || s.sellVol || s.sellKitta || s.volume || 0);
+      entry.sellAmount += Number(s.sellAmount || s.sellAmt || s.turnover || s.amount || 0);
     }
   }
 

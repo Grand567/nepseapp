@@ -309,8 +309,10 @@ export function calculateBreakoutQuality(
       let totalSellVol = 0;
       const sellers = new Map<string, number>();
       trades.forEach((t) => {
-        const sId = String(t.seller || t.sellerBroker || '').trim();
-        const qty = Number(t.quantity || t.qty || 0);
+        const bId = String(t.buyer || t.buyerBroker || t.buyer_broker || '').trim();
+        const sId = String(t.seller || t.sellerBroker || t.seller_broker || '').trim();
+        if (bId && sId && bId === sId) return; // Exclude self-trades from distribution trap check
+        const qty = Number(t.quantity || t.qty || t.kitta || 0);
         if (sId && qty > 0) {
           sellers.set(sId, (sellers.get(sId) || 0) + qty);
           totalSellVol += qty;

@@ -585,12 +585,20 @@ function AppInner() {
           setMarketStatus(rawStatus);
         }
 
-        // Fallback index calculation if liveIndices failed
+        // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
         const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
-        if (!hasFreshIndices && currentStocks && currentStocks.length > 0) {
-          const computed = calculateIndices(currentStocks);
-          setIndices({ ...computed });
-          if (!computed.isPlaceholder) saveCachedIndices(computed);
+        if (!hasFreshIndices) {
+          setIndices(prev => {
+            if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder) {
+              return prev; // PRESERVE authentic live index! Never overwrite with yesterday's fallback
+            }
+            if (currentStocks && currentStocks.length > 0) {
+              const computed = calculateIndices(currentStocks);
+              if (!computed.isPlaceholder) saveCachedIndices(computed);
+              return { ...computed };
+            }
+            return prev;
+          });
         }
 
         if (hasFreshData) {
@@ -610,16 +618,16 @@ function AppInner() {
 
       if (!isMounted) return;
 
-      // Adaptive battery-saving intervals:
-      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 12s
-      // - Pre-Open Session (10:30 - 11:00 AM NPT): 30s
-      // - Post-Close Reconciliation (3:00 - 4:00 PM NPT): 60s
-      // - Off-Hours / Weekend / Holiday: 600s (10 min) to conserve mobile battery & cellular data
+      // Adaptive intervals with continuous background self-refresh:
+      // - Active Live Trading (11:00 AM - 3:00 PM NPT): 8s
+      // - Pre-Open Session (10:30 - 11:00 AM NPT): 15s
+      // - Post-Close Reconciliation (3:00 - 4:00 PM NPT): 20s
+      // - Off-Hours / Weekend: 30s (fast responsive background self-refresh)
       const isRecon = !isMarketOpen && (status?.isPostCloseReconciling || (status?.nptTotalMinutes >= 15 * 60 && status?.nptTotalMinutes < 16 * 60));
-      const baseInterval = isMarketOpen ? 12000 : (isPreOpen ? 30000 : (isRecon ? 60000 : 600000));
+      const baseInterval = isMarketOpen ? 8000 : (isPreOpen ? 15000 : (isRecon ? 20000 : 30000));
       let nextInterval = baseInterval;
       if (hadError || consecutiveErrors > 0) {
-        nextInterval = Math.min(baseInterval * Math.pow(1.8, Math.min(consecutiveErrors, 5)), 180000);
+        nextInterval = Math.min(baseInterval * Math.pow(1.4, Math.min(consecutiveErrors, 4)), 45000);
       }
 
       scheduleNext(nextInterval);
@@ -633,7 +641,7 @@ function AppInner() {
     };
   }, [user]); // Re-run when user logs in/out
 
-  // ── High-Frequency (2-Second) NEPSE Live Index Micro-Ticker ──
+  // ── High-Frequency NEPSE Live Index Micro-Ticker (Continuous Self-Refresh) ──
   // Decoupled from the heavy 350+ stock universe fetch to deliver sub-second index responsiveness
   useEffect(() => {
     let isMounted = true;
@@ -641,36 +649,48 @@ function AppInner() {
 
     const tickFastIndex = async () => {
       const status = getDetailedMarketStatus();
-      // Fast index polling during live market or pre-open (Mon-Fri 10:30am-3:00pm NPT)
-      if (status.isOpen || status.isPreOpen) {
-        try {
-          const liveIdx = await fetchMarketIndices();
-          if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
-            setIndices(prev => {
-              if (
-                prev?.nepse?.value === liveIdx.nepse.value &&
-                prev?.nepse?.turnover === liveIdx.nepse.turnover &&
-                prev?.nepse?.change === liveIdx.nepse.change
-              ) {
-                return prev;
-              }
-              return { ...prev, ...liveIdx };
-            });
-            saveCachedIndices(liveIdx);
-          }
-        } catch (_) {}
-      }
+      try {
+        const liveIdx = await fetchMarketIndices();
+        if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
+          setIndices(prev => {
+            if (
+              prev?.nepse?.value === liveIdx.nepse.value &&
+              prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+              prev?.nepse?.change === liveIdx.nepse.change
+            ) {
+              return prev;
+            }
+            return { ...prev, ...liveIdx };
+          });
+          saveCachedIndices(liveIdx);
+        }
+      } catch (_) {}
 
       if (!isMounted) return;
-      const interval = status.isOpen ? 1000 : (status.isPreOpen ? 2500 : 30000);
+      // High frequency continuous interval: 1.5s during market, 2.5s pre-open, 5s off-market
+      const interval = status.isOpen ? 1500 : (status.isPreOpen ? 2500 : 5000);
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
-    tickerTimer = setTimeout(tickFastIndex, 1000);
+    tickerTimer = setTimeout(tickFastIndex, 500);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        tickFastIndex();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('focus', handleVisibilityChange);
+    }
 
     return () => {
       isMounted = false;
       if (tickerTimer) clearTimeout(tickerTimer);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', handleVisibilityChange);
+      }
     };
   }, []);
 
@@ -747,12 +767,20 @@ function AppInner() {
       const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
       if (status) setMarketStatus(status);
 
-      // Fallback index calculation if liveIndices failed
+      // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
       const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder;
-      if (!hasFreshIndices && currentStocks && currentStocks.length > 0) {
-        const computed = calculateIndices(currentStocks);
-        setIndices({ ...computed });
-        if (!computed.isPlaceholder) saveCachedIndices(computed);
+      if (!hasFreshIndices) {
+        setIndices(prev => {
+          if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder) {
+            return prev; // PRESERVE authentic live index! Never revert to yesterday!
+          }
+          if (currentStocks && currentStocks.length > 0) {
+            const computed = calculateIndices(currentStocks);
+            if (!computed.isPlaceholder) saveCachedIndices(computed);
+            return { ...computed };
+          }
+          return prev;
+        });
       }
 
       if (hasFreshData) {
@@ -1791,7 +1819,7 @@ function AppInner() {
                       : marketStatus?.isHoliday
                       ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
                       : marketStatus?.isWeekend
-                      ? 'Weekend Closed (शनिबार/आइतबार)'
+                      ? 'Weekend Closed (शुक्रबार/शनिबार)'
                       : 'Market Closed (बन्द)'}
                   </div>
                 </div>
@@ -1803,8 +1831,8 @@ function AppInner() {
                 }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Mon – Fri (सोम – शुक्र)</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Friday market is OPEN</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Sun – Thu (आइत – बिही)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sunday market is OPEN</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
@@ -1813,7 +1841,7 @@ function AppInner() {
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Saturday & Sunday</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Friday & Saturday</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>National weekend off</div>
                   </div>
                 </div>
@@ -1846,7 +1874,7 @@ function AppInner() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {upcomingHolidaysList.map((h, idx) => {
-                      const isWeekendOff = Boolean(h.isWeekend ?? (h.dayOfWeek === 0 || h.dayOfWeek === 6));
+                      const isWeekendOff = Boolean(h.isWeekend ?? (h.dayOfWeek === 5 || h.dayOfWeek === 6));
                       return (
                         <div
                           key={`${h.bsYear}_${h.bsMonth}_${h.bsDay}_${idx}`}

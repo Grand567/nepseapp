@@ -42,6 +42,12 @@ export const PHASE_DEFINITIONS = {
     badge: "⚪ Balanced Order Book",
     criteria: "Evenly dispersed buy/sell orders without dominant broker cornering",
     explanation: "Trading is distributed across broad retail participants without asymmetric institutional dominance."
+  },
+  INSUFFICIENT_ACTIVITY: {
+    title: "Insufficient Activity",
+    badge: "⚪ Insufficient Activity",
+    criteria: "Turnover < Rs. 50,000 | Volume < 200 shares | Active Brokers < 3 | Trades < 5",
+    explanation: "Trading volume, turnover, or broker participation is too thin for statistically reliable institutional accumulation/distribution detection."
   }
 };
 
@@ -255,6 +261,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
 
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
       const sVol = Math.max(0, Number(b.sellVol || b.sellQty || 0));
+      const cVol = Math.max(0, Number(b.crossVol || b.cross_vol || 0));
       const bAmt = bVol > 0
         ? Number(b.buyAmt ?? b.buyAmount ?? (sVol === 0 && b.amount ? b.amount : 0) ?? (bVol * Number(b.avgBuyPrice || b.rate || 0)))
         : 0;
@@ -264,6 +271,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
 
       prev.buyVol += bVol;
       prev.sellVol += sVol;
+      prev.crossVol = (prev.crossVol || 0) + cVol;
       prev.buyAmt += bAmt;
       prev.sellAmt += sAmt;
 
@@ -271,6 +279,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
         date: dt,
         buyVol: bVol,
         sellVol: sVol,
+        crossVol: cVol,
         netVol: bVol - sVol,
         buyAmt: bAmt,
         sellAmt: sAmt,
@@ -280,12 +289,14 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
       });
 
       brokerLedger.set(brokerId, prev);
-
-      dayTopBuyerVol += bVol;
-      dayTopSellerVol += sVol;
     }
 
-    if (dayTopBuyerVol >= dayTopSellerVol && dayTopBuyerVol > 0) {
+    // Compare Top 3 Net Buyers vs Top 3 Net Sellers for this session (not total buy vs total sell which is always equal)
+    const sessionNets = (day.brokers || []).map(b => Number(b.buyVol || b.buyQty || 0) - Number(b.sellVol || b.sellQty || 0));
+    dayTopBuyerVol = sessionNets.filter(n => n > 0).sort((a, b) => b - a).slice(0, 3).reduce((s, n) => s + n, 0);
+    dayTopSellerVol = sessionNets.filter(n => n < 0).sort((a, b) => a - b).slice(0, 3).reduce((s, n) => s + Math.abs(n), 0);
+
+    if (dayTopBuyerVol > dayTopSellerVol && dayTopBuyerVol > 0) {
       sessionsWithPositiveSmartFlow++;
     }
   }
@@ -379,17 +390,20 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   const top5NetBuyVol = topNetBuyers.slice(0, 5).reduce((sum, b) => sum + b.netVol, 0);
   const top3NetSellVol = topNetSellers.slice(0, 3).reduce((sum, b) => sum + Math.abs(b.netVol), 0);
 
-  const top3GrossBuyVol = topGrossBuyers.slice(0, 3).reduce((sum, b) => sum + b.buyVol, 0);
-  const top5GrossBuyVol = topGrossBuyers.slice(0, 5).reduce((sum, b) => sum + b.buyVol, 0);
-  const top3GrossSellVol = topGrossSellers.slice(0, 3).reduce((sum, b) => sum + b.sellVol, 0);
+  const totalCrossVol = brokersArray.reduce((sum, b) => sum + Number(b.crossVol || 0), 0);
+  const nonCrossMarketVol = Math.max(1, totalVolume - totalCrossVol);
 
-  const bcr3NetPct = Number(((top3NetBuyVol / totalVolume) * 100).toFixed(1));
-  const bcr5NetPct = Number(((top5NetBuyVol / totalVolume) * 100).toFixed(1));
-  const scr3NetPct = Number(((top3NetSellVol / totalVolume) * 100).toFixed(1));
+  const top3GrossBuyVol = topGrossBuyers.slice(0, 3).reduce((sum, b) => sum + Math.max(0, b.buyVol - Number(b.crossVol || 0)), 0);
+  const top5GrossBuyVol = topGrossBuyers.slice(0, 5).reduce((sum, b) => sum + Math.max(0, b.buyVol - Number(b.crossVol || 0)), 0);
+  const top3GrossSellVol = topGrossSellers.slice(0, 3).reduce((sum, s) => sum + Math.max(0, s.sellVol - Number(s.crossVol || 0)), 0);
 
-  const bcr3BuyPct = Number(((top3GrossBuyVol / totalVolume) * 100).toFixed(1));
-  const bcr5BuyPct = Number(((top5GrossBuyVol / totalVolume) * 100).toFixed(1));
-  const scr3SellPct = Number(((top3GrossSellVol / totalVolume) * 100).toFixed(1));
+  const bcr3NetPct = Number(((top3NetBuyVol / nonCrossMarketVol) * 100).toFixed(1));
+  const bcr5NetPct = Number(((top5NetBuyVol / nonCrossMarketVol) * 100).toFixed(1));
+  const scr3NetPct = Number(((top3NetSellVol / nonCrossMarketVol) * 100).toFixed(1));
+
+  const bcr3BuyPct = Number(Math.min(100, (top3GrossBuyVol / nonCrossMarketVol) * 100).toFixed(1));
+  const bcr5BuyPct = Number(Math.min(100, (top5GrossBuyVol / nonCrossMarketVol) * 100).toFixed(1));
+  const scr3SellPct = Number(Math.min(100, (top3GrossSellVol / nonCrossMarketVol) * 100).toFixed(1));
 
   const grossBuyConcentrationPct = bcr5BuyPct;
   const grossSellConcentrationPct = scr3SellPct;
@@ -414,10 +428,21 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   const rangePct = lowestPrice > 0 ? ((highestPrice - lowestPrice) / lowestPrice) * 100 : 0;
 
   // 4. Classify Phase for Accumulation & Distribution Radar + Search Filter Tabs
+  // Minimum Activity Guard (Item 5)
+  const totalTradesCount = windowData.reduce((acc, d) => acc + Number(d.transactions || d.trades || d.totalTransactions || 0), 0);
+  const distinctBrokersCount = brokersArray.length;
+  const isUnderactive = (totalTurnover > 0 && totalTurnover < 50000) ||
+                        (totalVolume > 0 && totalVolume < 200) ||
+                        (distinctBrokersCount > 0 && distinctBrokersCount < 3) ||
+                        (totalTradesCount > 0 && totalTradesCount < 5);
+
   let phase = "NEUTRAL_RETAIL";
   let phaseLabel = "Normal Retail Flow";
 
-  if (scr3NetPct >= 20.0 && priceChangePct > 2.5) {
+  if (isUnderactive || totalVolume === 0) {
+    phase = "INSUFFICIENT_ACTIVITY";
+    phaseLabel = "INSUFFICIENT ACTIVITY";
+  } else if (scr3NetPct >= 20.0 && priceChangePct > 2.5) {
     phase = "BULL_TRAP";
     phaseLabel = "Bull Trap (Retail Buying Top)";
   } else if (scr3NetPct >= 18.0) {
@@ -432,9 +457,11 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   }
 
   const isInstitutionalDumping = phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP" || scr3NetPct >= 20.0 || scr3SellPct >= 38.0;
-  const adSignal = (phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP")
-    ? "Accumulation"
-    : (isInstitutionalDumping ? "Distribution" : "Neutral");
+  const adSignal = (phase === "INSUFFICIENT_ACTIVITY")
+    ? "INSUFFICIENT ACTIVITY"
+    : ((phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP")
+      ? "Accumulation"
+      : (isInstitutionalDumping ? "Distribution" : "Neutral"));
 
   // 5. Safe Buy Zone Bounds & Clear Conditional Copy (Overview Card 3)
   const buyZoneMin = Number((bigBrokerVWAP * 0.99).toFixed(1));
@@ -612,6 +639,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     isInstitutionalDumping,
     adSignal,
     smartMoneyNetFlowPct,
+    sessionsWithPositiveSmartFlow,
     absorptionConsistency: `${sessionsWithPositiveSmartFlow}/${actualDays} Sessions`,
     phase,
     phaseLabel,
@@ -714,25 +742,29 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
     }).filter((d) => d.totalVolume > 0 && d.brokers.length > 0);
   }
 
-  // 2. Single-Session Fallback (Strictly 1-Day Authentic Snapshot — NEVER clone Day 1 brokers onto past candles!)
-  const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers)
+  // 2. Single-Session Fallback (Strictly 1-Day Authentic Snapshot — merge topBuyers & topSellers by brokerId so netVol = buyVol - sellVol)
+  const rawBrokers = Array.isArray(realBrokerAnalysis?.brokers) && realBrokerAnalysis.brokers.length > 0
     ? realBrokerAnalysis.brokers
-    : [
-        ...(realBrokerAnalysis?.topBuyers || []).map(b => ({
-          ...b,
-          buyQty: Number(b.volume ?? b.buyQty ?? b.shares ?? 0),
-          sellQty: 0,
-          buyAmt: Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0),
-          sellAmt: 0,
-        })),
-        ...(realBrokerAnalysis?.topSellers || []).map(s => ({
-          ...s,
-          buyQty: 0,
-          sellQty: Number(s.volume ?? s.sellQty ?? s.shares ?? 0),
-          buyAmt: 0,
-          sellAmt: Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? 0),
-        }))
-      ];
+    : (() => {
+        const merged = new Map();
+        for (const b of (realBrokerAnalysis?.topBuyers || [])) {
+          const id = String(b.broker || b.brokerId || b.id || '').trim();
+          if (!id) continue;
+          const cur = merged.get(id) || { brokerId: id, brokerName: b.brokerName || b.name, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+          cur.buyQty += Number(b.buyQty ?? b.buyKitta ?? b.volume ?? b.shares ?? 0);
+          cur.buyAmt += Number(b.buyAmt ?? b.buyAmount ?? b.amount ?? 0);
+          merged.set(id, cur);
+        }
+        for (const s of (realBrokerAnalysis?.topSellers || [])) {
+          const id = String(s.broker || s.brokerId || s.id || '').trim();
+          if (!id) continue;
+          const cur = merged.get(id) || { brokerId: id, brokerName: s.brokerName || s.name, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 };
+          cur.sellQty += Number(s.sellQty ?? s.sellKitta ?? s.volume ?? s.shares ?? 0);
+          cur.sellAmt += Number(s.sellAmt ?? s.sellAmount ?? s.amount ?? 0);
+          merged.set(id, cur);
+        }
+        return Array.from(merged.values());
+      })();
 
   if (rawBrokers.length === 0) return [];
 
@@ -879,6 +911,14 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
   const avgGrossRetention = Number(diag3d.retentionPct || 80);
   const isWashTrap = (avgGrossRetention < 35 && rvol3d >= 1.2) || scr3NetPct >= 20 || diag3d.phase === 'BULL_TRAP';
 
+  // Single-day or 3-day spike under the ±15% circuit limit
+  const day0PriceChange = Array.isArray(dailyHistory) && dailyHistory.length > 0
+    ? Number(dailyHistory[0]?.priceChangePct || dailyHistory[0]?.pChange || 0)
+    : 0;
+  const isLargeSpike = day0PriceChange > 9.0 || priceChange3dPct > 9.0;
+  const isNearCircuit = priceChange3dPct >= 12.5 || day0PriceChange >= 12.5;
+  const isCircuitLocked = priceChange3dPct >= 14.8 || day0PriceChange >= 14.8;
+
   let ignitionStage = 'NEUTRAL_ACCUMULATION';
   let stageLabel = 'Neutral / No Ignition';
   let stageBadge = '⚪ Neutral / Base';
@@ -896,6 +936,7 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
   }
   // STAGE 2: Prime Ignition Entry (Supply Vacuum Ignition)
   else if (
+    !isLargeSpike &&
     rvol3d >= 1.6 &&
     smh3dPct >= 18 &&
     t2RetentionPct >= 85 &&
@@ -910,16 +951,8 @@ export function evaluateEarlyIgnition(symbol, diag3d, diag30d, dailyHistory = []
     entrySignal = 'PRIME_BUY';
     tacticalAdvice = `Supply vacuum confirmed! Smart money holding +${smh3dPct}% with ${t2RetentionPct}% T+2 retention. Operator margin is tight (+${operatorProfitMargin3d}%). Prime early entry window before public breakout.`;
   }
-  // Single-day or 3-day spike under the ±15% circuit limit
-  const day0PriceChange = Array.isArray(dailyHistory) && dailyHistory.length > 0
-    ? Number(dailyHistory[0]?.priceChangePct || dailyHistory[0]?.pChange || 0)
-    : 0;
-  const isLargeSpike = day0PriceChange > 9.0 || priceChange3dPct > 9.0;
-  const isNearCircuit = priceChange3dPct >= 12.5 || day0PriceChange >= 12.5;
-  const isCircuitLocked = priceChange3dPct >= 14.8 || day0PriceChange >= 14.8;
-
-  // STAGE 3: Breakout / Gap-Up Markup in Progress (Evaluated before Stealth Seeding to catch >9% spikes)
-  if (
+  // STAGE 3: Breakout / Gap-Up Markup in Progress (Evaluated as else-if so it never clobbers Stage 2 or Wash Trap)
+  else if (
     isLargeSpike ||
     (priceChange3dPct > 6.5 && smh3dPct >= 15)
   ) {

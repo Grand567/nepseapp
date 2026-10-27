@@ -73,7 +73,7 @@ if (typeof window !== 'undefined') {
 // so the server is warm by the time fetchMarket() runs.
 let _serverWarmTs = 0;      // timestamp of the last warm-up ping response
 let _serverWarmPending = false;
-let _localProxyState = 'unknown'; // 'unknown' | 'alive' | 'dead'
+let _localProxyState = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'alive' : 'unknown'; // 'unknown' | 'alive' | 'dead'
 
 export async function warmUpServer() {
   if (_serverWarmPending) return; // already in flight
@@ -95,12 +95,12 @@ export async function warmUpServer() {
     return false;
   };
 
-  // In desktop browser on localhost, quick 350ms probe to check if local proxy is active
+  // In desktop browser on localhost, probe local proxy with generous timeout
   // Run it in background — don't await, this should never block the data fetch
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    ping('http://localhost:5000', 350).then(ok => {
-      _localProxyState = ok ? 'alive' : 'dead';
-    }).catch(() => { _localProxyState = 'dead'; });
+    ping('http://localhost:5000', 3500).then(ok => {
+      if (ok) _localProxyState = 'alive';
+    }).catch(() => {});
   }
 
   // Always ping production Render backend to guarantee wake up and warm status
@@ -701,11 +701,6 @@ export const fetchLiveStockDetail = fetchStockFundamentals;
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
 
-  // If configured base is a dead local proxy, bypass directly to production Render backend
-  if (base.includes('localhost') && _localProxyState === 'dead') {
-    return tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
-  }
-
   const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 6000), 12000);
 
   // 1. Primary: try configured proxy
@@ -716,24 +711,20 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
       if (base.includes('localhost')) _localProxyState = 'alive';
       return res;
     }
-  } catch (_) {
-    if (base.includes('localhost')) _localProxyState = 'dead';
-  }
+  } catch (_) {}
 
-  // 2. If primary was localhost and failed, never retry localhost; immediately fall back to Render!
-  if (base.includes('localhost')) {
-    _localProxyState = 'dead';
+  // 1b. If running in browser and base is localhost, also try relative path (via Vite dev server proxy)
+  if (base.includes('localhost') && typeof window !== 'undefined') {
     try {
-      const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
+      const res = await tryFetchJSON(path, firstAttemptTimeout);
       if (res && res.success !== false) {
-        _serverWarmTs = Date.now();
+        _localProxyState = 'alive';
         return res;
       }
     } catch (_) {}
-    return null;
   }
 
-  // 3. Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
+  // 2. Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
   if (base !== 'https://nepseapp.onrender.com') {
     try {
       const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
@@ -742,6 +733,7 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
         return res;
       }
     } catch (_) {}
+    return null;
   } else {
     // If primary was already Render and had a transient blip, retry once with short 500ms delay
     await new Promise(r => setTimeout(r, 500));
@@ -1833,46 +1825,46 @@ export const DEFAULT_OFFICIAL_INDICES = {
   status: 'complete',
   nepse: {
     index: 'NEPSE Index',
-    value: 2629.81,
-    change: 11.77,
-    pChange: 0.44,
-    prevClose: 2618.04,
-    open: 2611.39,
-    high: 2629.94,
-    low: 2605.32,
-    turnover: 5447313168.19
+    value: 2624.41,
+    change: -5.40,
+    pChange: -0.20,
+    prevClose: 2629.82,
+    open: 2629.82,
+    high: 2631.22,
+    low: 2618.41,
+    turnover: 3605119768.61
   },
   sensitive: {
     index: 'Sensitive Index',
-    value: 469.01,
-    change: 1.55,
-    pChange: 0.33,
-    prevClose: 467.46,
-    open: 467.46,
-    high: 469.20,
-    low: 465.34,
+    value: 474.92,
+    change: -0.85,
+    pChange: -0.18,
+    prevClose: 475.78,
+    open: 475.78,
+    high: 476.36,
+    low: 473.72,
     turnover: 2219221573.60
   },
   float: {
     index: 'Float Index',
-    value: 181.18,
-    change: 0.78,
-    pChange: 0.43,
-    prevClose: 180.40,
-    open: 180.40,
-    high: 181.25,
-    low: 179.95,
+    value: 181.83,
+    change: -0.38,
+    pChange: -0.21,
+    prevClose: 182.22,
+    open: 182.22,
+    high: 182.25,
+    low: 181.36,
     turnover: 5216090156.60
   },
   sensitiveFloat: {
     index: 'Sensitive Float Index',
-    value: 158.36,
-    change: 0.55,
-    pChange: 0.35,
-    prevClose: 157.81,
-    open: 157.80,
-    high: 158.44,
-    low: 157.05,
+    value: 160.50,
+    change: -0.45,
+    pChange: -0.28,
+    prevClose: 160.96,
+    open: 160.96,
+    high: 161.06,
+    low: 160.20,
     turnover: 2219221573.60
   },
   subIndices: [
@@ -2458,9 +2450,9 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
       return { ...res.data, isReal: true };
     }
 
-    // If date was specified as today and returned 0 rows (e.g. market closed today),
-    // fetch the latest real historical trading day floorsheet from NEPSE exchange
-    if (date && !buyer && !seller && (!res || !res.data?.rows || res.data.rows.length === 0)) {
+    // If date was specified or defaulted to today and returned 0 rows (e.g. today's session not closed or empty),
+    // fetch the latest real historical trading day floorsheet from backend / SQLite
+    if (!buyer && !seller && (!res || !res.data?.rows || res.data.rows.length === 0)) {
       const fallbackRes = await fetchFromBackend(`/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?page=${page}&size=${size}`, 10000);
       if (fallbackRes && fallbackRes.success && fallbackRes.data?.rows?.length > 0) {
         if (page === 1) setCachedRealFloorsheet(sym, fallbackRes.data);
@@ -3005,9 +2997,7 @@ export function getProxyBase() {
   // 1. If running locally in desktop browser (localhost / 127.0.0.1) and NOT native mobile:
   const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
   if (!isNative && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    if (_localProxyState !== 'dead') {
-      return 'http://localhost:5000';
-    }
+    return 'http://localhost:5000';
   }
 
   // 2. If explicitly configured in localStorage, respect it

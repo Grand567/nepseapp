@@ -114,6 +114,33 @@ export function get5DBrokerSummaryForSymbol(rawSymbol: string): unknown {
     } catch {
       return null;
     }
+  } else if (tableExists(db, "daily_broker_ledger")) {
+    try {
+      return db
+        .prepare(
+          `SELECT
+            broker_id AS brokerId,
+            SUM(buy_vol) AS buyKitta,
+            SUM(sell_vol) AS sellKitta,
+            SUM(buy_vol - sell_vol) AS netKitta,
+            COUNT(*) AS trades,
+            1.0 AS anomalyScore,
+            AVG(buy_vol + sell_vol) AS avgTicketKitta
+          FROM daily_broker_ledger
+          WHERE UPPER(symbol) = ?
+            AND trade_date IN (
+              SELECT DISTINCT trade_date
+              FROM daily_broker_ledger
+              WHERE UPPER(symbol) = ?
+              ORDER BY trade_date DESC
+              LIMIT 5
+            )
+          GROUP BY broker_id`
+        )
+        .all(symbol, symbol);
+    } catch {
+      return null;
+    }
   }
   return null;
 }

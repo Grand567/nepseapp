@@ -18,6 +18,9 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    watch: {
+      ignored: ['**/dist-electron/**', '**/android/**', '**/dist/**', '**/.git/**']
+    },
     proxy: {
       '/api/meroShare': {
         target: 'https://webbackend.cdsc.com.np',

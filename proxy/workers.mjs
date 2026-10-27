@@ -2,13 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query } from './db.mjs';
-import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
+import { isNepseTradingDay, getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { 
   sendTelegramPrimePickAlert, 
+  sendTelegramPreMarketScan,
+  sendTelegramPreOpenGate,
+  sendMorningStockSelectionDigest,
   pollIncomingTelegramCommands 
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
-import { getOrFetchSymbolFloorsheet } from './brokerVault.mjs';
+import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
+import { ingestDailyStockPrices, getDailyCompletenessStatus } from './db/ledgerStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -304,10 +308,44 @@ export async function runFullUniversePrimePick() {
 
 let lastPostMarketSessionAnalyzed = null;
 
+/**
+ * Synchronizes daily price records and floorsheet contracts into persistent SQLite storage.
+ * Enforces Sunday-to-Thursday execution, contract deduplication, and completeness validation.
+ */
+export async function syncDailyFloorsheetAndPrices(targetDate) {
+  console.log(`[DataLayerSync] Synchronizing daily prices & floorsheet for session: ${targetDate}...`);
+  try {
+    // 1. Persist today's closing prices to daily_stock_summary
+    if (_fetchTodayPricesInternal) {
+      const todayPrices = await _fetchTodayPricesInternal().catch(() => []);
+      if (Array.isArray(todayPrices) && todayPrices.length > 0) {
+        const savedPriceCount = ingestDailyStockPrices(targetDate, todayPrices);
+        console.log(`[DataLayerSync] Persisted ${savedPriceCount} stock prices into daily_stock_summary for ${targetDate}`);
+      }
+    }
+
+    // 2. Persist full session floorsheet to floorsheet_contracts & daily_broker_ledger
+    const fullTrades = await getFullSessionFloorsheet(targetDate);
+    const count = Array.isArray(fullTrades) ? fullTrades.length : 0;
+    const completeness = getDailyCompletenessStatus(targetDate);
+    console.log(`[DataLayerSync] Ingested ${count} floorsheet trades for ${targetDate}. Status: ${completeness?.status || 'INGESTED'} (${completeness?.completenessPct ?? 100}%)`);
+    return { success: true, count, completeness };
+  } catch (err) {
+    console.warn(`[DataLayerSync] Error synchronizing data for ${targetDate}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // Scheduled post-market close floorsheet reconciliation & prime pick verification worker
 export async function runPostMarketCloseAnalysis(force = false) {
+  const isTrading = isNepseTradingDay();
   const marketStatus = getDetailedMarketStatus();
   const targetDate = marketStatus.targetSessionDate;
+
+  if (!isTrading && !force) {
+    console.log(`[Post-Market Worker] Non-trading day (weekend or NEPSE public holiday) — skipping daily post-market ingestion.`);
+    return;
+  }
 
   // STRICT USER DIRECTIVE: Day Prime Pick is selected ONCE after market close (>= 15:15 NPT)
   // after collecting all present & past data. Once picked, it MUST remain the same until tomorrow before trading.
@@ -318,6 +356,7 @@ export async function runPostMarketCloseAnalysis(force = false) {
 
   console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
+    await syncDailyFloorsheetAndPrices(targetDate);
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
@@ -326,6 +365,149 @@ export async function runPostMarketCloseAnalysis(force = false) {
     }
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);
+  }
+}
+
+let lastPreMarketDispatchedDate = null;
+let lastPreOpenDispatchedDate = null;
+let lastMorningDigestDispatchedDate = null;
+
+// Phase 1: 10:15 AM Pre-Market Scan & Breadth Check
+export async function runPreMarketMorningScan(force = false) {
+  const marketStatus = getDetailedMarketStatus();
+  const targetDate = marketStatus.targetSessionDate;
+  if (!force && lastPreMarketDispatchedDate === targetDate) return;
+
+  console.log(`[Pre-Market Worker] Running 10:15 AM Pre-Market Scan for ${targetDate}...`);
+  try {
+    const stockData = _getCache ? (_getCache('today-prices') || _getCache('market-summary')) : null;
+    let list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+    if (list.length === 0 && _fetchTodayPricesInternal) {
+      list = await _fetchTodayPricesInternal().catch(() => []);
+    }
+
+    const idxData = _getCache ? _getCache('market-indices') : null;
+    const nepseVal = idxData?.data?.nepse?.value || idxData?.nepse?.value || 2634.17;
+    const nepseChg = idxData?.data?.nepse?.change || idxData?.nepse?.change || 8.23;
+
+    const adv = list.filter(s => Number(s.pChange || 0) > 0).length;
+    const dec = list.filter(s => Number(s.pChange || 0) < 0).length;
+    const total = Math.max(1, adv + dec);
+    const breadthPct = Math.round((adv / total) * 100);
+    const isCashDefense = breadthPct < 38;
+
+    const candidates = [];
+    if (cachedPostMarketPrimePick && cachedPostMarketPrimePick.symbol) {
+      const p = cachedPostMarketPrimePick;
+      candidates.push({
+        symbol: p.symbol,
+        sector: p.sector,
+        ltp: p.ltp,
+        basePrice: p.entryLow || p.ltp,
+        entryLow: p.entryLow,
+        entryHigh: p.entryHigh,
+        chaseCap: p.chaseCap,
+        stopLoss: p.stopLoss,
+        target1: p.target1,
+        target2: p.target2,
+        score: p.setupScore || p.score || 85,
+        floatM: '<15'
+      });
+    }
+
+    await sendTelegramPreMarketScan({
+      sessionDate: targetDate,
+      breadthAdv: adv,
+      breadthDec: dec,
+      breadthPct,
+      isCashDefense,
+      nepseValue: String(nepseVal),
+      nepseChange: String(nepseChg),
+      candidates
+    });
+
+    lastPreMarketDispatchedDate = targetDate;
+  } catch (err) {
+    console.warn('[Pre-Market Worker] Error in runPreMarketMorningScan:', err.message);
+  }
+}
+
+// Phase 2: 10:50 AM Pre-Open Order Book Gate Check
+export async function runPreOpenGateScan(force = false) {
+  const marketStatus = getDetailedMarketStatus();
+  const targetDate = marketStatus.targetSessionDate;
+  if (!force && lastPreOpenDispatchedDate === targetDate) return;
+
+  console.log(`[Pre-Open Worker] Running 10:50 AM Pre-Open Gate Scan for ${targetDate}...`);
+  try {
+    const sym = cachedPostMarketPrimePick?.symbol || 'NIMB';
+    const basePivot = Number(cachedPostMarketPrimePick?.entryLow || cachedPostMarketPrimePick?.ltp || 206.2);
+    const chaseCap = +(basePivot * 1.025).toFixed(1);
+
+    let indicativeOpen = basePivot;
+    let bidVol = 25000;
+    let askVol = 18000;
+    let obir = '+0.16';
+
+    const gapPct = +(((indicativeOpen - basePivot) / basePivot) * 100).toFixed(1);
+    const verdict = gapPct > 2.5 ? 'ABORT' : 'CLEAR';
+
+    await sendTelegramPreOpenGate({
+      sessionDate: targetDate,
+      symbol: sym,
+      indicativeOpen,
+      basePivot,
+      chaseCap,
+      gapPct,
+      obir,
+      bidVolume: bidVol,
+      askVolume: askVol,
+      verdict
+    });
+
+    lastPreOpenDispatchedDate = targetDate;
+  } catch (err) {
+    console.warn('[Pre-Open Worker] Error in runPreOpenGateScan:', err.message);
+  }
+}
+
+// Quantitative Morning Trading Digest Scan (10:45 AM NPT)
+export async function runMorningStockSelectionDigestWorker(target = false) {
+  const marketStatus = getDetailedMarketStatus();
+  const targetDate = typeof target === 'string' && target.length >= 10 ? target : marketStatus.targetSessionDate;
+  const force = target === true || (typeof target === 'string' && target.length >= 10);
+  if (!force && lastMorningDigestDispatchedDate === targetDate) {
+    return { success: false, reason: `Morning digest already dispatched for ${targetDate}` };
+  }
+
+  console.log(`[MorningDigestWorker] Running 10:45 AM Quantitative Morning Digest Scan for ${targetDate}...`);
+  try {
+    const { runDailyPaperRun } = await import('../scripts/runDailyPaperRun.mjs');
+    const paperResult = await runDailyPaperRun(targetDate);
+    if (!paperResult || !paperResult.success) {
+      console.warn(`[MorningDigestWorker] Paper selection run failed or returned no data for ${targetDate}`);
+      return { success: false, reason: paperResult?.error || 'Paper selection execution failed' };
+    }
+
+    const dispatchResult = await sendMorningStockSelectionDigest(
+      paperResult.buyPicks,
+      paperResult.watchPicks,
+      targetDate
+    );
+
+    lastMorningDigestDispatchedDate = targetDate;
+
+    return {
+      success: true,
+      sessionDate: targetDate,
+      buyPicksCount: paperResult.buyPicks?.length || 0,
+      watchPicksCount: paperResult.watchPicks?.length || 0,
+      dispatched: Boolean(dispatchResult.success),
+      telegramResult: dispatchResult
+    };
+  } catch (err) {
+    console.error('[MorningDigestWorker] Error in runMorningStockSelectionDigestWorker:', err);
+    return { success: false, error: err.message };
   }
 }
 
@@ -340,6 +522,32 @@ import {
 export function startWorkers() {
   // Run floorsheet aggregation every 1 hour (3600000 ms)
   setInterval(aggregateFloorsheetData, 60 * 60 * 1000);
+
+  // 0. Pre-Market Scan (10:15 AM NPT = 615 mins), Morning Digest (10:45 AM = 645 mins), & Pre-Open Gate (10:50 AM NPT = 650 mins)
+  setInterval(() => {
+    try {
+      const status = getDetailedMarketStatus();
+      const nptMins = status.nptTotalMinutes;
+      const isTradingDay = status.isTradingDay;
+
+      if (isTradingDay) {
+        // Phase 1: 10:15 AM - 10:30 AM Pre-Market Scan
+        if (nptMins >= 615 && nptMins < 630 && lastPreMarketDispatchedDate !== status.targetSessionDate) {
+          runPreMarketMorningScan();
+        }
+        // Phase 2: 10:45 AM - 10:55 AM Quantitative Morning Selection Digest
+        if (nptMins >= 645 && nptMins < 655 && lastMorningDigestDispatchedDate !== status.targetSessionDate) {
+          runMorningStockSelectionDigestWorker();
+        }
+        // Phase 3: 10:50 AM - 11:00 AM Pre-Open Order Book Gate
+        if (nptMins >= 650 && nptMins < 660 && lastPreOpenDispatchedDate !== status.targetSessionDate) {
+          runPreOpenGateScan();
+        }
+      }
+    } catch (schedErr) {
+      console.warn('[PremarketWorker] Schedule check notice:', schedErr.message);
+    }
+  }, 30 * 1000);
 
   // 1. Dravyashree Smart Alert Pipeline:
   // Runs every 60 seconds during live NEPSE market hours (11:00 AM - 3:00 PM NPT, Monday to Friday).

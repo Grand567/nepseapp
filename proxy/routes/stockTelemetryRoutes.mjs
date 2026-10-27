@@ -3,6 +3,7 @@ import express from 'express';
 import { db } from '../db/ledgerStore.js';
 import { safeNum, resolveValidNepseSymbol, resolveVerifiedPrice } from './aiGuruRoutes.mjs';
 import { getBrokerName, getOrFetchAllTimeBrokerHoldings } from '../brokerVault.mjs';
+import { aggregateBrokerMicrostructure } from '../utils/sharedBrokerAggregationEngine.js';
 
 function sanitizeSymbol(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -324,7 +325,7 @@ export function handleStockTelemetry(req, res) {
                 amount
               FROM floorsheet_contracts
               WHERE UPPER(symbol) = ? AND trade_date = ?
-              ORDER BY contract_no DESC
+              ORDER BY trade_time DESC, contract_no DESC
               LIMIT 500`
             )
             .all(validSymbol, targetDate);
@@ -822,45 +823,64 @@ export async function handleStockSmartMoney(req, res) {
         .all(...(targetDates.length > 0 ? queryParams : [validSymbol]));
     }
 
-    const enriched = brokerRows.map(b => {
-      const bId = String(b.brokerId);
-      const bName = getBrokerName(bId);
-      const buyKitta = Number(b.buyKitta || 0);
-      const sellKitta = Number(b.sellKitta || 0);
-      const netKitta = Number(b.netKitta || (buyKitta - sellKitta));
-      const buyAmt = Number(b.buyAmount || 0);
-      const sellAmt = Number(b.sellAmount || 0);
-      const avgBuy = Number(b.avgBuyPrice || (buyKitta > 0 ? buyAmt / buyKitta : 0));
-      const avgSell = Number(b.avgSellPrice || (sellKitta > 0 ? sellAmt / sellKitta : 0));
-      const retentionPct = buyKitta > 0 ? Number(((Math.max(0, netKitta) / buyKitta) * 100).toFixed(1)) : 0;
-
-      return {
-        ...b,
-        brokerId: bId,
-        brokerName: bName,
-        name: bName,
-        buyVolume: buyKitta,
-        sellVolume: sellKitta,
-        buyQty: buyKitta,
-        sellQty: sellKitta,
-        netVolume: netKitta,
-        netQty: netKitta,
-        holdQty: Math.max(0, netKitta),
-        signedHoldQty: netKitta,
-        buyTurnoverNpr: buyAmt,
-        sellTurnoverNpr: sellAmt,
-        buyAmt,
-        sellAmt,
-        avgBuyRate: +avgBuy.toFixed(2),
-        avgSellRate: +avgSell.toFixed(2),
-        retentionPct,
-        anomalyScore: 1.0,
-        avgTicketKitta: Math.round((buyKitta + sellKitta) / 10),
-      };
+    const agg = aggregateBrokerMicrostructure({
+      dailyLedgerRows: brokerRows,
+      symbol: validSymbol,
+      days: requestedDays
     });
 
-    const accumulators = enriched.filter(b => b.netKitta > 0).sort((a, b) => b.netKitta - a.netKitta);
-    const distributors = enriched.filter(b => b.netKitta < 0).sort((a, b) => a.netKitta - b.netKitta);
+    const enriched = agg.allBrokers.map(b => ({
+      ...b,
+      buyKitta: b.buyVol,
+      sellKitta: b.sellVol,
+      netKitta: b.netQty,
+      holdKitta: Math.max(0, b.netQty),
+      signedHoldQty: b.netQty,
+      buyAmount: b.buyAmt,
+      sellAmount: b.sellAmt,
+      buyTurnoverNpr: b.buyAmt,
+      sellTurnoverNpr: b.sellAmt,
+      avgBuyPrice: b.avgBuyPrice,
+      avgSellPrice: b.avgSellPrice,
+      avgBuyRate: b.avgBuyPrice,
+      avgSellRate: b.avgSellPrice,
+      anomalyScore: 1.0,
+      avgTicketKitta: Math.round((b.buyVol + b.sellVol) / 10),
+    }));
+
+    const accumulators = agg.topAccumulators.map(b => ({
+      ...b,
+      buyKitta: b.buyVol,
+      sellKitta: b.sellVol,
+      netKitta: b.netQty,
+      holdKitta: Math.max(0, b.netQty),
+      signedHoldQty: b.netQty,
+      buyAmount: b.buyAmt,
+      sellAmount: b.sellAmt,
+      buyTurnoverNpr: b.buyAmt,
+      sellTurnoverNpr: b.sellAmt,
+      avgBuyPrice: b.avgBuyPrice,
+      avgSellPrice: b.avgSellPrice,
+      avgBuyRate: b.avgBuyPrice,
+      avgSellRate: b.avgSellPrice,
+    }));
+
+    const distributors = agg.topDistributors.map(b => ({
+      ...b,
+      buyKitta: b.buyVol,
+      sellKitta: b.sellVol,
+      netKitta: b.netQty,
+      holdKitta: Math.max(0, b.netQty),
+      signedHoldQty: b.netQty,
+      buyAmount: b.buyAmt,
+      sellAmount: b.sellAmt,
+      buyTurnoverNpr: b.buyAmt,
+      sellTurnoverNpr: b.sellAmt,
+      avgBuyPrice: b.avgBuyPrice,
+      avgSellPrice: b.avgSellPrice,
+      avgBuyRate: b.avgBuyPrice,
+      avgSellRate: b.avgSellPrice,
+    }));
 
     const totalSharesHeldTillNow = accumulators.reduce((s, b) => s + b.netKitta, 0);
     const allHoldings = accumulators.map(b => ({
@@ -897,6 +917,17 @@ export async function handleStockSmartMoney(req, res) {
       tradingDays: targetDates.length,
       fromDate: targetDates[targetDates.length - 1] || '',
       toDate: targetDates[0] || '',
+      scopeLabel: agg.scopeLabel,
+      historyWarning: agg.historyWarning,
+      isHistoryIncomplete: agg.isHistoryIncomplete,
+      phase: agg.phase,
+      phaseLabel: agg.phaseLabel,
+      smartMoneyScore: agg.smartMoneyScore,
+      adSignal: agg.adSignal,
+      bcr3BuyPct: agg.bcr3BuyPct,
+      scr3SellPct: agg.scr3SellPct,
+      marketVWAP: agg.marketVWAP,
+      bigBrokerVWAP: agg.bigBrokerVWAP
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

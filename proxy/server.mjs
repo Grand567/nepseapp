@@ -54,6 +54,7 @@ import {
   sendTelegramSmartAlert,
   sendTelegramPrimePickAlert,
   sendTelegramExitAlert,
+  sendMorningStockSelectionDigest,
   autoDetectChatId,
   sendTelegramMessage
 } from './telegramNotifier.mjs';
@@ -187,8 +188,9 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: 'Rate limit exceeded. Please wait a minute.' },
   skip: (req) => {
-    // Never rate-limit the warm-up ping or health check
-    return req.path === '/api/ping' || req.path === '/health';
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
+    return req.path === '/api/ping' || req.path === '/ping' || req.path === '/health';
   }
 });
 // Limiter for data scraping endpoints (floorsheet, price-history, broker-analysis)
@@ -198,6 +200,11 @@ const scrapeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests to data endpoints. Please wait.' },
+  skip: (req) => {
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || req.hostname === 'localhost') return true;
+    return false;
+  }
 });
 app.use('/api', apiLimiter);
 app.use('/api/price-history', scrapeLimiter);
@@ -2107,6 +2114,8 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
     companyName: '',
     listedShares: 0,
     paidUpCapital: 0,
+    npl: null,
+    roe: 0,
     publicShares: 0,
     publicPercentage: 0,
     promoterShares: 0,
@@ -2223,6 +2232,8 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
       if (label.includes('% bonus') || (label.includes('bonus') && label.includes('%')) || label === 'bonus share') detail.bonus = parseMoney(value.replace('%', '')) || detail.bonus;
       if (label.includes('market cap') || label.includes('market capitalization')) detail.marketCap = parseMoney(value) || detail.marketCap;
       if (label.includes('paid') && label.includes('capital')) detail.paidUpCapital = parseMoney(value) || detail.paidUpCapital;
+      if (label.includes('npl') || label.includes('non-performing') || label.includes('non performing')) detail.npl = parseMoney(value) || detail.npl;
+      if (label.includes('roe') || label.includes('return on equity')) detail.roe = parseMoney(value) || detail.roe;
     });
 
     if (detail.eps === 0 || detail.bookValue === 0) {
@@ -2251,6 +2262,8 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
             if (detail.bookValue === 0 && label.includes('book value')) detail.bookValue = parseMoney(val);
             if (detail.pe === 0 && label.includes('p/e')) detail.pe = parseMoney(val);
             if (detail.pbv === 0 && (label === 'pbv' || label.includes('p/b'))) detail.pbv = parseMoney(val);
+            if (!detail.npl && (label.includes('npl') || label.includes('non-performing'))) detail.npl = parseMoney(val);
+            if (!detail.roe && (label.includes('roe') || label.includes('return on equity'))) detail.roe = parseMoney(val);
           }
         });
       } catch (_) {}
@@ -2261,6 +2274,9 @@ export async function getStockDetailInternal(symbol, forceRefresh = false) {
     }
     if (detail.pbv === 0 && detail.bookValue > 0 && detail.marketPrice > 0) {
       detail.pbv = Number((detail.marketPrice / detail.bookValue).toFixed(2));
+    }
+    if ((!detail.roe || detail.roe === 0) && detail.eps > 0 && detail.bookValue > 0) {
+      detail.roe = Number(((detail.eps / detail.bookValue) * 100).toFixed(2));
     }
 
     setCache(cacheKey, detail, 2 * 60 * 60 * 1000); // 2 hours TTL
@@ -9225,6 +9241,37 @@ app.post('/api/telegram/test-alert', async (req, res) => {
   }
 });
 
+app.post('/api/telegram/trigger-premarket', async (req, res) => {
+  try {
+    const { runPreMarketMorningScan } = await import('./workers.mjs');
+    await runPreMarketMorningScan(true);
+    res.json({ success: true, message: 'Phase 1 Pre-Market Morning Scan dispatched to Telegram!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/trigger-preopen', async (req, res) => {
+  try {
+    const { runPreOpenGateScan } = await import('./workers.mjs');
+    await runPreOpenGateScan(true);
+    res.json({ success: true, message: 'Phase 2 Pre-Open Gate Scan dispatched to Telegram!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/telegram/dispatch-morning-digest', async (req, res) => {
+  try {
+    const { sessionDate } = req.body || {};
+    const { runMorningStockSelectionDigestWorker } = await import('./workers.mjs');
+    const result = await runMorningStockSelectionDigestWorker(sessionDate || true);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── DISCORD NOTIFICATION CONTROLS (100% FREE / ZERO PHONE FEES) ──
 app.get('/api/discord/status', (req, res) => {
   try {
@@ -9892,6 +9939,142 @@ app.get('/api/market/promoter-shares', (req, res) => {
     data: lockinData,
     timestamp: now.toISOString()
   });
+});
+
+// ── QUANTITATIVE BACKTEST ENDPOINTS (STEP 4) ──────────────────────────────────
+app.get('/api/backtest/latest', async (req, res) => {
+  try {
+    const reportPath = path.join(process.cwd(), 'backtest', 'report.md');
+    if (fs.existsSync(reportPath)) {
+      const markdown = fs.readFileSync(reportPath, 'utf8');
+      return res.json({ success: true, exists: true, markdown });
+    }
+    return res.json({ success: true, exists: false, message: 'No backtest report generated yet. Run a backtest first.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/backtest/run', async (req, res) => {
+  try {
+    const { symbol = 'NABIL', initialCapital = 1000000, days = 365 } = req.body || {};
+    const sym = String(symbol || 'NABIL').toUpperCase().trim();
+
+    const { runComprehensiveBacktest, generateBacktestMarkdownReport, saveBacktestReport } = await import('../src/utils/signals/backtestEngine.js');
+
+    const [detail, history] = await Promise.all([
+      getStockDetailInternal(sym).catch(() => ({ symbol: sym })),
+      getPriceHistoryInternal(sym, days).catch(() => [])
+    ]);
+
+    const candles = Array.isArray(history) ? history.map(h => ({
+      date: h.date || h.businessDate,
+      open: Number(h.open || h.openPrice || h.closePrice || h.close),
+      high: Number(h.high || h.highPrice || h.closePrice || h.close),
+      low: Number(h.low || h.lowPrice || h.closePrice || h.close),
+      close: Number(h.close || h.closePrice || h.ltp),
+      volume: Number(h.volume || h.totalTradedQuantity || 10000),
+      turnover: Number(h.turnover || h.totalTradedValue || 0)
+    })).filter(c => c.close > 0) : [];
+
+    const result = runComprehensiveBacktest({
+      symbol: sym,
+      sector: detail.sectorName || detail.sector || 'Unknown',
+      candles,
+      fundamentalData: {
+        eps: detail.eps,
+        bookValue: detail.bookValue,
+        npl: detail.npl,
+        car: detail.car,
+        listedShares: detail.listedShares,
+        publicPercentage: detail.publicPercentage
+      },
+      initialCapital: Number(initialCapital)
+    });
+
+    if (result.error) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    const markdown = generateBacktestMarkdownReport(result);
+    saveBacktestReport(markdown);
+
+    res.json({ success: true, data: result, markdown });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/backtest/walk-forward', async (req, res) => {
+  try {
+    const { runWalkForwardOptimization } = await import('../scripts/runWalkForwardOptimization.mjs');
+    const result = await runWalkForwardOptimization();
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── PAPER TRADING & TRADE JOURNAL ENDPOINTS (STEP 5) ──────────────────────────
+app.get('/api/paper-trading/state', async (req, res) => {
+  try {
+    const { getPaperTrackerState } = await import('../src/utils/signals/paperTradingTracker.js');
+    res.json({ success: true, data: getPaperTrackerState() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/paper-trading/log-pick', async (req, res) => {
+  try {
+    const { recordPaperPick } = await import('../src/utils/signals/paperTradingTracker.js');
+    const pick = recordPaperPick(req.body || {});
+    res.json({ success: true, data: pick });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/paper-trading/sync-outcomes', async (req, res) => {
+  try {
+    const { processDailyPaperOutcomes } = await import('../src/utils/signals/paperTradingTracker.js');
+    const quotes = req.body?.quotes || {};
+    const state = processDailyPaperOutcomes(quotes, req.body?.currentDate);
+    res.json({ success: true, data: state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/paper-trading/attribution', async (req, res) => {
+  try {
+    const { calculateSignalAttribution } = await import('../src/utils/signals/paperTradingTracker.js');
+    res.json({ success: true, data: calculateSignalAttribution() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/paper-trading/run-daily-selection', async (req, res) => {
+  try {
+    const { runDailyPaperRun } = await import('../scripts/runDailyPaperRun.mjs');
+    const result = await runDailyPaperRun(req.body?.targetDate);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── SYSTEM HEALTH & DAILY MONITORING ENDPOINTS (Step 7) ──────────────────────
+app.get(['/api/system/monitoring-health', '/api/monitoring/health'], async (req, res) => {
+  try {
+    const { getSystemMonitoringSnapshot } = await import('./utils/monitoringService.mjs');
+    const snapshot = getSystemMonitoringSnapshot();
+    const httpStatus = snapshot.overallStatus === 'DEGRADED' ? 503 : 200;
+    res.status(httpStatus).json({ success: true, data: snapshot, ...snapshot });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ── NEPSE AGENT ENDPOINTS (Phase 3: Tool-Connected AI Reasoning) ────────────

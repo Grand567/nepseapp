@@ -517,7 +517,7 @@ export function UniversalScreener({
       {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
-        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Mon–Fri) or check a different filter.</InfoBanner>
+        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
       ) : (
         <>
           <SourceBar count={data.length} source={source} totalCount={rawTotal} />
@@ -1087,7 +1087,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
-      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Mon–Fri 11 AM – 3 PM NPT).</InfoBanner>
+      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Sun–Thu 11 AM – 3 PM NPT).</InfoBanner>
       <DataTable data={data} cols={[
         {
           key: 'symbol',
@@ -5921,7 +5921,7 @@ export function MarketDepthService() {
         <TableSkeleton rows={5} cols={6} />
       ) : !hasOrders ? (
         <InfoBanner type="info">
-          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Mon–Fri 11:00 AM – 3:00 PM NPT).
+          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Sun–Thu 11:00 AM – 3:00 PM NPT).
         </InfoBanner>
       ) : (
         <div className="space-y-2.5">

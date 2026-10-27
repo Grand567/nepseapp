@@ -412,27 +412,31 @@ assert(washResult.isWashTrap === true && washResult.stage === 'WASH_CHURN_TRAP',
 // ─────────────────────────────────────────────────────────────────────────────
 // TEST 10: NEPSE Mon–Fri Trading Schedule, Saturday/Sunday Weekend & Dashain 2026
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n▶ TEST 10: NEPSE Mon–Fri Trading Schedule, Weekend Closures, Dashain 2026 & T+2 Settlement');
+console.log('\n▶ TEST 10: NEPSE Sun–Thu Trading Schedule, Weekend Closures (Fri/Sat), Dashain 2026 & T+2 Settlement');
 
-// 1. Weekend Closures: Saturday (6) and Sunday (0) are market holidays
+// 1. Weekend Closures: Friday (5) and Saturday (6) are statutory market holidays
+const friCheck = isNepseWeekend(new Date('2026-10-23T12:00:00+05:45'));
 const satCheck = isNepseWeekend(new Date('2026-10-24T12:00:00+05:45'));
 const sunCheck = isNepseWeekend(new Date('2026-10-25T12:00:00+05:45'));
-const monCheck = isNepseWeekend(new Date('2026-10-26T12:00:00+05:45'));
 
-assert(satCheck.isWeekend === true && sunCheck.isWeekend === true,
-  'Saturday (6) and Sunday (0) strictly identified as weekly market closures',
-  `Saturday: ${satCheck.isWeekend} (${satCheck.dayName}), Sunday: ${sunCheck.isWeekend} (${sunCheck.dayName})`);
+assert(friCheck.isWeekend === true && satCheck.isWeekend === true,
+  'Friday (5) and Saturday (6) strictly identified as weekly market closures',
+  `Friday: ${friCheck.isWeekend} (${friCheck.dayName}), Saturday: ${satCheck.isWeekend} (${satCheck.dayName})`);
 
-assert(monCheck.isWeekend === false,
-  'Monday through Friday identified as active trading days (when not a holiday)',
-  `Monday: isWeekend = ${monCheck.isWeekend}`);
+assert(sunCheck.isWeekend === false,
+  'Sunday through Thursday identified as active trading days (when not a holiday)',
+  `Sunday: isWeekend = ${sunCheck.isWeekend} (${sunCheck.dayName})`);
 
-// 2. T+2 Settlement Cycle Verification (Monday through Friday)
+// 2. T+2 Settlement Cycle Verification (Sunday through Thursday)
+const sunSettlement = calculateT2SettlementDate(new Date('2026-12-06')); // Sun Dec 6
 const monSettlement = calculateT2SettlementDate(new Date('2026-12-07')); // Mon Dec 7
 const tueSettlement = calculateT2SettlementDate(new Date('2026-12-08')); // Tue Dec 8
 const wedSettlement = calculateT2SettlementDate(new Date('2026-12-09')); // Wed Dec 9
 const thuSettlement = calculateT2SettlementDate(new Date('2026-12-10')); // Thu Dec 10
-const friSettlement = calculateT2SettlementDate(new Date('2026-12-11')); // Fri Dec 11
+
+assert(sunSettlement.settlementDayName === 'Tuesday' && sunSettlement.settlementDateIso === '2026-12-08',
+  'Sunday trade settles on Tuesday (T+2)',
+  sunSettlement.summary);
 
 assert(monSettlement.settlementDayName === 'Wednesday' && monSettlement.settlementDateIso === '2026-12-09',
   'Monday trade settles on Wednesday (T+2)',
@@ -442,17 +446,13 @@ assert(tueSettlement.settlementDayName === 'Thursday' && tueSettlement.settlemen
   'Tuesday trade settles on Thursday (T+2)',
   tueSettlement.summary);
 
-assert(wedSettlement.settlementDayName === 'Friday' && wedSettlement.settlementDateIso === '2026-12-11',
-  'Wednesday trade settles on Friday (T+2)',
+assert(wedSettlement.settlementDayName === 'Sunday' && wedSettlement.settlementDateIso === '2026-12-13',
+  'Wednesday trade settles on Sunday (T+2, skips Fri & Sat weekends)',
   wedSettlement.summary);
 
 assert(thuSettlement.settlementDayName === 'Monday' && thuSettlement.settlementDateIso === '2026-12-14',
-  'Thursday trade settles on Monday (T+2, skips Sat & Sun weekends)',
+  'Thursday trade settles on Monday (T+2, skips Fri & Sat weekends)',
   thuSettlement.summary);
-
-assert(friSettlement.settlementDayName === 'Tuesday' && friSettlement.settlementDateIso === '2026-12-15',
-  'Friday trade settles on Tuesday (T+2, skips Sat & Sun weekends)',
-  friSettlement.summary);
 
 // 3. 2026 Dashain Festival Holidays (Oct 19–23) & Reopening Mon Oct 26
 const oct19Status = getDetailedMarketStatus(new Date('2026-10-19T11:30:00+05:45'));
@@ -467,8 +467,8 @@ assert(oct23Trading === false,
   'Friday, October 23, 2026 marked as official Dashain holiday (Kojagrat Purnima)',
   `isTradingDay: ${oct23Trading}`);
 
-assert(oct19Status.nextTradingDayIso === '2026-10-26' && oct19Status.nextTradingDayName === 'Monday',
-  'Next active trading day after Dashain week is Monday, October 26, 2026',
+assert(oct19Status.nextTradingDayIso === '2026-10-25' && oct19Status.nextTradingDayName === 'Sunday',
+  'Next active trading day after Dashain week is Sunday, October 25, 2026',
   `Next Reopen: ${oct19Status.reopeningSchedule}`);
 
 // ─────────────────────────────────────────────────────────────────────────────

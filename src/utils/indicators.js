@@ -79,7 +79,7 @@ export function calculateEMA(prices, period) {
  */
 export function calculateMACD(prices, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
   if (!prices || prices.length < longPeriod) {
-    return { line: null, signal: null, histogram: null, isInsufficient: true };
+    return { line: null, macd: null, signal: null, histogram: null, isInsufficient: true };
   }
 
   const shortEma = calculateEMA(prices, shortPeriod);
@@ -286,3 +286,170 @@ export function calculateFibonacci(high52wOrStock, low52w) {
   };
 }
 
+// ── On-Balance Volume (OBV) ──────────────────────────────────────────────────
+/**
+ * Calculates On-Balance Volume (OBV) series and 20-period moving average.
+ * @param {Array<{close: number, volume: number}>} candles - Chronological candles (oldest -> newest)
+ * @returns {{ obv: number|null, obvSma20: number|null, isObvTrendingUp: boolean, obvArray: number[] }}
+ */
+export function calculateOBV(candles) {
+  if (!Array.isArray(candles) || candles.length === 0) {
+    return { obv: null, obvSma20: null, isObvTrendingUp: false, obvArray: [] };
+  }
+
+  const obvArray = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const prevClose = Number(candles[i - 1].close || candles[i - 1].c || 0);
+    const curClose = Number(candles[i].close || candles[i].c || 0);
+    const vol = Math.max(0, Number(candles[i].volume || candles[i].v || 0));
+
+    let prevObv = obvArray[i - 1];
+    if (curClose > prevClose) {
+      obvArray.push(prevObv + vol);
+    } else if (curClose < prevClose) {
+      obvArray.push(prevObv - vol);
+    } else {
+      obvArray.push(prevObv);
+    }
+  }
+
+  const latestObv = obvArray[obvArray.length - 1];
+  const smaPeriod = Math.min(20, obvArray.length);
+  const recentSlice = obvArray.slice(-smaPeriod);
+  const obvSma20 = recentSlice.length > 0
+    ? Math.round(recentSlice.reduce((a, b) => a + b, 0) / recentSlice.length)
+    : null;
+
+  return {
+    obv: latestObv,
+    obvSma20,
+    isObvTrendingUp: obvSma20 !== null ? latestObv >= obvSma20 : false,
+    obvArray
+  };
+}
+
+// ── Average Directional Index (ADX) ──────────────────────────────────────────
+/**
+ * Calculates ADX (14) with +DI and -DI using Wilder's smoothing.
+ * @param {Array<{high: number, low: number, close: number}>} candles - Chronological candles
+ * @param {number} period - Default 14
+ * @returns {{ adx: number|null, plusDI: number|null, minusDI: number|null, isTrending: boolean, trendDirection: string }}
+ */
+export function calculateADX(candles, period = 14) {
+  if (!Array.isArray(candles) || candles.length < period * 2) {
+    return { adx: null, plusDI: null, minusDI: null, isTrending: false, trendDirection: 'NEUTRAL' };
+  }
+
+  const trs = [];
+  const plusDMs = [];
+  const minusDMs = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const curH = Number(candles[i].high || candles[i].h || 0);
+    const curL = Number(candles[i].low || candles[i].l || 0);
+    const prevC = Number(candles[i - 1].close || candles[i - 1].c || 0);
+    const prevH = Number(candles[i - 1].high || candles[i - 1].h || 0);
+    const prevL = Number(candles[i - 1].low || candles[i - 1].l || 0);
+
+    const tr = Math.max(curH - curL, Math.abs(curH - prevC), Math.abs(curL - prevC));
+    trs.push(tr);
+
+    const upMove = curH - prevH;
+    const downMove = prevL - curL;
+
+    plusDMs.push((upMove > downMove && upMove > 0) ? upMove : 0);
+    minusDMs.push((downMove > upMove && downMove > 0) ? downMove : 0);
+  }
+
+  if (trs.length < period) {
+    return { adx: null, plusDI: null, minusDI: null, isTrending: false, trendDirection: 'NEUTRAL' };
+  }
+
+  let smoothTR = trs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothPlusDM = plusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothMinusDM = minusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+
+  const dxList = [];
+  let plusDI = 0;
+  let minusDI = 0;
+
+  for (let i = period; i < trs.length; i++) {
+    smoothTR = smoothTR - (smoothTR / period) + trs[i];
+    smoothPlusDM = smoothPlusDM - (smoothPlusDM / period) + plusDMs[i];
+    smoothMinusDM = smoothMinusDM - (smoothMinusDM / period) + minusDMs[i];
+
+    plusDI = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+    minusDI = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+
+    const diDiff = Math.abs(plusDI - minusDI);
+    const diSum = plusDI + minusDI;
+    const dx = diSum > 0 ? (diDiff / diSum) * 100 : 0;
+    dxList.push(dx);
+  }
+
+  if (dxList.length < period) {
+    return {
+      adx: null,
+      plusDI: +plusDI.toFixed(2),
+      minusDI: +minusDI.toFixed(2),
+      isTrending: false,
+      trendDirection: plusDI > minusDI ? 'BULLISH' : 'BEARISH'
+    };
+  }
+
+  let adx = dxList.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dxList.length; i++) {
+    adx = (adx * (period - 1) + dxList[i]) / period;
+  }
+
+  const finalAdx = +adx.toFixed(2);
+  const finalPlusDI = +plusDI.toFixed(2);
+  const finalMinusDI = +minusDI.toFixed(2);
+
+  return {
+    adx: finalAdx,
+    plusDI: finalPlusDI,
+    minusDI: finalMinusDI,
+    isTrending: finalAdx >= 25,
+    trendDirection: finalPlusDI > finalMinusDI ? 'BULLISH' : 'BEARISH'
+  };
+}
+
+// ── Money Flow Index (MFI) ───────────────────────────────────────────────────
+/**
+ * Calculates Money Flow Index (14) - volume-weighted RSI.
+ * @param {Array<{high: number, low: number, close: number, volume: number}>} candles
+ * @param {number} period - Default 14
+ * @returns {number|null}
+ */
+export function calculateMFI(candles, period = 14) {
+  if (!Array.isArray(candles) || candles.length < period + 1) return null;
+
+  let posFlow = 0;
+  let negFlow = 0;
+
+  const validCandles = candles.map(c => {
+    const h = Number(c.high || c.h || 0);
+    const l = Number(c.low || c.l || 0);
+    const cl = Number(c.close || c.c || 0);
+    const v = Number(c.volume || c.v || 0);
+    const tp = (h + l + cl) / 3;
+    return { tp, v, rawFlow: tp * v };
+  });
+
+  const slice = validCandles.slice(-(period + 1));
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i].tp > slice[i - 1].tp) {
+      posFlow += slice[i].rawFlow;
+    } else if (slice[i].tp < slice[i - 1].tp) {
+      negFlow += slice[i].rawFlow;
+    }
+  }
+
+  if (posFlow === 0 && negFlow === 0) return 50.0;
+  if (negFlow === 0) return 100.0;
+  if (posFlow === 0) return 0.0;
+
+  const moneyRatio = posFlow / negFlow;
+  return +(100 - (100 / (1 + moneyRatio))).toFixed(2);
+}

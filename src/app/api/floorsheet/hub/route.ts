@@ -101,8 +101,8 @@ export async function GET(request: NextRequest) {
         const params: Array<string | number> = [asOfDate];
 
         if (symbolFilter && symbolFilter !== "ALL") {
-          clauses.push(`UPPER(symbol) LIKE ?`);
-          params.push(`%${symbolFilter}%`);
+          clauses.push(`UPPER(symbol) = ?`);
+          params.push(symbolFilter);
         }
         if (buyerFilter > 0) {
           clauses.push(`buyer_broker = ?`);
@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
           params.push(minAmount);
         }
         if (whaleOnly) {
-          clauses.push(`(kitta >= 500 OR amount >= 500000 OR is_whale_print = 1)`);
+          clauses.push(`(kitta >= 200 OR amount >= 100000 OR is_whale_print = 1)`);
         }
         if (excludeCross) {
           clauses.push(`buyer_broker != seller_broker`);
@@ -137,13 +137,15 @@ export async function GET(request: NextRequest) {
             seller_broker AS sellerBroker,
             kitta,
             rate,
-            amount
+            amount,
+            aggressor_side AS aggressor
           FROM floorsheet_contracts
           WHERE ${clauses.join(" AND ")}
-          ORDER BY contract_no DESC
+          ORDER BY trade_date DESC, trade_time DESC, contract_no DESC
           LIMIT ?
         `;
-        params.push(limit * 2); // Fetch extra to compute accurate session rollups
+        // Allow full-session rollup on high-volume NEPSE days (up to 100,000 contracts) while slicing `contracts` response to `limit`
+        params.push(100000);
 
         rawContracts = db.prepare(sql).all(...params) as RawFloorsheetContract[];
       }
@@ -219,7 +221,7 @@ export async function GET(request: NextRequest) {
 
     // Apply client filters on synthesized rows as well
     allEnriched = allEnriched.filter((c) => {
-      if (symbolFilter && symbolFilter !== "ALL" && !c.symbol.includes(symbolFilter)) return false;
+      if (symbolFilter && symbolFilter !== "ALL" && c.symbol !== symbolFilter) return false;
       if (buyerFilter > 0 && c.buyerBroker !== buyerFilter) return false;
       if (sellerFilter > 0 && c.sellerBroker !== sellerFilter) return false;
       if (minKitta > 0 && c.kitta < minKitta) return false;
@@ -230,7 +232,12 @@ export async function GET(request: NextRequest) {
     });
 
     // Sort newest/largest first
-    allEnriched.sort((a, b) => b.contractNo.localeCompare(a.contractNo, undefined, { numeric: true }));
+    allEnriched.sort((a, b) => {
+      const tA = String(a.tradeTime || "");
+      const tB = String(b.tradeTime || "");
+      if (tA && tB && tA !== tB) return tB.localeCompare(tA);
+      return b.contractNo.localeCompare(a.contractNo, undefined, { numeric: true });
+    });
 
     // 4. Compute Market-Wide Summary, Top Whale Scrips, and Top Institutional Brokers
     let totalKitta = 0;
@@ -289,6 +296,8 @@ export async function GET(request: NextRequest) {
       );
       scripAgg.set(c.symbol, s);
 
+      const isSelfTrade = c.buyerBroker > 0 && c.buyerBroker === c.sellerBroker;
+
       // Buyer Broker aggregation
       if (c.buyerBroker > 0) {
         const b = brokerAgg.get(c.buyerBroker) || {
@@ -315,8 +324,11 @@ export async function GET(request: NextRequest) {
           trades: 0,
         };
         sl.sellKitta += c.kitta;
-        sl.turnover += c.amount;
-        sl.trades += 1;
+        // Avoid double-counting turnover and trade count on self-trades (buyerBroker === sellerBroker)
+        if (!isSelfTrade) {
+          sl.turnover += c.amount;
+          sl.trades += 1;
+        }
         brokerAgg.set(c.sellerBroker, sl);
       }
     }

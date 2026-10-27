@@ -26,8 +26,11 @@ const RETAIL_GIANT_BASELINE = {
 function enrichFloorsheetContracts(rawRows, fallbackSymbol) {
   if (!Array.isArray(rawRows) || rawRows.length === 0) return [];
 
-  // Sort chronologically (oldest contract first) to infer uptick/downtick direction
+  // Sort chronologically by tradeTime (oldest contract first) to infer uptick/downtick direction
   const chronological = [...rawRows].sort((a, b) => {
+    const tA = String(a.tradeTime ?? a.trade_time ?? a.time ?? '');
+    const tB = String(b.tradeTime ?? b.trade_time ?? b.time ?? '');
+    if (tA && tB && tA !== tB) return tA.localeCompare(tB);
     const cA = String(a.contractNo ?? a.contract_no ?? a.contractId ?? '');
     const cB = String(b.contractNo ?? b.contract_no ?? b.contractId ?? '');
     return cA.localeCompare(cB, undefined, { numeric: true });
@@ -184,7 +187,7 @@ export function handleFloorsheetHub(req, res) {
             amount
           FROM floorsheet_contracts
           WHERE ${clauses.join(' AND ')}
-          ORDER BY contract_no DESC
+          ORDER BY trade_date DESC, trade_time DESC, contract_no DESC
           LIMIT ?
         `;
         params.push(limit * 2);
@@ -267,7 +270,12 @@ export function handleFloorsheetHub(req, res) {
     });
 
     // Sort newest/largest first
-    allEnriched.sort((a, b) => b.contractNo.localeCompare(a.contractNo, undefined, { numeric: true }));
+    allEnriched.sort((a, b) => {
+      const tA = String(a.tradeTime || '');
+      const tB = String(b.tradeTime || '');
+      if (tA && tB && tA !== tB) return tB.localeCompare(tA);
+      return b.contractNo.localeCompare(a.contractNo, undefined, { numeric: true });
+    });
 
     // 4. Compute Market-Wide Summary, Top Whale Scrips, and Top Institutional Brokers
     let totalKitta = 0;
