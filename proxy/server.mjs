@@ -162,19 +162,30 @@ const CORS_DEFAULTS = [
   'https://nepseapp.onrender.com',
   'https://nepse-app.vercel.app',
   'http://localhost:5173',  // Vite dev server
+  'http://127.0.0.1:5173',
   'http://localhost:5000',  // local proxy dev
+  'http://127.0.0.1:5000',
   'http://localhost:4173',  // Vite preview
+  'http://127.0.0.1:4173',
   'http://localhost:3000',  // Local dev server
+  'http://127.0.0.1:3000',
   'capacitor://localhost',  // Capacitor Android WebView
   'http://localhost',
+  'http://127.0.0.1',
+  'null'
 ];
 
 const ALL_ALLOWED = [...new Set([...CORS_DEFAULTS, ...ALLOWED_ORIGINS])];
 
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow server-to-server (no origin) and all allowed origins
-    if (!origin || ALL_ALLOWED.some(o => origin === o || origin.startsWith(o))) {
+    // Allow server-to-server (no origin), Electron/WebView null, local origins and LAN subnets
+    if (
+      !origin ||
+      origin === 'null' ||
+      ALL_ALLOWED.some(o => origin === o || origin.startsWith(o)) ||
+      /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)
+    ) {
       return cb(null, true);
     }
     console.warn(`[CORS] Blocked origin: ${origin}`);
@@ -3268,6 +3279,15 @@ app.get('/api/floorsheet/archive/:date', async (req, res) => {
       return res.json({ success: true, date: targetDate, count: data.length, data });
     }
     return res.status(404).json({ success: false, error: `Daily floorsheet for ${targetDate} not found locally.` });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/floorsheet/archives', (req, res) => {
+  try {
+    const archives = getArchiveIndex();
+    return res.json({ success: true, count: archives.length, archives });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -11320,4 +11340,33 @@ app.listen(PORT, '0.0.0.0', async () => {
 
     // Then keep cache warm every 25 seconds (shorter than any cache TTL)
     setInterval(warmMarketCache, 25 * 1000);
+
+    // ── Automated Daily Post-Market Floorsheet Archiver (3:05 PM NPT) ─────────
+    // Automatically runs after 3:00 PM NPT on trading days to download and archive the
+    // full day floorsheet into proxy/data/daily_floorsheets/ and ingest into SQLite ledger.
+    const runPostMarketFloorsheetCollector = async () => {
+      try {
+        const status = getDetailedMarketStatus();
+        if (!status.isTradingDay) return;
+        const nptMins = status.nptTotalMinutes || 0;
+        // Run between 15:05 NPT (15*60 + 5 = 905) and 18:00 NPT (18*60 = 1080)
+        if (nptMins >= 905 && nptMins <= 1080) {
+          const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
+          const archives = getArchiveIndex();
+          const alreadyArchived = archives.some(a => a.date === todayIso && a.tradeCount > 0);
+          if (!alreadyArchived) {
+            console.log(`[auto-archiver] Post-market 3:05 PM triggered: archiving full floorsheet for ${todayIso}...`);
+            const res = await downloadAndArchiveDailyFloorsheet(todayIso);
+            console.log(`[auto-archiver] Finished floorsheet archive for ${todayIso}:`, res?.tradeCount, 'trades');
+          }
+        }
+      } catch (err) {
+        console.warn('[auto-archiver] Error in post-market floorsheet runner:', err.message);
+      }
+    };
+
+    // Check every 60 seconds
+    setInterval(runPostMarketFloorsheetCollector, 60 * 1000);
+    // Also run a check on startup in case server started after 3:00 PM
+    setTimeout(runPostMarketFloorsheetCollector, 10000);
 });

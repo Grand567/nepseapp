@@ -302,9 +302,12 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
       ? { 'Referer': 'https://chukul.com/', 'Origin': 'https://chukul.com' }
       : {};
 
-    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul)
-    // are blocked by browser CORS policy. On native mobile, CapacitorHttp handles them.
-    if (!isNative && typeof window !== 'undefined' && (url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com'))) {
+    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul, MeroLagani)
+    // are blocked by browser CORS policy unless routed through a CORS proxy (like allorigins).
+    const isDirectThirdParty = !url.includes('allorigins') && !url.includes('corsproxy') && (
+      url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com')
+    );
+    if (!isNative && typeof window !== 'undefined' && isDirectThirdParty) {
       return null;
     }
 
@@ -353,9 +356,12 @@ async function tryFetchText(url, timeoutMs = 12000) {
       ? { 'Referer': 'https://chukul.com/', 'Origin': 'https://chukul.com' }
       : {};
 
-    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul)
-    // are blocked by browser CORS policy. On native mobile, CapacitorHttp handles them.
-    if (!isNative && typeof window !== 'undefined' && (url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com'))) {
+    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul, MeroLagani)
+    // are blocked by browser CORS policy unless routed through a CORS proxy (like allorigins).
+    const isDirectThirdParty = !url.includes('allorigins') && !url.includes('corsproxy') && (
+      url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com')
+    );
+    if (!isNative && typeof window !== 'undefined' && isDirectThirdParty) {
       return null;
     }
 
@@ -834,7 +840,7 @@ async function attemptLiveMarket() {
   // 1. PRIMARY: Official NEPSE NOTS Live feeds (/api/market/live & /api/today-prices)
   for (const endpoint of ['/api/market/live', '/api/today-prices']) {
     try {
-      const res = await fetchFromBackend(endpoint, 5000);
+      const res = await fetchFromBackend(endpoint, isTradingSession ? 10000 : 6000);
       const isStale = res?.isStale === true ||
         res?.source === 'LAST_KNOWN_OFFICIAL_SNAPSHOT' ||
         res?.source === 'LAST_KNOWN_SNAPSHOT_FALLBACK';
@@ -3217,21 +3223,46 @@ if (typeof window !== 'undefined') {
 
 // getProxyBase — returns the configured backend proxy URL.
 // Used by MeroShare, Portfolio, IPOList and other services for API calls.
+// Handles Desktop Electron (file://), local development (localhost), LAN IP, and mobile Capacitor.
 // Falls back to production Render proxy if no local backend is configured or alive.
 export function getProxyBase() {
-  // 1. If running locally in desktop browser (localhost / 127.0.0.1) and NOT native mobile:
   const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
-  if (!isNative && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return 'http://localhost:5000';
+  if (isNative) {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
+      if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
+    }
+    return 'https://nepseapp.onrender.com';
   }
 
-  // 2. If explicitly configured in localStorage, respect it
+  // 1. Electron environment (protocol file: or Electron in userAgent)
+  if (typeof window !== 'undefined') {
+    const isElectron = window.location.protocol === 'file:' || 
+                       (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) ||
+                       typeof window.electron !== 'undefined';
+    if (isElectron) {
+      return 'http://localhost:5000';
+    }
+
+    // 2. Desktop browser on localhost / 127.0.0.1
+    const h = window.location.hostname || '';
+    if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
+      return 'http://localhost:5000';
+    }
+
+    // 3. Local LAN access (e.g. 192.168.x.x, 10.x.x.x)
+    if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(h)) {
+      return `http://${h}:5000`;
+    }
+  }
+
+  // 4. If explicitly configured in localStorage, respect it
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
     const stored = localStorage.getItem('nepse_proxy_base') || localStorage.getItem('proxy_base');
     if (stored && stored.startsWith('http')) return stored.replace(/\/$/, '');
   }
 
-  // 3. Environment variable (VITE_PROXY_URL from .env or Vite config)
+  // 5. Environment variable (VITE_PROXY_URL from .env or Vite config)
   try {
     const env = import.meta?.env?.VITE_PROXY_URL;
     if (env && env.trim()) {
@@ -3244,7 +3275,7 @@ export function getProxyBase() {
     }
   } catch (_) {}
 
-  // 4. Default production proxy on Render (reliable public backend with live NOTS data)
+  // 6. Default production proxy on Render (reliable public backend with live NOTS data)
   return 'https://nepseapp.onrender.com';
 }
 

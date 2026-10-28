@@ -2055,26 +2055,31 @@ export async function getFullSessionFloorsheet(dateStr = '') {
 
   if (cleanDate) {
     for (const dataDir of candidateDirs) {
-      const file = path.join(dataDir, `floorsheet-full-${cleanDate}.json`);
-      if (fs.existsSync(file)) {
-        try {
-          const stat = fs.statSync(file);
-          const ageMs = Date.now() - stat.mtimeMs;
-          if (cleanDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000) {
-            break;
-          }
-          const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-          if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
-            const recDate = cleanDate || parsed[0]?.businessDate;
-            if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
-              try {
-                ingestDailyFloorsheetTransaction(recDate, parsed);
-                rebuildHotCache();
-              } catch (_) {}
+      const candidateFiles = [
+        path.join(dataDir, `floorsheet-full-${cleanDate}.json`),
+        path.join(dataDir, 'daily_floorsheets', `floorsheet-${cleanDate}.json`)
+      ];
+      for (const file of candidateFiles) {
+        if (fs.existsSync(file)) {
+          try {
+            const stat = fs.statSync(file);
+            const ageMs = Date.now() - stat.mtimeMs;
+            if (cleanDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000) {
+              break;
             }
-            return parsed;
-          }
-        } catch (_) {}
+            const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+              const recDate = cleanDate || parsed[0]?.businessDate;
+              if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
+                try {
+                  ingestDailyFloorsheetTransaction(recDate, parsed);
+                  rebuildHotCache();
+                } catch (_) {}
+              }
+              return parsed;
+            }
+          } catch (_) {}
+        }
       }
     }
   } else {

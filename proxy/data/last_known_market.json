@@ -1,30 +1,70 @@
 {
-  "timestamp": 1793157148103,
-  "savedAt": "2026-10-28T03:12:28.103Z",
-  "summary": [
+  "timestamp": 1793168510146,
+  "savedAt": "2026-10-28T06:21:50.146Z",
+  "indices": [
     {
-      "detail": "Total Turnover Rs:",
-      "value": 5799330203.01
+      "id": 63,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-28T12:04:58.723",
+      "index": "Sensitive Float Index",
+      "close": 160.69,
+      "high": 161.1442,
+      "low": 160.3716,
+      "previousClose": 160.6926,
+      "change": 0.39,
+      "perChange": 0.24,
+      "fiftyTwoWeekHigh": 173.41,
+      "fiftyTwoWeekLow": 148.93,
+      "currentValue": 161.09
     },
     {
-      "detail": "Total Traded Shares",
-      "value": 15346226
+      "id": 62,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-28T12:05:00.027",
+      "index": "Float Index",
+      "close": 182.11,
+      "high": 182.7183,
+      "low": 181.8152,
+      "previousClose": 182.1148,
+      "change": 0.56,
+      "perChange": 0.31,
+      "fiftyTwoWeekHigh": 204.21,
+      "fiftyTwoWeekLow": 172.25,
+      "currentValue": 182.68
     },
     {
-      "detail": "Total Transactions",
-      "value": 53030
+      "id": 57,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-28T12:04:58.72",
+      "index": "Sensitive Index",
+      "close": 475.47,
+      "high": 476.9629,
+      "low": 474.6201,
+      "previousClose": 475.4721,
+      "change": 1.37,
+      "perChange": 0.28,
+      "fiftyTwoWeekHigh": 507,
+      "fiftyTwoWeekLow": 439.44,
+      "currentValue": 476.84
     },
     {
-      "detail": "Total Scrips Traded",
-      "value": 360
-    },
-    {
-      "detail": "Total Market Capitalization Rs:",
-      "value": 4528498483518.4
-    },
-    {
-      "detail": "Total Float Market Capitalization Rs:",
-      "value": 1540935723250.4
+      "id": 58,
+      "auditId": null,
+      "exchangeIndexId": null,
+      "generatedTime": "2026-10-28T12:05:00.027",
+      "index": "NEPSE Index",
+      "close": 2630.77,
+      "high": 2640.2106,
+      "low": 2626.8629,
+      "previousClose": 2630.7699,
+      "change": 8.96,
+      "perChange": 0.34,
+      "fiftyTwoWeekHigh": 2960.4,
+      "fiftyTwoWeekLow": 2513.42,
+      "currentValue": 2639.73
     }
   ]
 }

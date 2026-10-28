@@ -509,9 +509,13 @@ function AppInner() {
         const pLiveMarket = fetchLiveMarketData().then(res => {
           if (!isMounted || !res) return res;
           const isFreshFeed = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
-          const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live';
+          const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live' && res.source !== 'yesterday';
           const hasExistingReal = liveStocksRef.current && liveStocksRef.current.length > 0;
-          if (isReal || (!hasExistingReal && res.data?.length > 0)) {
+          const isMarketOpenNow = Boolean(status?.isOpen);
+
+          // If market is open and we already have real live stocks, NEVER regress to yesterday's snapshot!
+          const shouldUpdate = isFreshFeed || isReal || (!hasExistingReal && res.data?.length > 0);
+          if (shouldUpdate && (!isMarketOpenNow || isFreshFeed || !hasExistingReal)) {
             currentStocks = res.data;
             liveStocksRef.current = currentStocks;
             setStocks(prev => {
@@ -537,11 +541,13 @@ function AppInner() {
               return currentStocks;
             });
             const isLive = Boolean(status?.isOpen);
-            setApiStatus(isLive ? (isFreshFeed ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
+            setApiStatus(isLive ? (isFreshFeed ? 'live' : (hasExistingReal ? 'live' : 'yesterday')) : (res.source === 'closing' ? 'closing' : 'yesterday'));
             if (isFreshFeed) {
               saveCachedStocks(currentStocks);
               hasFreshData = true;
             }
+          } else if (hasExistingReal && isMarketOpenNow) {
+            setApiStatus('live');
           }
           return res;
         }).catch(err => {
@@ -726,18 +732,24 @@ function AppInner() {
       const pLiveMarket = fetchLiveMarketData().then(res => {
         if (!res) return res;
         const isFresh = res.isFreshFeed === true || res.source === 'live' || res.source === 'closing';
-        const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live';
+        const isReal = res.data && res.data.length > 0 && res.source !== 'simulated-live' && res.source !== 'yesterday';
         const hasExistingReal = liveStocksRef.current && liveStocksRef.current.length > 0;
-        if (isReal || (!hasExistingReal && res.data?.length > 0)) {
+        const isMarketOpenNow = Boolean(marketStatus?.isOpen);
+
+        // If market is open and we already have real live stocks, NEVER regress to yesterday's snapshot!
+        const shouldUpdate = isFresh || isReal || (!hasExistingReal && res.data?.length > 0);
+        if (shouldUpdate && (!isMarketOpenNow || isFresh || !hasExistingReal)) {
           currentStocks = res.data;
           liveStocksRef.current = currentStocks;
           setStocks(currentStocks);
           const isLive = Boolean(marketStatus?.isOpen);
-          setApiStatus(isLive ? (isFresh ? 'live' : 'yesterday') : (res.source === 'closing' ? 'closing' : 'yesterday'));
+          setApiStatus(isLive ? (isFresh ? 'live' : (hasExistingReal ? 'live' : 'yesterday')) : (res.source === 'closing' ? 'closing' : 'yesterday'));
           if (isFresh) {
             saveCachedStocks(currentStocks);
             hasFreshData = true;
           }
+        } else if (hasExistingReal && isMarketOpenNow) {
+          setApiStatus('live');
         }
         return res;
       }).catch(err => {
