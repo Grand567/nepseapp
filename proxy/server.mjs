@@ -58,7 +58,11 @@ import {
   sendTelegramExitAlert,
   sendMorningStockSelectionDigest,
   autoDetectChatId,
-  sendTelegramMessage
+  sendTelegramMessage,
+  initTelegramPlaybookDependencies,
+  selectPlaybookMidStagePick,
+  sendTelegramPlaybookPickAlert,
+  autoSelectAndDispatchPlaybookPick
 } from './telegramNotifier.mjs';
 import {
   getDiscordStatus,
@@ -809,6 +813,38 @@ export async function enrichStocksWithBrokerSummary(stocks, days = 1) {
     brokerConcentration: stock.brokerConcentration || null
   }));
 }
+
+/**
+ * Returns complete stock universe enriched with broker concentration and floorsheet metrics.
+ */
+export async function getEnrichedStockUniverse() {
+  let list = [];
+  try {
+    const mero = await fetchInternalMeroMarketSummary();
+    if (mero && Array.isArray(mero.stocks) && mero.stocks.length > 0) {
+      list = mero.stocks;
+    }
+  } catch (_) {}
+
+  if (list.length === 0) {
+    const stockData = getCache('today-prices') || getCache('market-summary');
+    list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
+  }
+
+  if (list.length === 0) {
+    try {
+      const snap = await getFastVaultSnapshot();
+      if (snap && Array.isArray(snap.todayPrices) && snap.todayPrices.length > 0) {
+        list = snap.todayPrices;
+      }
+    } catch (_) {}
+  }
+
+  return await enrichStocksWithBrokerSummary(list);
+}
+
+// Initialize Telegram Playbook automated picker dependencies
+initTelegramPlaybookDependencies({ getEnrichedStockUniverse });
 
 app.get('/api/market-summary', async (req, res) => {
   const cacheKey = 'market-summary';
@@ -9809,6 +9845,29 @@ app.post('/api/telegram/dispatch-morning-digest', async (req, res) => {
     const { runMorningStockSelectionDigestWorker } = await import('./workers.mjs');
     const result = await runMorningStockSelectionDigestWorker(sessionDate || true);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── AUTOMATED METHOD 1 & 2 INSTITUTIONAL PLAYBOOK NOTIFIER ──
+app.post('/api/telegram/dispatch-playbook-pick', async (req, res) => {
+  try {
+    const result = await autoSelectAndDispatchPlaybookPick();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/telegram/playbook-pick', async (req, res) => {
+  try {
+    const universe = await getEnrichedStockUniverse();
+    const pick = selectPlaybookMidStagePick(universe);
+    if (!pick) {
+      return res.json({ success: false, message: 'No equity currently satisfies all strict Method 1 & 2 accumulation criteria.' });
+    }
+    res.json({ success: true, pick });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
