@@ -19,6 +19,8 @@
   "server": {
     "cleartext": false,
     "allowNavigation": [
+      "nepalipaisa.com",
+      "*.nepalipaisa.com",
       "sharesansar.com",
       "*.sharesansar.com",
       "chukul.com",

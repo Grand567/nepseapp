@@ -610,13 +610,13 @@ function AppInner() {
         const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
         if (!hasFreshIndices) {
           setIndices(prev => {
+            const computed = (currentStocks && currentStocks.length > 0) ? calculateIndices(currentStocks) : null;
+            if (computed && computed.nepse?.value > 0 && !computed.isPlaceholder) {
+              saveCachedIndices(computed);
+              return { ...prev, ...computed };
+            }
             if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder && Math.abs(Number(prev.nepse.value) - 2629.82) >= 0.05) {
               return prev; // PRESERVE authentic live index! Never overwrite with yesterday's fallback
-            }
-            if (currentStocks && currentStocks.length > 0) {
-              const computed = calculateIndices(currentStocks);
-              if (!computed.isPlaceholder) saveCachedIndices(computed);
-              return { ...computed };
             }
             return prev;
           });
@@ -848,13 +848,13 @@ function AppInner() {
           }
         } else {
           setIndices(prev => {
+            const computed = (currentStocks && currentStocks.length > 0) ? calculateIndices(currentStocks) : null;
+            if (computed && computed.nepse?.value > 0 && !computed.isPlaceholder) {
+              saveCachedIndices(computed);
+              return { ...prev, ...computed };
+            }
             if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder && Math.abs(Number(prev.nepse.value) - 2629.82) >= 0.05) {
               return prev; // PRESERVE authentic live index! Never revert to yesterday!
-            }
-            if (currentStocks && currentStocks.length > 0) {
-              const computed = calculateIndices(currentStocks);
-              if (!computed.isPlaceholder) saveCachedIndices(computed);
-              return { ...computed };
             }
             return prev;
           });

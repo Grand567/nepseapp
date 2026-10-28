@@ -319,6 +319,8 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           ...extraHeaders
         },
@@ -337,7 +339,16 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
 
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch(url, { signal: ctrl.signal, headers: extraHeaders });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        ...extraHeaders
+      }
+    });
     clearTimeout(t);
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
@@ -2188,12 +2199,13 @@ export async function fetchMarketIndices() {
     const isTradingSession = calStatus.isOpen || calStatus.isPreOpen || (calStatus.nptTotalMinutes >= 11 * 60);
     const todayIso = formatNptDateIso(new Date());
 
-    // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data (/api/indices & /api/market-indices)
+    // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data (/api/indices, /api/market-indices & /api/market/summary)
     const tryFastBackend = async () => {
       try {
-        const [indicesRes, marketRes] = await Promise.allSettled([
+        const [indicesRes, marketRes, summaryRes] = await Promise.allSettled([
           fetchFromBackend('/api/indices', 6000),
-          fetchFromBackend('/api/market-indices', 6000)
+          fetchFromBackend('/api/market-indices', 6000),
+          fetchFromBackend('/api/market/summary', 6000)
         ]);
 
         if (marketRes.status === 'fulfilled' && marketRes.value) {
@@ -2219,6 +2231,33 @@ export async function fetchMarketIndices() {
           }
         }
 
+        if (summaryRes.status === 'fulfilled' && summaryRes.value) {
+          const s = summaryRes.value?.data || summaryRes.value;
+          const liveIndex = Number(s?.nepseIndex || 0);
+          if (liveIndex > 0) {
+            const chg = Number(s?.change || 0);
+            const prevClose = (liveIndex > 0 && chg !== 0) ? +(liveIndex - chg).toFixed(2) : liveIndex;
+            return {
+              nepse: {
+                index: 'NEPSE Index',
+                value: liveIndex,
+                change: chg,
+                pChange: Number(s?.changePercent != null ? s.changePercent : (prevClose > 0 ? +((chg / prevClose) * 100).toFixed(2) : 0)),
+                prevClose,
+                open: prevClose,
+                high: Math.max(liveIndex, prevClose),
+                low: Math.min(liveIndex, prevClose),
+                turnover: Number(s?.totalTurnover || MEM_SUMMARY?.totalTurnover || 0)
+              },
+              sensitive: null,
+              float: null,
+              sensitiveFloat: null,
+              subIndices: [],
+              asOfDate: todayIso
+            };
+          }
+        }
+
         if (indicesRes.status === 'fulfilled' && indicesRes.value) {
           const parsed = parseNotsIndicesArray(indicesRes.value, MEM_SUMMARY?.totalTurnover);
           if (parsed && parsed.nepse && parsed.nepse.value > 0) {
@@ -2232,9 +2271,10 @@ export async function fetchMarketIndices() {
     // 2. High-Precision Intraday Exchange Ticks (Direct NOTS / MeroLagani handler)
     const tryIntradayTicks = async () => {
       try {
+        const nonce = Date.now();
         const [intradayRes, summaryRes] = await Promise.allSettled([
-          tryFetchJSON(`${getProxyBase()}/api/nepse/intraday-graph`, 4500).then(r => r?.data || r),
-          tryFetchJSON('https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary', 4000)
+          tryFetchJSON(`${getProxyBase()}/api/nepse/intraday-graph?_t=${nonce}`, 5000).then(r => r?.data || r),
+          tryFetchJSON(`https://merolagani.com/handlers/webrequesthandler.ashx?type=market_summary&_t=${nonce}`, 5000)
         ]);
 
         const pts = intradayRes.status === 'fulfilled' && Array.isArray(intradayRes.value) ? intradayRes.value : [];
@@ -2294,11 +2334,15 @@ export async function fetchMarketIndices() {
     //    and does not depend on the Render proxy, which is often behind a Cloudflare challenge.
     const tryNepaliPaisa = async () => {
       try {
-        const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
-        const url = isNative
-          ? 'https://www.nepalipaisa.com/api/GetIndexLive'
-          : `${getProxyBase()}/api/nepalipaisa/index-live`;
-        const j = await tryFetchJSON(url, 5000);
+        const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+        const nonce = Date.now();
+        const primaryUrl = isNative
+          ? `https://www.nepalipaisa.com/api/GetIndexLive?_t=${nonce}`
+          : `${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`;
+        let j = await tryFetchJSON(primaryUrl, 8000);
+        if (!j && isNative) {
+          j = await tryFetchJSON(`${getProxyBase()}/api/nepalipaisa/index-live?_t=${nonce}`, 8000);
+        }
         const list = Array.isArray(j?.result) ? j.result : (Array.isArray(j) ? j : null);
         if (!list) return null;
         const pick = (re) => list.find(x => re.test(String(x.indexName || '').trim()));

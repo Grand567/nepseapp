@@ -4143,6 +4143,35 @@ app.get('/api/market/summary', async (req, res) => {
 });
 
 // /api/indices â€” liveData.js fetchMarketIndices calls this
+// Live index passthrough (NepaliPaisa) — used by web/desktop clients (CORS-safe)
+let _npIndexCache = { at: 0, body: null };
+app.get('/api/nepalipaisa/index-live', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  try {
+    if (_npIndexCache.body && Date.now() - _npIndexCache.at < 3000) return res.json(_npIndexCache.body);
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    const r = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', Accept: 'application/json' }
+    });
+    clearTimeout(t);
+    const body = await r.json();
+    if (body && (body.result || Array.isArray(body))) {
+      _npIndexCache = { at: Date.now(), body };
+      return res.json(body);
+    }
+    throw new Error('Invalid response from NepaliPaisa');
+  } catch (err) {
+    if (_npIndexCache.body && Date.now() - _npIndexCache.at < 60000) return res.json(_npIndexCache.body);
+    res.status(502).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/indices', async (req, res) => {
   try {
     const r = await axios.get(`http://localhost:${PORT}/api/market-indices`, { timeout: 15000 });
