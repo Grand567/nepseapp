@@ -4754,6 +4754,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                             style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, outline: 'none', cursor: 'pointer' }}
                           >
                             <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>Latest / Aggregate ({(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || 'Today'})</option>
+                            {brokerDate && !Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).includes(brokerDate) && (
+                              <option value={brokerDate} style={{ background: '#0f172a', color: '#38bdf8' }}>{brokerDate} (Selected Session)</option>
+                            )}
                             {Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map(dt => (
                               <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>{dt}</option>
                             ))}

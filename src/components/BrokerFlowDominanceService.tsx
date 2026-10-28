@@ -1285,6 +1285,9 @@ export function BrokerFlowDominanceService({
                 className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-sky-400 outline-none focus:border-sky-500 cursor-pointer"
               >
                 <option value="">Latest Session ({sessionDate})</option>
+                {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
+                  <option value={sessionDateFilter}>{sessionDateFilter} (Selected)</option>
+                )}
                 {availableDates.map(dt => (
                   <option key={dt} value={dt}>{dt}</option>
                 ))}

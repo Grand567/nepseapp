@@ -1080,6 +1080,11 @@ export default function StockBrokerAnalysisTab({
                 <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
                   {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : `Latest Session (${availableDates[0] || '1D'})`}
                 </option>
+                {effectiveDate && !availableDates.includes(effectiveDate) && (
+                  <option value={effectiveDate} style={{ background: '#0f172a', color: '#38bdf8' }}>
+                    {effectiveDate} (Selected Session)
+                  </option>
+                )}
                 {availableDates.map(dt => (
                   <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
                     {dt}
@@ -1285,6 +1290,45 @@ export default function StockBrokerAnalysisTab({
           )}
         </div>
       </div>
+
+      {/* Notice banner when user selects a date that has no floorsheet compiled yet */}
+      {effectiveDate && brokerRecords.length === 0 && !isTabLoading && (
+        <div style={{
+          marginBottom: 14,
+          padding: '10px 14px',
+          borderRadius: 10,
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          color: '#fbbf24',
+          fontSize: 12,
+          lineHeight: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10
+        }}>
+          <div>
+            ⚠️ No floorsheet records compiled yet for <strong>{effectiveDate}</strong> (trading session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-27'}</strong>.
+          </div>
+          <button
+            type="button"
+            onClick={() => handleDateSelect('')}
+            style={{
+              padding: '3px 8px',
+              borderRadius: 6,
+              background: 'rgba(245, 158, 11, 0.2)',
+              border: 'none',
+              color: '#fef3c7',
+              fontSize: 11,
+              fontWeight: 800,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Reset to Latest
+          </button>
+        </div>
+      )}
 
       {/* ── Sub-tab 1: Broker Cards & Top Bar Chart Layout (Exact Share Hub Visuals) ── */}
       {activeSubTab === 'brokers' && (
@@ -1704,6 +1748,11 @@ export default function StockBrokerAnalysisTab({
                   <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
                     {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : (availableDates.length > 0 ? `Latest Session (${availableDates[0]})` : 'Latest Trading Session')}
                   </option>
+                  {effectiveDate && !availableDates.includes(effectiveDate) && (
+                    <option value={effectiveDate} style={{ background: '#0f172a', color: '#38bdf8' }}>
+                      {effectiveDate} (Selected Session)
+                    </option>
+                  )}
                   {availableDates.map(dt => (
                     <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
                       {dt}

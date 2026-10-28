@@ -420,17 +420,25 @@ function AppInner() {
         }));
 
         // 11. Push comprehensive multi-device backup to cloud ONLY if there is real data
-        const hasDataToPreserve = mergedProfiles.length > 0 || mergedTxs.length > 0 || mergedBulk.length > 0;
+        const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
+        const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
+        const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
+        const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');
+        const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');
+        const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');
+        const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');
+        const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');
+
+        const hasDataToPreserve = mergedProfiles.length > 0 ||
+                                  mergedTxs.length > 0 ||
+                                  mergedBulk.length > 0 ||
+                                  currentWatchlist.length > 0 ||
+                                  currentNotes.length > 0 ||
+                                  currentAlerts.length > 0 ||
+                                  currentJournal.length > 0 ||
+                                  currentPaperPos.length > 0;
         if (hasDataToPreserve) {
           try {
-            const currentWatchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
-            const currentNotes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
-            const currentAlerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
-            const currentJournal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');
-            const currentPaperBal = parseFloat(localStorage.getItem('nepse_paper_balance') || '1000000');
-            const currentPaperPos = JSON.parse(localStorage.getItem('nepse_paper_positions') || '[]');
-            const currentPaperOrd = JSON.parse(localStorage.getItem('nepse_paper_orders') || '[]');
-            const currentCreds = JSON.parse(localStorage.getItem('nepse_credentials_vault') || '[]');
 
             await syncUserDataToCloud(uid, {
               profiles: mergedProfiles,
@@ -558,7 +566,8 @@ function AppInner() {
         const pIndices = fetchMarketIndices().then(liveIdx => {
           if (!isMounted || !liveIdx) return liveIdx;
           const todayIso = formatNptDateIso(new Date());
-          const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso) ||
+          const isSession = Boolean(status?.isOpen || status?.isPreOpen);
+          const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
             (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
           const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
           if (hasFresh) {
@@ -595,7 +604,8 @@ function AppInner() {
 
         // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
         const todayIso = formatNptDateIso(new Date());
-        const isStale = Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso) ||
+        const isSession = Boolean(status?.isOpen || status?.isPreOpen);
+        const isStale = (!isSession && Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso)) ||
           (Math.abs(Number(liveIndices?.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
         const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
         if (!hasFreshIndices) {
@@ -652,11 +662,12 @@ function AppInner() {
     };
   }, [user]); // Re-run when user changes, but starts automatically on mount for everyone
 
-  // ── High-Frequency NEPSE Live Index Micro-Ticker (Sub-Second Autonomous Self-Refresh) ──
-  // Decoupled from the heavy 350+ stock universe fetch to deliver sub-second index responsiveness
+  // ── NEPSE Live Index Micro-Ticker ──
+  // Autonomous live index poller with rate-limit protection
   useEffect(() => {
     let isMounted = true;
     let tickerTimer = null;
+    let consecutiveErrors = 0;
 
     const tickFastIndex = async () => {
       const status = getDetailedMarketStatus();
@@ -664,7 +675,8 @@ function AppInner() {
         const liveIdx = await fetchMarketIndices();
         if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
           const todayIso = formatNptDateIso(new Date());
-          const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso) ||
+          const isSession = Boolean(status.isOpen || status.isPreOpen);
+          const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
             (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
           if (!isStale) {
             setIndices(prev => {
@@ -679,13 +691,18 @@ function AppInner() {
             });
             saveCachedIndices(liveIdx);
             setLastSyncTime(new Date());
+            consecutiveErrors = 0;
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        consecutiveErrors++;
+      }
 
       if (!isMounted) return;
-      // High-frequency continuous self-refresh: 1.0s during market, 1.5s pre-open, 2.5s off-market
-      const interval = status.isOpen ? 1000 : (status.isPreOpen ? 1500 : 2500);
+      // Responsive refresh: 3.5s during market, 5.0s pre-open, 6.0s off-market
+      // Exponential backoff up to 15s prevents Cloudflare 429 Bot Challenges
+      const baseInterval = status.isOpen ? 3500 : (status.isPreOpen ? 5000 : 6000);
+      const interval = consecutiveErrors > 0 ? Math.min(baseInterval * Math.pow(1.3, Math.min(consecutiveErrors, 3)), 15000) : baseInterval;
       tickerTimer = setTimeout(tickFastIndex, interval);
     };
 
@@ -760,7 +777,8 @@ function AppInner() {
       const pIndices = fetchMarketIndices().then(liveIdx => {
         if (!liveIdx) return liveIdx;
         const todayIso = formatNptDateIso(new Date());
-        const isStale = Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso) ||
+        const isSession = Boolean(marketStatus?.isOpen || marketStatus?.isPreOpen);
+        const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
           (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
         const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
         if (hasFresh) {
@@ -794,7 +812,8 @@ function AppInner() {
       if (status) setMarketStatus(status);
 
       const todayIso = formatNptDateIso(new Date());
-      const isStale = Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso) ||
+      const isSession = Boolean(status?.isOpen || status?.isPreOpen);
+      const isStale = (!isSession && Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso)) ||
         (Math.abs(Number(liveIndices?.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
       const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
 

@@ -642,7 +642,8 @@ app.get('/api/market-indices', async (req, res) => {
     const asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : null;
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
-    if (asOfDate && asOfDate !== todayIso) {
+    const isTradingSession = getDetailedMarketStatus().isOpen || getDetailedMarketStatus().isPreOpen;
+    if (asOfDate && asOfDate !== todayIso && !isTradingSession) {
       console.warn(`[market-indices] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
     } else {
       const $ = cheerio.load(response.data);

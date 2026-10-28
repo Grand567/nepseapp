@@ -73,7 +73,7 @@ if (typeof window !== 'undefined') {
 // so the server is warm by the time fetchMarket() runs.
 let _serverWarmTs = 0;      // timestamp of the last warm-up ping response
 let _serverWarmPending = false;
-let _localProxyState = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? 'alive' : 'unknown'; // 'unknown' | 'alive' | 'dead'
+let _localProxyState = 'unknown'; // 'unknown' | 'alive' | 'dead'
 
 export async function warmUpServer() {
   if (_serverWarmPending) return; // already in flight
@@ -95,12 +95,14 @@ export async function warmUpServer() {
     return false;
   };
 
-  // In desktop browser on localhost, probe local proxy with generous timeout
+  // In desktop browser on localhost, probe local proxy with lightweight timeout
   // Run it in background — don't await, this should never block the data fetch
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    ping('http://localhost:5000', 3500).then(ok => {
-      if (ok) _localProxyState = 'alive';
-    }).catch(() => {});
+    ping('http://localhost:5000', 2000).then(ok => {
+      _localProxyState = ok ? 'alive' : 'dead';
+    }).catch(() => {
+      _localProxyState = 'dead';
+    });
   }
 
   // Always ping production Render backend to guarantee wake up and warm status
@@ -732,33 +734,41 @@ export const fetchLiveStockDetail = fetchStockFundamentals;
 export async function fetchFromBackend(path, timeoutMs = 12000) {
   const base = getProxyBase();
 
-  const firstAttemptTimeout = isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 6000), 12000);
+  const isLocal = base.includes('localhost') || base.includes('127.0.0.1');
 
-  // 1. Primary: try configured proxy
-  try {
-    const res = await tryFetchJSON(`${base}${path}`, firstAttemptTimeout);
-    if (res && res.success !== false) {
-      if (!isServerWarm()) { _serverWarmTs = Date.now(); }
-      if (base.includes('localhost')) _localProxyState = 'alive';
-      return res;
-    }
-  } catch (_) {}
-
-  // 1b. If running in browser and base is localhost, also try relative path (via Vite dev server proxy)
-  if (base.includes('localhost') && typeof window !== 'undefined') {
+  // 1. Primary: try configured local proxy ONLY if not already marked dead
+  if (!isLocal || _localProxyState !== 'dead') {
     try {
-      const res = await tryFetchJSON(path, firstAttemptTimeout);
+      const probeTimeout = isLocal && _localProxyState === 'unknown' ? 1500 : (isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 4000), 10000));
+      const res = await tryFetchJSON(`${base}${path}`, probeTimeout);
       if (res && res.success !== false) {
-        _localProxyState = 'alive';
+        if (!isServerWarm()) { _serverWarmTs = Date.now(); }
+        if (isLocal) _localProxyState = 'alive';
         return res;
+      } else if (isLocal && _localProxyState === 'unknown') {
+        _localProxyState = 'dead';
       }
-    } catch (_) {}
+    } catch (_) {
+      if (isLocal) _localProxyState = 'dead';
+    }
+
+    // 1b. If running in browser and base is localhost, also try relative path (via Vite dev server proxy)
+    if (isLocal && _localProxyState !== 'dead' && typeof window !== 'undefined' && window.location.protocol !== 'file:') {
+      try {
+        const res = await tryFetchJSON(path, 2000);
+        if (res && res.success !== false) {
+          _localProxyState = 'alive';
+          return res;
+        }
+      } catch (_) {}
+    }
   }
 
   // 2. Fallback: Render production backend (if primary is a local/dev proxy that's not the Render URL)
   if (base !== 'https://nepseapp.onrender.com') {
     try {
-      const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
+      const renderTimeout = Math.max(timeoutMs, 6000);
+      const res = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, renderTimeout);
       if (res && res.success !== false) {
         _serverWarmTs = Date.now();
         return res;
@@ -2131,6 +2141,45 @@ export function getCachedIndices() {
   return fallback;
 }
 
+export function parseNotsIndicesArray(rawList, existingTurnover = 0) {
+  const arr = Array.isArray(rawList?.data) ? rawList.data : (Array.isArray(rawList) ? rawList : null);
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const nepseItem = arr.find(i => i.index === 'NEPSE Index' || i.id === 58);
+  if (!nepseItem) return null;
+
+  const build = (item) => {
+    if (!item) return null;
+    const liveVal = Number(item.currentValue || item.close || 0);
+    const chg = Number(item.change !== undefined && item.change !== null ? item.change : 0);
+    let prevClose = Number(item.previousClose || item.close || 0);
+    if (chg !== 0 && liveVal > 0 && Math.abs(liveVal - prevClose) < 0.01) {
+      prevClose = +(liveVal - chg).toFixed(2);
+    }
+    const pChg = Number(item.perChange !== undefined && item.perChange !== null ? item.perChange : (prevClose > 0 ? +((chg / prevClose) * 100).toFixed(2) : 0));
+    return {
+      index: item.index,
+      value: liveVal,
+      change: chg,
+      pChange: +(pChg).toFixed(2),
+      prevClose,
+      open: Number(item.open || prevClose),
+      high: Number(item.high || liveVal),
+      low: Number(item.low || liveVal),
+      turnover: Number(item.turnover || existingTurnover || 0)
+    };
+  };
+
+  const todayIso = formatNptDateIso(new Date());
+  return {
+    nepse: build(nepseItem),
+    sensitive: build(arr.find(i => i.index === 'Sensitive Index' || i.id === 57)),
+    float: build(arr.find(i => i.index === 'Float Index' || i.id === 62)),
+    sensitiveFloat: build(arr.find(i => i.index === 'Sensitive Float Index' || i.id === 63)),
+    subIndices: [],
+    asOfDate: todayIso
+  };
+}
+
 export async function fetchMarketIndices() {
   try {
     let indicesData = null;
@@ -2139,31 +2188,42 @@ export async function fetchMarketIndices() {
     const isTradingSession = calStatus.isOpen || calStatus.isPreOpen || (calStatus.nptTotalMinutes >= 11 * 60);
     const todayIso = formatNptDateIso(new Date());
 
-    // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data
+    // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data (/api/indices & /api/market-indices)
     const tryFastBackend = async () => {
       try {
-        const fastRes = await fetchFromBackend('/api/market-indices', isServerWarm() ? 6000 : 3500);
-        const d = fastRes?.data || fastRes;
-        if (d && d.nepse && Number(d.nepse.value) > 0) {
-          // Reject stale data from previous trading sessions
-          if (d.asOfDate && d.asOfDate < todayIso) {
-            return null;
+        const [indicesRes, marketRes] = await Promise.allSettled([
+          fetchFromBackend('/api/indices', 6000),
+          fetchFromBackend('/api/market-indices', 6000)
+        ]);
+
+        if (marketRes.status === 'fulfilled' && marketRes.value) {
+          const d = marketRes.value?.data || marketRes.value;
+          if (d && d.nepse && Number(d.nepse.value) > 0) {
+            if (!d.asOfDate || d.asOfDate >= todayIso || isTradingSession) {
+              return {
+                nepse: {
+                  ...d.nepse,
+                  value: Number(d.nepse.value),
+                  change: Number(d.nepse.change || 0),
+                  pChange: Number(d.nepse.pChange || 0),
+                  turnover: Number(d.nepse.turnover || MEM_SUMMARY?.totalTurnover || 0),
+                  prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
+                },
+                sensitive: d.sensitive || null,
+                float: d.float || null,
+                sensitiveFloat: d.sensitiveFloat || null,
+                subIndices: Array.isArray(d.subIndices) ? d.subIndices : [],
+                asOfDate: d.asOfDate || todayIso
+              };
+            }
           }
-          return {
-            nepse: {
-              ...d.nepse,
-              value: Number(d.nepse.value),
-              change: Number(d.nepse.change || 0),
-              pChange: Number(d.nepse.pChange || 0),
-              turnover: Number(d.nepse.turnover || 0),
-              prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
-            },
-            sensitive: d.sensitive || null,
-            float: d.float || null,
-            sensitiveFloat: d.sensitiveFloat || null,
-            subIndices: Array.isArray(d.subIndices) ? d.subIndices : [],
-            asOfDate: d.asOfDate || todayIso
-          };
+        }
+
+        if (indicesRes.status === 'fulfilled' && indicesRes.value) {
+          const parsed = parseNotsIndicesArray(indicesRes.value, MEM_SUMMARY?.totalTurnover);
+          if (parsed && parsed.nepse && parsed.nepse.value > 0) {
+            return parsed;
+          }
         }
       } catch (_) {}
       return null;
@@ -2219,8 +2279,8 @@ export async function fetchMarketIndices() {
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
           if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            // Strictly reject stale ShareSansar if its "As of" date is from a previous calendar day
-            if (parsedSS.asOfDate && parsedSS.asOfDate < todayIso) {
+            // Only reject stale ShareSansar if NOT in active trading session
+            if (!isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate < todayIso) {
               return null;
             }
             return parsedSS;
@@ -2230,8 +2290,52 @@ export async function fetchMarketIndices() {
       return null;
     };
 
-    // Execute concurrently, prioritizing authentic live NOTS backend & intraday ticks
-    const directResults = await Promise.allSettled([tryFastBackend(), tryIntradayTicks(), tryShareSansar()]);
+    // 0. Direct live index feed (NepaliPaisa). Works on native via CapacitorHttp (no CORS)
+    //    and does not depend on the Render proxy, which is often behind a Cloudflare challenge.
+    const tryNepaliPaisa = async () => {
+      try {
+        const isNative = typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
+        const url = isNative
+          ? 'https://www.nepalipaisa.com/api/GetIndexLive'
+          : `${getProxyBase()}/api/nepalipaisa/index-live`;
+        const j = await tryFetchJSON(url, 5000);
+        const list = Array.isArray(j?.result) ? j.result : (Array.isArray(j) ? j : null);
+        if (!list) return null;
+        const pick = (re) => list.find(x => re.test(String(x.indexName || '').trim()));
+        const build = (x, name) => {
+          if (!x || !(Number(x.indexValue) > 0)) return null;
+          const value = Number(x.indexValue);
+          const prevClose = Number(x.previousValue || 0) || +(value - Number(x.difference || 0)).toFixed(2);
+          return {
+            index: name,
+            value,
+            change: +Number(x.difference ?? (value - prevClose)).toFixed(2),
+            pChange: +Number(x.percentChange ?? 0).toFixed(2),
+            prevClose,
+            open: Number(x.openingValue || prevClose),
+            high: Number(x.dayHigh || value),
+            low: Number(x.dayLow || value),
+            turnover: Number(x.turnover || 0)
+          };
+        };
+        const nepse = build(pick(/^nepse$/i), 'NEPSE Index');
+        if (!nepse) return null;
+        const rawDate = pick(/^nepse$/i)?.asOfDate;
+        const asOf = rawDate ? String(rawDate).slice(0, 10) : todayIso;
+        return {
+          nepse,
+          sensitive: build(pick(/^sensitive$/i), 'Sensitive Index'),
+          float: build(pick(/^float$/i), 'Float Index'),
+          sensitiveFloat: build(pick(/^sen\.? ?float$/i), 'Sensitive Float Index'),
+          subIndices: [],
+          asOfDate: asOf > todayIso ? todayIso : asOf
+        };
+      } catch (_) {}
+      return null;
+    };
+
+    // Execute concurrently, prioritizing the direct live feed, then backend & intraday ticks
+    const directResults = await Promise.allSettled([tryNepaliPaisa(), tryFastBackend(), tryIntradayTicks(), tryShareSansar()]);
     for (const r of directResults) {
       if (r.status === 'fulfilled' && r.value?.nepse?.value > 0) {
         indicesData = r.value;
@@ -3241,17 +3345,20 @@ export function getProxyBase() {
                        (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Electron')) ||
                        typeof window.electron !== 'undefined';
     if (isElectron) {
+      if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
       return 'http://localhost:5000';
     }
 
     // 2. Desktop browser on localhost / 127.0.0.1
     const h = window.location.hostname || '';
     if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') {
+      if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
       return 'http://localhost:5000';
     }
 
     // 3. Local LAN access (e.g. 192.168.x.x, 10.x.x.x)
     if (/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(h)) {
+      if (_localProxyState === 'dead') return 'https://nepseapp.onrender.com';
       return `http://${h}:5000`;
     }
   }

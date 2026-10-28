@@ -146,6 +146,11 @@ export function BrokerAccumulationView({ initialSymbol = 'SHIVM' }: { initialSym
                   }}
                   className="bg-transparent font-mono text-xs text-white focus:outline-none cursor-pointer"
                 >
+                  {selectedDate && !availableDates.includes(selectedDate) && (
+                    <option value={selectedDate} className="bg-slate-900 text-sky-400">
+                      {selectedDate} (Selected)
+                    </option>
+                  )}
                   {availableDates.map((dt: string) => (
                     <option key={dt} value={dt} className="bg-slate-900 text-white">
                       {dt}

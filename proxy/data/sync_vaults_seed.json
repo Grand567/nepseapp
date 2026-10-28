@@ -1,0 +1,180 @@
+{
+  "kharcha___kharcha_user_1789202622840_nepal.np": {
+    "app": "kharcha",
+    "email": "kharcha_user_1789202622840@nepal.np",
+    "name": "Bishal Sharma",
+    "passwordHash": "bXlTZWNyZXRQaW4xMjM=",
+    "data": {
+      "version": "2.5",
+      "userId": "usr_kharcha_dev1",
+      "updatedAt": "2026-09-12T08:43:42.840Z",
+      "data": {
+        "transactions": "[{\"id\":\"tx_1\",\"title\":\"Daily Grocery & Market Item #1\",\"amount\":250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_2\",\"title\":\"Daily Grocery & Market Item #2\",\"amount\":500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_3\",\"title\":\"Daily Grocery & Market Item #3\",\"amount\":750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_4\",\"title\":\"Daily Grocery & Market Item #4\",\"amount\":1000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_5\",\"title\":\"Daily Grocery & Market Item #5\",\"amount\":1250,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_6\",\"title\":\"Daily Grocery & Market Item #6\",\"amount\":1500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_7\",\"title\":\"Daily Grocery & Market Item #7\",\"amount\":1750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_8\",\"title\":\"Daily Grocery & Market Item #8\",\"amount\":2000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_9\",\"title\":\"Daily Grocery & Market Item #9\",\"amount\":2250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_10\",\"title\":\"Daily Grocery & Market Item #10\",\"amount\":2500,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_11\",\"title\":\"Daily Grocery & Market Item #11\",\"amount\":2750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_12\",\"title\":\"Daily Grocery & Market Item #12\",\"amount\":3000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_13\",\"title\":\"Daily Grocery & Market Item #13\",\"amount\":3250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_14\",\"title\":\"Daily Grocery & Market Item #14\",\"amount\":3500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_15\",\"title\":\"Daily Grocery & Market Item #15\",\"amount\":3750,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_16\",\"title\":\"Daily Grocery & Market Item #16\",\"amount\":4000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_17\",\"title\":\"Daily Grocery & Market Item #17\",\"amount\":4250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_18\",\"title\":\"Daily Grocery & Market Item #18\",\"amount\":4500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_19\",\"title\":\"Daily Grocery & Market Item #19\",\"amount\":4750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_20\",\"title\":\"Daily Grocery & Market Item #20\",\"amount\":5000,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_21\",\"title\":\"Daily Grocery & Market Item #21\",\"amount\":5250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_22\",\"title\":\"Daily Grocery & Market Item #22\",\"amount\":5500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_23\",\"title\":\"Daily Grocery & Market Item #23\",\"amount\":5750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_24\",\"title\":\"Daily Grocery & Market Item #24\",\"amount\":6000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_25\",\"title\":\"Daily Grocery & Market Item #25\",\"amount\":6250,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_26\",\"title\":\"Daily Grocery & Market Item #26\",\"amount\":6500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_27\",\"title\":\"Daily Grocery & Market Item #27\",\"amount\":6750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_28\",\"title\":\"Daily Grocery & Market Item #28\",\"amount\":7000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_29\",\"title\":\"Daily Grocery & Market Item #29\",\"amount\":7250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_30\",\"title\":\"Daily Grocery & Market Item #30\",\"amount\":7500,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_31\",\"title\":\"Daily Grocery & Market Item #31\",\"amount\":7750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_32\",\"title\":\"Daily Grocery & Market Item #32\",\"amount\":8000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_33\",\"title\":\"Daily Grocery & Market Item #33\",\"amount\":8250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_34\",\"title\":\"Daily Grocery & Market Item #34\",\"amount\":8500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_35\",\"title\":\"Daily Grocery & Market Item #35\",\"amount\":8750,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_36\",\"title\":\"Daily Grocery & Market Item #36\",\"amount\":9000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_37\",\"title\":\"Daily Grocery & Market Item #37\",\"amount\":9250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_38\",\"title\":\"Daily Grocery & Market Item #38\",\"amount\":9500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_39\",\"title\":\"Daily Grocery & Market Item #39\",\"amount\":9750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_40\",\"title\":\"Daily Grocery & Market Item #40\",\"amount\":10000,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_41\",\"title\":\"Daily Grocery & Market Item #41\",\"amount\":10250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_42\",\"title\":\"Daily Grocery & Market Item #42\",\"amount\":10500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_43\",\"title\":\"Daily Grocery & Market Item #43\",\"amount\":10750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_44\",\"title\":\"Daily Grocery & Market Item #44\",\"amount\":11000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_45\",\"title\":\"Daily Grocery & Market Item #45\",\"amount\":11250,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_46\",\"title\":\"Daily Grocery & Market Item #46\",\"amount\":11500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_47\",\"title\":\"Daily Grocery & Market Item #47\",\"amount\":11750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_48\",\"title\":\"Daily Grocery & Market Item #48\",\"amount\":12000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_49\",\"title\":\"Daily Grocery & Market Item #49\",\"amount\":12250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_50\",\"title\":\"Daily Grocery & Market Item #50\",\"amount\":12500,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_51\",\"title\":\"Daily Grocery & Market Item #51\",\"amount\":12750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_52\",\"title\":\"Daily Grocery & Market Item #52\",\"amount\":13000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_53\",\"title\":\"Daily Grocery & Market Item #53\",\"amount\":13250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_54\",\"title\":\"Daily Grocery & Market Item #54\",\"amount\":13500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_55\",\"title\":\"Daily Grocery & Market Item #55\",\"amount\":13750,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_56\",\"title\":\"Daily Grocery & Market Item #56\",\"amount\":14000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_57\",\"title\":\"Daily Grocery & Market Item #57\",\"amount\":14250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_58\",\"title\":\"Daily Grocery & Market Item #58\",\"amount\":14500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_59\",\"title\":\"Daily Grocery & Market Item #59\",\"amount\":14750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_60\",\"title\":\"Daily Grocery & Market Item #60\",\"amount\":15000,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_61\",\"title\":\"Daily Grocery & Market Item #61\",\"amount\":15250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_62\",\"title\":\"Daily Grocery & Market Item #62\",\"amount\":15500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_63\",\"title\":\"Daily Grocery & Market Item #63\",\"amount\":15750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_64\",\"title\":\"Daily Grocery & Market Item #64\",\"amount\":16000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_65\",\"title\":\"Daily Grocery & Market Item #65\",\"amount\":16250,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_66\",\"title\":\"Daily Grocery & Market Item #66\",\"amount\":16500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_67\",\"title\":\"Daily Grocery & Market Item #67\",\"amount\":16750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_68\",\"title\":\"Daily Grocery & Market Item #68\",\"amount\":17000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_69\",\"title\":\"Daily Grocery & Market Item #69\",\"amount\":17250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_70\",\"title\":\"Daily Grocery & Market Item #70\",\"amount\":17500,\"type\":\"income\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_71\",\"title\":\"Daily Grocery & Market Item #71\",\"amount\":17750,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_72\",\"title\":\"Daily Grocery & Market Item #72\",\"amount\":18000,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_73\",\"title\":\"Daily Grocery & Market Item #73\",\"amount\":18250,\"type\":\"expense\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_74\",\"title\":\"Daily Grocery & Market Item #74\",\"amount\":18500,\"type\":\"expense\",\"category\":\"Food\",\"date\":\"2026-09-12\"},{\"id\":\"tx_75\",\"title\":\"Daily Grocery & Market Item #75\",\"amount\":18750,\"type\":\"income\",\"category\":\"Utility\",\"date\":\"2026-09-12\"},{\"id\":\"tx_76\",\"title\":\"New Bike Fuel\",\"amount\":1500,\"type\":\"expense\",\"category\":\"Travel\",\"date\":\"2026-09-12\"}]",
+        "nepseHoldings": "[{\"symbol\":\"NABIL\",\"kitta\":50}]",
+        "groupsRegistry": "[{\"id\":\"grp_1\",\"name\":\"Family Expense Fund\"}]"
+      }
+    },
+    "createdAt": "2026-09-12T08:43:43.068Z",
+    "updatedAt": "2026-09-12T08:43:43.101Z",
+    "syncVersion": 2
+  },
+  "kharcha___ramesh_nepal.np": {
+    "app": "kharcha",
+    "email": "ramesh@nepal.np",
+    "name": "Ramesh Sharma",
+    "passwordHash": "hash123",
+    "data": {
+      "balance": 45000,
+      "expenses": [
+        {
+          "id": 1,
+          "title": "Bhatbhateni",
+          "amt": 2500
+        },
+        {
+          "id": 2,
+          "title": "Petrol",
+          "amt": 5000
+        }
+      ]
+    },
+    "createdAt": "2026-09-12T08:38:41.289Z",
+    "updatedAt": "2026-09-12T08:38:41.316Z",
+    "syncVersion": 2
+  },
+  "nepse___investor_1789202623119_sharesansar.np": {
+    "app": "nepse",
+    "email": "investor_1789202623119@sharesansar.np",
+    "name": "Sushil Thapa",
+    "passwordHash": "bmVwc2VNYXN0ZXJLZXk4ODg=",
+    "data": {
+      "profiles": [
+        {
+          "id": "boid_01",
+          "name": "Primary Demat (Nabil Bank)",
+          "boid": "1301010001234567"
+        }
+      ],
+      "transactions": [
+        {
+          "id": "tx_nepse_1",
+          "symbol": "NABIL",
+          "type": "buy",
+          "quantity": 150,
+          "price": 480
+        },
+        {
+          "id": "tx_nepse_2",
+          "symbol": "GBIME",
+          "type": "buy",
+          "quantity": 200,
+          "price": 230
+        },
+        {
+          "id": "tx_nepse_3",
+          "symbol": "SHIVM",
+          "type": "buy",
+          "quantity": 75,
+          "price": 420
+        }
+      ],
+      "watchlist": [
+        "NABIL",
+        "GBIME",
+        "SHIVM",
+        "CHCL",
+        "HDL"
+      ]
+    },
+    "createdAt": "2026-09-12T08:43:43.132Z",
+    "updatedAt": "2026-09-12T08:43:43.132Z",
+    "syncVersion": 1
+  },
+  "nepse___investor_nepse.np": {
+    "app": "nepse",
+    "email": "investor@nepse.np",
+    "name": "Smart Investor",
+    "passwordHash": "nepse123",
+    "data": {
+      "portfolio": [
+        {
+          "symbol": "NABIL",
+          "kitta": 100
+        }
+      ],
+      "watchlist": [
+        "SHIVM",
+        "HDL"
+      ]
+    },
+    "createdAt": "2026-09-12T08:38:41.333Z",
+    "updatedAt": "2026-09-12T08:38:41.333Z",
+    "syncVersion": 1
+  },
+  "nepse___nepse_flow_test_gmail.com": {
+    "app": "nepse",
+    "email": "nepse_flow_test@gmail.com",
+    "name": "Ram Thapa",
+    "passwordHash": "hash123",
+    "data": {
+      "profiles": [
+        {
+          "id": "p1",
+          "name": "Ram Thapa",
+          "boid": "1301010000000001",
+          "holdings": [
+            {
+              "scrip": "NABIL",
+              "units": 100
+            }
+          ]
+        }
+      ],
+      "transactions": [
+        {
+          "id": "tx1",
+          "symbol": "NABIL",
+          "quantity": 100,
+          "price": 450
+        }
+      ],
+      "watchlist": [
+        "NABIL",
+        "SHIVM"
+      ]
+    },
+    "createdAt": "2026-09-12T09:33:49.302Z",
+    "updatedAt": "2026-09-12T09:33:49.359Z",
+    "syncVersion": 5
+  },
+  "nepse___investor_test_fresh_sharesansar.np": {
+    "app": "nepse",
+    "email": "investor_test_fresh@sharesansar.np",
+    "name": "Fresh Investor",
+    "passwordHash": "secretHash123",
+    "data": {
+      "profiles": [
+        {
+          "id": "boid_99",
+          "name": "Primary BOID",
+          "boid": "1301010009999999"
+        }
+      ],
+      "transactions": [
+        {
+          "id": "tx_99",
+          "symbol": "NABIL",
+          "quantity": 100,
+          "price": 490
+        }
+      ],
+      "watchlist": [
+        "NABIL",
+        "SHIVM"
+      ]
+    },
+    "createdAt": "2026-10-28T07:11:50.440Z",
+    "updatedAt": "2026-10-28T07:11:50.440Z",
+    "syncVersion": 1
+  }
+}

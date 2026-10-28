@@ -176,73 +176,184 @@ export const signInWithFacebook = async () => {
 
 // ─── Local Email / Password Auth ─────────────────────────────────────────────
 
-/**
- * Register a new local account (email + password).
- * Returns the user object or throws with a friendly error.
- */
-export const registerLocal = async (displayName, email, password) => {
-  if (!displayName || displayName.trim().length < 2)
-    throw new Error('Please enter your full name (at least 2 characters).');
-  if (!email || !email.includes('@'))
-    throw new Error('Please enter a valid email address.');
-  if (!password || password.length < 4)
-    throw new Error('Password must be at least 4 characters.');
-
-  const users = getLocalUsers();
-  const emailKey = email.trim().toLowerCase();
-
-  const hashedPw = hashSimple(password + emailKey);
-  const uid = 'usr_' + hashSimple(emailKey);
-
-  users[emailKey] = {
-    uid,
-    displayName: (displayName || email.split('@')[0]).trim(),
-    email: emailKey,
-    photoURL: null,
-    passwordHash: hashedPw,
-    createdAt: Date.now(),
-    isLocal: true,
-  };
-
-  saveLocalUsers(users);
-
-  const userObj = { uid, displayName: (displayName || email.split('@')[0]).trim(), email: emailKey, photoURL: null, isLocal: true };
-
-  // Sync registration with cloud
-  try {
-    const syncUrl = getSyncProxyEndpoint();
-    const regRes = await fetch(`${syncUrl}/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        app: 'nepse',
-        email: emailKey,
-        passwordHash: hashedPw,
-        name: userObj.displayName
-      })
-    });
-    if (regRes.ok) {
-      const regJson = await regRes.json();
-      if (regJson.data && typeof regJson.data === 'object') {
-        _cachedCloudData = regJson.data;
-        const userProfileKey = `nepse_hub_${uid}_profiles`;
-        const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
-        const profiles = regJson.data.profiles || regJson.data.bulkAccounts || [];
-        if (Array.isArray(profiles) && profiles.length > 0) {
-          localStorage.setItem(userProfileKey, JSON.stringify(profiles));
-          localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
-        }
-      }
-    }
-  } catch (_) {}
-
-  notifyLocalAuth(userObj);
-  return userObj;
-};
-
 let _cachedCloudData = null;
+let _activeSyncEndpoint = null;
 
 export const getCachedCloudData = () => _cachedCloudData;
+
+export const getCandidateSyncEndpoints = () => {
+  const endpoints = [];
+
+  // 1. If running on localhost / 127.0.0.1 / file: (Electron or Vite dev), prioritize local proxy
+  if (typeof window !== 'undefined') {
+    const isLocal =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.protocol === 'file:' ||
+      window.location.port === '5173' ||
+      window.location.port === '3000';
+    if (isLocal) {
+      endpoints.push('http://localhost:5000/api/sync');
+    }
+  }
+
+  // 2. Configured VITE_PROXY_URL
+  const configuredProxy = import.meta.env.VITE_PROXY_URL;
+  if (configuredProxy) {
+    const cleanConfigured = configuredProxy.replace(/\/$/, '') + '/api/sync';
+    if (!endpoints.includes(cleanConfigured)) {
+      endpoints.push(cleanConfigured);
+    }
+  }
+
+  // 3. Render cloud proxy
+  const renderProxy = 'https://nepseapp.onrender.com/api/sync';
+  if (!endpoints.includes(renderProxy)) {
+    endpoints.push(renderProxy);
+  }
+
+  // 4. Fallback localhost for mobile debug bridge
+  if (!endpoints.includes('http://localhost:5000/api/sync')) {
+    endpoints.push('http://localhost:5000/api/sync');
+  }
+
+  return endpoints;
+};
+
+export const callSyncProxy = async (endpointPath, options = {}, timeoutMs = 6500) => {
+  const candidates = getCandidateSyncEndpoints();
+  const orderedCandidates = _activeSyncEndpoint
+    ? [_activeSyncEndpoint, ...candidates.filter(c => c !== _activeSyncEndpoint)]
+    : candidates;
+
+  let lastError = null;
+
+  for (const base of orderedCandidates) {
+    try {
+      const isLocal = base.includes('localhost') || base.includes('127.0.0.1');
+      const effTimeout = isLocal ? Math.min(timeoutMs, 3000) : Math.max(timeoutMs, 8500);
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), effTimeout);
+
+      const url = `${base}${endpointPath.startsWith('/') ? endpointPath : '/' + endpointPath}`;
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      // If server responded with ANY valid HTTP status, this endpoint is alive!
+      _activeSyncEndpoint = base;
+      return res;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Network error: unable to reach any Cloud Sync endpoint.');
+};
+
+export const getSyncProxyEndpoint = () => {
+  return _activeSyncEndpoint || getCandidateSyncEndpoints()[0];
+};
+
+export const pingSyncServer = () => {
+  callSyncProxy('/health', { method: 'GET' }).catch(() => {});
+};
+// Trigger non-blocking warm-up ping
+pingSyncServer();
+
+/**
+ * Hydrates cloud data directly into localStorage and dispatches reactive events.
+ */
+export const hydrateLocalDataFromCloud = (uid, cloudData) => {
+  if (!cloudData || typeof cloudData !== 'object') return;
+
+  try {
+    const userProfileKey  = `nepse_hub_${uid}_profiles`;
+    const userTxKey       = `nepse_hub_${uid}_transactions`;
+    const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+
+    // 1. Profiles & Bulk Accounts
+    const profiles = cloudData.profiles || cloudData.bulkAccounts || [];
+    if (Array.isArray(profiles) && profiles.length > 0) {
+      localStorage.setItem(userProfileKey, JSON.stringify(profiles));
+      localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
+      window.dispatchEvent(new StorageEvent('storage', { key: userProfileKey, newValue: JSON.stringify(profiles) }));
+      window.dispatchEvent(new StorageEvent('storage', { key: bulkAccountsKey, newValue: JSON.stringify(profiles) }));
+      window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles } }));
+    }
+
+    // 2. Transactions
+    if (Array.isArray(cloudData.transactions) && cloudData.transactions.length > 0) {
+      localStorage.setItem(userTxKey, JSON.stringify(cloudData.transactions));
+      window.dispatchEvent(new StorageEvent('storage', { key: userTxKey, newValue: JSON.stringify(cloudData.transactions) }));
+    }
+
+    // 3. Watchlist
+    if (Array.isArray(cloudData.watchlist) && cloudData.watchlist.length > 0) {
+      localStorage.setItem('nepse_user_watchlist', JSON.stringify(cloudData.watchlist));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nepse_user_watchlist', newValue: JSON.stringify(cloudData.watchlist) }));
+    }
+
+    // 4. Trade Notes
+    if (Array.isArray(cloudData.tradeNotes) && cloudData.tradeNotes.length > 0) {
+      localStorage.setItem('nepse_trade_notes', JSON.stringify(cloudData.tradeNotes));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nepse_trade_notes', newValue: JSON.stringify(cloudData.tradeNotes) }));
+    }
+
+    // 5. Stock Alerts
+    if (Array.isArray(cloudData.stockAlerts) && cloudData.stockAlerts.length > 0) {
+      localStorage.setItem('nepse_stock_alerts', JSON.stringify(cloudData.stockAlerts));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nepse_stock_alerts', newValue: JSON.stringify(cloudData.stockAlerts) }));
+    }
+
+    // 6. Trade Journal
+    if (Array.isArray(cloudData.tradeJournal) && cloudData.tradeJournal.length > 0) {
+      localStorage.setItem('nepse_trade_journal', JSON.stringify(cloudData.tradeJournal));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'nepse_trade_journal', newValue: JSON.stringify(cloudData.tradeJournal) }));
+    }
+
+    // 7. Paper Trading
+    if (cloudData.paperTrading && typeof cloudData.paperTrading === 'object') {
+      if (cloudData.paperTrading.balance !== undefined) {
+        localStorage.setItem('nepse_paper_balance', cloudData.paperTrading.balance.toString());
+      }
+      if (Array.isArray(cloudData.paperTrading.positions)) {
+        localStorage.setItem('nepse_paper_positions', JSON.stringify(cloudData.paperTrading.positions));
+      }
+      if (Array.isArray(cloudData.paperTrading.orders)) {
+        localStorage.setItem('nepse_paper_orders', JSON.stringify(cloudData.paperTrading.orders));
+      }
+    }
+
+    // 8. Credentials Vault
+    if (Array.isArray(cloudData.credentials) && cloudData.credentials.length > 0) {
+      localStorage.setItem('nepse_credentials_vault', JSON.stringify(cloudData.credentials));
+    }
+
+    // 9. Dispatch custom sync restoration event
+    window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored', {
+      detail: {
+        uid,
+        profiles,
+        transactions: cloudData.transactions || [],
+        bulkAccounts: profiles,
+        watchlist: cloudData.watchlist || [],
+        tradeNotes: cloudData.tradeNotes || [],
+        stockAlerts: cloudData.stockAlerts || [],
+        tradeJournal: cloudData.tradeJournal || [],
+        paperTrading: cloudData.paperTrading || null,
+        credentials: cloudData.credentials || []
+      }
+    }));
+
+    console.log(`[CloudSync] Data hydration complete for user ${uid}.`);
+  } catch (err) {
+    console.warn('[CloudSync] Hydration warning:', err);
+  }
+};
 
 export const resolveUserEmail = (userId, userEmail) => {
   if (userEmail && typeof userEmail === 'string' && userEmail.includes('@')) {
@@ -281,81 +392,162 @@ export const resolveUserEmail = (userId, userEmail) => {
 };
 
 /**
- * Sign in with a local email + password.
+ * Register a new local account (email + password).
  * Returns the user object or throws with a friendly error.
+ */
+export const registerLocal = async (displayName, email, password) => {
+  if (!displayName || displayName.trim().length < 2)
+    throw new Error('Please enter your full name (at least 2 characters).');
+  if (!email || !email.includes('@'))
+    throw new Error('Please enter a valid email address.');
+  if (!password || password.length < 4)
+    throw new Error('Password must be at least 4 characters.');
+
+  const users = getLocalUsers();
+  const emailKey = email.trim().toLowerCase();
+
+  const hashedPw = hashSimple(password + emailKey);
+  const uid = 'usr_' + hashSimple(emailKey);
+
+  // Collect any pre-existing guest data to sync into new account
+  let initialData = {};
+  try {
+    const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
+    const guestProfiles = JSON.parse(localStorage.getItem('nepse_hub_guest_local_profiles') || '[]');
+    const rawBulk = JSON.parse(localStorage.getItem(bulkAccountsKey) || '[]');
+    const profiles = rawBulk.length > 0 ? rawBulk : guestProfiles;
+    const watchlist = JSON.parse(localStorage.getItem('nepse_user_watchlist') || '[]');
+    const notes = JSON.parse(localStorage.getItem('nepse_trade_notes') || '[]');
+    const alerts = JSON.parse(localStorage.getItem('nepse_stock_alerts') || '[]');
+    const journal = JSON.parse(localStorage.getItem('nepse_trade_journal') || '[]');
+
+    initialData = {
+      ...(profiles.length > 0 ? { profiles, bulkAccounts: profiles } : {}),
+      ...(watchlist.length > 0 ? { watchlist } : {}),
+      ...(notes.length > 0 ? { tradeNotes: notes } : {}),
+      ...(alerts.length > 0 ? { stockAlerts: alerts } : {}),
+      ...(journal.length > 0 ? { tradeJournal: journal } : {})
+    };
+  } catch (_) {}
+
+  // Sync registration with cloud
+  try {
+    const regRes = await callSyncProxy('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app: 'nepse',
+        email: emailKey,
+        passwordHash: hashedPw,
+        name: displayName.trim(),
+        initialData
+      })
+    });
+
+    if (regRes.status === 409) {
+      throw new Error('An account with this email already exists. Please switch to Sign In.');
+    }
+
+    if (regRes.ok) {
+      const regJson = await regRes.json();
+      if (regJson.data && typeof regJson.data === 'object') {
+        _cachedCloudData = regJson.data;
+        hydrateLocalDataFromCloud(uid, regJson.data);
+      }
+    }
+  } catch (syncErr) {
+    if (syncErr.message.includes('already exists')) {
+      throw syncErr;
+    }
+    console.warn('[CloudSync] Remote registration warning:', syncErr.message);
+  }
+
+  const userRecord = {
+    uid,
+    displayName: displayName.trim(),
+    email: emailKey,
+    photoURL: null,
+    passwordHash: hashedPw,
+    createdAt: Date.now(),
+    isLocal: true,
+  };
+  users[emailKey] = userRecord;
+  saveLocalUsers(users);
+
+  const userObj = { uid, displayName: displayName.trim(), email: emailKey, photoURL: null, isLocal: true };
+  notifyLocalAuth(userObj);
+  return userObj;
+};
+
+/**
+ * Sign in with a local email + password.
+ * Restores cloud vault data across fresh installations.
  */
 export const signInLocal = async (email, password) => {
   if (!email || !password) throw new Error('Please enter your email and password.');
 
   const users = getLocalUsers();
   const emailKey = email.trim().toLowerCase();
+  const hashedPw = hashSimple(password + emailKey);
+  const uid = 'usr_' + hashSimple(emailKey);
   let record = users[emailKey];
+
+  let serverAuthSuccess = false;
 
   // Try checking the remote Cloud Sync API on login (cross-device account restoration)
   try {
-    const syncUrl = getSyncProxyEndpoint();
-    const res = await fetch(`${syncUrl}/login`, {
+    const res = await callSyncProxy('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         app: 'nepse',
         email: emailKey,
-        passwordHash: hashSimple(password + emailKey),
-        autoRegisterIfMissing: !record
+        passwordHash: hashedPw,
+        autoRegisterIfMissing: false
       })
     });
+
     if (res.ok) {
       const json = await res.json();
       if (json.success) {
-        const uid = 'usr_' + hashSimple(emailKey);
+        serverAuthSuccess = true;
         if (json.data && typeof json.data === 'object' && Object.keys(json.data).length > 0) {
           _cachedCloudData = json.data;
-          try {
-            const userProfileKey = `nepse_hub_${uid}_profiles`;
-            const userTxKey = `nepse_hub_${uid}_transactions`;
-            const bulkAccountsKey = 'nepse_hub_bulk_ipo_accounts';
-
-            const profiles = json.data.profiles || json.data.bulkAccounts || [];
-            if (Array.isArray(profiles) && profiles.length > 0) {
-              localStorage.setItem(userProfileKey, JSON.stringify(profiles));
-              localStorage.setItem(bulkAccountsKey, JSON.stringify(profiles));
-              window.dispatchEvent(new CustomEvent('bulkAccountsChanged', { detail: { key: userProfileKey, profiles } }));
-            }
-            if (Array.isArray(json.data.transactions) && json.data.transactions.length > 0) {
-              localStorage.setItem(userTxKey, JSON.stringify(json.data.transactions));
-            }
-            if (Array.isArray(json.data.watchlist) && json.data.watchlist.length > 0) {
-              localStorage.setItem('nepse_user_watchlist', JSON.stringify(json.data.watchlist));
-            }
-            window.dispatchEvent(new CustomEvent('nepse_cloud_data_restored'));
-          } catch (hydErr) {
-            console.warn('[CloudSync] Immediate hydration warning:', hydErr);
-          }
+          hydrateLocalDataFromCloud(uid, json.data);
         }
         // Update or populate local user record
         record = {
           uid,
-          displayName: json.user?.name || email.split('@')[0],
+          displayName: json.user?.name || record?.displayName || email.split('@')[0],
           email: emailKey,
           photoURL: null,
-          passwordHash: hashSimple(password + emailKey),
-          createdAt: Date.now(),
+          passwordHash: hashedPw,
+          createdAt: record?.createdAt || Date.now(),
           isLocal: true,
         };
         users[emailKey] = record;
         saveLocalUsers(users);
       }
+    } else if (res.status === 401) {
+      throw new Error('Incorrect password. Please verify your password and try again.');
+    } else if (res.status === 404 && !record) {
+      throw new Error('No account found with this email. Please check your email or click "Register" to create a new account.');
     }
-  } catch (_) {}
-
-  if (!record) {
-    const displayName = email.split('@')[0];
-    return registerLocal(displayName, email, password);
+  } catch (err) {
+    if (err.message.includes('Incorrect password') || err.message.includes('No account found')) {
+      throw err;
+    }
+    console.warn('[CloudSync] Remote sync login notice:', err.message);
   }
 
-  const hashedPw = hashSimple(password + emailKey);
-  if (record.passwordHash && record.passwordHash !== hashedPw) {
-    throw new Error('Incorrect password. Please try again.');
+  // If server was unreachable, check local credentials
+  if (!serverAuthSuccess) {
+    if (!record) {
+      throw new Error('Unable to connect to sync server. Please verify your internet connection or click "Register" to create a new account.');
+    }
+    if (record.passwordHash && record.passwordHash !== hashedPw) {
+      throw new Error('Incorrect password. Please try again.');
+    }
   }
 
   const userObj = {
@@ -409,20 +601,6 @@ export const checkRedirectResult = async () => {
   }
 };
 
-const getSyncProxyEndpoint = () => {
-  const base = import.meta.env.VITE_PROXY_URL || 'https://nepseapp.onrender.com';
-  return base.replace(/\/$/, '') + '/api/sync';
-};
-
-export const pingSyncServer = () => {
-  try {
-    const syncUrl = getSyncProxyEndpoint();
-    fetch(`${syncUrl}/health`, { method: 'GET', mode: 'cors' }).catch(() => {});
-  } catch (_) {}
-};
-// Trigger non-blocking warm-up ping
-pingSyncServer();
-
 export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null) => {
   if (!userId) return;
 
@@ -457,11 +635,10 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
   };
   if (email) dataToSave.email = email;
 
-  // 1. Primary: Push to Render Cloud Sync Bridge
+  // 1. Primary: Push to Cloud Sync Bridge
   if (email && email.includes('@')) {
     try {
-      const syncUrl = getSyncProxyEndpoint();
-      const res = await fetch(`${syncUrl}/push`, {
+      const res = await callSyncProxy('/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -470,7 +647,7 @@ export const syncUserDataToCloud = async (userId, payload = {}, userEmail = null
           data: dataToSave
         })
       });
-      if (res.ok) {
+      if (res && res.ok) {
         console.log('[CloudSync] Successfully backed up user data to Cloud Sync API.');
       }
     } catch (err) {
@@ -508,11 +685,10 @@ export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
 
   const email = resolveUserEmail(userId, userEmail);
 
-  // 1. Primary: Pull from Render Cloud Sync Bridge
+  // 1. Primary: Pull from Cloud Sync Bridge
   if (email && email.includes('@')) {
     try {
-      const syncUrl = getSyncProxyEndpoint();
-      const res = await fetch(`${syncUrl}/pull`, {
+      const res = await callSyncProxy('/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -520,7 +696,7 @@ export const fetchUserDataFromCloud = async (userId, userEmail = null) => {
           email: email.trim().toLowerCase()
         })
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const json = await res.json();
         if (json.success && json.data && Object.keys(json.data).length > 0) {
           console.log('[CloudSync] Successfully restored user data from Cloud Sync API.');

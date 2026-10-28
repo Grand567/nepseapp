@@ -239,6 +239,19 @@ export async function initDB() {
         created_at      TIMESTAMP DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_corporate_actions_symbol_date ON corporate_actions(symbol, announced_date DESC);
+
+      CREATE TABLE IF NOT EXISTS cloud_sync_vaults (
+        key             VARCHAR(255) PRIMARY KEY,
+        app             VARCHAR(50) NOT NULL,
+        email           VARCHAR(255) NOT NULL,
+        name            VARCHAR(255),
+        password_hash   VARCHAR(255),
+        data            JSONB DEFAULT '{}'::jsonb,
+        created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        sync_version    INT DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_cloud_sync_vaults_lookup ON cloud_sync_vaults(app, email);
     `);
 
     // Seed initial macro baseline if none exists

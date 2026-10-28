@@ -2,14 +2,17 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { pool, query } from './db.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// Data storage directory for vaults
+// Data storage directories
 const VAULT_DIR = path.resolve(__dirname, 'data', 'sync_vaults');
+const SEED_FILE = path.resolve(__dirname, 'data', 'sync_vaults_seed.json');
+
 try {
   if (!fs.existsSync(VAULT_DIR)) {
     fs.mkdirSync(VAULT_DIR, { recursive: true });
@@ -29,29 +32,101 @@ const getSafeKey = (app = 'general', email = '') => {
 
 const getFilePath = (key) => path.join(VAULT_DIR, `${key}.json`);
 
-// Load existing vaults from disk on startup
-const preloadVaults = () => {
+let isDbTableReady = false;
+const ensureSyncTable = async () => {
+  if (!pool || isDbTableReady) return;
   try {
-    if (!fs.existsSync(VAULT_DIR)) return;
-    const files = fs.readdirSync(VAULT_DIR);
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        try {
-          const key = file.replace('.json', '');
-          const content = fs.readFileSync(path.join(VAULT_DIR, file), 'utf8');
-          memoryVaults.set(key, JSON.parse(content));
-        } catch (_) {}
-      }
-    }
-    console.log(`[SyncRouter] Preloaded ${memoryVaults.size} cloud sync vaults into memory.`);
+    await query(`
+      CREATE TABLE IF NOT EXISTS cloud_sync_vaults (
+        key VARCHAR(255) PRIMARY KEY,
+        app VARCHAR(50) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        password_hash VARCHAR(255),
+        data JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        sync_version INT DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_cloud_sync_vaults_lookup ON cloud_sync_vaults(app, email);
+    `);
+    isDbTableReady = true;
   } catch (err) {
-    console.warn('[SyncRouter] Error preloading vaults:', err.message);
+    console.warn('[SyncRouter] Table ensure notice:', err.message);
   }
 };
+
+// Load existing vaults from disk, seed file, and PostgreSQL on startup
+const preloadVaults = async () => {
+  // 1. Load from individual disk files
+  try {
+    if (fs.existsSync(VAULT_DIR)) {
+      const files = fs.readdirSync(VAULT_DIR);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          try {
+            const key = file.replace('.json', '');
+            const content = fs.readFileSync(path.join(VAULT_DIR, file), 'utf8');
+            memoryVaults.set(key, JSON.parse(content));
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SyncRouter] Error preloading vaults from disk:', err.message);
+  }
+
+  // 2. Load from seed file (essential for containers with ephemeral disk like Render)
+  try {
+    if (fs.existsSync(SEED_FILE)) {
+      const seedContent = fs.readFileSync(SEED_FILE, 'utf8');
+      const seedObj = JSON.parse(seedContent);
+      if (seedObj && typeof seedObj === 'object') {
+        for (const [key, vault] of Object.entries(seedObj)) {
+          if (!memoryVaults.has(key)) {
+            memoryVaults.set(key, vault);
+          }
+        }
+      }
+    }
+  } catch (seedErr) {
+    console.warn('[SyncRouter] Error preloading vaults from seed:', seedErr.message);
+  }
+
+  // 3. Load from PostgreSQL if pool is available
+  if (pool) {
+    try {
+      await ensureSyncTable();
+      const res = await query('SELECT key, app, email, name, password_hash, data, created_at, updated_at, sync_version FROM cloud_sync_vaults');
+      if (res && res.rows) {
+        for (const row of res.rows) {
+          memoryVaults.set(row.key, {
+            app: row.app,
+            email: row.email,
+            name: row.name,
+            passwordHash: row.password_hash,
+            data: row.data || {},
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            syncVersion: row.sync_version
+          });
+        }
+        console.log(`[SyncRouter] Preloaded ${res.rows.length} vaults from PostgreSQL database.`);
+      }
+    } catch (dbErr) {
+      console.warn('[SyncRouter] DB preload notice:', dbErr.message);
+    }
+  }
+
+  console.log(`[SyncRouter] Active in-memory cloud sync vaults: ${memoryVaults.size}`);
+};
+
 preloadVaults();
 
-const saveVault = (key, vaultData) => {
+const saveVault = async (key, vaultData) => {
   memoryVaults.set(key, vaultData);
+
+  // 1. Write individual JSON file to disk
   try {
     if (!fs.existsSync(VAULT_DIR)) {
       fs.mkdirSync(VAULT_DIR, { recursive: true });
@@ -60,12 +135,47 @@ const saveVault = (key, vaultData) => {
   } catch (err) {
     console.warn(`[SyncRouter] Failed to write vault ${key} to disk:`, err.message);
   }
+
+  // 2. Update committed seed file to persist across container restarts
+  try {
+    const allVaults = Object.fromEntries(memoryVaults.entries());
+    fs.writeFileSync(SEED_FILE, JSON.stringify(allVaults, null, 2), 'utf8');
+  } catch (_) {}
+
+  // 3. Upsert to PostgreSQL if pool is available
+  if (pool) {
+    try {
+      await ensureSyncTable();
+      await query(`
+        INSERT INTO cloud_sync_vaults (key, app, email, name, password_hash, data, updated_at, sync_version)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (key) DO UPDATE SET
+          name = EXCLUDED.name,
+          password_hash = COALESCE(NULLIF(EXCLUDED.password_hash, ''), cloud_sync_vaults.password_hash),
+          data = EXCLUDED.data,
+          updated_at = EXCLUDED.updated_at,
+          sync_version = EXCLUDED.sync_version;
+      `, [
+        key,
+        vaultData.app || 'nepse',
+        vaultData.email,
+        vaultData.name || '',
+        vaultData.passwordHash || '',
+        JSON.stringify(vaultData.data || {}),
+        vaultData.updatedAt || new Date().toISOString(),
+        vaultData.syncVersion || 1
+      ]);
+    } catch (dbErr) {
+      console.warn(`[SyncRouter] DB upsert failed for ${key}:`, dbErr.message);
+    }
+  }
 };
 
-const getVault = (key) => {
+const getVault = async (key) => {
   if (memoryVaults.has(key)) {
     return memoryVaults.get(key);
   }
+  // Try disk file
   const fp = getFilePath(key);
   if (fs.existsSync(fp)) {
     try {
@@ -73,6 +183,30 @@ const getVault = (key) => {
       memoryVaults.set(key, data);
       return data;
     } catch (_) {}
+  }
+  // Try PostgreSQL
+  if (pool) {
+    try {
+      await ensureSyncTable();
+      const res = await query('SELECT key, app, email, name, password_hash, data, created_at, updated_at, sync_version FROM cloud_sync_vaults WHERE key = $1', [key]);
+      if (res && res.rows && res.rows.length > 0) {
+        const row = res.rows[0];
+        const vault = {
+          app: row.app,
+          email: row.email,
+          name: row.name,
+          passwordHash: row.password_hash,
+          data: row.data || {},
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          syncVersion: row.sync_version
+        };
+        memoryVaults.set(key, vault);
+        return vault;
+      }
+    } catch (err) {
+      console.warn('[SyncRouter] DB getVault notice:', err.message);
+    }
   }
   return null;
 };
@@ -85,12 +219,13 @@ router.get('/health', (req, res) => {
     status: 'OK',
     service: 'Kharcha & NEPSE Multi-Device Cloud Sync Bridge',
     activeVaults: memoryVaults.size,
+    dbConnected: Boolean(pool),
     timestamp: new Date().toISOString()
   });
 });
 
 // Register new account & vault
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { app = 'general', email, passwordHash, name, initialData } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -100,7 +235,7 @@ router.post('/register', (req, res) => {
     }
 
     const key = getSafeKey(app, cleanEmail);
-    const existing = getVault(key);
+    const existing = await getVault(key);
 
     if (existing) {
       return res.status(409).json({
@@ -121,7 +256,7 @@ router.post('/register', (req, res) => {
       syncVersion: 1
     };
 
-    saveVault(key, newVault);
+    await saveVault(key, newVault);
 
     console.log(`[SyncRouter] Registered new cloud vault for [${app}] ${cleanEmail}`);
     res.json({
@@ -141,7 +276,7 @@ router.post('/register', (req, res) => {
 });
 
 // Login and pull remote vault
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { app = 'general', email, passwordHash, autoRegisterIfMissing, initialData } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -151,7 +286,7 @@ router.post('/login', (req, res) => {
     }
 
     const key = getSafeKey(app, cleanEmail);
-    let vault = getVault(key);
+    let vault = await getVault(key);
 
     // If not found and autoRegister is requested:
     if (!vault) {
@@ -166,7 +301,7 @@ router.post('/login', (req, res) => {
           updatedAt: new Date().toISOString(),
           syncVersion: 1
         };
-        saveVault(key, vault);
+        await saveVault(key, vault);
         console.log(`[SyncRouter] Auto-registered new cloud vault on login for [${app}] ${cleanEmail}`);
       } else {
         return res.status(404).json({
@@ -204,7 +339,7 @@ router.post('/login', (req, res) => {
 });
 
 // Push local data snapshot to cloud
-router.post('/push', (req, res) => {
+router.post('/push', async (req, res) => {
   try {
     const { app = 'general', email, passwordHash, data, name } = req.body || {};
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -214,7 +349,7 @@ router.post('/push', (req, res) => {
     }
 
     const key = getSafeKey(app, cleanEmail);
-    let vault = getVault(key);
+    let vault = await getVault(key);
 
     const now = new Date().toISOString();
 
@@ -263,7 +398,7 @@ router.post('/push', (req, res) => {
       vault.syncVersion = (vault.syncVersion || 0) + 1;
     }
 
-    saveVault(key, vault);
+    await saveVault(key, vault);
 
     res.json({
       success: true,
@@ -278,7 +413,7 @@ router.post('/push', (req, res) => {
 });
 
 // Pull cloud data snapshot
-router.all('/pull', (req, res) => {
+router.all('/pull', async (req, res) => {
   try {
     const app = req.body?.app || req.query?.app || 'general';
     const email = req.body?.email || req.query?.email || '';
@@ -290,7 +425,7 @@ router.all('/pull', (req, res) => {
     }
 
     const key = getSafeKey(app, cleanEmail);
-    const vault = getVault(key);
+    const vault = await getVault(key);
 
     if (!vault) {
       return res.status(404).json({

@@ -3267,6 +3267,9 @@ export function BrokerHeatmapService() {
                 className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
               >
                 <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
+                {selectedDate && !data.availableDates.includes(selectedDate) && (
+                  <option value={selectedDate}>{selectedDate} (Selected)</option>
+                )}
                 {Array.from(new Set(data.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                   <option key={dt} value={dt}>{dt}</option>
                 ))}
@@ -4365,6 +4368,9 @@ export function BrokerAnalysisService({
               className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
             >
               <option value="">Latest Session ({daysMap[timeframe] || 30}D Cumulative)</option>
+              {selectedDate && !brokerData.availableDates.includes(selectedDate) && (
+                <option value={selectedDate}>{selectedDate} (Selected)</option>
+              )}
               {Array.from(new Set(brokerData.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                 <option key={dt} value={dt}>{dt}</option>
               ))}
@@ -6047,6 +6053,9 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
                   className="px-2 py-1 text-xs font-semibold rounded-lg bg-slate-950 text-slate-200 border border-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
                   <option value="">Latest Session ({brokerDays}D Cumulative)</option>
+                  {selectedBrokerDate && !brokerAccumData.availableDates.includes(selectedBrokerDate) && (
+                    <option value={selectedBrokerDate}>{selectedBrokerDate} (Selected)</option>
+                  )}
                   {Array.from(new Set(brokerAccumData.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
                     <option key={dt} value={dt}>{dt}</option>
                   ))}

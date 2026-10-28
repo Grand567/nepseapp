@@ -296,7 +296,9 @@ const apiLimiter = rateLimit({
       req.path.startsWith('/api/indices') ||
       req.path.startsWith('/api/nepse/intraday-graph') ||
       req.path.startsWith('/api/market/summary') ||
-      req.path.startsWith('/api/live-market')
+      req.path.startsWith('/api/live-market') ||
+      req.path.startsWith('/api/today-prices') ||
+      req.path.startsWith('/api/market-summary')
     ) return true;
     return false;
   }
@@ -990,21 +992,25 @@ export async function getMarketIndicesInternal() {
   if (cached && cached.nepse && cached.nepse.value > 0) return cached;
 
   const currentStatus = getProxyMarketStatus();
-  const indexTtl = currentStatus?.isOpen ? 1000 : (currentStatus?.isPreOpen ? 2500 : 30000);
+  const indexTtl = currentStatus?.isOpen ? 4000 : (currentStatus?.isPreOpen ? 6000 : 30000);
 
   // Helper to ensure NOTS calls don't hang serverless/cloud requests
-  const quickNots = (p, ms = 7000) => Promise.race([
+  const quickNots = (p, ms = 4000) => Promise.race([
     p,
     new Promise((_, reject) => setTimeout(() => reject(new Error('NOTS timeout')), ms))
   ]);
 
   // Primary: Direct Official NEPSE NOTS API via nepseClient (real-time live trading values)
   try {
-    const [indicesData, subIndicesData, marketSummaryData] = await Promise.all([
-      quickNots(nepseClient.getNepseIndex(), 7000).catch(() => []),
-      quickNots(nepseClient.getNepseSubIndices(), 7000).catch(() => []),
-      quickNots(nepseClient.getMarketSummary(), 5000).catch(() => null)
+    const [indicesRes, subIndicesRes, marketSummaryRes] = await Promise.allSettled([
+      quickNots(nepseClient.getNepseIndex(), 4000),
+      quickNots(nepseClient.getNepseSubIndices(), 4000),
+      quickNots(nepseClient.getMarketSummary(), 3000)
     ]);
+
+    const indicesData = indicesRes.status === 'fulfilled' && Array.isArray(indicesRes.value) ? indicesRes.value : [];
+    const subIndicesData = subIndicesRes.status === 'fulfilled' && Array.isArray(subIndicesRes.value) ? subIndicesRes.value : [];
+    const marketSummaryData = marketSummaryRes.status === 'fulfilled' ? marketSummaryRes.value : null;
 
     const indices = {};
     if (Array.isArray(indicesData) && indicesData.length > 0) {
@@ -1069,7 +1075,7 @@ export async function getMarketIndicesInternal() {
     const isTradingSession = currentStatus?.isOpen || currentStatus?.isPreOpen || (currentStatus?.nptTotalMinutes >= 11 * 60);
     const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
-    if (asOfDate && asOfDate < todayIso) {
+    if (asOfDate && asOfDate < todayIso && !isTradingSession) {
       console.warn(`[proxy] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
     } else {
       const $ = cheerio.load(response.data);
@@ -6392,6 +6398,21 @@ app.get('/api/market/top-transactions', async (req, res) => {
 // ============================================================
 // 9: INDICES & SECTOR INDICES & INDEX HISTORY
 // ============================================================
+// Live index passthrough (NepaliPaisa) — used by web/desktop clients (CORS-safe)
+let _npIndexCache = { at: 0, body: null };
+app.get('/api/nepalipaisa/index-live', async (req, res) => {
+  try {
+    if (_npIndexCache.body && Date.now() - _npIndexCache.at < 4000) return res.json(_npIndexCache.body);
+    const r = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
+    const body = await r.json();
+    _npIndexCache = { at: Date.now(), body };
+    res.json(body);
+  } catch (err) {
+    if (_npIndexCache.body) return res.json(_npIndexCache.body);
+    res.status(502).json({ success: false, error: err.message });
+  }
+});
+
 app.get('/api/indices', async (req, res) => {
   try {
     const list = await Promise.race([
