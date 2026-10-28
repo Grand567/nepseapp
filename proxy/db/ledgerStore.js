@@ -214,6 +214,50 @@ db.exec(`
   );
 `);
 
+// Backward-compatible schema migration for databases restored from older gz snapshots
+const ensureColumns = (tableName, requiredCols) => {
+  try {
+    const existing = new Set(db.prepare(`PRAGMA table_info(${tableName})`).all().map(c => c.name));
+    for (const [colName, colDef] of Object.entries(requiredCols)) {
+      if (!existing.has(colName)) {
+        try {
+          db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colDef}`);
+          console.log(`[Drabyashree Ledger] Migrated ${tableName}: added missing column ${colName}`);
+        } catch (e) {
+          // Ignore duplicate column errors if already added
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Drabyashree Ledger] Migration check warning for ${tableName}:`, err.message);
+  }
+};
+
+ensureColumns('daily_stock_summary', {
+  is_quarantined: 'INTEGER DEFAULT 0',
+  calendar_status: "TEXT DEFAULT 'VALID'",
+  tape_scope: "TEXT DEFAULT 'EQUITY_ONLY'",
+  source: "TEXT DEFAULT 'NOTS_FULL_DUMP'"
+});
+
+ensureColumns('daily_broker_ledger', {
+  buy_amt: 'REAL DEFAULT 0',
+  sell_amt: 'REAL DEFAULT 0',
+  cross_vol: 'INTEGER DEFAULT 0',
+  is_quarantined: 'INTEGER DEFAULT 0',
+  calendar_status: "TEXT DEFAULT 'VALID'",
+  tape_scope: "TEXT DEFAULT 'EQUITY_ONLY'",
+  source: "TEXT DEFAULT 'NOTS_FULL_DUMP'"
+});
+
+ensureColumns('floorsheet_contracts', {
+  aggressor_side: "TEXT DEFAULT 'NEUTRAL'",
+  is_internal_cross: 'INTEGER DEFAULT 0',
+  is_whale_print: 'INTEGER DEFAULT 0',
+  is_quarantined: 'INTEGER DEFAULT 0',
+  calendar_status: "TEXT DEFAULT 'VALID'"
+});
+
 // In-Memory Tier-1 Hot Cache for < 1ms API responses
 let stockMap = {};
 try {
