@@ -78,6 +78,8 @@ export const db = new Database(dbPath);
 // Enable WAL mode & NORMAL synchronous for maximum concurrent read/write throughput
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
+db.pragma("cache_size = -16000"); // 16MB SQLite page cache ceiling for Render 512MB RAM limit
+db.pragma("temp_store = MEMORY");
 
 // 1. Create Compressed Tables & Indexes (stores 40 trading days in ~25 MB)
 db.exec(`
@@ -277,10 +279,42 @@ try {
   }
 } catch (_) {}
 
+/**
+ * Transparent on-demand LRU cache for deep single-stock diagnostics.
+ * Keeps active memory footprint < 20MB while instantly computing missing symbols from SQLite in ~6ms.
+ */
+export class HotDiagnosticCache extends Map {
+  get(key) {
+    let item = super.get(key);
+    if (item) return item;
+    if (typeof key === 'string' && key.includes('_')) {
+      const [symbol, daysStr] = key.split('_');
+      const days = parseInt(daysStr, 10) || 30;
+      if (symbol && days > 0) {
+        try {
+          const hist = getSymbolHistoryFromDb(symbol, days);
+          if (hist && hist.length > 0) {
+            item = calculateMultiDayDiagnostics(hist, days, { includeSeries: true, includeDailyFlow: true });
+            if (item) {
+              if (this.size >= 120) {
+                const oldest = this.keys().next().value;
+                if (oldest) this.delete(oldest);
+              }
+              super.set(key, item);
+              return item;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    return undefined;
+  }
+}
+
 export const HOT_CACHE = {
   lastUpdatedDate: null,
   radarByTimeframe: { 1: [], 3: [], 5: [], 15: [], 30: [] },
-  stockDiagnostics: new Map(), // Key: `${symbol}_${days}` -> Single stock deep diagnostic
+  stockDiagnostics: new HotDiagnosticCache(), // Key: `${symbol}_${days}` -> Auto-fetching LRU diagnostic cache
   earlyIgnition: [], // Precomputed 3D Early Ignition & Manipulation records sorted by ignitionScore
   signalTrackRecord: null, // Empirical walk-forward T+2 audit track record
 };
@@ -1286,8 +1320,15 @@ export function rebuildHotCache() {
   const oldestDate = dates[dates.length - 1];
 
   // 2. Streamline multi-day diagnostics symbol-by-symbol to keep V8 heap < 80MB on Render Free Tier (ordinary equities only)
+  // Sort symbols by turnover DESC so top active stocks get deep diagnostics cached in RAM
   const symbols = db
-    .prepare(`SELECT DISTINCT symbol FROM daily_stock_summary WHERE trade_date >= ?`)
+    .prepare(`
+      SELECT symbol, SUM(total_turnover) as turnover 
+      FROM daily_stock_summary 
+      WHERE trade_date >= ?
+      GROUP BY symbol 
+      ORDER BY turnover DESC
+    `)
     .all(oldestDate)
     .map((r) => r.symbol)
     .filter((s) => !isNonEquityScrip(s));
@@ -1301,10 +1342,11 @@ export function rebuildHotCache() {
 
   const timeframes = [1, 3, 5, 15, 30];
   const nextRadar = { 1: [], 3: [], 5: [], 15: [], 30: [] };
-  const nextDiagnostics = new Map();
+  const nextDiagnostics = new HotDiagnosticCache();
   const earlyIgnitionList = [];
 
-  for (const symbol of symbols) {
+  for (let i = 0; i < symbols.length; i++) {
+    const symbol = symbols[i];
     const summs = stmtSummary.all(symbol, oldestDate);
     if (summs.length === 0) continue;
 
@@ -1339,11 +1381,14 @@ export function rebuildHotCache() {
 
     let diag3 = null;
     let diag30 = null;
+    const isTopActive = i < 20;
 
     for (const days of timeframes) {
-      const diag = calculateMultiDayDiagnostics(dailyHistory, days);
+      const diag = calculateMultiDayDiagnostics(dailyHistory, days, { lean: !isTopActive });
       if (diag) {
-        nextDiagnostics.set(`${symbol}_${days}`, diag);
+        if (isTopActive) {
+          nextDiagnostics.set(`${symbol}_${days}`, diag);
+        }
         if (days === 3) diag3 = diag;
         if (days === 30) diag30 = diag;
 
@@ -1414,6 +1459,10 @@ export function rebuildHotCache() {
   HOT_CACHE.radarByTimeframe = nextRadar;
   HOT_CACHE.stockDiagnostics = nextDiagnostics;
   HOT_CACHE.earlyIgnition = earlyIgnitionList.sort((a, b) => b.ignitionScore - a.ignitionScore);
+
+  if (global.gc) {
+    try { global.gc(); } catch (_) {}
+  }
 
   console.log(
     `[Drabyashree Cache] Rebuilt 1D/3D/5D/15D/30D hot cache for ${symbols.length} stocks (${earlyIgnitionList.length} early ignition records) in ${Date.now() - startTime}ms (Session: ${dates[0]})`

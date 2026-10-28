@@ -219,9 +219,14 @@ export function detectCycleStartDate(chronologicalSeries, direction = "ACCUMULAT
  * Aggregates N-day floorsheet/broker summaries into Radar Phases & Deep Diagnostics
  * @param {Array} dailyHistory - Array of daily stock objects sorted newest -> oldest (index 0 = latest day)
  * @param {Number} days - Timeframe window: 1, 5, 15, or 30
+ * @param {Object} options - Memory optimization options { lean?: boolean, includeSeries?: boolean, includeDailyFlow?: boolean }
  */
-export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
+export function calculateMultiDayDiagnostics(dailyHistory, days = 1, options = {}) {
   if (!Array.isArray(dailyHistory) || dailyHistory.length === 0) return null;
+
+  const isLean = options?.lean === true;
+  const includeSeries = options?.includeSeries ?? !isLean;
+  const includeDailyFlow = options?.includeDailyFlow ?? !isLean;
 
   // 1. Slice the exact N-day window (fallback to available days if history < N)
   const windowData = dailyHistory.slice(0, Math.max(1, parseInt(days || 1, 10)));
@@ -275,18 +280,25 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
       prev.buyAmt += bAmt;
       prev.sellAmt += sAmt;
 
-      prev.dailySeries.push({
-        date: dt,
-        buyVol: bVol,
-        sellVol: sVol,
-        crossVol: cVol,
-        netVol: bVol - sVol,
-        buyAmt: bAmt,
-        sellAmt: sAmt,
-        avgBuyPrice: bVol > 0 ? Number((bAmt / bVol).toFixed(2)) : 0,
-        avgSellPrice: sVol > 0 ? Number((sAmt / sVol).toFixed(2)) : 0,
-        close: Number(day.closePrice || day.close || day.ltp || 0)
-      });
+      if (includeSeries) {
+        prev.dailySeries.push({
+          date: dt,
+          buyVol: bVol,
+          sellVol: sVol,
+          crossVol: cVol,
+          netVol: bVol - sVol,
+          buyAmt: bAmt,
+          sellAmt: sAmt,
+          avgBuyPrice: bVol > 0 ? Number((bAmt / bVol).toFixed(2)) : 0,
+          avgSellPrice: sVol > 0 ? Number((sAmt / sVol).toFixed(2)) : 0,
+          close: Number(day.closePrice || day.close || day.ltp || 0)
+        });
+      } else {
+        prev.dailySeries.push({
+          date: dt,
+          netVol: bVol - sVol
+        });
+      }
 
       brokerLedger.set(brokerId, prev);
     }
@@ -367,7 +379,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
       activeDaysCount: cycleInfo.activeDaysCount,
       consistencyPct: cycleInfo.consistencyPct,
       unrealizedProfitPct,
-      dailySeries: b.dailySeries
+      dailySeries: includeSeries ? b.dailySeries : undefined
     };
   });
 
@@ -564,7 +576,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   };
 
   // Construct session-by-session flow for date-wise drilldown across all requested timeframes
-  const dailyFlow = windowData.map((day) => {
+  const dailyFlow = includeDailyFlow ? windowData.map((day) => {
     const dayBrokers = (day.brokers || []).map((b) => {
       const bId = String(b.brokerId || b.broker || b.id || '').trim();
       const bVol = Math.max(0, Number(b.buyVol || b.buyQty || b.shares || 0));
@@ -618,7 +630,7 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
       topDistributor: topDist,
       brokers: dayBrokers,
     };
-  });
+  }) : [];
 
   return {
     timeframeDays: actualDays,
