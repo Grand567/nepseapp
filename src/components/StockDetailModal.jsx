@@ -4775,6 +4775,32 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                     </div>
                   </div>
 
+                  {/* Date Notice Banner if selected date has no compiled records */}
+                  {brokerDate && !Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).includes(brokerDate) && (
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'rgba(245, 158, 11, 0.1)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      color: '#fbbf24',
+                      fontSize: 11,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      marginBottom: 10
+                    }}>
+                      <span>⚠️ No floorsheet records compiled yet for <strong>{brokerDate}</strong>. Showing latest completed session: <strong>{(Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))))[0] || '2026-10-27'}</strong>.</span>
+                      <button
+                        type="button"
+                        onClick={() => handleBrokerDateChange('')}
+                        style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(245, 158, 11, 0.25)', border: 'none', color: '#fef3c7', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  )}
+
                   {/* Plain-English Guide Banner */}
                   <div style={{
                     padding: '10px 14px',

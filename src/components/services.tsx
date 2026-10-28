@@ -3288,6 +3288,19 @@ export function BrokerHeatmapService() {
         )}
       </div>
 
+      {/* Date Notice Banner if selected date has no compiled records */}
+      {selectedDate && Array.isArray(data?.availableDates) && !data.availableDates.includes(selectedDate) && (
+        <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300 flex items-center justify-between gap-3">
+          <span>⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong>. Showing latest completed session: <strong>{data.availableDates[0] || '2026-10-27'}</strong>.</span>
+          <button
+            onClick={() => setSelectedDate('')}
+            className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold hover:bg-amber-500/30 cursor-pointer text-[11px] whitespace-nowrap"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <div
           onClick={() => topBuyerBroker && setSelectedBroker(topBuyerBroker)}

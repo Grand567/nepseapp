@@ -1349,6 +1349,22 @@ export function BrokerFlowDominanceService({
         </div>
       </div>
 
+      {/* Date Notice Banner if selected date has no compiled records */}
+      {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
+        <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3">
+          <span>
+            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-27'}</strong>.
+          </span>
+          <button
+            type="button"
+            onClick={() => setSessionDateFilter('')}
+            className="px-2 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold hover:bg-amber-500/30 cursor-pointer text-[11px] whitespace-nowrap"
+          >
+            Reset to Latest
+          </button>
+        </div>
+      )}
+
       {/* Telemetry Cards */}
       <div className="grid grid-cols-2 gap-2 sm:gap-2.5 sm:grid-cols-4 w-full">
         <StatCard label="Top Accumulator" value={topAccumulator ? `Broker #${topAccumulator.brokerId}` : '—'} subtitle={topAccumulator ? `+Rs. ${(topAccumulator.netFlow / 1e7).toFixed(1)} Cr (${topAccumulator.topStock})` : undefined} color="#10b981" />
