@@ -367,15 +367,15 @@ export function UniversalScreener({
         const week52HighDist = hi52 > 0 ? Number((((c - hi52) / hi52) * 100).toFixed(2)) : null;
         const week52LowDist = lo52 > 0 ? Number((((c - lo52) / lo52) * 100).toFixed(2)) : null;
 
-        const bcr3BuyPct = Number(stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? 0);
-        const bcr5BuyPct = Number(stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? 0);
-        const bcr3SellPct = Number(stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? 0);
-        const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? 1.0);
-        const lbas = Number(stock.lbas ?? stock.brokerAnalysis?.lbas ?? 0);
-        const adSignal = stock.adSignal || stock.brokerAnalysis?.adSignal || 'Neutral';
-        const adRatio = Number(stock.adRatio ?? stock.brokerAnalysis?.adRatio ?? 0);
-        const topAccumulator = stock.topAccumulator || stock.brokerAnalysis?.topAccumulator || stock.brokerAnalysis?.topNetBuyers?.[0] || null;
-        const topDistributor = stock.topDistributor || stock.brokerAnalysis?.topDistributor || stock.brokerAnalysis?.topNetSellers?.[0] || null;
+        const bcr3BuyPct = Number(stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
+        const bcr5BuyPct = Number(stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
+        const bcr3SellPct = Number(stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? stock.realBrokerAnalysis?.bcr3SellPct ?? 0);
+        const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? stock.realBrokerAnalysis?.nbar ?? 1.0);
+        const lbas = Number(stock.lbas ?? stock.brokerAnalysis?.lbas ?? stock.realBrokerAnalysis?.lbas ?? 0);
+        const adSignal = stock.adSignal || stock.brokerAnalysis?.adSignal || stock.realBrokerAnalysis?.adSignal || 'Neutral';
+        const adRatio = Number(stock.adRatio ?? stock.brokerAnalysis?.adRatio ?? stock.realBrokerAnalysis?.adRatio ?? 0);
+        const topAccumulator = stock.topAccumulator || stock.brokerAnalysis?.topAccumulator || stock.brokerAnalysis?.topNetBuyers?.[0] || stock.realBrokerAnalysis?.topAccumulator || stock.realBrokerAnalysis?.topNetBuyers?.[0] || stock.realBrokerAnalysis?.leadAccumulator || null;
+        const topDistributor = stock.topDistributor || stock.brokerAnalysis?.topDistributor || stock.brokerAnalysis?.topNetSellers?.[0] || stock.realBrokerAnalysis?.topDistributor || stock.realBrokerAnalysis?.topNetSellers?.[0] || stock.realBrokerAnalysis?.leadDistributor || null;
 
         // Distribution / churn flag: high price + high volume = operator offloading into retail
         const _stealthScore = Number(tfMetrics.stealthAccumulation) || 50;
@@ -530,7 +530,7 @@ export function UniversalScreener({
 }
 
 // ── Multi-timeframe momentum ──
-export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) {
+export function StockMomentumAnalyzer({ stocks = [], initialSymbol = 'NABIL' }: { stocks?: any[]; initialSymbol?: string } = {}) {
   const [symbol, setSymbol] = useState('');
   const [allSymbols, setAllSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -543,8 +543,9 @@ export function StockMomentumAnalyzer({ stocks = [] }: { stocks?: any[] } = {}) 
     fetchAllSecurities().then((r) => {
       if (r?.data) setAllSymbols(r.data.map((s: any) => s.symbol).filter(Boolean).sort());
     });
-    setSymbol('NABIL');
-    analyzeWith('NABIL');
+    const initSym = (initialSymbol || 'NABIL').trim().toUpperCase();
+    setSymbol(initSym);
+    analyzeWith(initSym);
   }, []);
 
   const POPULAR_SYMBOLS = ['NABIL', 'SHIVM', 'CHCL', 'CIT', 'GBIME', 'HDL', 'NRIC', 'NICA'];
@@ -2084,7 +2085,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const sym = String(s.symbol || s.scrip || '').toUpperCase().trim();
 
       // Broker dumping check
-      const brokerData = getCachedRealBrokerAnalysis(sym);
+      const brokerData = s.brokerAnalysis || s.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
       if (brokerData) {
         const adRatio = Number(brokerData.adRatio || 0);
         const topSellers = brokerData.topNetSellers || brokerData.topSellers || [];
@@ -2135,7 +2136,7 @@ export function PrimePickService({ stocks = [], onSelectStock }: { stocks?: any[
       const hydroAdjustment = hydro.isHydro ? (hydro.isDrySeason ? -8 : 6) : 0;
 
       // Broker accumulation bonus
-      const brokerData = getCachedRealBrokerAnalysis(sym);
+      const brokerData = s.brokerAnalysis || s.realBrokerAnalysis || getCachedRealBrokerAnalysis(sym);
       const brokerBonus = (brokerData && Number(brokerData.adRatio || 0) > 0.05) ? 8 : 0;
 
       // RVOL computed BEFORE compositeScore so distribution penalty can reference it
@@ -5582,8 +5583,8 @@ export function WatchlistTool() {
 }
 
 // ── Level 2 NEPSE Market Depth Service (Top 5 Bids and Asks & Cumulative Broker Flow) ──
-export function MarketDepthService() {
-  const [symbol, setSymbol] = useState('NABIL');
+export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { initialSymbol?: string; stocks?: any[] } = {}) {
+  const [symbol, setSymbol] = useState(initialSymbol || 'NABIL');
   const [depthData, setDepthData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -5778,7 +5779,7 @@ export function MarketDepthService() {
     if (Array.isArray(brokerAccumData.brokers) && brokerAccumData.brokers.length > 0) {
       return brokerAccumData.brokers
         .filter((b: any) => (b.netQty !== undefined ? b.netQty : (b.buyQty - b.sellQty)) < 0)
-        .sort((a: any, b: any) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - a.sellQty)));
+        .sort((a: any, b: any) => (a.netQty || (a.buyQty - a.sellQty)) - (b.netQty || (b.buyQty - b.sellQty)));
     }
     return brokerAccumData.topSellers || [];
   }, [brokerAccumData]);

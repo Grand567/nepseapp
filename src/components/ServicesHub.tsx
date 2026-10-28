@@ -335,9 +335,9 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'multibagger-hunter':    MultibaggerHunterService as ComponentType,
   'minervini-leaderboard': MinerviniLeaderboard     as ComponentType,
   'ai-agent-dossier':      NepseAgentDashboard as unknown as ComponentType,
-  'signals-track-record': (({ stocks }: { stocks?: any[] }) => (
+  'signals-track-record': (({ stocks, onSelectStock }: { stocks?: any[]; onSelectStock?: (s: any) => void }) => (
     <div className="py-2">
-      <AlgorithmicSignalTrackRecord inlineMode={true} marketStocks={stocks || []} />
+      <AlgorithmicSignalTrackRecord inlineMode={true} marketStocks={stocks || []} onSelectStock={onSelectStock} />
     </div>
   )) as ComponentType,
   'stock-momentum': StockMomentumAnalyzer,
@@ -380,11 +380,11 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'technical-ratings': TechnicalRatingsGaugeService as ComponentType,
   'players-choices': () => (
     <UniversalScreener
-      filterFn={(s) => s.turnover > 5000000 && s.pChange > 0 && (s.nbar || 1) >= 1.05 && (s.adRatio ?? 0) >= 0}
+      filterFn={(s) => s.turnover > 5000000 && s.pChange > 0 && (s.nbar || 1) >= 1.05 && (s.adRatio != null ? s.adRatio >= 0.05 : (s.bcr3BuyPct || 0) >= 30)}
       sortFn={(a, b) => b.turnover - a.turnover}
       customCols={[
         { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
-        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
+        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => { if (!v) return '—'; const id = typeof v === 'object' ? (v.broker || v.brokerId || v.brokerNo || v.id) : v; const qty = typeof v === 'object' ? Number(v.netQty ?? v.netVol ?? v.kitta ?? 0) : 0; return id ? ('#' + id + (qty > 0 ? ' (+' + qty.toLocaleString() + ')' : '')) : '—'; } }
       ]}
       banner={{ type: 'success', text: 'Institutional favorites with positive net broker accumulation. Wired to /turnover + 100% floorsheet telemetry.' }}
       insight="Follow smart-money turnover with positive broker accumulation for consistent outperformance." />
@@ -1039,17 +1039,17 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'strategy-lab': StrategyLabService,
   'backtest-report': BacktestReportScreen,
   'paper-trading-journal': PaperTradingJournalScreen,
-  'stock-selection-screener': (props: any) => <StockSelectionScreener onSelectSymbol={props?.onSelectStock} />,
-  'stock-screener': (props: any) => <StockSelectionScreener onSelectSymbol={props?.onSelectStock} />,
-  'broker-accumulation-view': (props: any) => <BrokerAccumulationView initialSymbol={props?.selectedStock || 'SHIVM'} />,
-  'watchlist-entry-alerts': () => <WatchlistEntryAlertModal />,
+  'stock-selection-screener': (props: any) => <StockSelectionScreener stocks={props?.stocks} onSelectSymbol={props?.onSelectStock} />,
+  'stock-screener': (props: any) => <StockSelectionScreener stocks={props?.stocks} onSelectSymbol={props?.onSelectStock} />,
+  'broker-accumulation-view': (props: any) => <BrokerAccumulationView initialSymbol={props?.initialSymbol || props?.selectedStock || 'SHIVM'} />,
+  'watchlist-entry-alerts': (props: any) => <WatchlistEntryAlertModal onSelectStock={props?.onSelectStock} />,
   'smart-money': () => (
     <UniversalScreener
-      filterFn={(s) => s.turnover > 10000000 && (s.nbar || 1) >= 1.05 && (s.adRatio ?? 0) >= 0}
+      filterFn={(s) => s.turnover > 10000000 && (s.nbar || 1) >= 1.05 && (s.adRatio != null ? s.adRatio >= 0.05 : (s.bcr3BuyPct || 0) >= 30)}
       sortFn={(a, b) => b.turnover - a.turnover}
       customCols={[
         { key: 'bcr3BuyPct', label: 'BCR3 Buy %', align: 'right', bold: true, format: (v) => (Number(v) > 0 ? `${v}%` : '—'), colorFn: (v) => (Number(v) >= 35 ? '#10b981' : '#38bdf8') },
-        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => (v ? `#${v.broker || v.brokerId} (+${Number(v.netQty || 0).toLocaleString()})` : '—') }
+        { key: 'topAccumulator', label: 'Top Accumulator', align: 'left', format: (v) => { if (!v) return '—'; const id = typeof v === 'object' ? (v.broker || v.brokerId || v.brokerNo || v.id) : v; const qty = typeof v === 'object' ? Number(v.netQty ?? v.netVol ?? v.kitta ?? 0) : 0; return id ? ('#' + id + (qty > 0 ? ' (+' + qty.toLocaleString() + ')' : '')) : '—'; } }
       ]}
       banner={{ text: 'Where smart money flowed today — Rs. 1 Cr+ turnover names with confirmed broker accumulation.' }}
       insight="High turnover + positive broker net flow = verified institutional sponsorship." />

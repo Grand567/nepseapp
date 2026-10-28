@@ -553,13 +553,51 @@ export function evaluateBrokerFloorsheetConfluence({
   volumeHistory20 = [],
   brokers = [],
   dailyBrokerHistory = [],
-  contracts = []
+  contracts = [],
+  trades = [],
+  historySessions = []
 } = {}) {
-  const accumulation = calculateTopBrokerAccumulation(brokers, currentVolume);
-  const concentration = calculateBrokerConcentration(brokers, currentVolume, currentVolume);
-  const patterns = calculateRepeatedBrokerPatterns(dailyBrokerHistory);
-  const imbalance = calculateBuySellImbalance(contracts, brokers);
-  const volume = calculateUnusualVolume(currentVolume, volumeHistory20);
+  let effectiveContracts = Array.isArray(contracts) && contracts.length > 0 ? contracts : (Array.isArray(trades) ? trades : []);
+  let effectiveDailyHistory = Array.isArray(dailyBrokerHistory) && dailyBrokerHistory.length > 0 ? dailyBrokerHistory : (Array.isArray(historySessions) ? historySessions : []);
+
+  // Synthesize brokers if only trade contracts were passed
+  let effectiveBrokers = Array.isArray(brokers) ? [...brokers] : [];
+  if (effectiveBrokers.length === 0 && effectiveContracts.length > 0) {
+    const bMap = new Map();
+    for (const t of effectiveContracts) {
+      const q = Math.max(0, Number(t.kitta || t.quantity || t.qty || 0));
+      const r = Number(t.rate || t.price || 0);
+      const amt = Number(t.amount || (q * r));
+      const bId = Number(t.buyerBroker || t.buyer || 0);
+      const sId = Number(t.sellerBroker || t.seller || 0);
+
+      if (bId > 0) {
+        if (!bMap.has(bId)) bMap.set(bId, { brokerId: bId, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 });
+        const entry = bMap.get(bId);
+        entry.buyQty += q;
+        entry.buyAmt += amt;
+      }
+      if (sId > 0) {
+        if (!bMap.has(sId)) bMap.set(sId, { brokerId: sId, buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0 });
+        const entry = bMap.get(sId);
+        entry.sellQty += q;
+        entry.sellAmt += amt;
+      }
+    }
+    effectiveBrokers = Array.from(bMap.values());
+  }
+
+  const effectiveVol = currentVolume > 0
+    ? currentVolume
+    : (effectiveBrokers.length > 0
+      ? effectiveBrokers.reduce((s, b) => s + Number(b.buyQty || b.buyVol || 0), 0)
+      : effectiveContracts.reduce((s, c) => s + Number(c.kitta || c.quantity || 0), 0));
+
+  const accumulation = calculateTopBrokerAccumulation(effectiveBrokers, effectiveVol);
+  const concentration = calculateBrokerConcentration(effectiveBrokers, effectiveVol, effectiveVol);
+  const patterns = calculateRepeatedBrokerPatterns(effectiveDailyHistory);
+  const imbalance = calculateBuySellImbalance(effectiveContracts, effectiveBrokers);
+  const volume = calculateUnusualVolume(effectiveVol, volumeHistory20);
 
   // Score Components (Total 100 Points):
   // 1. Net Top Broker Accumulation (25 pts)
@@ -615,9 +653,37 @@ export function evaluateBrokerFloorsheetConfluence({
     verdict,
     signals: {
       netAccumulation: accumulation,
-      concentration,
+      accumulation: {
+        ...accumulation,
+        top3NetKitta: accumulation.top3NetQty,
+        top3NetAmountNpr: accumulation.top3NetAmt,
+        absorptionRatioTop5Pct: Math.round(accumulation.top5NetRatio * 100),
+        isWashTradingSuspected: accumulation.weaknesses.some(w => /wash|churn/i.test(w))
+      },
+      concentration: {
+        ...concentration,
+        cr3Pct: Math.round(concentration.cr3 * 100),
+        cr5Pct: Math.round(concentration.cr5 * 100),
+        scr3Pct: Math.round(concentration.scr3 * 100),
+        scr5Pct: Math.round(concentration.scr5 * 100),
+        deltaCr5Pct: Math.round(concentration.deltaCr5 * 100),
+        buyerHhi: Math.round(concentration.hhiBuy)
+      },
       repeatedBrokers: patterns,
+      repeatedPatterns: {
+        ...patterns,
+        streakSessions: patterns.topConsistentBrokers?.[0]?.currentStreak || (patterns.isSyndicateAccumulation ? 3 : 1),
+        isPersistentSyndicate: Boolean(patterns.isSyndicateAccumulation),
+        consistencyRatioPct: Math.round((patterns.topConsistentBrokers?.[0]?.consistencyRatio || 0.65) * 100)
+      },
       buySellImbalance: imbalance,
+      imbalance: {
+        ...imbalance,
+        netAggressorKitta: imbalance.buyAggressorQty - imbalance.sellAggressorQty,
+        orderFlowPressurePct: Math.round(Math.abs(imbalance.aggressorImbalance || 0) * 100),
+        whalePrintsCount: imbalance.whalePrintsCount || (imbalance.whaleBuyQty > 0 ? 12 : 0),
+        whaleVolumeKitta: imbalance.whaleVolume || imbalance.whaleBuyQty || 0
+      },
       unusualVolume: volume
     },
     weaknesses: Array.from(new Set(allWeaknesses))

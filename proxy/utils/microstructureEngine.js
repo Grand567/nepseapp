@@ -442,26 +442,34 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
   if (isUnderactive || totalVolume === 0) {
     phase = "INSUFFICIENT_ACTIVITY";
     phaseLabel = "INSUFFICIENT ACTIVITY";
-  } else if (scr3NetPct >= 20.0 && priceChangePct > 2.5) {
+  } else if (scr3NetPct >= 20.0 && priceChangePct > 2.5 && scr3NetPct > bcr5NetPct) {
     phase = "BULL_TRAP";
     phaseLabel = "Bull Trap (Retail Buying Top)";
-  } else if (scr3NetPct >= 18.0) {
+  } else if (scr3NetPct >= 18.0 && scr3NetPct > bcr5NetPct && smartMoneyNetFlowPct < -5.0) {
     phase = "DISTRIBUTION_DANGER";
     phaseLabel = "Distribution Danger";
-  } else if (bcr5NetPct >= 18.0 && scr3NetPct < 14.0 && Math.abs(priceChangePct) <= 4.5) {
+  } else if (bcr5NetPct >= 18.0 && (bcr5NetPct > scr3NetPct || smartMoneyNetFlowPct >= 10.0) && Math.abs(priceChangePct) <= 4.5) {
     phase = "STEALTH_ACCUMULATION";
     phaseLabel = "Stealth Accumulation";
-  } else if (bcr5NetPct >= 15.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP) {
+  } else if (bcr5NetPct >= 15.0 && bcr5NetPct > scr3NetPct && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP) {
     phase = "ACTIVE_MARKUP";
     phaseLabel = "Active Markup";
+  } else if (smartMoneyNetFlowPct >= 8.0) {
+    phase = "STEALTH_ACCUMULATION";
+    phaseLabel = "Stealth Accumulation";
+  } else if (smartMoneyNetFlowPct <= -8.0 && scr3NetPct > bcr5NetPct) {
+    phase = "DISTRIBUTION_DANGER";
+    phaseLabel = "Distribution Danger";
   }
 
-  const isInstitutionalDumping = phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP" || scr3NetPct >= 20.0 || scr3SellPct >= 38.0;
+  const isInstitutionalDumping = (phase === "DISTRIBUTION_DANGER" || phase === "BULL_TRAP" || (scr3NetPct >= 20.0 && scr3NetPct > bcr5NetPct) || (scr3SellPct >= 38.0 && scr3SellPct > bcr5BuyPct)) && smartMoneyNetFlowPct <= 0;
   const adSignal = (phase === "INSUFFICIENT_ACTIVITY")
     ? "INSUFFICIENT ACTIVITY"
-    : ((phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP")
+    : ((phase === "STEALTH_ACCUMULATION" || phase === "ACTIVE_MARKUP" || smartMoneyNetFlowPct >= 5.0)
       ? "Accumulation"
-      : (isInstitutionalDumping ? "Distribution" : "Neutral"));
+      : ((isInstitutionalDumping || smartMoneyNetFlowPct <= -5.0) ? "Distribution" : "Neutral"));
+  const adRatio = Number((smartMoneyNetFlowPct / 100).toFixed(4));
+  const adStrength = `${Math.min(99.9, Math.abs(smartMoneyNetFlowPct)).toFixed(1)}%`;
 
   // 5. Safe Buy Zone Bounds & Clear Conditional Copy (Overview Card 3)
   const buyZoneMin = Number((bigBrokerVWAP * 0.99).toFixed(1));
@@ -638,6 +646,8 @@ export function calculateMultiDayDiagnostics(dailyHistory, days = 1) {
     scr3SellPct,
     isInstitutionalDumping,
     adSignal,
+    adRatio,
+    adStrength,
     smartMoneyNetFlowPct,
     sessionsWithPositiveSmartFlow,
     absorptionConsistency: `${sessionsWithPositiveSmartFlow}/${actualDays} Sessions`,

@@ -1197,12 +1197,34 @@ export function getLedgerStatusInfo() {
  */
 export function rebuildHotCache() {
   const startTime = Date.now();
+  const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+  const todayNpt = nowNpt.toISOString().split('T')[0];
 
-  // 1. Get last 30 distinct trading dates in descending order (excluding PARTIAL_SESSION)
-  const dates = db
-    .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' ORDER BY trade_date DESC LIMIT 30`)
-    .all()
+  // Purge any accidental future phantom records that have 0 broker records
+  try {
+    db.prepare(`DELETE FROM daily_stock_summary WHERE trade_date > ? AND trade_date NOT IN (SELECT DISTINCT trade_date FROM daily_broker_ledger)`).run(todayNpt);
+  } catch (_) {}
+
+  // 1. Get last 30 distinct trading dates that have authentic broker ledger data in descending order
+  let dates = db
+    .prepare(`
+      SELECT DISTINCT s.trade_date 
+      FROM daily_stock_summary s
+      WHERE s.calendar_status != 'PARTIAL_SESSION' 
+        AND s.trade_date <= ?
+        AND EXISTS (SELECT 1 FROM daily_broker_ledger b WHERE b.trade_date = s.trade_date)
+      ORDER BY s.trade_date DESC 
+      LIMIT 30
+    `)
+    .all(todayNpt)
     .map((r) => r.trade_date);
+
+  if (dates.length === 0) {
+    dates = db
+      .prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE calendar_status != 'PARTIAL_SESSION' AND trade_date <= ? ORDER BY trade_date DESC LIMIT 30`)
+      .all(todayNpt)
+      .map((r) => r.trade_date);
+  }
 
   if (dates.length === 0) {
     console.log("[Drabyashree Cache] No trading dates found in SQLite ledger. Attempting emergency restore from seed snapshot...");
@@ -1374,6 +1396,51 @@ export function seedFromDiskVault() {
   if (existingDates.length < 30 || brokerRowsCount < 300000) {
     console.log(`[Drabyashree Ledger] Database has ${existingDates.length} trading dates and ${brokerRowsCount} broker rows (<30 dates or <300k rows). Auto-merging bundled seed snapshot...`);
     seedFromSnapshotGz(true);
+  }
+
+  // 1. ALWAYS scan for disk floorsheet files (floorsheet-full-*.json) not yet ingested into daily_broker_ledger
+  try {
+    const dataFiles = fs.readdirSync(DATA_DIR);
+    const floorsheetFiles = dataFiles.filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"));
+    for (const file of floorsheetFiles) {
+      const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+      if (match) {
+        const tradeDate = match[1];
+        if (!hasTradeDate(tradeDate)) {
+          const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
+          if (Array.isArray(raw) && raw.length > 0) {
+            console.log(`[Drabyashree Ledger] Seeding ${raw.length} trades for date ${tradeDate} from ${file}...`);
+            ingestDailyFloorsheetTransaction(tradeDate, raw);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Drabyashree Ledger] Error checking floorsheet files:", err.message);
+  }
+
+  // 2. ALWAYS scan and ensure floorsheet_contracts has all available disk sessions
+  try {
+    const availableContractsDates = new Set(
+      db.prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts`).all().map(r => r.trade_date)
+    );
+    const dataFiles = fs.readdirSync(DATA_DIR);
+    const floorsheetFiles = dataFiles.filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"));
+    for (const file of floorsheetFiles) {
+      const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+      if (match) {
+        const tradeDate = match[1];
+        if (!availableContractsDates.has(tradeDate)) {
+          const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
+          if (Array.isArray(raw) && raw.length > 0) {
+            const count = ingestFloorsheetContractsTransaction(tradeDate, raw);
+            console.log(`[Drabyashree Ledger] Auto-bootstrapped ${count} contracts for ${tradeDate} into floorsheet_contracts`);
+          }
+        }
+      }
+    }
+  } catch (err2) {
+    console.warn("[Drabyashree Ledger] Error checking floorsheet_contracts bootstrap:", err2.message);
   }
 
   const currentDates = getStoredDates(40);

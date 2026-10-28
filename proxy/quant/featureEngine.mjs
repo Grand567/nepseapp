@@ -8,6 +8,7 @@
 // with safe fallback when running in lightweight memory mode.
 
 import { pool } from '../db.mjs';
+import { db } from '../db/ledgerStore.js';
 import { getMacroCache, hasMacroCache } from './macroCache.mjs';
 import { getNewsCache, hasNewsCache } from './newsCache.mjs';
 
@@ -164,9 +165,9 @@ export function computeRSI(closes, period = 14) {
   return Number((100 - 100 / (1 + rs)).toFixed(2));
 }
 
-/** Exponential moving average */
+/** Exponential moving average — strictly returns null if candles are insufficient (zero lookahead / bias immunity) */
 export function computeEMA(closes, period) {
-  if (!Array.isArray(closes) || closes.length < period) return closes?.[closes.length - 1] || null;
+  if (!Array.isArray(closes) || closes.length < period) return null;
   const k = 2 / (period + 1);
   let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < closes.length; i++) {
@@ -739,23 +740,47 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
   if (stockData && stockData.ltp) {
     const ltp = Number(stockData.ltp || stockData.closePrice || 100);
     const pChange = Number(stockData.pChange || stockData.percentageChange || 0);
-    const volume = Number(stockData.volume || stockData.totalTradedQuantity || 10000);
-    const volumeSurgeRatio = Number(stockData.volumeSurgeRatio || (volume > 20000 ? 1.45 : 0.95));
+    const volume = Number(stockData.volume || stockData.totalTradedQuantity || 0);
 
-    // Retrieve authentic historical closes from DB
+    // Retrieve authentic historical closes from DB (Postgres or SQLite ledgerStore)
     let histCloses = [];
+    let histVolumes = [];
     if (pool) {
       try {
         const { rows: histRows } = await pool.query(
-          `SELECT d.close_price FROM daily_price_history d
+          `SELECT d.close_price, d.total_volume FROM daily_price_history d
            JOIN securities s ON s.security_id = d.security_id
            WHERE s.symbol = $1 ORDER BY d.traded_date DESC LIMIT 60`,
           [sym]
         );
         if (histRows && histRows.length > 0) {
-          histCloses = histRows.reverse().map(r => Number(r.close_price));
+          const rev = histRows.reverse();
+          histCloses = rev.map(r => Number(r.close_price));
+          histVolumes = rev.map(r => Number(r.total_volume || 0));
         }
       } catch (_) {}
+    }
+
+    if (histCloses.length === 0 && db) {
+      try {
+        const rows = db.prepare(
+          `SELECT close_price, total_volume FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 60`
+        ).all(sym);
+        if (rows && rows.length > 0) {
+          const rev = rows.reverse();
+          histCloses = rev.map(r => Number(r.close_price));
+          histVolumes = rev.map(r => Number(r.total_volume || 0));
+        }
+      } catch (_) {}
+    }
+
+    let volumeSurgeRatio = Number(stockData.volumeSurgeRatio || 0);
+    if (!volumeSurgeRatio && histVolumes.length >= 5) {
+      const hist20 = histVolumes.slice(-21, -1);
+      const avgVol20 = hist20.reduce((a, b) => a + b, 0) / Math.max(1, hist20.length);
+      volumeSurgeRatio = (avgVol20 > 0 && volume > 0) ? Number((volume / avgVol20).toFixed(2)) : 1.0;
+    } else if (!volumeSurgeRatio) {
+      volumeSurgeRatio = 1.0;
     }
 
     // Attempt real RSI from DB price history; return null if insufficient
@@ -774,13 +799,20 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
       momentum5d = Number((((histCloses[histCloses.length - 1] - histCloses[histCloses.length - 6]) / histCloses[histCloses.length - 6]) * 100).toFixed(2));
     }
     const macdSignal = histCloses.length >= 20 ? computeMACDSignal(histCloses) : 'neutral';
-    const obvTrend = volumeSurgeRatio > 1.2 && pChange >= 0 ? 'rising' : (pChange < -1 ? 'falling' : 'flat');
+    
+    let obvTrend = 'flat';
+    if (histCloses.length >= 10 && histVolumes.length >= 10) {
+      const obvSeries = computeOBV(histCloses, histVolumes);
+      obvTrend = classifyOBVTrend(obvSeries, Math.min(10, obvSeries.length - 1));
+    } else {
+      obvTrend = volumeSurgeRatio > 1.2 && pChange >= 0 ? 'rising' : (pChange < -1 ? 'falling' : 'flat');
+    }
     const avgTurnover5d = Number(stockData.turnover || (ltp * volume));
 
     // ── EMA 50 Structural Calculation ──────────────────────────────────────
     let ema50 = Number(stockData.ema50 || stockData.sma50 || 0);
-    if (!ema50 && histCloses.length >= 15) {
-      ema50 = computeEMA(histCloses, Math.min(50, histCloses.length));
+    if (!ema50 && histCloses.length >= 50) {
+      ema50 = computeEMA(histCloses, 50);
     }
     const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
 
@@ -800,21 +832,43 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
     };
   }
 
-  if (!pool) return null;
+  // Standalone query: try PostgreSQL first, then SQLite ledgerStore
+  let ordered = [];
+  if (pool) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT d.close_price, d.total_volume AS volume, d.traded_date AS trade_date
+         FROM daily_price_history d
+         JOIN securities s ON s.security_id = d.security_id
+         WHERE s.symbol = $1
+         ORDER BY d.traded_date DESC
+         LIMIT $2`,
+        [sym, Math.max(days, 60)]
+      );
+      if (rows && rows.length >= 5) {
+        ordered = rows.reverse();
+      }
+    } catch (_) {}
+  }
+
+  if (ordered.length === 0 && db) {
+    try {
+      const rows = db.prepare(
+        `SELECT close_price, total_volume AS volume, trade_date
+         FROM daily_stock_summary
+         WHERE symbol = ?
+         ORDER BY trade_date DESC
+         LIMIT ?`
+      ).all(sym, Math.max(days, 60));
+      if (rows && rows.length >= 5) {
+        ordered = rows.reverse();
+      }
+    } catch (_) {}
+  }
+
+  if (ordered.length < 5) return null;
 
   try {
-    const { rows } = await pool.query(
-      `SELECT d.close_price, d.total_volume AS volume, d.traded_date AS trade_date
-       FROM daily_price_history d
-       JOIN securities s ON s.security_id = d.security_id
-       WHERE s.symbol = $1
-       ORDER BY d.traded_date DESC
-       LIMIT $2`,
-      [sym, Math.max(days, 60)]
-    );
-    if (rows.length < 5) return null;
-
-    const ordered = rows.reverse();
     const closes = ordered.map((r) => Number(r.close_price));
     const volumes = ordered.map((r) => Number(r.volume));
 

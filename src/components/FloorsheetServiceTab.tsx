@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { FloorsheetHubApiResponse } from "@/app/api/floorsheet/hub/route";
+import { getProxyBase } from "../utils/liveData";
 
 interface FloorsheetServiceTabProps {
   /** Optional callback when a user clicks a scrip row to inspect Stock Information Modal */
@@ -14,6 +15,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
 }) => {
   const [data, setData] = useState<FloorsheetHubApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [selectedDate, setSelectedDate] = useState<string>("");
 
   // Filter States
   const [symbolInput, setSymbolInput] = useState<string>("");
@@ -27,20 +29,25 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      if (selectedDate.trim()) params.set("date", selectedDate.trim());
       if (symbolInput.trim()) params.set("symbol", symbolInput.trim().toUpperCase());
-      if (buyerBrokerInput.trim()) params.set("buyer", buyerBrokerInput.trim());
-      if (sellerBrokerInput.trim()) params.set("seller", sellerBrokerInput.trim());
+      if (buyerBrokerInput.trim()) params.set("buyer", buyerBrokerInput.trim().replace(/^0+/, ""));
+      if (sellerBrokerInput.trim()) params.set("seller", sellerBrokerInput.trim().replace(/^0+/, ""));
       if (minKittaInput.trim()) params.set("minKitta", minKittaInput.trim());
       if (whaleOnly) params.set("whaleOnly", "true");
       if (excludeCross) params.set("excludeCross", "true");
       params.set("limit", "300");
 
-      const res = await fetch(`/api/floorsheet/hub?${params.toString()}`, {
+      const base = getProxyBase();
+      const res = await fetch(`${base}/api/floorsheet/hub?${params.toString()}`, {
         signal,
         cache: "no-store",
       });
       const json = (await res.json()) as FloorsheetHubApiResponse;
       setData(json);
+      if (json?.asOfDate && !selectedDate) {
+        setSelectedDate(json.asOfDate);
+      }
     } catch (err) {
       if ((err as Error)?.name !== "AbortError") {
         console.error("FloorsheetServiceTab fetch error:", err);
@@ -49,6 +56,7 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
       setLoading(false);
     }
   }, [
+    selectedDate,
     symbolInput,
     buyerBrokerInput,
     sellerBrokerInput,

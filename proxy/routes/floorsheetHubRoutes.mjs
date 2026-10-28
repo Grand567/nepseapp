@@ -190,7 +190,8 @@ export function handleFloorsheetHub(req, res) {
           ORDER BY trade_date DESC, trade_time DESC, contract_no DESC
           LIMIT ?
         `;
-        params.push(limit * 2);
+        // Allow full-session rollup on high-volume NEPSE days (up to 100,000 contracts) while slicing `contracts` response to `limit`
+        params.push(100000);
 
         rawContracts = db.prepare(sql).all(...params);
       }

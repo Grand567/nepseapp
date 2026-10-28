@@ -5,6 +5,7 @@ import {
   Layers, DollarSign, Percent, Scale, Clock, Lock
 } from 'lucide-react';
 import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
+import { getProxyBase } from '../utils/liveData';
 
 interface BacktestMetrics {
   symbol: string;
@@ -63,7 +64,7 @@ export function BacktestReportScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/backtest/run', {
+      const res = await fetch(`${getProxyBase()}/api/backtest/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol: targetSymbol, initialCapital: capital, days: 365 })
@@ -84,7 +85,7 @@ export function BacktestReportScreen() {
 
   // Load latest report or run initial backtest on mount
   useEffect(() => {
-    fetch('/api/backtest/latest')
+    fetch(`${getProxyBase()}/api/backtest/latest`)
       .then(res => res.json())
       .then(json => {
         if (json.success && json.exists && json.markdown) {

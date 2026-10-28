@@ -755,6 +755,37 @@ export async function scoreAllStocks(stocksList = []) {
       score = Math.min(48, score);
     }
 
+    // 8. Smart Money & Broker Floorsheet Flow Factor (±15 pts)
+    const bcr3Buy = Number(s.bcr3BuyPct || s.brokerAnalysis?.bcr3BuyPct || 0);
+    const bcr3Sell = Number(s.bcr3SellPct || s.brokerAnalysis?.bcr3SellPct || 0);
+    const bcr5Buy = Number(s.bcr5BuyPct || s.brokerAnalysis?.bcr5BuyPct || 0);
+    const adSignal = s.adSignal || s.brokerAnalysis?.adSignal || 'Neutral';
+    const nbar = Number(s.nbar || s.brokerAnalysis?.nbar || 1.0);
+    const smartFlowPct = Number(s.smartMoneyNetFlowPct || s.brokerAnalysis?.smartMoneyNetFlowPct || 0);
+
+    const isDistributionTrap = (adSignal === 'Distribution' || (bcr3Sell >= 45.0 && bcr3Sell - bcr3Buy >= 10.0)) &&
+      (mom > 0 || (s.pChange || 0) > 0);
+
+    if (adSignal === 'Accumulation' || bcr3Buy >= 40.0) {
+      if (bcr3Buy >= 45.0 && nbar >= 1.2) {
+        score += 15; // Institutional cornering & aggressive stealth accumulation
+      } else if (bcr3Buy >= 38.0 || smartFlowPct > 10.0) {
+        score += 10; // Strong institutional buyer dominance
+      } else {
+        score += 5;
+      }
+    } else if (adSignal === 'Distribution' || (bcr3Sell >= 45.0 && bcr3Sell - bcr3Buy >= 10.0)) {
+      if (bcr3Sell >= 50.0 && nbar <= 0.8) {
+        score -= 15; // Heavy institutional dump / operator offloading
+      } else {
+        score -= 10;
+      }
+      // VETO GUARD: If price is up but smart money is dumping -> Distribution Trap!
+      if (isDistributionTrap) {
+        score = Math.min(score, 42); // Hard cap below neutral for distribution traps
+      }
+    }
+
     // Clamp score
     const compositeScore = Math.max(8, Math.min(98, Math.round(score)));
 
@@ -768,8 +799,12 @@ export async function scoreAllStocks(stocksList = []) {
 
     // AI Reasoning
     let reasoning = '';
-    if (hardCeilingApplied) {
+    if (isDistributionTrap) {
+      reasoning = `DISTRIBUTION TRAP WARNING: Price is artificially positive (+${Number(s.pChange || 0).toFixed(1)}%) but institutional brokers (BCR3 Sell ${bcr3Sell.toFixed(1)}%) are dumping inventory into retail liquidity. Avoid entering.`;
+    } else if (hardCeilingApplied) {
       reasoning = `Trading below 50 EMA (Rs. ${ema50.toFixed(1)}). Counter-trend bounce into overhead resistance; wait for structural breakout before committing.`;
+    } else if (adSignal === 'Accumulation' && bcr3Buy >= 40.0) {
+      reasoning = `Stealth accumulation confirmed: Top 3 brokers control ${bcr3Buy.toFixed(1)}% of buy volume with positive absorption (NBAR ${nbar.toFixed(2)}). Constructive middle-stage markup setup.`;
     } else if (compositeScore >= 80) {
       reasoning = `Strong momentum conviction with ${vsr.toFixed(1)}x volume surge and rising OBV. Prime breakout candidate.`;
     } else if (compositeScore >= 65) {
@@ -799,6 +834,16 @@ export async function scoreAllStocks(stocksList = []) {
       pe: Number(s.pe || 0),
       pb: Number(s.pb || 0),
       eps: Number(s.eps || 0),
+      bcr3BuyPct: bcr3Buy,
+      bcr3SellPct: bcr3Sell,
+      bcr5BuyPct: bcr5Buy,
+      nbar,
+      adSignal,
+      adRatio: Number(s.adRatio || 0),
+      smartMoneyNetFlowPct: smartFlowPct,
+      topAccumulator: s.topAccumulator || null,
+      topDistributor: s.topDistributor || null,
+      isDistributionTrap,
       volume_surge_ratio: feat.volume_surge_ratio,
       momentum_5d: feat.momentum_5d,
       rsi_14: feat.rsi_14,

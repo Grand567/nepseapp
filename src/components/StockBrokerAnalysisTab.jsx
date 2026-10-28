@@ -1078,7 +1078,7 @@ export default function StockBrokerAnalysisTab({
                 }}
               >
                 <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                  Select Session ({availableDates[0]})
+                  {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : `Latest Session (${availableDates[0] || '1D'})`}
                 </option>
                 {availableDates.map(dt => (
                   <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>
@@ -1702,7 +1702,7 @@ export default function StockBrokerAnalysisTab({
                   }}
                 >
                   <option value="" style={{ background: '#0f172a', color: '#94a3b8' }}>
-                    {availableDates.length > 0 ? `Latest (${availableDates[0]})` : 'Latest Trading Session'}
+                    {effectiveDays > 1 ? `Multi-Day Window (${effectiveDays}D Cumulative)` : (availableDates.length > 0 ? `Latest Session (${availableDates[0]})` : 'Latest Trading Session')}
                   </option>
                   {availableDates.map(dt => (
                     <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>

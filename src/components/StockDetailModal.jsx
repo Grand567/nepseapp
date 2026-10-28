@@ -1975,16 +1975,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       '1W': 7, '1M': 30, '2M': 60, '3M': 90, '6M': 180, '1Y': 260, '2Y/All': 500
     };
     const days = daysMap[brokerAccumPeriod] || brokerDays || 5;
-    setBrokerAccumLoading(true);
-    fetchRealBrokerAnalysis(d.symbol, days, { refresh: true })
-      .then(data => {
-        if (data) {
-          setBrokerAccumData(data);
-          setRealBrokerAnalysis(data);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setBrokerAccumLoading(false));
+    const isStale = !brokerAccumData || brokerAccumData.tradingDays !== days;
+    if (isStale) {
+      setBrokerAccumLoading(true);
+      fetchRealBrokerAnalysis(d.symbol, days, { refresh: false })
+        .then(data => {
+          if (data) {
+            setBrokerAccumData(data);
+            setRealBrokerAnalysis(data);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setBrokerAccumLoading(false));
+    }
   }, [activeTab, brokerAccumPeriod, d?.symbol]);
 
   // Trigger real data fetch when switching to Market Depth, Floorsheet, or Broker Analysis tabs
@@ -2009,9 +2012,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     if ((activeTab === 'broker_analysis' || activeTab === 'depth_broker') && d?.symbol) {
       if (!realBrokerAnalysis || !realBrokerAnalysis.brokers || realBrokerAnalysis.brokers.length === 0) {
         fetchBrokerAnalysisData(brokerDays, brokerDate);
-      }
-      if (!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length < 15) {
-        fetchFloorsheetData(1);
       }
     }
     if (activeTab === 'dividends' && d?.symbol && !dividendHistory && !dividendLoading) {

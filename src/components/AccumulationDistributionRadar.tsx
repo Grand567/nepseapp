@@ -128,13 +128,14 @@ const StockTableRow = React.memo(function StockTableRow({
   const badgeStyle = getStageBadgeStyle(stock.wyckoff?.stage);
   const isRiskHigh = (stock.wyckoff?.pumpDumpRiskScore || 0) >= 55;
   const isRiskExtreme = (stock.wyckoff?.pumpDumpRiskScore || 0) >= 75;
-  const bcr3Buy = stock.bcr3Buy || 0;
-  const bcr3Sell = stock.bcr3Sell || 0;
+  const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? stock.brokerData?.bcr3BuyPct ?? 0);
+  const bcr3Sell = Number(stock.bcr3Sell ?? stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? stock.realBrokerAnalysis?.bcr3SellPct ?? stock.brokerData?.bcr3SellPct ?? 0);
+  const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.bcr5NetPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? stock.brokerData?.bcr5BuyPct ?? 0);
   const isTrap = stock.isTrap;
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
-  const topBuyers = stock.brokerData?.topBuyerBrokers || [];
-  const topSellers = stock.brokerData?.topSellerBrokers || [];
+  const topBuyers = stock.brokerData?.topBuyerBrokers || stock.brokerData?.topBuyers || stock.brokerAnalysis?.topBuyers || stock.topBuyers || [];
+  const topSellers = stock.brokerData?.topSellerBrokers || stock.brokerData?.topSellers || stock.brokerAnalysis?.topSellers || stock.topSellers || [];
 
   return (
     <tr
@@ -298,11 +299,11 @@ const StockTableRow = React.memo(function StockTableRow({
         </span>
       </td>
       <td className="py-2.5 px-3 text-right font-semibold text-slate-200 whitespace-nowrap">
-        {bcr3Buy > 0 || stock.brokerData?.bcr5BuyPct > 0 ? (
+        {bcr3Buy > 0 || bcr5Buy > 0 ? (
           <div>
             <span className={bcr3Buy >= 40 ? 'text-emerald-400 font-black' : 'text-white'}>{bcr3Buy}%</span>
             <span className="text-slate-500 mx-1">/</span>
-            <span className="text-slate-400 text-[11px]">{stock.brokerData?.bcr5BuyPct || 0}%</span>
+            <span className="text-slate-400 text-[11px]">{bcr5Buy}%</span>
           </div>
         ) : '—'}
       </td>
@@ -385,13 +386,14 @@ const StockRadarCard = React.memo(function StockRadarCard({
   const badgeStyle = getStageBadgeStyle(stock.wyckoff?.stage);
   const isRiskHigh = (stock.wyckoff?.pumpDumpRiskScore || 0) >= 55;
   const isRiskExtreme = (stock.wyckoff?.pumpDumpRiskScore || 0) >= 75;
-  const bcr3Buy = stock.bcr3Buy || 0;
-  const bcr3Sell = stock.bcr3Sell || 0;
+  const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? stock.brokerData?.bcr3BuyPct ?? 0);
+  const bcr3Sell = Number(stock.bcr3Sell ?? stock.bcr3SellPct ?? stock.brokerAnalysis?.bcr3SellPct ?? stock.realBrokerAnalysis?.bcr3SellPct ?? stock.brokerData?.bcr3SellPct ?? 0);
+  const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.bcr5NetPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? stock.brokerData?.bcr5BuyPct ?? 0);
   const isTrap = stock.isTrap;
   const isDumping = stock.isDumping;
   const isAccumulation = stock.isAccumulation;
-  const topBuyers = stock.brokerData?.topBuyerBrokers || [];
-  const topSellers = stock.brokerData?.topSellerBrokers || [];
+  const topBuyers = stock.brokerData?.topBuyerBrokers || stock.brokerData?.topBuyers || stock.brokerAnalysis?.topBuyers || stock.topBuyers || [];
+  const topSellers = stock.brokerData?.topSellerBrokers || stock.brokerData?.topSellers || stock.brokerAnalysis?.topSellers || stock.topSellers || [];
 
   return (
     <div
@@ -497,11 +499,11 @@ const StockRadarCard = React.memo(function StockRadarCard({
         <div>
           <div className="text-[10px] text-slate-300 font-medium">BCR3 / BCR5</div>
           <div className="font-bold text-slate-200 mt-0.5">
-            {bcr3Buy > 0 || stock.brokerData?.bcr5BuyPct > 0 ? (
+            {bcr3Buy > 0 || bcr5Buy > 0 ? (
               <span>
                 <span className={bcr3Buy >= 40 ? 'text-emerald-400 font-black' : 'text-white'}>{bcr3Buy}%</span>
                 <span className="text-slate-500 mx-0.5">/</span>
-                <span className="text-slate-400 text-[10px]">{stock.brokerData?.bcr5BuyPct || 0}%</span>
+                <span className="text-slate-400 text-[10px]">{bcr5Buy}%</span>
               </span>
             ) : '—'}
           </div>

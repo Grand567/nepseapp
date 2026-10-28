@@ -302,6 +302,12 @@ async function tryFetchJSON(url, timeoutMs = 15000) {
       ? { 'Referer': 'https://chukul.com/', 'Origin': 'https://chukul.com' }
       : {};
 
+    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul)
+    // are blocked by browser CORS policy. On native mobile, CapacitorHttp handles them.
+    if (!isNative && typeof window !== 'undefined' && (url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com'))) {
+      return null;
+    }
+
     if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
       const res = await CapacitorHttp.request({
         url,
@@ -346,6 +352,12 @@ async function tryFetchText(url, timeoutMs = 12000) {
     const extraHeaders = isChukul
       ? { 'Referer': 'https://chukul.com/', 'Origin': 'https://chukul.com' }
       : {};
+
+    // In a browser environment, direct cross-origin fetches to third-party scraping targets (ShareSansar, Chukul)
+    // are blocked by browser CORS policy. On native mobile, CapacitorHttp handles them.
+    if (!isNative && typeof window !== 'undefined' && (url.includes('sharesansar.com') || url.includes('chukul.com') || url.includes('merolagani.com'))) {
+      return null;
+    }
 
     if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
       const res = await CapacitorHttp.request({
@@ -1089,6 +1101,17 @@ function normalizeLiveArray(arr) {
     const topSellers = r.topSellers || brokerAnalysis?.topSellers || prev?.topSellers || [];
     const topNetBuyers = r.topNetBuyers || brokerAnalysis?.topNetBuyers || prev?.topNetBuyers || [];
     const topNetSellers = r.topNetSellers || brokerAnalysis?.topNetSellers || prev?.topNetSellers || [];
+    const topAccumulator = r.topAccumulator || brokerAnalysis?.topAccumulator || prev?.topAccumulator || topNetBuyers[0] || null;
+    const topDistributor = r.topDistributor || brokerAnalysis?.topDistributor || prev?.topDistributor || topNetSellers[0] || null;
+    const adSignal = r.adSignal || brokerAnalysis?.adSignal || prev?.adSignal || 'Neutral';
+    const adRatio = Number(r.adRatio ?? brokerAnalysis?.adRatio ?? prev?.adRatio ?? 0);
+    const adStrength = r.adStrength || brokerAnalysis?.adStrength || prev?.adStrength || '0%';
+    const concentrationPct = Number(r.concentrationPct ?? brokerAnalysis?.concentrationPct ?? prev?.concentrationPct ?? bcr3BuyPct ?? 0);
+    const bcr5NetPct = Number(r.bcr5NetPct ?? brokerAnalysis?.bcr5NetPct ?? prev?.bcr5NetPct ?? 0);
+    const scr3NetPct = Number(r.scr3NetPct ?? brokerAnalysis?.scr3NetPct ?? prev?.scr3NetPct ?? 0);
+    const smartMoneyNetFlowPct = Number(r.smartMoneyNetFlowPct ?? brokerAnalysis?.smartMoneyNetFlowPct ?? prev?.smartMoneyNetFlowPct ?? 0);
+    const phase = r.phase || brokerAnalysis?.phase || prev?.phase || 'NEUTRAL_RETAIL';
+    const phaseLabel = r.phaseLabel || brokerAnalysis?.phaseLabel || prev?.phaseLabel || 'Normal Retail Flow';
 
     if (brokerAnalysis && brokerAnalysis.isRealFloorsheet) {
       setCachedBrokerData(sym, brokerAnalysis);
@@ -1111,6 +1134,7 @@ function normalizeLiveArray(arr) {
       turnover, totalTurnover: turnover, totalTradeValue: turnover,
       transactions: tx, totalTransactions: tx, totalTrades: tx,
       brokerAnalysis,
+      realBrokerAnalysis: brokerAnalysis,
       bcr3BuyPct,
       bcr5BuyPct,
       bcr3SellPct,
@@ -1121,6 +1145,17 @@ function normalizeLiveArray(arr) {
       topSellers,
       topNetBuyers,
       topNetSellers,
+      topAccumulator,
+      topDistributor,
+      adSignal,
+      adRatio,
+      adStrength,
+      concentrationPct,
+      bcr5NetPct,
+      scr3NetPct,
+      smartMoneyNetFlowPct,
+      phase,
+      phaseLabel,
       high52w: hi52, low52w: lo52,
       week52HighDist: hi52 ? +(((ltp - hi52) / hi52) * 100).toFixed(2) : null,
       week52LowDist: lo52 ? +(((ltp - lo52) / lo52) * 100).toFixed(2) : null,
@@ -1196,16 +1231,24 @@ export async function prefetchFundamentalsForUniverse() {
   try {
     ensureSnapshot();
     if (!MEM_STOCKS || MEM_STOCKS.length === 0) return;
-    // Pick top 80 by turnover — these are the stocks screener users care about most
+    // Pick top 50 by turnover — these are the stocks screener users care about most
     const topStocks = [...MEM_STOCKS]
       .sort((a, b) => (b.turnover || 0) - (a.turnover || 0))
-      .slice(0, 80)
+      .slice(0, 50)
       .map(s => s.symbol)
       .filter(Boolean);
 
-    const CONCURRENCY = 5;
-    for (let i = 0; i < topStocks.length; i += CONCURRENCY) {
-      const batch = topStocks.slice(i, i + CONCURRENCY);
+    // Only prefetch stocks that do not already have verified cached fundamentals
+    const neededStocks = topStocks.filter(sym => {
+      const c = getCachedStockFundamentals(sym);
+      return !c || (c.eps === undefined && !c.bookValue);
+    }).slice(0, 15);
+
+    if (neededStocks.length === 0) return;
+
+    const CONCURRENCY = 3;
+    for (let i = 0; i < neededStocks.length; i += CONCURRENCY) {
+      const batch = neededStocks.slice(i, i + CONCURRENCY);
       await Promise.allSettled(batch.map(async (sym) => {
         try {
           const fund = await fetchStockFundamentals(sym);
@@ -1764,9 +1807,38 @@ function mergeBrokerDataOntoStocks(stocks) {
     if (bData.bcr3BuyPct !== undefined) stock.bcr3BuyPct = bData.bcr3BuyPct;
     if (bData.bcr5BuyPct !== undefined) stock.bcr5BuyPct = bData.bcr5BuyPct;
     if (bData.bcr3SellPct !== undefined) stock.bcr3SellPct = bData.bcr3SellPct;
+    if (bData.bcr5SellPct !== undefined) stock.bcr5SellPct = bData.bcr5SellPct;
     if (bData.nbar !== undefined) stock.nbar = bData.nbar;
     if (bData.lbas !== undefined) stock.lbas = bData.lbas;
     if (bData.adSignal !== undefined) stock.adSignal = bData.adSignal;
+    if (bData.adRatio !== undefined) stock.adRatio = bData.adRatio;
+    if (bData.adStrength !== undefined) stock.adStrength = bData.adStrength;
+    if (bData.concentrationPct !== undefined) stock.concentrationPct = bData.concentrationPct;
+    if (bData.bcr5NetPct !== undefined) stock.bcr5NetPct = bData.bcr5NetPct;
+    if (bData.scr3NetPct !== undefined) stock.scr3NetPct = bData.scr3NetPct;
+    if (bData.smartMoneyNetFlowPct !== undefined) stock.smartMoneyNetFlowPct = bData.smartMoneyNetFlowPct;
+    if (bData.phase !== undefined) stock.phase = bData.phase;
+    if (bData.phaseLabel !== undefined) stock.phaseLabel = bData.phaseLabel;
+    if (bData.bigBrokerVWAP !== undefined) stock.bigBrokerVWAP = bData.bigBrokerVWAP;
+    if (bData.buyZoneMin !== undefined) stock.buyZoneMin = bData.buyZoneMin;
+    if (bData.buyZoneMax !== undefined) stock.buyZoneMax = bData.buyZoneMax;
+    if (bData.entryStatus !== undefined) stock.entryStatus = bData.entryStatus;
+
+    const topAcc = bData.topAccumulator || bData.leadAccumulator || bData.topNetBuyers?.[0] || bData.topAccumulators?.[0] || null;
+    const topDist = bData.topDistributor || bData.leadDistributor || bData.topNetSellers?.[0] || bData.topDistributors?.[0] || null;
+    if (topAcc) stock.topAccumulator = topAcc;
+    if (topDist) stock.topDistributor = topDist;
+
+    if (bData.topBuyers) stock.topBuyers = bData.topBuyers;
+    if (bData.topSellers) stock.topSellers = bData.topSellers;
+    if (bData.topBuyerBrokers) stock.topBuyerBrokers = bData.topBuyerBrokers;
+    if (bData.topSellerBrokers) stock.topSellerBrokers = bData.topSellerBrokers;
+    if (bData.topNetBuyers) stock.topNetBuyers = bData.topNetBuyers;
+    if (bData.topNetSellers) stock.topNetSellers = bData.topNetSellers;
+    if (bData.brokers) stock.brokers = bData.brokers;
+    if (bData.allBrokers) stock.allBrokers = bData.allBrokers;
+
+    stock.brokerAnalysis = bData;
     stock.realBrokerAnalysis = bData;
   }
   return stocks;
@@ -1775,11 +1847,12 @@ function mergeBrokerDataOntoStocks(stocks) {
 export async function loadNepseData() {
   const isBrokerCacheEmpty = realBrokerAnalysisCache.size === 0 && (!brokerDataCache || brokerDataCache.size === 0) && (!marketWideBrokerSummaryMapCache.data || Object.keys(marketWideBrokerSummaryMapCache.data).length === 0);
   if (isBrokerCacheEmpty) {
-    fetchMarketWideBrokerSummaryMap(1).then((map) => {
+    try {
+      const map = await fetchMarketWideBrokerSummaryMap(1);
       if (map && MEM_STOCKS && Array.isArray(MEM_STOCKS)) {
         mergeBrokerDataOntoStocks(MEM_STOCKS);
       }
-    }).catch(() => {});
+    } catch (_) {}
   }
 
   let result;
@@ -2601,7 +2674,47 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
       if (options?.date) params.set('date', String(options.date));
       const qs = params.toString() ? `?${params.toString()}` : '';
 
-      // Tier 1 Fast Path: Query in-memory hot cache (< 5ms response)
+      // 1. Primary Path: Fetch complete market-wide broker rollup (360+ stocks, all 91 brokers, authentic floorsheet)
+      let res = await fetchFromBackend(`/api/market/broker-summary${qs}`, 15000);
+      if (!res || (res.success === false && !res.data)) {
+        res = await fetchFromBackend(`/api/broker-analysis/summary-map${qs}`, 15000);
+      }
+      const rawMap = res?.data || res;
+      if (rawMap && typeof rawMap === 'object' && Object.keys(rawMap).length > 0) {
+        const map = {};
+        for (const [symKey, dataObj] of Object.entries(rawMap)) {
+          if (dataObj && typeof dataObj === 'object') {
+            const normKey = String(symKey).toUpperCase().trim();
+            const topAcc = dataObj.topAccumulator || dataObj.leadAccumulator || dataObj.topNetBuyers?.[0] || dataObj.topAccumulators?.[0] || null;
+            const topDist = dataObj.topDistributor || dataObj.leadDistributor || dataObj.topNetSellers?.[0] || dataObj.topDistributors?.[0] || null;
+            const enrichedObj = {
+              ...dataObj,
+              symbol: normKey,
+              topAccumulator: topAcc,
+              topDistributor: topDist,
+              topBuyerBrokers: dataObj.topBuyerBrokers || dataObj.topBuyers || [],
+              topSellerBrokers: dataObj.topSellerBrokers || dataObj.topSellers || [],
+              topNetAccumulators: dataObj.topNetAccumulators || dataObj.topNetBuyers || (topAcc ? [topAcc] : []),
+              topNetDistributors: dataObj.topNetDistributors || dataObj.topNetSellers || (topDist ? [topDist] : []),
+              concentrationPct: dataObj.concentrationPct ?? dataObj.bcr3BuyPct ?? 0,
+              adRatio: dataObj.adRatio ?? (dataObj.smartMoneyNetFlowPct != null ? +(dataObj.smartMoneyNetFlowPct / 100).toFixed(4) : 0),
+              adStrength: dataObj.adStrength || (dataObj.smartMoneyNetFlowPct != null ? `${Math.abs(dataObj.smartMoneyNetFlowPct)}%` : '0%'),
+              brokers: dataObj.brokers || dataObj.allBrokers || [],
+              allBrokers: dataObj.allBrokers || dataObj.brokers || []
+            };
+            map[normKey] = enrichedObj;
+            realBrokerAnalysisCache.set(normKey, enrichedObj);
+            setCachedRealBrokerAnalysis(normKey, enrichedObj, numDays, options);
+          }
+        }
+        const cacheEntry = { timestamp: Date.now(), data: map };
+        marketWideBrokerSummaryMapCache = cacheEntry;
+        marketWideBrokerSummaryMapCaches.set(cacheKey, cacheEntry);
+        bulkSetCachedBrokerData(map);
+        return map;
+      }
+
+      // 2. Secondary Fast Path: Query in-memory hot cache radar summary if full rollup is unreachable
       if (!options?.date) {
         try {
           const fastRadar = await fetchFromBackend(`/api/radar?days=${numDays}`, 5000);
@@ -2609,6 +2722,11 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
             const map = {};
             for (const st of fastRadar.stocks) {
               const symUpper = String(st.symbol).toUpperCase().trim();
+              const topAcc = st.leadAccumulator || (st.topAccumulators && st.topAccumulators[0]) || (st.topBuyers && st.topBuyers[0]) || null;
+              const topDist = st.leadDistributor || (st.topDistributors && st.topDistributors[0]) || (st.topSellers && st.topSellers[0]) || null;
+              const adRatioVal = st.smartMoneyNetFlowPct != null 
+                ? +(st.smartMoneyNetFlowPct / 100).toFixed(4) 
+                : (st.bcr5NetPct != null ? +(st.bcr5NetPct / 100).toFixed(4) : 0);
               map[symUpper] = {
                 symbol: symUpper,
                 bcr3BuyPct: st.grossBuyConcentrationPct || 0,
@@ -2619,6 +2737,9 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
                 grossBuyConcentrationPct: st.grossBuyConcentrationPct,
                 grossSellConcentrationPct: st.grossSellConcentrationPct,
                 smartMoneyNetFlowPct: st.smartMoneyNetFlowPct,
+                adRatio: adRatioVal,
+                adStrength: `${Math.abs(st.smartMoneyNetFlowPct || 0)}%`,
+                adSignal: st.phase || (st.smartMoneyNetFlowPct > 10 ? 'Accumulation' : st.smartMoneyNetFlowPct < -10 ? 'Distribution' : 'Neutral'),
                 phase: st.phase,
                 phaseLabel: st.phaseLabel,
                 bigBrokerVWAP: st.bigBrokerVWAP,
@@ -2633,6 +2754,19 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
                 topSellers: st.topSellers || [],
                 topBuyerBrokers: st.topBuyers || [],
                 topSellerBrokers: st.topSellers || [],
+                topNetBuyers: st.topAccumulators || (topAcc ? [topAcc] : []),
+                topNetSellers: st.topDistributors || (topDist ? [topDist] : []),
+                topNetAccumulators: st.topAccumulators || (topAcc ? [topAcc] : []),
+                topNetDistributors: st.topDistributors || (topDist ? [topDist] : []),
+                topAccumulator: topAcc,
+                topDistributor: topDist,
+                leadAccumulator: st.leadAccumulator || topAcc,
+                leadDistributor: st.leadDistributor || topDist,
+                topAccumulators: st.topAccumulators || (topAcc ? [topAcc] : []),
+                topDistributors: st.topDistributors || (topDist ? [topDist] : []),
+                concentrationPct: st.grossBuyConcentrationPct || st.bcr5NetPct || 0,
+                brokers: st.brokers || st.topBuyers || [],
+                allBrokers: st.allBrokers || st.brokers || st.topBuyers || [],
                 source: 'hot_cache_precomputed'
               };
             }
@@ -2647,26 +2781,6 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
             return map;
           }
         } catch (_) {}
-      }
-
-      let res = await fetchFromBackend(`/api/market/broker-summary${qs}`, 20000);
-      if (!res || (res.success === false && !res.data)) {
-        res = await fetchFromBackend(`/api/broker-analysis/summary-map${qs}`, 20000);
-      }
-      const map = res?.data || res;
-      if (map && typeof map === 'object' && Object.keys(map).length > 0) {
-        const cacheEntry = { timestamp: Date.now(), data: map };
-        marketWideBrokerSummaryMapCache = cacheEntry;
-        marketWideBrokerSummaryMapCaches.set(cacheKey, cacheEntry);
-        bulkSetCachedBrokerData(map);
-        for (const [symKey, dataObj] of Object.entries(map)) {
-          if (dataObj && typeof dataObj === 'object') {
-            const normKey = String(symKey).toUpperCase().trim();
-            realBrokerAnalysisCache.set(normKey, dataObj);
-            setCachedRealBrokerAnalysis(normKey, dataObj, numDays, options);
-          }
-        }
-        return map;
       }
     } catch (err) {
       console.warn('[liveData] fetchMarketWideBrokerSummaryMap error:', err.message);
@@ -2737,11 +2851,21 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
 
   // Tier 1 Fast Path: Query in-memory hot cache for single stock diagnostic (< 5ms response)
   // ONLY for short/numeric days, NEVER for 'all' / all-time!
-  if (!isAllTime && !date && !fromDate && !toDate) {
+  if (!isAllTime) {
     try {
-      const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?days=${numDays}`, 5000);
+      const diagParams = new URLSearchParams();
+      diagParams.set('days', String(numDays));
+      if (date) diagParams.set('date', date);
+      if (fromDate) diagParams.set('fromDate', fromDate);
+      if (toDate) diagParams.set('toDate', toDate);
+      const fastDiag = await fetchFromBackend(`/api/diagnostics/${encodeURIComponent(sym)}?${diagParams.toString()}`, 5000);
       if (fastDiag?.success && fastDiag.data) {
         const fd = fastDiag.data;
+        const topAcc = fd.leadAccumulator ? normalizeBrokerItem(fd.leadAccumulator) : (fd.topNetBuyers?.length > 0 ? normalizeBrokerItem(fd.topNetBuyers[0]) : null);
+        const topDist = fd.leadDistributor ? normalizeBrokerItem(fd.leadDistributor) : (fd.topNetSellers?.length > 0 ? normalizeBrokerItem(fd.topNetSellers[0]) : null);
+        const adRatioVal = fd.adRatio != null ? fd.adRatio : (fd.smartMoneyNetFlowPct != null 
+          ? +(fd.smartMoneyNetFlowPct / 100).toFixed(4) 
+          : (fd.bcr5NetPct != null ? +(fd.bcr5NetPct / 100).toFixed(4) : 0));
         const normalized = {
           symbol: sym,
           totalBuyVolume: fd.totalVolume,
@@ -2756,13 +2880,24 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
           grossBuyConcentrationPct: fd.grossBuyConcentrationPct,
           grossSellConcentrationPct: fd.grossSellConcentrationPct,
           smartMoneyNetFlowPct: fd.smartMoneyNetFlowPct,
+          adRatio: adRatioVal,
+          adStrength: fd.adStrength || `${Math.abs(fd.smartMoneyNetFlowPct || 0)}%`,
+          adSignal: fd.adSignal || (fd.smartMoneyNetFlowPct > 10 ? 'Accumulation' : fd.smartMoneyNetFlowPct < -10 ? 'Distribution' : 'Neutral'),
+          concentrationPct: fd.grossBuyConcentrationPct || fd.bcr5NetPct || 0,
+          topAccumulator: topAcc,
+          topDistributor: topDist,
+          leadAccumulator: topAcc,
+          leadDistributor: topDist,
           topBuyerBrokers: (fd.topGrossBuyers || []).map(normalizeBrokerItem).filter(Boolean),
           topSellerBrokers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
           topBuyers: (fd.topGrossBuyers || []).map(normalizeBrokerItem).filter(Boolean),
           topSellers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
           topNetBuyers: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
           topNetSellers: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetAccumulators: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetDistributors: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
           brokers: (fd.allBrokers || fd.brokers || []).map(normalizeBrokerItem).filter(Boolean),
+          allBrokers: (fd.allBrokers || fd.brokers || []).map(normalizeBrokerItem).filter(Boolean),
           dailyFlow: Array.isArray(fd.dailyFlow) ? fd.dailyFlow : [],
           dateWiseBrokers: Array.isArray(fd.dateWiseBrokers) ? fd.dateWiseBrokers : (Array.isArray(fd.dailyFlow) ? fd.dailyFlow : []),
           availableDates: Array.isArray(fd.availableDates) ? fd.availableDates : [],
@@ -2814,17 +2949,27 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       const normalizedNetBuyers = (d.topNetBuyers || normalizedHoldings).map(normalizeBrokerItem).filter(Boolean);
       const normalizedNetSellers = (d.topNetSellers || d.allDistributors || []).map(normalizeBrokerItem).filter(Boolean);
 
+      const topAcc = d.topAccumulator ? normalizeBrokerItem(d.topAccumulator) : (normalizedNetBuyers[0] || null);
+      const topDist = d.topDistributor ? normalizeBrokerItem(d.topDistributor) : (normalizedNetSellers[0] || null);
       const enriched = {
         ...d,
         symbol: sym,
+        topAccumulator: topAcc,
+        topDistributor: topDist,
+        topBuyerBrokers: normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings.slice(0, 15) : []),
+        topSellerBrokers: normalizedSellers.length > 0 ? normalizedSellers : (normalizedNetSellers.length > 0 ? normalizedNetSellers.slice(0, 15) : []),
         brokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings : [])),
+        allBrokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings : [])),
         topBuyers: normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings.slice(0, 15) : []),
         topSellers: normalizedSellers.length > 0 ? normalizedSellers : (normalizedNetSellers.length > 0 ? normalizedNetSellers.slice(0, 15) : []),
         topHoldings: normalizedHoldings.length > 0 ? normalizedHoldings : normalizedBrokers.filter(b => b.signedHoldQty > 0).sort((a,b) => b.signedHoldQty - a.signedHoldQty),
         topNetBuyers: normalizedNetBuyers,
         topNetSellers: normalizedNetSellers,
+        topNetAccumulators: normalizedNetBuyers,
+        topNetDistributors: normalizedNetSellers,
         totalSharesHeldTillNow: d.totalSharesHeldTillNow || (normalizedHoldings.reduce((sum, h) => sum + (h.holdQty || h.netQty || 0), 0)),
         topHoldingBroker: d.topHoldingBroker || (normalizedHoldings[0] || null),
+        concentrationPct: d.concentrationPct ?? d.bcr3BuyPct ?? 0,
         isReal: true
       };
       setCachedRealBrokerAnalysis(sym, enriched, numDays, options);

@@ -438,9 +438,9 @@ describe('Broker Floorsheet Audit: Valuation, Netting, Reconciliation & Wiring',
     const testDate = '2026-10-26';
     // Import official benchmark figures from external NEPSE daily report
     const benchmarkData = {
-      total_volume: 9806411,
-      total_turnover: 3950594309.70,
-      total_transactions: 38250,
+      total_volume: 10343709,
+      total_turnover: 4002421168.07,
+      total_transactions: 38788,
       source: 'NEPSE Daily Trading Summary (Official PDF Bulletin)'
     };
 
@@ -452,8 +452,8 @@ describe('Broker Floorsheet Audit: Valuation, Netting, Reconciliation & Wiring',
     assert.strictEqual(recon.status, 'RECONCILED_EXACT', 'Floorsheet contracts must reconcile exactly with official exchange benchmark');
     assert.strictEqual(recon.volumeDifference, 0, 'Volume discrepancy must be 0');
     assert.strictEqual(recon.turnoverDifference, 0, 'Turnover discrepancy must be 0');
-    assert.strictEqual(recon.officialVolume, 9806411);
-    assert.strictEqual(recon.storedVolume, 9806411);
+    assert.strictEqual(recon.officialVolume, 10343709);
+    assert.strictEqual(recon.storedVolume, 10343709);
   });
 
   it('12. Fixed-Fixture OHL Verification: 14 Contracts, Cross Exclusion, and Path Parity (Item 2)', async () => {

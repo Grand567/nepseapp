@@ -34,6 +34,7 @@ export interface MarketWideBrokerRollup {
 export interface FloorsheetHubApiResponse {
   ok: boolean;
   asOfDate: string;
+  availableDates?: string[];
   source: "SQLITE_CONTRACTS" | "SQLITE_BROKER_SUMMARY_SYNTHESIS" | "EMPTY";
   summary: {
     totalContracts: number;
@@ -83,18 +84,40 @@ export async function GET(request: NextRequest) {
     const excludeCross = searchParams.get("excludeCross") === "true";
     const limit = Math.min(1000, Math.max(50, Math.round(safeNum(searchParams.get("limit"), 350))));
 
+    const requestedDate = (searchParams.get("date") || "").trim();
     let rawContracts: RawFloorsheetContract[] = [];
     let asOfDate = new Date().toISOString().slice(0, 10);
     let source: FloorsheetHubApiResponse["source"] = "EMPTY";
+    let availableDates: string[] = [];
 
-    // 1. Primary Path: Query tick-level `floorsheet_contracts` table for the latest trading session
+    // Distinct trading dates for date dropdown
+    if (tableExists(db, "floorsheet_contracts")) {
+      try {
+        availableDates = (db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 30`)
+          .all() as Array<{ trade_date: string }>).map((r) => r.trade_date);
+      } catch (_) {}
+    }
+    if (availableDates.length === 0 && tableExists(db, "floorsheet_broker_summary")) {
+      try {
+        availableDates = (db
+          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_broker_summary ORDER BY trade_date DESC LIMIT 30`)
+          .all() as Array<{ trade_date: string }>).map((r) => r.trade_date);
+      } catch (_) {}
+    }
+
+    // 1. Primary Path: Query tick-level `floorsheet_contracts` table for the selected or latest trading session
     if (tableExists(db, "floorsheet_contracts")) {
       const latestDateRow = db
         .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_contracts`)
         .get() as { latest_date?: string } | undefined;
 
-      if (latestDateRow?.latest_date) {
-        asOfDate = latestDateRow.latest_date;
+      const chosenDate = requestedDate && availableDates.includes(requestedDate)
+        ? requestedDate
+        : (availableDates[0] || latestDateRow?.latest_date);
+
+      if (chosenDate) {
+        asOfDate = chosenDate;
         source = "SQLITE_CONTRACTS";
 
         const clauses: string[] = [`trade_date = ?`];
@@ -386,6 +409,7 @@ export async function GET(request: NextRequest) {
     const responsePayload: FloorsheetHubApiResponse = {
       ok: true,
       asOfDate,
+      availableDates,
       source,
       summary: {
         totalContracts: allEnriched.length,
@@ -413,6 +437,7 @@ export async function GET(request: NextRequest) {
       {
         ok: false,
         asOfDate: new Date().toISOString().slice(0, 10),
+        availableDates: [],
         source: "EMPTY",
         error: err instanceof Error ? err.message : "Failed to load Floorsheet Hub",
         summary: {

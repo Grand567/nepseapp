@@ -13,7 +13,7 @@ import {
   triggerBreakoutVibration
 } from '../utils/watchlistAlerts';
 import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
-import { fetchFromBackend } from '../utils/liveData';
+import { fetchFromBackend, loadNepseData } from '../utils/liveData';
 
 interface WatchlistAlertItem {
   symbol: string;
@@ -29,7 +29,7 @@ interface WatchlistAlertItem {
   alertEnabled: boolean;
 }
 
-export function WatchlistEntryAlertModal() {
+export function WatchlistEntryAlertModal({ onSelectStock = null }: { onSelectStock?: ((stk: any) => void) | null } = {}) {
   const [configs, setConfigs] = useState<Record<string, any>>({});
   const [marketQuotes, setMarketQuotes] = useState<Record<string, number>>({});
   const [alertHistory, setAlertHistory] = useState<any[]>([]);
@@ -46,11 +46,11 @@ export function WatchlistEntryAlertModal() {
       setAlertHistory(getAlertHistory() || []);
 
       // Fetch live market prices
-      const data = await fetchFromBackend('/api/market-summary');
-      const list = Array.isArray(data) ? data : (data?.data || []);
+      const res = await loadNepseData();
+      const list = res?.stocks || [];
       const quoteMap: Record<string, number> = {};
       list.forEach((s: any) => {
-        if (s.symbol) quoteMap[s.symbol.toUpperCase()] = Number(s.ltp || s.marketPrice || 0);
+        if (s.symbol) quoteMap[s.symbol.toUpperCase()] = Number(s.ltp || s.price || 0);
       });
       setMarketQuotes(quoteMap);
     } catch (_) {

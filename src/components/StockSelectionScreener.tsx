@@ -7,11 +7,19 @@ import {
 import { StatCard, InfoBanner, Spinner, StockSearchSelect } from './ui';
 import { evaluateStockSelection } from '../utils/signals/stockScoringEngine';
 import { SCORING_CONFIG } from '../utils/signals/scoringConfig';
-import { fetchFromBackend } from '../utils/liveData';
+import { fetchFromBackend, loadNepseData } from '../utils/liveData';
 
-export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymbol?: ((sym: string) => void) | null }) {
-  const [stocks, setStocks] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+export function StockSelectionScreener({
+  stocks: propStocks = [],
+  onSelectStock = null,
+  onSelectSymbol = null
+}: {
+  stocks?: any[];
+  onSelectStock?: ((s: any) => void) | null;
+  onSelectSymbol?: ((sym: string) => void) | null;
+}) {
+  const [stocks, setStocks] = useState<any[]>(propStocks);
+  const [loading, setLoading] = useState<boolean>(propStocks.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   // Filter States
@@ -25,11 +33,16 @@ export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymb
 
   // Fetch live market data
   const loadMarketData = async () => {
+    if (propStocks && propStocks.length > 0) {
+      setStocks(propStocks);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchFromBackend('/api/market-summary');
-      const list = Array.isArray(data) ? data : (data?.data || []);
+      const res = await loadNepseData();
+      const list = res?.stocks || [];
       setStocks(list);
     } catch (err: any) {
       setError(err.message || 'Failed to load market screener data.');
@@ -39,8 +52,13 @@ export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymb
   };
 
   useEffect(() => {
-    loadMarketData();
-  }, []);
+    if (propStocks && propStocks.length > 0) {
+      setStocks(propStocks);
+      setLoading(false);
+    } else {
+      loadMarketData();
+    }
+  }, [propStocks]);
 
   // Compute Selection Scores for each stock
   const scoredStocks = useMemo(() => {
@@ -50,6 +68,10 @@ export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymb
       const pChange = Number(stock.pChange || (prevClose > 0 ? ((ltp - prevClose) / prevClose) * 100 : 0));
       const volume = Number(stock.volume || 0);
       const turnover = Number(stock.turnover || (ltp * volume));
+
+      const bcr3Buy = Number(stock.bcr3Buy ?? stock.bcr3BuyPct ?? stock.brokerAnalysis?.bcr3BuyPct ?? stock.realBrokerAnalysis?.bcr3BuyPct ?? 0);
+      const bcr5Buy = Number(stock.bcr5Buy ?? stock.bcr5BuyPct ?? stock.brokerAnalysis?.bcr5BuyPct ?? stock.realBrokerAnalysis?.bcr5BuyPct ?? 0);
+      const nbar = Number(stock.nbar ?? stock.brokerAnalysis?.nbar ?? 1.0);
 
       // Build scoring payload
       const evalResult = evaluateStockSelection({
@@ -67,7 +89,9 @@ export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymb
           listedShares: stock.listedShares ?? 10000000,
           publicPercentage: stock.publicPercentage ?? 40
         },
-        brokerSignals: { compositeScore: stock.bcr3Buy ? Math.min(100, stock.bcr3Buy * 1.5) : 55 },
+        brokerSignals: {
+          compositeScore: bcr3Buy > 0 ? Math.min(100, Math.max(10, Math.round(bcr3Buy * 1.4 + (nbar - 1.0) * 20))) : 55
+        },
         technicalSignals: {
           compositeScore: pChange > 0 && volume > 20000 ? 75 : 50,
           signals: { volatility: { atr14: ltp * 0.03 } }
@@ -320,7 +344,10 @@ export function StockSelectionScreener({ onSelectSymbol = null }: { onSelectSymb
                     <tr key={idx} className="hover:bg-slate-800/30">
                       <td className="p-3">
                         <button
-                          onClick={() => onSelectSymbol && onSelectSymbol(item.symbol)}
+                          onClick={() => {
+                            if (onSelectStock) onSelectStock(item);
+                            if (onSelectSymbol) onSelectSymbol(item.symbol);
+                          }}
                           className="text-left font-bold text-white hover:text-purple-400 transition-colors"
                         >
                           <div className="font-mono text-sm">{item.symbol}</div>

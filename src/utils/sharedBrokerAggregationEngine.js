@@ -490,10 +490,10 @@ export function aggregateBrokerMicrostructure(params = {}) {
     };
   });
 
-  const sortedBuyers = [...allBrokers].sort((a, b) => b.buyVol - a.buyVol);
-  const sortedSellers = [...allBrokers].sort((a, b) => b.sellVol - a.sellVol);
-  const topAccumulators = [...allBrokers].filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
-  const topDistributors = [...allBrokers].filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+  const sortedBuyers = [...allBrokers].sort((a, b) => (b.buyVol - a.buyVol) || (b.buyAmt - a.buyAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
+  const sortedSellers = [...allBrokers].sort((a, b) => (b.sellVol - a.sellVol) || (b.sellAmt - a.sellAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
+  const topAccumulators = [...allBrokers].filter(b => b.netQty > 0).sort((a, b) => (b.netQty - a.netQty) || (b.netAmt - a.netAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
+  const topDistributors = [...allBrokers].filter(b => b.netQty < 0).sort((a, b) => (a.netQty - b.netQty) || (a.netAmt - b.netAmt) || String(a.brokerId).localeCompare(String(b.brokerId), undefined, { numeric: true }));
 
   // Gross Concentration strictly excludes same-broker cross trades from numerator AND denominator (Item 1 & 6)
   const top3GrossBuyVol = sortedBuyers.slice(0, 3).reduce((sum, b) => sum + (b.nonCrossBuyVol ?? b.buyVol), 0);

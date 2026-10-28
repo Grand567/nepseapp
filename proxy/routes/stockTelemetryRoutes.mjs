@@ -23,6 +23,14 @@ function tableExists(database, name) {
   }
 }
 
+function getTableColumns(database, tableName) {
+  try {
+    return new Set(database.prepare(`PRAGMA table_info(${tableName})`).all().map(c => c.name));
+  } catch {
+    return new Set();
+  }
+}
+
 export function handleStockTelemetry(req, res) {
   try {
     const rawSymbol = req.params.symbol || req.query.symbol;
@@ -46,19 +54,30 @@ export function handleStockTelemetry(req, res) {
 
     if (signalTable) {
       try {
+        const cols = getTableColumns(db, signalTable);
+        const stratCol = cols.has('strategy_name') ? 'strategy_name' : cols.has('strategy') ? 'strategy' : "'MOMENTUM_BREAKOUT'";
+        const vwapCol = cols.has('entry_vwap') ? 'entry_vwap' : cols.has('broker_vwap') ? 'broker_vwap' : cols.has('entry_price') ? 'entry_price' : '0';
+        const unlockCol = cols.has('settlement_unlock_date') ? 'settlement_unlock_date' : cols.has('t2_unlock_date') ? 't2_unlock_date' : "'POST_DASHAIN_T2'";
+        const mfeCol = cols.has('mfe_pct') ? 'mfe_pct' : cols.has('max_gain_pct') ? 'max_gain_pct' : '0';
+        const maeCol = cols.has('mae_pct') ? 'mae_pct' : '0';
+        const alphaCol = cols.has('nepse_alpha_pct') ? 'nepse_alpha_pct' : '0';
+        const anomalyCol = cols.has('broker_anomaly_score') ? 'broker_anomaly_score' : '1.0';
+        const ticketCol = cols.has('avg_ticket_kitta') ? 'avg_ticket_kitta' : '0';
+        const ratchetCol = cols.has('ratchet_triggered') ? 'ratchet_triggered' : cols.has('is_ratchet_armed') ? 'is_ratchet_armed' : '0';
+
         ledgerTelemetry = db
           .prepare(
             `SELECT
               symbol,
-              COALESCE(strategy_name, strategy) AS strategy_name,
-              COALESCE(entry_vwap, broker_vwap, entry_price, 0) AS entry_vwap,
-              COALESCE(settlement_unlock_date, t2_unlock_date, 'POST_DASHAIN_T2') AS settlement_unlock_date,
-              COALESCE(mfe_pct, max_gain_pct, 0) AS mfe_pct,
-              COALESCE(mae_pct, 0) AS mae_pct,
-              COALESCE(nepse_alpha_pct, 0) AS nepse_alpha_pct,
-              COALESCE(broker_anomaly_score, 1.0) AS broker_anomaly_score,
-              COALESCE(avg_ticket_kitta, 0) AS avg_ticket_kitta,
-              COALESCE(ratchet_triggered, is_ratchet_armed, 0) AS ratchet_triggered,
+              ${stratCol} AS strategy_name,
+              ${vwapCol} AS entry_vwap,
+              ${unlockCol} AS settlement_unlock_date,
+              ${mfeCol} AS mfe_pct,
+              ${maeCol} AS mae_pct,
+              ${alphaCol} AS nepse_alpha_pct,
+              ${anomalyCol} AS broker_anomaly_score,
+              ${ticketCol} AS avg_ticket_kitta,
+              ${ratchetCol} AS ratchet_triggered,
               status
             FROM ${signalTable}
             WHERE UPPER(symbol) = ?
@@ -66,7 +85,7 @@ export function handleStockTelemetry(req, res) {
             LIMIT 1`
           )
           .get(validSymbol) || null;
-      } catch {
+      } catch (e) {
         ledgerTelemetry = null;
       }
     }
@@ -103,26 +122,35 @@ export function handleStockTelemetry(req, res) {
 
     // 3. Fetch Historical Daily Candles (Up to 60 sessions)
     let historicalCandles = [];
-    for (const candleTable of ['historical_candles', 'daily_stock_summary', 'daily_price_history', 'ohlcv_history']) {
+    for (const candleTable of ['daily_stock_summary', 'historical_candles', 'daily_price_history', 'ohlcv_history']) {
       if (tableExists(db, candleTable)) {
         try {
+          const cols = getTableColumns(db, candleTable);
+          const dateCol = cols.has('trade_date') ? 'trade_date' : cols.has('date') ? 'date' : null;
+          if (!dateCol) continue;
+          const openCol = cols.has('open_price') ? 'open_price' : cols.has('open') ? 'open' : dateCol;
+          const highCol = cols.has('high_price') ? 'high_price' : cols.has('high') ? 'high' : dateCol;
+          const lowCol = cols.has('low_price') ? 'low_price' : cols.has('low') ? 'low' : dateCol;
+          const closeCol = cols.has('close_price') ? 'close_price' : cols.has('close') ? 'close' : dateCol;
+          const volCol = cols.has('total_volume') ? 'total_volume' : cols.has('volume') ? 'volume' : '0';
+          const toCol = cols.has('total_turnover') ? 'total_turnover' : cols.has('turnover') ? 'turnover' : '0';
+
           const rows = db
             .prepare(
               `SELECT
-                COALESCE(trade_date, date) AS date,
-                COALESCE(open_price, open) AS open,
-                COALESCE(high_price, high) AS high,
-                COALESCE(low_price, low) AS low,
-                COALESCE(close_price, close) AS close,
-                COALESCE(total_volume, volume) AS volume,
+                ${dateCol} AS date,
+                ${openCol} AS open,
+                ${highCol} AS high,
+                ${lowCol} AS low,
+                ${closeCol} AS close,
+                ${volCol} AS volume,
                 CASE
-                  WHEN COALESCE(total_volume, volume, 0) > 0
-                  THEN (COALESCE(total_turnover, turnover, 0) / COALESCE(total_volume, volume, 1))
-                  ELSE COALESCE(close_price, close, 0)
+                  WHEN ${volCol} > 0 THEN (${toCol} / ${volCol})
+                  ELSE ${closeCol}
                 END AS vwap
               FROM ${candleTable}
               WHERE UPPER(symbol) = ?
-              ORDER BY COALESCE(trade_date, date) DESC
+              ORDER BY ${dateCol} DESC
               LIMIT 60`
             )
             .all(validSymbol);
@@ -456,7 +484,19 @@ export function handleStockTelemetry(req, res) {
     }
 
     // 9. Compute Verified Price & Enrichments
-    const verified = resolveVerifiedPrice(quoteData, historicalCandles, ledgerTelemetry);
+    let verified = resolveVerifiedPrice(quoteData, historicalCandles, ledgerTelemetry);
+    if (requestedDate && historicalCandles.length > 0) {
+      const sessionCandle = historicalCandles.find(c => c.date === requestedDate);
+      if (sessionCandle && sessionCandle.close > 0) {
+        verified = {
+          price: sessionCandle.close,
+          source: 'SESSION_HISTORICAL_CLOSE',
+          asOfLabel: `Session Close (${requestedDate})`,
+          prevCloseRef: sessionCandle.open || sessionCandle.close,
+          vwap: sessionCandle.vwap || sessionCandle.close,
+        };
+      }
+    }
     const verifiedPrice = verified.price;
 
     // Tick test enrichment
@@ -684,6 +724,11 @@ export function handleStockTelemetry(req, res) {
       ok: true,
       symbol: validSymbol,
       asOfTimestamp: new Date().toISOString(),
+      price: verifiedPrice,
+      verifiedPrice,
+      priceSource: verified.source,
+      priceAsOfLabel: verified.asOfLabel,
+      sessionVwap: sessionVwap > 0 ? sessionVwap : (verifiedPrice || 0),
       quoteData,
       historicalCandles,
       ledgerTelemetry,
@@ -714,6 +759,13 @@ export function handleStockTelemetry(req, res) {
 
 router.get('/:symbol/telemetry', handleStockTelemetry);
 router.get('/telemetry', handleStockTelemetry);
+router.get('/:symbol', (req, res, next) => {
+  // If request has /telemetry or root of /api/stock-telemetry/:symbol
+  if (req.baseUrl.includes('telemetry')) {
+    return handleStockTelemetry(req, res);
+  }
+  next();
+});
 
 export async function handleStockSmartMoney(req, res) {
   try {

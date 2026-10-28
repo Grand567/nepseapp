@@ -13,6 +13,7 @@ import {
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
 import { getOrFetchSymbolFloorsheet, getFullSessionFloorsheet } from './brokerVault.mjs';
 import { ingestDailyStockPrices, getDailyCompletenessStatus } from './db/ledgerStore.js';
+import { downloadAndArchiveDailyFloorsheet } from './utils/dailyFloorsheetCollector.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -342,7 +343,11 @@ export async function syncDailyFloorsheetAndPrices(targetDate) {
 export async function runPostMarketCloseAnalysis(force = false) {
   const isTrading = isNepseTradingDay();
   const marketStatus = getDetailedMarketStatus();
-  const targetDate = marketStatus.targetSessionDate;
+  const now = new Date();
+  const nowNpt = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
+  const todayIso = nowNpt.toISOString().split('T')[0];
+  // Post-market analysis synchronizes the session that closed today, NOT tomorrow's target date
+  const targetDate = isTrading ? todayIso : (marketStatus.lastClosedSessionDate || marketStatus.targetSessionDate || todayIso);
 
   if (!isTrading && !force) {
     console.log(`[Post-Market Worker] Non-trading day (weekend or NEPSE public holiday) — skipping daily post-market ingestion.`);
@@ -365,6 +370,8 @@ export async function runPostMarketCloseAnalysis(force = false) {
   console.log(`[Post-Market Worker] Running post-market floorsheet & prime pick analysis for target session: ${targetDate}...`);
   try {
     await syncDailyFloorsheetAndPrices(targetDate);
+    // Download and archive into daily_floorsheets local folder
+    await downloadAndArchiveDailyFloorsheet(targetDate).catch(e => console.warn('[Post-Market Worker] dailyFloorsheetCollector notice:', e.message));
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
@@ -597,12 +604,16 @@ export function startWorkers() {
       const status = getDetailedMarketStatus();
       const nptMins = status.nptTotalMinutes;
       const isTradingDay = status.isTradingDay;
+      const now = new Date();
+      const nowNpt = new Date(now.getTime() + (5 * 60 + 45) * 60 * 1000);
+      const todayIso = nowNpt.toISOString().split('T')[0];
+      const sessionDate = isTradingDay ? todayIso : (status.lastClosedSessionDate || status.targetSessionDate || todayIso);
 
       // STRICT TIMING: Run AFTER market close with at least 10-15 minutes for data collection
       // & floorsheet reconciliation (>= 15:15 NPT = 915 mins).
-      // Once picked, it stays locked for targetSessionDate until tomorrow!
+      // Once picked, it stays locked for sessionDate until tomorrow!
       if (isTradingDay && nptMins >= 915 && nptMins <= 1439) {
-        if (lastPostMarketSessionAnalyzed !== status.targetSessionDate) {
+        if (lastPostMarketSessionAnalyzed !== sessionDate) {
           runPostMarketCloseAnalysis();
         }
       }

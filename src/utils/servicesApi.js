@@ -389,10 +389,10 @@ export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
   return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, { timeout: 45000 }, 120000);
 };
-export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => {
+export const fetchBrokerAnalysis = (symbol, days = 30, forceRefreshOrOptions = false) => {
   const sym = String(symbol || '').toUpperCase().trim();
   let numDays = 30;
-  let refresh = Boolean(forceRefresh);
+  let refresh = false;
   let date = '';
   let fromDate = '';
   let toDate = '';
@@ -404,6 +404,14 @@ export const fetchBrokerAnalysis = (symbol, days = 30, forceRefresh = false) => 
     if (days.toDate) toDate = String(days.toDate).trim();
   } else {
     numDays = Math.max(1, parseInt(days || 30, 10) || 30);
+    if (typeof forceRefreshOrOptions === 'object' && forceRefreshOrOptions !== null) {
+      if (forceRefreshOrOptions.refresh) refresh = true;
+      if (forceRefreshOrOptions.date) date = String(forceRefreshOrOptions.date).trim();
+      if (forceRefreshOrOptions.fromDate) fromDate = String(forceRefreshOrOptions.fromDate).trim();
+      if (forceRefreshOrOptions.toDate) toDate = String(forceRefreshOrOptions.toDate).trim();
+    } else {
+      refresh = Boolean(forceRefreshOrOptions);
+    }
   }
   const params = new URLSearchParams();
   params.set('days', String(numDays));

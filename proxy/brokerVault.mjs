@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
-import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet } from './db/ledgerStore.js';
+import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate } from './db/ledgerStore.js';
 import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
@@ -2065,6 +2065,13 @@ export async function getFullSessionFloorsheet(dateStr = '') {
           }
           const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+            const recDate = cleanDate || parsed[0]?.businessDate;
+            if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
+              try {
+                ingestDailyFloorsheetTransaction(recDate, parsed);
+                rebuildHotCache();
+              } catch (_) {}
+            }
             return parsed;
           }
         } catch (_) {}
@@ -2086,6 +2093,13 @@ export async function getFullSessionFloorsheet(dateStr = '') {
             if (!(fileDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000)) {
               const parsed = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
               if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
+                const recDate = fileDate || parsed[0]?.businessDate;
+                if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
+                  try {
+                    ingestDailyFloorsheetTransaction(recDate, parsed);
+                    rebuildHotCache();
+                  } catch (_) {}
+                }
                 return parsed;
               }
             }
@@ -2455,14 +2469,15 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
         totalAmount: agg.totalTurnover ?? 0,
         totalTurnover: agg.totalTurnover ?? 0,
         vwap: agg.totalVolume > 0 ? +(agg.totalTurnover / agg.totalVolume).toFixed(2) : (agg.vwap ?? 0),
-        topHoldings: (agg.topHoldings || []).slice(0, 5),
-        topBuyers: (agg.topBuyers || []).slice(0, 5),
-        topSellers: (agg.topSellers || []).slice(0, 5),
-        buyers: (agg.buyers || []).slice(0, 5),
-        sellers: (agg.sellers || []).slice(0, 5),
-        topNetBuyers: (agg.topNetBuyers || []).slice(0, 5),
-        topNetSellers: (agg.topNetSellers || []).slice(0, 5),
-        brokers: (agg.brokers || []).slice(0, 10),
+        topHoldings: agg.topHoldings || [],
+        topBuyers: agg.topBuyers || [],
+        topSellers: agg.topSellers || [],
+        buyers: agg.buyers || agg.topBuyers || [],
+        sellers: agg.sellers || agg.topSellers || [],
+        topNetBuyers: agg.topNetBuyers || [],
+        topNetSellers: agg.topNetSellers || [],
+        brokers: agg.brokers || [],
+        allBrokers: agg.brokers || [],
         dailyFlow: agg.dailyFlow || [],
         topAccumulator: agg.topNetBuyers?.[0] || null,
         topDistributor: agg.topNetSellers?.[0] || null,
@@ -2549,14 +2564,15 @@ export async function getMarketWideBrokerSummaryMap(days = 1, options = {}) {
                 totalAmount: agg.totalTurnover ?? 0,
                 totalTurnover: agg.totalTurnover ?? 0,
                 vwap: agg.totalVolume > 0 ? +(agg.totalTurnover / agg.totalVolume).toFixed(2) : (agg.vwap ?? 0),
-                topHoldings: (agg.topHoldings || []).slice(0, 5),
-                topBuyers: (agg.topBuyers || []).slice(0, 5),
-                topSellers: (agg.topSellers || []).slice(0, 5),
-                buyers: (agg.buyers || []).slice(0, 5),
-                sellers: (agg.sellers || []).slice(0, 5),
-                topNetBuyers: (agg.topNetBuyers || []).slice(0, 5),
-                topNetSellers: (agg.topNetSellers || []).slice(0, 5),
-                brokers: (agg.brokers || []).slice(0, 10),
+                topHoldings: agg.topHoldings || [],
+                topBuyers: agg.topBuyers || [],
+                topSellers: agg.topSellers || [],
+                buyers: agg.buyers || agg.topBuyers || [],
+                sellers: agg.sellers || agg.topSellers || [],
+                topNetBuyers: agg.topNetBuyers || [],
+                topNetSellers: agg.topNetSellers || [],
+                brokers: agg.brokers || [],
+                allBrokers: agg.brokers || [],
                 dailyFlow: agg.dailyFlow || [],
                 topAccumulator: agg.topNetBuyers?.[0] || null,
                 topDistributor: agg.topNetSellers?.[0] || null,
