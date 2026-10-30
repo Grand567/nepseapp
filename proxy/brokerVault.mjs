@@ -1888,6 +1888,27 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
     .sort((a, b) => b.totalAmt - a.totalAmt)
     .map(s => s.symbol);
 
+  const effectiveDate = String(dateStr || trades[0]?.businessDate || trades[0]?.date || '2099-12-31').split('T')[0];
+  const isDateAlreadyIngested = typeof hasTradeDate === 'function' ? hasTradeDate(effectiveDate) : false;
+  const cumLedgerMap = new Map();
+  if (db) {
+    try {
+      const rows = db.prepare(`
+        SELECT broker_id, UPPER(symbol) as symbol,
+               SUM(buy_vol) as totalBuyVol,
+               SUM(sell_vol) as totalSellVol,
+               SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
+               SUM(buy_amt) as totalBuyAmt
+        FROM daily_broker_ledger
+        WHERE trade_date <= ?
+        GROUP BY broker_id, UPPER(symbol)
+      `).all(effectiveDate);
+      for (const r of rows) {
+        cumLedgerMap.set(`${String(r.broker_id)}_${r.symbol}`, r);
+      }
+    } catch (_) {}
+  }
+
   const heatmapMatrix = topBrokersList.map(b => {
     const scripsArr = Object.values(b.scripsMap).map(s => {
       const netAmt = s.buyAmt - s.sellAmt;
@@ -1912,87 +1933,81 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
       };
     });
 
-    const effectiveDate = String(dateStr || trades[0]?.businessDate || trades[0]?.date || '2099-12-31').split('T')[0];
     const enrichCumulativeHolding = (scripItem) => {
       if (!scripItem || !scripItem.symbol) return scripItem;
-      try {
-        if (db) {
-          const cumRow = db.prepare(`
-            SELECT 
-              SUM(buy_vol) as totalBuyVol,
-              SUM(sell_vol) as totalSellVol,
-              SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
-              SUM(buy_amt) as totalBuyAmt
-            FROM daily_broker_ledger
-            WHERE broker_id = ? AND symbol = ? AND trade_date <= ?
-          `).get(b.id, scripItem.symbol, effectiveDate);
-          if (cumRow) {
-            const cumQty = cumRow.cumNetQty !== null ? cumRow.cumNetQty : scripItem.netQty;
-            const cumAvg = (cumRow.totalBuyVol && cumRow.totalBuyVol > 0)
-              ? +(cumRow.totalBuyAmt / cumRow.totalBuyVol).toFixed(2)
-              : scripItem.avgBuyRate;
-            return {
-              ...scripItem,
-              cumHoldQty: cumQty,
-              cumAvgBuy: cumAvg
-            };
-          }
-        }
-      } catch (_) {}
+      const bNormId = String(b.id).replace(/^0+/, '');
+      const sSym = String(scripItem.symbol).toUpperCase().trim();
+      const cumRow = cumLedgerMap.get(`${bNormId}_${sSym}`) || cumLedgerMap.get(`${b.id}_${sSym}`) || null;
+
+      let totalBuyVol = Number(cumRow?.totalBuyVol || 0);
+      let totalSellVol = Number(cumRow?.totalSellVol || 0);
+      let totalBuyAmt = Number(cumRow?.totalBuyAmt || 0);
+      let cumNetQty = Number(cumRow?.cumNetQty || 0);
+
+      // If current live date is not yet committed to daily_broker_ledger, incorporate today's session activity
+      if (!isDateAlreadyIngested) {
+        totalBuyVol += Number(scripItem.buyQty || 0);
+        totalSellVol += Number(scripItem.sellQty || 0);
+        totalBuyAmt += Number(scripItem.buyAmount || scripItem.buy || 0);
+        cumNetQty += Number(scripItem.netQty !== undefined ? scripItem.netQty : ((scripItem.buyQty || 0) - (scripItem.sellQty || 0)));
+      }
+
+      if (totalBuyVol > 0 || cumNetQty !== 0) {
+        const cumAvg = totalBuyVol > 0 ? +(totalBuyAmt / totalBuyVol).toFixed(2) : (scripItem.avgBuyRate || 0);
+        return {
+          ...scripItem,
+          cumHoldQty: Math.max(0, cumNetQty),
+          cumAvgBuy: cumAvg > 0 ? cumAvg : scripItem.avgBuyRate
+        };
+      }
       return {
         ...scripItem,
-        cumHoldQty: scripItem.netQty,
-        cumAvgBuy: scripItem.avgBuyRate
+        cumHoldQty: Math.max(0, Number(scripItem.netQty != null ? scripItem.netQty : ((scripItem.buyQty || 0) - (scripItem.sellQty || 0)))),
+        cumAvgBuy: scripItem.avgBuyRate || 0
       };
     };
 
-    const topAccumulation = [...scripsArr]
+    const enrichedScrips = scripsArr.map(enrichCumulativeHolding);
+
+    const topAccumulation = [...enrichedScrips]
       .filter(s => s.net > 0)
       .sort((x, y) => y.net - x.net)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topDistribution = [...scripsArr]
+    const topDistribution = [...enrichedScrips]
       .filter(s => s.net < 0)
       .sort((x, y) => x.net - y.net)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topByNetQty = [...scripsArr]
+    const topByNetQty = [...enrichedScrips]
       .filter(s => s.netQty > 0)
       .sort((x, y) => y.netQty - x.netQty)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topByGrossBuyAmt = [...scripsArr]
+    const topByGrossBuyAmt = [...enrichedScrips]
       .filter(s => s.buyAmount > 0)
       .sort((x, y) => y.buyAmount - x.buyAmount)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topByGrossBuyQty = [...scripsArr]
+    const topByGrossBuyQty = [...enrichedScrips]
       .filter(s => s.buyQty > 0)
       .sort((x, y) => y.buyQty - x.buyQty)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topDistByNetQty = [...scripsArr]
+    const topDistByNetQty = [...enrichedScrips]
       .filter(s => s.netQty < 0)
       .sort((x, y) => x.netQty - y.netQty)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topDistByGrossSellAmt = [...scripsArr]
+    const topDistByGrossSellAmt = [...enrichedScrips]
       .filter(s => s.sellAmount > 0)
       .sort((x, y) => y.sellAmount - x.sellAmount)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
-    const topDistByGrossSellQty = [...scripsArr]
+    const topDistByGrossSellQty = [...enrichedScrips]
       .filter(s => s.sellQty > 0)
       .sort((x, y) => y.sellQty - x.sellQty)
-      .slice(0, 10)
-      .map(enrichCumulativeHolding);
+      .slice(0, 10);
 
     const netFlow = Math.round(b.totalBuy - b.totalSell);
     let bias = 'Mild Accumulation';
@@ -2017,7 +2032,7 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
       topDistByNetQty,
       topDistByGrossSellAmt,
       topDistByGrossSellQty,
-      scrips: scripsArr
+      scrips: enrichedScrips
     };
   });
 

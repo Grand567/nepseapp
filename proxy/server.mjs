@@ -4343,6 +4343,13 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     }
 
     if (vaultData && (vaultData.brokers?.length > 0 || vaultData.topBuyers?.length > 0 || vaultData.topNetBuyers?.length > 0 || vaultData.totalVolume > 0)) {
+      if (!vaultData.dailyFlow || vaultData.dailyFlow.length <= 1) {
+        const snap = getFastVaultSnapshot(symbol, 30);
+        if (snap?.dailyFlow?.length > 1) {
+          vaultData.dailyFlow = snap.dailyFlow;
+          vaultData.dateWiseBrokers = snap.dailyFlow;
+        }
+      }
       const enrichedVault = enrichWithMicrostructure(symbol, days, vaultData, date);
       setCache(cacheKey, enrichedVault, 10 * 60 * 1000);
       return res.json({ success: true, data: enrichedVault, source: 'broker_vault_authentic' });
@@ -5465,6 +5472,10 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           } catch (_) {}
           aggData.availableDates = availableDates;
           setCache(cacheKey, aggData, 5 * 60 * 1000);
+          try {
+            const outPath = path.join(__dirname, 'data', 'broker_matrix_latest.json');
+            fs.writeFileSync(outPath, JSON.stringify(aggData), 'utf8');
+          } catch (_) {}
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
 
@@ -5487,6 +5498,47 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
                   if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
                 } catch (_) {}
                 parsed.availableDates = availableDates;
+
+                // Ensure snapshot fallback has authentic cumulative holding from SQLite ledger
+                if (db && (!parsed.matrix[0]?.topAccumulation?.[0]?.cumHoldQty || !parsed.matrix[0]?.scrips?.[0]?.cumHoldQty)) {
+                  const cumLedgerMap = new Map();
+                  try {
+                    const rows = db.prepare(`
+                      SELECT broker_id, UPPER(symbol) as symbol,
+                             SUM(buy_vol) as totalBuyVol,
+                             SUM(sell_vol) as totalSellVol,
+                             SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
+                             SUM(buy_amt) as totalBuyAmt
+                      FROM daily_broker_ledger
+                      GROUP BY broker_id, UPPER(symbol)
+                    `).all();
+                    for (const r of rows) {
+                      cumLedgerMap.set(`${String(r.broker_id).replace(/^0+/, '')}_${r.symbol}`, r);
+                    }
+                  } catch (_) {}
+
+                  parsed.matrix.forEach(b => {
+                    const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
+                    const enrich = (sc) => {
+                      if (!sc || !sc.symbol) return sc;
+                      const r = cumLedgerMap.get(`${bId}_${String(sc.symbol).toUpperCase().trim()}`);
+                      if (r) {
+                        const net = Number(r.cumNetQty || 0);
+                        if (net > 0) {
+                          sc.cumHoldQty = net;
+                          const avg = Number(r.totalBuyVol || 0) > 0 ? +(r.totalBuyAmt / r.totalBuyVol).toFixed(2) : 0;
+                          if (avg > 0) sc.cumAvgBuy = avg;
+                        }
+                      }
+                      return sc;
+                    };
+                    if (Array.isArray(b.topAccumulation)) b.topAccumulation = b.topAccumulation.map(enrich);
+                    if (Array.isArray(b.topDistribution)) b.topDistribution = b.topDistribution.map(enrich);
+                    if (Array.isArray(b.topByNetQty)) b.topByNetQty = b.topByNetQty.map(enrich);
+                    if (Array.isArray(b.scrips)) b.scrips = b.scrips.map(enrich);
+                  });
+                }
+
                 setCache(cacheKey, parsed, 5 * 60 * 1000);
                 return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot' });
               }
