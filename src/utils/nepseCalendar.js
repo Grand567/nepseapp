@@ -2,12 +2,12 @@ import { getNepaliDate, getBikramSambatHoliday } from './bikramSambat.js';
 
 /**
  * NEPSE Trading Calendar & Holiday Engine
- * Regulates trading days, weekly closures (Friday & Saturday),
+ * Regulates trading days, weekly closures (Saturday & Sunday),
  * and official Nepal Bikram Sambat (BS) Public Holidays.
  * 
  * NEPSE Trading Schedule:
- * - Trading Days: Sunday, Monday, Tuesday, Wednesday, Thursday
- * - Weekly Closed: Friday & Saturday (National Weekend Holidays)
+ * - Trading Days: Monday, Tuesday, Wednesday, Thursday, Friday
+ * - Weekly Closed: Saturday & Sunday (National Weekend Holidays)
  * - Hours: 11:00 AM – 3:00 PM NPT (UTC+5:45)
  */
 
@@ -290,8 +290,8 @@ export function isNepsePublicHoliday(date = new Date()) {
 
 /**
  * Checks if a given date is a weekly closure for NEPSE.
- * Under current NEPSE rules: Friday (5) and Saturday (6) are weekend market closures.
- * Sunday (0) through Thursday (4) are active trading days (11:00 AM – 3:00 PM NPT).
+ * Under current NEPSE rules: Saturday (6) and Sunday (0) are weekend market closures.
+ * Monday (1) through Friday (5) are active trading days (11:00 AM – 3:00 PM NPT).
  */
 export function isNepseWeekend(date = new Date()) {
   const d = new Date(date);
@@ -312,10 +312,9 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // Statutory NEPSE weekend holidays: Friday (5) and Saturday (6).
-  // Sunday (0) through Thursday (4) are standard active trading days.
-  // Note: Friday (5) is dynamically unlocked during active trading hours (11:00 AM – 3:00 PM NPT) in getDetailedMarketStatus.
-  const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+  // Statutory NEPSE weekend holidays: Saturday (6) and Sunday (0).
+  // Monday (1) through Friday (5) are standard active trading days.
+  const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
@@ -325,7 +324,7 @@ export function isNepseWeekend(date = new Date()) {
 
 /**
  * Checks if a given date is an official active NEPSE trading day.
- * Returns true for Sunday, Monday, Tuesday, Wednesday, Thursday when NOT a holiday.
+ * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
 export function isNepseTradingDay(date = new Date()) {
   const weekendCheck = isNepseWeekend(date);
@@ -451,19 +450,19 @@ export function getTargetTradingSessionDate(now = new Date()) {
 
 /**
  * Calculates the exact T+2 Settlement Date and Demat Credit sellable date (T+3)
- * under the statutory NEPSE Sunday–Thursday trading schedule.
+ * under the statutory NEPSE Monday–Friday trading schedule.
  *
  * Rules (statutory SEBON / NEPSE trading calendar):
- * - Trading Days: Sunday (0) through Thursday (4).
- * - Weekly Market Holidays: Friday (5) and Saturday (6).
- * - Strictly skips all Fridays, Saturdays, and official NEPSE festival/public holidays.
+ * - Trading Days: Monday (1) through Friday (5).
+ * - Weekly Market Holidays: Saturday (6) and Sunday (0).
+ * - Strictly skips all Saturdays, Sundays, and official NEPSE festival/public holidays.
  *
  * Standard schedule (no intervening public holidays):
- * - Sunday trade    -> Settles Tuesday (T+2)   | Sellable from Demat Wednesday (T+3)
  * - Monday trade    -> Settles Wednesday (T+2) | Sellable from Demat Thursday (T+3)
- * - Tuesday trade   -> Settles Thursday (T+2)  | Sellable from Demat Sunday (T+3, skips Fri/Sat)
- * - Wednesday trade -> Settles Sunday (T+2, skips Fri/Sat) | Sellable from Demat Monday (T+3)
- * - Thursday trade  -> Settles Monday (T+2, skips Fri/Sat) | Sellable from Demat Tuesday (T+3)
+ * - Tuesday trade   -> Settles Thursday (T+2)  | Sellable from Demat Friday (T+3)
+ * - Wednesday trade -> Settles Friday (T+2)    | Sellable from Demat Monday (T+3, skips Sat/Sun)
+ * - Thursday trade  -> Settles Monday (T+2, skips Sat/Sun) | Sellable from Demat Tuesday (T+3)
+ * - Friday trade    -> Settles Tuesday (T+2, skips Sat/Sun) | Sellable from Demat Wednesday (T+3)
  *
  * @param {Date|string} tradeDate - Execution date (default: now)
  * @returns {object} Comprehensive T+2 settlement schedule
@@ -513,8 +512,8 @@ export const getT2SettlementSchedule = calculateT2SettlementDate;
 /**
  * Counts the exact number of official NEPSE trading sessions elapsed between two dates.
  * - Source: Nepal Stock Exchange (NEPSE) Trading Schedule & Official BS Holidays Database.
- * - Active Trading Days: Sunday through Thursday (11:00 AM - 3:00 PM NPT).
- * - Weekly Market Holidays: Friday and Saturday (strictly 0 trading sessions elapsed).
+ * - Active Trading Days: Monday through Friday (11:00 AM - 3:00 PM NPT).
+ * - Weekly Market Holidays: Saturday and Sunday (strictly 0 trading sessions elapsed).
  * - Excludes all official festival/public holidays listed in NEPSE_PUBLIC_HOLIDAYS.
  *
  * Example (Standard Week):
@@ -708,7 +707,8 @@ export function getDetailedMarketStatus(now = new Date()) {
 
   // 0. Live Market Override (Direct from NOTS Exchange Broadcast)
   // If the live exchange is trading, respect reality above any calendar rules.
-  if (_liveMarketOverride && _liveMarketOverride.isOpen) {
+  // Note: Strictly bound to trading hours window (10:30 AM – 3:05 PM NPT). Outside this window, market is closed.
+  if (_liveMarketOverride && _liveMarketOverride.isOpen && nptTotalMinutes >= (10 * 60 + 30) && nptTotalMinutes < (15 * 60 + 5)) {
     return {
       ...baseData,
       isOpen: true,
@@ -756,7 +756,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 2. Check Weekly Close (Friday, Saturday)
+  // 2. Check Weekly Close (Saturday, Sunday)
   if (weekend.isWeekend) {
     const nextTradingDay = getNextValidTradingDay(now);
     const nextTradingDayIso = formatNptDateIso(nextTradingDay);
@@ -782,7 +782,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 3. Regular Trading Day (Sunday - Thursday)
+  // 3. Regular Trading Day (Monday - Friday)
   if (isWithinHours) {
     return {
       ...baseData,

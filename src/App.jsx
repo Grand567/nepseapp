@@ -597,12 +597,20 @@ function AppInner() {
         if (rawStatus && rawStatus.isOpen !== undefined) {
           if (rawStatus.isOpen) {
             setLiveMarketOverride({ isOpen: true, status: 'OPEN' });
+          } else {
+            clearLiveMarketOverride();
           }
           setMarketStatus(rawStatus);
         }
 
-        if (response && (response.marketOpen === true || response.source === 'live' || (response.data && response.data.length > 0 && response.source !== 'yesterday' && response.source !== 'simulated-live'))) {
+        const calStatusNow = getDetailedMarketStatus();
+        const nptMinsNow = calStatusNow.nptTotalMinutes || 0;
+        const isTradingHourWindow = nptMinsNow >= (10 * 60 + 30) && nptMinsNow < (15 * 60 + 5);
+
+        if (response && response.marketOpen === true && isTradingHourWindow) {
           setLiveMarketOverride({ isOpen: true, status: 'OPEN' });
+        } else if (!isTradingHourWindow || (rawStatus && !rawStatus.isOpen)) {
+          clearLiveMarketOverride();
         }
 
         // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
@@ -623,7 +631,7 @@ function AppInner() {
 
         if (hasFreshData) {
           clearDynamicMarketHalt();
-          const freshStatus = getDetailedMarketStatus();
+          const freshStatus = (rawStatus && rawStatus.isOpen !== undefined) ? rawStatus : getDetailedMarketStatus();
           setMarketStatus(freshStatus);
           const isFresh = response?.isFreshFeed === true || response?.source === 'live' || response?.source === 'closing';
           setApiStatus(freshStatus.isOpen ? (isFresh ? 'live' : 'yesterday') : (response?.source === 'closing' ? 'closing' : 'yesterday'));
@@ -1882,7 +1890,7 @@ function AppInner() {
                       : marketStatus?.isHoliday
                       ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
                       : marketStatus?.isWeekend
-                      ? 'Weekend Closed (शुक्रबार/शनिबार)'
+                      ? 'Weekend Closed (शनिबार/आइतबार)'
                       : 'Market Closed (बन्द)'}
                   </div>
                 </div>
@@ -1894,8 +1902,8 @@ function AppInner() {
                 }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Sun – Thu (आइत – बिही)</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Fri & Sat market CLOSED</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Mon – Fri (सोम – शुक्र)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sat & Sun market CLOSED</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
@@ -1904,7 +1912,7 @@ function AppInner() {
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Friday & Saturday</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Saturday & Sunday</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>National weekend off</div>
                   </div>
                 </div>

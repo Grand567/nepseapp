@@ -68,13 +68,8 @@ console.log('===================================================================
 // ─── TEST 1: TRADING DAY SCHEDULE & HOLIDAY SKIPPING ──────────────────────
 console.log('[TEST 1] Sunday-to-Thursday Trading Day Schedule & Holiday Skipping');
 
-it('Sunday (0) to Thursday (4) are recognized as NEPSE trading days', () => {
+it('Monday (1) to Friday (5) are recognized as NEPSE trading days', () => {
   // Test non-holiday regular dates
-  // 2026-11-01: Sunday
-  const sunday = new Date('2026-11-01T12:00:00+05:45');
-  assert.strictEqual(isNepseWeekend(sunday).isWeekend, false, 'Sunday must not be weekend');
-  assert.strictEqual(isNepseTradingDay(sunday), true, 'Sunday must be an active trading day');
-
   // 2026-10-26: Monday
   const monday = new Date('2026-10-26T12:00:00+05:45');
   assert.strictEqual(isNepseWeekend(monday).isWeekend, false, 'Monday must not be weekend');
@@ -91,18 +86,23 @@ it('Sunday (0) to Thursday (4) are recognized as NEPSE trading days', () => {
   // 2026-10-29: Thursday
   const thursday = new Date('2026-10-29T12:00:00+05:45');
   assert.strictEqual(isNepseTradingDay(thursday), true, 'Thursday must be an active trading day');
-});
 
-it('Friday (5) and Saturday (6) are strictly excluded as weekend closures', () => {
   // 2026-10-30: Friday
   const friday = new Date('2026-10-30T12:00:00+05:45');
-  assert.strictEqual(isNepseWeekend(friday).isWeekend, true, 'Friday must be weekend');
-  assert.strictEqual(isNepseTradingDay(friday), false, 'Friday must NOT be trading day');
+  assert.strictEqual(isNepseWeekend(friday).isWeekend, false, 'Friday must not be weekend');
+  assert.strictEqual(isNepseTradingDay(friday), true, 'Friday must be an active trading day');
+});
 
+it('Saturday (6) and Sunday (0) are strictly excluded as weekend closures', () => {
   // 2026-10-31: Saturday
   const saturday = new Date('2026-10-31T12:00:00+05:45');
   assert.strictEqual(isNepseWeekend(saturday).isWeekend, true, 'Saturday must be weekend');
   assert.strictEqual(isNepseTradingDay(saturday), false, 'Saturday must NOT be trading day');
+
+  // 2026-11-01: Sunday
+  const sunday = new Date('2026-11-01T12:00:00+05:45');
+  assert.strictEqual(isNepseWeekend(sunday).isWeekend, true, 'Sunday must be weekend');
+  assert.strictEqual(isNepseTradingDay(sunday), false, 'Sunday must NOT be trading day');
 });
 
 it('NEPSE Public Holidays are strictly skipped even when falling on weekdays', () => {

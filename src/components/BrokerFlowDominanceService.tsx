@@ -213,7 +213,7 @@ export function BrokerFlowDominanceService({
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
-    return '2026-10-29';
+    return formatNptDateIso(new Date());
   }, [sessionDateFilter, selectedDate, date, heatmapData, availableDates, floorsheet]);
 
   // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
@@ -311,7 +311,7 @@ export function BrokerFlowDominanceService({
     setLoading(true);
     try {
       const days = DAYS_MAP[activeTf] || 1;
-      const effDate = targetDate || sessionDate || '2026-10-29';
+      const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
       const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
         fetchRealFloorsheet(null, effDate, 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),

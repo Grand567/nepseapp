@@ -596,7 +596,7 @@ export function startWorkers() {
     try {
       const status = getDetailedMarketStatus();
       const nptMins = status.nptTotalMinutes;
-      const isTradingDay = status.isTradingDay || status.isOpen || (nptMins >= 660 && nptMins <= 900 && !status.isHoliday && status.bsDate?.dayOfWeek !== 6);
+      const isTradingDay = status.isTradingDay || status.isOpen;
 
       if (isTradingDay && nptMins >= 660 && nptMins <= 900) {
         runMarketAlertScanCycle({

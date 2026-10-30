@@ -519,7 +519,7 @@
           "lastSyncedAt": 1792144355164,
           "dpId": "134",
           "lastWaccSyncedAt": 1789902382374,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236042639",
@@ -778,7 +778,7 @@
             }
           ],
           "lastSyncedAt": 1791975762862,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236112958",
@@ -1057,7 +1057,7 @@
           ],
           "lastSyncedAt": 1790088677246,
           "dpId": "156",
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236164910",
@@ -1183,7 +1183,7 @@
             }
           ],
           "lastSyncedAt": 1790088694562,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         }
       ],
       "transactions": [],
@@ -1523,7 +1523,7 @@
           "lastSyncedAt": 1792144355164,
           "dpId": "134",
           "lastWaccSyncedAt": 1789902382374,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236042639",
@@ -1782,7 +1782,7 @@
             }
           ],
           "lastSyncedAt": 1791975762862,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236112958",
@@ -2061,7 +2061,7 @@
           ],
           "lastSyncedAt": 1790088677246,
           "dpId": "156",
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         },
         {
           "id": "1780236164910",
@@ -2187,7 +2187,7 @@
             }
           ],
           "lastSyncedAt": 1790088694562,
-          "hasLocalCredentials": false
+          "hasLocalCredentials": true
         }
       ],
       "watchlist": [
@@ -2203,11 +2203,11 @@
         "orders": []
       },
       "credentials": [],
-      "lastUpdatedAt": 1793196836501,
+      "lastUpdatedAt": 1793354662512,
       "email": "shreeksuwal@gmail.com"
     },
     "createdAt": "2026-10-28T08:59:51.218Z",
-    "updatedAt": "2026-10-28T14:14:06.149Z",
-    "syncVersion": 6
+    "updatedAt": "2026-10-30T10:04:22.517Z",
+    "syncVersion": 7
   }
 }

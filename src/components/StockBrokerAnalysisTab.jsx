@@ -7,6 +7,7 @@ import {
 import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistributionEngine';
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
 import { fetchRealBrokerAnalysis, fetchFromBackend } from '../utils/liveData';
+import { formatNptDateIso } from '../utils/nepseCalendar';
 
 function formatCompactQty(val) {
   const n = Math.abs(Number(val) || 0);
@@ -305,9 +306,9 @@ export default function StockBrokerAnalysisTab({
   // Extract available trading dates from activeBrokerData or floorsheetData (excluding incomplete ongoing intraday session)
   const availableDates = useMemo(() => {
     const now = new Date();
+    const todayNpt = formatNptDateIso(now);
     const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
-    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const isOngoingMarketSession = (nptMins % 1440) >= (11 * 60) && (nptMins % 1440) < (15 * 60 + 5);
 
     const set = new Set();
     allStoredDates.forEach(d => d && set.add(String(d)));
@@ -335,9 +336,9 @@ export default function StockBrokerAnalysisTab({
   // Active display date / range string
   const activeDateDisplay = useMemo(() => {
     const now = new Date();
+    const todayNpt = formatNptDateIso(now);
     const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
-    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
-    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const isOngoingMarketSession = (nptMins % 1440) >= (11 * 60) && (nptMins % 1440) < (15 * 60 + 5);
 
     if (effectiveDate && (!isOngoingMarketSession || effectiveDate !== todayNpt)) return effectiveDate;
     const bd = activeBrokerData;
@@ -346,7 +347,7 @@ export default function StockBrokerAnalysisTab({
     }
     if (bd?.businessDate && (!isOngoingMarketSession || bd.businessDate !== todayNpt)) return bd.businessDate;
     if (availableDates.length > 0) return availableDates[0];
-    return '2026-10-29';
+    return todayNpt;
   }, [effectiveDate, activeBrokerData, availableDates]);
 
   // Process broker flows from activeBrokerData or floorsheetData

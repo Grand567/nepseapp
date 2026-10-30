@@ -1857,7 +1857,7 @@ export default function ServicesHub({
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>NEPSE Official Data Feed — Live</span>
               </div>
               <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#94a3b8' }}>
-                Market hours: <strong style={{ color: '#ffffff' }}>Sun–Thu 11:00 AM – 3:00 PM NPT</strong>
+                Market hours: <strong style={{ color: '#ffffff' }}>Mon–Fri 11:00 AM – 3:00 PM NPT</strong>
                 {' '} · Live prices & indicators powered by <strong style={{ color: '#ffffff' }}>NEPSE NOTS API</strong>
               </p>
             </div>
