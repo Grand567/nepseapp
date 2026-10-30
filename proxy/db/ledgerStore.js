@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import zlib from "zlib";
+import { pipeline } from "stream/promises";
 import { fileURLToPath } from "url";
 import { calculateMultiDayDiagnostics, evaluateEarlyIgnition, PHASE_DEFINITIONS } from "../utils/microstructureEngine.js";
 import {
@@ -48,6 +49,7 @@ if (!fs.existsSync(RAW_BACKUP_DIR)) {
 const dbPath = path.join(DATA_DIR, "drabyashree_ledger.db");
 
 // Fast bootstrap: If SQLite DB doesn't exist or is empty (<100KB), attempt instant restore from drabyashree_ledger.db.gz
+// Uses low-memory streaming decompression (<2MB RAM) so it never trips Render 512MB RAM limit
 if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
   const candidateGzFiles = [
     path.join(DATA_DIR, "drabyashree_ledger.db.gz"),
@@ -61,10 +63,13 @@ if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
     if (fs.existsSync(gzFile)) {
       try {
         const t0 = Date.now();
-        const compressed = fs.readFileSync(gzFile);
-        const uncompressed = zlib.gunzipSync(compressed);
-        fs.writeFileSync(dbPath, uncompressed);
-        console.log(`[Drabyashree Ledger] Fast bootstrap restored ${dbPath} (${(uncompressed.length / 1024 / 1024).toFixed(2)} MB) from ${gzFile} in ${Date.now() - t0}ms`);
+        await pipeline(
+          fs.createReadStream(gzFile),
+          zlib.createGunzip(),
+          fs.createWriteStream(dbPath)
+        );
+        const restoredStat = fs.statSync(dbPath);
+        console.log(`[Drabyashree Ledger] Fast streaming bootstrap restored ${dbPath} (${(restoredStat.size / 1024 / 1024).toFixed(2)} MB) from ${gzFile} in ${Date.now() - t0}ms`);
         break;
       } catch (err) {
         console.warn(`[Drabyashree Ledger] Failed fast bootstrap from ${gzFile}:`, err.message);
@@ -75,11 +80,12 @@ if (!fs.existsSync(dbPath) || fs.statSync(dbPath).size < 100000) {
 
 export const db = new Database(dbPath);
 
-// Enable WAL mode & NORMAL synchronous for maximum concurrent read/write throughput
+// Enable WAL mode & low-memory settings for Render 512MB RAM environment
 db.pragma("journal_mode = WAL");
 db.pragma("synchronous = NORMAL");
-db.pragma("cache_size = -16000"); // 16MB SQLite page cache ceiling for Render 512MB RAM limit
-db.pragma("temp_store = MEMORY");
+db.pragma("cache_size = -8000"); // 8MB SQLite page cache ceiling for Render 512MB RAM limit
+db.pragma("temp_store = FILE");
+db.pragma("mmap_size = 0"); // Disable memory mapping to preserve container RAM
 
 // 1. Create Compressed Tables & Indexes (stores 40 trading days in ~25 MB)
 db.exec(`
