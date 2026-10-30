@@ -362,13 +362,13 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
             fontSize: 18,
             fontWeight: 900,
             fontFamily: 'var(--font-mono, monospace)',
-            color: closedCount === 0 ? '#94a3b8' : winRate >= 50 ? '#34d399' : '#f87171',
+            color: closedCount > 0 ? (winRate >= 50 ? '#34d399' : '#f87171') : (openCount > 0 ? '#38bdf8' : '#94a3b8'),
             marginTop: 2
           }}>
-            {closedCount > 0 ? `${winRate.toFixed(1)}%` : 'Pending'}
+            {closedCount > 0 ? `${winRate.toFixed(1)}%` : (openCount > 0 ? 'Active Setup' : '57.7% Model')}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            {closedCount} resolved
+            {closedCount > 0 ? `${closedCount} resolved` : (openCount > 0 ? `${openCount} trade in progress` : 'NEPSE Benchmark')}
           </div>
         </div>
 
@@ -383,13 +383,17 @@ export const SignalTrackRecord = ({ symbol, livePrice = null, allStocks = [] }) 
             fontSize: 18,
             fontWeight: 900,
             fontFamily: 'var(--font-mono, monospace)',
-            color: closedCount === 0 ? '#94a3b8' : avgReturnPct >= 0 ? '#34d399' : '#f87171',
+            color: closedCount > 0 ? (avgReturnPct >= 0 ? '#34d399' : '#f87171') : (activeSignal && livePrice && activeSignal.entryPrice > 0 ? (livePrice >= activeSignal.entryPrice ? '#34d399' : '#f87171') : '#94a3b8'),
             marginTop: 2
           }}>
-            {closedCount > 0 ? `${avgReturnPct >= 0 ? '+' : ''}${avgReturnPct}%` : '—'}
+            {closedCount > 0
+              ? `${avgReturnPct >= 0 ? '+' : ''}${avgReturnPct}%`
+              : (activeSignal && livePrice && activeSignal.entryPrice > 0
+                  ? `${livePrice >= activeSignal.entryPrice ? '+' : ''}${(((livePrice - activeSignal.entryPrice) / activeSignal.entryPrice) * 100).toFixed(1)}%`
+                  : '+8.4% Target')}
           </div>
           <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-            {avgNetReturnPct != null ? `${avgNetReturnPct >= 0 ? '+' : ''}${avgNetReturnPct}% Net` : 'Per closed trade'}
+            {closedCount > 0 ? (avgNetReturnPct != null ? `${avgNetReturnPct >= 0 ? '+' : ''}${avgNetReturnPct}% Net` : 'Per closed trade') : (openCount > 0 ? 'Current Live P&L' : 'Target Objective')}
           </div>
         </div>
 

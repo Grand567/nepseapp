@@ -313,7 +313,8 @@ export function isNepseWeekend(date = new Date()) {
   } catch (_) {}
 
   // Statutory NEPSE weekend holidays: Friday (5) and Saturday (6).
-  // Sunday (0) through Thursday (4) are active trading days!
+  // Sunday (0) through Thursday (4) are standard active trading days.
+  // Note: Friday (5) is dynamically unlocked during active trading hours (11:00 AM – 3:00 PM NPT) in getDetailedMarketStatus.
   const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
   return {
     isWeekend,

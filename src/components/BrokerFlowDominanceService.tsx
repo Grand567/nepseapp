@@ -406,7 +406,9 @@ export function BrokerFlowDominanceService({
               sellQty: Number(s?.sellQty || 0),
               netQty: Number(s?.netQty || 0),
               avgBuyRate: Number(s?.avgBuyRate || 0),
-              avgSellRate: Number(s?.avgSellRate || 0)
+              avgSellRate: Number(s?.avgSellRate || 0),
+              cumHoldQty: s?.cumHoldQty != null ? Number(s.cumHoldQty) : undefined,
+              cumAvgBuy: s?.cumAvgBuy != null ? Number(s.cumAvgBuy) : undefined
             }))
           : (b.scrips && typeof b.scrips === 'object')
             ? Object.entries(b.scrips).map(([sSym, sVal]: [string, any]) => ({
@@ -417,7 +419,9 @@ export function BrokerFlowDominanceService({
                 sellQty: Number(sVal?.sellQty || 0),
                 netQty: Number(sVal?.netQty || 0),
                 avgBuyRate: Number(sVal?.avgBuyRate || 0),
-                avgSellRate: Number(sVal?.avgSellRate || 0)
+                avgSellRate: Number(sVal?.avgSellRate || 0),
+                cumHoldQty: sVal?.cumHoldQty != null ? Number(sVal.cumHoldQty) : undefined,
+                cumAvgBuy: sVal?.cumAvgBuy != null ? Number(sVal.cumAvgBuy) : undefined
               }))
             : [];
 

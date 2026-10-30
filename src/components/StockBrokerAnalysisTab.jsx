@@ -162,7 +162,7 @@ export default function StockBrokerAnalysisTab({
         (Array.isArray(resAll?.availableDates) && resAll.availableDates.length > 0) ? resAll.availableDates :
         (Array.isArray(resSm?.availableDates) && resSm.availableDates.length > 0) ? resSm.availableDates :
         (Array.isArray(resSm?.data?.availableDates) && resSm.data.availableDates.length > 0) ? resSm.data.availableDates :
-        (Array.isArray(resDiag?.data?.availableDates) ? resDiag.data.availableDates : (resDiag?.availableDates || []))
+        (Array.isArray(res30?.availableDates) ? res30.availableDates : (res30?.data?.availableDates || []))
       );
       if (Array.isArray(dates) && dates.length > 0) {
         setAllStoredDates(dates);
@@ -173,8 +173,8 @@ export default function StockBrokerAnalysisTab({
         resAll?.totalSharesHeldTillNow ||
         resSm?.totalSharesHeldTillNow ||
         resSm?.data?.totalSharesHeldTillNow ||
-        resDiag?.data?.totalSharesHeldTillNow ||
-        resDiag?.totalSharesHeldTillNow ||
+        res30?.totalSharesHeldTillNow ||
+        res30?.data?.totalSharesHeldTillNow ||
         0
       );
       if (totalHeld > 0) {
@@ -194,12 +194,12 @@ export default function StockBrokerAnalysisTab({
         : (Array.isArray(resSm?.data)
             ? resSm.data
             : (resSm?.allHoldings || resSm?.allBrokers || resSm?.topHoldings || resSm?.brokers || resSm?.data?.allBrokers || []));
-      const listDiag = resDiag?.data?.allBrokers || resDiag?.data?.brokers || resDiag?.allBrokers || resDiag?.brokers || [];
-      const primaryList = (listAll.length > 0) ? listAll : ((Array.isArray(listSm) && listSm.length > 0) ? listSm : listDiag);
+      const list30 = res30?.allHoldings || res30?.data?.allHoldings || res30?.brokers || res30?.data?.brokers || [];
+      const primaryList = (listAll.length > 0) ? listAll : ((Array.isArray(listSm) && listSm.length > 0) ? listSm : list30);
 
       const parsed = parseAndSetHoldings(primaryList, dates, flow);
-      if (!parsed && listDiag.length > 0) {
-        parseAndSetHoldings(listDiag, dates, flow);
+      if (!parsed && list30.length > 0) {
+        parseAndSetHoldings(list30, dates, flow);
       }
 
       // If symbol's all-time historical floorsheet is still syncing in the background, poll every 4s until complete
