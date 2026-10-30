@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
+import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, ShieldCheck, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
 import { isNepseTradingDay, formatNptDateIso } from '../utils/nepseCalendar';
-import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
+import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '../utils/servicesApi';
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
@@ -120,13 +120,13 @@ export function BrokerFlowDominanceService({
   availableDates: propAvailableDates,
   initialSymbol,
 }: {
-  mode?: 'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise';
+  mode?: 'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise' | 'stockRetention';
   selectedDate?: string;
   date?: string;
   availableDates?: string[];
   initialSymbol?: string;
 }) {
-  const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise'>(mode);
+  const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise' | 'stockRetention'>(mode || 'flow');
   const [timeframe, setTimeframe] = useState('1D');
   const [sessionDateFilter, setSessionDateFilter] = useState(selectedDate || date || '');
   const [fromDate, setFromDate] = useState('');
@@ -142,12 +142,22 @@ export function BrokerFlowDominanceService({
   const [fetchedDates, setFetchedDates] = useState<string[]>([]);
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
-  const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
+  const [modalTab, setModalTab] = useState<'accumulation' | 'distribution' | 'holding_till_now'>('accumulation');
   const [rankingMetric, setRankingMetric] = useState<'net_amount' | 'net_qty' | 'gross_buy_amount' | 'gross_buy_qty'>('net_amount');
   const [matchingSortOrder, setMatchingSortOrder] = useState<'date_desc' | 'amount_desc'>('date_desc');
-  const [brokerWiseTab, setBrokerWiseTab] = useState<'sellers' | 'buyers'>('sellers');
+  const [brokerWiseTab, setBrokerWiseTab] = useState<'whole_day_net' | 'net_buyers' | 'net_sellers' | 'buyers' | 'sellers'>('whole_day_net');
   const [uniqueStockOnly, setUniqueStockOnly] = useState<boolean>(true);
   const [copiedCard, setCopiedCard] = useState<boolean>(false);
+  const [selectedStockRetention, setSelectedStockRetention] = useState<string>(initialSymbol || 'BARUN');
+  const [stockRetentionData, setStockRetentionData] = useState<any>(null);
+  const [loadingRetention, setLoadingRetention] = useState<boolean>(false);
+  const [copiedRetentionCard, setCopiedRetentionCard] = useState<boolean>(false);
+  const [stockRetentionInput, setStockRetentionInput] = useState<string>('');
+  const [retentionViewType, setRetentionViewType] = useState<'byStock' | 'byBroker'>('byStock');
+  const [selectedRetentionBrokerId, setSelectedRetentionBrokerId] = useState<string>('58');
+  const [brokerRetentionData, setBrokerRetentionData] = useState<any>(null);
+  const [loadingBrokerRetention, setLoadingBrokerRetention] = useState<boolean>(false);
+  const [copiedBrokerRetentionCard, setCopiedBrokerRetentionCard] = useState<boolean>(false);
 
   // Sync incoming props from parent
   useEffect(() => {
@@ -216,17 +226,39 @@ export function BrokerFlowDominanceService({
     return formatNptDateIso(new Date());
   }, [sessionDateFilter, selectedDate, date, heatmapData, availableDates, floorsheet]);
 
+  // Whole Day Net Bought Leaderboard
+  const topNetBoughtWholeDay = useMemo(() => {
+    if (heatmapData && Array.isArray(heatmapData.topNetBoughtScripsWholeDay) && heatmapData.topNetBoughtScripsWholeDay.length > 0) {
+      return heatmapData.topNetBoughtScripsWholeDay;
+    }
+    return [];
+  }, [heatmapData]);
+
   // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
   const brokerWiseLeaderboard = useMemo(() => {
     if (heatmapData) {
-      if (brokerWiseTab === 'sellers') {
+      if (brokerWiseTab === 'net_buyers') {
+        if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockNetBuyers) && heatmapData.topUniqueStockNetBuyers.length > 0) {
+          return heatmapData.topUniqueStockNetBuyers;
+        }
+        if (!uniqueStockOnly && Array.isArray(heatmapData.topCrossBrokerNetBuyers) && heatmapData.topCrossBrokerNetBuyers.length > 0) {
+          return heatmapData.topCrossBrokerNetBuyers;
+        }
+      } else if (brokerWiseTab === 'net_sellers') {
+        if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockNetSellers) && heatmapData.topUniqueStockNetSellers.length > 0) {
+          return heatmapData.topUniqueStockNetSellers;
+        }
+        if (!uniqueStockOnly && Array.isArray(heatmapData.topCrossBrokerNetSells) && heatmapData.topCrossBrokerNetSells.length > 0) {
+          return heatmapData.topCrossBrokerNetSells;
+        }
+      } else if (brokerWiseTab === 'sellers') {
         if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockSellers) && heatmapData.topUniqueStockSellers.length > 0) {
           return heatmapData.topUniqueStockSellers;
         }
         if (!uniqueStockOnly && Array.isArray(heatmapData.topCrossBrokerSellers) && heatmapData.topCrossBrokerSellers.length > 0) {
           return heatmapData.topCrossBrokerSellers;
         }
-      } else {
+      } else if (brokerWiseTab === 'buyers') {
         if (uniqueStockOnly && Array.isArray(heatmapData.topUniqueStockBuyers) && heatmapData.topUniqueStockBuyers.length > 0) {
           return heatmapData.topUniqueStockBuyers;
         }
@@ -242,30 +274,49 @@ export function BrokerFlowDominanceService({
     matrix.forEach((b: any) => {
       const brokerId = b.broker || b.id;
       const brokerName = b.brokerName || b.name || `Broker ${brokerId}`;
-      const list = brokerWiseTab === 'sellers'
-        ? (b.topDistByGrossSellAmt || b.scrips?.filter((s: any) => s.sellAmount > 0) || [])
-        : (b.topByGrossBuyAmt || b.scrips?.filter((s: any) => s.buyAmount > 0) || []);
+      const isSellMode = brokerWiseTab === 'sellers' || brokerWiseTab === 'net_sellers';
+      const list = isSellMode
+        ? (b.topDistByGrossSellAmt || b.scrips?.filter((s: any) => (s.sellAmount > 0 || s.sellQty > 0)) || [])
+        : (b.topByGrossBuyAmt || b.scrips?.filter((s: any) => (s.buyAmount > 0 || s.buyQty > 0)) || []);
 
       list.forEach((s: any) => {
-        const qty = Number(brokerWiseTab === 'sellers' ? (s.sellQty || s.qty || 0) : (s.buyQty || s.qty || 0));
-        const amt = Number(brokerWiseTab === 'sellers' ? (s.sellAmount || s.amount || 0) : (s.buyAmount || s.amount || 0));
-        if (qty > 0 && amt > 0) {
+        const buyQty = Number(s.buyQty || 0);
+        const sellQty = Number(s.sellQty || 0);
+        const buyAmt = Number(s.buyAmount || s.buyAmt || 0);
+        const sellAmt = Number(s.sellAmount || s.sellAmt || 0);
+        const netKitta = buyQty - sellQty;
+        const netAmount = buyAmt - sellAmt;
+
+        const isNetMode = brokerWiseTab === 'net_buyers' || brokerWiseTab === 'net_sellers';
+        const qty = isNetMode
+          ? (brokerWiseTab === 'net_buyers' ? netKitta : Math.abs(netKitta))
+          : (brokerWiseTab === 'sellers' ? (sellQty || s.qty || 0) : (buyQty || s.qty || 0));
+        const amt = isNetMode
+          ? (brokerWiseTab === 'net_buyers' ? netAmount : Math.abs(netAmount))
+          : (brokerWiseTab === 'sellers' ? (sellAmt || s.amount || 0) : (buyAmt || s.amount || 0));
+
+        if (qty > 0) {
           items.push({
             symbol: s.symbol,
             sellerBroker: brokerId,
             buyerBroker: brokerId,
             brokerName,
             qty,
+            netQty: netKitta,
+            buyQty,
+            sellQty,
             amount: amt,
             amountCr: +(amt / 1e7).toFixed(2),
-            avgRate: s.avgSellRate || s.avgBuyRate || +(amt / qty).toFixed(2),
-            trades: s.trades || 0
+            avgRate: s.avgBuyRate || s.avgSellRate || (qty > 0 ? +(amt / qty).toFixed(2) : 0),
+            trades: s.trades || 0,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
           });
         }
       });
     });
 
-    items.sort((a, b) => b.amount - a.amount);
+    items.sort((a, b) => b.qty - a.qty);
 
     if (uniqueStockOnly) {
       const seen = new Set<string>();
@@ -282,18 +333,144 @@ export function BrokerFlowDominanceService({
     return items.slice(0, 25);
   }, [heatmapData, brokerWiseTab, uniqueStockOnly]);
 
-  const handleCopySocialCard = () => {
-    const isSeller = brokerWiseTab === 'sellers';
-    let text = `🔥 TOP ${isSeller ? 'SELLER' : 'BUYER'} STOCKS BY BROKER-WISE\n`;
-    text += `📅 As of ${sessionDate}\n`;
+  // Load all-time broker retention for a specific stock
+  // Load all-time top 10 stocks held by a specific broker
+  const loadBrokerRetention = async (bId: string) => {
+    const targetId = String(bId || selectedRetentionBrokerId || '58').trim();
+    if (!targetId) return;
+    setLoadingBrokerRetention(true);
+    try {
+      const res = await fetchBrokerHoldings(targetId);
+      if (res && res.success && res.data) {
+        setBrokerRetentionData(res.data);
+      } else {
+        setBrokerRetentionData(null);
+      }
+    } catch (err) {
+      console.error('Failed to load broker retention:', err);
+      setBrokerRetentionData(null);
+    } finally {
+      setLoadingBrokerRetention(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMode === 'stockRetention' && retentionViewType === 'byBroker' && selectedRetentionBrokerId) {
+      loadBrokerRetention(selectedRetentionBrokerId);
+    }
+  }, [activeMode, retentionViewType, selectedRetentionBrokerId]);
+
+  const handleCopyBrokerRetentionCard = () => {
+    if (!brokerRetentionData) return;
+    const topHoldings = brokerRetentionData.topHoldings || [];
+    const bName = brokerRetentionData.brokerName || `Broker #${selectedRetentionBrokerId}`;
+    let text = `🏢 TOP 10 STOCKS NET HELD TILL NOW: Broker #${selectedRetentionBrokerId} (${bName})\n`;
+    text += `📊 Total Retained Shares: ${Number(brokerRetentionData.totalSharesHeld || 0).toLocaleString()} kitta\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    brokerWiseLeaderboard.slice(0, 10).forEach((row, idx) => {
-      const brokerId = isSeller ? row.sellerBroker : row.buyerBroker;
-      const rate = row.avgRate ? Number(row.avgRate).toFixed(2) : '-';
-      text += `${idx + 1}. ${row.symbol.padEnd(7)} | Broker ${brokerId.padEnd(2)} | ${row.qty.toLocaleString()} Qty | ${formatNepaliCurrency(row.amount)} | Avg: ${rate}\n`;
+    topHoldings.slice(0, 10).forEach((s: any, idx: number) => {
+      const netKitta = Number(s.cumHoldQty || s.netQty || 0).toLocaleString();
+      const avgBuy = Number(s.avgBuyRate || 0).toFixed(2);
+      const retPct = s.retentionPct ?? 0;
+      text += `${idx + 1}. ${s.symbol.padEnd(6)} | +${netKitta} kitta (${retPct}% ret) @ Rs. ${avgBuy}\n`;
     });
     text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `⚡ Verified by Drabyashree NEPSE Surveillance`;
+    text += `⚡ Powered by Drabyashree NEPSE Smart Money Intelligence`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedBrokerRetentionCard(true);
+        setTimeout(() => setCopiedBrokerRetentionCard(false), 2500);
+      });
+    }
+  };
+
+  const loadStockRetention = async (sym: string, force = false) => {
+    const targetSym = (sym || selectedStockRetention || 'BARUN').toUpperCase().trim();
+    if (!targetSym) return;
+    setLoadingRetention(true);
+    try {
+      const res = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all' });
+      if (res && res.success && res.data) {
+        setStockRetentionData(res.data);
+      } else {
+        setStockRetentionData(null);
+      }
+    } catch (err) {
+      console.error('Failed to load stock retention:', err);
+      setStockRetentionData(null);
+    } finally {
+      setLoadingRetention(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMode === 'stockRetention' && selectedStockRetention) {
+      loadStockRetention(selectedStockRetention);
+    }
+  }, [activeMode, selectedStockRetention]);
+
+  const handleCopyStockRetentionCard = () => {
+    if (!stockRetentionData) return;
+    const topHoldings = stockRetentionData.topHoldings || [];
+    const totalHeld = stockRetentionData.totalSharesHeldTillNow || 0;
+    let text = `💎 TOP 10 BROKER NET RETENTION TILL NOW: ${selectedStockRetention}\n`;
+    text += `📊 Total Retained Kitta (Net Accumulators): ${totalHeld.toLocaleString()} kitta\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    topHoldings.slice(0, 10).forEach((b: any, idx: number) => {
+      const brokerId = b.brokerId || b.id;
+      const name = b.brokerName || b.name || `Broker ${brokerId}`;
+      const netKitta = Number(b.netQty || b.holdQty || 0).toLocaleString();
+      const retPct = b.retentionPct ?? 0;
+      const sharePct = b.holdingSharePct ?? 0;
+      const avgBuy = Number(b.avgBuyRate || 0).toFixed(2);
+      text += `${idx + 1}. Broker #${brokerId} (${name})\n`;
+      text += `   • Net Retained: +${netKitta} kitta (${retPct}% ret, ${sharePct}% share)\n`;
+      text += `   • Avg Buy Price: Rs. ${avgBuy}\n`;
+      if (b.avgSellRate > 0) text += `   • Avg Sell Price: Rs. ${Number(b.avgSellRate).toFixed(2)}\n`;
+    });
+    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `⚡ Powered by Drabyashree NEPSE Smart Money Intelligence`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedRetentionCard(true);
+        setTimeout(() => setCopiedRetentionCard(false), 2500);
+      });
+    }
+  };
+
+  const handleCopySocialCard = () => {
+    let text = '';
+    if (brokerWiseTab === 'whole_day_net') {
+      text = `🔥 TOP 10 NET BOUGHT STOCKS (WHOLE DAY)\n`;
+      text += `📅 As of ${sessionDate}\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      topNetBoughtWholeDay.slice(0, 10).forEach((st: any, idx: number) => {
+        text += `${idx + 1}. ${String(st.symbol).padEnd(6)} | Net: +${Number(st.totalNetKitta).toLocaleString()} kitta (${st.lockPct}% locked) | Inflow: Rs. ${st.totalNetInflowCr} Cr\n`;
+        if (st.leadAccumulator) {
+          text += `   • Lead Desk: Broker #${st.leadAccumulator.broker} (${st.leadAccumulator.brokerName}) +${Number(st.leadAccumulator.netQty).toLocaleString()} kitta (${st.leadAccumulator.shareOfLockPct}% of net)\n`;
+        }
+        if (Array.isArray(st.top3Accumulators) && st.top3Accumulators.length > 0) {
+          const top3Str = st.top3Accumulators.map((a: any) => `B#${a.broker}: +${Number(a.netQty).toLocaleString()} (${a.shareOfLockPct || 0}%) @ Rs. ${a.avgBuyRate}`).join(' | ');
+          text += `   • Top 3: ${top3Str}\n`;
+        }
+      });
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `⚡ Verified by Drabyashree NEPSE Surveillance`;
+    } else {
+      const isSeller = brokerWiseTab === 'sellers' || brokerWiseTab === 'net_sellers';
+      const isNet = brokerWiseTab === 'net_buyers' || brokerWiseTab === 'net_sellers';
+      text = `🔥 TOP ${isNet ? 'NET ' : ''}${isSeller ? 'SELLER' : 'BUYER'} STOCKS BY BROKER-WISE\n`;
+      text += `📅 As of ${sessionDate}\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      brokerWiseLeaderboard.slice(0, 10).forEach((row: any, idx: number) => {
+        const brokerId = isSeller ? row.sellerBroker : row.buyerBroker;
+        const rate = row.avgRate ? Number(row.avgRate).toFixed(2) : '-';
+        text += `${idx + 1}. ${String(row.symbol).padEnd(7)} | Broker ${String(brokerId).padEnd(2)} | ${Number(row.qty).toLocaleString()} Qty | ${formatNepaliCurrency(row.amount)} | Avg: ${rate}\n`;
+      });
+      text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `⚡ Verified by Drabyashree NEPSE Surveillance`;
+    }
 
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(text);
@@ -1203,6 +1380,8 @@ export function BrokerFlowDominanceService({
               ? 'Institutional Broker Flow Matrix'
               : activeMode === 'brokerWise'
               ? 'Exchange Top Stock by Broker-Wise'
+              : activeMode === 'stockRetention'
+              ? 'Top 10 Broker Retention Till Now'
               : activeMode === 'dominance'
               ? 'Stock Dominance & Cornering Board'
               : activeMode === 'top10'
@@ -1214,6 +1393,8 @@ export function BrokerFlowDominanceService({
               ? 'Net buy/sell capital flow, accumulated scrips, and bias per broker.'
               : activeMode === 'brokerWise'
               ? 'Exchange-wide leaderboard ranking largest single-broker selling and buying positions.'
+              : activeMode === 'stockRetention'
+              ? 'All-time net retained kitta, volume-weighted average buy price, and broker holding share for any stock.'
               : activeMode === 'dominance'
               ? 'Which brokers control the largest percentage of volume per scrip.'
               : activeMode === 'top10'
@@ -1223,34 +1404,40 @@ export function BrokerFlowDominanceService({
         </div>
 
         {/* View Mode Switcher */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 sm:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 w-full sm:w-auto shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-6 sm:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 w-full sm:w-auto shrink-0">
           <button
             onClick={() => setActiveMode('flow')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'flow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'flow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <Users size={12} className="shrink-0" /> <span className="truncate">Broker Flow</span>
           </button>
           <button
             onClick={() => setActiveMode('brokerWise')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'brokerWise' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'brokerWise' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <Target size={12} className="shrink-0" /> <span className="truncate">Broker-Wise</span>
           </button>
           <button
+            onClick={() => setActiveMode('stockRetention')}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'stockRetention' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+          >
+            <ShieldCheck size={12} className="shrink-0" /> <span className="truncate">Stock Retention</span>
+          </button>
+          <button
             onClick={() => setActiveMode('dominance')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'dominance' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'dominance' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <Crown size={12} className="shrink-0" /> <span className="truncate">Dominance</span>
           </button>
           <button
             onClick={() => setActiveMode('top10')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'top10' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'top10' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <BarChart3 size={12} className="shrink-0" /> <span className="truncate">Top 10 A/D</span>
           </button>
           <button
             onClick={() => setActiveMode('matching')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition ${activeMode === 'matching' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'matching' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <ArrowLeftRight size={12} className="shrink-0" /> <span className="truncate">Matching</span>
           </button>
@@ -2589,36 +2776,72 @@ export function BrokerFlowDominanceService({
       {activeMode === 'brokerWise' && (
         <div className="space-y-3.5 w-full min-w-0">
           <InfoBanner type="info">
-            Exchange-wide institutional surveillance ranking single-broker dump and accumulation moves across all active trading desks in NEPSE.
+            Exchange-wide institutional surveillance ranking whole-day net accumulation, single-broker accumulation, and dump moves across all active trading desks in NEPSE.
           </InfoBanner>
 
           {/* Broker-Wise Toolbar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 p-3 rounded-2xl border border-slate-800 shadow-md">
-            {/* Left: Tab Switcher (Top Sellers vs Top Buyers) */}
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-900/90 p-3 rounded-2xl border border-slate-800 shadow-md">
+            {/* Left: Tab Switcher (5 options) */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
               <button
                 type="button"
-                onClick={() => setBrokerWiseTab('sellers')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                  brokerWiseTab === 'sellers'
-                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40'
+                onClick={() => setBrokerWiseTab('whole_day_net')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'whole_day_net'
+                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/40'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <TrendingDown size={14} />
-                <span>Top Seller Stocks</span>
+                <TrendingUp size={13} />
+                <span>Whole Day Net Bought</span>
               </button>
               <button
                 type="button"
-                onClick={() => setBrokerWiseTab('buyers')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                  brokerWiseTab === 'buyers'
+                onClick={() => setBrokerWiseTab('net_buyers')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'net_buyers'
                     ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <TrendingUp size={14} />
-                <span>Top Buyer Stocks</span>
+                <Users size={13} />
+                <span>Top Net Buyers</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBrokerWiseTab('net_sellers')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'net_sellers'
+                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <TrendingDown size={13} />
+                <span>Top Net Sellers</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBrokerWiseTab('buyers')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'buyers'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Target size={13} />
+                <span>Gross Buyers</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBrokerWiseTab('sellers')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                  brokerWiseTab === 'sellers'
+                    ? 'bg-rose-700 text-white shadow-lg shadow-rose-900/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Target size={13} />
+                <span>Gross Sellers</span>
               </button>
             </div>
 
@@ -2628,18 +2851,20 @@ export function BrokerFlowDominanceService({
                 📅 As of {sessionDate}
               </span>
 
-              <button
-                type="button"
-                onClick={() => setUniqueStockOnly(!uniqueStockOnly)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                  uniqueStockOnly
-                    ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                }`}
-                title="Toggle between showing only the single top broker per stock or all broker desks"
-              >
-                {uniqueStockOnly ? '✓ 1 Broker Per Stock' : 'All Broker Desks'}
-              </button>
+              {brokerWiseTab !== 'whole_day_net' && (
+                <button
+                  type="button"
+                  onClick={() => setUniqueStockOnly(!uniqueStockOnly)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                    uniqueStockOnly
+                      ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                  title="Toggle between showing only the single top broker per stock or all broker desks"
+                >
+                  {uniqueStockOnly ? '✓ 1 Broker Per Stock' : 'All Broker Desks'}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -2662,41 +2887,1071 @@ export function BrokerFlowDominanceService({
             </div>
           </div>
 
-          {/* Desktop & Tablet Table */}
-          <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
-                <tr>
-                  <th className="p-3 w-12 text-center">#</th>
-                  <th className="p-3">Symbol</th>
-                  <th className="p-3">{brokerWiseTab === 'sellers' ? 'Seller Desk' : 'Buyer Desk'}</th>
-                  <th className="p-3 text-right">Quantity</th>
-                  <th className="p-3 text-right">Amount</th>
-                  <th className="p-3 text-right">Avg. Rate</th>
-                  <th className="p-3 text-center">Desk Dominance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
-                {brokerWiseLeaderboard.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400 font-sans">
-                      No broker-wise records available for this session.
-                    </td>
-                  </tr>
+          {/* VIEW A: WHOLE DAY NET BOUGHT LEADERBOARD */}
+          {brokerWiseTab === 'whole_day_net' ? (
+            <>
+              {/* Desktop & Tablet Table */}
+              <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="p-3 w-12 text-center">#</th>
+                      <th className="p-3">Stock Symbol</th>
+                      <th className="p-3 text-right">Day Net Kitta</th>
+                      <th className="p-3 text-right">Traded Volume</th>
+                      <th className="p-3 text-center">% Locked</th>
+                      <th className="p-3 text-right">Net Inflow</th>
+                      <th className="p-3 text-right">Avg. Price</th>
+                      <th className="p-3">Lead Accumulator Desk</th>
+                      <th className="p-3">Top 3 Accumulators (Share &amp; Avg Buy)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {topNetBoughtWholeDay.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-slate-400 font-sans">
+                          No whole-day net accumulation records available for this session.
+                        </td>
+                      </tr>
+                    ) : (
+                      topNetBoughtWholeDay.map((st: any, idx: number) => {
+                        const topAcc = st.leadAccumulator;
+                        return (
+                          <tr
+                            key={`wd_${st.symbol}_${idx}`}
+                            className="hover:bg-slate-900/60 transition group cursor-pointer"
+                            onClick={() => {
+                              if (topAcc?.broker) {
+                                const found = brokerFlowList.find(b => b.brokerId === String(topAcc.broker));
+                                if (found) setSelectedBrokerModal(found);
+                              }
+                            }}
+                          >
+                            <td className="p-3 text-center">
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
+                                idx === 0
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : idx === 1
+                                  ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
+                                  : idx === 2
+                                  ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                                  : 'text-slate-500'
+                              }`}>
+                                {idx + 1}
+                              </span>
+                            </td>
+                            <td className="p-3 font-sans">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-white text-sm group-hover:text-blue-400 transition">
+                                  {st.symbol}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStockRetention(st.symbol);
+                                    setActiveMode('stockRetention');
+                                  }}
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition cursor-pointer"
+                                  title="View all-time top 10 broker net retention till now"
+                                >
+                                  Till-Now
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right font-black text-emerald-400">
+                              +{Number(st.totalNetKitta).toLocaleString()} <span className="text-[10px] text-emerald-500/80 font-normal">kitta</span>
+                            </td>
+                            <td className="p-3 text-right font-bold text-slate-300">
+                              {Number(st.totalTradedVol).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                                st.lockPct >= 60
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                  : st.lockPct >= 40
+                                  ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}>
+                                {st.lockPct}% locked
+                              </span>
+                            </td>
+                            <td className="p-3 text-right font-black text-emerald-300">
+                              {st.totalNetInflowCr ? `Rs. ${st.totalNetInflowCr} Cr` : formatNepaliCurrency(st.totalNetInflow)}
+                            </td>
+                            <td className="p-3 text-right font-bold text-slate-300">
+                              {st.avgPrice > 0 ? `Rs. ${Number(st.avgPrice).toFixed(2)}` : '—'}
+                            </td>
+                            <td className="p-3 font-sans">
+                              {topAcc ? (
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.2 rounded text-[11px] font-black font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                      #{topAcc.broker}
+                                    </span>
+                                    <span className="text-slate-200 text-xs font-bold truncate max-w-[120px]">
+                                      {topAcc.brokerName}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] font-mono text-emerald-400">
+                                    +{Number(topAcc.netQty).toLocaleString()} kitta ({topAcc.shareOfLockPct}% of net)
+                                  </div>
+                                  {topAcc.cumHoldQty > 0 && (
+                                    <div className="text-[9px] font-mono text-slate-400">
+                                      Till now: {Number(topAcc.cumHoldQty).toLocaleString()} held (Avg Rs. {topAcc.cumAvgBuy})
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 font-sans">
+                              <div className="flex flex-col gap-1 max-w-[280px]">
+                                {Array.isArray(st.top3Accumulators) && st.top3Accumulators.length > 0 ? (
+                                  st.top3Accumulators.map((acc: any, aidx: number) => (
+                                    <div key={aidx} className="flex items-center justify-between gap-1.5 text-[10px] font-mono bg-slate-900/90 px-2 py-0.5 rounded border border-slate-800">
+                                      <span className="font-bold text-cyan-300">#{acc.broker}</span>
+                                      <span className="text-emerald-400 font-bold">+{Number(acc.netQty).toLocaleString()}</span>
+                                      <span className="text-purple-300 font-extrabold">{acc.shareOfLockPct || 0}%</span>
+                                      <span className="text-slate-300">@ Rs. {acc.avgBuyRate > 0 ? Number(acc.avgBuyRate).toFixed(1) : '—'}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <span className="text-slate-500 text-xs">—</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="sm:hidden space-y-2.5">
+                {topNetBoughtWholeDay.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+                    No whole-day net accumulation records available for this session.
+                  </div>
                 ) : (
-                  brokerWiseLeaderboard.map((item, idx) => {
-                    const brokerId = brokerWiseTab === 'sellers' ? item.sellerBroker : item.buyerBroker;
-                    const isTop3 = idx < 3;
+                  topNetBoughtWholeDay.map((st: any, idx: number) => {
+                    const topAcc = st.leadAccumulator;
                     return (
-                      <tr
-                        key={`${item.symbol}_${brokerId}_${idx}`}
-                        className="hover:bg-slate-900/60 transition group cursor-pointer"
+                      <div
+                        key={`m_wd_${st.symbol}_${idx}`}
+                        className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
                         onClick={() => {
-                          const found = brokerFlowList.find(b => b.brokerId === brokerId);
+                          if (topAcc?.broker) {
+                            const found = brokerFlowList.find(b => b.brokerId === String(topAcc.broker));
+                            if (found) setSelectedBrokerModal(found);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
+                            <span className="font-extrabold text-white text-sm">{st.symbol}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStockRetention(st.symbol);
+                                setActiveMode('stockRetention');
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                            >
+                              Till-Now
+                            </button>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                            {st.lockPct}% locked
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/70 text-xs font-mono">
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">Net Kitta</div>
+                            <div className="font-bold text-emerald-400">+{Number(st.totalNetKitta).toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">Day Volume</div>
+                            <div className="font-bold text-slate-300">{Number(st.totalTradedVol).toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">Net Inflow</div>
+                            <div className="font-bold text-emerald-300">
+                              {st.totalNetInflowCr ? `Rs. ${st.totalNetInflowCr} Cr` : formatNepaliCurrency(st.totalNetInflow)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Top 3 Accumulators on Mobile */}
+                        {Array.isArray(st.top3Accumulators) && st.top3Accumulators.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/60 space-y-1">
+                            <div className="text-[10px] text-slate-400 font-sans font-bold">Top 3 Accumulating Desks:</div>
+                            <div className="space-y-1">
+                              {st.top3Accumulators.map((acc: any, aidx: number) => (
+                                <div key={aidx} className="flex items-center justify-between text-[11px] font-mono bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800/80">
+                                  <span className="font-bold text-cyan-300">Broker #{acc.broker}</span>
+                                  <span className="text-emerald-400 font-bold">+{Number(acc.netQty).toLocaleString()} kitta</span>
+                                  <span className="text-purple-300 font-bold">{acc.shareOfLockPct || 0}%</span>
+                                  <span className="text-slate-300">@ Rs. {acc.avgBuyRate > 0 ? Number(acc.avgBuyRate).toFixed(1) : '—'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* VIEW B: BROKER-WISE PAIRS TABLE (NET BUYERS, NET SELLERS, GROSS BUYERS, GROSS SELLERS) */}
+              <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="p-3 w-12 text-center">#</th>
+                      <th className="p-3">Symbol</th>
+                      <th className="p-3">
+                        {brokerWiseTab.includes('seller') ? 'Seller Desk' : 'Buyer Desk'}
+                      </th>
+                      <th className="p-3 text-right">
+                        {brokerWiseTab.startsWith('net_') ? 'Net Kitta' : 'Quantity'}
+                      </th>
+                      <th className="p-3 text-right">
+                        {brokerWiseTab.startsWith('net_') ? 'Net Amount' : 'Amount'}
+                      </th>
+                      <th className="p-3 text-right">Avg. Rate</th>
+                      <th className="p-3">Cumulative Held Till Now</th>
+                      <th className="p-3 text-center">Desk Dominance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {brokerWiseLeaderboard.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-400 font-sans">
+                          No broker-wise records available for this session.
+                        </td>
+                      </tr>
+                    ) : (
+                      brokerWiseLeaderboard.map((item: any, idx: number) => {
+                        const isSeller = brokerWiseTab.includes('seller');
+                        const brokerId = isSeller ? item.sellerBroker : item.buyerBroker;
+                        const isTop3 = idx < 3;
+                        return (
+                          <tr
+                            key={`bw_${item.symbol}_${brokerId}_${idx}`}
+                            className="hover:bg-slate-900/60 transition group cursor-pointer"
+                            onClick={() => {
+                              const found = brokerFlowList.find(b => b.brokerId === String(brokerId));
+                              if (found) setSelectedBrokerModal(found);
+                            }}
+                          >
+                            <td className="p-3 text-center">
+                              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
+                                idx === 0
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : idx === 1
+                                  ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
+                                  : idx === 2
+                                  ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                                  : 'text-slate-500'
+                              }`}>
+                                {idx + 1}
+                              </span>
+                            </td>
+                            <td className="p-3 font-sans">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-white text-sm group-hover:text-blue-400 transition">
+                                  {item.symbol}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStockRetention(item.symbol);
+                                    setActiveMode('stockRetention');
+                                  }}
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition cursor-pointer"
+                                  title="View all-time top 10 broker net retention till now"
+                                >
+                                  Till-Now
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-3 font-sans">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
+                                  isSeller
+                                    ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                                    : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                                }`}>
+                                  Broker {brokerId}
+                                </span>
+                                <span className="text-slate-300 text-xs truncate max-w-[160px]">
+                                  {item.brokerName}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right font-bold text-slate-200">
+                              {Number(item.qty).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-right font-black">
+                              <span className={`text-sm ${isSeller ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                {formatNepaliCurrency(item.amount)}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right font-bold text-slate-300">
+                              Rs. {Number(item.avgRate || 0).toFixed(2)}
+                            </td>
+                            <td className="p-3 font-sans">
+                              {item.cumHoldQty > 0 ? (
+                                <div className="text-[11px] font-mono">
+                                  <span className="text-cyan-300 font-bold">{Number(item.cumHoldQty).toLocaleString()} kitta</span>
+                                  {item.cumAvgBuy > 0 && (
+                                    <span className="text-slate-400 ml-1">(@ Rs. {item.cumAvgBuy})</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-500 text-xs">—</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center font-sans">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                isTop3
+                                  ? isSeller
+                                    ? 'bg-rose-950/60 text-rose-300 border-rose-700/60'
+                                    : 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800'
+                              }`}>
+                                {isSeller ? 'Heavy Dump' : 'Aggressive Accum.'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="sm:hidden space-y-2.5">
+                {brokerWiseLeaderboard.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
+                    No broker-wise records available for this session.
+                  </div>
+                ) : (
+                  brokerWiseLeaderboard.map((item: any, idx: number) => {
+                    const isSeller = brokerWiseTab.includes('seller');
+                    const brokerId = isSeller ? item.sellerBroker : item.buyerBroker;
+                    return (
+                      <div
+                        key={`m_bw_${item.symbol}_${brokerId}_${idx}`}
+                        className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
+                        onClick={() => {
+                          const found = brokerFlowList.find(b => b.brokerId === String(brokerId));
                           if (found) setSelectedBrokerModal(found);
                         }}
                       >
-                        <td className="p-3 text-center">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
+                            <span className="font-extrabold text-white text-sm">{item.symbol}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStockRetention(item.symbol);
+                                setActiveMode('stockRetention');
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                            >
+                              Till-Now
+                            </button>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
+                            isSeller
+                              ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                              : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          }`}>
+                            Broker {brokerId}
+                          </span>
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 truncate">
+                          {item.brokerName}
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/70 text-xs font-mono">
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">
+                              {brokerWiseTab.startsWith('net_') ? 'Net Qty' : 'Qty'}
+                            </div>
+                            <div className="font-bold text-slate-200">{Number(item.qty).toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">Amount</div>
+                            <div className={`font-black ${isSeller ? 'text-rose-400' : 'text-emerald-400'}`}>
+                              {formatNepaliCurrency(item.amount)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 font-sans">Avg Rate</div>
+                            <div className="font-bold text-slate-300">Rs. {Number(item.avgRate || 0).toFixed(2)}</div>
+                          </div>
+                        </div>
+
+                        {item.cumHoldQty > 0 && (
+                          <div className="pt-1.5 border-t border-slate-800/60 text-[10px] font-mono text-cyan-400">
+                            Cumulative Held: {Number(item.cumHoldQty).toLocaleString()} kitta {item.cumAvgBuy > 0 ? `(@ Rs. ${item.cumAvgBuy})` : ''}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* MODE 6: TOP 10 NET BOUGHT KITTA TILL NOW (STOCK & BROKER RETENTION) */}
+      {activeMode === 'stockRetention' && (
+        <div className="space-y-4 w-full min-w-0">
+          <InfoBanner type="info">
+            Surveillance tracking all-time net retention: View which top 10 brokers accumulated and held any stock till now, OR view any broker's top 10 net-held stock portfolio till now (net kitta, retention %, and volume-weighted average buy price).
+          </InfoBanner>
+
+          {/* Perspective Switcher: By Stock vs By Broker */}
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/90 p-2 rounded-2xl border border-slate-800 shadow-md">
+            <span className="text-[11px] font-sans font-bold text-slate-400 px-2 uppercase">Perspective:</span>
+            <button
+              type="button"
+              onClick={() => setRetentionViewType('byStock')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                retentionViewType === 'byStock'
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/40'
+                  : 'text-slate-400 hover:text-white bg-slate-950/60'
+              }`}
+            >
+              <span>📊 By Stock: Top 10 Brokers Holding A Stock</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRetentionViewType('byBroker');
+                if (!brokerRetentionData) loadBrokerRetention(selectedRetentionBrokerId);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                retentionViewType === 'byBroker'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40'
+                  : 'text-slate-400 hover:text-white bg-slate-950/60'
+              }`}
+            >
+              <span>🏢 By Broker: Top 10 Stocks Held By A Broker</span>
+            </button>
+          </div>
+
+          {retentionViewType === 'byBroker' ? (
+            /* ── PERSPECTIVE B: BROKER'S TOP 10 STOCKS HELD TILL NOW ── */
+            <div className="space-y-4">
+              {/* Broker Selector Toolbar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 shadow-md">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-400 shrink-0">Select Broker:</label>
+                    <select
+                      value={selectedRetentionBrokerId}
+                      onChange={(e) => {
+                        setSelectedRetentionBrokerId(e.target.value);
+                        loadBrokerRetention(e.target.value);
+                      }}
+                      className="bg-slate-950 border border-slate-700 hover:border-slate-600 text-white text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer font-mono"
+                    >
+                      {brokerFlowList.map((b) => (
+                        <option key={b.brokerId} value={b.brokerId}>
+                          Broker #{b.brokerId} — {b.brokerName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Quick Pick Broker Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
+                    <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Quick Pick:</span>
+                    {[
+                      { id: '58', name: '#58 Naasa' },
+                      { id: '45', name: '#45 Imperial' },
+                      { id: '34', name: '#34 Vision' },
+                      { id: '17', name: '#17 ABC' },
+                      { id: '28', name: '#28 Krishna' },
+                      { id: '49', name: '#49 Online' },
+                      { id: '57', name: '#57 Aryatara' },
+                      { id: '38', name: '#38 Dipshikha' },
+                    ].map((pill) => (
+                      <button
+                        key={pill.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRetentionBrokerId(pill.id);
+                          loadBrokerRetention(pill.id);
+                        }}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-mono font-black transition cursor-pointer ${
+                          selectedRetentionBrokerId === pill.id
+                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                            : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {pill.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: Actions */}
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => loadBrokerRetention(selectedRetentionBrokerId)}
+                    disabled={loadingBrokerRetention}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={loadingBrokerRetention ? 'animate-spin text-purple-400' : ''} />
+                    <span>{loadingBrokerRetention ? 'Refreshing…' : 'Refresh'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyBrokerRetentionCard}
+                    disabled={!brokerRetentionData}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/40 transition cursor-pointer disabled:opacity-50"
+                    title="Copy ready-to-share Telegram / Facebook text card"
+                  >
+                    {copiedBrokerRetentionCard ? (
+                      <>
+                        <Check size={14} className="text-white" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} />
+                        <span>Copy Broker Holdings</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Broker HUD Summary Cards */}
+              {brokerRetentionData && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Target Broker Desk</div>
+                    <div className="text-lg font-black text-purple-400 font-mono mt-0.5 flex items-center gap-1.5 truncate">
+                      <span>Broker #{selectedRetentionBrokerId}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-sans truncate mt-0.5">
+                      {brokerRetentionData.brokerName}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Total Retained Kitta</div>
+                    <div className="text-lg font-black text-emerald-400 font-mono mt-0.5">
+                      +{Number(brokerRetentionData.totalSharesHeld || 0).toLocaleString()} <span className="text-xs font-sans text-emerald-500 font-normal">kitta</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      Across all accumulated stocks
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Accumulated Equities</div>
+                    <div className="text-lg font-black text-cyan-400 font-mono mt-0.5">
+                      {brokerRetentionData.totalHoldingsCount || (brokerRetentionData.topHoldings?.length || 0)} <span className="text-xs font-sans text-cyan-300 font-normal">Stocks</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      With positive net position held
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">#1 Largest Net Holding</div>
+                    <div className="text-lg font-black text-amber-400 font-mono mt-0.5">
+                      {brokerRetentionData.topHoldings?.[0]?.symbol || '—'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                      +{Number(brokerRetentionData.topHoldings?.[0]?.cumHoldQty || 0).toLocaleString()} kitta
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Table / Cards of Broker's Top 10 Stocks Held Till Now */}
+              {loadingBrokerRetention ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-3 bg-slate-950/40 rounded-2xl border border-slate-800">
+                  <Spinner size="lg" />
+                  <p className="text-xs text-slate-400 font-mono">Aggregating broker #{selectedRetentionBrokerId} all-time holdings across ledger…</p>
+                </div>
+              ) : !brokerRetentionData || !Array.isArray(brokerRetentionData.topHoldings) || brokerRetentionData.topHoldings.length === 0 ? (
+                <div className="py-16 text-center bg-slate-950/40 rounded-2xl border border-slate-800 text-slate-400 text-xs font-sans">
+                  No all-time holding records found for Broker #{selectedRetentionBrokerId}.
+                </div>
+              ) : (
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                        <tr>
+                          <th className="p-3 w-12 text-center">#</th>
+                          <th className="p-3">Stock Symbol</th>
+                          <th className="p-3 text-right">Net Held Kitta Till Now</th>
+                          <th className="p-3 text-center">Net Retention %</th>
+                          <th className="p-3 text-right">Avg. Buy Price</th>
+                          <th className="p-3 text-right">Avg. Sell Price</th>
+                          <th className="p-3 text-right">Total Net Capital</th>
+                          <th className="p-3 text-center">Active Sessions</th>
+                          <th className="p-3 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {brokerRetentionData.topHoldings.slice(0, 10).map((s: any, idx: number) => {
+                          const netKitta = Number(s.cumHoldQty || s.netQty || 0);
+                          const retPct = s.retentionPct ?? 0;
+                          const avgBuy = Number(s.avgBuyRate || 0);
+                          const avgSell = Number(s.avgSellRate || 0);
+                          const netAmt = Number(s.netAmt || (netKitta * avgBuy) || 0);
+
+                          return (
+                            <tr key={`bh_${s.symbol}_${idx}`} className="hover:bg-slate-900/60 transition group cursor-pointer">
+                              <td className="p-3 text-center">
+                                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
+                                  idx === 0
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : idx === 1
+                                    ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
+                                    : idx === 2
+                                    ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                                    : 'text-slate-500'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                              </td>
+                              <td className="p-3 font-sans">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-white text-sm group-hover:text-purple-400 transition font-mono">
+                                    {s.symbol}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedStockRetention(s.symbol);
+                                      setRetentionViewType('byStock');
+                                      loadStockRetention(s.symbol);
+                                    }}
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition cursor-pointer"
+                                    title="View which brokers are holding this stock till now"
+                                  >
+                                    Stock Desk
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-3 text-right font-black text-emerald-400">
+                                +{netKitta.toLocaleString()} <span className="text-[10px] text-emerald-500/80 font-normal">kitta</span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
+                                  retPct >= 60
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : retPct >= 35
+                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                                }`}>
+                                  {retPct}% retained
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-black text-emerald-300">
+                                {avgBuy > 0 ? `Rs. ${avgBuy.toFixed(2)}` : '—'}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-300">
+                                {avgSell > 0 ? `Rs. ${avgSell.toFixed(2)}` : '—'}
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-200">
+                                {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
+                              </td>
+                              <td className="p-3 text-center text-slate-400">
+                                {s.activeSessions || '—'} sessions
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedStockRetention(s.symbol);
+                                    setRetentionViewType('byStock');
+                                    loadStockRetention(s.symbol);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                                >
+                                  Stock Desk
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards */}
+                  <div className="sm:hidden space-y-2.5">
+                    {brokerRetentionData.topHoldings.slice(0, 10).map((s: any, idx: number) => {
+                      const netKitta = Number(s.cumHoldQty || s.netQty || 0);
+                      const retPct = s.retentionPct ?? 0;
+                      const avgBuy = Number(s.avgBuyRate || 0);
+                      const avgSell = Number(s.avgSellRate || 0);
+                      const netAmt = Number(s.netAmt || (netKitta * avgBuy) || 0);
+
+                      return (
+                        <div
+                          key={`m_bh_${s.symbol}_${idx}`}
+                          className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
+                              <span className="font-extrabold text-white text-base font-mono">{s.symbol}</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                              {retPct}% retained
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
+                            <div>
+                              <div className="text-[10px] text-slate-400 font-sans">Net Retained Kitta</div>
+                              <div className="font-mono text-base font-black text-emerald-400">
+                                +{netKitta.toLocaleString()} <span className="text-[10px] opacity-80">kitta</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] text-slate-400 font-sans">Avg Buy Price</div>
+                              <div className="font-mono text-xs font-bold text-emerald-400">
+                                {avgBuy > 0 ? `Rs. ${avgBuy.toFixed(2)}` : '—'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/50">
+                            <span>Avg Sell: {avgSell > 0 ? `Rs. ${avgSell.toFixed(2)}` : '—'}</span>
+                            <span className="text-slate-300 font-bold font-sans">
+                              {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            /* ── PERSPECTIVE A: STOCK'S TOP 10 BROKERS HELD TILL NOW ── */
+            <>
+              {/* Stock Selector & Search Toolbar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 shadow-md">
+            {/* Left: Input box & Popular pills */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+              <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 focus-within:border-cyan-500">
+                <Search size={14} className="text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={stockRetentionInput}
+                  onChange={(e) => setStockRetentionInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && stockRetentionInput.trim()) {
+                      setSelectedStockRetention(stockRetentionInput.trim());
+                      loadStockRetention(stockRetentionInput.trim());
+                    }
+                  }}
+                  placeholder="Enter symbol (e.g. BARUN, LBBL)…"
+                  className="bg-transparent text-xs text-white placeholder:text-slate-500 outline-none w-48 font-mono font-bold"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (stockRetentionInput.trim()) {
+                      setSelectedStockRetention(stockRetentionInput.trim());
+                      loadStockRetention(stockRetentionInput.trim());
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold bg-cyan-600 hover:bg-cyan-500 text-white transition cursor-pointer"
+                >
+                  Analyze
+                </button>
+              </div>
+
+              {/* Popular quick-pick stock chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
+                <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Popular:</span>
+                {['BARUN', 'LBBL', 'GBIME', 'NICA', 'SHIVM', 'CHCL', 'CIT', 'HDL'].map((sym) => (
+                  <button
+                    key={sym}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStockRetention(sym);
+                      loadStockRetention(sym);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-mono font-black transition cursor-pointer ${
+                      selectedStockRetention === sym
+                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                        : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {sym}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Actions (Refresh & Copy Social Card) */}
+            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => loadStockRetention(selectedStockRetention, true)}
+                disabled={loadingRetention}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 transition cursor-pointer disabled:opacity-50"
+                title="Force recompute all-time broker holdings from latest floorsheets"
+              >
+                <RefreshCw size={13} className={loadingRetention ? 'animate-spin text-cyan-400' : ''} />
+                <span>{loadingRetention ? 'Refreshing…' : 'Refresh'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyStockRetentionCard}
+                disabled={!stockRetentionData}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-900/40 transition cursor-pointer disabled:opacity-50"
+                title="Copy ready-to-share Telegram / Facebook text card"
+              >
+                {copiedRetentionCard ? (
+                  <>
+                    <Check size={14} className="text-white" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={14} />
+                    <span>Copy Retention Card</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Quick HUD Metrics */}
+          {stockRetentionData && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Stock Under Surveillance</div>
+                <div className="text-lg font-black text-cyan-400 font-mono mt-0.5 flex items-center gap-1.5">
+                  <span>{selectedStockRetention}</span>
+                  <span className="text-[11px] font-sans text-slate-400 font-normal">All-Time</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  {stockRetentionData.totalSessions || 38} Ingested Sessions
+                </div>
+              </div>
+
+              <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Total Retained Shares</div>
+                <div className="text-lg font-black text-emerald-400 font-mono mt-0.5">
+                  +{Number(stockRetentionData.totalSharesHeldTillNow || 0).toLocaleString()} <span className="text-xs font-sans text-emerald-500 font-normal">kitta</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  By all net accumulator desks
+                </div>
+              </div>
+
+              <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Active Retaining Desks</div>
+                <div className="text-lg font-black text-purple-400 font-mono mt-0.5">
+                  {Array.isArray(stockRetentionData.topHoldings) ? stockRetentionData.topHoldings.length : 0} <span className="text-xs font-sans text-purple-300 font-normal">Brokers</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  Positive net position held
+                </div>
+              </div>
+
+              <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-sans font-bold">Top 3 Dominance Share</div>
+                <div className="text-lg font-black text-amber-400 font-mono mt-0.5">
+                  {Array.isArray(stockRetentionData.topHoldings)
+                    ? (
+                        stockRetentionData.topHoldings
+                          .slice(0, 3)
+                          .reduce((acc: number, x: any) => acc + (x.holdingSharePct || 0), 0)
+                      ).toFixed(1)
+                    : 0}%
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  Concentration in Top 3 Desks
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Table / Cards View */}
+          {loadingRetention ? (
+            <div className="py-16 flex flex-col items-center justify-center gap-3 bg-slate-950/40 rounded-2xl border border-slate-800">
+              <Spinner size="lg" />
+              <p className="text-xs text-slate-400 font-mono">Aggregating all-time broker holdings across 38+ floorsheets…</p>
+            </div>
+          ) : !stockRetentionData || !Array.isArray(stockRetentionData.topHoldings) || stockRetentionData.topHoldings.length === 0 ? (
+            <div className="py-16 text-center bg-slate-950/40 rounded-2xl border border-slate-800 text-slate-400 text-xs font-sans">
+              No all-time broker holding records found for <span className="font-bold text-white">{selectedStockRetention}</span>.
+            </div>
+          ) : (
+            <>
+              {/* Desktop & Tablet Table */}
+              <div className="hidden sm:block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="p-3 w-12 text-center">#</th>
+                      <th className="p-3">Broker Desk</th>
+                      <th className="p-3 text-right">Net Retained Kitta</th>
+                      <th className="p-3 text-center">Net Retention %</th>
+                      <th className="p-3 text-center">Holding Share %</th>
+                      <th className="p-3 text-right">Avg. Buy Price</th>
+                      <th className="p-3 text-right">Avg. Sell Price</th>
+                      <th className="p-3 text-right">Total Net Capital</th>
+                      <th className="p-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {stockRetentionData.topHoldings.slice(0, 10).map((b: any, idx: number) => {
+                      const brokerId = b.brokerId || b.id;
+                      const brokerName = b.brokerName || b.name || `Broker ${brokerId}`;
+                      const netKitta = Number(b.netQty || b.holdQty || 0);
+                      const retPct = b.retentionPct ?? 0;
+                      const sharePct = b.holdingSharePct ?? 0;
+                      const avgBuy = Number(b.avgBuyRate || 0);
+                      const avgSell = Number(b.avgSellRate || 0);
+                      const netAmt = Number(b.netAmt || b.holdAmt || 0);
+
+                      return (
+                        <tr
+                          key={`ret_${brokerId}_${idx}`}
+                          className="hover:bg-slate-900/60 transition group cursor-pointer"
+                          onClick={() => {
+                            const found = brokerFlowList.find(bf => bf.brokerId === String(brokerId));
+                            if (found) setSelectedBrokerModal(found);
+                          }}
+                        >
+                          <td className="p-3 text-center">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
+                              idx === 0
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                : idx === 1
+                                ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
+                                : idx === 2
+                                ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
+                                : 'text-slate-500'
+                            }`}>
+                              {idx + 1}
+                            </span>
+                          </td>
+                          <td className="p-3 font-sans">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-lg text-xs font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                Broker {brokerId}
+                              </span>
+                              <span className="text-slate-200 text-xs font-bold truncate max-w-[180px]">
+                                {brokerName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-black text-emerald-400">
+                            +{netKitta.toLocaleString()} <span className="text-[10px] text-emerald-500/80 font-normal">kitta</span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
+                              retPct >= 70
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : retPct >= 40
+                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                            }`}>
+                              {retPct}% retained
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                              {sharePct}% share
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-black text-emerald-300">
+                            {avgBuy > 0 ? `Rs. ${avgBuy.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="p-3 text-right font-bold text-slate-300">
+                            {avgSell > 0 ? `Rs. ${avgSell.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="p-3 text-right font-bold text-slate-200">
+                            {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const found = brokerFlowList.find(bf => bf.brokerId === String(brokerId));
+                                if (found) setSelectedBrokerModal(found);
+                              }}
+                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                            >
+                              Desk Profile
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="sm:hidden space-y-2.5">
+                {stockRetentionData.topHoldings.slice(0, 10).map((b: any, idx: number) => {
+                  const brokerId = b.brokerId || b.id;
+                  const brokerName = b.brokerName || b.name || `Broker ${brokerId}`;
+                  const netKitta = Number(b.netQty || b.holdQty || 0);
+                  const retPct = b.retentionPct ?? 0;
+                  const sharePct = b.holdingSharePct ?? 0;
+                  const avgBuy = Number(b.avgBuyRate || 0);
+                  const avgSell = Number(b.avgSellRate || 0);
+                  const netAmt = Number(b.netAmt || b.holdAmt || 0);
+
+                  return (
+                    <div
+                      key={`m_ret_${brokerId}_${idx}`}
+                      className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
+                      onClick={() => {
+                        const found = brokerFlowList.find(bf => bf.brokerId === String(brokerId));
+                        if (found) setSelectedBrokerModal(found);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
                           <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-black ${
                             idx === 0
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -2704,117 +3959,70 @@ export function BrokerFlowDominanceService({
                               ? 'bg-slate-400/20 text-slate-300 border border-slate-400/40'
                               : idx === 2
                               ? 'bg-amber-700/20 text-amber-500 border border-amber-700/40'
-                              : 'text-slate-500'
+                              : 'bg-slate-800 text-slate-400'
                           }`}>
-                            {idx + 1}
+                            #{idx + 1}
                           </span>
-                        </td>
-                        <td className="p-3 font-sans">
-                          <span className="font-black text-white text-sm group-hover:text-blue-400 transition">
-                            {item.symbol}
+                          <span className="font-mono font-bold text-cyan-300 text-sm">
+                            Broker {brokerId}
                           </span>
-                        </td>
-                        <td className="p-3 font-sans">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
-                              brokerWiseTab === 'sellers'
-                                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
-                                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                            }`}>
-                              Broker {brokerId}
-                            </span>
-                            <span className="text-slate-300 text-xs truncate max-w-[160px]">
-                              {item.brokerName}
-                            </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black font-mono bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                          {sharePct}% share
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-slate-300 font-semibold truncate">
+                        {brokerName}
+                      </div>
+
+                      {/* Net Kitta & Retention Box */}
+                      <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] text-slate-400 font-sans">Net Bought Kitta (Retained)</div>
+                          <div className="font-mono text-base font-black text-emerald-400">
+                            +{netKitta.toLocaleString()} <span className="text-[10px] opacity-80">kitta</span>
                           </div>
-                        </td>
-                        <td className="p-3 text-right font-bold text-slate-200">
-                          {Number(item.qty).toLocaleString()}
-                        </td>
-                        <td className="p-3 text-right font-black">
-                          <span className={`text-sm ${brokerWiseTab === 'sellers' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                            {formatNepaliCurrency(item.amount)}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right font-bold text-slate-300">
-                          Rs. {Number(item.avgRate || 0).toFixed(2)}
-                        </td>
-                        <td className="p-3 text-center font-sans">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                            isTop3
-                              ? brokerWiseTab === 'sellers'
-                                ? 'bg-rose-950/60 text-rose-300 border-rose-700/60'
-                                : 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
-                              : 'bg-slate-900 text-slate-400 border-slate-800'
-                          }`}>
-                            {brokerWiseTab === 'sellers' ? 'Heavy Dump' : 'Aggressive Accum.'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Card View */}
-          <div className="sm:hidden space-y-2.5">
-            {brokerWiseLeaderboard.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
-                No broker-wise records available for this session.
-              </div>
-            ) : (
-              brokerWiseLeaderboard.map((item, idx) => {
-                const brokerId = brokerWiseTab === 'sellers' ? item.sellerBroker : item.buyerBroker;
-                return (
-                  <div
-                    key={`m_${item.symbol}_${brokerId}_${idx}`}
-                    className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-2.5 shadow-sm"
-                    onClick={() => {
-                      const found = brokerFlowList.find(b => b.brokerId === brokerId);
-                      if (found) setSelectedBrokerModal(found);
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
-                        <span className="font-extrabold text-white text-sm">{item.symbol}</span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono border ${
-                        brokerWiseTab === 'sellers'
-                          ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
-                          : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        Broker {brokerId}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400 truncate">
-                      {item.brokerName}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/70 text-xs font-mono">
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-sans">Qty</div>
-                        <div className="font-bold text-slate-200">{Number(item.qty).toLocaleString()}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-sans">Amount</div>
-                        <div className={`font-black ${brokerWiseTab === 'sellers' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                          {formatNepaliCurrency(item.amount)}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] text-slate-400 font-sans">Net Retention Rate</div>
+                          <div className="font-mono text-xs font-bold text-cyan-400">
+                            {retPct}% retained
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-400 font-sans">Avg Rate</div>
-                        <div className="font-bold text-slate-300">Rs. {Number(item.avgRate || 0).toFixed(2)}</div>
+
+                      {/* Rates & Volume Breakdown */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/70 text-xs font-mono">
+                        <div>
+                          <div className="text-[10px] text-slate-400 font-sans">Avg Buy Price</div>
+                          <div className="font-bold text-emerald-400">
+                            {avgBuy > 0 ? `Rs. ${avgBuy.toFixed(2)}` : '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-400 font-sans">Avg Sell Price</div>
+                          <div className="font-bold text-slate-300">
+                            {avgSell > 0 ? `Rs. ${avgSell.toFixed(2)}` : '—'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Volume Breakdown & Capital Footer */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/50">
+                        <span>Buy: {Number(b.buyQty || 0).toLocaleString()} | Sell: {Number(b.sellQty || 0).toLocaleString()}</span>
+                        <span className="text-slate-300 font-bold font-sans">
+                          {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
+                        </span>
                       </div>
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+            </>
+          )}
         </div>
       )}
 
@@ -2869,7 +4077,7 @@ export function BrokerFlowDominanceService({
             <div className="p-3 sm:p-4 overflow-y-auto flex-1 scrollbar-thin">
               <div className="flex flex-col gap-2 mb-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
                     <button
                       type="button"
                       onClick={() => setModalTab('accumulation')}
@@ -2891,6 +4099,17 @@ export function BrokerFlowDominanceService({
                       }`}
                     >
                       🔴 Top 10 Distribution
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab('holding_till_now')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        modalTab === 'holding_till_now'
+                          ? 'bg-cyan-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      💎 Net Holding Till Now
                     </button>
                   </div>
                   <div className="flex items-center gap-1 flex-wrap">
@@ -2934,7 +4153,9 @@ export function BrokerFlowDominanceService({
 
               {(() => {
                 const scripsToShow = (
-                  modalTab === 'accumulation'
+                  modalTab === 'holding_till_now'
+                    ? (selectedBrokerModal.topHoldingsTillNow || selectedBrokerModal.scrips?.filter((s: any) => (s.cumHoldQty || 0) > 0).sort((a: any, b: any) => (b.cumHoldQty || 0) - (a.cumHoldQty || 0)) || [])
+                    : modalTab === 'accumulation'
                     ? (rankingMetric === 'net_qty'
                         ? (selectedBrokerModal.topByNetQty || selectedBrokerModal.topAccumulation || [])
                         : rankingMetric === 'gross_buy_amount'

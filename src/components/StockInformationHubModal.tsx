@@ -73,7 +73,7 @@ export interface StockInformationHubModalProps {
   broker5DPayload?: unknown;
   rawFundamentals?: RawFundamentalRecord | null;
   corporateActions?: CorporateActionRow[];
-  peerStocks?: PeerStockRow[];
+  peerStocks?: PeerStockRow[];  initialTab?: StockInfoTabKey;
   onOpenAdvancedChart?: (symbol: string) => void;
   onClose?: () => void;
 }
@@ -247,11 +247,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   broker5DPayload = null,
   rawFundamentals = null,
   corporateActions = [],
-  peerStocks = [],
+  peerStocks = [],  initialTab = "OVERVIEW",
   onOpenAdvancedChart,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<StockInfoTabKey>("OVERVIEW");
+  const [activeTab, setActiveTab] = useState<StockInfoTabKey>(initialTab);
 
   // Floorsheet Filters
   const [whaleOnlyFilter, setWhaleOnlyFilter] = useState(false);
@@ -405,11 +405,11 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   useEffect(() => {
     let active = true;
     if (!resolvedSymbol) return;
-    fetchFromBackend(`/api/stock/${encodeURIComponent(resolvedSymbol)}/smart-money?days=all`, 12000)
+    fetchFromBackend(`/api/stocks/${encodeURIComponent(resolvedSymbol)}/smart-money?days=all`, 12000)
       .then((res: any) => {
         if (!active || !res) return;
         const payload = res.data || res;
-        const list = payload?.allHoldings || payload?.allBrokers || payload?.brokers || [];
+        const list = payload?.allHoldings || payload?.allBrokers || payload?.brokers || payload?.sessions || [];
         if (Array.isArray(list) && list.length > 0) {
           setInternalHoldings(list);
         }

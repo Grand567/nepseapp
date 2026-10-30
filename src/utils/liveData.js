@@ -2984,7 +2984,9 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
               allBrokers: dataObj.allBrokers || dataObj.brokers || []
             };
             map[normKey] = enrichedObj;
-            realBrokerAnalysisCache.set(normKey, enrichedObj);
+            if (numDays === 1 && !options?.date) {
+              realBrokerAnalysisCache.set(normKey, enrichedObj);
+            }
             setCachedRealBrokerAnalysis(normKey, enrichedObj, numDays, options);
           }
         }
@@ -3056,7 +3058,9 @@ export async function fetchMarketWideBrokerSummaryMap(days = 1, options = {}) {
             marketWideBrokerSummaryMapCaches.set(cacheKey, cacheEntry);
             bulkSetCachedBrokerData(map);
             for (const [symKey, dataObj] of Object.entries(map)) {
-              realBrokerAnalysisCache.set(symKey, dataObj);
+              if (numDays === 1 && !options?.date) {
+                realBrokerAnalysisCache.set(symKey, dataObj);
+              }
               setCachedRealBrokerAnalysis(symKey, dataObj, numDays, options);
             }
             return map;
@@ -3153,11 +3157,11 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
           totalSellVolume: fd.totalVolume,
           totalVolume: fd.totalVolume,
           totalTurnover: fd.totalTurnover,
-          bcr3BuyPct: fd.grossBuyConcentrationPct || 0,
-          bcr3SellPct: fd.grossSellConcentrationPct || 0,
-          bcr5BuyPct: fd.bcr5NetPct || 0,
-          bcr5NetPct: fd.bcr5NetPct || 0,
-          scr3NetPct: fd.scr3NetPct || 0,
+          bcr3BuyPct: fd.bcr3BuyPct ?? fd.grossBuyConcentrationPct ?? 0,
+          bcr3SellPct: fd.scr3SellPct ?? fd.bcr3SellPct ?? fd.grossSellConcentrationPct ?? 0,
+          bcr5BuyPct: fd.bcr5BuyPct ?? fd.bcr5NetPct ?? 0,
+          bcr5NetPct: fd.bcr5NetPct ?? 0,
+          scr3NetPct: fd.scr3NetPct ?? 0,
           grossBuyConcentrationPct: fd.grossBuyConcentrationPct,
           grossSellConcentrationPct: fd.grossSellConcentrationPct,
           smartMoneyNetFlowPct: fd.smartMoneyNetFlowPct,

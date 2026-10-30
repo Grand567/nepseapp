@@ -403,10 +403,15 @@ export function rebuildSignalTrackRecord(db, HOT_CACHE, options = {}) {
     return null;
   }
 
-  // Fast-Path: If algorithmic_signal_ledger already has computed signals and force is not set,
-  // load the precomputed signals directly from SQLite in ~3ms without allocating 365k broker rows in V8 heap.
-  const existingCount = db.prepare("SELECT COUNT(*) as c FROM algorithmic_signal_ledger").get()?.c || 0;
-  if (existingCount > 0 && !options.force) {
+  // Fast-Path: If algorithmic_signal_ledger already has computed signals AND covers the latest trading session
+  // in daily_stock_summary (and force is not set), load the precomputed signals directly from SQLite in ~3ms.
+  // If new trading sessions have been ingested (latestSummaryDate > latestSignalEvalDate), automatically
+  // force a walk-forward rebuild so new signals and forward T+2 exits roll forward automatically!
+  const existingMeta = db.prepare("SELECT COUNT(*) as c, MAX(signal_date) as maxSigDate, MAX(COALESCE(exit_date, signal_date)) as maxEvalDate FROM algorithmic_signal_ledger").get();
+  const existingCount = existingMeta?.c || 0;
+  const latestSummaryDate = dates[dates.length - 1] || '';
+  const isUpToDateWithLedger = existingMeta?.maxEvalDate >= latestSummaryDate || existingMeta?.maxSigDate >= latestSummaryDate;
+  if (existingCount > 0 && isUpToDateWithLedger && !options.force) {
     const signals = db.prepare("SELECT * FROM algorithmic_signal_ledger").all();
     return finalizeSignalTrackRecord(db, HOT_CACHE, signals, dates, t0);
   }

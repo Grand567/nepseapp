@@ -526,9 +526,10 @@ router.get(["/radar/early-ignition", "/early-ignition"], handleEarlyIgnition);
  */
 export async function handleSignalTrackRecord(req, res) {
   await ensureHotCacheReady();
-  if (!HOT_CACHE.signalTrackRecord || !HOT_CACHE.signalTrackRecord.signals?.length) {
+  const forceRebuild = req.query.force === "true" || req.query.rebuild === "true";
+  if (forceRebuild || !HOT_CACHE.signalTrackRecord || !HOT_CACHE.signalTrackRecord.signals?.length) {
     try {
-      rebuildSignalTrackRecord(db, HOT_CACHE);
+      rebuildSignalTrackRecord(db, HOT_CACHE, { force: forceRebuild });
     } catch (err) {
       console.warn("[RadarRoutes] On-demand rebuildSignalTrackRecord failed:", err.message);
     }
@@ -958,7 +959,7 @@ router.get("/diagnostics/:symbol", async (req, res) => {
       const fullHistory = getSymbolHistoryFromDb(symbol, 40);
       let filteredHistory = fullHistory;
       if (reqDate) {
-        filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) === reqDate);
+        filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) <= reqDate).slice(0, validDays);
       } else if (fromDate && toDate) {
         filteredHistory = fullHistory.filter(d => {
           const dt = d.date || d.trade_date;
@@ -966,7 +967,8 @@ router.get("/diagnostics/:symbol", async (req, res) => {
         });
       }
       if (filteredHistory && filteredHistory.length > 0) {
-        const diag = calculateMultiDayDiagnostics(filteredHistory, filteredHistory.length);
+        const diagDays = reqDate ? validDays : filteredHistory.length;
+        const diag = calculateMultiDayDiagnostics(filteredHistory, diagDays);
         if (diag) {
           data = { symbol, ...diag, availableDates: storedDates.slice(0, 30) };
         }

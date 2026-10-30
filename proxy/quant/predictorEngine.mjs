@@ -786,6 +786,14 @@ export async function scoreAllStocks(stocksList = []) {
       }
     }
 
+    // Re-apply Hard Trend Ceiling (50 EMA) & Distribution Trap Veto AFTER all bonuses
+    if (hardCeilingApplied) {
+      score = Math.min(48, score);
+    }
+    if (isDistributionTrap) {
+      score = Math.min(score, 42);
+    }
+
     // Clamp score
     const compositeScore = Math.max(8, Math.min(98, Math.round(score)));
 
@@ -849,8 +857,11 @@ export async function scoreAllStocks(stocksList = []) {
       rsi_14: feat.rsi_14,
       macd_signal: feat.macd_signal,
       obv_trend: feat.obv_trend,
+      ema50,
       is_above_50_ema: isAbove50EMA,
+      isAbove50EMA: isAbove50EMA,
       hard_ceiling_applied: hardCeilingApplied,
+      hardCeilingApplied: hardCeilingApplied,
       liquidity_score: liquidityScore,
       float_risk_flag: floatRiskFlag,
       corporate_action_flag: feat.corporate_action_flag,

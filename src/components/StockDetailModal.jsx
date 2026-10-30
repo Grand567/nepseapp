@@ -2084,7 +2084,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
         fetchBrokerAnalysisData(brokerDays, brokerDate);
       }
     }
-    if ((activeTab === 'floorsheet' || activeTab === 'depth_broker') && d?.symbol) {
+    if ((activeTab === 'floorsheet' || activeTab === 'depth_broker' || activeTab === 'volume_profile') && d?.symbol) {
       if (!realFloorsheet || !realFloorsheet.rows || realFloorsheet.rows.length < 15) {
         fetchFloorsheetData(1);
       }
@@ -2789,8 +2789,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
 
   // ── Category Definitions for Organized Navigation (Share Hub, Zerodha Kite & Groww Reference) ──
   const tabCategories = useMemo(() => [
-    { id: 'all', label: 'All Tabs', count: 12 },
-    { id: 'trading', label: '⚡ Trading & Flow', count: 6 },
+    { id: 'all', label: 'All Tabs', count: 13 },
+    { id: 'trading', label: '⚡ Trading & Flow', count: 7 },
     { id: 'financials', label: '📑 Financials', count: 4 },
     { id: 'tools', label: '🧠 Analytics & AI', count: 2 }
   ], []);
@@ -6107,6 +6107,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
             <div style={{ minHeight: 320 }}>
               <StockInformationHubModal
                 symbol={d.symbol}
+                initialTab="VOLUME_PROFILE"
                 selectedScrip={d}
                 quoteData={d}
                 historicalCandles={realPriceHistory || history || []}

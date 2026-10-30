@@ -811,8 +811,8 @@ export async function computeStockFeatures(symbol, days = 30, stockData = null) 
 
     // ── EMA 50 Structural Calculation ──────────────────────────────────────
     let ema50 = Number(stockData.ema50 || stockData.sma50 || 0);
-    if (!ema50 && histCloses.length >= 50) {
-      ema50 = computeEMA(histCloses, 50);
+    if (!ema50 && histCloses.length >= 15) {
+      ema50 = computeEMA(histCloses, Math.min(50, histCloses.length));
     }
     const isAbove50EMA = ema50 > 0 ? ltp >= ema50 : null;
 

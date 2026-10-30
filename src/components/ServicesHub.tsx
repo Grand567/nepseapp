@@ -118,6 +118,8 @@ const COLORS: Record<string, { bg: string; border: string; text: string }> = {
   teal: { bg: 'rgba(20,184,166,0.12)', border: 'rgba(20,184,166,0.35)', text: '#2dd4bf' },
   blue: { bg: 'rgba(59,130,246,0.14)', border: 'rgba(59,130,246,0.35)', text: '#60a5fa' },
   orange: { bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.35)', text: '#fb923c' },
+  amber: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)', text: '#fbbf24' },
+  indigo: { bg: 'rgba(99,102,241,0.14)', border: 'rgba(99,102,241,0.35)', text: '#818cf8' },
 };
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -792,14 +794,14 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'sector-rotation': SectorHeatmapService,
   'sector-wise-ad': SectorHeatmapService,
   'broker-heatmap': BrokerHeatmapService,
-  'top-gainers': () => <TopPerformersService type="gainers" />,
-  'top-losers': () => <TopPerformersService type="losers" />,
-  'volume-leaders': () => <TopPerformersService type="volume" />,
-  'top-volume': () => <TopPerformersService type="volume" />,
-  'turnover-leaders': () => <TopPerformersService type="turnover" />,
-  'top-turnover': () => <TopPerformersService type="turnover" />,
-  'top-transactions': () => <TopPerformersService type="transactions" />,
-  'top-traded': () => <TopPerformersService type="transactions" />,
+  'top-gainers': (props: any) => <TopPerformersService type="gainers" {...props} />,
+  'top-losers': (props: any) => <TopPerformersService type="losers" {...props} />,
+  'volume-leaders': (props: any) => <TopPerformersService type="volume" {...props} />,
+  'top-volume': (props: any) => <TopPerformersService type="volume" {...props} />,
+  'turnover-leaders': (props: any) => <TopPerformersService type="turnover" {...props} />,
+  'top-turnover': (props: any) => <TopPerformersService type="turnover" {...props} />,
+  'top-transactions': (props: any) => <TopPerformersService type="transactions" {...props} />,
+  'top-traded': (props: any) => <TopPerformersService type="transactions" {...props} />,
   'market-depth': MarketDepthService,
   'volume-spread': () => (
     <UniversalScreener filterFn={(s) => s.high && s.low && s.ltp > 0} sortFn={(a, b) => {
@@ -1004,8 +1006,11 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       customCols={[
         { key: 'high', label: 'High', align: 'right' },
         { key: 'low', label: 'Low', align: 'right' },
+        { key: 'pivotP', label: 'Pivot (P)', align: 'right', bold: true, format: (_v, r) => ((Number(r.high) + Number(r.low) + Number(r.ltp)) / 3).toFixed(2) },
+        { key: 'pivotR1', label: 'R1', align: 'right', format: (_v, r) => { const p = (Number(r.high) + Number(r.low) + Number(r.ltp)) / 3; return (2 * p - Number(r.low)).toFixed(2); }, colorFn: () => '#34d399' },
+        { key: 'pivotS1', label: 'S1', align: 'right', format: (_v, r) => { const p = (Number(r.high) + Number(r.low) + Number(r.ltp)) / 3; return (2 * p - Number(r.high)).toFixed(2); }, colorFn: () => '#fb7185' },
       ]}
-      banner={{ text: 'Classic pivot inputs (H/L/C) for tomorrow’s R1–S1 levels.' }}
+      banner={{ text: 'Classic Floor Trader Pivot Points (P, R1, S1) derived from session High, Low, and Close.' }}
       insight="Trade rejections at pivots; trade breaks only with volume." />
   ),
   'macd-signal': () => (

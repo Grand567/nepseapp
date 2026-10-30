@@ -288,14 +288,17 @@ export function AlgorithmicSignalTrackRecord({
   };
 
   // Fetch signals if propSignals not provided
-  const fetchTrackRecord = async () => {
+  const fetchTrackRecord = async (forceRebuild = false) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       setIsRefreshing(true);
       setError(null);
       const base = getProxyBase() || '';
-      const res = await fetch(`${base}/api/radar/signal-track-record`, {
+      const url = forceRebuild
+        ? `${base}/api/radar/signal-track-record?force=true`
+        : `${base}/api/radar/signal-track-record`;
+      const res = await fetch(url, {
         signal: controller.signal,
         headers: { Accept: 'application/json' }
       });
@@ -488,6 +491,10 @@ export function AlgorithmicSignalTrackRecord({
             if (!st.startsWith('WIN') && st !== 'TARGET_HIT' && st !== 'RATCHET_STOP_WIN') return false;
           } else if (selectedStatus === 'ACTIVE') {
             if (st !== 'ACTIVE' && st !== 'OPEN_ACTIVE') return false;
+          } else if (selectedStatus === 'TARGET_HIT') {
+            if (st !== 'TARGET_HIT' && st !== 'WIN_T1' && st !== 'WIN_T2') return false;
+          } else if (selectedStatus === 'RATCHET_STOP_WIN') {
+            if (st !== 'RATCHET_STOP_WIN' && st !== 'WIN_RATCHET_STOP') return false;
           } else if (selectedStatus === 'STOP_LOSS') {
             if (st !== 'STOP_LOSS' && st !== 'STOPPED_OUT') return false;
           } else if (selectedStatus === 'TIME_STOP_STALE') {
@@ -709,7 +716,7 @@ export function AlgorithmicSignalTrackRecord({
 
         <button
           type="button"
-          onClick={onRebuildTrackRecord || fetchTrackRecord}
+          onClick={() => (onRebuildTrackRecord ? onRebuildTrackRecord() : fetchTrackRecord(true))}
           disabled={isRebuilding || isRefreshing}
           className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition disabled:opacity-50 flex items-center gap-1.5"
         >

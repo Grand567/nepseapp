@@ -631,11 +631,11 @@ export function AccumulationDistributionRadar({
 
   const handleRadarTimeframeChange = async (d: number) => {
     setRadarDays(d);
-    setRadarDate('');
+    setDiagnosticDays(d);
     setIsRecalculatingTimeframe(true);
     setLoading(true);
     try {
-      const fastRadar = await fetchPrecomputedRadar(d).catch(() => null);
+      const fastRadar = !radarDate ? await fetchPrecomputedRadar(d).catch(() => null) : null;
       if (fastRadar?.success) {
         if (typeof fastRadar.loadedTradingDays === 'number') {
           setLoadedTradingDays(fastRadar.loadedTradingDays);
@@ -678,7 +678,7 @@ export function AccumulationDistributionRadar({
         }
         setStockBrokerDataMap(prev => ({ ...prev, ...brokerMap }));
       } else {
-        const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { refresh: true });
+        const brokerMap = await fetchMarketWideBrokerSummaryMap(d, { date: radarDate || undefined, refresh: true });
         if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
           const mapWithKeys: Record<string, any> = {};
           for (const [k, v] of Object.entries(brokerMap)) {
@@ -692,7 +692,7 @@ export function AccumulationDistributionRadar({
 
       if (selectedStockSymbol) {
         const symU = selectedStockSymbol.toUpperCase();
-        const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d).catch(() => null);
+        const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d, radarDate ? { date: radarDate } : {}).catch(() => null);
         if (diagFast) {
           setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
           if (typeof (diagFast as any).loadedTradingDays === 'number') {
@@ -702,7 +702,7 @@ export function AccumulationDistributionRadar({
             setIsBackfilling(Boolean((diagFast as any).isBackfilling));
           }
         } else {
-          const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true }).catch(() => null);
+          const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { date: radarDate || undefined, refresh: true }).catch(() => null);
           if (res) {
             setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
           }
@@ -721,7 +721,7 @@ export function AccumulationDistributionRadar({
     setDiagnosticLoading(true);
     const symU = selectedStockSymbol.toUpperCase();
     try {
-      const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d).catch(() => null);
+      const diagFast = await fetchPrecomputedDiagnostic(selectedStockSymbol, d, radarDate ? { date: radarDate } : {}).catch(() => null);
       if (diagFast) {
         setStockBrokerDataMap(prev => ({ ...prev, [symU]: diagFast, [`${symU}_${d}`]: diagFast }));
         if (typeof (diagFast as any).loadedTradingDays === 'number') {
@@ -731,7 +731,7 @@ export function AccumulationDistributionRadar({
           setIsBackfilling(Boolean((diagFast as any).isBackfilling));
         }
       } else {
-        const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { refresh: true }).catch(() => null);
+        const res = await fetchRealBrokerAnalysis(selectedStockSymbol, d, { date: radarDate || undefined, refresh: true }).catch(() => null);
         if (res) {
           setStockBrokerDataMap(prev => ({ ...prev, [symU]: res, [`${symU}_${d}`]: res }));
         }
@@ -760,12 +760,14 @@ export function AccumulationDistributionRadar({
       }
       if (selectedStockSymbol) {
         const symU = selectedStockSymbol.toUpperCase().trim();
-        const res = await fetchRealBrokerAnalysis(symU, radarDays, { date: dt, refresh: true }).catch(() => null);
+        const diagFast = await fetchPrecomputedDiagnostic(symU, radarDays, dt ? { date: dt } : {}).catch(() => null);
+        const res = diagFast || await fetchRealBrokerAnalysis(symU, radarDays, { date: dt, refresh: true }).catch(() => null);
         if (res) {
           setStockBrokerDataMap(prev => ({
             ...prev,
             [symU]: res,
-            [`${symU}_${radarDays}`]: res
+            [`${symU}_${radarDays}`]: res,
+            [`${symU}_${diagnosticDays}`]: res
           }));
         }
       }
@@ -799,7 +801,8 @@ export function AccumulationDistributionRadar({
     const now = new Date();
     const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
     const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
-    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const nptDateObj = new Date(now.getTime() + 345 * 60 * 1000);
+    const todayNpt = nptDateObj.toISOString().slice(0, 10);
 
     return Array.from(datesSet)
       .filter(d => !isOngoingMarketSession || d !== todayNpt)
@@ -838,9 +841,34 @@ export function AccumulationDistributionRadar({
               const batchMap: Record<string, any> = {};
               fastR.stocks.forEach((st: any) => {
                 const sSym = (st.symbol || '').toUpperCase().trim();
-                if (sSym && st.brokerData) {
-                  batchMap[sSym] = st.brokerData;
-                  batchMap[`${sSym}_1`] = st.brokerData;
+                if (sSym) {
+                  const entry = st.brokerData || {
+                    symbol: sSym,
+                    bcr3BuyPct: st.grossBuyConcentrationPct || 0,
+                    bcr3SellPct: st.grossSellConcentrationPct || 0,
+                    bcr5BuyPct: st.bcr5NetPct || 0,
+                    bcr5NetPct: st.bcr5NetPct || 0,
+                    scr3NetPct: st.scr3NetPct || 0,
+                    grossBuyConcentrationPct: st.grossBuyConcentrationPct,
+                    grossSellConcentrationPct: st.grossSellConcentrationPct,
+                    smartMoneyNetFlowPct: st.smartMoneyNetFlowPct,
+                    phase: st.phase,
+                    phaseLabel: st.phaseLabel,
+                    bigBrokerVWAP: st.bigBrokerVWAP,
+                    buyZoneMin: st.buyZoneMin,
+                    buyZoneMax: st.buyZoneMax,
+                    entryStatus: st.entryStatus,
+                    totalVolume: st.totalVolume,
+                    totalTurnover: st.totalTurnover,
+                    timeframeDays: st.timeframeDays,
+                    scopeLabel: st.scopeLabel,
+                    topBuyers: st.topBuyers || [],
+                    topSellers: st.topSellers || [],
+                    topBuyerBrokers: st.topBuyers || [],
+                    topSellerBrokers: st.topSellers || []
+                  };
+                  batchMap[sSym] = entry;
+                  batchMap[`${sSym}_1`] = entry;
                 }
               });
               if (Object.keys(batchMap).length > 0) {

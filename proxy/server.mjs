@@ -37,7 +37,7 @@ import {
   db,
 } from './db/ledgerStore.js';
 import { calculateMultiDayDiagnostics } from './utils/microstructureEngine.js';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot, getOrFetchAllTimeBrokerHoldings } from './brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, getBrokerName, BROKER_NAMES, aggregateMarketFloorsheet, getFullSessionFloorsheet, getOrFetchBrokerDeskAnalysis, fetchSymbolTradingDates, aggregateFloorsheetRows, getMarketWideBrokerSummaryMap, getFastVaultSnapshot, getOrFetchAllTimeBrokerHoldings, getBrokerAllTimeTopHoldings } from './brokerVault.mjs';
 import { 
   getActiveSmartAlerts, 
   getSmartAlertHistory, 
@@ -4185,13 +4185,25 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     sessionVwap = Number((vaultData.totalTurnover / vaultData.totalVolume).toFixed(2));
   }
 
-  // Try exact days key, then 30D key, then 15D, 5D, 1D
-  const diag =
-    HOT_CACHE?.stockDiagnostics?.get(`${sym}_${d}`) ||
-    HOT_CACHE?.stockDiagnostics?.get(`${sym}_30`) ||
-    HOT_CACHE?.stockDiagnostics?.get(`${sym}_15`) ||
-    HOT_CACHE?.stockDiagnostics?.get(`${sym}_5`) ||
-    HOT_CACHE?.stockDiagnostics?.get(`${sym}_1`);
+  // Try date-specific SQLite diagnostics first when a specific date is requested, otherwise HOT_CACHE
+  let diag = null;
+  if (date) {
+    try {
+      const fullHistory = getSymbolHistoryFromDb(sym, Math.max(d, 40));
+      const filteredHistory = fullHistory.filter(row => (row.date || row.trade_date) <= date).slice(0, d);
+      if (filteredHistory.length > 0) {
+        diag = calculateMultiDayDiagnostics(filteredHistory, d);
+      }
+    } catch (_) {}
+  }
+  if (!diag) {
+    diag =
+      HOT_CACHE?.stockDiagnostics?.get(`${sym}_${d}`) ||
+      HOT_CACHE?.stockDiagnostics?.get(`${sym}_30`) ||
+      HOT_CACHE?.stockDiagnostics?.get(`${sym}_15`) ||
+      HOT_CACHE?.stockDiagnostics?.get(`${sym}_5`) ||
+      HOT_CACHE?.stockDiagnostics?.get(`${sym}_1`);
+  }
 
   const enriched = {
     ...vaultData,
@@ -4208,26 +4220,26 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
   return {
     ...enriched,
     microstructure30d: diag,
-    phase: enriched.phase || diag.phase,
-    phaseLabel: enriched.phaseLabel || diag.phaseLabel,
-    marketVWAP: enriched.marketVWAP || diag.marketVWAP || sessionVwap,
-    bigBrokerVWAP: enriched.bigBrokerVWAP || diag.bigBrokerVWAP,
-    buyZoneMin: enriched.buyZoneMin ?? diag.buyZoneMin,
-    buyZoneMax: enriched.buyZoneMax ?? diag.buyZoneMax,
-    bcr3NetPct: enriched.bcr3NetPct ?? diag.bcr3NetPct,
-    bcr5NetPct: enriched.bcr5NetPct ?? diag.bcr5NetPct,
-    scr3NetPct: enriched.scr3NetPct ?? diag.scr3NetPct,
-    bcr3BuyPct: enriched.bcr3BuyPct ?? diag.bcr3BuyPct,
-    bcr5BuyPct: enriched.bcr5BuyPct ?? diag.bcr5BuyPct,
-    scr3SellPct: enriched.scr3SellPct ?? diag.scr3SellPct,
+    phase: date ? (diag.phase || enriched.phase) : (enriched.phase || diag.phase),
+    phaseLabel: date ? (diag.phaseLabel || enriched.phaseLabel) : (enriched.phaseLabel || diag.phaseLabel),
+    marketVWAP: date ? (diag.marketVWAP || sessionVwap || enriched.marketVWAP) : (enriched.marketVWAP || diag.marketVWAP || sessionVwap),
+    bigBrokerVWAP: date ? (diag.bigBrokerVWAP || enriched.bigBrokerVWAP) : (enriched.bigBrokerVWAP || diag.bigBrokerVWAP),
+    buyZoneMin: date ? (diag.buyZoneMin ?? enriched.buyZoneMin) : (enriched.buyZoneMin ?? diag.buyZoneMin),
+    buyZoneMax: date ? (diag.buyZoneMax ?? enriched.buyZoneMax) : (enriched.buyZoneMax ?? diag.buyZoneMax),
+    bcr3NetPct: date ? (diag.bcr3NetPct ?? enriched.bcr3NetPct) : (enriched.bcr3NetPct ?? diag.bcr3NetPct),
+    bcr5NetPct: date ? (diag.bcr5NetPct ?? enriched.bcr5NetPct) : (enriched.bcr5NetPct ?? diag.bcr5NetPct),
+    scr3NetPct: date ? (diag.scr3NetPct ?? enriched.scr3NetPct) : (enriched.scr3NetPct ?? diag.scr3NetPct),
+    bcr3BuyPct: date ? (diag.bcr3BuyPct ?? enriched.bcr3BuyPct) : (enriched.bcr3BuyPct ?? diag.bcr3BuyPct),
+    bcr5BuyPct: date ? (diag.bcr5BuyPct ?? enriched.bcr5BuyPct) : (enriched.bcr5BuyPct ?? diag.bcr5BuyPct),
+    scr3SellPct: date ? (diag.scr3SellPct ?? enriched.scr3SellPct) : (enriched.scr3SellPct ?? diag.scr3SellPct),
     isInstitutionalDumping: enriched.isInstitutionalDumping ?? diag.isInstitutionalDumping,
-    adSignal: enriched.adSignal || diag.adSignal,
+    adSignal: date ? (diag.adSignal || enriched.adSignal) : (enriched.adSignal || diag.adSignal),
     adRatio: enriched.adRatio ?? diag.adRatio ?? 0,
     adStrength: enriched.adStrength || diag.adStrength || '0%',
-    topAccumulators: enriched.topAccumulators || diag.topAccumulators,
-    topDistributors: enriched.topDistributors || diag.topDistributors,
-    topAccumulator: enriched.topAccumulator || (diag.topAccumulators?.[0] ? diag.topAccumulators[0].broker : null),
-    topDistributor: enriched.topDistributor || (diag.topDistributors?.[0] ? diag.topDistributors[0].broker : null),
+    topAccumulators: date ? (diag.topAccumulators || enriched.topAccumulators) : (enriched.topAccumulators || diag.topAccumulators),
+    topDistributors: date ? (diag.topDistributors || enriched.topDistributors) : (enriched.topDistributors || diag.topDistributors),
+    topAccumulator: date ? (diag.topAccumulators?.[0]?.brokerId || diag.topAccumulators?.[0]?.broker || enriched.topAccumulator) : (enriched.topAccumulator || (diag.topAccumulators?.[0] ? (diag.topAccumulators[0].brokerId || diag.topAccumulators[0].broker) : null)),
+    topDistributor: date ? (diag.topDistributors?.[0]?.brokerId || diag.topDistributors?.[0]?.broker || enriched.topDistributor) : (enriched.topDistributor || (diag.topDistributors?.[0] ? (diag.topDistributors[0].brokerId || diag.topDistributors[0].broker) : null)),
   };
 }
 
@@ -4302,7 +4314,38 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
     if (cached) return res.json({ success: true, data: enrichWithMicrostructure(symbol, days, cached, date), cached: true });
   }
 
-  // Tier 1: Authentic Multi-Date Broker Vault (Chukul Date-Wise + ShareSansar + Persistent File Cache)
+  // Tier 1.0: Query verified SQLite ledger first when <= 40 days (contains 27 trading days with 100% 3-way conservation)
+  if (days <= 40) {
+    try {
+      const fullHistory = getSymbolHistoryFromDb(symbol, Math.max(days, 40));
+      let filteredHistory = fullHistory;
+      if (date) {
+        filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) <= date).slice(0, days);
+      } else if (fromDate && toDate) {
+        filteredHistory = fullHistory.filter(d => {
+          const dt = d.date || d.trade_date;
+          return dt >= fromDate && dt <= toDate;
+        });
+      } else {
+        filteredHistory = fullHistory.slice(0, days);
+      }
+      // Verify the requested specific date is present when `date` is provided
+      const hasRequestedDate = !date || filteredHistory.some(d => (d.date || d.trade_date) === date);
+      if (filteredHistory && filteredHistory.length > 0 && hasRequestedDate) {
+        const diagDays = (fromDate && toDate) ? filteredHistory.length : days;
+        const diag = calculateMultiDayDiagnostics(filteredHistory, diagDays);
+        if (diag && (diag.brokers?.length > 0 || diag.allBrokers?.length > 0)) {
+          const enrichedDb = enrichWithMicrostructure(symbol, days, diag, date);
+          setCache(cacheKey, enrichedDb, 10 * 60 * 1000);
+          return res.json({ success: true, data: enrichedDb, source: 'sqlite_ledger_verified' });
+        }
+      }
+    } catch (dbErr) {
+      console.warn(`[broker-analysis] SQLite ledger primary lookup error for ${symbol}:`, dbErr.message);
+    }
+  }
+
+  // Tier 1.5: Authentic Multi-Date Broker Vault (Chukul Date-Wise + ShareSansar + Persistent File Cache)
   try {
     let vaultData = null;
     const isMultiDay = days >= 15 && !date && !fromDate && !toDate;
@@ -4360,18 +4403,21 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
 
   // Tier 1.5: Query verified SQLite ledger (contains 365,159 records across 32 days for all 367 stocks)
   try {
-    const fullHistory = getSymbolHistoryFromDb(symbol, Math.max(days, 30));
+    const fullHistory = getSymbolHistoryFromDb(symbol, Math.max(days, 40));
     let filteredHistory = fullHistory;
     if (date) {
-      filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) === date);
+      filteredHistory = fullHistory.filter(d => (d.date || d.trade_date) <= date).slice(0, days);
     } else if (fromDate && toDate) {
       filteredHistory = fullHistory.filter(d => {
         const dt = d.date || d.trade_date;
         return dt >= fromDate && dt <= toDate;
       });
+    } else {
+      filteredHistory = fullHistory.slice(0, days);
     }
     if (filteredHistory && filteredHistory.length > 0) {
-      const diag = calculateMultiDayDiagnostics(filteredHistory, filteredHistory.length);
+      const diagDays = (fromDate && toDate) ? filteredHistory.length : days;
+      const diag = calculateMultiDayDiagnostics(filteredHistory, diagDays);
       if (diag && (diag.brokers?.length > 0 || diag.allBrokers?.length > 0)) {
         const enrichedDb = enrichWithMicrostructure(symbol, days, diag, date);
         setCache(cacheKey, enrichedDb, 10 * 60 * 1000);
@@ -5539,6 +5585,143 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
                   });
                 }
 
+                // Ensure snapshot fallback has Top Net Buy Stock's Kitta broker-wise
+                if (!parsed.topUniqueStockNetBuyers || parsed.topUniqueStockNetBuyers.length === 0) {
+                  const netBuys = [];
+                  const netSells = [];
+                  parsed.matrix.forEach(b => {
+                    const bId = String(b.broker || b.id || '').replace(/^0+/, '').trim();
+                    const bName = b.brokerName || b.name || `Broker ${bId}`;
+                    (b.scrips || b.topByNetQty || []).forEach(s => {
+                      const netQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
+                      const netAmt = Number(s.netFlow !== undefined ? s.netFlow : (s.net !== undefined ? s.net : ((s.buyAmount || 0) - (s.sellAmount || 0))));
+                      if (netQty > 0) {
+                        netBuys.push({
+                          symbol: s.symbol,
+                          buyerBroker: bId,
+                          brokerName: bName,
+                          qty: netQty,
+                          netQty,
+                          buyQty: s.buyQty || netQty,
+                          sellQty: s.sellQty || 0,
+                          amount: Math.round(netAmt > 0 ? netAmt : (s.buyAmount || 0)),
+                          amountCr: +(Math.abs(netAmt) / 1e7).toFixed(2),
+                          avgRate: s.avgBuyRate || 0,
+                          trades: s.trades || 0,
+                          cumHoldQty: s.cumHoldQty,
+                          cumAvgBuy: s.cumAvgBuy
+                        });
+                      } else if (netQty < 0) {
+                        const absK = Math.abs(netQty);
+                        const absA = Math.abs(netAmt);
+                        netSells.push({
+                          symbol: s.symbol,
+                          sellerBroker: bId,
+                          brokerName: bName,
+                          qty: absK,
+                          netQty,
+                          buyQty: s.buyQty || 0,
+                          sellQty: s.sellQty || absK,
+                          amount: Math.round(absA > 0 ? absA : (s.sellAmount || 0)),
+                          amountCr: +(absA / 1e7).toFixed(2),
+                          avgRate: s.avgSellRate || 0,
+                          trades: s.trades || 0,
+                          cumHoldQty: s.cumHoldQty,
+                          cumAvgBuy: s.cumAvgBuy
+                        });
+                      }
+                    });
+                  });
+                  netBuys.sort((a, b) => b.qty - a.qty);
+                  netSells.sort((a, b) => b.qty - a.qty);
+                  const seenB = new Set();
+                  parsed.topUniqueStockNetBuyers = [];
+                  for (const it of netBuys) {
+                    if (!seenB.has(it.symbol)) { seenB.add(it.symbol); parsed.topUniqueStockNetBuyers.push(it); }
+                  }
+                  const seenS = new Set();
+                  parsed.topUniqueStockNetSellers = [];
+                  for (const it of netSells) {
+                    if (!seenS.has(it.symbol)) { seenS.add(it.symbol); parsed.topUniqueStockNetSellers.push(it); }
+                  }
+                  parsed.topCrossBrokerNetBuyers = netBuys.slice(0, 50);
+                  parsed.topCrossBrokerNetSells = netSells.slice(0, 50);
+                }
+
+                // Ensure snapshot fallback has Top 10 Most Net Bought Kitta as a Whole
+                if (!parsed.topNetBoughtScripsWholeDay || parsed.topNetBoughtScripsWholeDay.length === 0) {
+                  const wholeDayMap = new Map();
+                  (parsed.matrix || []).forEach(b => {
+                    (b.scrips || []).forEach(s => {
+                      const sym = s.symbol;
+                      if (!wholeDayMap.has(sym)) {
+                        wholeDayMap.set(sym, {
+                          symbol: sym,
+                          totalBuyVol: 0,
+                          totalNetKitta: 0,
+                          totalNetInflow: 0,
+                          totalBuyAmt: 0,
+                          accumulators: []
+                        });
+                      }
+                      const st = wholeDayMap.get(sym);
+                      st.totalBuyVol += Number(s.buyQty || 0);
+                      st.totalBuyAmt += Number(s.buyAmount || 0);
+                      const sNetQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
+                      const sNetAmt = Number(s.netFlow !== undefined ? s.netFlow : ((s.buyAmount || 0) - (s.sellAmount || 0)));
+                      if (sNetQty > 0) {
+                        st.totalNetKitta += sNetQty;
+                        st.totalNetInflow += sNetAmt;
+                        st.accumulators.push({
+                          broker: b.broker || b.id,
+                          brokerName: b.brokerName || b.name,
+                          netQty: sNetQty,
+                          buyQty: s.buyQty || sNetQty,
+                          sellQty: s.sellQty || 0,
+                          avgBuyRate: s.avgBuyRate || 0,
+                          cumHoldQty: s.cumHoldQty,
+                          cumAvgBuy: s.cumAvgBuy
+                        });
+                      }
+                    });
+                  });
+                  const wholeDayList = Array.from(wholeDayMap.values()).map(st => {
+                    st.accumulators.sort((a, b) => b.netQty - a.netQty);
+                    const topAcc = st.accumulators[0] || null;
+                    const top3Acc = st.accumulators.slice(0, 3);
+                    const top3AccKitta = top3Acc.reduce((acc, x) => acc + x.netQty, 0);
+                    const effTradedVol = st.totalBuyVol || 1;
+                    const lockPct = +((st.totalNetKitta / effTradedVol) * 100).toFixed(1);
+                    const bcr3NetPct = +((top3AccKitta / effTradedVol) * 100).toFixed(1);
+                    const avgPrice = st.totalBuyVol > 0 ? +(st.totalBuyAmt / st.totalBuyVol).toFixed(2) : (topAcc?.avgBuyRate || 0);
+                    return {
+                      symbol: st.symbol,
+                      totalNetKitta: st.totalNetKitta,
+                      totalTradedVol: st.totalBuyVol,
+                      lockPct,
+                      totalNetInflow: Math.round(st.totalNetInflow),
+                      totalNetInflowCr: +(st.totalNetInflow / 1e7).toFixed(2),
+                      avgPrice,
+                      leadAccumulator: topAcc ? {
+                        broker: topAcc.broker,
+                        brokerName: topAcc.brokerName,
+                        netQty: topAcc.netQty,
+                        buyQty: topAcc.buyQty,
+                        sellQty: topAcc.sellQty,
+                        shareOfLockPct: +((topAcc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
+                        cumHoldQty: topAcc.cumHoldQty,
+                        cumAvgBuy: topAcc.cumAvgBuy
+                      } : null,
+                      top3Accumulators: top3Acc,
+                      top3AccKitta,
+                      bcr3NetPct,
+                      smartMoneyBias: lockPct >= 65 || (bcr3NetPct >= 35 && st.totalNetKitta > 100000) ? 'Heavy Cornering' : (lockPct >= 45 ? 'Institutional Accumulation' : 'Mild Accumulation')
+                    };
+                  });
+                  wholeDayList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
+                  parsed.topNetBoughtScripsWholeDay = wholeDayList.slice(0, 20);
+                }
+
                 setCache(cacheKey, parsed, 5 * 60 * 1000);
                 return res.json({ success: true, data: parsed, source: 'broker_matrix_latest_snapshot' });
               }
@@ -5785,6 +5968,29 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
    ENDPOINT S5.1 — Individual Broker Desk Telemetry
    GET /api/smart-money/broker-desk/:brokerId
    ══════════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENDPOINT S5.2 — Broker All-Time Top Holdings Till Now
+   GET /api/smart-money/broker-holdings/:brokerId
+   ══════════════════════════════════════════════════════════════════════════════ */
+app.get(['/api/smart-money/broker-holdings/:brokerId', '/api/broker-holdings/:brokerId'], async (req, res) => {
+  const brokerId = String(req.params.brokerId || '').replace(/^0+/, '').trim();
+  if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
+  const cacheKey = `broker-alltime-holdings-${brokerId}`;
+  const cached = getCache(cacheKey);
+  if (cached) return res.json({ success: true, data: cached, cached: true });
+
+  try {
+    const data = getBrokerAllTimeTopHoldings(brokerId);
+    if (data) {
+      setCache(cacheKey, data, 5 * 60 * 1000);
+      return res.json({ success: true, data, source: 'daily_broker_ledger' });
+    }
+    return res.status(404).json({ success: false, message: `No holdings found for broker #${brokerId}` });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get(['/api/smart-money/broker-desk/:brokerId', '/api/broker-desk/:brokerId'], async (req, res) => {
   const brokerId = String(req.params.brokerId || '').replace(/^0+/, '').trim();
   if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
@@ -12113,7 +12319,32 @@ app.get('/api/company/:symbol/quarterly-reports', async (req, res) => {
     } catch (_) {}
 
     if (!baseDetail || (baseDetail.eps == null && baseDetail.bookValue == null)) {
-      return res.status(404).json({ success: false, message: `Real quarterly filings not found for ${sym}`, symbol: sym });
+      try {
+        if (db) {
+          const sf = db.prepare(`SELECT * FROM scrip_fundamentals WHERE UPPER(symbol) = ? LIMIT 1`).get(sym);
+          if (sf && (sf.eps_ttm != null || sf.bvps != null)) {
+            baseDetail = {
+              eps: sf.eps_ttm,
+              bookValue: sf.bvps,
+              paidUpCapital: sf.paid_up_capital_npr || null,
+              npl: sf.npl_pct,
+              roe: sf.eps_ttm && sf.bvps && sf.bvps > 0 ? +((sf.eps_ttm / sf.bvps) * 100).toFixed(2) : null,
+              fiscalYear: sf.fiscal_year || 'Latest Reported Period',
+              source: 'SQLite scrip_fundamentals'
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!baseDetail || (baseDetail.eps == null && baseDetail.bookValue == null)) {
+      const emptyResult = {
+        symbol: sym,
+        quarters: [],
+        latest: null,
+        isAuthenticOnly: true
+      };
+      return res.json({ success: true, data: emptyResult, message: `Quarterly filings pending for ${sym}` });
     }
 
     const eps = baseDetail.eps != null ? Number(baseDetail.eps) : null;

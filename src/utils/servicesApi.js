@@ -389,21 +389,27 @@ export const fetchBrokerDeskDetail = (brokerId, date) => {
   const q = date ? `?date=${encodeURIComponent(date)}` : '';
   return _proxyFetch(`/api/smart-money/broker-desk/${encodeURIComponent(brokerId)}${q}`, { timeout: 45000 }, 120000);
 };
+export const fetchBrokerHoldings = (brokerId) => {
+  return _proxyFetch(`/api/smart-money/broker-holdings/${encodeURIComponent(brokerId)}`, { timeout: 45000 }, 120000);
+};
 export const fetchBrokerAnalysis = (symbol, days = 30, forceRefreshOrOptions = false) => {
   const sym = String(symbol || '').toUpperCase().trim();
-  let numDays = 30;
+  const isAll = (typeof days === 'string' && days.toLowerCase() === 'all') ||
+                (typeof days === 'object' && days !== null && String(days.days || '').toLowerCase() === 'all') ||
+                (typeof forceRefreshOrOptions === 'object' && forceRefreshOrOptions !== null && (String(forceRefreshOrOptions.timeframe || '').toLowerCase() === 'all' || String(forceRefreshOrOptions.days || '').toLowerCase() === 'all'));
+  let numDays = isAll ? 'all' : 30;
   let refresh = false;
   let date = '';
   let fromDate = '';
   let toDate = '';
   if (typeof days === 'object' && days !== null) {
-    numDays = Math.max(1, parseInt(days.days || 30, 10) || 30);
+    numDays = isAll ? 'all' : Math.max(1, parseInt(days.days || 30, 10) || 30);
     if (days.refresh) refresh = true;
     if (days.date) date = String(days.date).trim();
     if (days.fromDate) fromDate = String(days.fromDate).trim();
     if (days.toDate) toDate = String(days.toDate).trim();
   } else {
-    numDays = Math.max(1, parseInt(days || 30, 10) || 30);
+    numDays = isAll ? 'all' : Math.max(1, parseInt(days || 30, 10) || 30);
     if (typeof forceRefreshOrOptions === 'object' && forceRefreshOrOptions !== null) {
       if (forceRefreshOrOptions.refresh) refresh = true;
       if (forceRefreshOrOptions.date) date = String(forceRefreshOrOptions.date).trim();

@@ -1,6 +1,6 @@
 // proxy/routes/stockTelemetryRoutes.mjs
 import express from 'express';
-import { db } from '../db/ledgerStore.js';
+import { db, getScripVolumeProfile } from '../db/ledgerStore.js';
 import { safeNum, resolveValidNepseSymbol, resolveVerifiedPrice } from './aiGuruRoutes.mjs';
 import { getBrokerName, getOrFetchAllTimeBrokerHoldings } from '../brokerVault.mjs';
 import { aggregateBrokerMicrostructure } from '../utils/sharedBrokerAggregationEngine.js';
@@ -355,7 +355,7 @@ export function handleStockTelemetry(req, res) {
               FROM floorsheet_contracts
               WHERE UPPER(symbol) = ? AND trade_date = ?
               ORDER BY trade_time DESC, contract_no DESC
-              LIMIT 500`
+              LIMIT 5000`
             )
             .all(validSymbol, targetDate);
         }
@@ -587,10 +587,15 @@ export function handleStockTelemetry(req, res) {
         asks: [],
       },
       floorsheetTape: enrichedTape,
-      volumeProfile: {
-        pocPrice: sessionVwap > 0 ? Math.round(sessionVwap) : null,
-        nodes: [],
-      },
+      volumeProfile: (() => {
+        const vp = getScripVolumeProfile(validSymbol);
+        return vp && Array.isArray(vp.nodes) && vp.nodes.length > 0
+          ? vp
+          : {
+              pocPrice: sessionVwap > 0 ? Math.round(sessionVwap) : null,
+              nodes: [],
+            };
+      })(),
       smartMoney5D: {
         dominantRegime: 'MODERATE_ACCUMULATION',
         netAccumulationRatio: 12.5,

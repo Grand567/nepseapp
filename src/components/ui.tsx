@@ -122,7 +122,7 @@ export function StatCard({ label, value, color, big, subtitle }: { label: string
 
 export interface ColDef { key: string; label: string; align?: 'left' | 'right' | 'center'; bold?: boolean; format?: (v: any, row: any) => ReactNode; colorFn?: (v: any, row: any) => string | undefined; }
 
-export function DataTable({ data = [], cols = [], loading = false }: { data: any[]; cols: ColDef[]; loading?: boolean }) {
+export function DataTable({ data = [], cols = [], loading = false, onRowClick }: { data: any[]; cols: ColDef[]; loading?: boolean; onRowClick?: (row: any) => void }) {
   const [page, setPage] = useState(0);
   const [query, setQuery] = useState('');
   const rowsPerPage = 15;
@@ -223,7 +223,11 @@ export function DataTable({ data = [], cols = [], loading = false }: { data: any
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {paged.map((row, i) => (
-              <tr key={i} className={`transition-colors ${i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50`}>
+              <tr
+                key={i}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={`transition-colors ${i % 2 === 0 ? 'bg-slate-950/40' : 'bg-slate-900/20'} hover:bg-slate-800/50 ${onRowClick ? 'cursor-pointer' : ''}`}
+              >
                 {cols.map((col, j) => {
                   const val = row[col.key];
                   const formatted = col.format ? col.format(val, row) : (val ?? '—');

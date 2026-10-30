@@ -1497,7 +1497,12 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
     let targetDates = [];
 
     if (specificDate) {
-      targetDates = [specificDate];
+      if (numDays > 1) {
+        const priorDates = allTradingDates.filter(d => d <= specificDate).slice(0, Math.min(numDays + 2, 500));
+        targetDates = priorDates.length > 0 ? priorDates : [specificDate];
+      } else {
+        targetDates = [specificDate];
+      }
     } else if (fromDate || toDate) {
       targetDates = allTradingDates.filter(d => {
         if (fromDate && d < fromDate) return false;
@@ -1547,10 +1552,10 @@ export async function getOrFetchBrokerAnalysis(symbol, days = 30, options = {}) 
 
     // Collect rows for the requested targetDates (capped at numDays when not a custom range)
     let activeDates = targetDates.filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0);
-    if (!specificDate && !fromDate && !toDate) {
+    if (!fromDate && !toDate) {
       if (activeDates.length < numDays) {
         const vaultDates = Object.keys(rowsByDate)
-          .filter(d => Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
+          .filter(d => (!specificDate || d <= specificDate) && Array.isArray(rowsByDate[d]) && rowsByDate[d].length > 0)
           .sort((a, b) => b.localeCompare(a));
         activeDates = vaultDates.slice(0, Math.min(numDays, vaultDates.length));
       } else {
@@ -2039,30 +2044,105 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
   // Calculate Exchange-Wide Cross-Broker Institutional Moves
   const crossBrokerSells = [];
   const crossBrokerBuys = [];
+  const crossBrokerNetBuys = [];
+  const crossBrokerNetSells = [];
+
   topBrokersList.forEach(b => {
     Object.values(b.scripsMap || {}).forEach(s => {
-      if (s.sellAmt > 0 && s.sellQty > 0) {
+      const buyQty = Number(s.buyQty || 0);
+      const sellQty = Number(s.sellQty || 0);
+      const buyAmt = Number(s.buyAmt || 0);
+      const sellAmt = Number(s.sellAmt || 0);
+      const netKitta = buyQty - sellQty;
+      const netAmount = buyAmt - sellAmt;
+
+      // Cumulative holding lookup
+      const bNormId = String(b.id).replace(/^0+/, '');
+      const sSym = String(s.symbol).toUpperCase().trim();
+      const cumRow = cumLedgerMap.get(`${bNormId}_${sSym}`) || cumLedgerMap.get(`${b.id}_${sSym}`) || null;
+      let cumHoldQty = Number(cumRow?.cumNetQty || 0);
+      let cumBuyVol = Number(cumRow?.totalBuyVol || 0);
+      let cumBuyAmt = Number(cumRow?.totalBuyAmt || 0);
+      if (!isDateAlreadyIngested) {
+        cumHoldQty += netKitta;
+        cumBuyVol += buyQty;
+        cumBuyAmt += buyAmt;
+      }
+      const cumAvgBuy = cumBuyVol > 0 ? +(cumBuyAmt / cumBuyVol).toFixed(2) : (buyQty > 0 ? +(buyAmt / buyQty).toFixed(2) : 0);
+
+      if (sellAmt > 0 && sellQty > 0) {
         crossBrokerSells.push({
           symbol: s.symbol,
           sellerBroker: b.id,
           brokerName: b.name,
-          qty: s.sellQty,
-          amount: Math.round(s.sellAmt),
-          amountCr: +(s.sellAmt / 1e7).toFixed(2),
-          avgRate: +(s.sellAmt / s.sellQty).toFixed(2),
-          trades: s.trades
+          qty: sellQty,
+          netQty: netKitta,
+          buyQty,
+          sellQty,
+          amount: Math.round(sellAmt),
+          amountCr: +(sellAmt / 1e7).toFixed(2),
+          avgRate: +(sellAmt / sellQty).toFixed(2),
+          trades: s.trades,
+          cumHoldQty: Math.max(0, cumHoldQty),
+          cumAvgBuy
         });
       }
-      if (s.buyAmt > 0 && s.buyQty > 0) {
+      if (buyAmt > 0 && buyQty > 0) {
         crossBrokerBuys.push({
           symbol: s.symbol,
           buyerBroker: b.id,
           brokerName: b.name,
-          qty: s.buyQty,
-          amount: Math.round(s.buyAmt),
-          amountCr: +(s.buyAmt / 1e7).toFixed(2),
-          avgRate: +(s.buyAmt / s.buyQty).toFixed(2),
-          trades: s.trades
+          qty: buyQty,
+          netQty: netKitta,
+          buyQty,
+          sellQty,
+          amount: Math.round(buyAmt),
+          amountCr: +(buyAmt / 1e7).toFixed(2),
+          avgRate: +(buyAmt / buyQty).toFixed(2),
+          trades: s.trades,
+          cumHoldQty: Math.max(0, cumHoldQty),
+          cumAvgBuy
+        });
+      }
+
+      // Net Accumulation in Kitta
+      if (netKitta > 0) {
+        crossBrokerNetBuys.push({
+          symbol: s.symbol,
+          buyerBroker: b.id,
+          brokerName: b.name,
+          qty: netKitta,
+          netQty: netKitta,
+          buyQty,
+          sellQty,
+          amount: Math.round(netAmount),
+          amountCr: +(netAmount / 1e7).toFixed(2),
+          buyAmount: Math.round(buyAmt),
+          sellAmount: Math.round(sellAmt),
+          avgRate: buyQty > 0 ? +(buyAmt / buyQty).toFixed(2) : 0,
+          trades: s.trades,
+          cumHoldQty: Math.max(0, cumHoldQty),
+          cumAvgBuy
+        });
+      } else if (netKitta < 0) {
+        const absNetKitta = Math.abs(netKitta);
+        const absNetAmt = Math.abs(netAmount);
+        crossBrokerNetSells.push({
+          symbol: s.symbol,
+          sellerBroker: b.id,
+          brokerName: b.name,
+          qty: absNetKitta,
+          netQty: netKitta,
+          buyQty,
+          sellQty,
+          amount: Math.round(absNetAmt),
+          amountCr: +(absNetAmt / 1e7).toFixed(2),
+          buyAmount: Math.round(buyAmt),
+          sellAmount: Math.round(sellAmt),
+          avgRate: sellQty > 0 ? +(sellAmt / sellQty).toFixed(2) : 0,
+          trades: s.trades,
+          cumHoldQty: Math.max(0, cumHoldQty),
+          cumAvgBuy
         });
       }
     });
@@ -2070,6 +2150,8 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
 
   crossBrokerSells.sort((a, b) => b.amount - a.amount);
   crossBrokerBuys.sort((a, b) => b.amount - a.amount);
+  crossBrokerNetBuys.sort((a, b) => b.qty - a.qty);
+  crossBrokerNetSells.sort((a, b) => b.qty - a.qty);
 
   // Top unique stock seller desk across NEPSE
   const seenSellSyms = new Set();
@@ -2091,6 +2173,136 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
     }
   }
 
+  // Top unique stock net buyer desk across NEPSE (Ranked by highest net kitta)
+  const seenNetBuySyms = new Set();
+  const topUniqueStockNetBuyers = [];
+  for (const item of crossBrokerNetBuys) {
+    if (!seenNetBuySyms.has(item.symbol)) {
+      seenNetBuySyms.add(item.symbol);
+      topUniqueStockNetBuyers.push(item);
+    }
+  }
+
+  // Top unique stock net seller desk across NEPSE (Ranked by highest net sell kitta)
+  const seenNetSellSyms = new Set();
+  const topUniqueStockNetSellers = [];
+  for (const item of crossBrokerNetSells) {
+    if (!seenNetSellSyms.has(item.symbol)) {
+      seenNetSellSyms.add(item.symbol);
+      topUniqueStockNetSellers.push(item);
+    }
+  }
+
+  // Calculate Top 10 Most Net Bought Kitta as a Whole of the Trading Day
+  const wholeDayStockMap = new Map();
+  heatmapMatrix.forEach(b => {
+    (b.scrips || []).forEach(s => {
+      const sym = s.symbol;
+      if (!wholeDayStockMap.has(sym)) {
+        wholeDayStockMap.set(sym, {
+          symbol: sym,
+          totalBuyVol: 0,
+          totalSellVol: 0,
+          totalBuyAmt: 0,
+          totalSellAmt: 0,
+          totalNetKitta: 0,
+          totalNetInflow: 0,
+          accumulators: [],
+          distributors: []
+        });
+      }
+      const st = wholeDayStockMap.get(sym);
+      st.totalBuyVol += Number(s.buyQty || 0);
+      st.totalSellVol += Number(s.sellQty || 0);
+      st.totalBuyAmt += Number(s.buyAmount || 0);
+      st.totalSellAmt += Number(s.sellAmount || 0);
+      const sNetQty = Number(s.netQty !== undefined ? s.netQty : ((s.buyQty || 0) - (s.sellQty || 0)));
+      const sNetAmt = Number(s.netFlow !== undefined ? s.netFlow : ((s.buyAmount || 0) - (s.sellAmount || 0)));
+      if (sNetQty > 0) {
+        st.totalNetKitta += sNetQty;
+        st.totalNetInflow += sNetAmt;
+        st.accumulators.push({
+          broker: b.broker,
+          brokerName: b.brokerName,
+          netQty: sNetQty,
+          buyQty: s.buyQty || sNetQty,
+          sellQty: s.sellQty || 0,
+          netAmount: Math.round(sNetAmt),
+          avgBuyRate: s.avgBuyRate || 0,
+          cumHoldQty: s.cumHoldQty,
+          cumAvgBuy: s.cumAvgBuy
+        });
+      } else if (sNetQty < 0) {
+        const absQ = Math.abs(sNetQty);
+        st.distributors.push({
+          broker: b.broker,
+          brokerName: b.brokerName,
+          netQty: absQ,
+          buyQty: s.buyQty || 0,
+          sellQty: s.sellQty || absQ,
+          netAmount: Math.round(Math.abs(sNetAmt)),
+          avgSellRate: s.avgSellRate || 0,
+          cumHoldQty: s.cumHoldQty,
+          cumAvgBuy: s.cumAvgBuy
+        });
+      }
+    });
+  });
+
+  const wholeDayStockList = Array.from(wholeDayStockMap.values()).map(st => {
+    st.accumulators.sort((a, b) => b.netQty - a.netQty);
+    st.distributors.sort((a, b) => b.netQty - a.netQty);
+    const effTradedVol = st.totalBuyVol || 1;
+    const topAcc = st.accumulators[0] || null;
+    const top3Acc = st.accumulators.slice(0, 3).map(acc => ({
+      ...acc,
+      shareOfLockPct: +((acc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
+      shareOfDayVolPct: +((acc.netQty / effTradedVol) * 100).toFixed(1)
+    }));
+    const top3AccKitta = top3Acc.reduce((acc, x) => acc + x.netQty, 0);
+    const top3DistKitta = st.distributors.slice(0, 3).reduce((acc, x) => acc + x.netQty, 0);
+    const lockPct = +((st.totalNetKitta / effTradedVol) * 100).toFixed(1);
+    const bcr3NetPct = +((top3AccKitta / effTradedVol) * 100).toFixed(1);
+    const avgTradedPrice = st.totalBuyVol > 0 ? +(st.totalBuyAmt / st.totalBuyVol).toFixed(2) : (topAcc?.avgBuyRate || 0);
+
+    let smartMoneyBias = 'Broad Inflow';
+    if (lockPct >= 65 || (bcr3NetPct >= 35 && st.totalNetKitta > 100000)) {
+      smartMoneyBias = 'Heavy Cornering';
+    } else if (lockPct >= 45 || bcr3NetPct >= 25) {
+      smartMoneyBias = 'Institutional Accumulation';
+    } else if (lockPct >= 30) {
+      smartMoneyBias = 'Mild Accumulation';
+    }
+
+    return {
+      symbol: st.symbol,
+      totalNetKitta: st.totalNetKitta,
+      totalTradedVol: st.totalBuyVol,
+      lockPct,
+      totalNetInflow: Math.round(st.totalNetInflow),
+      totalNetInflowCr: +(st.totalNetInflow / 1e7).toFixed(2),
+      avgPrice: avgTradedPrice,
+      leadAccumulator: topAcc ? {
+        broker: topAcc.broker,
+        brokerName: topAcc.brokerName,
+        netQty: topAcc.netQty,
+        buyQty: topAcc.buyQty,
+        sellQty: topAcc.sellQty,
+        shareOfLockPct: +((topAcc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
+        cumHoldQty: topAcc.cumHoldQty,
+        cumAvgBuy: topAcc.cumAvgBuy
+      } : null,
+      top3Accumulators: top3Acc,
+      top3AccKitta,
+      bcr3NetPct,
+      netSmartMoneyKitta: top3AccKitta - top3DistKitta,
+      smartMoneyBias
+    };
+  });
+
+  wholeDayStockList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
+  const topNetBoughtScripsWholeDay = wholeDayStockList.slice(0, 20);
+
   const sessionDt = dateStr || trades[0]?.businessDate || new Date().toISOString().split('T')[0];
 
   return {
@@ -2098,10 +2310,15 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
     topBrokerNames: topBrokersList.map(b => b.name),
     topScrips: topScripsList.slice(0, 30),
     matrix: heatmapMatrix,
-    topCrossBrokerSellers: crossBrokerSells.slice(0, 25),
-    topCrossBrokerBuyers: crossBrokerBuys.slice(0, 25),
-    topUniqueStockSellers: topUniqueStockSellers.slice(0, 20),
-    topUniqueStockBuyers: topUniqueStockBuyers.slice(0, 20),
+    topCrossBrokerSellers: crossBrokerSells.slice(0, 50),
+    topCrossBrokerBuyers: crossBrokerBuys.slice(0, 50),
+    topCrossBrokerNetBuyers: crossBrokerNetBuys.slice(0, 50),
+    topCrossBrokerNetSells: crossBrokerNetSells.slice(0, 50),
+    topUniqueStockSellers: topUniqueStockSellers.slice(0, 30),
+    topUniqueStockBuyers: topUniqueStockBuyers.slice(0, 30),
+    topUniqueStockNetBuyers: topUniqueStockNetBuyers.slice(0, 30),
+    topUniqueStockNetSellers: topUniqueStockNetSellers.slice(0, 30),
+    topNetBoughtScripsWholeDay,
     totalTrades: trades.length,
     businessDate: sessionDt
   };
@@ -2772,8 +2989,10 @@ export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
     const marketAgg = aggregateMarketFloorsheet(fullTrades, dateStr || fullTrades[0]?.businessDate);
     const brokerItem = marketAgg.matrix.find(b => String(b.broker).replace(/^0+/, '') === bId);
     if (brokerItem) {
+      const allTimeHoldings = getBrokerAllTimeTopHoldings(bId);
       return {
         ...brokerItem,
+        topHoldingsTillNow: allTimeHoldings.topHoldings || [],
         source: 'full_session_floorsheet',
         businessDate: marketAgg.businessDate
       };
@@ -2815,8 +3034,10 @@ export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
         const marketAgg = aggregateMarketFloorsheet(allBrokerTrades, dateStr || allBrokerTrades[0]?.businessDate);
         const brokerItem = marketAgg.matrix.find(b => String(b.broker).replace(/^0+/, '') === bId);
         if (brokerItem) {
+          const allTimeHoldings = getBrokerAllTimeTopHoldings(bId);
           return {
             ...brokerItem,
+            topHoldingsTillNow: allTimeHoldings.topHoldings || [],
             source: 'nepse_broker_nots',
             businessDate: marketAgg.businessDate
           };
@@ -2831,3 +3052,74 @@ export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
 }
 
 
+
+/**
+ * Retrieve a broker's top net-held stocks across all trading sessions (All-Time Net Retention)
+ */
+export function getBrokerAllTimeTopHoldings(brokerId) {
+  const bId = String(brokerId || '').replace(/^0+/, '').trim();
+  const bNum = parseInt(bId, 10);
+  if (!bNum || !db) return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };
+
+  try {
+    const rows = db.prepare(`
+      SELECT UPPER(symbol) as symbol,
+             SUM(buy_vol) as totalBuyVol,
+             SUM(sell_vol) as totalSellVol,
+             SUM(buy_vol) - SUM(sell_vol) as cumHoldQty,
+             SUM(buy_amt) as totalBuyAmt,
+             SUM(sell_amt) as totalSellAmt,
+             COUNT(DISTINCT trade_date) as activeSessions
+      FROM daily_broker_ledger
+      WHERE broker_id = ?
+      GROUP BY UPPER(symbol)
+      HAVING cumHoldQty > 0
+      ORDER BY cumHoldQty DESC
+      LIMIT 25
+    `).all(bId);
+
+    const brokerName = getBrokerName(bId);
+    let totalSharesHeld = 0;
+    const topHoldings = rows.map((r, idx) => {
+      const buyVol = Number(r.totalBuyVol || 0);
+      const sellVol = Number(r.totalSellVol || 0);
+      const holdQty = Number(r.cumHoldQty || 0);
+      const buyAmt = Number(r.totalBuyAmt || 0);
+      const sellAmt = Number(r.totalSellAmt || 0);
+      const avgBuyRate = buyVol > 0 ? +(buyAmt / buyVol).toFixed(2) : 0;
+      const avgSellRate = sellVol > 0 ? +(sellAmt / sellVol).toFixed(2) : 0;
+      const retentionPct = buyVol > 0 ? +((holdQty / buyVol) * 100).toFixed(1) : 100;
+      const netAmt = Math.round(holdQty * avgBuyRate);
+      totalSharesHeld += holdQty;
+
+      return {
+        rank: idx + 1,
+        symbol: r.symbol,
+        brokerId: bId,
+        brokerName,
+        cumHoldQty: holdQty,
+        netQty: holdQty,
+        totalBuyVol: buyVol,
+        totalSellVol: sellVol,
+        avgBuyRate,
+        avgSellRate,
+        retentionPct,
+        totalBuyAmt: buyAmt,
+        totalSellAmt: sellAmt,
+        netAmt,
+        activeSessions: r.activeSessions
+      };
+    });
+
+    return {
+      brokerId: bId,
+      brokerName,
+      totalHoldingsCount: topHoldings.length,
+      totalSharesHeld,
+      topHoldings
+    };
+  } catch (err) {
+    console.error(`[brokerVault] Error fetching all-time holdings for broker ${bId}:`, err);
+    return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };
+  }
+}

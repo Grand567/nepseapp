@@ -154,7 +154,8 @@ export default function StockBrokerAnalysisTab({
       const now = new Date();
       const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
       const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
-      const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+      const nptDateObj = new Date(now.getTime() + 345 * 60 * 1000);
+      const todayNpt = nptDateObj.toISOString().slice(0, 10);
 
       // Extract daily session flow (30 completed trading days)
       const rawFlow = (Array.isArray(res30?.dailyFlow) && res30.dailyFlow.length > 0)
