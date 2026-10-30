@@ -2137,6 +2137,33 @@ export function BrokerFlowDominanceService({
 
           {/* DUAL DECK: Top 10 Accumulation vs Top 10 Distribution */}
           {activeTop10Broker && (() => {
+            const getScripCumHolding = (brokerId: string, sc: any, netK: number) => {
+              if (sc.cumHoldQty != null && Number(sc.cumHoldQty) > 0) {
+                return {
+                  cumHoldKitta: Number(sc.cumHoldQty),
+                  cumAvgPx: Number(sc.cumAvgBuy || sc.avgBuyRate || 0)
+                };
+              }
+              const bNorm = String(brokerId || '').replace(/^0+/, '');
+              const sSym = String(sc.symbol || '').toUpperCase().trim();
+              const fBroker = Array.isArray((latestBrokerMatrix as any)?.matrix)
+                ? (latestBrokerMatrix as any).matrix.find((bm: any) => String(bm.broker || bm.id || '').replace(/^0+/, '') === bNorm)
+                : null;
+              const fScrip = fBroker?.topAccumulation?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym)
+                || fBroker?.scrips?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym);
+
+              if (fScrip?.cumHoldQty != null && Number(fScrip.cumHoldQty) > 0) {
+                return {
+                  cumHoldKitta: Number(fScrip.cumHoldQty),
+                  cumAvgPx: Number(fScrip.cumAvgBuy || fScrip.avgBuyRate || sc.avgBuyRate || 0)
+                };
+              }
+              return {
+                cumHoldKitta: netK > 0 ? netK : 0,
+                cumAvgPx: Number(sc.cumAvgBuy || sc.avgBuyRate || 0)
+              };
+            };
+
             const activeAccScrips = (
               rankingMetric === 'net_qty'
                 ? (activeTop10Broker.topByNetQty || activeTop10Broker.topAccumulation || [])
@@ -2208,8 +2235,7 @@ export function BrokerFlowDominanceService({
                             const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
                             const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
                             const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
-                            const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
-                            const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+                            const { cumHoldKitta, cumAvgPx } = getScripCumHolding(activeTop10Broker.brokerId, sc, netKitta);
 
                             return (
                               <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
@@ -2304,8 +2330,7 @@ export function BrokerFlowDominanceService({
                             const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
                             const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
                             const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
-                            const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
-                            const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+                            const { cumHoldKitta, cumAvgPx } = getScripCumHolding(activeTop10Broker.brokerId, sc, netKitta);
 
                             return (
                               <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
@@ -2954,8 +2979,17 @@ export function BrokerFlowDominanceService({
                           const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
                           const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
                           const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
-                          const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
-                          const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+                          const bNorm = String(selectedBrokerModal.brokerId || '').replace(/^0+/, '');
+                          const sSym = String(sc.symbol || '').toUpperCase().trim();
+                          const fBroker = Array.isArray((latestBrokerMatrix as any)?.matrix)
+                            ? (latestBrokerMatrix as any).matrix.find((bm: any) => String(bm.broker || bm.id || '').replace(/^0+/, '') === bNorm)
+                            : null;
+                          const fScrip = fBroker?.topAccumulation?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym)
+                            || fBroker?.scrips?.find((fs: any) => String(fs.symbol).toUpperCase() === sSym);
+                          const cumHoldKitta = sc.cumHoldQty != null && Number(sc.cumHoldQty) > 0
+                            ? Number(sc.cumHoldQty)
+                            : (fScrip?.cumHoldQty != null && Number(fScrip.cumHoldQty) > 0 ? Number(fScrip.cumHoldQty) : (netKitta > 0 ? netKitta : 0));
+                          const cumAvgPx = sc.cumAvgBuy || fScrip?.cumAvgBuy || sc.avgBuyRate || 0;
 
                           return (
                             <tr key={sc.symbol} className="hover:bg-slate-900/60 transition">

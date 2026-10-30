@@ -834,6 +834,19 @@ export function AccumulationDistributionRadar({
           if (fastR?.success) {
             if (typeof fastR.loadedTradingDays === 'number') setLoadedTradingDays(fastR.loadedTradingDays);
             if (typeof fastR.isBackfilling === 'boolean') setIsBackfilling(Boolean(fastR.isBackfilling));
+            if (Array.isArray(fastR.stocks)) {
+              const batchMap: Record<string, any> = {};
+              fastR.stocks.forEach((st: any) => {
+                const sSym = (st.symbol || '').toUpperCase().trim();
+                if (sSym && st.brokerData) {
+                  batchMap[sSym] = st.brokerData;
+                  batchMap[`${sSym}_1`] = st.brokerData;
+                }
+              });
+              if (Object.keys(batchMap).length > 0) {
+                setStockBrokerDataMap(prev => ({ ...batchMap, ...prev }));
+              }
+            }
           }
         }).catch(() => {});
         if (liveRes.status === 'fulfilled' && liveRes.value?.stocks) {
@@ -1027,31 +1040,36 @@ export function AccumulationDistributionRadar({
       const topSellers = brokerData?.topSellerBrokers || brokerData?.topSellers || [];
       const topBuyers = brokerData?.topBuyerBrokers || brokerData?.topBuyers || [];
 
-      const hasSellingAsymmetry = bcr3Sell >= 45.0 && bcr3Sell - bcr3Buy >= 10.0;
+      const hasSellingAsymmetry = bcr3Sell >= 45.0 && (bcr3Sell - bcr3Buy) >= 8.0;
       const topSellerNetDumping =
         isSampleValid &&
         topSellers.slice(0, 3).some((sel: any) => {
           const buyOfSel = topBuyers.find((b: any) => b.broker === sel.broker)?.volume || 0;
-          return sel.volume > buyOfSel && sel.volume - buyOfSel > totalSellVol * 0.2;
+          return sel.volume > buyOfSel && (sel.volume - buyOfSel) > totalSellVol * 0.2;
         }) &&
         hasSellingAsymmetry;
 
+      // Prevent false offloading when buy concentration is high (BCR3 >= 36% or BCR5 >= 50%) and within 8% of selling
+      const isTwoWayInstitutionalActivity = (bcr3Buy >= 36.0 || Number(brokerData?.bcr5BuyPct || 0) >= 50.0) && Math.abs(bcr3Buy - bcr3Sell) < 8.0;
+
       const isSellerDominant =
         isSampleValid &&
+        !isTwoWayInstitutionalActivity &&
         (hasSellingAsymmetry ||
           topSellerNetDumping ||
-          (brokerData?.smartMoneyBias === 'Operator Offloading' && bcr3Sell > bcr3Buy));
+          (brokerData?.smartMoneyBias === 'Operator Offloading' && (bcr3Sell - bcr3Buy) >= 8.0));
 
       const isDumping = Boolean(
         isSampleValid &&
+          !isTwoWayInstitutionalActivity &&
           (isSellerDominant ||
             (brokerData?.adSignal === 'Distribution' &&
-              (Number(brokerData?.adStrength || 0) >= 30 ||
-                Number(brokerData?.adRatio || 0) <= -0.08) &&
-              bcr3Sell > bcr3Buy))
+              (Number(brokerData?.adStrength || 0) >= 35 ||
+                Number(brokerData?.adRatio || 0) <= -0.10) &&
+              (bcr3Sell - bcr3Buy) >= 8.0))
       );
 
-      const isTrap = isDumping && (intradayPChange >= 0 || wyckoffStage.includes('PUMP'));
+      const isTrap = isDumping && (intradayPChange >= 0 || wyckoffStage.includes('PUMP')) && (bcr3Sell - bcr3Buy) >= 8.0;
       const isAccumulation =
         isSampleValid &&
         (bcr3Buy >= 40.0 || (Number(brokerData?.bcr5BuyPct || 0) >= 50.0 && bcr3Buy >= 36.0)) &&
@@ -1128,7 +1146,7 @@ export function AccumulationDistributionRadar({
         ? { ...s, pChange: effectivePChange, intradayPChange, volume: effectiveVolume, realBrokerAnalysis: stockBrokerAnalysis }
         : { ...s, pChange: effectivePChange, intradayPChange, volume: effectiveVolume };
 
-      const stockTrades = floorsheetBySymbol.get(symUpper) || [];
+      const stockTrades = radarDays === 1 ? (floorsheetBySymbol.get(symUpper) || []) : [];
       const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker, stockBrokerAnalysis);
       const wyckoff = classifyWyckoffStage(stockSummaryWithBroker, historyCandles, brokerData);
 
@@ -3677,6 +3695,52 @@ export function AccumulationDistributionRadar({
               </div>
             </div>
 
+            {/* ── INTELLIGENT MODEL SYNTHESIS: Reconcile 20D CMF/Wyckoff Trend with Immediate Broker Syndicate Flow ── */}
+            {(() => {
+              const cmf = Number(activeStock.wyckoff?.cmf || 0);
+              const bcr3Buy = Number(activeStock.brokerData?.bcr3BuyPct || 0);
+              const bcr3Sell = Number(activeStock.brokerData?.bcr3SellPct || 0);
+              const isStealthAccum = bcr3Buy >= 38.0 && (bcr3Buy - bcr3Sell) >= 3.0;
+              const isHeavyOffloading = bcr3Sell >= 42.0 && (bcr3Sell - bcr3Buy) >= 8.0;
+
+              let synthesisTitle = 'Macro & Micro Alignment';
+              let synthesisDesc = 'Mathematical trend indicators and broker order flow are in equilibrium.';
+              let badgeColor = 'bg-slate-900 border-slate-700 text-slate-300';
+              let icon = '⚖️';
+
+              if (cmf < -0.05 && isStealthAccum) {
+                synthesisTitle = 'Early Wyckoff Divergence: Stealth Institutional Accumulation';
+                synthesisDesc = `20-day trend oscillator (CMF: ${cmf.toFixed(2)}) reflects the prior multi-week downtrend, but top institutional brokers (BCR₃: ${bcr3Buy}%) are actively absorbing shares at the bottom. This classic divergence indicates smart money stealth accumulation before markup.`;
+                badgeColor = 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300';
+                icon = '🎯';
+              } else if (cmf > 0.05 && isHeavyOffloading) {
+                synthesisTitle = 'Wyckoff Exhaustion: Distribution into High Volume';
+                synthesisDesc = `While historical 20-day trend (CMF: +${cmf.toFixed(2)}) is green, top brokers are currently offloading (${bcr3Sell}% SCR₃) into retail enthusiasm. Caution advised.`;
+                badgeColor = 'bg-rose-950/40 border-rose-500/40 text-rose-300';
+                icon = '⚠️';
+              } else if (cmf > 0.05 && isStealthAccum) {
+                synthesisTitle = 'High-Conviction Accumulation Confluence';
+                synthesisDesc = `Both 20-day trend volume (CMF: +${cmf.toFixed(2)}) and active broker syndicates (${bcr3Buy}% BCR₃) are in strong bullish alignment.`;
+                badgeColor = 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300';
+                icon = '🚀';
+              } else if (cmf < -0.05 && isHeavyOffloading) {
+                synthesisTitle = 'Consistent Distribution Trend';
+                synthesisDesc = `Both the 20-day trend and immediate broker desks confirm persistent institutional offloading (${bcr3Sell}% sell share).`;
+                badgeColor = 'bg-rose-950/40 border-rose-500/40 text-rose-300';
+                icon = '🔻';
+              }
+
+              return (
+                <div className={`p-3.5 rounded-xl border ${badgeColor} flex items-start gap-3`}>
+                  <span className="text-xl shrink-0">{icon}</span>
+                  <div className="space-y-1">
+                    <div className="text-xs font-black uppercase tracking-wider">{synthesisTitle}</div>
+                    <div className="text-[11.5px] leading-relaxed opacity-90">{synthesisDesc}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ── STEP 4: SMART MONEY BROKER FLOW AUDIT CARD (Fixes BUG-A2-07 ReferenceError) ── */}
             {(() => {
               const pChange = Number(activeStock.intradayPChange ?? activeStock.pChange ?? 0);
@@ -3685,7 +3749,7 @@ export function AccumulationDistributionRadar({
                 pChange,
                 activeStock.wyckoff?.stage || '',
                 Boolean(activeStock.realBrokerAnalysis),
-                (floorsheetBySymbol.get(String(activeStock.symbol || '').toUpperCase().trim()) || []).length
+                diagnosticDays === 1 ? (floorsheetBySymbol.get(String(activeStock.symbol || '').toUpperCase().trim()) || []).length : 0
               );
               const isSampleValid = step4.isSampleValid;
               const bcr3Buy = step4.bcr3Buy;

@@ -637,17 +637,26 @@ export function aggregateBrokerMicrostructure(params = {}) {
     adSignal = "INSUFFICIENT ACTIVITY";
   } else {
     // All thresholds below are UNTUNED heuristic baseline thresholds (Item 5)
-    // Symmetrical k=3 comparisons on both buy and sell sides
-    const isInstitutionalDumping = (scr3NetPct >= 18.0 && scr3NetPct > bcr3NetPct) || // UNTUNED
-                                   (scr3GrossSellPct >= 38.0 && scr3GrossSellPct > bcr3BuyPct) || // UNTUNED
-                                   (scr3GrossSellPct >= 42.0 && tradeSizeRatio <= 0.70); // UNTUNED
-    const isBullTrap = scr3NetPct >= 20.0 && scr3NetPct > bcr3NetPct && priceChangePct > 2.5; // UNTUNED
-    const isInstitutionalAccumulation = (bcr3NetPct >= 18.0 && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0) || // UNTUNED
-                                        (bcr3BuyPct >= 40.0 && tradeSizeRatio >= 1.40); // UNTUNED
-    const isActiveMarkup = bcr3NetPct >= 15.0 && bcr3NetPct > scr3NetPct && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP; // UNTUNED
-    const isRetailAbsorption = bcr3BuyPct > scr3SellPct && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0 && scr3GrossSellPct < 30.0 && tradeSizeRatio >= 1.05; // UNTUNED
+    // Symmetrical k=3 comparisons on both buy and sell sides with dominance margins
+    // Prevents false distribution trap when buy concentration (BCR3) is high (e.g. 54.1%) and matches or approaches selling
+    const isTwoWayInstitutionalActivity = bcr3BuyPct >= 35.0 && scr3GrossSellPct >= 35.0 && Math.abs(bcr3BuyPct - scr3GrossSellPct) < 8.0;
 
-    if (isBullTrap) {
+    const isInstitutionalDumping = !isTwoWayInstitutionalActivity && (
+                                   (scr3NetPct >= 20.0 && (scr3NetPct - bcr3NetPct) >= 8.0) ||
+                                   (scr3GrossSellPct >= 42.0 && (scr3GrossSellPct - bcr3BuyPct) >= 8.0) ||
+                                   (scr3GrossSellPct >= 45.0 && tradeSizeRatio <= 0.70));
+    const isBullTrap = !isTwoWayInstitutionalActivity && scr3NetPct >= 20.0 && (scr3NetPct - bcr3NetPct) >= 8.0 && priceChangePct > 2.5;
+    const isInstitutionalAccumulation = (bcr3NetPct >= 18.0 && (bcr3NetPct - scr3NetPct) >= 6.0 && scr3NetPct < 15.0) ||
+                                        (bcr3BuyPct >= 40.0 && (bcr3BuyPct - scr3GrossSellPct) >= 5.0 && tradeSizeRatio >= 1.25);
+    const isActiveMarkup = bcr3NetPct >= 15.0 && (bcr3NetPct - scr3NetPct) >= 5.0 && priceChangePct > 4.5 && latestClose >= bigBrokerVWAP;
+    const isRetailAbsorption = bcr3BuyPct > scr3SellPct && bcr3NetPct > scr3NetPct && scr3NetPct < 14.0 && scr3GrossSellPct < 30.0 && tradeSizeRatio >= 1.05;
+
+    if (isTwoWayInstitutionalActivity) {
+      phase = "ACCUMULATION_REACCUMULATION";
+      phaseLabel = "Balanced Institutional Flow (High 2-Way Volume)";
+      smartMoneyBias = "Institutional Absorption";
+      adSignal = bcr3BuyPct >= scr3GrossSellPct ? "Accumulation" : "Neutral";
+    } else if (isBullTrap) {
       phase = "BULL_TRAP";
       phaseLabel = "Bull Trap (Retail Buying Top)";
       smartMoneyBias = "Operator Offloading";
