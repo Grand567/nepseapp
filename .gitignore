@@ -53,3 +53,5 @@ src/data/broker_matrix_latest.json
 proxy/data/*.db
 !proxy/data/ledger_seed_snapshot.json.gz
 !proxy/data/drabyashree_ledger.db.gz
+
+proxy/proxy/

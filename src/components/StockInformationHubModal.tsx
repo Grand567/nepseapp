@@ -405,7 +405,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   useEffect(() => {
     let active = true;
     if (!resolvedSymbol) return;
-    fetchFromBackend(`/api/stock/${encodeURIComponent(resolvedSymbol)}/smart-money?days=30`, 8000)
+    fetchFromBackend(`/api/stock/${encodeURIComponent(resolvedSymbol)}/smart-money?days=all`, 12000)
       .then((res: any) => {
         if (!active || !res) return;
         const payload = res.data || res;
@@ -510,7 +510,7 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
       avgAccumBuyPrice: avgBuy,
       topHoldingBrokerItem: holdingsWithShare[0] || null,
     };
-  }, [telemetry.smartMoney5D, broker5DPayload, ltp]);
+  }, [internalHoldings, telemetry.smartMoney5D, broker5DPayload, ltp]);
 
   const filteredAndSortedBrokers = useMemo(() => {
     let list = brokerViewMode === "HOLDINGS" ? [...allHoldingsList] : [...allDistributorsList];

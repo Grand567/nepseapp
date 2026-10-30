@@ -1,24 +1,326 @@
 [
   {
+    "date": "2026-08-27",
+    "tradeCount": 51912,
+    "totalVolume": 9123717,
+    "totalTurnover": 3753553596,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-08-27.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-08-27.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.920Z"
+  },
+  {
+    "date": "2026-08-31",
+    "tradeCount": 67323,
+    "totalVolume": 8170764,
+    "totalTurnover": 3621726757,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-08-31.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-08-31.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-01",
+    "tradeCount": 47675,
+    "totalVolume": 6766321,
+    "totalTurnover": 2892130518,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-01.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-01.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-02",
+    "tradeCount": 39180,
+    "totalVolume": 6740099,
+    "totalTurnover": 2931283861,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-02.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-02.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-03",
+    "tradeCount": 39921,
+    "totalVolume": 7021937,
+    "totalTurnover": 3399815453,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-03.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-03.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-07",
+    "tradeCount": 50184,
+    "totalVolume": 8048057,
+    "totalTurnover": 3798071703,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-07.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-07.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-09",
+    "tradeCount": 49958,
+    "totalVolume": 8104225,
+    "totalTurnover": 4143989078,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-09.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-09.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-10",
+    "tradeCount": 43633,
+    "totalVolume": 9744138,
+    "totalTurnover": 3989538163,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-10.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-10.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-11",
+    "tradeCount": 48475,
+    "totalVolume": 10957230,
+    "totalTurnover": 4305550659,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-11.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-11.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-14",
+    "tradeCount": 48621,
+    "totalVolume": 10788635,
+    "totalTurnover": 4677285063,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-14.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-14.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-15",
+    "tradeCount": 78184,
+    "totalVolume": 19498515,
+    "totalTurnover": 8277959267,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-15.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-15.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-16",
+    "tradeCount": 55271,
+    "totalVolume": 13322047,
+    "totalTurnover": 5361336270,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-16.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-16.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-17",
+    "tradeCount": 51197,
+    "totalVolume": 12672736,
+    "totalTurnover": 5455036326,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-17.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-17.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-18",
+    "tradeCount": 63490,
+    "totalVolume": 17351589,
+    "totalTurnover": 6686632892,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-18.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-18.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-22",
+    "tradeCount": 69910,
+    "totalVolume": 16954527,
+    "totalTurnover": 7005600421,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-22.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-22.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-23",
+    "tradeCount": 57324,
+    "totalVolume": 14593661,
+    "totalTurnover": 6258877457,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-23.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-23.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-24",
+    "tradeCount": 51015,
+    "totalVolume": 11573243,
+    "totalTurnover": 5233096680,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-24.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-24.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-28",
+    "tradeCount": 57031,
+    "totalVolume": 11674482,
+    "totalTurnover": 5168955949,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-28.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-28.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-29",
+    "tradeCount": 50146,
+    "totalVolume": 9886336,
+    "totalTurnover": 4393572968,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-29.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-29.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-09-30",
+    "tradeCount": 47240,
+    "totalVolume": 11281325,
+    "totalTurnover": 4539994189,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-09-30.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-09-30.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-01",
+    "tradeCount": 50782,
+    "totalVolume": 11583453,
+    "totalTurnover": 4744368514,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-01.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-01.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-02",
+    "tradeCount": 42943,
+    "totalVolume": 9927368,
+    "totalTurnover": 4183491492,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-02.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-02.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-05",
+    "tradeCount": 43988,
+    "totalVolume": 8171866,
+    "totalTurnover": 3225453454,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-05.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-05.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-06",
+    "tradeCount": 41002,
+    "totalVolume": 8218881,
+    "totalTurnover": 3105485358,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-06.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-06.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-07",
+    "tradeCount": 38856,
+    "totalVolume": 9273901,
+    "totalTurnover": 3721719824,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-07.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-07.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-08",
+    "tradeCount": 43083,
+    "totalVolume": 10537826,
+    "totalTurnover": 3836606437,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-08.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-08.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-09",
+    "tradeCount": 51477,
+    "totalVolume": 12378191,
+    "totalTurnover": 4816839910,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-09.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-09.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-12",
+    "tradeCount": 49174,
+    "totalVolume": 12084044,
+    "totalTurnover": 4433229890,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-12.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-12.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-13",
+    "tradeCount": 46156,
+    "totalVolume": 12376858,
+    "totalTurnover": 4716354780,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-13.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-13.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-14",
+    "tradeCount": 38719,
+    "totalVolume": 10974481,
+    "totalTurnover": 4100582335,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-14.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-14.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-15",
+    "tradeCount": 38861,
+    "totalVolume": 13624407,
+    "totalTurnover": 4717028104,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-15.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-15.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-16",
+    "tradeCount": 38795,
+    "totalVolume": 13226556,
+    "totalTurnover": 4821091789,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-16.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-16.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
     "date": "2026-10-26",
     "tradeCount": 38788,
-    "ingestedCount": 38788,
     "totalVolume": 10343709,
     "totalTurnover": 4002421168,
-    "jsonFileSizeKb": 19343.6,
-    "gzFileSizeKb": 1787.2,
-    "savedAt": "2026-10-28T01:26:20.813Z",
-    "status": "COMPLETE"
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-26.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-26.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
   },
   {
     "date": "2026-10-27",
     "tradeCount": 53030,
-    "ingestedCount": 53030,
     "totalVolume": 15346226,
     "totalTurnover": 5799330203,
-    "jsonFileSizeKb": 26472.1,
-    "gzFileSizeKb": 2420.8,
-    "savedAt": "2026-10-28T01:26:15.031Z",
-    "status": "COMPLETE"
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-27.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-27.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-28",
+    "tradeCount": 63037,
+    "totalVolume": 18820937,
+    "totalTurnover": 7399807550,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-28.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-28.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
+  },
+  {
+    "date": "2026-10-29",
+    "tradeCount": 66500,
+    "totalVolume": 22162299,
+    "totalTurnover": 8170665470,
+    "filePath": "data/daily_floorsheets/floorsheet-2026-10-29.json",
+    "gzFilePath": "data/daily_floorsheets/floorsheet-2026-10-29.json.gz",
+    "archivedAt": "2026-10-30T01:24:22.923Z"
   }
 ]

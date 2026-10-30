@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
-import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
+import { isNepseTradingDay } from '../utils/nepseCalendar';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
@@ -112,12 +113,20 @@ const DAYS_MAP: Record<string, number> = {
 
 export function BrokerFlowDominanceService({
   mode = 'flow',
+  selectedDate,
+  date,
+  availableDates: propAvailableDates,
+  initialSymbol,
 }: {
   mode?: 'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise';
+  selectedDate?: string;
+  date?: string;
+  availableDates?: string[];
+  initialSymbol?: string;
 }) {
   const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise'>(mode);
   const [timeframe, setTimeframe] = useState('1D');
-  const [sessionDateFilter, setSessionDateFilter] = useState('');
+  const [sessionDateFilter, setSessionDateFilter] = useState(selectedDate || date || '');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(true);
@@ -128,6 +137,7 @@ export function BrokerFlowDominanceService({
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
   const [heatmapData, setHeatmapData] = useState<any>(null);
+  const [fetchedDates, setFetchedDates] = useState<string[]>([]);
   const [selectedBrokerModal, setSelectedBrokerModal] = useState<BrokerStat | null>(null);
   const [selectedTop10BrokerId, setSelectedTop10BrokerId] = useState<string>('58');
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
@@ -137,8 +147,31 @@ export function BrokerFlowDominanceService({
   const [uniqueStockOnly, setUniqueStockOnly] = useState<boolean>(true);
   const [copiedCard, setCopiedCard] = useState<boolean>(false);
 
+  // Sync incoming props from parent
+  useEffect(() => {
+    const incoming = selectedDate || date;
+    if (incoming && incoming !== sessionDateFilter) {
+      setSessionDateFilter(incoming);
+    }
+  }, [selectedDate, date]);
+
+  // Load authoritative trading dates on mount
+  useEffect(() => {
+    fetchAvailableTradingDates().then(dates => {
+      if (Array.isArray(dates) && dates.length > 0) {
+        setFetchedDates(dates);
+      }
+    }).catch(() => {});
+  }, []);
+
   const availableDates = useMemo(() => {
     const set = new Set<string>();
+    if (Array.isArray(propAvailableDates)) {
+      propAvailableDates.forEach((d: any) => d && set.add(String(d)));
+    }
+    if (Array.isArray(fetchedDates)) {
+      fetchedDates.forEach((d: any) => d && set.add(String(d)));
+    }
     if (Array.isArray(heatmapData?.availableDates)) {
       heatmapData.availableDates.forEach((d: any) => d && set.add(String(d)));
     }
@@ -149,18 +182,29 @@ export function BrokerFlowDominanceService({
         if (dt) set.add(String(dt).split('T')[0]);
       });
     }
-    return Array.from(set).sort().reverse().slice(0, 500);
-  }, [heatmapData, floorsheet]);
+    // Filter strictly through isNepseTradingDay to guarantee no Saturday/Sunday weekends or Dashain holidays leak in
+    const valid = Array.from(set).filter(d => {
+      if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      try {
+        return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+      } catch {
+        return true;
+      }
+    });
+    return valid.sort().reverse().slice(0, 500);
+  }, [propAvailableDates, fetchedDates, heatmapData, floorsheet]);
 
   const sessionDate = useMemo(() => {
     if (sessionDateFilter) return sessionDateFilter;
+    if (selectedDate || date) return selectedDate || date;
     if (heatmapData?.businessDate) return heatmapData.businessDate;
+    if (availableDates.length > 0) return availableDates[0];
     if (floorsheet && floorsheet.length > 0) {
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
-    return new Date().toISOString().split('T')[0];
-  }, [sessionDateFilter, floorsheet, heatmapData]);
+    return '2026-10-28';
+  }, [sessionDateFilter, selectedDate, date, heatmapData, availableDates, floorsheet]);
 
   // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
   const brokerWiseLeaderboard = useMemo(() => {
@@ -250,18 +294,19 @@ export function BrokerFlowDominanceService({
 
   const loadData = async (
     activeTf = timeframe,
-    targetDate = sessionDateFilter,
+    targetDate = sessionDateFilter || selectedDate || date || '',
     targetFrom = fromDate,
     targetTo = toDate
   ) => {
     setLoading(true);
     try {
       const days = DAYS_MAP[activeTf] || 1;
+      const effDate = targetDate || sessionDate || '2026-10-28';
       const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
-        fetchRealFloorsheet(null, targetDate || '', 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),
-        fetchBrokerHeatmap({ days, date: targetDate, fromDate: targetFrom, toDate: targetTo }),
-        fetchMarketWideBrokerSummaryMap(days, { date: targetDate })
+        fetchRealFloorsheet(null, effDate, 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),
+        fetchBrokerHeatmap({ days, date: effDate, fromDate: targetFrom, toDate: targetTo }),
+        fetchMarketWideBrokerSummaryMap(days, { date: effDate })
       ]);
       if (liveDataRes.status === 'fulfilled') {
         const liveStocks = liveDataRes.value?.stocks || [];
@@ -1353,7 +1398,7 @@ export function BrokerFlowDominanceService({
       {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
         <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3">
           <span>
-            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-27'}</strong>.
+            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-28'}</strong>.
           </span>
           <button
             type="button"

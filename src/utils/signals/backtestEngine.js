@@ -117,7 +117,7 @@ export function runComprehensiveBacktest({
     // ── 1. MANAGE EXITS FOR OPEN POSITIONS ─────────────────────────────────────
     const remainingPositions = [];
     for (const pos of openPositions) {
-      // Statutory NEPSE trading calendar session counting (Sun-Thu, skipping weekends & official holidays)
+      // Statutory NEPSE trading calendar session counting (Mon-Fri, skipping weekends & official holidays)
       const holdSessions = (pos.entryDate && today.date)
         ? countNepseTradingSessionsBetween(pos.entryDate, today.date)
         : (i - pos.entryIdx);

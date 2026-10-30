@@ -10,6 +10,7 @@ import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, 
 import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
+import { isNepseTradingDay, formatNptDateIso } from '../src/utils/nepseCalendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -368,7 +369,15 @@ export async function fetchSymbolTradingDates(symbol) {
   }
 
   if (dateSet.size > 0) {
-    const dates = Array.from(dateSet).sort((a, b) => b.localeCompare(a)).slice(0, 1500);
+    const todayIso = formatNptDateIso(new Date());
+    const dates = Array.from(dateSet)
+      .filter(d => {
+        if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+        if (d > todayIso) return false;
+        return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+      })
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 1500);
     tradingDatesCache.set(sym, { timestamp: now, dates });
     return dates;
   }
@@ -604,11 +613,12 @@ async function loadAndSyncSymbolVault(symbol, requestedDates = []) {
   let didUpdate = false;
 
   // 1. Ingest from authentic full session floorsheet (100% NOTS trades)
-  // Strictly skip calling exchange live session API for old historical dates
+  // Strictly skip calling exchange live session API for old historical dates unless cached on disk or SQLite
   for (const dt of Array.from(datesToFetch)) {
     const isToday = (dt === nptDate || dt === latestTwoDates[0]);
     const fullFileExists = candidateDirs.some(d => fs.existsSync(path.join(d, `floorsheet-full-${dt}.json`)));
-    if (!isToday && !fullFileExists) continue;
+    const hasDbRecords = db ? Boolean(db.prepare('SELECT 1 FROM floorsheet_contracts WHERE trade_date = ? LIMIT 1').get(dt)) : false;
+    if (!isToday && !fullFileExists && !hasDbRecords) continue;
 
     try {
       const fullTrades = await getFullSessionFloorsheet(dt);
@@ -1274,7 +1284,10 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
     const brokerAccum = {};
     let totalVolume = 0;
     let totalTurnover = 0;
-    const dates = Object.keys(rollupObj.dailyRollup || {}).sort((a, b) => b.localeCompare(a));
+    const todayIso = formatNptDateIso(new Date());
+    const dates = Object.keys(rollupObj.dailyRollup || {})
+      .filter(d => d <= todayIso && isNepseTradingDay(new Date(d + 'T12:00:00+05:45')))
+      .sort((a, b) => b.localeCompare(a));
 
     for (const dt of dates) {
       const dayData = rollupObj.dailyRollup[dt];
@@ -2082,6 +2095,28 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         }
       }
     }
+
+    // Direct SQLite SSOT Query for requested historical date
+    if (db) {
+      try {
+        const dbContracts = db.prepare(`
+          SELECT contract_no as contractId, symbol as stockSymbol, symbol,
+                 trade_date as businessDate, trade_time as tradeTime,
+                 buyer_broker as buyerMemberId, buyer_broker as buyerBroker,
+                 seller_broker as sellerMemberId, seller_broker as sellerBroker,
+                 kitta as contractQuantity, kitta as quantity, kitta as qty,
+                 rate as contractRate, rate,
+                 amount as contractAmount, amount
+          FROM floorsheet_contracts
+          WHERE trade_date = ?
+        `).all(cleanDate);
+        if (Array.isArray(dbContracts) && dbContracts.length > 0) {
+          return dbContracts;
+        }
+      } catch (dbErr) {
+        console.warn(`[brokerVault] SQLite query error for date ${cleanDate}:`, dbErr.message);
+      }
+    }
   } else {
     // If no specific date was requested, check for the most recent floorsheet-full-*.json on disk
     for (const dataDir of candidateDirs) {
@@ -2112,13 +2147,37 @@ export async function getFullSessionFloorsheet(dateStr = '') {
         } catch (_) {}
       }
     }
+
+    // Direct SQLite SSOT Query for latest date if no file found
+    if (db) {
+      try {
+        const latestRow = db.prepare(`SELECT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 1`).get();
+        if (latestRow?.trade_date) {
+          const dbContracts = db.prepare(`
+            SELECT contract_no as contractId, symbol as stockSymbol, symbol,
+                   trade_date as businessDate, trade_time as tradeTime,
+                   buyer_broker as buyerMemberId, buyer_broker as buyerBroker,
+                   seller_broker as sellerMemberId, seller_broker as sellerBroker,
+                   kitta as contractQuantity, kitta as quantity, kitta as qty,
+                   rate as contractRate, rate,
+                   amount as contractAmount, amount
+            FROM floorsheet_contracts
+            WHERE trade_date = ?
+          `).all(latestRow.trade_date);
+          if (Array.isArray(dbContracts) && dbContracts.length > 0) {
+            return dbContracts;
+          }
+        }
+      } catch (_) {}
+    }
   }
 
-  // Tier 1: Query official NEPSE NOTS floorsheet
-  try {
-    const session = nepseClient?.nepseman?.session;
-    if (session) {
-      const endpoint = "/api/nots/nepse-data/floorsheet";
+  // Tier 1: Query official NEPSE NOTS floorsheet (only for today's active session)
+  if (!cleanDate || cleanDate === nptDate) {
+    try {
+      const session = nepseClient?.nepseman?.session;
+      if (session) {
+        const endpoint = "/api/nots/nepse-data/floorsheet";
       const firstPayload = { size: "500", page: "0" };
       if (cleanDate) firstPayload.businessDate = cleanDate;
       const firstRes = await session.post(endpoint, "floor", firstPayload);
@@ -2223,49 +2282,67 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     } catch (e2) {
       console.warn('[brokerVault] Tier 2 ShareSansar fallback error:', e2.message);
     }
+  }
 
   // Tier 3: Vault Reconstruction Fallback
   // If live scraping fails (e.g. off-market hours or upstream outage) and no exact floorsheet-full-${cleanDate}.json matches:
-  // A) Check for the most recent floorsheet-full-*.json on disk across candidateDirs
+  // A) Check for exact matching date floorsheet file on disk (or latest only if no specific date requested)
   for (const dataDir of candidateDirs) {
     if (fs.existsSync(dataDir)) {
       try {
-        const files = fs.readdirSync(dataDir)
-          .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
-          .sort((a, b) => b.localeCompare(a));
-        for (const fl of files) {
-          const filePath = path.join(dataDir, fl);
-          const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
+        const candidateFiles = cleanDate
+          ? [
+              path.join(dataDir, `floorsheet-full-${cleanDate}.json`),
+              path.join(dataDir, 'daily_floorsheets', `floorsheet-${cleanDate}.json`)
+            ]
+          : fs.readdirSync(dataDir)
+              .filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'))
+              .sort((a, b) => b.localeCompare(a))
+              .map(fl => path.join(dataDir, fl));
+
+        for (const filePath of candidateFiles) {
+          if (fs.existsSync(filePath)) {
+            const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const fileDate = (parsed[0]?.businessDate || '').slice(0, 10);
+              // Strict date match: NEVER return a different date's trades when a specific date is requested!
+              if (!cleanDate || fileDate === cleanDate) {
+                return parsed;
+              }
+            }
           }
         }
       } catch (_) {}
     }
   }
 
-  // B) Aggregate the latest trading date's rows across all proxy/data/broker_vault/*.json files
+  // B) Aggregate authentic trading rows across proxy/data/broker_vault/*.json files for cleanDate
   try {
     if (fs.existsSync(VAULT_DIR)) {
       const vaultFiles = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.json'));
       if (vaultFiles.length > 0) {
-        const dateCountMap = {};
-        const allVaultRows = [];
-        for (const vf of vaultFiles.slice(0, 100)) {
-          try {
-            const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
-            if (symData?.rowsByDate) {
-              for (const [dt, rows] of Object.entries(symData.rowsByDate)) {
-                if (Array.isArray(rows) && rows.length > 0) {
-                  dateCountMap[dt] = (dateCountMap[dt] || 0) + rows.length;
+        let targetVaultDate = cleanDate;
+        if (!targetVaultDate) {
+          // If no date requested, discover the latest available date across vault files
+          const dateCountMap = {};
+          for (const vf of vaultFiles.slice(0, 50)) {
+            try {
+              const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
+              if (symData?.rowsByDate) {
+                for (const [dt, rows] of Object.entries(symData.rowsByDate)) {
+                  if (Array.isArray(rows) && rows.length > 0) {
+                    dateCountMap[dt] = (dateCountMap[dt] || 0) + rows.length;
+                  }
                 }
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
+          const sortedVaultDates = Object.keys(dateCountMap).sort((a, b) => b.localeCompare(a));
+          targetVaultDate = sortedVaultDates[0] || null;
         }
-        const sortedVaultDates = Object.keys(dateCountMap).sort((a, b) => b.localeCompare(a));
-        const targetVaultDate = cleanDate && dateCountMap[cleanDate] ? cleanDate : sortedVaultDates[0];
+
         if (targetVaultDate) {
+          const allVaultRows = [];
           for (const vf of vaultFiles) {
             try {
               const symData = JSON.parse(fs.readFileSync(path.join(VAULT_DIR, vf), 'utf8'));
@@ -2275,6 +2352,7 @@ export async function getFullSessionFloorsheet(dateStr = '') {
               }
             } catch (_) {}
           }
+
           if (allVaultRows.length > 0) {
             const seenContracts = new Set();
             const deduplicated = [];
@@ -2284,8 +2362,23 @@ export async function getFullSessionFloorsheet(dateStr = '') {
                 if (seenContracts.has(cid)) continue;
                 seenContracts.add(cid);
               }
-              deduplicated.push(r);
+              deduplicated.push({
+                ...r,
+                businessDate: targetVaultDate
+              });
             }
+
+            // Cache reconstructed session to disk so subsequent queries are instant
+            try {
+              const dailyDir = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), 'daily_floorsheets');
+              if (!fs.existsSync(dailyDir)) fs.mkdirSync(dailyDir, { recursive: true });
+              const dailyFile = path.join(dailyDir, `floorsheet-${targetVaultDate}.json`);
+              const fullFile = path.join(candidateDirs[0] || path.join(process.cwd(), 'data'), `floorsheet-full-${targetVaultDate}.json`);
+              fs.writeFileSync(dailyFile, JSON.stringify(deduplicated), 'utf8');
+              fs.writeFileSync(fullFile, JSON.stringify(deduplicated), 'utf8');
+              console.log(`[brokerVault] Reconstructed and cached ${deduplicated.length} authentic trades for ${targetVaultDate}`);
+            } catch (_) {}
+
             return deduplicated;
           }
         }
@@ -2296,13 +2389,17 @@ export async function getFullSessionFloorsheet(dateStr = '') {
   }
 
   // C) Reconstruct genuine floorsheet transactions from broker_matrix_latest.json
+  // ONLY if no specific date was requested or matrix businessDate matches cleanDate
   for (const dataDir of candidateDirs) {
     const matrixPath = path.join(dataDir, 'broker_matrix_latest.json');
     if (fs.existsSync(matrixPath)) {
       try {
         const matrixObj = JSON.parse(fs.readFileSync(matrixPath, 'utf8'));
         if (Array.isArray(matrixObj?.matrix) && matrixObj.matrix.length > 0) {
-          const mDate = matrixObj.businessDate || cleanDate || nptDate;
+          const mDate = matrixObj.businessDate || nptDate;
+          if (cleanDate && mDate !== cleanDate) {
+            continue; // Do not return mismatching matrix
+          }
           const reconstructedTrades = [];
           for (const b of matrixObj.matrix) {
             const bId = String(b.broker || '').trim();

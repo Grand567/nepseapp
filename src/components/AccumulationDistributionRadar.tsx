@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, HelpCircle, Calendar, History, Clock, Sparkles,
   Download, Upload, Crown, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
-import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic } from '../utils/liveData';
+import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, fetchRealBrokerAnalysis, getCachedRealPriceHistory, getCachedRealBrokerAnalysis, fetchPriceHistory, fetchMarketWideBrokerSummaryMap, fetchPrecomputedRadar, fetchPrecomputedDiagnostic, fetchAvailableTradingDates } from '../utils/liveData';
 import {
   calculateChaikinADL,
   calculateCMF,
@@ -585,6 +585,7 @@ export function AccumulationDistributionRadar({
   const [loading, setLoading] = useState(true);
   const [stocks, setStocks] = useState<any[]>([]);
   const [floorsheet, setFloorsheet] = useState<any[]>([]);
+  const [availableSessionDates, setAvailableSessionDates] = useState<string[]>([]);
   const [stockBrokerDataMap, setStockBrokerDataMap] = useState<Record<string, any>>({});
   const [whaleArchive, setWhaleArchive] = useState<any[]>(() => getStoredWhaleArchive());
   const [selectedArchiveDate, setSelectedArchiveDate] = useState<string>('');
@@ -783,6 +784,9 @@ export function AccumulationDistributionRadar({
         bData.availableDates.forEach((d: string) => { if (d) datesSet.add(d); });
       }
     }
+    if (Array.isArray(availableSessionDates)) {
+      availableSessionDates.forEach((d: string) => { if (d) datesSet.add(d); });
+    }
     if (Array.isArray(whaleArchive)) {
       whaleArchive.forEach((w: any) => { if (w?.date) datesSet.add(w.date); });
     }
@@ -793,19 +797,22 @@ export function AccumulationDistributionRadar({
       });
     }
     return Array.from(datesSet).sort((a, b) => b.localeCompare(a)).slice(0, 500);
-  }, [stockBrokerDataMap, selectedStockSymbol, whaleArchive, floorsheet]);
+  }, [stockBrokerDataMap, selectedStockSymbol, whaleArchive, floorsheet, availableSessionDates]);
 
   useEffect(() => {
     let isMounted = true;
     async function init() {
       setLoading(true);
       try {
-        const [liveRes, fsRes, brokerMapRes] = await Promise.allSettled([
+        const [liveRes, datesRes, brokerMapRes] = await Promise.allSettled([
           loadNepseData(),
-          fetchRealFloorsheet(null, '', 1, 100000),  // 100% full-session floorsheet
+          fetchAvailableTradingDates(),
           fetchMarketWideBrokerSummaryMap(1)
         ]);
         if (!isMounted) return;
+        if (datesRes.status === 'fulfilled' && Array.isArray(datesRes.value)) {
+          setAvailableSessionDates(datesRes.value);
+        }
         if (brokerMapRes.status === 'fulfilled' && brokerMapRes.value && typeof brokerMapRes.value === 'object') {
           const map1D: Record<string, any> = {};
           for (const [k, v] of Object.entries(brokerMapRes.value)) {
@@ -826,21 +833,6 @@ export function AccumulationDistributionRadar({
           if (!initialSymbol && liveRes.value.stocks.length > 0) {
             setSelectedStockSymbol(liveRes.value.stocks[0].symbol);
           }
-        }
-        if (fsRes.status === 'fulfilled') {
-          const fs = fsRes.value;
-          const fsData = Array.isArray(fs?.content)
-            ? fs.content
-            : Array.isArray(fs?.data)
-            ? fs.data
-            : Array.isArray(fs?.rows)
-            ? fs.rows
-            : Array.isArray(fs?.list)
-            ? fs.list
-            : Array.isArray(fs)
-            ? fs
-            : [];
-          setFloorsheet(fsData);
         }
       } catch (e) {
         console.error('Failed to load live accumulation data:', e);
@@ -1129,7 +1121,7 @@ export function AccumulationDistributionRadar({
         : { ...s, pChange: effectivePChange, intradayPChange, volume: effectiveVolume };
 
       const stockTrades = floorsheetBySymbol.get(symUpper) || [];
-      const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker);
+      const brokerData = calculateBrokerConcentration(stockTrades, sym, stockSummaryWithBroker, stockBrokerAnalysis);
       const wyckoff = classifyWyckoffStage(stockSummaryWithBroker, historyCandles, brokerData);
 
       const streak = whaleStreakMap.get(symUpper);

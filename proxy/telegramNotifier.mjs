@@ -97,54 +97,61 @@ export function getTelegramStatus() {
 
 /**
  * Core resilient Telegram API caller.
- * Attempts standard HTTPS fetch first. If intercepted or timed out by local ISP
- * (e.g., DNS hijacking in Nepal), automatically fails over to Telegram direct IP
- * with TLS SNI validation.
+ * Directly bypasses local ISP DNS poisoning (e.g. Nepal ISP blackhole IPs)
+ * by connecting directly to Telegram official core IP (149.154.166.110) with TLS SNI validation.
  */
 async function callTelegramApi(endpoint, payload = null) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(`https://api.telegram.org${endpoint}`, {
+  const dataStr = payload ? JSON.stringify(payload) : null;
+
+  // Primary Path: Direct HTTPS with SNI to bypass Nepal DNS poisoning instantly
+  const directPromise = new Promise((resolve, reject) => {
+    const req = https.request({
+      host: '149.154.166.110',
+      port: 443,
+      path: endpoint,
       method: payload ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload ? JSON.stringify(payload) : undefined,
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    return await res.json();
-  } catch (_) {
-    // Failover: Direct connection to Telegram core IP
-    return new Promise((resolve) => {
-      const dataStr = payload ? JSON.stringify(payload) : null;
-      const req = https.request({
-        host: '149.154.166.110',
-        port: 443,
-        path: endpoint,
-        method: payload ? 'POST' : 'GET',
-        headers: {
-          'Host': 'api.telegram.org',
-          'Content-Type': 'application/json',
-          ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
-        },
-        servername: 'api.telegram.org',
-        timeout: 5000
-      }, (res) => {
-        let buf = '';
-        res.on('data', chunk => buf += chunk);
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(buf));
-          } catch (e) {
-            resolve({ ok: false, description: buf || 'Invalid JSON response from Telegram' });
-          }
-        });
+      headers: {
+        'Host': 'api.telegram.org',
+        'Content-Type': 'application/json',
+        ...(dataStr ? { 'Content-Length': Buffer.byteLength(dataStr) } : {})
+      },
+      servername: 'api.telegram.org',
+      timeout: 6000
+    }, (res) => {
+      let buf = '';
+      res.on('data', chunk => buf += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(buf));
+        } catch (_) {
+          resolve({ ok: false, description: buf || 'Invalid response from Telegram' });
+        }
       });
-      req.on('error', e => resolve({ ok: false, description: e.message }));
-      req.on('timeout', () => { req.destroy(); resolve({ ok: false, description: 'Telegram connection timed out' }); });
-      if (dataStr) req.write(dataStr);
-      req.end();
     });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Telegram direct connection timed out')); });
+    if (dataStr) req.write(dataStr);
+    req.end();
+  });
+
+  try {
+    return await directPromise;
+  } catch (_) {
+    // Secondary Failover: Standard fetch with abort controller
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`https://api.telegram.org${endpoint}`, {
+        method: payload ? 'POST' : 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload ? JSON.stringify(payload) : undefined,
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      return await res.json();
+    } catch (err) {
+      return { ok: false, description: err.message || 'Telegram network failure' };
+    }
   }
 }
 

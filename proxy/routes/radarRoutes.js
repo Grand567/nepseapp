@@ -102,7 +102,7 @@ export async function ensureHotCacheReady() {
  * GET /api/radar?days=30
  * Returns all stocks' phase classifications & radar counts for 1D, 5D, 15D, or 30D in < 1ms
  */
-router.get("/radar", async (req, res) => {
+router.get(["/radar", "/radar/accumulation-distribution"], async (req, res) => {
   await ensureHotCacheReady();
   const validDays = resolveValidTimeframe(req.query.days, 30);
 

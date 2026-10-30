@@ -454,9 +454,9 @@ export function validateNepseTradingDate(tradeDate, allowLegacy = false) {
     return true;
   }
   const dayOfWeek = d.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 4 = Thursday, 5 = Friday, 6 = Saturday
-  if (dayOfWeek === 5 || dayOfWeek === 6) {
-    const dayName = dayOfWeek === 5 ? 'Friday' : 'Saturday';
-    throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule is strictly Sunday through Thursday (11:00 AM – 3:00 PM NPT).`);
+  if (dayOfWeek === 6 || dayOfWeek === 0) {
+    const dayName = dayOfWeek === 6 ? 'Saturday' : 'Sunday';
+    throw new Error(`[NEPSE Calendar Validator] Rejected non-trading weekday '${cleanDate}' (${dayName}). Statutory NEPSE trading schedule is strictly Monday through Friday (11:00 AM – 3:00 PM NPT).`);
   }
   // Reject future trading dates beyond current NPT date (allow 2099 in unit tests)
   if (!cleanDate.startsWith('2099') && process.env.NODE_ENV !== 'test') {
@@ -1905,22 +1905,20 @@ export function getScripFloorsheet(symbol, limit = 500, options = {}) {
 /**
  * Reconstructs Level-2 Market Depth from SQLite Floorsheet Volume-at-Price (VAP) clusters
  */
-export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = null) {
+export function reconstructMarketDepthFromFloorsheet(symbol, verifiedPrice = null, targetDate = null) {
   if (!symbol) return null;
   const cleanSym = String(symbol).toUpperCase().trim();
 
   try {
     let refPrice = verifiedPrice;
     if (!refPrice || refPrice <= 0) {
-      const latestSummary = db.prepare(`
-        SELECT close_price FROM daily_stock_summary
-        WHERE UPPER(symbol) = ?
-        ORDER BY trade_date DESC LIMIT 1
-      `).get(cleanSym);
-      refPrice = latestSummary?.close_price || 0;
+      const summaryQuery = targetDate
+        ? db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(cleanSym, targetDate)
+        : db.prepare(`SELECT close_price FROM daily_stock_summary WHERE UPPER(symbol) = ? ORDER BY trade_date DESC LIMIT 1`).get(cleanSym);
+      refPrice = summaryQuery?.close_price || 0;
     }
 
-    const contracts = getScripFloorsheet(cleanSym, 200);
+    const contracts = getScripFloorsheet(cleanSym, 200, targetDate ? { date: targetDate } : {});
     if (!contracts || contracts.length === 0) return null;
 
     if (!refPrice || refPrice <= 0) {

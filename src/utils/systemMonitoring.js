@@ -121,7 +121,7 @@ export function evaluateDataFreshness({
   const market = calendarStatus || getDetailedMarketStatus(new Date(currentTime));
   const isMarketOpen = Boolean(market?.isOpen || market?.isWithinTradingHours);
 
-  // 1. During Live Trading Session (11:00 - 15:00 NPT Sun-Thu)
+  // 1. During Live Trading Session (11:00 - 15:00 NPT Mon-Fri)
   if (isMarketOpen) {
     if (ageMinutes <= 15) {
       return {

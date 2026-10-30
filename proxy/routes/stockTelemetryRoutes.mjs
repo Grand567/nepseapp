@@ -4,6 +4,7 @@ import { db } from '../db/ledgerStore.js';
 import { safeNum, resolveValidNepseSymbol, resolveVerifiedPrice } from './aiGuruRoutes.mjs';
 import { getBrokerName, getOrFetchAllTimeBrokerHoldings } from '../brokerVault.mjs';
 import { aggregateBrokerMicrostructure } from '../utils/sharedBrokerAggregationEngine.js';
+import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 function sanitizeSymbol(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -819,6 +820,13 @@ export async function handleStockSmartMoney(req, res) {
           .map(r => r.trade_date);
       } catch (_) {}
     }
+
+    const todayIso = formatNptDateIso(new Date());
+    availableDates = availableDates.filter(d => {
+      if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      if (d > todayIso) return false;
+      return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+    });
 
     const targetDates = requestedDate
       ? [requestedDate]

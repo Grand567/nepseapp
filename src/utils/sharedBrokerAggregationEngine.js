@@ -157,8 +157,31 @@ export function aggregateBrokerMicrostructure(params = {}) {
   let crossVolume = 0;
   let crossTurnover = 0;
 
-  // PATH 1: Raw floorsheet contracts provided
-  if (rawTrades.length > 0) {
+  // Check if rawTrades is an incomplete partial sample (e.g. from 100-trade paginated floorsheet)
+  const rbaCandidate = params.realBrokerAnalysis || stockSummary?.realBrokerAnalysis || stockSummary?.brokerAnalysis;
+  const hasFullRba = Boolean(
+    rbaCandidate && (
+      (Array.isArray(rbaCandidate.brokers) && rbaCandidate.brokers.length > 0) ||
+      (Array.isArray(rbaCandidate.topBuyers) && rbaCandidate.topBuyers.length > 0)
+    )
+  );
+  const expectedVol = Number(stockSummary.total_volume || stockSummary.totalTradedQuantity || stockSummary.volume || rbaCandidate?.totalVolume || 0);
+
+  const rawTradesVol = rawTrades.reduce((acc, t) => {
+    const s = String(t.symbol || t.stockSymbol || t.contractSymbol || '').toUpperCase().trim();
+    if (!normSym || !s || s === normSym) {
+      return acc + Number(t.quantity || t.qty || t.kitta || t.contractQuantity || 0);
+    }
+    return acc;
+  }, 0);
+
+  // If we have an authentic realBrokerAnalysis and the raw trades cover less than 85% of total volume,
+  // or if rawTradesVol is less than 50% of expected session volume, do NOT let the partial snippet corrupt broker concentration.
+  const isPartialFragment = (hasFullRba && expectedVol >= 500 && rawTradesVol < expectedVol * 0.85) ||
+                            (expectedVol >= 500 && rawTradesVol < expectedVol * 0.5);
+
+  // PATH 1: Raw floorsheet contracts provided (only if representative of the session)
+  if (rawTrades.length > 0 && !isPartialFragment) {
     const symbolTrades = rawTrades.filter(t => {
       const s = String(t.symbol || t.stockSymbol || t.contractSymbol || '').toUpperCase().trim();
       return !normSym || !s || s === normSym;

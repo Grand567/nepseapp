@@ -2,6 +2,8 @@
 import express from 'express';
 import { db } from '../db/ledgerStore.js';
 import { safeNum } from './aiGuruRoutes.mjs';
+import { getFullSessionFloorsheet } from '../brokerVault.mjs';
+import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
 
 const router = express.Router();
 
@@ -97,7 +99,7 @@ function enrichFloorsheetContracts(rawRows, fallbackSymbol) {
   return enriched;
 }
 
-export function handleFloorsheetHub(req, res) {
+export async function handleFloorsheetHub(req, res) {
   try {
     const symbolFilter = (req.query.symbol || '').trim().toUpperCase();
     const buyerFilter = Math.round(safeNum(req.query.buyer, 0));
@@ -113,23 +115,19 @@ export function handleFloorsheetHub(req, res) {
     let source = 'EMPTY';
     let availableDates = [];
 
-    // Distinct trading dates for date dropdown (up to 30 dates sorted descending)
+    // Distinct trading dates for date dropdown (comprehensive historical coverage)
+    const dateSet = new Set();
     if (tableExists(db, 'floorsheet_contracts')) {
       try {
-        availableDates = db
-          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts ORDER BY trade_date DESC LIMIT 30`)
-          .all()
-          .map(r => r.trade_date);
+        db.prepare('SELECT DISTINCT trade_date FROM floorsheet_contracts WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 500').all(formatNptDateIso(new Date())).forEach(r => r.trade_date && dateSet.add(r.trade_date));
       } catch (_) {}
     }
-    if (availableDates.length === 0 && tableExists(db, 'floorsheet_broker_summary')) {
+    if (tableExists(db, 'daily_stock_summary')) {
       try {
-        availableDates = db
-          .prepare(`SELECT DISTINCT trade_date FROM floorsheet_broker_summary ORDER BY trade_date DESC LIMIT 30`)
-          .all()
-          .map(r => r.trade_date);
+        db.prepare('SELECT DISTINCT trade_date FROM daily_stock_summary WHERE (is_quarantined = 0 OR is_quarantined IS NULL) AND trade_date <= ? ORDER BY trade_date DESC LIMIT 500').all(formatNptDateIso(new Date())).forEach(r => r.trade_date && dateSet.add(r.trade_date));
       } catch (_) {}
     }
+    availableDates = Array.from(dateSet).filter(d => d && d <= formatNptDateIso(new Date()) && isNepseTradingDay(new Date(d + 'T12:00:00+05:45'))).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500);
 
     const requestedDate = req.query.date || null;
 
@@ -197,8 +195,54 @@ export function handleFloorsheetHub(req, res) {
       }
     }
 
-    // 2. Fallback Path: If `floorsheet_contracts` is empty, synthesize representative tape from `floorsheet_broker_summary`
-    if (rawContracts.length === 0 && tableExists(db, 'floorsheet_broker_summary')) {
+    // 2. Secondary Path: Query authentic full session floorsheet from vault/disk
+    if (rawContracts.length === 0 && chosenDate) {
+      try {
+        const fullTrades = await getFullSessionFloorsheet(chosenDate);
+        if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+          let filtered = fullTrades;
+          if (chosenDate) {
+            filtered = filtered.filter(t => (t.businessDate || '').slice(0, 10) === chosenDate);
+          }
+          if (symbolFilter && symbolFilter !== 'ALL') {
+            filtered = filtered.filter(t => (t.stockSymbol || t.symbol || '').toUpperCase().includes(symbolFilter));
+          }
+          if (buyerFilter > 0) {
+            filtered = filtered.filter(t => Number(t.buyerMemberId || t.buyerBroker || 0) === buyerFilter);
+          }
+          if (sellerFilter > 0) {
+            filtered = filtered.filter(t => Number(t.sellerMemberId || t.sellerBroker || 0) === sellerFilter);
+          }
+          if (minKitta > 0) {
+            filtered = filtered.filter(t => Number(t.contractQuantity || t.quantity || t.qty || 0) >= minKitta);
+          }
+          if (minAmount > 0) {
+            filtered = filtered.filter(t => Number(t.contractAmount || t.amount || 0) >= minAmount);
+          }
+          if (excludeCross) {
+            filtered = filtered.filter(t => String(t.buyerMemberId || t.buyerBroker) !== String(t.sellerMemberId || t.sellerBroker));
+          }
+          if (filtered.length > 0) {
+            rawContracts = filtered.slice(0, 100000).map((t, idx) => ({
+              contractNo: String(t.contractId || t.contract_no || `${chosenDate}-${idx + 1}`),
+              symbol: (t.stockSymbol || t.symbol || '').toUpperCase(),
+              tradeDate: t.businessDate || chosenDate,
+              tradeTime: t.tradeTime || '14:59:00',
+              buyerBroker: Number(t.buyerMemberId || t.buyerBroker || t.buyer || 0),
+              sellerBroker: Number(t.sellerMemberId || t.sellerBroker || t.seller || 0),
+              kitta: Number(t.contractQuantity || t.quantity || t.qty || 0),
+              rate: Number(t.contractRate || t.rate || 0),
+              amount: Number(t.contractAmount || t.amount || (Number(t.contractQuantity || 0) * Number(t.contractRate || 0))),
+            }));
+            source = 'FULL_SESSION_VAULT';
+            asOfDate = chosenDate;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback Path: Only if NO specific date requested and contracts are empty
+    if (rawContracts.length === 0 && !requestedDate && tableExists(db, 'floorsheet_broker_summary')) {
       const latestDateRow = db
         .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_broker_summary`)
         .get();

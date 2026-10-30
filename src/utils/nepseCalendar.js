@@ -6,8 +6,8 @@ import { getNepaliDate, getBikramSambatHoliday } from './bikramSambat.js';
  * and official Nepal Bikram Sambat (BS) Public Holidays.
  * 
  * NEPSE Trading Schedule:
- * - Trading Days: Sunday, Monday, Tuesday, Wednesday, Thursday
- * - Weekly Closed: Friday & Saturday (National Weekend Holidays)
+ * - Trading Days: Monday, Tuesday, Wednesday, Thursday, Friday
+ * - Weekly Closed: Saturday & Sunday (National Weekend Holidays)
  * - Hours: 11:00 AM – 3:00 PM NPT (UTC+5:45)
  */
 
@@ -312,9 +312,9 @@ export function isNepseWeekend(date = new Date()) {
     else if (dayStr === 'Sat') dayOfWeek = 6;
   } catch (_) {}
 
-  // Statutory NEPSE weekend holidays: Friday (5) and Saturday (6).
-  // Sunday (0) to Thursday (4) are active trading days!
-  const isWeekend = (dayOfWeek === 5 || dayOfWeek === 6);
+  // Statutory NEPSE weekend holidays: Saturday (6) and Sunday (0).
+  // Monday (1) through Friday (5) are active trading days!
+  const isWeekend = (dayOfWeek === 6 || dayOfWeek === 0);
   return {
     isWeekend,
     dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek],
@@ -324,7 +324,7 @@ export function isNepseWeekend(date = new Date()) {
 
 /**
  * Checks if a given date is an official active NEPSE trading day.
- * Returns true for Sunday, Monday, Tuesday, Wednesday, Thursday when NOT a holiday.
+ * Returns true for Monday, Tuesday, Wednesday, Thursday, Friday when NOT a holiday.
  */
 export function isNepseTradingDay(date = new Date()) {
   const weekendCheck = isNepseWeekend(date);
@@ -338,7 +338,7 @@ export function isNepseTradingDay(date = new Date()) {
 
 /**
  * Finds the most recent past valid NEPSE Trading Day.
- * If today is Friday, Saturday, or a Holiday (or trading hasn't started yet),
+ * If today is Saturday, Sunday, or a Holiday (or trading hasn't started yet),
  * it scans backwards until finding the last active trading session date.
  *
  * @param {Date} fromDate - Reference date (default: now)
@@ -450,19 +450,19 @@ export function getTargetTradingSessionDate(now = new Date()) {
 
 /**
  * Calculates the exact T+2 Settlement Date and Demat Credit sellable date (T+3)
- * under the statutory NEPSE Sunday–Thursday trading schedule.
+ * under the statutory NEPSE Monday–Friday trading schedule.
  *
- * Rules (effective under SEBON / NEPSE Sun-Thu regulations):
- * - Trading Days: Sunday (0) through Thursday (4).
- * - Weekly Market Holidays: Friday (5) and Saturday (6).
- * - Strictly skips all Fridays, Saturdays, and official NEPSE festival/public holidays.
+ * Rules (effective under SEBON / NEPSE Mon-Fri regulations):
+ * - Trading Days: Monday (1) through Friday (5).
+ * - Weekly Market Holidays: Saturday (6) and Sunday (0).
+ * - Strictly skips all Saturdays, Sundays, and official NEPSE festival/public holidays.
  *
  * Standard schedule (no intervening public holidays):
- * - Sunday trade    -> Settles Tuesday (T+2)   | Sellable from Demat Wednesday (T+3)
  * - Monday trade    -> Settles Wednesday (T+2) | Sellable from Demat Thursday (T+3)
- * - Tuesday trade   -> Settles Thursday (T+2)  | Sellable from Demat Sunday (T+3, skips Fri/Sat)
- * - Wednesday trade -> Settles Sunday (T+2, skips Fri/Sat) | Sellable from Demat Monday (T+3)
- * - Thursday trade  -> Settles Monday (T+2, skips Fri/Sat) | Sellable from Demat Tuesday (T+3)
+ * - Tuesday trade   -> Settles Thursday (T+2)  | Sellable from Demat Friday (T+3)
+ * - Wednesday trade -> Settles Friday (T+2)    | Sellable from Demat Monday (T+3, skips Sat/Sun)
+ * - Thursday trade  -> Settles Monday (T+2, skips Sat/Sun) | Sellable from Demat Tuesday (T+3)
+ * - Friday trade    -> Settles Tuesday (T+2, skips Sat/Sun) | Sellable from Demat Wednesday (T+3)
  *
  * @param {Date|string} tradeDate - Execution date (default: now)
  * @returns {object} Comprehensive T+2 settlement schedule
@@ -512,16 +512,16 @@ export const getT2SettlementSchedule = calculateT2SettlementDate;
 /**
  * Counts the exact number of official NEPSE trading sessions elapsed between two dates.
  * - Source: Nepal Stock Exchange (NEPSE) Trading Schedule & Official BS Holidays Database.
- * - Active Trading Days: Sunday through Thursday (11:00 AM - 3:00 PM NPT).
- * - Weekly Market Holidays: Friday and Saturday (strictly 0 trading sessions elapsed).
+ * - Active Trading Days: Monday through Friday (11:00 AM - 3:00 PM NPT).
+ * - Weekly Market Holidays: Saturday and Sunday (strictly 0 trading sessions elapsed).
  * - Excludes all official festival/public holidays listed in NEPSE_PUBLIC_HOLIDAYS.
  *
  * Example (Standard Week):
- * - Thursday to Thursday: 0 trading sessions (Entry Day T)
- * - Thursday to Friday:   0 trading sessions (Friday Weekend)
- * - Thursday to Saturday: 0 trading sessions (Saturday Weekend)
- * - Thursday to Sunday:   1 trading session  (Day T+1, Locked in Demat settlement)
- * - Thursday to Monday:   2 trading sessions (Day T+2, Settled in Demat, Unlocked)
+ * - Friday to Friday:   0 trading sessions (Entry Day T)
+ * - Friday to Saturday: 0 trading sessions (Saturday Weekend)
+ * - Friday to Sunday:   0 trading sessions (Sunday Weekend)
+ * - Friday to Monday:   1 trading session  (Day T+1, Locked in Demat settlement)
+ * - Friday to Tuesday:  2 trading sessions (Day T+2, Settled in Demat, Unlocked)
  *
  * @param {string|Date} startDate - Entry or anchor date (YYYY-MM-DD or Date object)
  * @param {string|Date} endDate - Current or exit date (YYYY-MM-DD or Date object)
@@ -567,7 +567,7 @@ export function countNepseTradingSessionsBetween(startDate, endDate) {
 
 /**
  * Generates an array of EXACT past valid NEPSE trading dates.
- * Strictly skips Fridays, Saturdays, and all Nepal Public Holidays.
+ * Strictly skips Saturdays, Sundays, and all Nepal Public Holidays.
  */
 export function generateTradingDaysSequence(count = 365, referenceDate = new Date()) {
   const tradingDays = [];
@@ -718,7 +718,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 2. Check Weekly Close (Friday, Saturday)
+  // 2. Check Weekly Close (Saturday, Sunday)
   if (weekend.isWeekend) {
     const nextTradingDay = getNextValidTradingDay(now);
     const nextTradingDayIso = formatNptDateIso(nextTradingDay);
@@ -744,7 +744,7 @@ export function getDetailedMarketStatus(now = new Date()) {
     };
   }
 
-  // 3. Regular Trading Day (Sunday - Thursday)
+  // 3. Regular Trading Day (Monday - Friday)
   if (isWithinHours) {
     return {
       ...baseData,

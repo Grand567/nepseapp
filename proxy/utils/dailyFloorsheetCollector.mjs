@@ -223,14 +223,39 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
       if (stat.size > 1000) {
         console.log(`[dailyFloorsheetCollector] Already downloaded locally: ${jsonFilePath} (${(stat.size / 1024).toFixed(1)} KB)`);
         const cachedTrades = JSON.parse(fs.readFileSync(jsonFilePath, 'utf8'));
-        return {
-          success: true,
-          date: targetDate,
-          tradeCount: cachedTrades.length,
-          filePath: jsonFilePath,
-          gzFilePath,
-          cached: true
-        };
+
+        // ── Date Mislabeling Guard ──
+        // Validate that the cached file actually contains data for targetDate.
+        // Cross-check by sampling the first trade's businessDate.
+        const sampleTrade = cachedTrades[0];
+        const embeddedDate = String(
+          sampleTrade?.businessDate || sampleTrade?.trade_date || sampleTrade?.tradeDate || ''
+        ).split('T')[0].trim();
+        if (embeddedDate && embeddedDate !== targetDate) {
+          console.warn(`[dailyFloorsheetCollector] ⚠️ Date mislabeling detected! File ${jsonFilePath} contains data for ${embeddedDate} but was labeled ${targetDate}. Deleting stale file and re-fetching.`);
+          try { fs.unlinkSync(jsonFilePath); } catch (_) {}
+          try { if (fs.existsSync(gzFilePath)) fs.unlinkSync(gzFilePath); } catch (_) {}
+          // Fall through to re-fetch below
+        } else {
+          // ── Ensure floorsheet_contracts is populated even for cached files ──
+          if (db && cachedTrades.length > 0) {
+            const existing = db.prepare(
+              'SELECT COUNT(*) as c FROM floorsheet_contracts WHERE trade_date = ?'
+            ).get(targetDate);
+            if (!existing || existing.c === 0) {
+              console.log(`[dailyFloorsheetCollector] floorsheet_contracts missing for ${targetDate} — re-ingesting ${cachedTrades.length} cached contracts...`);
+              ingestContractsToLedger(targetDate, cachedTrades);
+            }
+          }
+          return {
+            success: true,
+            date: targetDate,
+            tradeCount: cachedTrades.length,
+            filePath: jsonFilePath,
+            gzFilePath,
+            cached: true
+          };
+        }
       }
     } catch (_) {}
   }
@@ -241,6 +266,23 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
     trades = await getFullSessionFloorsheet(targetDate);
   } catch (err) {
     console.warn(`[dailyFloorsheetCollector] Fetch warning for ${targetDate}:`, err.message);
+  }
+
+  // ── Date Mislabeling Guard for freshly fetched data ──
+  // If exchange API returns data for a different session (e.g., yesterday's data labeled today),
+  // abort rather than storing incorrect data.
+  if (trades && trades.length > 0) {
+    const sampleFreshDate = String(
+      trades[0]?.businessDate || trades[0]?.trade_date || trades[0]?.tradeDate || ''
+    ).split('T')[0].trim();
+    if (sampleFreshDate && sampleFreshDate !== targetDate) {
+      console.warn(`[dailyFloorsheetCollector] ⚠️ Date mislabeling: Exchange returned ${sampleFreshDate}, requested ${targetDate}. Aborting save — today's market may not be closed yet.`);
+      return {
+        success: false,
+        date: targetDate,
+        error: `Exchange returned data for ${sampleFreshDate}, not ${targetDate}. Market may still be open or data not yet available.`
+      };
+    }
   }
 
   // If external fetch returned empty, try extracting from SQLite ledger

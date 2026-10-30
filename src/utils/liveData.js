@@ -15,7 +15,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt } from './nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay } from './nepseCalendar.js';
 import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import {
@@ -1305,8 +1305,21 @@ export async function prefetchFundamentalsForUniverse() {
 }
 
 // PUBLIC API
-export async function fetchLiveMarket() {
+export async function fetchLiveMarket(date = '') {
   ensureSnapshot();
+  const reqDate = String(date || '').trim();
+  const todayIso = formatNptDateIso(new Date());
+
+  if (reqDate && reqDate !== todayIso) {
+    try {
+      const res = await fetchFromBackend(`/api/today-prices?date=${encodeURIComponent(reqDate)}`, 10000);
+      const arr = res?.data || (Array.isArray(res) ? res : []);
+      if (Array.isArray(arr) && arr.length > 20) {
+        return { data: arr, source: 'historical', marketStatus: getDetailedMarketStatus(), isFreshFeed: false, date: reqDate };
+      }
+    } catch (_) {}
+  }
+
   const live = await attemptLiveMarket();
   if (live && live.length) {
     persistStocks(live);
@@ -1327,7 +1340,7 @@ export async function fetchLiveMarket() {
   return { data: MEM_STOCKS, source: LAST_SOURCE, marketStatus, isFreshFeed: false, isSimulatedData: isSimulated };
 }
 
-export async function fetchMarketSummary() {
+export async function fetchMarketSummary(targetDate) {
   ensureSnapshot();
   let marketStatus = getDetailedMarketStatus();
   const defaultSource = marketStatus.isEmergencyHalt ? 'halt-confirmed' : (marketStatus.isOpen ? 'live' : 'closing');
@@ -1343,7 +1356,8 @@ export async function fetchMarketSummary() {
 
   // 1. Try backend proxy /api/market/summary
   try {
-    const pSum = await fetchFromBackend(`/api/market/summary`, 10000);
+    const sumUrl = `/api/market/summary` + (targetDate ? `?date=${encodeURIComponent(targetDate)}` : "");
+    const pSum = await fetchFromBackend(sumUrl, 10000);
     const d = pSum?.data;
     if (d && (d.nepseIndex || d.totalTurnover !== undefined)) {
       const isZeroTurnover = Number(d.totalTurnover || 0) === 0;
@@ -1430,13 +1444,53 @@ const rank = (fn, n = 25) => {
   return [...MEM_STOCKS].sort(fn).slice(0, n);
 };
 
-export async function fetchTopGainers() { return { data: rank((a, b) => b.pChange - a.pChange) }; }
-export async function fetchTopLosers() { return { data: rank((a, b) => a.pChange - b.pChange) }; }
-export async function fetchTopVolume() { return { data: rank((a, b) => b.volume - a.volume) }; }
-export async function fetchTopTurnover() { return { data: rank((a, b) => b.turnover - a.turnover) }; }
-export async function fetchTopTransactions() { return { data: rank((a, b) => b.transactions - a.transactions) }; }
-export async function fetchTopTurnoverStocks() { return fetchTopTurnover(); }
-export async function fetchTopVolumeStocks() { return fetchTopVolume(); }
+export async function fetchTopGainers(date) {
+  if (date) {
+    try {
+      const res = await fetchFromBackend(`/api/market/top-gainers?date=${encodeURIComponent(date)}`, 4000);
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
+    } catch (_) {}
+  }
+  return { data: rank((a, b) => b.pChange - a.pChange) };
+}
+export async function fetchTopLosers(date) {
+  if (date) {
+    try {
+      const res = await fetchFromBackend(`/api/market/top-losers?date=${encodeURIComponent(date)}`, 4000);
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
+    } catch (_) {}
+  }
+  return { data: rank((a, b) => a.pChange - b.pChange) };
+}
+export async function fetchTopVolume(date) {
+  if (date) {
+    try {
+      const res = await fetchFromBackend(`/api/market/top-volume?date=${encodeURIComponent(date)}`, 4000);
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
+    } catch (_) {}
+  }
+  return { data: rank((a, b) => b.volume - a.volume) };
+}
+export async function fetchTopTurnover(date) {
+  if (date) {
+    try {
+      const res = await fetchFromBackend(`/api/market/top-turnover?date=${encodeURIComponent(date)}`, 4000);
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
+    } catch (_) {}
+  }
+  return { data: rank((a, b) => b.turnover - a.turnover) };
+}
+export async function fetchTopTransactions(date) {
+  if (date) {
+    try {
+      const res = await fetchFromBackend(`/api/market/top-transactions?date=${encodeURIComponent(date)}`, 4000);
+      if (res?.data && Array.isArray(res.data) && res.data.length > 0) return { data: res.data };
+    } catch (_) {}
+  }
+  return { data: rank((a, b) => b.transactions - a.transactions) };
+}
+export async function fetchTopTurnoverStocks(date) { return fetchTopTurnover(date); }
+export async function fetchTopVolumeStocks(date) { return fetchTopVolume(date); }
 
 export async function fetchAllSecurities() {
   ensureSnapshot();
@@ -1459,8 +1513,8 @@ export async function fetchAllSecurities() {
 }
 export async function fetchCompanyList() { return fetchAllSecurities(); }
 
-export async function fetchIndices() {
-  const indicesObj = await fetchMarketIndices();
+export async function fetchIndices(targetDate) {
+  const indicesObj = await fetchMarketIndices(targetDate);
   if (indicesObj && indicesObj.nepse) {
     const arr = [
       { name: 'NEPSE Index', value: indicesObj.nepse.value, change: indicesObj.nepse.change, changePercent: indicesObj.nepse.pChange },
@@ -1808,7 +1862,10 @@ export async function fetchSectorSummary() {
   return { data: Object.values(sectors).map(s => ({ ...s, avgChange: s.count ? s.change / s.count : 0 })).sort((a, b) => b.avgChange - a.avgChange) };
 }
 
-export async function fetchBrokerAnalysis() {
+export async function fetchBrokerAnalysis(symbol, days = 1, options = {}) {
+  if (symbol && typeof symbol === 'string' && symbol.trim().length > 0) {
+    return fetchRealBrokerAnalysis(symbol, days, options);
+  }
   const r = await fetchFloorSheet(200);
   const map = {};
   r.data.forEach(t => {
@@ -1871,11 +1928,12 @@ function mergeBrokerDataOntoStocks(stocks) {
   return stocks;
 }
 
-export async function loadNepseData() {
+export async function loadNepseData(date = '') {
+  const reqDate = String(date || '').trim();
   const isBrokerCacheEmpty = realBrokerAnalysisCache.size === 0 && (!brokerDataCache || brokerDataCache.size === 0) && (!marketWideBrokerSummaryMapCache.data || Object.keys(marketWideBrokerSummaryMapCache.data).length === 0);
   if (isBrokerCacheEmpty) {
     try {
-      const map = await fetchMarketWideBrokerSummaryMap(1);
+      const map = await fetchMarketWideBrokerSummaryMap(1, { date: reqDate });
       if (map && MEM_STOCKS && Array.isArray(MEM_STOCKS)) {
         mergeBrokerDataOntoStocks(MEM_STOCKS);
       }
@@ -1884,12 +1942,12 @@ export async function loadNepseData() {
 
   let result;
   try {
-    const r = await fetchLiveMarket();
-    if (r.data.length > 50) {
-      result = { stocks: r.data, source: r.source };
+    const r = await fetchLiveMarket(reqDate);
+    if (r.data.length > 20) {
+      result = { stocks: r.data, source: r.source, date: reqDate };
     } else {
       const cached = getCachedStocks();
-      if (cached.length > 50) {
+      if (cached.length > 50 && !reqDate) {
         result = { stocks: cached, source: 'cached' };
       } else {
         ensureSnapshot();
@@ -1905,7 +1963,7 @@ export async function loadNepseData() {
     mergeBrokerDataOntoStocks(result.stocks);
     if (isBrokerCacheEmpty) {
       const targetStocks = result.stocks;
-      fetchMarketWideBrokerSummaryMap(1).then((map) => {
+      fetchMarketWideBrokerSummaryMap(1, { date: reqDate }).then((map) => {
         if (map && Array.isArray(targetStocks)) {
           mergeBrokerDataOntoStocks(targetStocks);
         }
@@ -1943,7 +2001,7 @@ export function saveCachedStocks(stocks) {
   }
   return true; 
 }
-export async function fetchLiveMarketData() { const r = await fetchLiveMarket(); _lastSync = Date.now(); return Object.assign({}, r, { stocks: r.data }); }
+export async function fetchLiveMarketData(date = '') { const r = await fetchLiveMarket(date); _lastSync = Date.now(); return Object.assign({}, r, { stocks: r.data }); }
 export const INDICES_CACHE_KEY = 'nepse_latest_indices_cache';
 
 let MEM_INDICES = null;
@@ -2117,31 +2175,18 @@ export function calculateIndices(stocks) {
 
 export function getCachedIndices() {
   const todayIso = formatNptDateIso(new Date());
-  if (MEM_INDICES && MEM_INDICES.nepse && MEM_INDICES.nepse.value > 0) {
-    const isYesterdayClose = Math.abs(Number(MEM_INDICES.nepse.value) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82;
-    const isOldDate = MEM_INDICES.asOfDate && MEM_INDICES.asOfDate < todayIso;
-    if (!isYesterdayClose && !isOldDate) {
-      return MEM_INDICES;
-    }
+  if (MEM_INDICES && MEM_INDICES.nepse && Number(MEM_INDICES.nepse.value) > 1000) {
+    return MEM_INDICES;
   }
   try {
     const raw = localStorage.getItem(INDICES_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.nepse && parsed.nepse.value > 0) {
-        const isOldDate = parsed.asOfDate && parsed.asOfDate < todayIso;
-        const isYesterdayClose = Math.abs(Number(parsed.nepse.value) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82;
-        const isLegacyMock = Math.abs(Number(parsed.nepse.value) - 2542.77) < 0.5;
-
-        if (isOldDate || isYesterdayClose || isLegacyMock) {
-          // Stale cache from previous sessions — actively purge
-          localStorage.removeItem(INDICES_CACHE_KEY);
-        } else {
-          parsed.data = parsed;
-          parsed.asOfDate = parsed.asOfDate || todayIso;
-          MEM_INDICES = parsed;
-          return parsed;
-        }
+      if (parsed && parsed.nepse && Number(parsed.nepse.value) > 1000) {
+        parsed.data = parsed;
+        parsed.asOfDate = parsed.asOfDate || todayIso;
+        MEM_INDICES = parsed;
+        return parsed;
       }
     }
   } catch (_) {}
@@ -2191,7 +2236,7 @@ export function parseNotsIndicesArray(rawList, existingTurnover = 0) {
   };
 }
 
-export async function fetchMarketIndices() {
+export async function fetchMarketIndices(targetDate) {
   try {
     let indicesData = null;
 
@@ -2202,32 +2247,31 @@ export async function fetchMarketIndices() {
     // 1. Fast Parallel Race: Prioritize live backend NOTS exchange data (/api/indices, /api/market-indices & /api/market/summary)
     const tryFastBackend = async () => {
       try {
+        const qDate = targetDate ? `?date=${encodeURIComponent(targetDate)}` : '';
         const [indicesRes, marketRes, summaryRes] = await Promise.allSettled([
-          fetchFromBackend('/api/indices', 6000),
-          fetchFromBackend('/api/market-indices', 6000),
-          fetchFromBackend('/api/market/summary', 6000)
+          fetchFromBackend(`/api/indices${qDate}`, 6000),
+          fetchFromBackend(`/api/market-indices${qDate}`, 6000),
+          fetchFromBackend(`/api/market/summary${qDate}`, 6000)
         ]);
 
         if (marketRes.status === 'fulfilled' && marketRes.value) {
           const d = marketRes.value?.data || marketRes.value;
-          if (d && d.nepse && Number(d.nepse.value) > 0) {
-            if (!d.asOfDate || d.asOfDate >= todayIso || isTradingSession) {
-              return {
-                nepse: {
-                  ...d.nepse,
-                  value: Number(d.nepse.value),
-                  change: Number(d.nepse.change || 0),
-                  pChange: Number(d.nepse.pChange || 0),
-                  turnover: Number(d.nepse.turnover || MEM_SUMMARY?.totalTurnover || 0),
-                  prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
-                },
-                sensitive: d.sensitive || null,
-                float: d.float || null,
-                sensitiveFloat: d.sensitiveFloat || null,
-                subIndices: Array.isArray(d.subIndices) ? d.subIndices : [],
-                asOfDate: d.asOfDate || todayIso
-              };
-            }
+          if (d && d.nepse && Number(d.nepse.value) > 1000) {
+            return {
+              nepse: {
+                ...d.nepse,
+                value: Number(d.nepse.value),
+                change: Number(d.nepse.change || 0),
+                pChange: Number(d.nepse.pChange || 0),
+                turnover: Number(d.nepse.turnover || MEM_SUMMARY?.totalTurnover || 0),
+                prevClose: Number(d.nepse.prevClose || (d.nepse.value - (d.nepse.change || 0)).toFixed(2))
+              },
+              sensitive: d.sensitive || null,
+              float: d.float || null,
+              sensitiveFloat: d.sensitiveFloat || null,
+              subIndices: Array.isArray(d.subIndices) ? d.subIndices : [],
+              asOfDate: d.asOfDate || todayIso
+            };
           }
         }
 
@@ -2318,11 +2362,7 @@ export async function fetchMarketIndices() {
         const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 4000);
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
-          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            // Only reject stale ShareSansar if NOT in active trading session
-            if (!isTradingSession && parsedSS.asOfDate && parsedSS.asOfDate < todayIso) {
-              return null;
-            }
+          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 1000) {
             return parsedSS;
           }
         }
@@ -2485,16 +2525,14 @@ export async function fetchMarketIndices() {
       } catch (_) {}
     }
 
-    // 4. Fallback: Secondary ShareSansar attempt if previous missed (with strict date guard)
+    // 4. Fallback: Secondary ShareSansar attempt if previous missed
     if (!indicesData || !indicesData.nepse || !indicesData.nepse.value) {
       try {
         const ssHtml = await tryFetchText('https://www.sharesansar.com/market', 5000);
         if (ssHtml) {
           const parsedSS = parseShareSansarMarketHtml(ssHtml);
-          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 0) {
-            if (!(parsedSS.asOfDate && parsedSS.asOfDate < todayIso)) {
-              indicesData = parsedSS;
-            }
+          if (parsedSS && parsedSS.nepse && parsedSS.nepse.value > 1000) {
+            indicesData = parsedSS;
           }
         }
       } catch (_) {}
@@ -2526,6 +2564,56 @@ export async function fetchMarketIndices() {
   }
   return calculateIndices();
 }
+
+let _cachedTradingDatesList = [];
+let _cachedTradingDatesTs = 0;
+
+export async function fetchAvailableTradingDates() {
+  const now = Date.now();
+  if (_cachedTradingDatesList.length >= 5 && (now - _cachedTradingDatesTs < 5 * 60 * 1000)) {
+    return _cachedTradingDatesList;
+  }
+  const todayIso = formatNptDateIso(new Date());
+  const sanitizeDates = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    return Array.from(new Set(arr))
+      .filter(d => {
+        if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+        if (d > todayIso) return false;
+        return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+      })
+      .sort((a, b) => b.localeCompare(a));
+  };
+
+  try {
+    const res = await fetchFromBackend('/api/trading-dates', 5000);
+    const list = res?.dates || (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []));
+    const valid = sanitizeDates(list);
+    if (valid.length > 0) {
+      _cachedTradingDatesList = valid;
+      _cachedTradingDatesTs = now;
+      return valid;
+    }
+  } catch (_) {}
+
+  try {
+    const res = await fetchFromBackend('/api/floorsheet/archives', 5000);
+    const arr = res?.archives || (Array.isArray(res) ? res : []);
+    if (Array.isArray(arr) && arr.length > 0) {
+      const dates = arr.map(a => a.date || a).filter(Boolean);
+      const valid = sanitizeDates(dates);
+      if (valid.length > 0) {
+        _cachedTradingDatesList = valid;
+        _cachedTradingDatesTs = now;
+        return valid;
+      }
+    }
+  } catch (_) {}
+
+  const fallback = sanitizeDates([todayIso, '2026-10-28', '2026-10-27', '2026-10-26', '2026-10-16', '2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12']);
+  return _cachedTradingDatesList.length > 0 ? _cachedTradingDatesList : fallback;
+}
+
 // In-memory full-session trade store by symbol: Map<string, { list: Array, date: string, ts: number }>
 const _fsFullTradesCache = new Map();
 
@@ -2678,10 +2766,10 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
   const mkt = getDetailedMarketStatus();
   const todayIso = formatNptDateIso(new Date());
   const lastTradingIso = mkt.lastTradingDay ? formatNptDateIso(mkt.lastTradingDay) : getLatestTradingDateStr();
-  const dateCandidates = date
-    ? [date, lastTradingIso, todayIso].filter(Boolean)
-    : (mkt.isOpen ? [todayIso, lastTradingIso] : [lastTradingIso, todayIso]).filter(Boolean);
-  const uniqueDates = Array.from(new Set(dateCandidates)).sort((a, b) => String(b).localeCompare(String(a)));
+  const availableTradingDates = await fetchAvailableTradingDates().catch(() => []);
+  const uniqueDates = date
+    ? [date]
+    : Array.from(new Set(mkt.isOpen ? [todayIso, ...availableTradingDates] : availableTradingDates)).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
 
   // Direct authentic Chukul exchange floorsheet fallback for individual equities
   if (sym && sym !== 'ALL' && days === 1 && !fromDate && !toDate) {
@@ -2735,30 +2823,36 @@ export async function fetchRealFloorsheet(symbol, date = '', page = 1, size = 25
     const url = `/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?${params.toString()}`;
     const timeoutMs = (size > 200 || days > 1 || fromDate || toDate) ? 25000 : 12000;
     const res = await fetchFromBackend(url, timeoutMs);
-    const hasValidRowsWithBrokers = res && res.success && res.data && Array.isArray(res.data.rows) && res.data.rows.length > 0 &&
-      res.data.rows.some(r => r.buyerBroker || r.buyer || r.buyerMemberId);
-
-    // If backend returned a robust full-session dataset (>= 15 trades, or user specified filters),
-    // accept it immediately.
-    const isPotentiallyTruncated = sym && sym !== 'ALL' && !buyer && !seller && !broker && minQty === 0 && minAmount === 0 && !selfMatchedOnly &&
-      (!res || !res.success || !res.data || (res.data.totalElements || res.data.rows?.length || 0) < 15);
-
-    if (hasValidRowsWithBrokers && !isPotentiallyTruncated) {
-      if (page === 1 && !hasFilter && !date && (res.data.totalElements >= 15 || res.data.rows?.length >= 15)) {
-        setCachedRealFloorsheet(sym, res.data);
-      }
-      return { ...res.data, isReal: true };
-    }
+    const hasValidRowsWithBrokers = res && res.success && res.data && Array.isArray(res.data.rows) && res.data.rows.length > 0;
 
     if (hasValidRowsWithBrokers) {
       if (page === 1 && !hasFilter && !date && (res.data.totalElements >= 15 || res.data.rows?.length >= 15)) {
         setCachedRealFloorsheet(sym, res.data);
       }
-      return { ...res.data, isReal: true };
+      const combinedAvail = Array.from(new Set([...(res.data.availableDates || []), ...availableTradingDates])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+      return { ...res.data, availableDates: combinedAvail, isReal: true };
     }
 
-    // If date was specified or defaulted to today and returned 0 rows (e.g. today's session not closed or empty),
-    // fetch the latest real historical trading day floorsheet from backend / SQLite
+    // If date was explicitly requested and returned empty (or 0 rows), return authoritative empty response for THAT date!
+    // NEVER substitute another date's data when the user explicitly selected a date!
+    if (date) {
+      return {
+        rows: [],
+        page,
+        size,
+        totalPages: 0,
+        totalElements: 0,
+        totalAmount: 0,
+        totalQty: 0,
+        businessDate: date,
+        availableDates: availableTradingDates,
+        priceVolumeBreakdown: [],
+        bulkTransactions: [],
+        isReal: true
+      };
+    }
+
+    // Only if NO specific date was requested and today's session is empty/closed, fallback to latest closed session
     if (!buyer && !seller && (!res || !res.data?.rows || res.data.rows.length === 0)) {
       const fallbackRes = await fetchFromBackend(`/api/floorsheet${sym ? `/${encodeURIComponent(sym)}` : ''}?page=${page}&size=${size}`, 10000);
       if (fallbackRes && fallbackRes.success && fallbackRes.data?.rows?.length > 0) {
@@ -3046,10 +3140,10 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
           topSellerBrokers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
           topBuyers: (fd.topGrossBuyers || []).map(normalizeBrokerItem).filter(Boolean),
           topSellers: (fd.topGrossSellers || []).map(normalizeBrokerItem).filter(Boolean),
-          topNetBuyers: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
-          topNetSellers: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
-          topNetAccumulators: (fd.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean),
-          topNetDistributors: (fd.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetBuyers: (fd.topNetBuyers || fd.topAccumulators || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetSellers: (fd.topNetSellers || fd.topDistributors || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetAccumulators: (fd.topNetBuyers || fd.topAccumulators || []).map(normalizeBrokerItem).filter(Boolean),
+          topNetDistributors: (fd.topNetSellers || fd.topDistributors || []).map(normalizeBrokerItem).filter(Boolean),
           brokers: (fd.allBrokers || fd.brokers || []).map(normalizeBrokerItem).filter(Boolean),
           allBrokers: (fd.allBrokers || fd.brokers || []).map(normalizeBrokerItem).filter(Boolean),
           dailyFlow: Array.isArray(fd.dailyFlow) ? fd.dailyFlow : [],
@@ -3099,12 +3193,17 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
       const normalizedBrokers = (d.brokers || d.allBrokers || []).map(normalizeBrokerItem).filter(Boolean);
       const normalizedBuyers = (d.topBuyers || d.buyers || d.topNetBuyers || []).map(normalizeBrokerItem).filter(Boolean);
       const normalizedSellers = (d.topSellers || d.sellers || d.topNetSellers || []).map(normalizeBrokerItem).filter(Boolean);
+      const rawAllHoldings = (Array.isArray(d.allHoldings) && d.allHoldings.length > 0) ? d.allHoldings : (d.topHoldings || []);
+      const normalizedAllHoldings = rawAllHoldings.map(normalizeBrokerItem).filter(Boolean);
       const normalizedHoldings = (d.topHoldings || d.allHoldings || []).map(normalizeBrokerItem).filter(Boolean);
       const normalizedNetBuyers = (d.topNetBuyers || normalizedHoldings).map(normalizeBrokerItem).filter(Boolean);
       const normalizedNetSellers = (d.topNetSellers || d.allDistributors || []).map(normalizeBrokerItem).filter(Boolean);
 
       const topAcc = d.topAccumulator ? normalizeBrokerItem(d.topAccumulator) : (normalizedNetBuyers[0] || null);
       const topDist = d.topDistributor ? normalizeBrokerItem(d.topDistributor) : (normalizedNetSellers[0] || null);
+      const allHoldingsList = normalizedAllHoldings.length > 0 ? normalizedAllHoldings : normalizedHoldings;
+      const calcTotalHeld = Number(d.totalSharesHeldTillNow) || allHoldingsList.reduce((sum, h) => sum + (h.holdQty || Math.max(0, h.signedHoldQty || 0) || 0), 0);
+
       const enriched = {
         ...d,
         symbol: sym,
@@ -3112,17 +3211,18 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
         topDistributor: topDist,
         topBuyerBrokers: normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings.slice(0, 15) : []),
         topSellerBrokers: normalizedSellers.length > 0 ? normalizedSellers : (normalizedNetSellers.length > 0 ? normalizedNetSellers.slice(0, 15) : []),
-        brokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings : [])),
-        allBrokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings : [])),
+        brokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (allHoldingsList.length > 0 ? allHoldingsList : [])),
+        allBrokers: normalizedBrokers.length > 0 ? normalizedBrokers : (normalizedBuyers.length > 0 ? normalizedBuyers : (allHoldingsList.length > 0 ? allHoldingsList : [])),
         topBuyers: normalizedBuyers.length > 0 ? normalizedBuyers : (normalizedHoldings.length > 0 ? normalizedHoldings.slice(0, 15) : []),
         topSellers: normalizedSellers.length > 0 ? normalizedSellers : (normalizedNetSellers.length > 0 ? normalizedNetSellers.slice(0, 15) : []),
-        topHoldings: normalizedHoldings.length > 0 ? normalizedHoldings : normalizedBrokers.filter(b => b.signedHoldQty > 0).sort((a,b) => b.signedHoldQty - a.signedHoldQty),
+        topHoldings: normalizedHoldings.length > 0 ? normalizedHoldings : allHoldingsList.slice(0, 15),
+        allHoldings: allHoldingsList,
         topNetBuyers: normalizedNetBuyers,
         topNetSellers: normalizedNetSellers,
         topNetAccumulators: normalizedNetBuyers,
         topNetDistributors: normalizedNetSellers,
-        totalSharesHeldTillNow: d.totalSharesHeldTillNow || (normalizedHoldings.reduce((sum, h) => sum + (h.holdQty || h.netQty || 0), 0)),
-        topHoldingBroker: d.topHoldingBroker || (normalizedHoldings[0] || null),
+        totalSharesHeldTillNow: calcTotalHeld,
+        topHoldingBroker: d.topHoldingBroker || (allHoldingsList[0] || null),
         concentrationPct: d.concentrationPct ?? d.bcr3BuyPct ?? 0,
         isReal: true
       };
@@ -3264,12 +3364,13 @@ export async function fetchRealBrokerAnalysis(symbol, days = 1, options = {}) {
   return null;
 }
 
-export async function fetchMarketDepth(symbol) {
+export async function fetchMarketDepth(symbol, date) {
   const sym = String(symbol || '').toUpperCase().trim();
   if (!sym) return null;
 
   try {
-    const res = await fetchFromBackend(`/api/nepse/market-depth/${encodeURIComponent(sym)}`, 4000);
+    const qDate = date ? `?date=${encodeURIComponent(date)}` : "";
+    const res = await fetchFromBackend(`/api/nepse/market-depth/${encodeURIComponent(sym)}${qDate}`, 4000) || await fetchFromBackend(`/api/market-depth/${encodeURIComponent(sym)}${qDate}`, 4000);
     if (res && res.success && res.data) {
       const bids = Array.isArray(res.data.bids) ? res.data.bids : [];
       const asks = Array.isArray(res.data.asks) ? res.data.asks : [];

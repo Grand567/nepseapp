@@ -8,14 +8,26 @@ import { getProxyBase } from "../utils/liveData";
 interface FloorsheetServiceTabProps {
   /** Optional callback when a user clicks a scrip row to inspect Stock Information Modal */
   onSelectSymbol?: (symbol: string) => void;
+  selectedDate?: string;
+  date?: string;
 }
 
 export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
   onSelectSymbol,
+  selectedDate: propSelectedDate,
+  date: propDate,
 }) => {
+  const initialDate = propSelectedDate || propDate || "";
   const [data, setData] = useState<FloorsheetHubApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate);
+
+  useEffect(() => {
+    const nextDate = propSelectedDate || propDate || "";
+    if (nextDate !== undefined && nextDate !== selectedDate) {
+      setSelectedDate(nextDate);
+    }
+  }, [propSelectedDate, propDate]);
 
   // Filter States
   const [symbolInput, setSymbolInput] = useState<string>("");
@@ -109,6 +121,16 @@ export const FloorsheetServiceTab: React.FC<FloorsheetServiceTabProps> = ({
 
       {/* Sticky Multi-Dimensional Filter Bar */}
       <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center gap-2.5 text-xs">
+        <select
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-indigo-300 font-medium cursor-pointer"
+        >
+          <option value="">Latest Session ({data?.asOfDate || "Today"})</option>
+          {Array.isArray(data?.availableDates) && data.availableDates.map(dt => (
+            <option key={dt} value={dt}>{dt}</option>
+          ))}
+        </select>
         <input
           type="text"
           placeholder="Scrip (e.g. NABIL)"

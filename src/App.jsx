@@ -565,11 +565,7 @@ function AppInner() {
 
         const pIndices = fetchMarketIndices().then(liveIdx => {
           if (!isMounted || !liveIdx) return liveIdx;
-          const todayIso = formatNptDateIso(new Date());
-          const isSession = Boolean(status?.isOpen || status?.isPreOpen);
-          const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
-            (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
-          const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
+          const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 1000 && !liveIdx.isPlaceholder;
           if (hasFresh) {
             setIndices(prev => {
               if (
@@ -603,20 +599,16 @@ function AppInner() {
         }
 
         // Fallback index calculation ONLY if liveIndices failed AND we do NOT already have authentic indices
-        const todayIso = formatNptDateIso(new Date());
-        const isSession = Boolean(status?.isOpen || status?.isPreOpen);
-        const isStale = (!isSession && Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso)) ||
-          (Math.abs(Number(liveIndices?.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
-        const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
+        const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 1000 && !liveIndices.isPlaceholder;
         if (!hasFreshIndices) {
           setIndices(prev => {
             const computed = (currentStocks && currentStocks.length > 0) ? calculateIndices(currentStocks) : null;
-            if (computed && computed.nepse?.value > 0 && !computed.isPlaceholder) {
+            if (computed && computed.nepse?.value > 1000 && !computed.isPlaceholder) {
               saveCachedIndices(computed);
               return { ...prev, ...computed };
             }
-            if (prev?.nepse?.value && Number(prev.nepse.value) > 0 && !prev.isPlaceholder && Math.abs(Number(prev.nepse.value) - 2629.82) >= 0.05) {
-              return prev; // PRESERVE authentic live index! Never overwrite with yesterday's fallback
+            if (prev?.nepse?.value && Number(prev.nepse.value) > 1000 && !prev.isPlaceholder) {
+              return prev; // PRESERVE authentic live index! Never overwrite with placeholder
             }
             return prev;
           });
@@ -673,26 +665,20 @@ function AppInner() {
       const status = getDetailedMarketStatus();
       try {
         const liveIdx = await fetchMarketIndices();
-        if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder) {
-          const todayIso = formatNptDateIso(new Date());
-          const isSession = Boolean(status.isOpen || status.isPreOpen);
-          const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
-            (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
-          if (!isStale) {
-            setIndices(prev => {
-              if (
-                prev?.nepse?.value === liveIdx.nepse.value &&
-                prev?.nepse?.turnover === liveIdx.nepse.turnover &&
-                prev?.nepse?.change === liveIdx.nepse.change
-              ) {
-                return prev;
-              }
-              return { ...prev, ...liveIdx };
-            });
-            saveCachedIndices(liveIdx);
-            setLastSyncTime(new Date());
-            consecutiveErrors = 0;
-          }
+        if (isMounted && liveIdx && liveIdx.nepse && Number(liveIdx.nepse.value) > 1000 && !liveIdx.isPlaceholder) {
+          setIndices(prev => {
+            if (
+              prev?.nepse?.value === liveIdx.nepse.value &&
+              prev?.nepse?.turnover === liveIdx.nepse.turnover &&
+              prev?.nepse?.change === liveIdx.nepse.change
+            ) {
+              return prev;
+            }
+            return { ...prev, ...liveIdx };
+          });
+          saveCachedIndices(liveIdx);
+          setLastSyncTime(new Date());
+          consecutiveErrors = 0;
         }
       } catch (_) {
         consecutiveErrors++;
@@ -776,11 +762,7 @@ function AppInner() {
 
       const pIndices = fetchMarketIndices().then(liveIdx => {
         if (!liveIdx) return liveIdx;
-        const todayIso = formatNptDateIso(new Date());
-        const isSession = Boolean(marketStatus?.isOpen || marketStatus?.isPreOpen);
-        const isStale = (!isSession && Boolean(liveIdx.asOfDate && liveIdx.asOfDate < todayIso)) ||
-          (Math.abs(Number(liveIdx.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
-        const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 0 && !liveIdx.isPlaceholder && !isStale;
+        const hasFresh = liveIdx.nepse && Number(liveIdx.nepse.value) > 1000 && !liveIdx.isPlaceholder;
         if (hasFresh) {
           setIndices(prev => {
             if (
@@ -811,11 +793,7 @@ function AppInner() {
       const status = (rawStatus?.isOpen !== undefined) ? rawStatus : (rawStatus?.data || rawStatus || getDetailedMarketStatus());
       if (status) setMarketStatus(status);
 
-      const todayIso = formatNptDateIso(new Date());
-      const isSession = Boolean(status?.isOpen || status?.isPreOpen);
-      const isStale = (!isSession && Boolean(liveIndices?.asOfDate && liveIndices.asOfDate < todayIso)) ||
-        (Math.abs(Number(liveIndices?.nepse?.value || 0) - 2629.82) < 0.05 && DEFAULT_OFFICIAL_INDICES.nepse.value !== 2629.82);
-      const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 0 && !liveIndices.isPlaceholder && !isStale;
+      const hasFreshIndices = liveIndices && liveIndices.nepse && Number(liveIndices.nepse.value) > 1000 && !liveIndices.isPlaceholder;
 
       if (!hasFreshIndices) {
         // Direct synthesis from live exchange intraday ticks if available
@@ -1897,7 +1875,7 @@ function AppInner() {
                       : marketStatus?.isHoliday
                       ? `Holiday: ${marketStatus.holidayName || 'Public Holiday'}`
                       : marketStatus?.isWeekend
-                      ? 'Weekend Closed (शुक्रबार/शनिबार)'
+                      ? 'Weekend Closed (शनिबार/आइतबार)'
                       : 'Market Closed (बन्द)'}
                   </div>
                 </div>
@@ -1909,8 +1887,8 @@ function AppInner() {
                 }}>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING DAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Sun – Thu (आइत – बिही)</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sunday market is OPEN</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--bull)', marginTop: 2 }}>Mon – Fri (सोम – शुक्र)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Friday market is OPEN</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>TRADING HOURS</div>
@@ -1919,7 +1897,7 @@ function AppInner() {
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>WEEKEND HOLIDAYS</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Friday & Saturday</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>Saturday & Sunday</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>National weekend off</div>
                   </div>
                 </div>
@@ -1952,7 +1930,7 @@ function AppInner() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {upcomingHolidaysList.map((h, idx) => {
-                      const isWeekendOff = Boolean(h.isWeekend ?? (h.dayOfWeek === 5 || h.dayOfWeek === 6));
+                      const isWeekendOff = Boolean(h.isWeekend ?? (h.dayOfWeek === 6 || h.dayOfWeek === 0));
                       return (
                         <div
                           key={`${h.bsYear}_${h.bsMonth}_${h.bsDay}_${idx}`}

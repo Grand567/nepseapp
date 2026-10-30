@@ -135,7 +135,7 @@ export default function StockBrokerAnalysisTab({
 
     // Parallel fetch: All-Time Broker Vault + All-Time Smart-Money endpoint + Diagnostics endpoint
     const p0 = fetchRealBrokerAnalysis(symbol, 'all', { refresh: false }).catch(() => null);
-    const p1 = fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
+    const p1 = fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
     const p2 = fetchFromBackend(`/api/diagnostics/${encodeURIComponent(symbol)}?days=30`, 10000).catch(() => null);
 
     Promise.all([p0, p1, p2]).then(([resAll, resSm, resDiag]) => {
@@ -178,7 +178,13 @@ export default function StockBrokerAnalysisTab({
       }
 
       // Extract broker list (prioritize all-time holdings with full multi-year totals)
-      const listAll = (resAll?.allHoldings?.length ? resAll.allHoldings : (resAll?.topHoldings?.length ? resAll.topHoldings : (resAll?.brokers || [])));
+      const listAll = (Array.isArray(resAll?.allHoldings) && resAll.allHoldings.length > 0)
+        ? resAll.allHoldings
+        : ((Array.isArray(resSm?.allHoldings) && resSm.allHoldings.length > 0)
+            ? resSm.allHoldings
+            : ((Array.isArray(resSm?.data?.allHoldings) && resSm.data.allHoldings.length > 0)
+                ? resSm.data.allHoldings
+                : (resAll?.topHoldings?.length ? resAll.topHoldings : (resAll?.brokers || []))));
       const listSm = Array.isArray(resSm)
         ? resSm
         : (Array.isArray(resSm?.data)
@@ -196,7 +202,7 @@ export default function StockBrokerAnalysisTab({
       if (resSm && resSm.isCompleteHistory === false) {
         const pollTimer = setTimeout(() => {
           if (!active) return;
-          fetchFromBackend(`/api/stock/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000)
+          fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000)
             .then(updatedSm => {
               if (active && updatedSm && updatedSm.success) {
                 const updatedList = Array.isArray(updatedSm.data) ? updatedSm.data : (updatedSm.allHoldings || updatedSm.brokers || []);
@@ -215,7 +221,7 @@ export default function StockBrokerAnalysisTab({
     });
 
     return () => { active = false; };
-  }, [symbol, ltp]);
+  }, [symbol, ltp, allTimeHoldingData]);
 
   // Auto-fetch if brokerData is missing, empty, or from a different timeframe
   useEffect(() => {
@@ -486,12 +492,13 @@ export default function StockBrokerAnalysisTab({
       const sellPct = totalTrade > 0 ? (100 - buyPct) : 0;
 
       const idKey = String(r.id || '').replace(/^0+/, '');
-      const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || {};
-      const cumHold = (cum.totalHeldQty !== undefined && cum.totalHeldQty > 0) ? cum.totalHeldQty : (cum.totalHeldQty === 0 ? 0 : Math.max(0, netQty));
-      const cumAmt = cum.totalHeldAmt !== undefined ? cum.totalHeldAmt : holdAmt;
-      const cumBuyPx = cum.avgBuyRate !== undefined ? cum.avgBuyRate : avgBuy;
-      const cumSellPx = cum.avgSellRate !== undefined ? cum.avgSellRate : avgSell;
-      const cumRet = cum.retentionPct !== undefined ? cum.retentionPct : holdPctOfBuy;
+      const hasCumData = cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0;
+      const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || null;
+      const cumHold = cum ? (cum.totalHeldQty || 0) : 0;
+      const cumAmt = cum ? (cum.totalHeldAmt || (cumHold * (cum.avgBuyRate || ltp || 100))) : 0;
+      const cumBuyPx = cum ? (cum.avgBuyRate || 0) : 0;
+      const cumSellPx = cum ? (cum.avgSellRate || 0) : 0;
+      const cumRet = cum ? (cum.retentionPct || 0) : 0;
 
       return {
         ...r,
@@ -760,7 +767,7 @@ export default function StockBrokerAnalysisTab({
       }
     }
 
-    if (totalCumulativeHoldingKitta > 0) {
+    if (cumHold <= 0 && totalCumulativeHoldingKitta > 0) {
       cumHold = totalCumulativeHoldingKitta;
     }
 
@@ -865,18 +872,16 @@ export default function StockBrokerAnalysisTab({
         }
       }
     }
-    // Overlay or add brokers from brokerRecords only if not already in authoritative cumulativeHoldingMap
+    // Overlay or add brokers from brokerRecords only if already possessing cumHoldQty
     for (const b of filteredBrokers) {
       const normId = String(b.id || '').replace(/^0+/, '');
-      const cH = b.cumHoldQty !== undefined && b.cumHoldQty > 0 ? b.cumHoldQty : (b.signedHoldQty > 0 ? b.signedHoldQty : 0);
-      if (cH > 0) {
-        if (!map.has(normId)) {
-          map.set(normId, {
-            ...b,
-            cumHoldQty: cH,
-            cumHoldAmt: b.cumHoldAmt || (cH * (b.cumAvgBuy || b.avgBuy || ltp || 100)),
-          });
-        }
+      const cH = b.cumHoldQty || 0;
+      if (cH > 0 && !map.has(normId)) {
+        map.set(normId, {
+          ...b,
+          cumHoldQty: cH,
+          cumHoldAmt: b.cumHoldAmt || (cH * (b.cumAvgBuy || ltp || 100)),
+        });
       }
     }
 
@@ -1368,7 +1373,7 @@ export default function StockBrokerAnalysisTab({
                     Total Locked by Accumulators
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-mono)' }}>
-                    +{(totalCumulativeHoldingKitta || brokerHoldingTotals.cumHold || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
+                    +{(brokerHoldingTotals.cumHold || totalCumulativeHoldingKitta || 0).toLocaleString()} <span style={{ fontSize: 11, color: '#6ee7b7' }}>kitta</span>
                   </div>
                 </div>
                 <button
@@ -1400,7 +1405,7 @@ export default function StockBrokerAnalysisTab({
             }}>
               {sortedCumulativeBrokers.slice(0, 5).map((b, idx) => {
                 const totalHeld = b.cumHoldQty || b.holdQty || 0;
-                const poolTotal = totalCumulativeHoldingKitta || brokerHoldingTotals.cumHold || 1;
+                const poolTotal = brokerHoldingTotals.cumHold || totalCumulativeHoldingKitta || 1;
                 const sharePct = poolTotal > 0 ? ((totalHeld / poolTotal) * 100).toFixed(1) : '0.0';
                 return (
                   <div
@@ -1868,133 +1873,6 @@ export default function StockBrokerAnalysisTab({
                     Click any session row to inspect full broker transactions for that day
                   </div>
                 </div>
-
-                {/* Date Sorting Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>Sort Dates:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dateSortField === 'date') {
-                        setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                      } else {
-                        setDateSortField('date');
-                        setDateSortOrder('desc');
-                      }
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '5px 10px',
-                      borderRadius: 8,
-                      border: dateSortField === 'date' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
-                      background: dateSortField === 'date' ? 'rgba(2, 132, 199, 0.25)' : 'rgba(255,255,255,0.04)',
-                      color: dateSortField === 'date' ? '#38bdf8' : '#94a3b8',
-                      fontSize: 11.5,
-                      fontWeight: 800,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    📅 {dateSortField === 'date' ? (dateSortOrder === 'desc' ? 'Newest First ⬇' : 'Oldest First ⬆') : 'Sort by Date'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dateSortField === 'volume') {
-                        setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                      } else {
-                        setDateSortField('volume');
-                        setDateSortOrder('desc');
-                      }
-                    }}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: 8,
-                      border: dateSortField === 'volume' ? '1px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
-                      background: dateSortField === 'volume' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.04)',
-                      color: dateSortField === 'volume' ? '#10b981' : '#94a3b8',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Volume {dateSortField === 'volume' ? (dateSortOrder === 'desc' ? '▼' : '▲') : '↕'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dateSortField === 'turnover') {
-                        setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                      } else {
-                        setDateSortField('turnover');
-                        setDateSortOrder('desc');
-                      }
-                    }}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: 8,
-                      border: dateSortField === 'turnover' ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
-                      background: dateSortField === 'turnover' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.04)',
-                      color: dateSortField === 'turnover' ? '#38bdf8' : '#94a3b8',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Amount {dateSortField === 'turnover' ? (dateSortOrder === 'desc' ? '▼' : '▲') : '↕'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dateSortField === 'vwap') {
-                        setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                      } else {
-                        setDateSortField('vwap');
-                        setDateSortOrder('desc');
-                      }
-                    }}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: 8,
-                      border: dateSortField === 'vwap' ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.1)',
-                      background: dateSortField === 'vwap' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255,255,255,0.04)',
-                      color: dateSortField === 'vwap' ? '#c084fc' : '#94a3b8',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    VWAP {dateSortField === 'vwap' ? (dateSortOrder === 'desc' ? '▼' : '▲') : '↕'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (dateSortField === 'trades') {
-                        setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc');
-                      } else {
-                        setDateSortField('trades');
-                        setDateSortOrder('desc');
-                      }
-                    }}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: 8,
-                      border: dateSortField === 'trades' ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.1)',
-                      background: dateSortField === 'trades' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.04)',
-                      color: dateSortField === 'trades' ? '#fbbf24' : '#94a3b8',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Trades {dateSortField === 'trades' ? (dateSortOrder === 'desc' ? '▼' : '▲') : '↕'}
-                  </button>
-                </div>
               </div>
 
               {sortedDailyFlowList.length === 0 ? (
@@ -2253,7 +2131,7 @@ export default function StockBrokerAnalysisTab({
                             {b.signedHoldQty.toLocaleString()}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
-                            {b.cumHoldQty > 0 ? `+${b.cumHoldQty.toLocaleString()}` : (isNetPos ? `+${b.signedHoldQty.toLocaleString()}` : '—')}
+                            {b.cumHoldQty > 0 ? `+${b.cumHoldQty.toLocaleString()}` : (cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0 ? '—' : '...')}
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#e2e8f0', fontFamily: 'var(--font-mono)' }}>
                             {b.avgBuy > 0 ? b.avgBuy.toFixed(2) : '0.00'}

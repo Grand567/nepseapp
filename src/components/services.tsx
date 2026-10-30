@@ -517,7 +517,7 @@ export function UniversalScreener({
       {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
-        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
+        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Mon–Fri) or check a different filter.</InfoBanner>
       ) : (
         <>
           <SourceBar count={data.length} source={source} totalCount={rawTotal} />
@@ -894,7 +894,8 @@ export function StockMomentumAnalyzer({ stocks = [], initialSymbol = 'NABIL' }: 
 }
 
 // ── Market summary ──
-export function MarketSummaryService() {
+export function MarketSummaryService({ selectedDate, date }: { selectedDate?: string; date?: string } = {}) {
+  const activeDate = selectedDate || date || '';
   const [data, setData] = useState<any>(null);
   const [indices, setIndices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -905,8 +906,8 @@ export function MarketSummaryService() {
   const loadData = async () => {
     try {
       const [m, idx, hist] = await Promise.all([
-        fetchMarketSummary(),
-        fetchIndices(),
+        fetchMarketSummary(activeDate),
+        fetchIndices(activeDate),
         fetchPriceHistory('NEPSE', 365).catch(() => null)
       ]);
       setData(m?.data);
@@ -920,7 +921,7 @@ export function MarketSummaryService() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1008,7 +1009,18 @@ export function MarketSummaryService() {
 }
 
 // ── Top performers ──
-export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'volume' | 'turnover' | 'transactions' }) {
+export function TopPerformersService({
+  type,
+  selectedDate,
+  date,
+  stocks: propStocks,
+}: {
+  type: 'gainers' | 'losers' | 'volume' | 'turnover' | 'transactions';
+  selectedDate?: string;
+  date?: string;
+  stocks?: any[];
+}) {
+  const activeDate = selectedDate || date || '';
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('1D');
@@ -1016,7 +1028,9 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
 
   const loadData = async (activeTf = timeframe) => {
     try {
-      const { stocks } = await loadNepseData();
+      const { stocks } = (propStocks && propStocks.length > 0 && !activeDate)
+        ? { stocks: propStocks }
+        : await loadNepseData(activeDate);
 
       // Pre-warm authentic price history for top active securities when multi-timeframe horizon is selected
       if (activeTf !== '1D' && stocks?.length) {
@@ -1029,7 +1043,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
         );
       }
 
-      const mapped = stocks.map(s => {
+      const mapped = (stocks || []).map(s => {
         const metricsMap = computeStockTimeframeMetrics(s);
         const tfMetrics = metricsMap[activeTf as keyof typeof metricsMap] || metricsMap['1D'];
         return {
@@ -1051,7 +1065,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
       if (activeTf === '1D') {
         const fnMap: any = { gainers: fetchTopGainers, losers: fetchTopLosers, volume: fetchTopVolume, turnover: fetchTopTurnover, transactions: fetchTopTransactions };
         try {
-          const r: any = await (fnMap[type] || fetchTopGainers)();
+          const r: any = await (fnMap[type] || fetchTopGainers)(activeDate);
           if (r?.data && r.data.length > 0) d = r.data;
         } catch (_) {}
       }
@@ -1070,7 +1084,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
 
   useEffect(() => {
     loadData(timeframe);
-  }, [type, timeframe]);
+  }, [type, timeframe, activeDate]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -1088,7 +1102,7 @@ export function TopPerformersService({ type }: { type: 'gainers' | 'losers' | 'v
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
-      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Sun–Thu 11 AM – 3 PM NPT).</InfoBanner>
+      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Mon–Fri 11 AM – 3 PM NPT).</InfoBanner>
       <DataTable data={data} cols={[
         {
           key: 'symbol',
@@ -3032,7 +3046,7 @@ export function LiveFloorsheetService() {
 export const FloorSheetService = LiveFloorsheetService;
 
 // ── Dedicated Broker Heatmap Service (Wired to /api/smart-money/broker-heatmap) ──
-export function BrokerHeatmapService() {
+export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: propDate }: { selectedDate?: string; date?: string } = {}) {
   const [data, setData] = useState<any>(null);
   const [timeframe, setTimeframe] = useState('1D');
   const [loading, setLoading] = useState(true);
@@ -3047,8 +3061,23 @@ export function BrokerHeatmapService() {
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [modalTab, setModalTab] = useState<'accumulation' | 'distribution'>('accumulation');
   const [modalMetric, setModalMetric] = useState<'netFlow' | 'netQty' | 'grossBuyAmt' | 'grossBuyQty'>('netFlow');
+  const [availableTradingDates, setAvailableTradingDates] = useState<string[]>([]);
 
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(propSelectedDate || propDate || '');
+
+  useEffect(() => {
+    fetchAvailableTradingDates().then(dates => {
+      if (Array.isArray(dates) && dates.length > 0) setAvailableTradingDates(dates);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const nextDate = propSelectedDate || propDate || '';
+    if (nextDate !== selectedDate) {
+      setSelectedDate(nextDate);
+      loadData(timeframe, nextDate, selectedSector);
+    }
+  }, [propSelectedDate, propDate]);
 
   const daysMap: Record<string, number | string> = {
     '1D': 1,
@@ -3258,24 +3287,27 @@ export function BrokerHeatmapService() {
             </select>
           </div>
 
-          {Array.isArray(data?.availableDates) && data.availableDates.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Historical Session:</span>
-              <select
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
-                {selectedDate && !data.availableDates.includes(selectedDate) && (
-                  <option value={selectedDate}>{selectedDate} (Selected)</option>
-                )}
-                {Array.from(new Set(data.availableDates)).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a))).slice(0, 500).map((dt: string) => (
-                  <option key={dt} value={dt}>{dt}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          {(() => {
+            const allAvail = Array.from(new Set([...(data?.availableDates || []), ...availableTradingDates])).filter(Boolean).sort((a: any, b: any) => String(b).localeCompare(String(a)));
+            return (
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-400 uppercase tracking-wider text-[11px]">Session Date:</span>
+                <select
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="">Latest Session ({daysMap[timeframe] || 1}D Cumulative)</option>
+                  {selectedDate && !allAvail.includes(selectedDate) && (
+                    <option value={selectedDate}>{selectedDate} (Selected)</option>
+                  )}
+                  {allAvail.slice(0, 500).map((dt: string) => (
+                    <option key={dt} value={dt}>{dt}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })()}
         </div>
 
         {(selectedDate || selectedSector !== 'ALL') && (
@@ -3291,7 +3323,7 @@ export function BrokerHeatmapService() {
       {/* Date Notice Banner if selected date has no compiled records */}
       {selectedDate && Array.isArray(data?.availableDates) && !data.availableDates.includes(selectedDate) && (
         <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300 flex items-center justify-between gap-3">
-          <span>⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong>. Showing latest completed session: <strong>{data.availableDates[0] || '2026-10-27'}</strong>.</span>
+          <span>⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong>. Showing latest completed session: <strong>{data.availableDates[0] || '2026-10-28'}</strong>.</span>
           <button
             onClick={() => setSelectedDate('')}
             className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold hover:bg-amber-500/30 cursor-pointer text-[11px] whitespace-nowrap"
@@ -5921,7 +5953,7 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
       {depthData?.isOffMarket && (
         <div className="px-3.5 py-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between flex-wrap gap-2">
           <span>🌙 <strong>Market Closed</strong>: Displaying authentic Closing Session Order Book snapshot ({depthData?.sessionLabel || '3:00 PM NPT'}).</span>
-          <span className="text-[11px] text-slate-400">Live NOTS queue streams Sun–Thu 11:00 AM – 3:00 PM</span>
+          <span className="text-[11px] text-slate-400">Live NOTS queue streams Mon–Fri 11:00 AM – 3:00 PM</span>
         </div>
       )}
 
@@ -5941,7 +5973,7 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
         <TableSkeleton rows={5} cols={6} />
       ) : !hasOrders ? (
         <InfoBanner type="info">
-          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Sun–Thu 11:00 AM – 3:00 PM NPT).
+          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Mon–Fri 11:00 AM – 3:00 PM NPT).
         </InfoBanner>
       ) : (
         <div className="space-y-2.5">

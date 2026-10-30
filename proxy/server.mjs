@@ -72,7 +72,7 @@ import {
   sendDiscordPrimePickAlert
 } from './discordNotifier.mjs';
 import { assembleScripDossier, buildAgentAnalysisPrompt } from './agentTools.mjs';
-import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
+import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseTradingDay, formatNptDateIso } from '../src/utils/nepseCalendar.js';
 import { 
   getArchiveIndex, 
   downloadAndArchiveDailyFloorsheet, 
@@ -705,11 +705,11 @@ app.get('/api/nepse/diagnostics', (req, res) => {
 /**
  * Enriches an array of stocks with real floorsheet broker concentration data (BCR3/5, NBAR, LBAS, Top Net Desks).
  */
-export async function enrichStocksWithBrokerSummary(stocks, days = 1) {
+export async function enrichStocksWithBrokerSummary(stocks, days = 1, targetDate = '') {
   if (!Array.isArray(stocks) || stocks.length === 0) return stocks;
   try {
     const numDays = Math.max(1, parseInt(days || 1, 10) || 1);
-    const brokerMap = await getMarketWideBrokerSummaryMap(numDays);
+    const brokerMap = await getMarketWideBrokerSummaryMap(numDays, { date: targetDate });
     if (brokerMap && typeof brokerMap === 'object' && Object.keys(brokerMap).length > 0) {
       return stocks.map(stock => {
         const sym = String(stock.symbol || '').toUpperCase().trim();
@@ -859,7 +859,69 @@ export async function getEnrichedStockUniverse() {
 // Initialize Telegram Playbook automated picker dependencies
 initTelegramPlaybookDependencies({ getEnrichedStockUniverse });
 
-app.get('/api/market-summary', async (req, res) => {
+app.get(['/api/market-summary', '/api/market/summary'], async (req, res) => {
+  const reqDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isHistorical = reqDate && reqDate !== todayIso;
+
+  if (isHistorical) {
+    const histCacheKey = `market-summary-${reqDate}`;
+    const cachedHist = getCache(histCacheKey);
+    if (cachedHist) return res.json({ success: true, data: cachedHist, source: 'ledger_daily_summary', date: reqDate, cached: true });
+
+    try {
+      const dateRows = db.prepare(`
+        SELECT
+          symbol,
+          open_price AS open,
+          high_price AS high,
+          low_price AS low,
+          close_price AS ltp,
+          total_volume AS volume,
+          total_turnover AS turnover
+        FROM daily_stock_summary
+        WHERE trade_date = ?
+      `).all(reqDate);
+
+      if (dateRows.length > 0) {
+        const prevDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE trade_date < ? ORDER BY trade_date DESC LIMIT 1`).get(reqDate);
+        let prevCloseMap = new Map();
+        if (prevDateRow?.trade_date) {
+          const prevRows = db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date);
+          for (const pr of prevRows) prevCloseMap.set(pr.symbol, pr.close_price);
+        }
+
+        const formatted = dateRows.map(r => {
+          const sym = r.symbol;
+          const prevClose = prevCloseMap.get(sym) || r.open || r.ltp;
+          const change = +(r.ltp - prevClose).toFixed(2);
+          const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+          return {
+            symbol: sym,
+            name: stockMap[sym]?.name || sym,
+            ltp: r.ltp,
+            change,
+            pChange,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            prevClose,
+            volume: r.volume,
+            turnover: r.turnover,
+            sector: stockMap[sym]?.sector || 'Unknown',
+            date: reqDate,
+            businessDate: reqDate,
+            source: 'ledger_daily_summary'
+          };
+        });
+
+        const enriched = await enrichStocksWithBrokerSummary(formatted, 1, reqDate);
+        setCache(histCacheKey, enriched, 60 * 60 * 1000);
+        return res.json({ success: true, data: enriched, source: 'ledger_daily_summary', date: reqDate });
+      }
+    } catch (_) {}
+  }
+
   const cacheKey = 'market-summary';
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, source: 'live', cached: true });
@@ -986,7 +1048,70 @@ let LAST_GOOD_INDICES = {
 };
 
 // Internal helper for Market Indices
-export async function getMarketIndicesInternal() {
+export async function getMarketIndicesInternal(targetDate = '') {
+  const reqDate = String(targetDate || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isHistorical = reqDate && reqDate !== todayIso;
+
+  if (isHistorical) {
+    const histCacheKey = `market-indices-${reqDate}`;
+    const cachedHist = getCache(histCacheKey);
+    if (cachedHist) return cachedHist;
+
+    try {
+      const summaryRow = db.prepare(`
+        SELECT
+          sum(total_turnover) AS turnover,
+          sum(total_volume) AS volume,
+          count(*) AS stockCount
+        FROM daily_stock_summary
+        WHERE trade_date = ?
+      `).get(reqDate);
+
+      if (summaryRow && summaryRow.turnover > 0) {
+        let nepseVal = LAST_GOOD_INDICES?.nepse?.value || 2664.06;
+        let prevClose = nepseVal;
+        try {
+          const udfRes = await axios.get(`https://chukul.com/api/data/historydata/data/?symbol=NEPSE&resolution=1D&from=1400000000&to=1900000000`, { timeout: 4000 }).catch(() => null);
+          if (udfRes?.data?.t && Array.isArray(udfRes.data.t)) {
+            const nepalOffset = 5.75 * 3600 * 1000;
+            for (let i = 0; i < udfRes.data.t.length; i++) {
+              const dStr = new Date(udfRes.data.t[i] * 1000 + nepalOffset).toISOString().slice(0, 10);
+              if (dStr === reqDate) {
+                nepseVal = Number(udfRes.data.c[i] || nepseVal);
+                prevClose = Number(udfRes.data.c[i - 1] || udfRes.data.o[i] || nepseVal);
+                break;
+              }
+            }
+          }
+        } catch (_) {}
+
+        const chg = +(nepseVal - prevClose).toFixed(2);
+        const pChg = prevClose > 0 ? +((chg / prevClose) * 100).toFixed(2) : 0;
+
+        const histObj = {
+          nepse: {
+            index: 'NEPSE Index',
+            value: nepseVal,
+            change: chg,
+            pChange: pChg,
+            prevClose,
+            open: prevClose,
+            high: Math.max(nepseVal, prevClose),
+            low: Math.min(nepseVal, prevClose),
+            turnover: summaryRow.turnover,
+            volume: summaryRow.volume
+          },
+          subIndices: [],
+          asOfDate: reqDate,
+          isHistorical: true
+        };
+        setCache(histCacheKey, histObj, 60 * 60 * 1000);
+        return histObj;
+      }
+    } catch (_) {}
+  }
+
   const cacheKey = 'market-indices';
   const cached = getCache(cacheKey);
   if (cached && cached.nepse && cached.nepse.value > 0) return cached;
@@ -1054,6 +1179,8 @@ export async function getMarketIndicesInternal() {
         prevClose: Number(item.previousClose || item.close || 0)
       })) : [];
 
+      indices.asOfDate = todayIso;
+
       if (indices.nepse && indices.nepse.value > 0) {
         setCache(cacheKey, indices, indexTtl);
         LAST_GOOD_INDICES = indices;
@@ -1064,56 +1191,103 @@ export async function getMarketIndicesInternal() {
     console.warn('[proxy] nepseClient indices error:', err.message);
   }
 
-  // Fallback 1: Direct ShareSansar Market Table (authoritative real-time indices with 3:00 PM closing)
+  // Fast Provider 2: Direct Live Feed via NepaliPaisa (real-time exchange quotes)
+  try {
+    const npCtrl = new AbortController();
+    const npTimer = setTimeout(() => npCtrl.abort(), 4000);
+    const npRes = await fetch('https://www.nepalipaisa.com/api/GetIndexLive', {
+      signal: npCtrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'application/json'
+      }
+    });
+    clearTimeout(npTimer);
+    const npBody = await npRes.json();
+    const npList = Array.isArray(npBody?.result) ? npBody.result : (Array.isArray(npBody) ? npBody : null);
+    if (npList && npList.length > 0) {
+      const pick = (re) => npList.find(x => re.test(String(x.indexName || '').trim()));
+      const build = (x, name) => {
+        if (!x || !(Number(x.indexValue) > 0)) return null;
+        const value = Number(x.indexValue);
+        const prevClose = Number(x.previousValue || 0) || +(value - Number(x.difference || 0)).toFixed(2);
+        return {
+          index: name,
+          value,
+          change: +Number(x.difference ?? (value - prevClose)).toFixed(2),
+          pChange: +Number(x.percentChange ?? 0).toFixed(2),
+          prevClose,
+          open: Number(x.openingValue || prevClose),
+          high: Number(x.dayHigh || value),
+          low: Number(x.dayLow || value),
+          turnover: Number(x.turnover || 0)
+        };
+      };
+      const nepseItem = build(pick(/^nepse$/i), 'NEPSE Index');
+      if (nepseItem && nepseItem.value > 0) {
+        const rawDate = pick(/^nepse$/i)?.asOfDate;
+        const npDate = rawDate ? String(rawDate).slice(0, 10) : todayIso;
+        const npIndices = {
+          nepse: nepseItem,
+          float: build(pick(/^float$/i), 'Float Index'),
+          sensitive: build(pick(/^sensitive$/i), 'Sensitive Index'),
+          sensitiveFloat: build(pick(/^sen\.? ?float$/i), 'Sensitive Float Index'),
+          subIndices: (LAST_GOOD_INDICES?.subIndices?.length > 0) ? LAST_GOOD_INDICES.subIndices : [],
+          asOfDate: npDate
+        };
+        setCache(cacheKey, npIndices, indexTtl);
+        LAST_GOOD_INDICES = { ...LAST_GOOD_INDICES, ...npIndices };
+        return npIndices;
+      }
+    }
+  } catch (npErr) {
+    console.warn('[proxy] NepaliPaisa live index provider error:', npErr.message);
+  }
+
+  // Fallback 3: Direct ShareSansar Market Table (authoritative indices with official closing)
   try {
     const response = await axios.get('https://www.sharesansar.com/market', {
       headers: HEADERS,
       timeout: 10000
     });
     const asOfMatch = response.data.match(/As of\s*(?:<[^>]+>)?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})/i);
-    const asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : null;
-    const isTradingSession = currentStatus?.isOpen || currentStatus?.isPreOpen || (currentStatus?.nptTotalMinutes >= 11 * 60);
-    const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+    const asOfDate = asOfMatch ? asOfMatch[1].replace(/\//g, '-') : todayIso;
 
-    if (asOfDate && asOfDate < todayIso && !isTradingSession) {
-      console.warn(`[proxy] ShareSansar date (${asOfDate}) is yesterday (today is ${todayIso}). Bypassing stale fallback.`);
-    } else {
-      const $ = cheerio.load(response.data);
-      const indices = {};
-      const subIndices = [];
-      
-      $('table tbody tr').each((i, el) => {
-        const tds = $(el).find('td');
-        if (tds.length >= 7) {
-          const index = $(tds[0]).text().trim();
-          const open = parseMoney($(tds[1]).text());
-          const high = parseMoney($(tds[2]).text());
-          const low = parseMoney($(tds[3]).text());
-          const value = parseMoney($(tds[4]).text()); // Actual current index value
-          const change = parseMoney($(tds[5]).text()); // Point change
-          const pChange = parseMoney($(tds[6]).text()); // % change
-          const turnover = parseMoney($(tds[7]).text()); // Turnover
-          
-          if (index && !isNaN(value) && value > 0) {
-            const val = { value, change, pChange: +(pChange).toFixed(2), open, high, low, turnover, prevClose: +(value - change).toFixed(2) };
-            if (index === 'NEPSE Index') indices.nepse = val;
-            else if (index === 'Float Index') indices.float = val;
-            else if (index === 'Sensitive Index') indices.sensitive = val;
-            else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
-            else {
-              subIndices.push({ index, ...val });
-            }
+    const $ = cheerio.load(response.data);
+    const indices = {};
+    const subIndices = [];
+    
+    $('table tbody tr').each((i, el) => {
+      const tds = $(el).find('td');
+      if (tds.length >= 7) {
+        const index = $(tds[0]).text().trim();
+        const open = parseMoney($(tds[1]).text());
+        const high = parseMoney($(tds[2]).text());
+        const low = parseMoney($(tds[3]).text());
+        const value = parseMoney($(tds[4]).text());
+        const change = parseMoney($(tds[5]).text());
+        const pChange = parseMoney($(tds[6]).text());
+        const turnover = parseMoney($(tds[7]).text());
+        
+        if (index && !isNaN(value) && value > 0) {
+          const val = { value, change, pChange: +(pChange).toFixed(2), open, high, low, turnover, prevClose: +(value - change).toFixed(2) };
+          if (index === 'NEPSE Index') indices.nepse = val;
+          else if (index === 'Float Index') indices.float = val;
+          else if (index === 'Sensitive Index') indices.sensitive = val;
+          else if (index === 'Sensitive Float Index') indices.sensitiveFloat = val;
+          else {
+            subIndices.push({ index, ...val });
           }
         }
-      });
-      
-      indices.subIndices = subIndices;
-      indices.asOfDate = asOfDate || todayIso;
-      if (indices.nepse && indices.nepse.value > 0) {
-        setCache(cacheKey, indices, indexTtl);
-        LAST_GOOD_INDICES = indices;
-        return indices;
       }
+    });
+    
+    indices.subIndices = subIndices;
+    indices.asOfDate = asOfDate;
+    if (indices.nepse && indices.nepse.value > 0) {
+      setCache(cacheKey, indices, indexTtl);
+      LAST_GOOD_INDICES = indices;
+      return indices;
     }
   } catch (err) {
     console.warn('[proxy] ShareSansar market table error:', err.message);
@@ -1184,9 +1358,10 @@ export async function getMarketIndicesInternal() {
 }
 
 // Market Indices (ShareSansar)
-app.get('/api/market-indices', async (req, res) => {
+app.get(['/api/market-indices', '/api/indices'], async (req, res) => {
   try {
-    const indices = await getMarketIndicesInternal();
+    const targetDate = String(req.query.date || '').trim();
+    const indices = await getMarketIndicesInternal(targetDate);
     if (indices && Object.keys(indices).length > 0) {
       return res.json({ success: true, data: indices });
     }
@@ -1197,10 +1372,98 @@ app.get('/api/market-indices', async (req, res) => {
 });
 
 /* ═══════════════════════════════════════════════════
-   ENDPOINT 1 — Today's / Closing Prices
+   ENDPOINT 1 — Today's / Closing / Historical Prices
    Source: https://www.sharesansar.com/today-share-price
    ═══════════════════════════════════════════════════ */
-app.get('/api/today-prices', async (req, res) => {
+app.get(['/api/today-prices', '/api/live-market'], async (req, res) => {
+  const reqDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isHistorical = reqDate && reqDate !== todayIso;
+
+  if (isHistorical) {
+    const histCacheKey = `today-prices-${reqDate}`;
+    const cachedHist = getCache(histCacheKey);
+    if (cachedHist) return res.json({ success: true, data: cachedHist, source: 'ledger_daily_summary', date: reqDate, count: cachedHist.length, cached: true });
+
+    try {
+      let dateRows = db.prepare(`
+        SELECT
+          symbol,
+          open_price AS open,
+          high_price AS high,
+          low_price AS low,
+          close_price AS ltp,
+          total_volume AS volume,
+          total_turnover AS turnover
+        FROM daily_stock_summary
+        WHERE trade_date = ?
+      `).all(reqDate);
+
+      // If not in daily_stock_summary, check if we have full floorsheet on disk or contracts
+      if (dateRows.length === 0) {
+        const fullTrades = await getFullSessionFloorsheet(reqDate).catch(() => null);
+        if (Array.isArray(fullTrades) && fullTrades.length > 0) {
+          dateRows = db.prepare(`
+            SELECT
+              symbol,
+              open_price AS open,
+              high_price AS high,
+              low_price AS low,
+              close_price AS ltp,
+              total_volume AS volume,
+              total_turnover AS turnover
+            FROM daily_stock_summary
+            WHERE trade_date = ?
+          `).all(reqDate);
+        }
+      }
+
+      if (dateRows.length > 0) {
+        const prevDateRow = db.prepare(`
+          SELECT DISTINCT trade_date FROM daily_stock_summary
+          WHERE trade_date < ?
+          ORDER BY trade_date DESC LIMIT 1
+        `).get(reqDate);
+
+        let prevCloseMap = new Map();
+        if (prevDateRow?.trade_date) {
+          const prevRows = db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date);
+          for (const pr of prevRows) prevCloseMap.set(pr.symbol, pr.close_price);
+        }
+
+        const formatted = dateRows.map(r => {
+          const sym = r.symbol;
+          const prevClose = prevCloseMap.get(sym) || r.open || r.ltp;
+          const change = +(r.ltp - prevClose).toFixed(2);
+          const pChange = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+          return {
+            symbol: sym,
+            name: stockMap[sym]?.name || sym,
+            ltp: r.ltp,
+            change,
+            pChange,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            prevClose,
+            volume: r.volume,
+            turnover: r.turnover,
+            sector: stockMap[sym]?.sector || 'Unknown',
+            date: reqDate,
+            businessDate: reqDate,
+            source: 'ledger_daily_summary'
+          };
+        });
+
+        const enriched = await enrichStocksWithBrokerSummary(formatted, 1, reqDate);
+        setCache(histCacheKey, enriched, 60 * 60 * 1000);
+        return res.json({ success: true, data: enriched, source: 'ledger_daily_summary', date: reqDate, count: enriched.length });
+      }
+    } catch (histErr) {
+      console.warn('[proxy] Historical today-prices error:', histErr.message);
+    }
+  }
+
   const cacheKey = 'today-prices';
   const cached = getCache(cacheKey);
   if (cached) {
@@ -2638,12 +2901,17 @@ app.get('/api/company/:symbol', async (req, res) => {
     const resp = await axios.get(mlUrl, { headers: HEADERS, timeout: 10000 });
     const $ = cheerio.load(resp.data);
 
-    // MeroLagani renders a key-value table with class "table-bordered" or inside #ctl00_ContentPlaceHolder1_divFundamental
+    // MeroLagani renders a key-value table using <th> for label and <td> for value
+    // e.g.: <th>EPS</th><td>27.01<span>(FY:082-083, Q:4)</span></td>
     $('table tr').each((i, el) => {
+      // Support both <th><td> rows AND <td><td> rows
+      const th = $(el).find('th').first();
       const tds = $(el).find('td');
-      if (tds.length < 2) return;
-      const label = $(tds[0]).text().trim().toLowerCase();
-      const valueStr = $(tds[1]).text().trim();
+      const labelEl = th.length ? th : tds.first();
+      const valueEl = th.length ? tds.first() : tds.eq(1);
+      if (!labelEl.length || !valueEl.length) return;
+      const label = labelEl.text().trim().toLowerCase();
+      const valueStr = valueEl.text().trim();
       const val = parseMoney(valueStr);
 
       if (label.includes('eps') || label.includes('earning per share')) detail.eps = val;
@@ -3299,6 +3567,74 @@ app.get('/api/floorsheet/archives', (req, res) => {
   }
 });
 
+let _cachedTradingDates = { timestamp: 0, dates: [] };
+export async function getMarketTradingDates() {
+  const now = Date.now();
+  if (_cachedTradingDates.dates.length >= 10 && (now - _cachedTradingDates.timestamp < 5 * 60 * 1000)) {
+    return _cachedTradingDates.dates;
+  }
+  const todayIso = formatNptDateIso(new Date());
+  const datesSet = new Set();
+  try {
+    const rows = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE (is_quarantined = 0 OR is_quarantined IS NULL) AND trade_date <= ? ORDER BY trade_date DESC LIMIT 500`).all(todayIso);
+    rows.forEach(r => r.trade_date && datesSet.add(r.trade_date));
+  } catch (_) {}
+  try {
+    const rows = db.prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 500`).all(todayIso);
+    rows.forEach(r => r.trade_date && datesSet.add(r.trade_date));
+  } catch (_) {}
+  try {
+    const archivePath = path.join(__dirname, 'data', 'daily_floorsheets', 'archive_index.json');
+    if (fs.existsSync(archivePath)) {
+      const list = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+      list.forEach(a => a.date && a.date <= todayIso && datesSet.add(a.date));
+    }
+  } catch (_) {}
+  try {
+    const candidateDirs = [
+      path.join(__dirname, 'data'),
+      path.join(process.cwd(), 'data'),
+      path.join(process.cwd(), 'proxy', 'data')
+    ];
+    for (const dDir of candidateDirs) {
+      if (fs.existsSync(dDir)) {
+        const files = fs.readdirSync(dDir).filter(f => f.startsWith('floorsheet-full-') && f.endsWith('.json'));
+        files.forEach(f => {
+          const m = f.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+          if (m && m[1] && m[1] <= todayIso) datesSet.add(m[1]);
+        });
+      }
+    }
+  } catch (_) {}
+  try {
+    const ext = await fetchSymbolTradingDates('NABIL');
+    if (Array.isArray(ext)) ext.slice(0, 500).forEach(d => d && d <= todayIso && datesSet.add(d));
+  } catch (_) {}
+
+  // Strict Calendar & Trading Day Filter: Never future, never weekends (Fri/Sat), never public holidays
+  const sorted = Array.from(datesSet)
+    .filter(d => {
+      if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      if (d > todayIso) return false;
+      return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
+    })
+    .sort((a, b) => String(b).localeCompare(String(a)));
+
+  if (sorted.length > 0) {
+    _cachedTradingDates = { timestamp: now, dates: sorted };
+  }
+  return sorted;
+}
+
+app.get('/api/trading-dates', async (req, res) => {
+  try {
+    const dates = await getMarketTradingDates();
+    return res.json({ success: true, count: dates.length, dates });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /* ═══════════════════════════════════════════════════
    REAL DATA ENDPOINT B — Real Floorsheet (via @rumess/nepse-api)
    GET /api/floorsheet/:symbol? (optional symbol for market-wide or stock-specific)
@@ -3408,15 +3744,13 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
                 businessDate: r.businessDate || businessDate || ''
               }));
 
-            // Multi-date available dates list from symbol vault if exists
-            let availableDates = [businessDate || filtered[0]?.businessDate || new Date().toISOString().split('T')[0]];
-            if (cleanSym) {
-              try {
-                const dates = await fetchSymbolTradingDates(cleanSym);
-                if (Array.isArray(dates) && dates.length > 0) {
-                  availableDates = Array.from(new Set([availableDates[0], ...dates])).slice(0, 500);
-                }
-              } catch (_) {}
+            // Multi-date available dates list from symbol vault or market dates
+            let availableDates = [];
+            try {
+              availableDates = await getMarketTradingDates();
+            } catch (_) {}
+            if (!availableDates || availableDates.length === 0) {
+              availableDates = [businessDate || filtered[0]?.businessDate || new Date().toISOString().split('T')[0]];
             }
 
             const respData = {
@@ -3444,6 +3778,28 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     }
 
     // 2. Multi-day or historical date range: Symbol-specific floorsheet via Multi-date Vault
+    // If market-wide floorsheet for a specific date was requested, and full session returned empty:
+    if (!cleanSym && businessDate) {
+      return res.json({
+        success: true,
+        data: {
+          rows: [],
+          page: page + 1,
+          size,
+          totalPages: 0,
+          totalElements: 0,
+          totalAmount: 0,
+          totalQty: 0,
+          priceVolumeBreakdown: [],
+          bulkTransactions: [],
+          availableDates: await getMarketTradingDates().catch(() => []),
+          businessDate,
+          isReal: true
+        },
+        source: 'empty_historical_date_floorsheet'
+      });
+    }
+
     if (cleanSym) {
       try {
         const vaultFloorsheet = await getOrFetchSymbolFloorsheet(cleanSym, {
@@ -3475,13 +3831,17 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
     if (businessDate) options.date = businessDate;
 
     let result = null;
-    try {
-      result = await Promise.race([
-        nepseClient.getFloorSheet(options),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Floorsheet timeout from upstream exchange')), 5000))
-      ]);
-    } catch (e1) {
-      console.warn(`[floorsheet] nepseClient floorsheet unavailable: ${e1.message}`);
+    const todayIso = formatNptDateIso(new Date());
+    // Only call live exchange scraper if NO historical businessDate was requested or if date is today
+    if (!businessDate || businessDate === todayIso) {
+      try {
+        result = await Promise.race([
+          nepseClient.getFloorSheet(options),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Floorsheet timeout from upstream exchange')), 5000))
+        ]);
+      } catch (e1) {
+        console.warn(`[floorsheet] nepseClient floorsheet unavailable: ${e1.message}`);
+      }
     }
 
     const rawList = result?.floorsheets?.content || result?.content || (Array.isArray(result) ? result : []);
@@ -3525,22 +3885,29 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       try {
         const mktStatus = getDetailedMarketStatus();
         const lastTradingDayStr = mktStatus?.lastTradingDay ? (typeof mktStatus.lastTradingDay === 'string' ? mktStatus.lastTradingDay.split('T')[0] : mktStatus.lastTradingDay.toISOString().split('T')[0]) : '2026-10-14';
-        const targetDt = businessDate || (mktStatus?.isOpen ? new Date().toISOString().split('T')[0] : lastTradingDayStr);
+        const targetDt = businessDate || (mktStatus?.isOpen ? todayIso : lastTradingDayStr);
         let directRows = await fetchChukulDateFloorsheet(cleanSym, targetDt);
+        // If NO businessDate was specified, we can fall back to lastTradingDayStr or recent dates
         if (!directRows || directRows.length === 0) {
-          directRows = await fetchChukulDateFloorsheet(cleanSym, lastTradingDayStr);
+          if (!businessDate) {
+            directRows = await fetchChukulDateFloorsheet(cleanSym, lastTradingDayStr);
+          }
         }
         if (!directRows || directRows.length === 0) {
-          const allDates = await fetchSymbolTradingDates(cleanSym).catch(() => []);
-          for (const d of allDates.slice(0, 3)) {
-            if (d !== targetDt && d !== lastTradingDayStr) {
-              directRows = await fetchChukulDateFloorsheet(cleanSym, d);
-              if (directRows && directRows.length > 0) break;
+          if (!businessDate) {
+            const allDates = await fetchSymbolTradingDates(cleanSym).catch(() => []);
+            for (const d of allDates.slice(0, 3)) {
+              if (d !== targetDt && d !== lastTradingDayStr) {
+                directRows = await fetchChukulDateFloorsheet(cleanSym, d);
+                if (directRows && directRows.length > 0) break;
+              }
             }
           }
         }
         if (!directRows || directRows.length === 0) {
-          directRows = await fetchShareSansarFloorsheet(cleanSym, 6000);
+          if (!businessDate || businessDate === todayIso) {
+            directRows = await fetchShareSansarFloorsheet(cleanSym, 6000);
+          }
         }
 
         if (Array.isArray(directRows) && directRows.length > 0) {
@@ -3589,13 +3956,14 @@ app.get(['/api/floorsheet', '/api/floorsheet/:symbol'], async (req, res) => {
       totalQty: result?.totalQty || rows.reduce((s, r) => s + r.qty, 0),
       totalTrades: result?.totalTrades || totalElements,
       symbol,
-      businessDate: businessDate || rows[0]?.businessDate || ''
+      businessDate: businessDate || rows[0]?.businessDate || '',
+      availableDates: await getMarketTradingDates().catch(() => [])
     };
 
     // Off-hours / Holiday Fallback: If live exchange scraper returned 0 rows, serve from SQLite tick-level contracts
     if (rows.length === 0 && cleanSym) {
       try {
-        const sqliteFs = getScripFloorsheet(cleanSym, size || 100);
+        const sqliteFs = getScripFloorsheet(cleanSym, size || 100, businessDate ? { date: businessDate } : {});
         if (sqliteFs.length > 0) {
           const mappedRows = sqliteFs.map(c => ({
             contractNo: c.contractNo,
@@ -4086,8 +4454,8 @@ function saveMarketDepthSnapshot(symbol, depthData) {
   }
 }
 
-function reconstructClosingOrderBook(symbol) {
-  if (marketDepthSnapshots[symbol] && marketDepthSnapshots[symbol].bids?.length > 0) {
+function reconstructClosingOrderBook(symbol, targetDate = '') {
+  if (!targetDate && marketDepthSnapshots[symbol] && marketDepthSnapshots[symbol].bids?.length > 0) {
     return {
       ...marketDepthSnapshots[symbol],
       isOffMarket: true,
@@ -4097,19 +4465,38 @@ function reconstructClosingOrderBook(symbol) {
   }
 
   let stock = null;
-  try {
-    const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
-    if (fs.existsSync(lkmPath)) {
-      const lkm = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
-      stock = lkm.todayPrices?.find(s => String(s.symbol || '').toUpperCase() === symbol);
-    }
-  } catch (_) {}
+  if (targetDate) {
+    try {
+      const summary = db.prepare(`SELECT * FROM daily_stock_summary WHERE UPPER(symbol) = ? AND trade_date = ? LIMIT 1`).get(symbol, targetDate);
+      if (summary) {
+        stock = {
+          symbol,
+          ltp: summary.close_price,
+          openPrice: summary.open_price,
+          highPrice: summary.high_price,
+          lowPrice: summary.low_price,
+          closePrice: summary.close_price,
+          totalTradedQuantity: summary.total_volume
+        };
+      }
+    } catch (_) {}
+  }
+
+  if (!stock) {
+    try {
+      const lkmPath = path.join(__dirname, 'data', 'last_known_market.json');
+      if (fs.existsSync(lkmPath)) {
+        const lkm = JSON.parse(fs.readFileSync(lkmPath, 'utf8'));
+        stock = lkm.todayPrices?.find(s => String(s.symbol || '').toUpperCase() === symbol);
+      }
+    } catch (_) {}
+  }
 
   const ltp = Number(stock?.lastTradedPrice || stock?.ltp || stock?.closePrice || 0);
 
   // Fallback: Reconstruct L2 depth from SQLite floorsheet VAP liquidity clusters
   try {
-    const vapDepth = reconstructMarketDepthFromFloorsheet(symbol, ltp);
+    const vapDepth = reconstructMarketDepthFromFloorsheet(symbol, ltp, targetDate);
     if (vapDepth && (vapDepth.bids?.length > 0 || vapDepth.asks?.length > 0)) {
       return {
         ...vapDepth,
@@ -4156,12 +4543,14 @@ function reconstructClosingOrderBook(symbol) {
 app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
-  const cacheKey = `market-depth-${symbol}`;
+  const targetDate = String(req.query.date || '').trim();
+  const cacheKey = `market-depth-${symbol}-${targetDate || 'live'}`;
   const cached = getCache(cacheKey);
   if (cached) return res.json({ success: true, data: cached, cached: true });
 
   const currentStatus = getProxyMarketStatus();
-  const isMarketOpen = currentStatus?.isOpen;
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isMarketOpen = currentStatus?.isOpen && (!targetDate || targetDate === todayIso);
 
   try {
     let depthRaw = null;
@@ -4217,12 +4606,12 @@ app.get(['/api/nepse/market-depth/:symbol', '/api/market-depth/:symbol'], async 
     }
 
     // Off-Market or NOTS depth returned empty: serve closing session order book snapshot
-    const closingDepth = reconstructClosingOrderBook(symbol);
+    const closingDepth = reconstructClosingOrderBook(symbol, targetDate);
     setCache(cacheKey, closingDepth, 30 * 1000);
     return res.json({ success: true, data: closingDepth });
   } catch (err) {
     console.error(`[market-depth] ${symbol}:`, err.message);
-    const fallbackDepth = reconstructClosingOrderBook(symbol);
+    const fallbackDepth = reconstructClosingOrderBook(symbol, targetDate);
     res.json({ success: true, data: fallbackDepth });
   }
 });
@@ -5001,7 +5390,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           const aggData = aggregateMarketFloorsheet(fullTrades, businessDate || fullTrades[0]?.businessDate);
           let availableDates = [];
           try {
-            const dates = await fetchSymbolTradingDates('NABIL');
+            const dates = await getMarketTradingDates();
             if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
           } catch (_) {}
           aggData.availableDates = availableDates;
@@ -5024,7 +5413,7 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
               if (parsed?.matrix?.length > 0) {
                 let availableDates = [];
                 try {
-                  const dates = await fetchSymbolTradingDates('NABIL');
+                  const dates = await getMarketTradingDates();
                   if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
                 } catch (_) {}
                 parsed.availableDates = availableDates;
@@ -5519,24 +5908,69 @@ app.get('/api/smart-money/stealth/:symbol', async (req, res) => {
    ENDPOINT S9B — Institutional Smart Money Multi-Day Floorsheet Rollup
    GET /api/stocks/:symbol/smart-money?timeframe=5D&days=5
    ══════════════════════════════════════════════════════════════════════════════ */
-app.get(['/api/stocks/:symbol/smart-money', '/api/stocks/:symbol/smart-money/'], async (req, res) => {
+app.get([
+  '/api/stocks/:symbol/smart-money',
+  '/api/stocks/:symbol/smart-money/',
+  '/api/stock/:symbol/smart-money',
+  '/api/stock/:symbol/smart-money/'
+], async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Symbol is required', data: [] });
 
   const tf = String(req.query.timeframe || req.query.tf || '1D').toUpperCase();
-  const sessionLimit = req.query.days ? Math.max(1, parseInt(req.query.days, 10)) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1);
+  const isAll = req.query.days === 'all' || req.query.days === 'ALL' || tf === 'ALL' || parseInt(req.query.days, 10) >= 300;
+  const sessionLimit = isAll ? 9999 : (req.query.days ? Math.max(1, parseInt(req.query.days, 10) || 1) : (tf === '5D' ? 5 : tf === '1M' ? 20 : 1));
 
   try {
     const rows = getSmartMoneyAggregatedFlow(symbol, sessionLimit);
+    const enriched = (Array.isArray(rows) ? rows : []).map(r => {
+      const bVol = Number(r.buyVolume || r.buyVol || 0);
+      const sVol = Number(r.sellVolume || r.sellVol || 0);
+      const bAmt = Number(r.buyAmount || r.buyAmt || 0);
+      const sAmt = Number(r.sellAmount || r.sellAmt || 0);
+      const netQty = bVol - sVol;
+      const holdQty = Math.max(0, netQty);
+      const avgBuyRate = bVol > 0 ? +(bAmt / bVol).toFixed(2) : 0;
+      const avgSellRate = sVol > 0 ? +(sAmt / sVol).toFixed(2) : 0;
+      return {
+        ...r,
+        id: String(r.brokerId || '').replace(/^0+/, ''),
+        brokerId: String(r.brokerId || '').replace(/^0+/, ''),
+        buyQty: bVol,
+        sellQty: sVol,
+        buyAmt: bAmt,
+        sellAmt: sAmt,
+        netQty,
+        holdQty,
+        signedHoldQty: netQty,
+        totalHeldQty: holdQty,
+        totalHeldAmt: holdQty * (avgBuyRate || 100),
+        avgBuyRate,
+        avgSellRate,
+        retentionPct: bVol > 0 ? +((holdQty / bVol) * 100).toFixed(1) : 0
+      };
+    });
+
+    const accumulators = enriched.filter(b => b.netQty > 0).sort((a, b) => b.netQty - a.netQty);
+    const distributors = enriched.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
+    const totalSharesHeld = accumulators.reduce((sum, b) => sum + b.netQty, 0);
+
     return res.json({
+      success: true,
       symbol,
       timeframe: tf,
       sessionsIncluded: sessionLimit,
-      data: Array.isArray(rows) ? rows : [],
+      totalSharesHeldTillNow: totalSharesHeld,
+      data: enriched,
+      brokers: enriched,
+      allHoldings: accumulators,
+      allDistributors: distributors,
+      topHoldings: accumulators.slice(0, 20)
     });
   } catch (error) {
     console.error(`[Server] /api/stocks/${symbol}/smart-money error:`, error.message);
     return res.json({
+      success: false,
       symbol,
       timeframe: tf,
       data: [],
@@ -6325,73 +6759,144 @@ app.get('/api/securities/:symbol/history', async (req, res) => {
 // ============================================================
 // 8: TOP GAINERS/LOSERS/VOLUME/TURNOVER/TRANSACTIONS
 // ============================================================
+async function getRankedStocksByDate(targetDate, sortFn, limit = 10) {
+  const reqDate = String(targetDate || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  const isHistorical = reqDate && reqDate !== todayIso;
+
+  let stocks = [];
+  if (isHistorical) {
+    try {
+      const rows = db.prepare(`SELECT * FROM daily_stock_summary WHERE trade_date = ?`).all(reqDate);
+      if (rows.length > 0) {
+        const prevDateRow = db.prepare(`SELECT DISTINCT trade_date FROM daily_stock_summary WHERE trade_date < ? ORDER BY trade_date DESC LIMIT 1`).get(reqDate);
+        let prevCloseMap = new Map();
+        if (prevDateRow?.trade_date) {
+          const prevRows = db.prepare(`SELECT symbol, close_price FROM daily_stock_summary WHERE trade_date = ?`).all(prevDateRow.trade_date);
+          for (const pr of prevRows) prevCloseMap.set(pr.symbol, pr.close_price);
+        }
+        stocks = rows.map(r => {
+          const prev = prevCloseMap.get(r.symbol) || r.open_price || r.close_price;
+          const chg = +(r.close_price - prev).toFixed(2);
+          const pchg = prev > 0 ? +((chg / prev) * 100).toFixed(2) : 0;
+          return {
+            symbol: r.symbol,
+            securityName: stockMap[r.symbol]?.name || r.symbol,
+            ltp: r.close_price,
+            closePrice: r.close_price,
+            change: chg,
+            pointChange: chg,
+            pChange: pchg,
+            percentageChange: pchg,
+            totalTradedQuantity: r.total_volume,
+            volume: r.total_volume,
+            totalTradedValue: r.total_turnover,
+            turnover: r.total_turnover
+          };
+        });
+      }
+    } catch (_) {}
+  } else {
+    const cached = getCache('today-prices') || getCache('market-summary');
+    if (Array.isArray(cached) && cached.length > 0) {
+      stocks = cached;
+    }
+  }
+  return [...stocks].sort(sortFn).slice(0, limit);
+}
+
 app.get('/api/market/top-gainers', async (req, res) => {
+  const targetDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  if (targetDate && targetDate !== todayIso) {
+    const list = await getRankedStocksByDate(targetDate, (a, b) => (b.pChange || b.percentageChange || 0) - (a.pChange || a.percentageChange || 0));
+    return res.json({ success: true, isMockData: false, source: 'DRABYASHREE_LEDGER_HISTORICAL', data: list });
+  }
   try {
     const list = await nepseClient.getTopTenGainers();
-    res.json({
-      success: true,
-      isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list.slice(0, 10) : []
-    });
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: list.slice(0, 10) });
+    }
+    throw new Error('NOTS empty');
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    const fallback = await getRankedStocksByDate('', (a, b) => (b.pChange || b.percentageChange || 0) - (a.pChange || a.percentageChange || 0));
+    res.json({ success: true, isMockData: false, source: 'AUTHENTIC_LOCAL_FALLBACK', data: fallback });
   }
 });
 
 app.get('/api/market/top-losers', async (req, res) => {
+  const targetDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  if (targetDate && targetDate !== todayIso) {
+    const list = await getRankedStocksByDate(targetDate, (a, b) => (a.pChange || a.percentageChange || 0) - (b.pChange || b.percentageChange || 0));
+    return res.json({ success: true, isMockData: false, source: 'DRABYASHREE_LEDGER_HISTORICAL', data: list });
+  }
   try {
     const list = await nepseClient.getTopTenLosers();
-    res.json({
-      success: true,
-      isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list.slice(0, 10) : []
-    });
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: list.slice(0, 10) });
+    }
+    throw new Error('NOTS empty');
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    const fallback = await getRankedStocksByDate('', (a, b) => (a.pChange || a.percentageChange || 0) - (b.pChange || b.percentageChange || 0));
+    res.json({ success: true, isMockData: false, source: 'AUTHENTIC_LOCAL_FALLBACK', data: fallback });
   }
 });
 
 app.get('/api/market/top-volume', async (req, res) => {
+  const targetDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  if (targetDate && targetDate !== todayIso) {
+    const list = await getRankedStocksByDate(targetDate, (a, b) => (b.volume || b.totalTradedQuantity || 0) - (a.volume || a.totalTradedQuantity || 0));
+    return res.json({ success: true, isMockData: false, source: 'DRABYASHREE_LEDGER_HISTORICAL', data: list });
+  }
   try {
     const list = await nepseClient.getTopTenTradeScrips();
-    res.json({
-      success: true,
-      isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list.slice(0, 10) : []
-    });
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: list.slice(0, 10) });
+    }
+    throw new Error('NOTS empty');
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    const fallback = await getRankedStocksByDate('', (a, b) => (b.volume || b.totalTradedQuantity || 0) - (a.volume || a.totalTradedQuantity || 0));
+    res.json({ success: true, isMockData: false, source: 'AUTHENTIC_LOCAL_FALLBACK', data: fallback });
   }
 });
 
 app.get('/api/market/top-turnover', async (req, res) => {
+  const targetDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  if (targetDate && targetDate !== todayIso) {
+    const list = await getRankedStocksByDate(targetDate, (a, b) => (b.turnover || b.totalTradedValue || 0) - (a.turnover || a.totalTradedValue || 0));
+    return res.json({ success: true, isMockData: false, source: 'DRABYASHREE_LEDGER_HISTORICAL', data: list });
+  }
   try {
     const list = await nepseClient.getTopTenTurnoverScrips();
-    res.json({
-      success: true,
-      isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list.slice(0, 10) : []
-    });
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: list.slice(0, 10) });
+    }
+    throw new Error('NOTS empty');
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    const fallback = await getRankedStocksByDate('', (a, b) => (b.turnover || b.totalTradedValue || 0) - (a.turnover || a.totalTradedValue || 0));
+    res.json({ success: true, isMockData: false, source: 'AUTHENTIC_LOCAL_FALLBACK', data: fallback });
   }
 });
 
 app.get('/api/market/top-transactions', async (req, res) => {
+  const targetDate = String(req.query.date || '').trim();
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+  if (targetDate && targetDate !== todayIso) {
+    const list = await getRankedStocksByDate(targetDate, (a, b) => (b.turnover || 0) - (a.turnover || 0));
+    return res.json({ success: true, isMockData: false, source: 'DRABYASHREE_LEDGER_HISTORICAL', data: list });
+  }
   try {
     const list = await nepseClient.getTopTenTransactionScrips();
-    res.json({
-      success: true,
-      isMockData: false,
-      source: 'LIVE - NEPSE NOTS API',
-      data: Array.isArray(list) ? list.slice(0, 10) : []
-    });
+    if (Array.isArray(list) && list.length > 0) {
+      return res.json({ success: true, isMockData: false, source: 'LIVE - NEPSE NOTS API', data: list.slice(0, 10) });
+    }
+    throw new Error('NOTS empty');
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, isMockData: false });
+    const fallback = await getRankedStocksByDate('', (a, b) => (b.turnover || 0) - (a.turnover || 0));
+    res.json({ success: true, isMockData: false, source: 'AUTHENTIC_LOCAL_FALLBACK', data: fallback });
   }
 });
 
@@ -11381,12 +11886,15 @@ app.listen(PORT, '0.0.0.0', async () => {
     // full day floorsheet into proxy/data/daily_floorsheets/ and ingest into SQLite ledger.
     const runPostMarketFloorsheetCollector = async () => {
       try {
-        const status = getDetailedMarketStatus();
-        if (!status.isTradingDay) return;
+        const todayNptDate = new Date();
+        const todayIso = formatNptDateIso(todayNptDate);
+        if (!isNepseTradingDay(todayNptDate)) return;
+
+        const status = getDetailedMarketStatus(todayNptDate);
         const nptMins = status.nptTotalMinutes || 0;
         // Run between 15:05 NPT (15*60 + 5 = 905) and 18:00 NPT (18*60 = 1080)
+        // Strictly archive today's completed trading session (never tomorrow)
         if (nptMins >= 905 && nptMins <= 1080) {
-          const todayIso = status.targetSessionDate || new Date().toISOString().split('T')[0];
           const archives = getArchiveIndex();
           const alreadyArchived = archives.some(a => a.date === todayIso && a.tradeCount > 0);
           if (!alreadyArchived) {

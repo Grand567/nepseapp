@@ -67,7 +67,7 @@ import {
   GdpVsNepseMacroService
 } from './ShareHubScannersSuite';
 import ProGate from './ProGate';
-import { fetchMarketWideBrokerSummaryMap } from '../utils/liveData';
+import { fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates, fetchLiveMarketData } from '../utils/liveData';
 import CapitalRiskSimulatorView from './CapitalRiskSimulatorView';
 
 export const PRO_SERVICE_IDS = new Set<string>([
@@ -810,7 +810,7 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
       banner={{ type: 'info', text: 'VSA — Volume Spread Analysis. Wide spread + high volume + close near high = bullish.' }}
       insight="Narrow spread + high volume = absorption. Wide spread + low volume = markup risk." />
   ),
-  'broker-flow': () => <BrokerFlowDominanceService mode="flow" />,
+  'broker-flow': (props: any) => <BrokerFlowDominanceService mode="flow" {...props} />,
 
   // Trade lab
   'support-setups': () => (
@@ -1072,10 +1072,10 @@ const SERVICE_COMPONENTS: Record<string, ComponentType> = {
   'daily-whale-tracker': (props: any) => <AccumulationDistributionRadar {...props} initialTab="archive" />,
   'aggressive-accumulators': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={5} />,
   'distribution-leaders': (props: any) => <AccumulationDistributionRadar {...props} initialStage="DISTRIBUTION" />,
-  'broker-dominance': () => <BrokerFlowDominanceService mode="dominance" />,
-  'broker-top10': () => <BrokerFlowDominanceService mode="top10" />,
+  'broker-dominance': (props: any) => <BrokerFlowDominanceService mode="dominance" {...props} />,
+  'broker-top10': (props: any) => <BrokerFlowDominanceService mode="top10" {...props} />,
   'aggressive-holdings': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={15} />,
-  'matching-buy-sell': () => <BrokerFlowDominanceService mode="matching" />,
+  'matching-buy-sell': (props: any) => <BrokerFlowDominanceService mode="matching" {...props} />,
   'slow-accumulation': (props: any) => <BrokerSmartFlowTracker onSelectStock={props?.onSelectStock} defaultTimeframe={30} />,
 };
 
@@ -1118,6 +1118,37 @@ export default function ServicesHub({
 }: ServicesHubProps = {}) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [selectedSessionDate, setSelectedSessionDate] = useState<string>('');
+  const [availableTradingDates, setAvailableTradingDates] = useState<string[]>([]);
+  const [dateStocks, setDateStocks] = useState<any[]>([]);
+  const [dateStocksLoading, setDateStocksLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetchAvailableTradingDates().then(dates => {
+      if (Array.isArray(dates) && dates.length > 0) {
+        setAvailableTradingDates(dates);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedSessionDate) {
+      setDateStocks([]);
+      return;
+    }
+    let active = true;
+    setDateStocksLoading(true);
+    fetchLiveMarketData(selectedSessionDate).then(data => {
+      if (active && Array.isArray(data) && data.length > 0) {
+        setDateStocks(data);
+      }
+    }).catch(() => {}).finally(() => {
+      if (active) setDateStocksLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedSessionDate]);
+
+  const activeStocks = (selectedSessionDate && dateStocks.length > 0) ? dateStocks : stocks;
   const [selectedService, setSelectedService] = useState<ServiceDef | null>(() => {
     try {
       const openId = typeof window !== 'undefined' ? localStorage.getItem('open_service_id') : null;
@@ -1305,10 +1336,33 @@ export default function ServicesHub({
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted, #94a3b8)', marginTop: 2 }}>
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
-              <span>NEPSE Live Feed</span>
+              <span>NEPSE Feed</span>
               <span>•</span>
               <span style={{ textTransform: 'capitalize' }}>{s.cat.replace('-', ' ')}</span>
             </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 8px', flexShrink: 0 }}>
+            <Calendar size={13} color="#38bdf8" />
+            <select
+              value={selectedSessionDate}
+              onChange={(e) => setSelectedSessionDate(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: selectedSessionDate ? '#38bdf8' : '#e2e8f0', fontSize: 11, fontWeight: 800, cursor: 'pointer', outline: 'none' }}
+            >
+              <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>Latest Session</option>
+              {availableTradingDates.map((dt) => (
+                <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>{dt}</option>
+              ))}
+            </select>
+            {selectedSessionDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedSessionDate('')}
+                style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: 12, fontWeight: 900, cursor: 'pointer', padding: 0 }}
+                title="Reset to Latest"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
         <div className="services-detail-body">
@@ -1321,7 +1375,10 @@ export default function ServicesHub({
                 >
                   <Component
                     {...({
-                      stocks,
+                      stocks: activeStocks,
+                      selectedDate: selectedSessionDate,
+                      date: selectedSessionDate,
+                      availableDates: availableTradingDates,
                       onSelectStock,
                       indices,
                       apiStatus,
@@ -1338,7 +1395,10 @@ export default function ServicesHub({
               ) : (
                 <Component
                   {...({
-                    stocks,
+                    stocks: activeStocks,
+                    selectedDate: selectedSessionDate,
+                    date: selectedSessionDate,
+                    availableDates: availableTradingDates,
                     onSelectStock,
                     indices,
                     apiStatus,
@@ -1377,9 +1437,34 @@ export default function ServicesHub({
             <span className="badge-count">{ALL_SERVICES.length} tools</span>
           </div>
 
-          <div className="badge-live">
-            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
-            <span>LIVE</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '3px 8px' }}>
+              <Calendar size={12} color="#38bdf8" />
+              <select
+                value={selectedSessionDate}
+                onChange={(e) => setSelectedSessionDate(e.target.value)}
+                style={{ background: 'transparent', border: 'none', color: selectedSessionDate ? '#38bdf8' : '#e2e8f0', fontSize: 11, fontWeight: 800, cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>Latest Session</option>
+                {availableTradingDates.map((dt) => (
+                  <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>{dt}</option>
+                ))}
+              </select>
+              {selectedSessionDate && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedSessionDate('')}
+                  style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: 11, fontWeight: 900, cursor: 'pointer', padding: 0 }}
+                  title="Reset to Latest"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <div className="badge-live">
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
+              <span>LIVE</span>
+            </div>
           </div>
         </div>
 
@@ -1772,7 +1857,7 @@ export default function ServicesHub({
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#34d399' }}>NEPSE Official Data Feed — Live</span>
               </div>
               <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: '#94a3b8' }}>
-                Market hours: <strong style={{ color: '#ffffff' }}>Sun–Thu 11:00 AM – 3:00 PM NPT</strong>
+                Market hours: <strong style={{ color: '#ffffff' }}>Mon–Fri 11:00 AM – 3:00 PM NPT</strong>
                 {' '} · Live prices & indicators powered by <strong style={{ color: '#ffffff' }}>NEPSE NOTS API</strong>
               </p>
             </div>

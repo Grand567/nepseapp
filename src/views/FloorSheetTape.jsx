@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Zap, RefreshCw, Search, Filter, Clock, ArrowRight, ShieldCheck, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { fetchRealFloorsheet } from '../utils/liveData';
+import { fetchRealFloorsheet, fetchAvailableTradingDates } from '../utils/liveData';
 import { getBrokerName } from '../utils/accumulationDistributionEngine';
 
 function formatNprCurrency(val, isNe = false) {
@@ -77,7 +77,10 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
 
       const res = await fetchRealFloorsheet(sym, currentDate, pg, size, opts);
       if (res && Array.isArray(res.rows)) {
-        setFloorsheetData(res);
+        setFloorsheetData(prev => ({
+          ...res,
+          availableDates: Array.from(new Set([...(res.availableDates || []), ...(prev.availableDates || [])])).sort((a, b) => String(b).localeCompare(String(a)))
+        }));
         setPage(pg);
         setLastSyncTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
       }
@@ -99,6 +102,18 @@ export function FloorSheetTape({ onSelectScrip, lang = 'ne' }) {
     setSelectedDate(dt);
     loadFloorsheet(1, false, timeframe, dt);
   };
+
+  // Pre-load all available historical trading sessions
+  useEffect(() => {
+    fetchAvailableTradingDates().then(dates => {
+      if (Array.isArray(dates) && dates.length > 0) {
+        setFloorsheetData(prev => ({
+          ...prev,
+          availableDates: Array.from(new Set([...(prev.availableDates || []), ...dates])).sort((a, b) => String(b).localeCompare(String(a)))
+        }));
+      }
+    }).catch(() => {});
+  }, []);
 
   // Initial and reactive load
   useEffect(() => {

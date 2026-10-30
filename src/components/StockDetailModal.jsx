@@ -28,6 +28,7 @@ import {
 } from '../utils/quantEngine';
 import {
   fetchStockFundamentals,
+  fetchAvailableTradingDates,
   fetchRealPriceHistory,
   fetchRealFloorsheet,
   fetchRealBrokerAnalysis,
@@ -769,8 +770,9 @@ function BeginnerConfidenceCard({
   }
 
   const dailyHistory = useMemo(() => {
-    return buildDailyHistoryFromStockData(d, realBrokerAnalysis, d?.history || d?.candles || []);
-  }, [d, realBrokerAnalysis]);
+    const hist = (realPriceHistory && realPriceHistory.length > 0) ? realPriceHistory : (history && history.length > 0 ? history : (d?.history || d?.candles || []));
+    return buildDailyHistoryFromStockData(d, realBrokerAnalysis, hist);
+  }, [d, realBrokerAnalysis, realPriceHistory, history]);
 
   const multiDayDiag = useMemo(() => {
     return calculateMultiDayDiagnostics(dailyHistory, brokerDays);
@@ -792,18 +794,34 @@ function BeginnerConfidenceCard({
   let check2Bg = 'rgba(148, 163, 184, 0.06)';
   let check2Border = 'rgba(148, 163, 184, 0.2)';
 
-  if ((multiDayDiag?.phase === 'STEALTH_ACCUMULATION' || multiDayDiag?.phase === 'ACTIVE_MARKUP') || (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)) {
-    check2Badge = '🟢 Big Players Accumulating';
-    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
-    check2Color = '#10b981';
-    check2Bg = 'rgba(16, 185, 129, 0.08)';
-    check2Border = 'rgba(16, 185, 129, 0.25)';
-  } else if ((multiDayDiag?.phase === 'DISTRIBUTION_DANGER' || multiDayDiag?.phase === 'BULL_TRAP') || (grossSellPct >= 38 && grossSellPct > grossBuyPct) || nbar <= 0.80) {
+  const isDistributionOrTrap = Boolean(
+    multiDayDiag?.phase === 'DISTRIBUTION_DANGER' ||
+    multiDayDiag?.phase === 'BULL_TRAP' ||
+    (realBrokerAnalysis?.adSignal === 'Distribution' && ((Number(realBrokerAnalysis?.adStrength) || 0) >= 20 || grossSellPct >= grossBuyPct)) ||
+    (grossSellPct >= 38 && grossSellPct > grossBuyPct) ||
+    nbar <= 0.80
+  );
+
+  const isAccumulation = Boolean(
+    !isDistributionOrTrap && (
+      multiDayDiag?.phase === 'STEALTH_ACCUMULATION' ||
+      multiDayDiag?.phase === 'ACTIVE_MARKUP' ||
+      (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)
+    )
+  );
+
+  if (isDistributionOrTrap) {
     check2Badge = '🚨 Big Players Selling (Trap Warning)';
     check2Desc = `Caution: Top selling brokers account for ${grossSellPct.toFixed(1)}% of volume (vs ${grossBuyPct.toFixed(1)}% buy). Big players are offloading shares.`;
     check2Color = '#f43f5e';
     check2Bg = 'rgba(244, 63, 94, 0.08)';
     check2Border = 'rgba(244, 63, 94, 0.25)';
+  } else if (isAccumulation) {
+    check2Badge = '🟢 Big Players Accumulating';
+    check2Desc = `Top 5 brokers absorbed ${grossBuyPct.toFixed(1)}% of all shares bought${whaleVwap ? ` at Big Broker VWAP of Rs. ${whaleVwap}` : ''} (Net absorption: ${bcr5Net}%).`;
+    check2Color = '#10b981';
+    check2Bg = 'rgba(16, 185, 129, 0.08)';
+    check2Border = 'rgba(16, 185, 129, 0.25)';
   }
 
   // Check 3: Entry Price Timing & Safety (Fixed Math Logic & Anchored to Big Broker VWAP)
@@ -1214,6 +1232,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   const [floorsheetLoading, setFloorsheetLoading] = useState(false);
   const [floorsheetPage, setFloorsheetPage] = useState(1);
   const [floorsheetPageSize, setFloorsheetPageSize] = useState(50);
+  const [availableTradingDates, setAvailableTradingDates] = useState([]);
+  const [modalSessionDate, setModalSessionDate] = useState('');
   const [floorsheetDate, setFloorsheetDate] = useState('');
   const [floorsheetBuyerInput, setFloorsheetBuyerInput] = useState('');
   const [floorsheetSellerInput, setFloorsheetSellerInput] = useState('');
@@ -1305,6 +1325,15 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     };
   }, [resolvedStock]);
 
+  // Preload verified available trading sessions on mount
+  useEffect(() => {
+    fetchAvailableTradingDates().then(dates => {
+      if (Array.isArray(dates) && dates.length > 0) {
+        setAvailableTradingDates(dates);
+      }
+    }).catch(() => {});
+  }, []);
+
   // ── High-Frequency Real-Time Live Price & Market Depth Ticker ──
   useEffect(() => {
     const sym = resolvedStock?.symbol;
@@ -1333,8 +1362,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
         }).catch(() => {});
 
         // Proactively refresh market depth if user is viewing depth tab
-        if (activeTab === 'depth_broker') {
-          fetchMarketDepth(sym).then(depth => {
+        if (activeTab === 'depth_broker' || activeTab === 'market_depth') {
+          fetchMarketDepth(sym, modalSessionDate).then(depth => {
             if (isMounted && depth) setRealMarketDepth(depth);
           }).catch(() => {});
         }
@@ -1345,7 +1374,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       isMounted = false;
       clearInterval(tickInterval);
     };
-  }, [resolvedStock?.symbol, activeTab]);
+  }, [resolvedStock?.symbol, activeTab, modalSessionDate]);
 
   // Derived stock merged with live fundamentals with complete null safety (Strictly NO mock data)
   const d = useMemo(() => {
@@ -1362,18 +1391,34 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       ltp = Number(s.prevClose || s.previousClose || s.high || 100);
     }
 
-    const livePChange = Number(
+    let livePChange = Number(
       liveQuote?.pChange !== undefined ? liveQuote.pChange :
       (s.pChange !== undefined ? s.pChange : (s.percentageChange !== undefined ? s.percentageChange : (liveDetail?.pChange || 0)))
     );
-    const liveChange = Number(
+    let liveChange = Number(
       liveQuote?.change !== undefined ? liveQuote.change :
       (s.change !== undefined ? s.change : (liveDetail?.change || 0))
     );
-    const liveOpen = Number(liveQuote?.open || s.open || s.openPrice || liveDetail?.openPrice || ltp);
-    const liveHigh = Number(liveQuote?.high || s.high || s.highPrice || liveDetail?.highPrice || ltp);
-    const liveLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
-    const livePrevClose = Number(liveQuote?.previousClose || s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
+    let liveOpen = Number(liveQuote?.open || s.open || s.openPrice || liveDetail?.openPrice || ltp);
+    let liveHigh = Number(liveQuote?.high || s.high || s.highPrice || liveDetail?.highPrice || ltp);
+    let liveLow = Number(liveQuote?.low || s.low || s.lowPrice || liveDetail?.lowPrice || ltp);
+    let livePrevClose = Number(liveQuote?.previousClose || s.prevClose || s.previousClose || liveDetail?.prevClose || (ltp > 0 ? ltp - liveChange : ltp));
+
+    let sessionCandle = null;
+    if (modalSessionDate && Array.isArray(realPriceHistory) && realPriceHistory.length > 0) {
+      const matchIdx = realPriceHistory.findIndex(c => c && c.date === modalSessionDate);
+      if (matchIdx !== -1) {
+        sessionCandle = realPriceHistory[matchIdx];
+        const prevC = matchIdx > 0 ? realPriceHistory[matchIdx - 1] : null;
+        ltp = Number(sessionCandle.close || sessionCandle.ltp || ltp);
+        liveOpen = Number(sessionCandle.open || ltp);
+        liveHigh = Number(sessionCandle.high || ltp);
+        liveLow = Number(sessionCandle.low || ltp);
+        livePrevClose = prevC ? Number(prevC.close) : Number(sessionCandle.prevClose || liveOpen);
+        liveChange = Number((ltp - livePrevClose).toFixed(2));
+        livePChange = livePrevClose > 0 ? Number(((liveChange / livePrevClose) * 100).toFixed(2)) : 0;
+      }
+    }
 
     // Derive 52W High / Low from real price history (strictly 52 weeks = ~260 trading days) if not in liveDetail
     let histHigh = 0;
@@ -1428,12 +1473,12 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const quoteVol = Number(liveQuote?.volume || 0);
     const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
     const liveVol = Number(liveDetail?.volume || liveDetail?.totalTradedQuantity || 0);
-    const volume = stockVol > 0 ? stockVol : liveVol;
+    const volume = sessionCandle ? Number(sessionCandle.volume || 0) : (stockVol > 0 ? stockVol : liveVol);
 
     const quoteTurnover = Number(liveQuote?.turnover || 0);
     const stockTurnover = quoteTurnover > 0 ? quoteTurnover : Number(s.turnover || s.totalTradedValue || 0);
     const liveTurnover = Number(liveDetail?.turnover || liveDetail?.totalTradedValue || 0);
-    const turnover = stockTurnover > 0 ? stockTurnover : liveTurnover;
+    const turnover = sessionCandle ? Number(sessionCandle.turnover || 0) : (stockTurnover > 0 ? stockTurnover : liveTurnover);
 
     const rvol = Number(s.rvol || s.volumeSurgeRatio || liveDetail?.rvol || 0) || undefined;
     const avgVolume20D = Number(s.avgVolume20D || liveDetail?.avgVolume20D || 0) || undefined;
@@ -1473,7 +1518,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       fiscalYear: liveDetail?.fiscalYear || s.fiscalYear || '',
       quarter: liveDetail?.quarter || s.quarter || ''
     };
-  }, [resolvedStock, liveDetail, realPriceHistory, liveQuote]);
+  }, [resolvedStock, liveDetail, realPriceHistory, liveQuote, modalSessionDate]);
 
   // ── Share Hub Parity: Algorithmic Observations & Metric Suite ──
   const calculatedSignals = useMemo(() => {
@@ -1920,6 +1965,24 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     setBrokerAnalysisLoading(false);
   }, [d?.symbol, brokerDays, brokerDate]);
 
+  const handleModalSessionDateChange = useCallback((newDate) => {
+    setModalSessionDate(newDate);
+    setFloorsheetDate(newDate);
+    setBrokerDate(newDate);
+    setHistoryFilterDate(newDate);
+
+    const sym = d?.symbol;
+    if (sym) {
+      fetchFloorsheetData(1, { date: newDate, refresh: true });
+      fetchBrokerAnalysisData(brokerDays, newDate, { refresh: true });
+      setMarketDepthLoading(true);
+      fetchMarketDepth(sym, newDate)
+        .then(depth => { if (depth) setRealMarketDepth(depth); })
+        .catch(() => {})
+        .finally(() => setMarketDepthLoading(false));
+    }
+  }, [brokerDays, d?.symbol, fetchBrokerAnalysisData, fetchFloorsheetData]);
+
   const handleBrokerDaysChange = useCallback((newDays) => {
     setBrokerDays(newDays);
     setBrokerDate('');
@@ -1927,9 +1990,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
   }, [fetchBrokerAnalysisData]);
 
   const handleBrokerDateChange = useCallback((newDate) => {
-    setBrokerDate(newDate);
-    fetchBrokerAnalysisData(brokerDays, newDate, { refresh: true });
-  }, [fetchBrokerAnalysisData, brokerDays]);
+    handleModalSessionDateChange(newDate);
+  }, [handleModalSessionDateChange]);
 
   const handleFetchSmartMoney = useCallback(async (sym, tf, days) => {
     try {
@@ -2878,6 +2940,57 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           </button>
           <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>
             {d.symbol}
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 8,
+            padding: '3px 8px'
+          }}>
+            <Calendar style={{ width: 13, height: 13, color: '#38bdf8' }} />
+            <select
+              value={modalSessionDate}
+              onChange={e => handleModalSessionDateChange(e.target.value)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: modalSessionDate ? '#38bdf8' : '#e2e8f0',
+                fontSize: 11,
+                fontWeight: 800,
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>
+                Latest Session ({availableTradingDates[0] || 'Today'})
+              </option>
+              {availableTradingDates.map(dt => (
+                <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>
+                  {dt}
+                </option>
+              ))}
+            </select>
+            {modalSessionDate && (
+              <button
+                type="button"
+                onClick={() => handleModalSessionDateChange('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#f43f5e',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  padding: '0 2px'
+                }}
+                title="Reset to Latest Session"
+              >
+                ×
+              </button>
+            )}
           </div>
         </div>
 
@@ -4757,7 +4870,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                             {brokerDate && !Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).includes(brokerDate) && (
                               <option value={brokerDate} style={{ background: '#0f172a', color: '#38bdf8' }}>{brokerDate} (Selected Session)</option>
                             )}
-                            {Array.from(new Set((realBrokerAnalysis || ba)?.availableDates || [])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map(dt => (
+                            {Array.from(new Set([...availableTradingDates, ...((realBrokerAnalysis || ba)?.availableDates || [])])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500).map(dt => (
                               <option key={dt} value={dt} style={{ background: '#0f172a', color: '#f8fafc' }}>{dt}</option>
                             ))}
                           </select>
@@ -5024,10 +5137,11 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
         {/* ════ TAB 3: FLOORSHEET (Share Hub APK Video Parity: Date Picker, Buyer/Seller Filter, Bulk Txns, Price vs Volume) ════ */}
         {(activeTab === 'floorsheet' || activeTab === 'depth_broker') && (() => {
           const fsAvailDates = Array.from(new Set([
+            ...availableTradingDates,
             ...(realFloorsheet?.availableDates || []),
             ...(realBrokerAnalysis?.availableDates || []),
-            ...(realPriceHistory || []).slice(-30).map(h => h.date).filter(Boolean).reverse()
-          ])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 30);
+            ...(realPriceHistory || []).map(h => h.date).filter(Boolean).reverse()
+          ])).filter(Boolean).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500);
 
           const activeFsDate = floorsheetDate || realFloorsheet?.businessDate || fsAvailDates[0] || '';
           const fsRows = filteredFloorsheet.length > 0 || floorsheetMode !== 'all' || brokerFilter.trim() !== ''
