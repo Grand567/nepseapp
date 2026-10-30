@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
-import { isNepseTradingDay } from '../utils/nepseCalendar';
+import { isNepseTradingDay, formatNptDateIso } from '../utils/nepseCalendar';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap } from '../utils/servicesApi';
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
@@ -27,6 +27,8 @@ export interface BrokerScripItem {
   netQty?: number;
   avgBuyRate?: number;
   avgSellRate?: number;
+  cumHoldQty?: number;
+  cumAvgBuy?: number;
 }
 
 interface BrokerStat {
@@ -182,9 +184,17 @@ export function BrokerFlowDominanceService({
         if (dt) set.add(String(dt).split('T')[0]);
       });
     }
+    const todayIso = formatNptDateIso(new Date());
     // Filter strictly through isNepseTradingDay to guarantee no Saturday/Sunday weekends or Dashain holidays leak in
     const valid = Array.from(set).filter(d => {
       if (!d || typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      // During active trading hours, omit today's incomplete date from floorsheet filter to avoid partial data interpretation
+      if (d === todayIso) {
+        const now = new Date();
+        const nptOffset = 5 * 60 + 45;
+        const totalMins = (now.getUTCHours() * 60 + now.getUTCMinutes() + nptOffset) % 1440;
+        if (totalMins < 15 * 60 + 30) return false; // Full day floorsheet reconciles after 3:30 PM
+      }
       try {
         return isNepseTradingDay(new Date(d + 'T12:00:00+05:45'));
       } catch {
@@ -203,7 +213,7 @@ export function BrokerFlowDominanceService({
       const fsDate = floorsheet.find(f => f.businessDate || f.date);
       if (fsDate?.businessDate || fsDate?.date) return String(fsDate.businessDate || fsDate.date).split('T')[0];
     }
-    return '2026-10-28';
+    return '2026-10-29';
   }, [sessionDateFilter, selectedDate, date, heatmapData, availableDates, floorsheet]);
 
   // Exchange-wide Broker-Wise Leaderboard (matches institutional analytics)
@@ -301,7 +311,7 @@ export function BrokerFlowDominanceService({
     setLoading(true);
     try {
       const days = DAYS_MAP[activeTf] || 1;
-      const effDate = targetDate || sessionDate || '2026-10-28';
+      const effDate = targetDate || sessionDate || '2026-10-29';
       const [liveDataRes, fsRes, hmRes, summaryMapRes] = await Promise.allSettled([
         loadNepseData(),
         fetchRealFloorsheet(null, effDate, 1, 100000, { days, fromDate: targetFrom, toDate: targetTo }),
@@ -335,8 +345,9 @@ export function BrokerFlowDominanceService({
           : [];
         setFloorsheet(fsData);
       }
-      if (hmRes.status === 'fulfilled' && Array.isArray(hmRes.value?.matrix) && hmRes.value.matrix.length > 0) {
-        setHeatmapData(hmRes.value);
+      const hmData = hmRes.status === 'fulfilled' ? (hmRes.value?.data || hmRes.value) : null;
+      if (hmData && Array.isArray(hmData.matrix) && hmData.matrix.length > 0) {
+        setHeatmapData(hmData);
       } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
@@ -429,6 +440,8 @@ export function BrokerFlowDominanceService({
           const nQty = Number(s.netQty != null ? s.netQty : (bQty - sQty));
           const avgBRate = Number(s.avgBuyRate || 0);
           const avgSRate = Number(s.avgSellRate || 0);
+          const cumHold = Number(s.cumHoldQty != null ? s.cumHoldQty : nQty);
+          const cumAvg = Number(s.cumAvgBuy != null ? s.cumAvgBuy : (avgBRate || 0));
 
           return {
             symbol: sym,
@@ -441,6 +454,8 @@ export function BrokerFlowDominanceService({
             netQty: nQty !== 0 ? nQty : undefined,
             avgBuyRate: avgBRate > 0 ? avgBRate : undefined,
             avgSellRate: avgSRate > 0 ? avgSRate : undefined,
+            cumHoldQty: cumHold !== 0 ? cumHold : undefined,
+            cumAvgBuy: cumAvg > 0 ? cumAvg : undefined,
             bias: s.bias || (net > 1000000 ? 'Accumulation' : net < -1000000 ? 'Distribution' : fallbackBias)
           };
         };
@@ -1398,7 +1413,7 @@ export function BrokerFlowDominanceService({
       {sessionDateFilter && !availableDates.includes(sessionDateFilter) && (
         <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 flex items-center justify-between gap-3">
           <span>
-            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-28'}</strong>.
+            ⚠️ No floorsheet records compiled yet for <strong>{sessionDateFilter}</strong> (session in progress or settlement pending). Showing latest completed session: <strong>{availableDates[0] || '2026-10-29'}</strong>.
           </span>
           <button
             type="button"
@@ -2176,39 +2191,51 @@ export function BrokerFlowDominanceService({
                           <tr>
                             <th className="p-2 text-center w-7">#</th>
                             <th className="p-2">Scrip</th>
-                            <th className="p-2 text-right">Buy (Lakhs)</th>
-                            <th className="p-2 text-right">Sell (Lakhs)</th>
-                            <th className="p-2 text-right">Net Flow</th>
+                            <th className="p-2 text-right">Buy (Kitta & Avg)</th>
+                            <th className="p-2 text-right">Sell (Kitta & Avg)</th>
+                            <th className="p-2 text-right">Day Net Kitta</th>
+                            <th className="p-2 text-right text-sky-400">Till Today Holding</th>
                             <th className="p-2 text-center">Bias</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/40">
                           {activeAccScrips.map((sc, idx) => {
-                            const isNetPos = sc.netFlow >= 0;
+                            const isNetPos = (sc.netQty != null ? sc.netQty : sc.netFlow) >= 0;
+                            const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
+                            const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
+                            const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
+                            const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
+                            const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+
                             return (
                               <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
                                 <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
                                 <td className="p-2 font-sans">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                    {sc.netQty != null && sc.netQty > 0 && (
-                                      <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/30">
-                                        +{sc.netQty.toLocaleString()} units
-                                      </span>
-                                    )}
+                                    <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/30">
+                                      +{netKitta.toLocaleString()} kitta
+                                    </span>
                                   </div>
-                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[160px]">
-                                    {sc.name || sc.symbol} {sc.avgBuyRate ? `• @ Rs. ${sc.avgBuyRate.toFixed(1)}` : ''}
+                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[150px]">
+                                    {sc.name || sc.symbol}
                                   </div>
                                 </td>
-                                <td className="p-2 text-right text-emerald-400 font-semibold">
-                                  {formatNepaliCurrency(sc.buyAmount)}
+                                <td className="p-2 text-right text-emerald-400 font-semibold font-mono">
+                                  <div>{buyKitta.toLocaleString()} <span className="text-[10px] text-emerald-500/70">kitta</span></div>
+                                  <div className="text-[10px] text-slate-400 font-sans">@ Rs. {sc.avgBuyRate ? sc.avgBuyRate.toFixed(1) : '—'}</div>
                                 </td>
-                                <td className="p-2 text-right text-slate-400">
-                                  {formatNepaliCurrency(sc.sellAmount)}
+                                <td className="p-2 text-right text-slate-400 font-mono">
+                                  <div>{sellKitta.toLocaleString()} <span className="text-[10px] text-slate-500">kitta</span></div>
+                                  <div className="text-[10px] text-slate-500 font-sans">@ Rs. {sc.avgSellRate ? sc.avgSellRate.toFixed(1) : '—'}</div>
                                 </td>
-                                <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                  {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
+                                <td className="p-2 text-right font-black font-mono" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
+                                  <div>{isNetPos ? '+' : ''}{netKitta.toLocaleString()} <span className="text-[10px]">kitta</span></div>
+                                  <div className="text-[10px] font-sans font-normal opacity-75">{formatNepaliCurrency(sc.netFlow)}</div>
+                                </td>
+                                <td className="p-2 text-right font-bold font-mono text-sky-400">
+                                  <div>+{cumHoldKitta.toLocaleString()} <span className="text-[10px] text-sky-500/70">kitta</span></div>
+                                  <div className="text-[10px] text-slate-400 font-sans">@ Rs. {cumAvgPx > 0 ? cumAvgPx.toFixed(1) : '—'} avg</div>
                                 </td>
                                 <td className="p-2 text-center font-sans">
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 whitespace-nowrap">
@@ -2260,39 +2287,51 @@ export function BrokerFlowDominanceService({
                           <tr>
                             <th className="p-2 text-center w-7">#</th>
                             <th className="p-2">Scrip</th>
-                            <th className="p-2 text-right">Buy (Lakhs)</th>
-                            <th className="p-2 text-right">Sell (Lakhs)</th>
-                            <th className="p-2 text-right">Net Flow</th>
+                            <th className="p-2 text-right">Buy (Kitta & Avg)</th>
+                            <th className="p-2 text-right">Sell (Kitta & Avg)</th>
+                            <th className="p-2 text-right">Day Net Kitta</th>
+                            <th className="p-2 text-right text-rose-400">Till Today Holding</th>
                             <th className="p-2 text-center">Bias</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/40">
                           {activeDistScrips.map((sc, idx) => {
-                            const isNetPos = sc.netFlow >= 0;
+                            const isNetPos = (sc.netQty != null ? sc.netQty : sc.netFlow) >= 0;
+                            const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
+                            const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
+                            const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
+                            const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
+                            const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+
                             return (
                               <tr key={sc.symbol} className="hover:bg-slate-800/50 transition">
                                 <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
                                 <td className="p-2 font-sans">
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                    {sc.netQty != null && sc.netQty < 0 && (
-                                      <span className="text-[10px] font-mono text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/30">
-                                        {sc.netQty.toLocaleString()} units
-                                      </span>
-                                    )}
+                                    <span className="text-[10px] font-mono text-rose-400 font-bold bg-rose-500/10 px-1 py-0.2 rounded border border-rose-500/30">
+                                      {netKitta.toLocaleString()} kitta
+                                    </span>
                                   </div>
-                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[160px]">
-                                    {sc.name || sc.symbol} {sc.avgSellRate ? `• @ Rs. ${sc.avgSellRate.toFixed(1)}` : ''}
+                                  <div className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[150px]">
+                                    {sc.name || sc.symbol}
                                   </div>
                                 </td>
-                                <td className="p-2 text-right text-slate-400">
-                                  {formatNepaliCurrency(sc.buyAmount)}
+                                <td className="p-2 text-right text-slate-400 font-mono">
+                                  <div>{buyKitta.toLocaleString()} <span className="text-[10px] text-slate-500">kitta</span></div>
+                                  <div className="text-[10px] text-slate-500 font-sans">@ Rs. {sc.avgBuyRate ? sc.avgBuyRate.toFixed(1) : '—'}</div>
                                 </td>
-                                <td className="p-2 text-right text-rose-400 font-semibold">
-                                  {formatNepaliCurrency(sc.sellAmount)}
+                                <td className="p-2 text-right text-rose-400 font-semibold font-mono">
+                                  <div>{sellKitta.toLocaleString()} <span className="text-[10px] text-rose-500/70">kitta</span></div>
+                                  <div className="text-[10px] text-slate-400 font-sans">@ Rs. {sc.avgSellRate ? sc.avgSellRate.toFixed(1) : '—'}</div>
                                 </td>
-                                <td className="p-2 text-right font-black" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                  {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
+                                <td className="p-2 text-right font-black font-mono" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
+                                  <div>{netKitta.toLocaleString()} <span className="text-[10px]">kitta</span></div>
+                                  <div className="text-[10px] font-sans font-normal opacity-75">{formatNepaliCurrency(sc.netFlow)}</div>
+                                </td>
+                                <td className="p-2 text-right font-bold font-mono text-rose-300">
+                                  <div>{cumHoldKitta >= 0 ? `+${cumHoldKitta.toLocaleString()}` : cumHoldKitta.toLocaleString()} <span className="text-[10px] text-slate-400">kitta</span></div>
+                                  <div className="text-[10px] text-slate-400 font-sans">@ Rs. {cumAvgPx > 0 ? cumAvgPx.toFixed(1) : '—'} avg</div>
                                 </td>
                                 <td className="p-2 text-center font-sans">
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-rose-500/10 text-rose-400 border-rose-500/30 whitespace-nowrap">
@@ -2898,43 +2937,55 @@ export function BrokerFlowDominanceService({
                         <tr>
                           <th className="p-2.5 text-center w-8">#</th>
                           <th className="p-2.5">Stock</th>
-                          <th className="p-2.5 text-right">Buy Turnover</th>
-                          <th className="p-2.5 text-right">Sell Turnover</th>
-                          <th className="p-2.5 text-right">Net Flow</th>
+                          <th className="p-2.5 text-right">Buy (Kitta & Avg)</th>
+                          <th className="p-2.5 text-right">Sell (Kitta & Avg)</th>
+                          <th className="p-2.5 text-right">Day Net Kitta</th>
+                          <th className="p-2.5 text-right text-sky-400">Till Today Holding</th>
                           <th className="p-2.5 text-center">Bias</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/40">
                         {scripsToShow.map((sc, idx) => {
                           const isNetPos = sc.netFlow >= 0;
+                          const buyKitta = sc.buyQty || Math.round(sc.buyAmount / (sc.avgBuyRate || 100));
+                          const sellKitta = sc.sellQty || Math.round(sc.sellAmount / (sc.avgSellRate || 100));
+                          const netKitta = sc.netQty != null ? sc.netQty : (buyKitta - sellKitta);
+                          const cumHoldKitta = sc.cumHoldQty != null ? sc.cumHoldQty : (netKitta > 0 ? netKitta : 0);
+                          const cumAvgPx = sc.cumAvgBuy || sc.avgBuyRate || 0;
+
                           return (
                             <tr key={sc.symbol} className="hover:bg-slate-900/60 transition">
                               <td className="p-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
                               <td className="p-2.5 font-sans">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-mono font-black text-white text-xs">{sc.symbol}</span>
-                                  {sc.netQty != null && sc.netQty !== 0 && (
-                                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
-                                      sc.netQty > 0
-                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                        : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                                    }`}>
-                                      {sc.netQty > 0 ? `+${sc.netQty.toLocaleString()}` : sc.netQty.toLocaleString()} units
-                                    </span>
-                                  )}
+                                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                                    isNetPos
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                      : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                  }`}>
+                                    {netKitta > 0 ? `+${netKitta.toLocaleString()}` : netKitta.toLocaleString()} kitta
+                                  </span>
                                 </div>
                                 <div className="text-[10px] text-slate-400 truncate max-w-[130px] sm:max-w-[170px]">
-                                  {sc.name || sc.symbol} {sc.avgBuyRate && sc.netFlow > 0 ? `• @ Rs. ${sc.avgBuyRate.toFixed(1)}` : (sc.avgSellRate && sc.netFlow < 0 ? `• @ Rs. ${sc.avgSellRate.toFixed(1)}` : '')}
+                                  {sc.name || sc.symbol}
                                 </div>
                               </td>
-                              <td className="p-2.5 text-right text-emerald-400 font-semibold">
-                                {formatNepaliCurrency(sc.buyAmount)}
+                              <td className="p-2.5 text-right text-emerald-400 font-semibold font-mono">
+                                <div>{buyKitta.toLocaleString()} <span className="text-[10px] text-emerald-500/70">kitta</span></div>
+                                <div className="text-[10px] text-slate-400 font-sans">@ Rs. {sc.avgBuyRate ? sc.avgBuyRate.toFixed(1) : '—'}</div>
                               </td>
-                              <td className="p-2.5 text-right text-rose-400 font-semibold">
-                                {formatNepaliCurrency(sc.sellAmount)}
+                              <td className="p-2.5 text-right text-rose-400 font-semibold font-mono">
+                                <div>{sellKitta.toLocaleString()} <span className="text-[10px] text-rose-500/70">kitta</span></div>
+                                <div className="text-[10px] text-slate-400 font-sans">@ Rs. {sc.avgSellRate ? sc.avgSellRate.toFixed(1) : '—'}</div>
                               </td>
-                              <td className="p-2.5 text-right font-bold" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
-                                {isNetPos ? '+' : ''}{formatNepaliCurrency(sc.netFlow)}
+                              <td className="p-2.5 text-right font-black font-mono" style={{ color: isNetPos ? '#10b981' : '#f43f5e' }}>
+                                <div>{netKitta > 0 ? `+${netKitta.toLocaleString()}` : netKitta.toLocaleString()} <span className="text-[10px]">kitta</span></div>
+                                <div className="text-[10px] font-sans font-normal opacity-75">{formatNepaliCurrency(sc.netFlow)}</div>
+                              </td>
+                              <td className="p-2.5 text-right font-bold font-mono text-sky-400">
+                                <div>{cumHoldKitta >= 0 ? `+${cumHoldKitta.toLocaleString()}` : cumHoldKitta.toLocaleString()} <span className="text-[10px] text-sky-500/70">kitta</span></div>
+                                <div className="text-[10px] text-slate-400 font-sans">@ Rs. {cumAvgPx > 0 ? cumAvgPx.toFixed(1) : '—'} avg</div>
                               </td>
                               <td className="p-2.5 text-center font-sans">
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${

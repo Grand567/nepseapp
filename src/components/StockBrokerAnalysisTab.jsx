@@ -133,22 +133,26 @@ export default function StockBrokerAnalysisTab({
       }
     }
 
-    // Parallel fetch: All-Time Broker Vault + All-Time Smart-Money endpoint + Diagnostics endpoint
+    // Parallel fetch: All-Time Broker Vault + 30-Day Broker Analysis (with full dailyFlow) + All-Time Smart-Money endpoint
     const p0 = fetchRealBrokerAnalysis(symbol, 'all', { refresh: false }).catch(() => null);
-    const p1 = fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
-    const p2 = fetchFromBackend(`/api/diagnostics/${encodeURIComponent(symbol)}?days=30`, 10000).catch(() => null);
+    const p1 = fetchRealBrokerAnalysis(symbol, 30, { refresh: false }).catch(() => null);
+    const p2 = fetchFromBackend(`/api/stocks/${encodeURIComponent(symbol)}/smart-money?days=all`, 12000).catch(() => null);
 
-    Promise.all([p0, p1, p2]).then(([resAll, resSm, resDiag]) => {
+    Promise.all([p0, p1, p2]).then(([resAll, res30, resSm]) => {
       if (!active) return;
 
-      // Extract daily session flow (30 trading days)
-      const flow = (Array.isArray(resDiag?.data?.dailyFlow) && resDiag.data.dailyFlow.length > 0)
-        ? resDiag.data.dailyFlow
-        : (Array.isArray(resDiag?.dailyFlow) && resDiag.dailyFlow.length > 0
-            ? resDiag.dailyFlow
-            : (Array.isArray(resAll?.dailyFlow) && resAll.dailyFlow.length > 0
-                ? resAll.dailyFlow
-                : (Array.isArray(resSm?.dailyFlow) ? resSm.dailyFlow : (Array.isArray(resSm?.data?.dailyFlow) ? resSm.data.dailyFlow : []))));
+      const now = new Date();
+      const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
+      const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+      const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
+      // Extract daily session flow (30 completed trading days)
+      const rawFlow = (Array.isArray(res30?.dailyFlow) && res30.dailyFlow.length > 0)
+        ? res30.dailyFlow
+        : (Array.isArray(resAll?.dailyFlow) && resAll.dailyFlow.length > 0
+            ? resAll.dailyFlow
+            : (Array.isArray(resSm?.dailyFlow) ? resSm.dailyFlow : (Array.isArray(resSm?.data?.dailyFlow) ? resSm.data.dailyFlow : [])));
+      const flow = rawFlow.filter(f => !isOngoingMarketSession || f?.date !== todayNpt);
       if (flow.length > 0) {
         setMultiDayDailyFlow(flow);
       }
@@ -298,8 +302,13 @@ export default function StockBrokerAnalysisTab({
     handleDaysSelect(1);
   };
 
-  // Extract available trading dates from activeBrokerData or floorsheetData
+  // Extract available trading dates from activeBrokerData or floorsheetData (excluding incomplete ongoing intraday session)
   const availableDates = useMemo(() => {
+    const now = new Date();
+    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
+    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
     const set = new Set();
     allStoredDates.forEach(d => d && set.add(String(d)));
     const bd = activeBrokerData;
@@ -317,19 +326,27 @@ export default function StockBrokerAnalysisTab({
     if (Array.isArray(floorsheetData?.availableDates)) {
       floorsheetData.availableDates.forEach(d => d && set.add(String(d)));
     }
-    return Array.from(set).sort().reverse();
+    return Array.from(set)
+      .filter(d => !isOngoingMarketSession || d !== todayNpt)
+      .sort()
+      .reverse();
   }, [activeBrokerData, floorsheetData, allStoredDates]);
 
   // Active display date / range string
   const activeDateDisplay = useMemo(() => {
-    if (effectiveDate) return effectiveDate;
+    const now = new Date();
+    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
+    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
+    if (effectiveDate && (!isOngoingMarketSession || effectiveDate !== todayNpt)) return effectiveDate;
     const bd = activeBrokerData;
     if (bd?.fromDate && bd?.toDate && bd.fromDate !== bd.toDate) {
       return `${bd.fromDate} → ${bd.toDate}`;
     }
-    if (bd?.businessDate) return bd.businessDate;
+    if (bd?.businessDate && (!isOngoingMarketSession || bd.businessDate !== todayNpt)) return bd.businessDate;
     if (availableDates.length > 0) return availableDates[0];
-    return '';
+    return '2026-10-29';
   }, [effectiveDate, activeBrokerData, availableDates]);
 
   // Process broker flows from activeBrokerData or floorsheetData
@@ -461,10 +478,10 @@ export default function StockBrokerAnalysisTab({
           map.set(normId, {
             id: normId,
             name: c.name || getBrokerName(normId),
-            buyQty: c.totalBuyQty || c.totalHeldQty || 0,
-            buyAmt: c.totalBuyQty ? (c.totalBuyQty * (c.avgBuyRate || ltp || 100)) : 0,
-            sellQty: c.totalSellQty || 0,
-            sellAmt: c.totalSellQty ? (c.totalSellQty * (c.avgSellRate || ltp || 100)) : 0,
+            buyQty: 0,
+            buyAmt: 0,
+            sellQty: 0,
+            sellAmt: 0,
             matchedQty: 0,
             matchedAmt: 0,
             trades: 0,
@@ -474,8 +491,8 @@ export default function StockBrokerAnalysisTab({
       }
     }
 
-    const totalBuyVol = Array.from(map.values()).reduce((sum, r) => sum + r.buyQty, 0) || 1;
-    const totalSellVol = Array.from(map.values()).reduce((sum, r) => sum + r.sellQty, 0) || 1;
+    const totalBuyVol = Array.from(map.values()).filter(r => !r.isHistoricalHolderOnly).reduce((sum, r) => sum + r.buyQty, 0) || 1;
+    const totalSellVol = Array.from(map.values()).filter(r => !r.isHistoricalHolderOnly).reduce((sum, r) => sum + r.sellQty, 0) || 1;
 
     const list = Array.from(map.values()).map(r => {
       const netQty = r.buyQty - r.sellQty;
@@ -494,11 +511,13 @@ export default function StockBrokerAnalysisTab({
       const idKey = String(r.id || '').replace(/^0+/, '');
       const hasCumData = cumulativeHoldingMap && Object.keys(cumulativeHoldingMap).length > 0;
       const cum = cumulativeHoldingMap[idKey] || cumulativeHoldingMap[String(r.id)] || null;
-      const cumHold = cum ? (cum.totalHeldQty || 0) : 0;
-      const cumAmt = cum ? (cum.totalHeldAmt || (cumHold * (cum.avgBuyRate || ltp || 100))) : 0;
-      const cumBuyPx = cum ? (cum.avgBuyRate || 0) : 0;
-      const cumSellPx = cum ? (cum.avgSellRate || 0) : 0;
-      const cumRet = cum ? (cum.retentionPct || 0) : 0;
+      const rawCumHold = cum ? (cum.totalHeldQty || cum.netQty || 0) : 0;
+      // Invariant: Total holding till today CANNOT be less than the holding accumulated in today's session alone!
+      const effectiveCumHold = Math.max(rawCumHold, Math.max(0, netQty));
+      const cumAmt = cum ? (cum.totalHeldAmt || (effectiveCumHold * (cum.avgBuyRate || avgBuy || ltp || 100))) : (effectiveCumHold * (avgBuy || ltp || 100));
+      const cumBuyPx = cum && cum.avgBuyRate > 0 ? cum.avgBuyRate : (avgBuy || 0);
+      const cumSellPx = cum && cum.avgSellRate > 0 ? cum.avgSellRate : (avgSell || 0);
+      const cumRet = cum && cum.retentionPct !== undefined ? cum.retentionPct : (r.buyQty > 0 ? Math.round((Math.max(0, netQty) / r.buyQty) * 100) : 0);
 
       return {
         ...r,
@@ -515,7 +534,7 @@ export default function StockBrokerAnalysisTab({
         totalTrade,
         buyMktShare: +((r.buyQty / totalBuyVol) * 100).toFixed(2),
         sellMktShare: +((r.sellQty / totalSellVol) * 100).toFixed(2),
-        cumHoldQty: cumHold,
+        cumHoldQty: effectiveCumHold,
         cumHoldAmt: cumAmt,
         cumAvgBuy: cumBuyPx,
         cumAvgSell: cumSellPx,
@@ -738,14 +757,16 @@ export default function StockBrokerAnalysisTab({
     let totalSellAmt = 0;
 
     for (const b of brokerRecords) {
-      sessionBuy += (b.buyQty || 0);
-      sessionSell += (b.sellQty || 0);
-      sessionMatched += (b.matchedQty || 0);
-      if (b.signedHoldQty > 0) {
-        sessionHold += b.signedHoldQty;
+      if (!b.isHistoricalHolderOnly) {
+        sessionBuy += (b.buyQty || 0);
+        sessionSell += (b.sellQty || 0);
+        sessionMatched += (b.matchedQty || 0);
+        if (b.signedHoldQty > 0) {
+          sessionHold += b.signedHoldQty;
+        }
+        totalBuyAmt += (b.buyAmt || 0);
+        totalSellAmt += (b.sellAmt || 0);
       }
-      totalBuyAmt += (b.buyAmt || 0);
-      totalSellAmt += (b.sellAmt || 0);
     }
 
     // Authoritative cumulative sum across all accumulators holding stock till today
@@ -759,7 +780,7 @@ export default function StockBrokerAnalysisTab({
       }
     } else {
       for (const b of brokerRecords) {
-        const cH = b.cumHoldQty !== undefined && b.cumHoldQty > 0 ? b.cumHoldQty : Math.max(0, b.signedHoldQty || 0);
+        const cH = b.cumHoldQty !== undefined && b.cumHoldQty > 0 ? b.cumHoldQty : (b.isHistoricalHolderOnly ? 0 : Math.max(0, b.signedHoldQty || 0));
         if (cH > 0) {
           cumHold += cH;
           cumHoldAmt += (b.cumHoldAmt || (cH * (b.cumAvgBuy || b.avgBuy || ltp || 100)));
@@ -775,12 +796,15 @@ export default function StockBrokerAnalysisTab({
     const weightedAvgSell = sessionSell > 0 ? +(totalSellAmt / sessionSell).toFixed(2) : 0;
     const overallRetention = sessionBuy > 0 ? Math.round((sessionHold / sessionBuy) * 100) : 0;
 
+    // Total locked by accumulators is the authentic cumulative pool (distinct from today's session activity)
+    const effectiveTotalCumHold = (cumHold > 0 ? cumHold : (totalCumulativeHoldingKitta || sessionHold || 0));
+
     return {
       sessionBuy,
       sessionSell,
       sessionMatched,
       sessionHold,
-      cumHold: cumHold > 0 ? cumHold : sessionHold,
+      cumHold: effectiveTotalCumHold,
       cumHoldAmt,
       weightedAvgBuy,
       weightedAvgSell,
@@ -872,16 +896,28 @@ export default function StockBrokerAnalysisTab({
         }
       }
     }
-    // Overlay or add brokers from brokerRecords only if already possessing cumHoldQty
+    // Overlay brokers from current session to ensure today's holdings are incorporated and never under-reported
     for (const b of filteredBrokers) {
       const normId = String(b.id || '').replace(/^0+/, '');
-      const cH = b.cumHoldQty || 0;
-      if (cH > 0 && !map.has(normId)) {
-        map.set(normId, {
-          ...b,
-          cumHoldQty: cH,
-          cumHoldAmt: b.cumHoldAmt || (cH * (b.cumAvgBuy || ltp || 100)),
-        });
+      const sessNet = Number(b.signedHoldQty || b.netQty || 0);
+      if (sessNet > 0) {
+        const existing = map.get(normId);
+        if (existing) {
+          if (existing.cumHoldQty < sessNet) {
+            existing.cumHoldQty = sessNet;
+            existing.holdQty = sessNet;
+            existing.signedHoldQty = sessNet;
+          }
+        } else {
+          map.set(normId, {
+            ...b,
+            id: normId,
+            cumHoldQty: sessNet,
+            holdQty: sessNet,
+            signedHoldQty: sessNet,
+            cumHoldAmt: b.cumHoldAmt || (sessNet * (b.cumAvgBuy || b.avgBuy || ltp || 100)),
+          });
+        }
       }
     }
 

@@ -40,7 +40,8 @@ import {
   getCachedRealPriceHistory,
   getCachedRealBrokerAnalysis,
   getCachedRealFloorsheet,
-  getCachedStockFundamentals
+  getCachedStockFundamentals,
+  getProxyBase
 } from '../utils/liveData';
 import { fetchStockSnapshot, getSnapshotCache } from '../services/stockSnapshot';
 import { fetchNepseIntradayGraph, fetchCompanyQuarterlyReports, fetchMarketNews } from '../utils/servicesApi';
@@ -707,6 +708,11 @@ class CardLocalErrorBoundary extends React.Component {
   componentDidCatch(err) {
     console.warn("[StockDetail] Card error caught:", err);
   }
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.children !== this.props.children) {
+      this.setState({ hasError: false });
+    }
+  }
   render() {
     if (this.state.hasError) {
       return (
@@ -739,7 +745,8 @@ function BeginnerConfidenceCard({
   brokerConcentration,
   brokerDays = 1,
   onSelectBrokerDays,
-  brokerLoading = false
+  brokerLoading = false,
+  realPriceHistory = null
 }) {
   const [selectedCapital, setSelectedCapital] = useState(25000);
 
@@ -770,12 +777,22 @@ function BeginnerConfidenceCard({
   }
 
   const dailyHistory = useMemo(() => {
-    const hist = (realPriceHistory && realPriceHistory.length > 0) ? realPriceHistory : (history && history.length > 0 ? history : (d?.history || d?.candles || []));
-    return buildDailyHistoryFromStockData(d, realBrokerAnalysis, hist);
-  }, [d, realBrokerAnalysis, realPriceHistory, history]);
+    try {
+      const hist = (Array.isArray(realPriceHistory) && realPriceHistory.length > 0)
+        ? realPriceHistory
+        : (Array.isArray(d?.history) ? d.history : (Array.isArray(d?.candles) ? d.candles : []));
+      return buildDailyHistoryFromStockData(d, realBrokerAnalysis, hist) || [];
+    } catch (_) {
+      return [];
+    }
+  }, [d, realBrokerAnalysis, realPriceHistory]);
 
   const multiDayDiag = useMemo(() => {
-    return calculateMultiDayDiagnostics(dailyHistory, brokerDays);
+    try {
+      return calculateMultiDayDiagnostics(dailyHistory, brokerDays);
+    } catch (_) {
+      return null;
+    }
   }, [dailyHistory, brokerDays]);
   const diag = multiDayDiag;
 
@@ -1997,7 +2014,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
-      const resp = await fetch(`/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, {
+      const base = getProxyBase();
+      const resp = await fetch(`${base}/api/stocks/${encodeURIComponent(sym)}/smart-money?timeframe=${tf}&days=${days}`, {
         headers: { Accept: 'application/json' },
         signal: controller.signal
       });
@@ -2941,57 +2959,6 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
           <div style={{ fontSize: 18, fontWeight: 900, color: '#ffffff' }}>
             {d.symbol}
           </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: 8,
-            padding: '3px 8px'
-          }}>
-            <Calendar style={{ width: 13, height: 13, color: '#38bdf8' }} />
-            <select
-              value={modalSessionDate}
-              onChange={e => handleModalSessionDateChange(e.target.value)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: modalSessionDate ? '#38bdf8' : '#e2e8f0',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-            >
-              <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>
-                Latest Session ({availableTradingDates[0] || 'Today'})
-              </option>
-              {availableTradingDates.map(dt => (
-                <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>
-                  {dt}
-                </option>
-              ))}
-            </select>
-            {modalSessionDate && (
-              <button
-                type="button"
-                onClick={() => handleModalSessionDateChange('')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#f43f5e',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  padding: '0 2px'
-                }}
-                title="Reset to Latest Session"
-              >
-                ×
-              </button>
-            )}
-          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3482,6 +3449,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   brokerDays={brokerDays}
                   onSelectBrokerDays={handleBrokerDaysChange}
                   brokerLoading={brokerAnalysisLoading}
+                  realPriceHistory={realPriceHistory}
                 />
               </CardLocalErrorBoundary>
 

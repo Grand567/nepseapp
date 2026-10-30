@@ -536,6 +536,9 @@ export function handleSignalTrackRecordEnriched(req, res) {
     return res.json({
       ok: true,
       success: true,
+      totalSignals: summary.totalSignals,
+      winRate: `${summary.verifiedWinRatePct}%`,
+      avgPnl: `${summary.avgNetReturnPct}%`,
       asOfDate,
       distinctSessionsJoined: distinctSessions,
       summary,
@@ -570,6 +573,6 @@ export function handleSignalTrackRecordEnriched(req, res) {
   }
 }
 
-router.get(['/track-record', '/'], handleSignalTrackRecordEnriched);
+router.get(['/track-record', '/active', '/'], handleSignalTrackRecordEnriched);
 
 export default router;

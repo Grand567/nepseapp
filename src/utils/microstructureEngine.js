@@ -358,10 +358,16 @@ export function buildDailyHistoryFromStockData(stock, realBrokerAnalysis, candle
 
   if (rawBrokers.length === 0) return [];
 
-  const totalVol = Number(
+  let totalVol = Number(
     realBrokerAnalysis?.totalVolume || stock.volume || stock.totalTradedQuantity || 0
   );
-  if (totalVol <= 0) return [];
+  if (totalVol <= 0) {
+    const sumBuy = rawBrokers.reduce((acc, b) => acc + Number(b.buyVol ?? b.buyQty ?? 0), 0);
+    const sumSell = rawBrokers.reduce((acc, b) => acc + Number(b.sellVol ?? b.sellQty ?? 0), 0);
+    totalVol = Math.max(sumBuy, sumSell, 0);
+  }
+  if (totalVol <= 0 && rawBrokers.length === 0) return [];
+  if (totalVol <= 0) totalVol = 100;
 
   const ltp = Number(stock.ltp || stock.close || 100);
   const totalTurnover = Number(

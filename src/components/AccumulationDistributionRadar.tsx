@@ -796,7 +796,15 @@ export function AccumulationDistributionRadar({
         if (d && typeof d === 'string' && d.length >= 8) datesSet.add(d);
       });
     }
-    return Array.from(datesSet).sort((a, b) => b.localeCompare(a)).slice(0, 500);
+    const now = new Date();
+    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
+    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+    const todayNpt = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+
+    return Array.from(datesSet)
+      .filter(d => !isOngoingMarketSession || d !== todayNpt)
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, 500);
   }, [stockBrokerDataMap, selectedStockSymbol, whaleArchive, floorsheet, availableSessionDates]);
 
   useEffect(() => {

@@ -1284,9 +1284,12 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
     const brokerAccum = {};
     let totalVolume = 0;
     let totalTurnover = 0;
-    const todayIso = formatNptDateIso(new Date());
+    const now = new Date();
+    const nptMins = now.getUTCHours() * 60 + now.getUTCMinutes() + 345;
+    const isOngoingMarketSession = (nptMins % 1440) < (15 * 60 + 30);
+    const todayIso = formatNptDateIso(now);
     const dates = Object.keys(rollupObj.dailyRollup || {})
-      .filter(d => d <= todayIso && isNepseTradingDay(new Date(d + 'T12:00:00+05:45')))
+      .filter(d => (isOngoingMarketSession ? d < todayIso : d <= todayIso))
       .sort((a, b) => b.localeCompare(a));
 
     for (const dt of dates) {
@@ -1381,6 +1384,7 @@ export async function getOrFetchAllTimeBrokerHoldings(symbol, options = {}) {
       brokers,
       allBrokers: brokers,
       data: brokers,
+      dailyFlow: (getFastVaultSnapshot(sym, 30)?.dailyFlow || []),
       availableDates: dates
     };
   };
@@ -1908,45 +1912,87 @@ export function aggregateMarketFloorsheet(trades, dateStr = '') {
       };
     });
 
+    const effectiveDate = String(dateStr || trades[0]?.businessDate || trades[0]?.date || '2099-12-31').split('T')[0];
+    const enrichCumulativeHolding = (scripItem) => {
+      if (!scripItem || !scripItem.symbol) return scripItem;
+      try {
+        if (db) {
+          const cumRow = db.prepare(`
+            SELECT 
+              SUM(buy_vol) as totalBuyVol,
+              SUM(sell_vol) as totalSellVol,
+              SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
+              SUM(buy_amt) as totalBuyAmt
+            FROM daily_broker_ledger
+            WHERE broker_id = ? AND symbol = ? AND trade_date <= ?
+          `).get(b.id, scripItem.symbol, effectiveDate);
+          if (cumRow) {
+            const cumQty = cumRow.cumNetQty !== null ? cumRow.cumNetQty : scripItem.netQty;
+            const cumAvg = (cumRow.totalBuyVol && cumRow.totalBuyVol > 0)
+              ? +(cumRow.totalBuyAmt / cumRow.totalBuyVol).toFixed(2)
+              : scripItem.avgBuyRate;
+            return {
+              ...scripItem,
+              cumHoldQty: cumQty,
+              cumAvgBuy: cumAvg
+            };
+          }
+        }
+      } catch (_) {}
+      return {
+        ...scripItem,
+        cumHoldQty: scripItem.netQty,
+        cumAvgBuy: scripItem.avgBuyRate
+      };
+    };
+
     const topAccumulation = [...scripsArr]
       .filter(s => s.net > 0)
       .sort((x, y) => y.net - x.net)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topDistribution = [...scripsArr]
       .filter(s => s.net < 0)
       .sort((x, y) => x.net - y.net)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topByNetQty = [...scripsArr]
       .filter(s => s.netQty > 0)
       .sort((x, y) => y.netQty - x.netQty)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topByGrossBuyAmt = [...scripsArr]
       .filter(s => s.buyAmount > 0)
       .sort((x, y) => y.buyAmount - x.buyAmount)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topByGrossBuyQty = [...scripsArr]
       .filter(s => s.buyQty > 0)
       .sort((x, y) => y.buyQty - x.buyQty)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topDistByNetQty = [...scripsArr]
       .filter(s => s.netQty < 0)
       .sort((x, y) => x.netQty - y.netQty)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topDistByGrossSellAmt = [...scripsArr]
       .filter(s => s.sellAmount > 0)
       .sort((x, y) => y.sellAmount - x.sellAmount)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const topDistByGrossSellQty = [...scripsArr]
       .filter(s => s.sellQty > 0)
       .sort((x, y) => y.sellQty - x.sellQty)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(enrichCumulativeHolding);
 
     const netFlow = Math.round(b.totalBuy - b.totalSell);
     let bias = 'Mild Accumulation';

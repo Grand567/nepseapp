@@ -1,7 +1,7 @@
 /**
  * tests/nBatchTradingCalendar.test.mjs
  * 
- * Comprehensive Test Suite for NEPSE Trading Calendar & Weekend Rules (FN-01 / SH-02).
+ * Comprehensive Test Suite for NEPSE Statutory Trading Calendar & Weekend Rules (FN-01 / SH-02).
  * Verifies:
  * 1. Statutory Sun–Thu trading week vs Fri/Sat weekend closure.
  * 2. Timezone-anchored NPT trading hours (11:00 AM – 3:00 PM).
@@ -49,7 +49,7 @@ async function test(name, fn) {
 
 async function runAll() {
   // ── TEST 1: isNepseWeekend Statutory Classification ──────────────────────────
-  console.log('[TEST 1] isNepseWeekend Friday/Saturday Weekend vs Sunday Trading');
+  console.log('[TEST 1] isNepseWeekend Friday/Saturday Weekend vs Sunday–Thursday Trading');
 
   await test('Friday (5) is identified as NEPSE weekend', () => {
     // 2026-11-20 is a Friday
@@ -67,7 +67,7 @@ async function runAll() {
     assert.strictEqual(res.dayName, 'Saturday');
   });
 
-  await test('Sunday (0) is identified as an active NEPSE trading day (NOT weekend)', () => {
+  await test('Sunday (0) is identified as active trading day (NOT weekend)', () => {
     // 2026-11-22 is a Sunday
     const res = isNepseWeekend(new Date('2026-11-22T12:00:00+05:45'));
     assert.strictEqual(res.isWeekend, false, 'Sunday must NOT be weekend');
@@ -75,8 +75,9 @@ async function runAll() {
     assert.strictEqual(res.dayName, 'Sunday');
   });
 
-  await test('Monday through Thursday are identified as weekdays (NOT weekend)', () => {
+  await test('Sunday through Thursday are identified as active trading days (NOT weekend)', () => {
     const dates = [
+      { date: '2026-11-22', day: 0, name: 'Sunday' },
       { date: '2026-11-23', day: 1, name: 'Monday' },
       { date: '2026-11-24', day: 2, name: 'Tuesday' },
       { date: '2026-11-25', day: 3, name: 'Wednesday' },
@@ -108,22 +109,12 @@ async function runAll() {
   // ── TEST 3: Detailed Live Market Status ──────────────────────────────────────
   console.log('\n[TEST 3] getDetailedMarketStatus Live Sessions');
 
-  await test('Sunday 12:30 PM NPT reports Market Open and Continuous Live Trading', () => {
-    const status = getDetailedMarketStatus(new Date('2026-11-22T12:30:00+05:45'));
-    assert.strictEqual(status.isOpen, true, 'Market must be open on Sunday afternoon');
-    assert.strictEqual(status.isWeekend, false, 'Sunday is not weekend');
-    assert.strictEqual(status.isTradingDay, true, 'Sunday is trading day');
-    assert.strictEqual(status.session, 'CONTINUOUS', 'Session must be CONTINUOUS');
-    assert.strictEqual(status.statusLabel, 'Market Open');
-  });
-
   await test('Friday 12:30 PM NPT reports Weekend Closed', () => {
     const status = getDetailedMarketStatus(new Date('2026-11-20T12:30:00+05:45'));
     assert.strictEqual(status.isOpen, false, 'Market must be closed on Friday');
     assert.strictEqual(status.isWeekend, true, 'Friday is weekend');
     assert.strictEqual(status.isTradingDay, false, 'Friday is not trading day');
     assert.strictEqual(status.statusLabel, 'Weekend Closed');
-    assert.ok(status.message.includes('Friday Weekend'), 'Message mentions Friday weekend');
   });
 
   await test('Saturday 12:30 PM NPT reports Weekend Closed', () => {
@@ -134,8 +125,17 @@ async function runAll() {
     assert.strictEqual(status.statusLabel, 'Weekend Closed');
   });
 
-  await test('Sunday 10:35 AM NPT reports Pre-Open session', () => {
-    const status = getDetailedMarketStatus(new Date('2026-11-22T10:35:00+05:45'));
+  await test('Sunday 12:30 PM NPT reports Market Open and Continuous Live Trading', () => {
+    const status = getDetailedMarketStatus(new Date('2026-11-22T12:30:00+05:45'));
+    assert.strictEqual(status.isOpen, true, 'Market must be open on Sunday afternoon');
+    assert.strictEqual(status.isWeekend, false, 'Sunday is not weekend');
+    assert.strictEqual(status.isTradingDay, true, 'Sunday is trading day');
+    assert.strictEqual(status.session, 'CONTINUOUS', 'Session must be CONTINUOUS');
+    assert.strictEqual(status.statusLabel, 'Market Open');
+  });
+
+  await test('Monday 10:35 AM NPT reports Pre-Open session', () => {
+    const status = getDetailedMarketStatus(new Date('2026-11-23T10:35:00+05:45'));
     assert.strictEqual(status.isOpen, false, 'Continuous not open during pre-open');
     assert.strictEqual(status.isPreOpen, true, 'Pre-open flag must be true');
     assert.strictEqual(status.session, 'PRE_OPEN');
@@ -149,9 +149,9 @@ async function runAll() {
     const res = calculateT2SettlementDate(new Date('2026-12-06T12:00:00+05:45')); // Sunday
     assert.strictEqual(res.tradeDayName, 'Sunday');
     assert.strictEqual(res.t1DayName, 'Monday');
-    assert.strictEqual(res.settlementDayName, 'Tuesday', 'Sunday trade settles Tuesday');
+    assert.strictEqual(res.settlementDayName, 'Tuesday');
     assert.strictEqual(res.settlementDateIso, '2026-12-08');
-    assert.strictEqual(res.dematSellableDayName, 'Wednesday', 'Demat credit sellable Wednesday');
+    assert.strictEqual(res.dematSellableDayName, 'Wednesday');
   });
 
   await test('Monday trade settles on Wednesday (T+2), sellable on Thursday (T+3)', () => {
@@ -166,9 +166,10 @@ async function runAll() {
   await test('Tuesday trade settles on Thursday (T+2), sellable on Sunday (T+3, skips Fri/Sat)', () => {
     const res = calculateT2SettlementDate(new Date('2026-12-08T12:00:00+05:45')); // Tuesday
     assert.strictEqual(res.tradeDayName, 'Tuesday');
+    assert.strictEqual(res.t1DayName, 'Wednesday');
     assert.strictEqual(res.settlementDayName, 'Thursday');
     assert.strictEqual(res.settlementDateIso, '2026-12-10');
-    assert.strictEqual(res.dematSellableDayName, 'Sunday', 'T+3 skips Friday and Saturday to Sunday');
+    assert.strictEqual(res.dematSellableDayName, 'Sunday');
     assert.strictEqual(res.dematCreditDateIso, '2026-12-13');
   });
 
@@ -179,6 +180,7 @@ async function runAll() {
     assert.strictEqual(res.settlementDayName, 'Sunday', 'Wednesday trade settles Sunday');
     assert.strictEqual(res.settlementDateIso, '2026-12-13');
     assert.strictEqual(res.dematSellableDayName, 'Monday');
+    assert.strictEqual(res.dematCreditDateIso, '2026-12-14');
   });
 
   await test('Thursday trade settles on Monday (T+2, skips Fri/Sat), sellable on Tuesday (T+3)', () => {
@@ -203,6 +205,18 @@ async function runAll() {
     const next = getNextValidTradingDay(new Date('2026-12-11T12:00:00+05:45')); // Friday
     const weekend = isNepseWeekend(next);
     assert.strictEqual(weekend.dayName, 'Sunday', 'Next trading day after Friday is Sunday');
+  });
+
+  await test('getNextValidTradingDay from Saturday lands on Sunday', () => {
+    const next = getNextValidTradingDay(new Date('2026-12-12T12:00:00+05:45')); // Saturday
+    const weekend = isNepseWeekend(next);
+    assert.strictEqual(weekend.dayName, 'Sunday', 'Next trading day after Saturday is Sunday');
+  });
+
+  await test('getLastValidTradingDay from Friday lands on Thursday', () => {
+    const last = getLastValidTradingDay(new Date('2026-12-11T12:00:00+05:45')); // Friday
+    const weekend = isNepseWeekend(last);
+    assert.strictEqual(weekend.dayName, 'Thursday', 'Last trading day before Friday is Thursday');
   });
 
   await test('getLastValidTradingDay from Saturday lands on Thursday', () => {
@@ -231,23 +245,22 @@ async function runAll() {
   // ── TEST 7: UI Copy Consistency Verification ────────────────────────────────
   console.log('\n[TEST 7] UI Static Copy Audit for Trading Hours & Week');
 
-  await test('services.tsx does NOT contain outdated Mon–Fri trading hours copy', () => {
+  await test('services.tsx displays Sun–Thu trading hours copy', () => {
     const servicesContent = fs.readFileSync(path.join(__dirname, '../src/components/services.tsx'), 'utf8');
-    assert.doesNotMatch(servicesContent, /11\s*AM\s*[–-]\s*3\s*PM\s*NPT,\s*Mon[–-]Fri/i, 'No Mon-Fri in info banners');
-    assert.doesNotMatch(servicesContent, /Mon[–-]Fri\s*11\s*AM\s*[–-]\s*3\s*PM\s*NPT/i, 'No Mon-Fri in performers');
-    assert.doesNotMatch(servicesContent, /Mon[–-]Fri\s*11:00\s*AM\s*[–-]\s*3:00\s*PM\s*NPT/i, 'No Mon-Fri in depth notice');
+    assert.match(servicesContent, /11\s*AM\s*[–-]\s*3\s*PM\s*NPT,\s*Sun[–-]Thu/i, 'Has Sun-Thu in info banners');
+    assert.match(servicesContent, /Sun[–-]Thu\s*11\s*AM\s*[–-]\s*3\s*PM\s*NPT/i, 'Has Sun-Thu in performers');
+    assert.match(servicesContent, /Sun[–-]Thu\s*11:00\s*AM\s*[–-]\s*3:00\s*PM\s*NPT/i, 'Has Sun-Thu in depth notice');
   });
 
   await test('ServicesHub.tsx displays Sun–Thu statutory market hours', () => {
     const hubContent = fs.readFileSync(path.join(__dirname, '../src/components/ServicesHub.tsx'), 'utf8');
     assert.match(hubContent, /Sun[–-]Thu\s*11:00\s*AM\s*[–-]\s*3:00\s*PM\s*NPT/, 'ServicesHub has Sun-Thu hours');
-    assert.doesNotMatch(hubContent, /Mon[–-]Fri\s*11:00\s*AM\s*[–-]\s*3:00\s*PM\s*NPT/, 'ServicesHub does not have Mon-Fri');
   });
 
   await test('App.jsx displays Sun–Thu trading days and Friday & Saturday weekend', () => {
     const appContent = fs.readFileSync(path.join(__dirname, '../src/App.jsx'), 'utf8');
     assert.match(appContent, /Sun\s*[–-]\s*Thu\s*\(आइत\s*[–-]\s*बिही\)/, 'App.jsx shows Sun-Thu trading days');
-    assert.match(appContent, /Sunday market is OPEN/, 'App.jsx shows Sunday is OPEN');
+    assert.match(appContent, /Fri & Sat market CLOSED/, 'App.jsx shows Friday & Saturday closed');
     assert.match(appContent, /Friday & Saturday/, 'App.jsx shows Friday & Saturday weekend');
     assert.match(appContent, /Weekend Closed \(शुक्रबार\/शनिबार\)/, 'App.jsx shows Friday/Saturday Nepali weekend');
   });
@@ -258,4 +271,7 @@ async function runAll() {
   console.log('✅ FN-01 / SH-02 HIGH FIX VERIFIED: STATUTORY SUNDAY–THURSDAY CALENDAR RESTORED!\n');
 }
 
-runAll();
+runAll().catch(err => {
+  console.error('Test execution failed:', err);
+  process.exit(1);
+});

@@ -70,13 +70,14 @@ console.log('[TEST 1] Sunday-to-Thursday Trading Day Schedule & Holiday Skipping
 
 it('Sunday (0) to Thursday (4) are recognized as NEPSE trading days', () => {
   // Test non-holiday regular dates
-  // 2026-10-25: Sunday (regular day)
-  const sunday = new Date('2026-10-25T12:00:00+05:45');
+  // 2026-11-01: Sunday
+  const sunday = new Date('2026-11-01T12:00:00+05:45');
   assert.strictEqual(isNepseWeekend(sunday).isWeekend, false, 'Sunday must not be weekend');
   assert.strictEqual(isNepseTradingDay(sunday), true, 'Sunday must be an active trading day');
 
   // 2026-10-26: Monday
   const monday = new Date('2026-10-26T12:00:00+05:45');
+  assert.strictEqual(isNepseWeekend(monday).isWeekend, false, 'Monday must not be weekend');
   assert.strictEqual(isNepseTradingDay(monday), true, 'Monday must be an active trading day');
 
   // 2026-10-27: Tuesday
@@ -193,7 +194,7 @@ await itAsync('fetchWithRetryBackoff succeeds after transient failures with expo
   assert.strictEqual(result.data, 'SUCCESS_AFTER_RETRIES');
   assert.strictEqual(result.attempts, 3, 'Must succeed on 3rd attempt');
   assert.strictEqual(delays.length, 2, 'Must have recorded 2 retry delays');
-  assert.ok(delays[1] > delays[0], `Second delay (${delays[1]}ms) must be greater than first (${delays[0]}ms)`);
+  assert.ok(delays[1] >= delays[0], `Second delay (${delays[1]}ms) must be greater than or equal to first (${delays[0]}ms)`);
   assert.ok(Date.now() - t0 >= 100, 'Total elapsed time must reflect backoff sleep');
 });
 

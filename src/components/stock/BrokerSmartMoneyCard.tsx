@@ -315,6 +315,12 @@ class BrokerSmartMoneyErrorBoundary extends Component<
     console.error('[BrokerSmartMoneyCard] Caught render exception:', error, info);
   }
 
+  componentDidUpdate(prevProps: BrokerSmartMoneyErrorBoundaryProps) {
+    if (this.state.hasError && (prevProps.children !== this.props.children)) {
+      this.setState({ hasError: false, errorMessage: '' });
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -425,19 +431,15 @@ function BrokerSmartMoneyCardInner({
         );
 
         if (normalizedCheck.length === 0) {
-          if (cached1DPayload) {
+          const fallbackPayload = cached1DPayload || initialData || null;
+          if (timeframe !== '1D') {
             setWarningBanner(
-              `${timeframe} multi-day floor-sheet aggregation is currently syncing for ${cleanSymbol}. Showing latest verified session telemetry.`
+              `${timeframe} multi-day floor-sheet rollup is compiling for ${cleanSymbol}. Displaying verified session telemetry.`
             );
-            setRawPayload(cached1DPayload);
-          } else if (initialData) {
-            setRawPayload(initialData);
           }
-          // Graceful fallback if 5D/1M floor-sheet table isn't backfilled for this scrip yet
-          setWarningBanner(
-            `${timeframe} multi-day floor-sheet aggregation is currently syncing for ${cleanSymbol}. Showing latest verified session telemetry.`
-          );
-          setRawPayload(cached1DPayload);
+          if (fallbackPayload) {
+            setRawPayload(fallbackPayload);
+          }
         } else {
           setRawPayload(responseData);
           if (timeframe === '1D' && normalizedCheck.length > 0) {
@@ -446,15 +448,16 @@ function BrokerSmartMoneyCardInner({
         }
       } catch (err) {
         if (!isMounted) return;
-        if (cached1DPayload) {
-          setWarningBanner(
-            `Could not fetch live ${timeframe} floor-sheet rollup. Displaying cached session data.`
-          );
-          setRawPayload(cached1DPayload);
-        } else if (initialData) {
-          setRawPayload(initialData);
+        const fallbackPayload = cached1DPayload || initialData || null;
+        if (fallbackPayload) {
+          if (timeframe !== '1D') {
+            setWarningBanner(
+              `Could not fetch live ${timeframe} floor-sheet rollup. Displaying verified session telemetry.`
+            );
+          }
+          setRawPayload(fallbackPayload);
         } else {
-          setRawPayload([]);
+          setRawPayload(null);
         }
       } finally {
         if (isMounted) setLoading(false);
@@ -509,10 +512,21 @@ function BrokerSmartMoneyCardInner({
     const leadSmartBroker =
       [...accumulators].sort((a, b) => b.anomalyScore - a.anomalyScore)[0] || null;
 
-    // Top Holding Broker & Total Shares Held
-    const totalSharesHeldTillNow = allBrokers
+    // Top Holding Broker & Total Shares Held scoped to timeframe
+    const rawAllTimeHeld = Number(
+      (rawPayload as any)?.totalSharesHeldTillNow ||
+      (rawPayload as any)?.data?.totalSharesHeldTillNow ||
+      (initialData as any)?.totalSharesHeldTillNow ||
+      0
+    );
+    const calculatedHeld = allBrokers
       .filter((b) => b.netVolume > 0)
       .reduce((s, b) => s + b.netVolume, 0);
+    // In ALL-TIME view, reflect authentic multi-year accumulator pool.
+    // In 1D / 5D / 1M session windows, reflect the net accumulation volume within that exact timeframe window.
+    const totalSharesHeldTillNow = timeframe === 'ALL'
+      ? Math.max(rawAllTimeHeld, calculatedHeld)
+      : calculatedHeld;
 
     const topHoldingBroker = accumulators[0] || null;
 
@@ -646,7 +660,7 @@ function BrokerSmartMoneyCardInner({
         {/* Total Shares Held Till Now */}
         <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-3">
           <div className="text-[11px] uppercase tracking-wider text-emerald-400 font-semibold">
-            Total Shares Held Till Now
+            {timeframe === 'ALL' ? 'Total Locked (All-Time)' : `Net Accumulated (${timeframe})`}
           </div>
           <div className="text-base md:text-lg font-bold font-mono text-emerald-400 mt-1">
             +{formatInt(summaryMetrics.totalSharesHeldTillNow)} kitta

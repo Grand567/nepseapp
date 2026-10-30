@@ -15,7 +15,7 @@ import axios from 'axios';
 import { NEPSE_UNIVERSE } from '../data/nepseUniverse.js';
 import { VERIFIED_DIVIDEND_DATABASE } from '../data/nepseDividends.js';
 import { calculateEMA, calculateMACD, calculateRSI } from './indicators.js';
-import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay } from './nepseCalendar.js';
+import { getDetailedMarketStatus, getLastValidTradingDay, formatNptDateIso, clearDynamicMarketHalt, isNepseTradingDay, setLiveMarketOverride, clearLiveMarketOverride } from './nepseCalendar.js';
 import { adjustPricesForCorporateActions, aggregateToWeeklyCandles, classifyLiquidity } from './priceAdjustment.js'; // C1 C2 C3
 import { idbGet, idbSet } from './indexedDb.js';
 import {
@@ -1716,7 +1716,40 @@ export async function fetchPriceHistory(symbol, days = 365) {
 
   } catch (_) {}
 
-  // 2B. Direct MeroLagani company graph fallback for individual equities
+  // 2B. Direct Authentic Chukul Multi-Year Historical Candles Fallback (provides 1,800+ real daily candles, ensuring 200 DSMA is always available)
+  if (symKey) {
+    try {
+      const chukulSym = isNepseOrIndex ? 'NEPSE' : symKey;
+      const chukulUrl = `https://chukul.com/api/data/historydata/data/?symbol=${encodeURIComponent(chukulSym)}&resolution=1D&from=1400000000&to=1900000000`;
+      const j = await tryFetchJSON(chukulUrl, 8000);
+      if (j && Array.isArray(j.t) && j.t.length > 0) {
+        const mapped = [];
+        for (let i = 0; i < j.t.length; i++) {
+          const ts = j.t[i] * 1000;
+          const dtStr = formatNptDateIso(new Date(ts));
+          mapped.push({
+            date: dtStr,
+            open: Number(j.o?.[i] ?? j.c[i]),
+            high: Number(j.h?.[i] ?? j.c[i]),
+            low: Number(j.l?.[i] ?? j.c[i]),
+            close: Number(j.c[i]),
+            volume: Number(j.vol?.[i] || 0),
+            turnover: Number(j.amt?.[i] || 0),
+            isReal: true
+          });
+        }
+        if (mapped.length > 0) {
+          const fullWithToday = appendTodayIfMissing(mapped);
+          setCachedRealPriceHistory(symKey, fullWithToday);
+          fullWithToday.isRealData = true;
+          fullWithToday.dataSource = 'chukul_multi_year_real';
+          return fullWithToday;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2C. Direct MeroLagani company graph fallback for individual equities
   if (!isNepseOrIndex && symKey) {
     try {
       const mlUrl = `https://merolagani.com/handlers/webrequesthandler.ashx?type=get_company_graph&symbol=${encodeURIComponent(symKey)}`;
@@ -2610,7 +2643,7 @@ export async function fetchAvailableTradingDates() {
     }
   } catch (_) {}
 
-  const fallback = sanitizeDates([todayIso, '2026-10-28', '2026-10-27', '2026-10-26', '2026-10-16', '2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12']);
+  const fallback = sanitizeDates([todayIso, '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26', '2026-10-16', '2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12']);
   return _cachedTradingDatesList.length > 0 ? _cachedTradingDatesList : fallback;
 }
 
@@ -3714,8 +3747,19 @@ export async function fetchCompanyFinancials(symbol) {
 }
 
 // fetchMarketStatus — returns authentic real-time market open/close status using nepseCalendar
-// Autonomously detects and enforces Emergency Market Halt if trading hours have zero turnover verified by news
+// Autonomously detects and enforces Emergency Market Halt or Live NOTS Session Active
 export async function fetchMarketStatus() {
+  // 1. Direct query to Proxy NOTS API to detect live exchange sessions (even on Friday / holidays)
+  try {
+    const res = await fetchFromBackend('/api/market/status', 3500);
+    const isLiveOpen = Boolean(res?.data?.isOpen || res?.isOpen);
+    if (isLiveOpen) {
+      setLiveMarketOverride({ isOpen: true, status: 'OPEN' });
+    } else if (res?.data && res.data.isOpen === false) {
+      clearLiveMarketOverride();
+    }
+  } catch (_) {}
+
   let status = getDetailedMarketStatus();
 
   // If clock says market is open, verify whether live data or news indicates a sudden halt

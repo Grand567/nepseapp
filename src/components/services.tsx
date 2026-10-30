@@ -517,7 +517,7 @@ export function UniversalScreener({
       {fallbackNotice && <InfoBanner type="info">{fallbackNotice}</InfoBanner>}
       {banner && <InfoBanner type={(banner.type as any) || 'info'}>{banner.text}</InfoBanner>}
       {data.length === 0 ? (
-        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Mon–Fri) or check a different filter.</InfoBanner>
+        <InfoBanner type="warning">No stocks match this criteria for timeframe {hideTimeframe ? '1D' : timeframe}. Try again during market hours (11 AM – 3 PM NPT, Sun–Thu) or check a different filter.</InfoBanner>
       ) : (
         <>
           <SourceBar count={data.length} source={source} totalCount={rawTotal} />
@@ -1102,7 +1102,7 @@ export function TopPerformersService({
         onRefresh={handleRefresh}
         isRefreshing={refreshing}
       />
-      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Mon–Fri 11 AM – 3 PM NPT).</InfoBanner>
+      <InfoBanner type="info">Top movers from exchange records — live during trading hours (Sun–Thu 11 AM – 3 PM NPT).</InfoBanner>
       <DataTable data={data} cols={[
         {
           key: 'symbol',
@@ -3323,7 +3323,7 @@ export function BrokerHeatmapService({ selectedDate: propSelectedDate, date: pro
       {/* Date Notice Banner if selected date has no compiled records */}
       {selectedDate && Array.isArray(data?.availableDates) && !data.availableDates.includes(selectedDate) && (
         <div className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300 flex items-center justify-between gap-3">
-          <span>⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong>. Showing latest completed session: <strong>{data.availableDates[0] || '2026-10-28'}</strong>.</span>
+          <span>⚠️ No floorsheet records compiled yet for <strong>{selectedDate}</strong>. Showing latest completed session: <strong>{data.availableDates[0] || '2026-10-29'}</strong>.</span>
           <button
             onClick={() => setSelectedDate('')}
             className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold hover:bg-amber-500/30 cursor-pointer text-[11px] whitespace-nowrap"
@@ -5953,7 +5953,7 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
       {depthData?.isOffMarket && (
         <div className="px-3.5 py-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between flex-wrap gap-2">
           <span>🌙 <strong>Market Closed</strong>: Displaying authentic Closing Session Order Book snapshot ({depthData?.sessionLabel || '3:00 PM NPT'}).</span>
-          <span className="text-[11px] text-slate-400">Live NOTS queue streams Mon–Fri 11:00 AM – 3:00 PM</span>
+          <span className="text-[11px] text-slate-400">Live NOTS queue streams Sun–Thu 11:00 AM – 3:00 PM</span>
         </div>
       )}
 
@@ -5973,7 +5973,7 @@ export function MarketDepthService({ initialSymbol = 'NABIL', stocks = [] }: { i
         <TableSkeleton rows={5} cols={6} />
       ) : !hasOrders ? (
         <InfoBanner type="info">
-          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Mon–Fri 11:00 AM – 3:00 PM NPT).
+          Order book queue is currently empty for {symbol}. Real-time 5-depth market depth is actively populated by NEPSE NOTS during continuous trading hours (Sun–Thu 11:00 AM – 3:00 PM NPT).
         </InfoBanner>
       ) : (
         <div className="space-y-2.5">

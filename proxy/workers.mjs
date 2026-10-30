@@ -106,6 +106,8 @@ let _generateEntryExitPlan = null;
 let _fetchTodayPricesInternal = null;
 let _getCache = null;
 let _getDividendHistoryInternal = null;
+let _getMarketIndicesInternal = null;
+let _db = null;
 
 export function initWorkerDependencies({
   getPriceHistoryInternal,
@@ -114,6 +116,8 @@ export function initWorkerDependencies({
   fetchTodayPricesInternal,
   getCache,
   getDividendHistoryInternal,
+  getMarketIndicesInternal,
+  db,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
   _getOrFetchBrokerAnalysis = getOrFetchBrokerAnalysis;
@@ -121,6 +125,8 @@ export function initWorkerDependencies({
   _fetchTodayPricesInternal = fetchTodayPricesInternal;
   _getCache = getCache;
   _getDividendHistoryInternal = getDividendHistoryInternal;
+  _getMarketIndicesInternal = getMarketIndicesInternal;
+  _db = db;
 }
 
 /**
@@ -402,8 +408,19 @@ export async function runPreMarketMorningScan(force = false) {
     }
 
     const idxData = _getCache ? _getCache('market-indices') : null;
-    const nepseVal = idxData?.data?.nepse?.value || idxData?.nepse?.value || 2634.17;
-    const nepseChg = idxData?.data?.nepse?.change || idxData?.nepse?.change || 8.23;
+    let nepseVal = idxData?.data?.nepse?.value || idxData?.nepse?.value;
+    let nepseChg = idxData?.data?.nepse?.change || idxData?.nepse?.change;
+    if (!nepseVal && _getMarketIndicesInternal) {
+      try {
+        const ind = await _getMarketIndicesInternal();
+        nepseVal = ind?.nepse?.value;
+        nepseChg = ind?.nepse?.change;
+      } catch (_) {}
+    }
+    if (!nepseVal) {
+      nepseVal = 2695.60;
+      nepseChg = 31.54;
+    }
 
     const adv = list.filter(s => Number(s.pChange || 0) > 0).length;
     const dec = list.filter(s => Number(s.pChange || 0) < 0).length;
@@ -455,8 +472,12 @@ export async function runPreOpenGateScan(force = false) {
 
   console.log(`[Pre-Open Worker] Running 10:50 AM Pre-Open Gate Scan for ${targetDate}...`);
   try {
-    const sym = cachedPostMarketPrimePick?.symbol || 'NIMB';
-    const basePivot = Number(cachedPostMarketPrimePick?.entryLow || cachedPostMarketPrimePick?.ltp || 206.2);
+    if (!cachedPostMarketPrimePick || !cachedPostMarketPrimePick.symbol) {
+      console.log(`[Pre-Open Worker] No qualified Prime Pick candidate for ${targetDate}. Preserving cash.`);
+      return;
+    }
+    const sym = cachedPostMarketPrimePick.symbol;
+    const basePivot = Number(cachedPostMarketPrimePick.entryLow || cachedPostMarketPrimePick.ltp || 100);
     const chaseCap = +(basePivot * 1.025).toFixed(1);
 
     let indicativeOpen = basePivot;
@@ -640,6 +661,10 @@ export function startWorkers() {
             const found = list.find(s => String(s.symbol || s.scrip || '').toUpperCase().trim() === clean);
             if (found) {
               return Number(found.ltp || found.lastTradedPrice || found.closePrice || 0);
+            }
+            if (_db) {
+              const row = _db.prepare('SELECT close_price FROM daily_stock_summary WHERE symbol = ? ORDER BY trade_date DESC LIMIT 1').get(clean);
+              if (row && row.close_price) return Number(row.close_price);
             }
           } catch (_) {}
           return 0;
