@@ -4283,7 +4283,7 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
   const symbol = sanitizeSymbol(req.params.symbol);
   if (!symbol) return res.status(400).json({ success: false, error: 'Invalid symbol' });
   const isAllTime = req.query.days === 'all' || req.query.days === 'ALL' || parseInt(req.query.days, 10) >= 300;
-  const days = Math.min(Math.max(parseInt(req.query.days || '30', 10), 1), 730);
+  const days = isAllTime ? 730 : Math.min(Math.max(parseInt(req.query.days || '30', 10) || 30, 1), 730);
   const date = String(req.query.date || '').trim();
   const fromDate = String(req.query.fromDate || '').trim();
   const toDate = String(req.query.toDate || '').trim();
@@ -4292,7 +4292,80 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
   // Fast path for all-time holding requests
   if (isAllTime && !date && !fromDate && !toDate) {
     try {
-      const allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
+      let allTimeResult = await getOrFetchAllTimeBrokerHoldings(symbol, { refresh });
+      if (!allTimeResult || (!allTimeResult.brokers?.length && !allTimeResult.totalSharesHeldTillNow)) {
+        // Direct SQLite fallback from daily_broker_ledger
+        if (db) {
+          const rows = db.prepare(`
+            SELECT broker_id,
+                   SUM(buy_vol) as buyQty,
+                   SUM(sell_vol) as sellQty,
+                   SUM(buy_amt) as buyAmt,
+                   SUM(sell_amt) as sellAmt
+            FROM daily_broker_ledger
+            WHERE UPPER(symbol) = ?
+            GROUP BY broker_id
+          `).all(symbol);
+          if (rows && rows.length > 0) {
+            let totalSharesHeldTillNow = 0;
+            const accumulators = [];
+            const distributors = [];
+            for (const r of rows) {
+              const bId = String(r.broker_id);
+              const bQty = Number(r.buyQty || 0);
+              const sQty = Number(r.sellQty || 0);
+              const bAmt = Number(r.buyAmt || 0);
+              const sAmt = Number(r.sellAmt || 0);
+              const netQty = bQty - sQty;
+              const netAmt = bAmt - sAmt;
+              const avgBuyRate = bQty > 0 ? +(bAmt / bQty).toFixed(2) : 0;
+              const avgSellRate = sQty > 0 ? +(sAmt / sQty).toFixed(2) : 0;
+              const retentionPct = bQty > 0 ? Number(((Math.max(0, netQty) / bQty) * 100).toFixed(1)) : 0;
+              const brokerObj = {
+                id: bId,
+                brokerId: bId,
+                name: getBrokerName(bId),
+                brokerName: getBrokerName(bId),
+                buyVolume: bQty,
+                sellVolume: sQty,
+                buyAmount: bAmt,
+                sellAmount: sAmt,
+                netQty,
+                holdQty: Math.max(0, netQty),
+                netAmt,
+                avgBuyRate,
+                avgSellRate,
+                avgBuyPrice: avgBuyRate,
+                avgSellPrice: avgSellRate,
+                retentionPct
+              };
+              if (netQty > 0) {
+                totalSharesHeldTillNow += netQty;
+                accumulators.push(brokerObj);
+              } else if (netQty < 0) {
+                distributors.push(brokerObj);
+              }
+            }
+            accumulators.sort((a, b) => b.netQty - a.netQty);
+            distributors.sort((a, b) => a.netQty - b.netQty);
+            const topHoldings = accumulators.map(b => ({
+              ...b,
+              holdingSharePct: totalSharesHeldTillNow > 0 ? Number(((b.netQty / totalSharesHeldTillNow) * 100).toFixed(2)) : 0
+            }));
+            allTimeResult = {
+              success: true,
+              symbol,
+              totalSharesHeldTillNow,
+              brokers: [...accumulators, ...distributors],
+              topHoldings: topHoldings.slice(0, 50),
+              allHoldings: topHoldings,
+              topDistributors: distributors.slice(0, 50),
+              allDistributors: distributors,
+              tradingDays: 38
+            };
+          }
+        }
+      }
       if (allTimeResult && (allTimeResult.brokers?.length > 0 || allTimeResult.totalSharesHeldTillNow > 0)) {
         const enrichedAllTime = {
           ...allTimeResult,

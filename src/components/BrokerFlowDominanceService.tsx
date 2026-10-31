@@ -445,10 +445,12 @@ export function BrokerFlowDominanceService({
   };
 
   useEffect(() => {
-    if (activeMode === 'stockRetention' && selectedStockRetention) {
-      loadStockRetention(selectedStockRetention);
+    if (activeMode === 'stockRetention' && retentionViewType === 'byStock' && selectedStockRetention) {
+      if (!stockRetentionData || stockRetentionData.symbol !== selectedStockRetention.toUpperCase()) {
+        loadStockRetention(selectedStockRetention);
+      }
     }
-  }, [activeMode, selectedStockRetention]);
+  }, [activeMode, retentionViewType, selectedStockRetention]);
 
   const handleCopyStockRetentionCard = () => {
     if (!stockRetentionData) return;
@@ -1679,25 +1681,28 @@ export function BrokerFlowDominanceService({
         {primaryHub === 'stock' && (
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-sans font-bold text-cyan-400 uppercase px-1">Stock Cornering Analysis:</span>
+              <span className="text-[10px] font-sans font-bold text-cyan-400 uppercase px-1">
+                {retentionViewType === 'byStock' ? 'Stock All-Time Retention Radar:' : 'Broker Desk All-Time Holding Radar:'}
+              </span>
               <span className="text-xs text-slate-300 font-sans">
-                Currently Inspecting: <strong className="text-cyan-300 font-mono text-sm">{selectedStockRetention}</strong>
+                Currently Inspecting: <strong className="text-cyan-300 font-mono text-sm">{retentionViewType === 'byStock' ? selectedStockRetention : `Broker #${selectedRetentionBrokerId}`}</strong>
               </span>
             </div>
 
             {/* Quick stock chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
               <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Popular:</span>
-              {['BARUN', 'LBBL', 'GBIME', 'NICA', 'SHIVM', 'CHCL', 'CIT', 'HDL'].map(sym => (
+              {['BARUN', 'GVL', 'SOHL', 'HEIP', 'MATRI', 'GLBSL', 'SICL', 'CIT'].map(sym => (
                 <button
                   key={sym}
                   type="button"
                   onClick={() => {
                     setSelectedStockRetention(sym);
+                    setRetentionViewType('byStock');
                     loadStockRetention(sym);
                   }}
                   className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition cursor-pointer ${
-                    selectedStockRetention === sym
+                    selectedStockRetention === sym && retentionViewType === 'byStock'
                       ? 'bg-cyan-500 text-slate-950 font-black'
                       : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700'
                   }`}
@@ -1710,8 +1715,10 @@ export function BrokerFlowDominanceService({
         )}
       </div>
 
-      {/* ── STEP 4: VERIFY SMART MONEY BROKER FLOW HUD ── */}
-      <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-3 sm:p-4 shadow-xl w-full min-w-0">
+      {primaryHub === 'market' && (
+        <>
+          {/* ── STEP 4: VERIFY SMART MONEY BROKER FLOW HUD ── */}
+          <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-3 sm:p-4 shadow-xl w-full min-w-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3 border-b border-slate-800/80 pb-3 mb-3">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <div className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black text-[10px] sm:text-xs tracking-wider shrink-0">
@@ -1983,6 +1990,8 @@ export function BrokerFlowDominanceService({
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* MODE 1: BROKER FLOW */}
       {activeMode === 'flow' && (
@@ -3668,6 +3677,7 @@ export function BrokerFlowDominanceService({
                     <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Quick Pick:</span>
                     {[
                       { id: '58', name: '#58 Naasa' },
+                      { id: '77', name: '#77 Capital' },
                       { id: '45', name: '#45 Imperial' },
                       { id: '34', name: '#34 Vision' },
                       { id: '17', name: '#17 ABC' },
@@ -3981,7 +3991,7 @@ export function BrokerFlowDominanceService({
               {/* Popular quick-pick stock chips */}
               <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-none">
                 <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Popular:</span>
-                {['BARUN', 'LBBL', 'GBIME', 'NICA', 'SHIVM', 'CHCL', 'CIT', 'HDL'].map((sym) => (
+                {['BARUN', 'GVL', 'SOHL', 'HEIP', 'MATRI', 'GLBSL', 'SICL', 'CIT', 'LBBL', 'NICA'].map((sym) => (
                   <button
                     key={sym}
                     type="button"
@@ -4188,17 +4198,32 @@ export function BrokerFlowDominanceService({
                             {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
                           </td>
                           <td className="p-3 text-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const found = brokerFlowList.find(bf => bf.brokerId === String(brokerId));
-                                if (found) setSelectedBrokerModal(found);
-                              }}
-                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-                            >
-                              Desk Profile
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRetentionBrokerId(String(brokerId));
+                                  setRetentionViewType('byBroker');
+                                  loadBrokerRetention(String(brokerId));
+                                }}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition cursor-pointer"
+                                title={`Inspect Broker #${brokerId} all-time net portfolio`}
+                              >
+                                Broker Radar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const found = brokerFlowList.find(bf => bf.brokerId === String(brokerId));
+                                  if (found) setSelectedBrokerModal(found);
+                                }}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                              >
+                                Profile
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -4292,6 +4317,22 @@ export function BrokerFlowDominanceService({
                         <span className="text-slate-300 font-bold font-sans">
                           {netAmt !== 0 ? formatNepaliCurrency(netAmt) : '—'}
                         </span>
+                      </div>
+
+                      {/* Jump to Broker Radar Button */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedRetentionBrokerId(String(brokerId));
+                            setRetentionViewType('byBroker');
+                            loadBrokerRetention(String(brokerId));
+                          }}
+                          className="flex-1 py-1.5 rounded-xl text-[11px] font-bold bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30 transition text-center cursor-pointer"
+                        >
+                          🏢 Inspect Broker #{brokerId} Holdings Radar
+                        </button>
                       </div>
                     </div>
                   );
