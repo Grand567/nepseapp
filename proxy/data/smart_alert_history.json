@@ -1,5 +1,49 @@
 [
   {
+    "id": "holding_GHL_1793411796660",
+    "symbol": "GHL",
+    "ltp": 270,
+    "triggeredAt": "2026-10-31T01:56:36.660Z",
+    "stopLoss": 258,
+    "target1": 310,
+    "target2": 335,
+    "kitta": 100,
+    "status": "STOPPED_OUT",
+    "isUserHolding": true,
+    "closedAt": "2026-10-31T01:56:36.668Z",
+    "exitPrice": 255
+  },
+  {
+    "id": "holding_SHIVM_1793411790498",
+    "symbol": "SHIVM",
+    "ltp": 512,
+    "triggeredAt": "2026-10-31T01:56:30.498Z",
+    "stopLoss": 516.9,
+    "target1": 588,
+    "target2": 640,
+    "kitta": 100,
+    "status": "TARGET2_HIT",
+    "isUserHolding": true,
+    "target1Hit": true,
+    "target1HitAt": "2026-10-31T01:56:30.527Z",
+    "runnerKitta": 50,
+    "target2Hit": true,
+    "closedAt": "2026-10-31T01:56:34.957Z",
+    "exitPrice": 645
+  },
+  {
+    "id": "holding_SHEL_1793388116026",
+    "symbol": "SHEL",
+    "ltp": 312.9,
+    "triggeredAt": "2026-10-30T19:21:56.026Z",
+    "stopLoss": 297.25,
+    "target1": 336.37,
+    "target2": 359.83,
+    "kitta": 79,
+    "status": "ACTIVE",
+    "isUserHolding": true
+  },
+  {
     "id": "holding_GHL_1793170208252",
     "symbol": "GHL",
     "ltp": 270,
@@ -1705,38 +1749,6 @@
     "runnerKitta": 50,
     "target2Hit": true,
     "closedAt": "2026-10-21T03:39:08.071Z",
-    "exitPrice": 645
-  },
-  {
-    "id": "holding_GHL_1792553857718",
-    "symbol": "GHL",
-    "ltp": 270,
-    "triggeredAt": "2026-10-21T03:37:37.718Z",
-    "stopLoss": 258,
-    "target1": 310,
-    "target2": 335,
-    "kitta": 100,
-    "status": "STOPPED_OUT",
-    "isUserHolding": true,
-    "closedAt": "2026-10-21T03:37:37.766Z",
-    "exitPrice": 255
-  },
-  {
-    "id": "holding_SHIVM_1792553853704",
-    "symbol": "SHIVM",
-    "ltp": 512,
-    "triggeredAt": "2026-10-21T03:37:33.704Z",
-    "stopLoss": 516.9,
-    "target1": 588,
-    "target2": 640,
-    "kitta": 100,
-    "status": "TARGET2_HIT",
-    "isUserHolding": true,
-    "target1Hit": true,
-    "target1HitAt": "2026-10-21T03:37:33.729Z",
-    "runnerKitta": 50,
-    "target2Hit": true,
-    "closedAt": "2026-10-21T03:37:36.647Z",
     "exitPrice": 645
   }
 ]

@@ -8,6 +8,7 @@ import {
   sendTelegramPreMarketScan,
   sendTelegramPreOpenGate,
   sendMorningStockSelectionDigest,
+  run5StepSwingSelectionAndDispatch,
   pollIncomingTelegramCommands 
 } from './telegramNotifier.mjs';
 import { sendDiscordPrimePickAlert } from './discordNotifier.mjs';
@@ -381,6 +382,10 @@ export async function runPostMarketCloseAnalysis(force = false) {
     await aggregateFloorsheetData();
     // Run the full Entry/Exit Analyzer scan across ALL 350+ stocks
     await runFullUniversePrimePick();
+    // Run the 5-Step 10–15 Day High-Alpha Swing Pick & auto-arm Exit Guard
+    await run5StepSwingSelectionAndDispatch({ onTrackHolding: trackCustomHolding }).catch(e =>
+      console.warn('[Post-Market Worker] 5-Step Swing dispatch notice:', e.message)
+    );
     lastPostMarketSessionAnalyzed = targetDate;
   } catch (err) {
     console.warn('[Post-Market Worker] Error in runPostMarketCloseAnalysis:', err?.message || err);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, ShieldCheck, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check } from 'lucide-react';
+import { Users, Crown, ArrowLeftRight, Search, RefreshCw, TrendingUp, TrendingDown, Shield, ShieldCheck, Eye, Target, LayoutGrid, List, X, ChevronRight, BarChart3, ExternalLink, Download, Share2, Copy, Check, Globe, Building2, Flame } from 'lucide-react';
 import { loadNepseData, fetchFloorSheet, fetchRealFloorsheet, getCachedRealBrokerAnalysis, fetchMarketWideBrokerSummaryMap, fetchAvailableTradingDates } from '../utils/liveData';
 import { isNepseTradingDay, formatNptDateIso } from '../utils/nepseCalendar';
 import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '../utils/servicesApi';
@@ -127,6 +127,12 @@ export function BrokerFlowDominanceService({
   initialSymbol?: string;
 }) {
   const [activeMode, setActiveMode] = useState<'flow' | 'dominance' | 'top10' | 'matching' | 'brokerWise' | 'stockRetention'>(mode || 'flow');
+  const [primaryHub, setPrimaryHub] = useState<'market' | 'broker' | 'stock'>(() => {
+    if (mode === 'top10') return 'broker';
+    if (mode === 'stockRetention') return 'stock';
+    return 'market';
+  });
+  const [brokerSubView, setBrokerSubView] = useState<'today_trades' | 'holding_till_now'>('today_trades');
   const [timeframe, setTimeframe] = useState('1D');
   const [sessionDateFilter, setSessionDateFilter] = useState(selectedDate || date || '');
   const [fromDate, setFromDate] = useState('');
@@ -159,7 +165,40 @@ export function BrokerFlowDominanceService({
   const [loadingBrokerRetention, setLoadingBrokerRetention] = useState<boolean>(false);
   const [copiedBrokerRetentionCard, setCopiedBrokerRetentionCard] = useState<boolean>(false);
 
+  // Sync unified broker selection
+  const handleSelectBroker = (bId: string) => {
+    const cleanId = String(bId || '58').trim();
+    setSelectedTop10BrokerId(cleanId);
+    setSelectedRetentionBrokerId(cleanId);
+    loadBrokerRetention(cleanId);
+  };
+
   // Sync incoming props from parent
+  useEffect(() => {
+    if (mode === 'top10') {
+      setPrimaryHub('broker');
+      setBrokerSubView('today_trades');
+      setActiveMode('top10');
+    } else if (mode === 'stockRetention') {
+      setPrimaryHub('stock');
+      setRetentionViewType('byStock');
+      setActiveMode('stockRetention');
+    } else if (mode === 'brokerWise') {
+      setPrimaryHub('market');
+      setActiveMode('brokerWise');
+      setBrokerWiseTab('whole_day_net');
+    } else if (mode === 'dominance') {
+      setPrimaryHub('market');
+      setActiveMode('dominance');
+    } else if (mode === 'matching') {
+      setPrimaryHub('market');
+      setActiveMode('matching');
+    } else if (mode === 'flow') {
+      setPrimaryHub('market');
+      setActiveMode('flow');
+    }
+  }, [mode]);
+
   useEffect(() => {
     const incoming = selectedDate || date;
     if (incoming && incoming !== sessionDateFilter) {
@@ -355,10 +394,12 @@ export function BrokerFlowDominanceService({
   };
 
   useEffect(() => {
-    if (activeMode === 'stockRetention' && retentionViewType === 'byBroker' && selectedRetentionBrokerId) {
-      loadBrokerRetention(selectedRetentionBrokerId);
+    if ((primaryHub === 'broker' && brokerSubView === 'holding_till_now') || (activeMode === 'stockRetention' && retentionViewType === 'byBroker')) {
+      if (selectedRetentionBrokerId) {
+        loadBrokerRetention(selectedRetentionBrokerId);
+      }
     }
-  }, [activeMode, retentionViewType, selectedRetentionBrokerId]);
+  }, [primaryHub, brokerSubView, activeMode, retentionViewType, selectedRetentionBrokerId]);
 
   const handleCopyBrokerRetentionCard = () => {
     if (!brokerRetentionData) return;
@@ -1372,76 +1413,301 @@ export function BrokerFlowDominanceService({
 
   return (
     <div className="w-full max-w-7xl mx-auto px-1 py-1.5 sm:px-4 sm:py-5 space-y-3 sm:space-y-4 min-w-0 overflow-x-hidden">
-      {/* Header with Mode Switcher */}
-      <div className="flex flex-col gap-2.5 sm:gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-900/80 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-800 w-full min-w-0">
-        <div className="min-w-0">
-          <h3 className="text-sm sm:text-base font-extrabold text-white tracking-wide truncate">
-            {activeMode === 'flow'
-              ? 'Institutional Broker Flow Matrix'
-              : activeMode === 'brokerWise'
-              ? 'Exchange Top Stock by Broker-Wise'
-              : activeMode === 'stockRetention'
-              ? 'Top 10 Broker Retention Till Now'
-              : activeMode === 'dominance'
-              ? 'Stock Dominance & Cornering Board'
-              : activeMode === 'top10'
-              ? 'Broker Top 10 Accumulation & Distribution Hub'
-              : 'Bilateral Matching & Block Deals'}
-          </h3>
-          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
-            {activeMode === 'flow'
-              ? 'Net buy/sell capital flow, accumulated scrips, and bias per broker.'
-              : activeMode === 'brokerWise'
-              ? 'Exchange-wide leaderboard ranking largest single-broker selling and buying positions.'
-              : activeMode === 'stockRetention'
-              ? 'All-time net retained kitta, volume-weighted average buy price, and broker holding share for any stock.'
-              : activeMode === 'dominance'
-              ? 'Which brokers control the largest percentage of volume per scrip.'
-              : activeMode === 'top10'
-              ? 'Inspect the Top 10 accumulated and Top 10 distributed scrips for any broker desk.'
-              : 'Traces coordinated block transfers between matched broker pairs.'}
-          </p>
+      {/* ── 3-PILLAR MASTER WORKSTATION HEADER ── */}
+      <div className="flex flex-col gap-3 bg-slate-900/90 p-3 sm:p-4 rounded-2xl border border-slate-800 shadow-xl w-full min-w-0">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-slate-800/80 pb-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-400 font-mono text-[10px] font-black uppercase">
+                Institutional Telemetry
+              </span>
+              <h2 className="text-sm sm:text-base font-extrabold text-white tracking-wide truncate">
+                Institutional Broker Flow &amp; Accumulation Workstation
+              </h2>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Comprehensive exchange-wide broker surveillance: monitor daily net absorption, broker cumulative portfolios, and stock cornering.
+            </p>
+          </div>
+
+          {/* Export and Tools */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                exportMarketBrokerSurveillance({
+                  mode: activeMode === 'top10' ? 'broker_scrips' : activeMode,
+                  timeframe,
+                  sessionDate,
+                  brokerFlowList: filteredBrokerFlowList,
+                  dominanceList: filteredDominanceList,
+                  matchingDeals: filteredMatchingDeals,
+                  selectedBroker: activeMode === 'top10' ? activeTop10Broker : selectedBrokerModal,
+                  format: 'csv',
+                })
+              }
+              title="Download current view as CSV"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25 text-xs font-bold transition cursor-pointer"
+            >
+              <Download size={12} />
+              <span>CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                exportMarketBrokerSurveillance({
+                  mode: activeMode,
+                  timeframe,
+                  sessionDate,
+                  brokerFlowList: filteredBrokerFlowList,
+                  dominanceList: filteredDominanceList,
+                  matchingDeals: filteredMatchingDeals,
+                  selectedBroker: activeTop10Broker || selectedBrokerModal,
+                  format: 'xls',
+                })
+              }
+              title="Download Full Multi-Sheet Market Workbook (.xls)"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-400 hover:bg-sky-500/25 text-xs font-bold transition cursor-pointer"
+            >
+              <Download size={12} />
+              <span>Excel (.xls)</span>
+            </button>
+          </div>
         </div>
 
-        {/* View Mode Switcher */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 sm:flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800 w-full sm:w-auto shrink-0">
+        {/* PRIMARY 3-PILLAR SELECTOR */}
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
           <button
-            onClick={() => setActiveMode('flow')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'flow' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            type="button"
+            onClick={() => {
+              setPrimaryHub('market');
+              if (activeMode === 'top10' || activeMode === 'stockRetention') {
+                setActiveMode('brokerWise');
+                setBrokerWiseTab('whole_day_net');
+              }
+            }}
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+              primaryHub === 'market'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/40 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+            }`}
           >
-            <Users size={12} className="shrink-0" /> <span className="truncate">Broker Flow</span>
+            <Globe size={14} className="shrink-0" />
+            <span className="truncate">1. Market Overview</span>
           </button>
+
           <button
-            onClick={() => setActiveMode('brokerWise')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'brokerWise' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            type="button"
+            onClick={() => {
+              setPrimaryHub('broker');
+              setActiveMode('top10');
+            }}
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+              primaryHub === 'broker'
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-900/40 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+            }`}
           >
-            <Target size={12} className="shrink-0" /> <span className="truncate">Broker-Wise</span>
+            <Building2 size={14} className="shrink-0" />
+            <span className="truncate">2. By Broker Desk</span>
           </button>
+
           <button
-            onClick={() => setActiveMode('stockRetention')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'stockRetention' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            type="button"
+            onClick={() => {
+              setPrimaryHub('stock');
+              setActiveMode('stockRetention');
+              setRetentionViewType('byStock');
+            }}
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+              primaryHub === 'stock'
+                ? 'bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-lg shadow-cyan-900/40 font-black'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+            }`}
           >
-            <ShieldCheck size={12} className="shrink-0" /> <span className="truncate">Stock Retention</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('dominance')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'dominance' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-          >
-            <Crown size={12} className="shrink-0" /> <span className="truncate">Dominance</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('top10')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'top10' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-          >
-            <BarChart3 size={12} className="shrink-0" /> <span className="truncate">Top 10 A/D</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('matching')}
-            className={`flex items-center justify-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition cursor-pointer ${activeMode === 'matching' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-          >
-            <ArrowLeftRight size={12} className="shrink-0" /> <span className="truncate">Matching</span>
+            <ShieldCheck size={14} className="shrink-0" />
+            <span className="truncate">3. By Stock Retention</span>
           </button>
         </div>
+
+        {/* Pillar 1 Contextual Sub-Nav Bar */}
+        {primaryHub === 'market' && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800/60">
+            <span className="text-[10px] font-sans font-bold text-slate-400 uppercase px-1">Market Views:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMode('brokerWise');
+                setBrokerWiseTab('whole_day_net');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                activeMode === 'brokerWise' && brokerWiseTab === 'whole_day_net'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30'
+                  : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <Flame size={13} className="text-amber-400" />
+              <span>Whole Day Net Bought (Top 10)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMode('brokerWise');
+                if (brokerWiseTab === 'whole_day_net') setBrokerWiseTab('net_buyers');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                activeMode === 'brokerWise' && brokerWiseTab !== 'whole_day_net'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30'
+                  : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <Users size={13} className="text-emerald-400" />
+              <span>Lead Accumulator per Stock (1 Broker/Scrip)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveMode('flow')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                activeMode === 'flow'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+                  : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <BarChart3 size={13} />
+              <span>All 60 Brokers Matrix</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveMode('dominance')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                activeMode === 'dominance'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30'
+                  : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <Crown size={13} />
+              <span>Stock Cornering (BCR3)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveMode('matching')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                activeMode === 'matching'
+                  ? 'bg-teal-600 text-white shadow-md shadow-teal-900/30'
+                  : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <ArrowLeftRight size={13} />
+              <span>Bilateral Matching Deals</span>
+            </button>
+          </div>
+        )}
+
+        {/* Pillar 2 Contextual Sub-Nav Bar */}
+        {primaryHub === 'broker' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-sans font-bold text-slate-400 uppercase px-1">Broker View:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setBrokerSubView('today_trades');
+                  setActiveMode('top10');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  brokerSubView === 'today_trades' && activeMode === 'top10'
+                    ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30 font-black'
+                    : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+                }`}
+              >
+                <BarChart3 size={13} />
+                <span>Today's Top 10 Buys &amp; Sells</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setBrokerSubView('holding_till_now');
+                  setActiveMode('stockRetention');
+                  setRetentionViewType('byBroker');
+                  if (!brokerRetentionData) loadBrokerRetention(selectedTop10BrokerId);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  (brokerSubView === 'holding_till_now' || (activeMode === 'stockRetention' && retentionViewType === 'byBroker'))
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30 font-black'
+                    : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-800'
+                }`}
+              >
+                <ShieldCheck size={13} />
+                <span>Top 10 Stocks Held Till Now (Cumulative Portfolio)</span>
+              </button>
+            </div>
+
+            {/* Quick Pill Selector directly in Header */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+              <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Whale Desks:</span>
+              {[
+                { id: '58', name: '#58 Naasa' },
+                { id: '45', name: '#45 Imperial' },
+                { id: '34', name: '#34 Vision' },
+                { id: '17', name: '#17 ABC' },
+                { id: '28', name: '#28 Krishna' },
+                { id: '49', name: '#49 Online' },
+              ].map(pill => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => handleSelectBroker(pill.id)}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition cursor-pointer ${
+                    selectedTop10BrokerId === pill.id
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {pill.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pillar 3 Contextual Sub-Nav Bar */}
+        {primaryHub === 'stock' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-sans font-bold text-cyan-400 uppercase px-1">Stock Cornering Analysis:</span>
+              <span className="text-xs text-slate-300 font-sans">
+                Currently Inspecting: <strong className="text-cyan-300 font-mono text-sm">{selectedStockRetention}</strong>
+              </span>
+            </div>
+
+            {/* Quick stock chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+              <span className="text-[10px] text-slate-400 font-sans uppercase font-bold shrink-0">Popular:</span>
+              {['BARUN', 'LBBL', 'GBIME', 'NICA', 'SHIVM', 'CHCL', 'CIT', 'HDL'].map(sym => (
+                <button
+                  key={sym}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStockRetention(sym);
+                    loadStockRetention(sym);
+                  }}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition cursor-pointer ${
+                    selectedStockRetention === sym
+                      ? 'bg-cyan-500 text-slate-950 font-black'
+                      : 'bg-slate-950 text-slate-300 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {sym}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── STEP 4: VERIFY SMART MONEY BROKER FLOW HUD ── */}
@@ -2950,7 +3216,10 @@ export function BrokerFlowDominanceService({
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedStockRetention(st.symbol);
+                                    setRetentionViewType('byStock');
+                                    setPrimaryHub('stock');
                                     setActiveMode('stockRetention');
+                                    loadStockRetention(st.symbol);
                                   }}
                                   className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition cursor-pointer"
                                   title="View all-time top 10 broker net retention till now"
@@ -3059,7 +3328,10 @@ export function BrokerFlowDominanceService({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedStockRetention(st.symbol);
+                                setRetentionViewType('byStock');
+                                setPrimaryHub('stock');
                                 setActiveMode('stockRetention');
+                                loadStockRetention(st.symbol);
                               }}
                               className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
                             >
@@ -3177,7 +3449,10 @@ export function BrokerFlowDominanceService({
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedStockRetention(item.symbol);
+                                    setRetentionViewType('byStock');
+                                    setPrimaryHub('stock');
                                     setActiveMode('stockRetention');
+                                    loadStockRetention(item.symbol);
                                   }}
                                   className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition cursor-pointer"
                                   title="View all-time top 10 broker net retention till now"
@@ -3270,7 +3545,10 @@ export function BrokerFlowDominanceService({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedStockRetention(item.symbol);
+                                setRetentionViewType('byStock');
+                                setPrimaryHub('stock');
                                 setActiveMode('stockRetention');
+                                loadStockRetention(item.symbol);
                               }}
                               className="px-1.5 py-0.5 rounded text-[10px] font-black font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
                             >

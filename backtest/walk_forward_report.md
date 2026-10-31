@@ -1,7 +1,7 @@
 # Drabyashree NEPSE: Walk-Forward Parameter Optimization Report
 
-**Generated At:** 2026-10-28T06:50:19.079Z  
-**Historical Horizon:** 34 NEPSE Trading Sessions  
+**Generated At:** 2026-10-31T01:56:49.633Z  
+**Historical Horizon:** 38 NEPSE Trading Sessions  
 **Validation Methodology:** Rolling 60% In-Sample Training / 40% Out-of-Sample Forward Testing  
 **Frictional Deductions:** 5-Tier SEBON Brokerage, 0.015% SEBON fee, Rs. 25 DP fee, 7.5% CGT, Slippage, and T+2 Demat Lock.
 
@@ -11,7 +11,7 @@
 
 > [!IMPORTANT]
 > **Recommended Calibration: Preset C: Technical Momentum Follower**  
-> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **2.65**, a Win Rate of **76.9%**, and Walk-Forward Efficiency of **0%**.
+> Demonstrates the highest forward risk-adjusted return with a Profit Factor of **0.92**, a Win Rate of **57.1%**, and Walk-Forward Efficiency of **0%**.
 
 ### Optimal Weight Allocation
 | Pillar | Optimized Weight | Description |
@@ -34,10 +34,10 @@
 
 | Preset Candidate | Weight Breakdown (B/T/F/M) | Buy Score | Trades (OOS) | Win Rate % | Profit Factor | Net PnL (NPR) | WFE % | Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 13 | 76.9% | **2.65** | Rs. 40,912 | 0% | ✅ Robust |
-| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 11 | 72.7% | **1.99** | Rs. 21,279 | 0% | ✅ Robust |
-| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 10 | 70% | **1.74** | Rs. 21,098 | 0% | ✅ Robust |
-| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 9 | 66.7% | **1.5** | Rs. 18,121 | 0% | ✅ Robust |
+| **Preset C: Technical Momentum Follower** | 25/45/15/15 | 68 | 14 | 57.1% | **0.92** | Rs. 22,679 | 0% | ⚠️ Sensitive |
+| **Preset B: Institutional Flow Dominant** | 45/20/15/20 | 72 | 12 | 50% | **0.69** | Rs. -3,959 | 0% | ⚠️ Sensitive |
+| **Preset D: High-Safety Value Conservative** | 30/20/30/20 | 75 | 12 | 50% | **0.66** | Rs. -2,219 | 0% | ⚠️ Sensitive |
+| **Preset A: Current Baseline Balanced** | 35/25/20/20 | 70 | 10 | 40% | **0.58** | Rs. -7,531 | 0% | ⚠️ Sensitive |
 
 ---
 

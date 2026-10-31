@@ -3,6 +3,2473 @@
   "initialCapital": 1000000,
   "dailyPicks": [
     {
+      "id": "PICK-PPL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "PPL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        300.2,
+        303.8
+      ],
+      "stopLoss": 277.4,
+      "target1": 340.4,
+      "target2": 365.6,
+      "shares": 10,
+      "capitalRequiredNpr": 3026,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CKHL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "CKHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        550.6,
+        557.2
+      ],
+      "stopLoss": 509.9,
+      "target1": 590.4,
+      "target2": 590.4,
+      "shares": 10,
+      "capitalRequiredNpr": 5550,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MKJC-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "MKJC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        288.1,
+        291.6
+      ],
+      "stopLoss": 269.3,
+      "target1": 322,
+      "target2": 343.1,
+      "shares": 10,
+      "capitalRequiredNpr": 2904,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SKBBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SKBBL",
+      "sector": "Microfinance",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        752.9,
+        762
+      ],
+      "stopLoss": 727.8,
+      "target1": 805.8,
+      "target2": 837,
+      "shares": 10,
+      "capitalRequiredNpr": 7590,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CHCL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "CHCL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        334,
+        338
+      ],
+      "stopLoss": 313.1,
+      "target1": 372.1,
+      "target2": 379.5,
+      "shares": 10,
+      "capitalRequiredNpr": 3367,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CGH-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "CGH",
+      "sector": "Hotels And Tourism",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 75,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        733.1,
+        742
+      ],
+      "stopLoss": 714.9,
+      "target1": 775.1,
+      "target2": 799.3,
+      "shares": 10,
+      "capitalRequiredNpr": 7390,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-LEC-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "LEC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 70,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        237.1,
+        240
+      ],
+      "stopLoss": 221.7,
+      "target1": 264.9,
+      "target2": 281.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2390,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MPFL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "MPFL",
+      "sector": "Finance",
+      "action": "BUY",
+      "compositeScore": 71,
+      "confidence": 75,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        575.4,
+        582.3
+      ],
+      "stopLoss": 550.4,
+      "target1": 624.4,
+      "target2": 654,
+      "shares": 10,
+      "capitalRequiredNpr": 5800,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MEPDL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "MEPDL",
+      "sector": "Others",
+      "action": "BUY",
+      "compositeScore": 71,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        580.4,
+        587.4
+      ],
+      "stopLoss": 549.4,
+      "target1": 638.6,
+      "target2": 674.4,
+      "shares": 10,
+      "capitalRequiredNpr": 5851,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-GBBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "GBBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 71,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        412.7,
+        417.7
+      ],
+      "stopLoss": 398.4,
+      "target1": 442.4,
+      "target2": 460,
+      "shares": 10,
+      "capitalRequiredNpr": 4160,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NRN-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "NRN",
+      "sector": "Investment",
+      "action": "BUY",
+      "compositeScore": 71,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        1364,
+        1380.5
+      ],
+      "stopLoss": 1276.8,
+      "target1": 1522.3,
+      "target2": 1566.6,
+      "shares": 10,
+      "capitalRequiredNpr": 13750,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-PCIL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "PCIL",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 71,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        564.2,
+        571
+      ],
+      "stopLoss": 538.3,
+      "target1": 614.3,
+      "target2": 644.7,
+      "shares": 10,
+      "capitalRequiredNpr": 5687,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MNBBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "MNBBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 72,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        337.3,
+        341.4
+      ],
+      "stopLoss": 323.1,
+      "target1": 365.4,
+      "target2": 382.3,
+      "shares": 10,
+      "capitalRequiredNpr": 3400,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SHPC-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SHPC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 72,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        522.8,
+        529.1
+      ],
+      "stopLoss": 507.2,
+      "target1": 556.7,
+      "target2": 576.5,
+      "shares": 10,
+      "capitalRequiredNpr": 5270,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SYPNL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SYPNL",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 72,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        1206.3,
+        1220.9
+      ],
+      "stopLoss": 1130.6,
+      "target1": 1344.1,
+      "target2": 1429.5,
+      "shares": 10,
+      "capitalRequiredNpr": 12160,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-EBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "EBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 73,
+      "confidence": 75,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        713.2,
+        721.9
+      ],
+      "stopLoss": 687.4,
+      "target1": 766.4,
+      "target2": 798,
+      "shares": 10,
+      "capitalRequiredNpr": 7190,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SHINE-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SHINE",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 73,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        411.2,
+        416.2
+      ],
+      "stopLoss": 396.5,
+      "target1": 441.5,
+      "target2": 459.5,
+      "shares": 10,
+      "capitalRequiredNpr": 4145,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-BHCL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "BHCL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 73,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        520.8,
+        527.1
+      ],
+      "stopLoss": 489.4,
+      "target1": 578.4,
+      "target2": 599.1,
+      "shares": 10,
+      "capitalRequiredNpr": 5250,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SMHL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SMHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 73,
+      "confidence": 60,
+      "triggers": [
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        480.1,
+        485.9
+      ],
+      "stopLoss": 461.3,
+      "target1": 518,
+      "target2": 540.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4840,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-LBBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "LBBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 74,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        475.7,
+        481.4
+      ],
+      "stopLoss": 459.4,
+      "target1": 509.6,
+      "target2": 529.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4795,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CLI-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "CLI",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 74,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        442.2,
+        447.6
+      ],
+      "stopLoss": 419.5,
+      "target1": 485.3,
+      "target2": 508.3,
+      "shares": 10,
+      "capitalRequiredNpr": 4458,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SPDL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SPDL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 74,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        342.7,
+        346.9
+      ],
+      "stopLoss": 319.8,
+      "target1": 384.1,
+      "target2": 394.4,
+      "shares": 10,
+      "capitalRequiredNpr": 3455,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HIDCLP-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "HIDCLP",
+      "sector": "Promoter Share",
+      "action": "BUY",
+      "compositeScore": 74,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        190.4,
+        192.7
+      ],
+      "stopLoss": 183.5,
+      "target1": 204.5,
+      "target2": 212.9,
+      "shares": 10,
+      "capitalRequiredNpr": 1919,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-UPCL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "UPCL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        327.4,
+        331.3
+      ],
+      "stopLoss": 308.4,
+      "target1": 362.4,
+      "target2": 376,
+      "shares": 10,
+      "capitalRequiredNpr": 3300,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SARBTM-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SARBTM",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        801.5,
+        811.2
+      ],
+      "stopLoss": 769.2,
+      "target1": 866.2,
+      "target2": 905,
+      "shares": 10,
+      "capitalRequiredNpr": 8080,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NGPL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "NGPL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        394.7,
+        399.5
+      ],
+      "stopLoss": 377.8,
+      "target1": 428,
+      "target2": 448.1,
+      "shares": 10,
+      "capitalRequiredNpr": 3979,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SADBL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SADBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        412.7,
+        417.7
+      ],
+      "stopLoss": 397.4,
+      "target1": 443.9,
+      "target2": 462.5,
+      "shares": 10,
+      "capitalRequiredNpr": 4160,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SGHL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "SGHL",
+      "sector": "Others",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        455.3,
+        460.8
+      ],
+      "stopLoss": 435.6,
+      "target1": 494.1,
+      "target2": 517.5,
+      "shares": 10,
+      "capitalRequiredNpr": 4590,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CZBIL-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "CZBIL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 75,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        212.8,
+        215.4
+      ],
+      "stopLoss": 200.9,
+      "target1": 234.9,
+      "target2": 248.5,
+      "shares": 10,
+      "capitalRequiredNpr": 2145,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NRM-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "NRM",
+      "sector": "Others",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        270.8,
+        274.1
+      ],
+      "stopLoss": 260.1,
+      "target1": 292.4,
+      "target2": 305.3,
+      "shares": 10,
+      "capitalRequiredNpr": 2730,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MDB-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "MDB",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        567.4,
+        574.3
+      ],
+      "stopLoss": 551.6,
+      "target1": 602.6,
+      "target2": 623,
+      "shares": 10,
+      "capitalRequiredNpr": 5720,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-DOLTI-2026-10-26-1969",
+      "date": "2026-10-26",
+      "symbol": "DOLTI",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        301.6,
+        305.2
+      ],
+      "stopLoss": 289.7,
+      "target1": 325.4,
+      "target2": 339.8,
+      "shares": 10,
+      "capitalRequiredNpr": 3040,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-ICFC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "ICFC",
+      "sector": "Finance",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        605.1,
+        612.4
+      ],
+      "stopLoss": 590.4,
+      "target1": 639.4,
+      "target2": 659,
+      "shares": 10,
+      "capitalRequiredNpr": 6100,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SPIL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SPIL",
+      "sector": "Non Life Insurance",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        605.1,
+        612.4
+      ],
+      "stopLoss": 569.1,
+      "target1": 671.4,
+      "target2": 695.8,
+      "shares": 10,
+      "capitalRequiredNpr": 6100,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-KSBBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "KSBBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        470.2,
+        475.9
+      ],
+      "stopLoss": 458.3,
+      "target1": 497.6,
+      "target2": 513.3,
+      "shares": 10,
+      "capitalRequiredNpr": 4740,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HIDCL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HIDCL",
+      "sector": "Investment",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        250,
+        253
+      ],
+      "stopLoss": 236.4,
+      "target1": 275.4,
+      "target2": 288.1,
+      "shares": 10,
+      "capitalRequiredNpr": 2520,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SMJC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SMJC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        420.5,
+        425.6
+      ],
+      "stopLoss": 399,
+      "target1": 461.3,
+      "target2": 486.1,
+      "shares": 10,
+      "capitalRequiredNpr": 4239,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MFIL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MFIL",
+      "sector": "Finance",
+      "action": "BUY",
+      "compositeScore": 76,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        753.9,
+        763
+      ],
+      "stopLoss": 710.6,
+      "target1": 834.1,
+      "target2": 883.5,
+      "shares": 10,
+      "capitalRequiredNpr": 7600,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-VLUCL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "VLUCL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        366,
+        370.5
+      ],
+      "stopLoss": 348.5,
+      "target1": 399.8,
+      "target2": 420.3,
+      "shares": 10,
+      "capitalRequiredNpr": 3690,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-RNLI-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "RNLI",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        449.4,
+        454.8
+      ],
+      "stopLoss": 419.9,
+      "target1": 502.6,
+      "target2": 519,
+      "shares": 10,
+      "capitalRequiredNpr": 4530,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-RFPL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "RFPL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        330.3,
+        334.3
+      ],
+      "stopLoss": 318.1,
+      "target1": 355.4,
+      "target2": 370.3,
+      "shares": 10,
+      "capitalRequiredNpr": 3330,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-DORDI-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "DORDI",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        265.5,
+        268.7
+      ],
+      "stopLoss": 254.6,
+      "target1": 287.1,
+      "target2": 300.1,
+      "shares": 10,
+      "capitalRequiredNpr": 2676,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-UPPER-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "UPPER",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        191.5,
+        193.8
+      ],
+      "stopLoss": 185.8,
+      "target1": 203.8,
+      "target2": 211,
+      "shares": 10,
+      "capitalRequiredNpr": 1930,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HURJA-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HURJA",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        256.9,
+        260
+      ],
+      "stopLoss": 247.4,
+      "target1": 276.4,
+      "target2": 288,
+      "shares": 10,
+      "capitalRequiredNpr": 2590,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MSHL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MSHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        535.7,
+        542.2
+      ],
+      "stopLoss": 507.5,
+      "target1": 588.8,
+      "target2": 613.8,
+      "shares": 10,
+      "capitalRequiredNpr": 5400,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SSHL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SSHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        206.3,
+        208.8
+      ],
+      "stopLoss": 196.2,
+      "target1": 225.7,
+      "target2": 237.5,
+      "shares": 10,
+      "capitalRequiredNpr": 2080,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NABIL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NABIL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        542.6,
+        549.2
+      ],
+      "stopLoss": 522.4,
+      "target1": 583.9,
+      "target2": 608.5,
+      "shares": 10,
+      "capitalRequiredNpr": 5470,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HPPL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HPPL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        403.7,
+        408.6
+      ],
+      "stopLoss": 390,
+      "target1": 432.5,
+      "target2": 449.5,
+      "shares": 10,
+      "capitalRequiredNpr": 4070,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NIMBPO-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NIMBPO",
+      "sector": "Promoter Share",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        144.8,
+        146.6
+      ],
+      "stopLoss": 136.5,
+      "target1": 160.3,
+      "target2": 169.8,
+      "shares": 10,
+      "capitalRequiredNpr": 1460,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        301.7,
+        305.3
+      ],
+      "stopLoss": 294.2,
+      "target1": 319,
+      "target2": 328.9,
+      "shares": 10,
+      "capitalRequiredNpr": 3041,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-PHCL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "PHCL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 77,
+      "confidence": 60,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        341.9,
+        346.1
+      ],
+      "stopLoss": 329.1,
+      "target1": 368.1,
+      "target2": 383.7,
+      "shares": 10,
+      "capitalRequiredNpr": 3447,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SCB-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SCB",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 78,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        673.6,
+        681.7
+      ],
+      "stopLoss": 658.6,
+      "target1": 709.6,
+      "target2": 730,
+      "shares": 10,
+      "capitalRequiredNpr": 6790,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NTC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NTC",
+      "sector": "Others",
+      "action": "BUY",
+      "compositeScore": 78,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        912.6,
+        923.7
+      ],
+      "stopLoss": 892.4,
+      "target1": 961.4,
+      "target2": 989,
+      "shares": 10,
+      "capitalRequiredNpr": 9200,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-JBBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "JBBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 78,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        348.1,
+        352.3
+      ],
+      "stopLoss": 334.7,
+      "target1": 375.2,
+      "target2": 391.4,
+      "shares": 10,
+      "capitalRequiredNpr": 3509,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 78,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        431.5,
+        436.7
+      ],
+      "stopLoss": 412.5,
+      "target1": 468.8,
+      "target2": 481.3,
+      "shares": 10,
+      "capitalRequiredNpr": 4350,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-ILI-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "ILI",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        428.5,
+        433.7
+      ],
+      "stopLoss": 406.5,
+      "target1": 470.3,
+      "target2": 495.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4320,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SMH-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SMH",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        544.6,
+        551.2
+      ],
+      "stopLoss": 520.6,
+      "target1": 591.6,
+      "target2": 620,
+      "shares": 10,
+      "capitalRequiredNpr": 5490,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SNLI-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SNLI",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        416.3,
+        421.4
+      ],
+      "stopLoss": 387.7,
+      "target1": 467.7,
+      "target2": 478.4,
+      "shares": 10,
+      "capitalRequiredNpr": 4197,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-KBSH-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "KBSH",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        893.8,
+        904.6
+      ],
+      "stopLoss": 838.4,
+      "target1": 994.9,
+      "target2": 1033.8,
+      "shares": 10,
+      "capitalRequiredNpr": 9010,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-BHDC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "BHDC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        437.5,
+        442.8
+      ],
+      "stopLoss": 421.5,
+      "target1": 470.3,
+      "target2": 484.7,
+      "shares": 10,
+      "capitalRequiredNpr": 4410,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        203.4,
+        205.8
+      ],
+      "stopLoss": 196.8,
+      "target1": 217.3,
+      "target2": 225.5,
+      "shares": 10,
+      "capitalRequiredNpr": 2050,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NIFRA-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NIFRA",
+      "sector": "Investment",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        243.2,
+        246.2
+      ],
+      "stopLoss": 229.1,
+      "target1": 269.3,
+      "target2": 280.9,
+      "shares": 10,
+      "capitalRequiredNpr": 2452,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-AKPL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "AKPL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        249,
+        252
+      ],
+      "stopLoss": 239.5,
+      "target1": 268.3,
+      "target2": 279.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2510,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-GLH-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "GLH",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        262.9,
+        266.1
+      ],
+      "stopLoss": 250.3,
+      "target1": 287.1,
+      "target2": 301.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2650,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-GBIME-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "GBIME",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        252,
+        255
+      ],
+      "stopLoss": 238.7,
+      "target1": 276.9,
+      "target2": 285.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2540,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-KBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "KBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        236.5,
+        239.4
+      ],
+      "stopLoss": 225.2,
+      "target1": 258.2,
+      "target2": 271.4,
+      "shares": 10,
+      "capitalRequiredNpr": 2384,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-API-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "API",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 79,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        342.2,
+        346.4
+      ],
+      "stopLoss": 328.1,
+      "target1": 370.4,
+      "target2": 386.4,
+      "shares": 10,
+      "capitalRequiredNpr": 3450,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NMLBBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NMLBBL",
+      "sector": "Microfinance",
+      "action": "BUY",
+      "compositeScore": 80,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        494.9,
+        500.9
+      ],
+      "stopLoss": 470.3,
+      "target1": 541.8,
+      "target2": 565.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4989,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MHNL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MHNL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        253,
+        256
+      ],
+      "stopLoss": 242.9,
+      "target1": 273.1,
+      "target2": 285.3,
+      "shares": 10,
+      "capitalRequiredNpr": 2550,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SRLI-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SRLI",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        374,
+        378.5
+      ],
+      "stopLoss": 349.1,
+      "target1": 418.9,
+      "target2": 434.7,
+      "shares": 10,
+      "capitalRequiredNpr": 3770,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-LICN-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "LICN",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        784.3,
+        793.8
+      ],
+      "stopLoss": 759.4,
+      "target1": 837.4,
+      "target2": 868.6,
+      "shares": 10,
+      "capitalRequiredNpr": 7906,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-BARUN-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "BARUN",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        329.3,
+        333.3
+      ],
+      "stopLoss": 314.2,
+      "target1": 358.7,
+      "target2": 375.1,
+      "shares": 10,
+      "capitalRequiredNpr": 3320,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HDHPC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HDHPC",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        217,
+        219.6
+      ],
+      "stopLoss": 204.6,
+      "target1": 239.8,
+      "target2": 251.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2187,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MAKAR-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MAKAR",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        408.7,
+        413.6
+      ],
+      "stopLoss": 399.3,
+      "target1": 431.1,
+      "target2": 443.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4120,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-HDL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "HDL",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        1299.5,
+        1315.2
+      ],
+      "stopLoss": 1239.6,
+      "target1": 1415.6,
+      "target2": 1480,
+      "shares": 10,
+      "capitalRequiredNpr": 13100,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SHIVM-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SHIVM",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 81,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        684.5,
+        692.8
+      ],
+      "stopLoss": 660,
+      "target1": 735,
+      "target2": 765,
+      "shares": 10,
+      "capitalRequiredNpr": 6900,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MEN-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MEN",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 82,
+      "confidence": 75,
+      "triggers": [
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        674.6,
+        682.7
+      ],
+      "stopLoss": 653,
+      "target1": 720.5,
+      "target2": 747.5,
+      "shares": 10,
+      "capitalRequiredNpr": 6800,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MLBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MLBL",
+      "sector": "Development Banks",
+      "action": "BUY",
+      "compositeScore": 83,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        367,
+        371.5
+      ],
+      "stopLoss": 355.9,
+      "target1": 391.1,
+      "target2": 405.3,
+      "shares": 10,
+      "capitalRequiredNpr": 3700,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-PRVU-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "PRVU",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 83,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        190.5,
+        192.8
+      ],
+      "stopLoss": 181.1,
+      "target1": 208.3,
+      "target2": 216.2,
+      "shares": 10,
+      "capitalRequiredNpr": 1920,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-GCIL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "GCIL",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 83,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        370.2,
+        374.7
+      ],
+      "stopLoss": 344.7,
+      "target1": 415.9,
+      "target2": 442.7,
+      "shares": 10,
+      "capitalRequiredNpr": 3732,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-CBBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "CBBL",
+      "sector": "Microfinance",
+      "action": "BUY",
+      "compositeScore": 83,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        971.7,
+        983.4
+      ],
+      "stopLoss": 950.1,
+      "target1": 1023.6,
+      "target2": 1053,
+      "shares": 10,
+      "capitalRequiredNpr": 9795,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SJLIC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SJLIC",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 84,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        411.8,
+        416.8
+      ],
+      "stopLoss": 398.3,
+      "target1": 440.3,
+      "target2": 457.1,
+      "shares": 10,
+      "capitalRequiredNpr": 4151,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SHL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SHL",
+      "sector": "Hotels And Tourism",
+      "action": "BUY",
+      "compositeScore": 84,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        523.8,
+        530.1
+      ],
+      "stopLoss": 508.9,
+      "target1": 556.6,
+      "target2": 575.8,
+      "shares": 10,
+      "capitalRequiredNpr": 5280,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NLIC-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NLIC",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 84,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        737.1,
+        746
+      ],
+      "stopLoss": 695.2,
+      "target1": 814.7,
+      "target2": 842.1,
+      "shares": 10,
+      "capitalRequiredNpr": 7430,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-LSL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "LSL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 84,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        257.9,
+        261
+      ],
+      "stopLoss": 246.2,
+      "target1": 280.7,
+      "target2": 294.5,
+      "shares": 10,
+      "capitalRequiredNpr": 2600,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SANIMA-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SANIMA",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 84,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        389.8,
+        394.5
+      ],
+      "stopLoss": 375.4,
+      "target1": 419.1,
+      "target2": 436.6,
+      "shares": 10,
+      "capitalRequiredNpr": 3929,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-UMHL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "UMHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 85,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        554.5,
+        561.2
+      ],
+      "stopLoss": 534.4,
+      "target1": 595.9,
+      "target2": 620.5,
+      "shares": 10,
+      "capitalRequiredNpr": 5590,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SWBBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SWBBL",
+      "sector": "Microfinance",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        707.3,
+        715.9
+      ],
+      "stopLoss": 690,
+      "target1": 747.5,
+      "target2": 770.5,
+      "shares": 10,
+      "capitalRequiredNpr": 7130,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-BGWT-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "BGWT",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        514.8,
+        521.1
+      ],
+      "stopLoss": 481,
+      "target1": 569.3,
+      "target2": 569.3,
+      "shares": 10,
+      "capitalRequiredNpr": 5190,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-ALICL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "ALICL",
+      "sector": "Life Insurance",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        426.6,
+        431.7
+      ],
+      "stopLoss": 408.9,
+      "target1": 461.6,
+      "target2": 482.8,
+      "shares": 10,
+      "capitalRequiredNpr": 4300,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NICA-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NICA",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        322.4,
+        326.3
+      ],
+      "stopLoss": 308.7,
+      "target1": 349.4,
+      "target2": 365.7,
+      "shares": 10,
+      "capitalRequiredNpr": 3250,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SHEL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SHEL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        302.6,
+        306.2
+      ],
+      "stopLoss": 292.7,
+      "target1": 323.4,
+      "target2": 335.8,
+      "shares": 10,
+      "capitalRequiredNpr": 3050,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-BHL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "BHL",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        223.9,
+        226.6
+      ],
+      "stopLoss": 213.6,
+      "target1": 243.8,
+      "target2": 249.5,
+      "shares": 10,
+      "capitalRequiredNpr": 2257,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-PCBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "PCBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        264.9,
+        268.1
+      ],
+      "stopLoss": 251.7,
+      "target1": 289.9,
+      "target2": 305.3,
+      "shares": 10,
+      "capitalRequiredNpr": 2670,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SAHAS-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SAHAS",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        694.4,
+        702.8
+      ],
+      "stopLoss": 658.6,
+      "target1": 762.1,
+      "target2": 799.2,
+      "shares": 10,
+      "capitalRequiredNpr": 7000,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-TAMOR-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "TAMOR",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 86,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        563.5,
+        570.3
+      ],
+      "stopLoss": 541.9,
+      "target1": 607.1,
+      "target2": 632.3,
+      "shares": 10,
+      "capitalRequiredNpr": 5680,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NLG-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NLG",
+      "sector": "Non Life Insurance",
+      "action": "BUY",
+      "compositeScore": 87,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        498.6,
+        504.6
+      ],
+      "stopLoss": 471.5,
+      "target1": 549.3,
+      "target2": 579.6,
+      "shares": 10,
+      "capitalRequiredNpr": 5026,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NUBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NUBL",
+      "sector": "Microfinance",
+      "action": "BUY",
+      "compositeScore": 88,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        612,
+        619.4
+      ],
+      "stopLoss": 598.1,
+      "target1": 645.1,
+      "target2": 663.9,
+      "shares": 10,
+      "capitalRequiredNpr": 6169,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-MANDU-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "MANDU",
+      "sector": "Hydro Power",
+      "action": "BUY",
+      "compositeScore": 88,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        773.8,
+        783.1
+      ],
+      "stopLoss": 729.4,
+      "target1": 855.9,
+      "target2": 882,
+      "shares": 10,
+      "capitalRequiredNpr": 7800,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-SONA-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "SONA",
+      "sector": "Manufacturing And Processing",
+      "action": "BUY",
+      "compositeScore": 88,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        430.5,
+        435.7
+      ],
+      "stopLoss": 406.6,
+      "target1": 475.1,
+      "target2": 497.9,
+      "shares": 10,
+      "capitalRequiredNpr": 4340,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-ADBL-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "ADBL",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 89,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        332.3,
+        336.3
+      ],
+      "stopLoss": 319.4,
+      "target1": 358.4,
+      "target2": 368.1,
+      "shares": 10,
+      "capitalRequiredNpr": 3350,
+      "rejectionReasons": []
+    },
+    {
+      "id": "PICK-NMB-2026-10-26-1968",
+      "date": "2026-10-26",
+      "symbol": "NMB",
+      "sector": "Commercial Banks",
+      "action": "BUY",
+      "compositeScore": 89,
+      "confidence": 75,
+      "triggers": [
+        "BROKER_ACCUMULATION",
+        "TECHNICAL_BREAKOUT",
+        "VALUE_FUNDAMENTAL",
+        "LIQUIDITY_SURGE"
+      ],
+      "entryZone": [
+        269.8,
+        273.1
+      ],
+      "stopLoss": 255.7,
+      "target1": 296.4,
+      "target2": 305.8,
+      "shares": 10,
+      "capitalRequiredNpr": 2720,
+      "rejectionReasons": []
+    },
+    {
       "id": "PICK-PPL-2026-10-26-0804",
       "date": "2026-10-26",
       "symbol": "PPL",
@@ -106923,7 +109390,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-NIMB-2026-10-26",
@@ -106943,7 +109410,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-HHL-2026-10-26",
@@ -106963,7 +109430,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-SBI-2026-10-26",
@@ -106983,7 +109450,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-GHL-2026-10-26",
@@ -107003,7 +109470,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-GVL-2026-10-26",
@@ -107023,7 +109490,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-RLFL-2026-10-26",
@@ -107043,7 +109510,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 44
+      "holdSessions": 45
     },
     {
       "id": "POS-MBJC-2026-10-26",
@@ -107063,7 +109530,7 @@
         "VALUE_FUNDAMENTAL",
         "LIQUIDITY_SURGE"
       ],
-      "holdSessions": 43
+      "holdSessions": 44
     }
   ],
   "closedJournal": [],

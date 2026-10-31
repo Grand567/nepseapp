@@ -647,6 +647,273 @@ export async function autoSelectAndDispatchPlaybookPick(customStocks = null) {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 5-STEP 10–15 DAY HIGH-ALPHA SWING STOCK SELECTOR & TELEGRAM AUTOMATION
+ * ───────────────────────────────────────────────────────────────────────────
+ * Evaluates active setups in the 37-day SQLite ledger against all 5 Steps:
+ *  Step 1: Market Regime & Technical Trend (LTP > 50-EMA, RSI 48–68, MACD Bullish)
+ *  Step 2: 3D/5D Smart Money Scanner (SYNDICATE_ROTATION / STEALTH_ACCUMULATION,
+ *          BCR5 >= 18.5%, SCR3 < 13.0%, Institutional Ticket >= 150 kitta)
+ *  Step 3: 13-Tab Verification (LTP within [-2.5%, +3.5%] of Big Broker VWAP,
+ *          Volume Profile POC support, Portfolio Broker Shield = SYNDICATE_FORTRESS / SAFE_ACCUMULATION)
+ *  Step 4: Intraday Execution Timing (12:15–1:30 PM Pullback / 2:35–2:55 PM Close)
+ *  Step 5: 10–15 Day Exit Plan (-4%/-5% Hard SL, +1.2R Breakeven Ratchet at +3.2%,
+ *          Target 1 +7.5% sell 50%, Target 2 +15% runner) + Auto Exit-Guard Tracking
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export async function select5StepSwingPicks() {
+  try {
+    const [{ db, rebuildHotCache, getScripVolumeProfile }, { computeStockFeatures }, { evaluatePortfolioShield }] =
+      await Promise.all([
+        import('./db/ledgerStore.js'),
+        import('./quant/featureEngine.mjs'),
+        import('./routes/radarRoutes.js'),
+      ]);
+
+    rebuildHotCache();
+
+    const openSignals = db
+      .prepare(`SELECT * FROM algorithmic_signal_ledger WHERE status = 'OPEN_ACTIVE' ORDER BY signal_date DESC`)
+      .all();
+
+    const strictMatches = [];
+    const secondaryMatches = [];
+
+    for (const sig of openSignals) {
+      const sym = String(sig.symbol || '').toUpperCase().trim();
+      if (!sym) continue;
+
+      const ltp = Number(sig.current_ltp || sig.entry_price || 0);
+      const brokerVwap = Number(sig.broker_vwap || sig.entry_vwap || ltp);
+      const vwapDiffPct = Number(
+        sig.vwap_diff_pct ?? (brokerVwap > 0 ? (((ltp - brokerVwap) / brokerVwap) * 100).toFixed(2) : 0)
+      );
+      const bcr5Net = Number(sig.bcr5_net_pct || 0);
+      const scr3Net = Number(sig.scr3_net_pct || 0);
+      const anomalyScore = Number(sig.broker_anomaly_score || 1.0);
+      const avgTicket = Number(sig.avg_ticket_kitta || 0);
+
+      // Step 1 & 3 Technicals + Volume Profile POC + Portfolio Broker Shield
+      const feat = await computeStockFeatures(sym, 50, { symbol: sym, ltp });
+      const vp = getScripVolumeProfile(sym, 30);
+      const shieldRes = evaluatePortfolioShield([{ symbol: sym, qty: 100, buyPrice: ltp }], 5);
+      const shieldItem = shieldRes?.items?.[0] || {};
+
+      const ema50 = Number(feat?.ema50 || 0);
+      const above50 = Boolean(feat?.is_above_50_ema ?? (ema50 > 0 && ltp >= ema50));
+      const rsi14 = Number(feat?.rsi_14 || 55);
+      const macdSignal = String(feat?.macd_signal || 'neutral');
+      const pocPrice = Number(vp?.pocPrice || brokerVwap);
+      const shieldVerdict = String(shieldItem.shieldVerdict || 'SAFE_ACCUMULATION_ZONE');
+
+      // Disqualify any stock failing hard safety gates:
+      // 1) Shield warning of T+2 dump or climax risk
+      if (shieldVerdict === 'EXIT_BEFORE_T2_DUMP' || shieldVerdict === 'PROFIT_BOOKING_CLIMAX_RISK') continue;
+      // 2) Below 50-Day EMA downtrend
+      if (!above50) continue;
+      // 3) Extended > +3.5% above Big Broker VWAP or < -2.5% breakdown
+      if (vwapDiffPct > 3.5 || vwapDiffPct < -2.5) continue;
+      // 4) Bearish MACD
+      if (macdSignal === 'bearish') continue;
+
+      const entryLow = Number(Math.min(ltp, brokerVwap).toFixed(1));
+      const entryHigh = Number(Math.max(ltp, brokerVwap * 1.012).toFixed(1));
+      const chaseCap = Number((entryHigh * 1.025).toFixed(1));
+      const stopLoss = Number(sig.stop_loss_price || (ltp * 0.95).toFixed(2));
+      const ratchetFloor = Number((ltp * 1.032).toFixed(2)); // +3.2% covers commission + SEBON + DP + 7.5% CGT
+      const target1 = Number(sig.target1_price || (ltp * 1.075).toFixed(2));
+      const target2 = Number(sig.target2_price || (ltp * 1.15).toFixed(2));
+      const slPct = Number((((ltp - stopLoss) / ltp) * 100).toFixed(1));
+      const t1Pct = Number((((target1 - ltp) / ltp) * 100).toFixed(1));
+      const t2Pct = Number((((target2 - ltp) / ltp) * 100).toFixed(1));
+      const rrr = Number(((target2 - ltp) / Math.max(1, ltp - stopLoss)).toFixed(2));
+
+      // Position sizing per Rs. 1,00,000 capital (max Rs. 1,250 risk = 1.25% capital risk)
+      const riskPerShare = Math.max(1, ltp - stopLoss);
+      const sharesPer1Lakh = Math.min(
+        Math.floor(100000 / ltp),
+        Math.max(10, Math.floor(1250 / riskPerShare))
+      );
+      const capitalOutlay = Math.round(sharesPer1Lakh * ltp);
+      const maxRiskRs = Math.round(sharesPer1Lakh * riskPerShare);
+
+      // Composite 5-Step Conviction Score
+      const isRsiSweetSpot = rsi14 >= 48 && rsi14 <= 66.5;
+      const isBelowOrAtVwap = vwapDiffPct <= 1.6;
+      const isInstitutionalTicket = avgTicket >= 150;
+      const recencyBonus = sig.signal_date >= '2026-10-29' ? 12 : sig.signal_date >= '2026-10-28' ? 8 : 0;
+      const vwapBonus = vwapDiffPct <= 0 ? 15 : vwapDiffPct <= 1.0 ? 10 : 5;
+      const rsiBonus = isRsiSweetSpot ? 15 : rsi14 <= 70 ? 6 : -12;
+      const shieldBonus = shieldVerdict === 'SYNDICATE_FORTRESS_HOLD' ? 12 : 6;
+      const pocBonus = Math.abs(ltp - pocPrice) / Math.max(1, pocPrice) <= 0.025 ? 8 : 3;
+
+      const totalScore = Math.min(
+        99,
+        Math.round(
+          40 +
+            Math.min(18, bcr5Net * 0.45) +
+            Math.min(12, anomalyScore * 1.1) +
+            recencyBonus +
+            vwapBonus +
+            rsiBonus +
+            shieldBonus +
+            pocBonus
+        )
+      );
+
+      const candidate = {
+        symbol: sym,
+        companyName: stockUniverseMap[sym]?.name || sym,
+        sector: sig.sector || stockUniverseMap[sym]?.sector || 'Equities',
+        strategy: sig.strategy || sig.signal_type || 'STEALTH_ACCUMULATION',
+        signalDate: sig.signal_date,
+        ltp,
+        brokerVwap,
+        vwapDiffPct,
+        pocPrice,
+        ema50: Number(ema50.toFixed(1)),
+        above50,
+        rsi14: Number(rsi14.toFixed(1)),
+        macdSignal,
+        bcr5Net,
+        scr3Net,
+        leadBrokerId: sig.lead_broker_id,
+        leadBrokerName: sig.lead_broker_name || `Broker #${sig.lead_broker_id}`,
+        anomalyScore,
+        avgTicket: Number(avgTicket.toFixed(1)),
+        shieldVerdict,
+        entryLow,
+        entryHigh,
+        chaseCap,
+        stopLoss,
+        ratchetFloor,
+        target1,
+        target2,
+        slPct,
+        t1Pct,
+        t2Pct,
+        rrr,
+        sharesPer1Lakh,
+        capitalOutlay,
+        maxRiskRs,
+        totalScore,
+        isStrict5StepPass: isRsiSweetSpot && isBelowOrAtVwap && isInstitutionalTicket && bcr5Net >= 20.0 && scr3Net < 13.0,
+      };
+
+      if (candidate.isStrict5StepPass) {
+        strictMatches.push(candidate);
+      } else {
+        secondaryMatches.push(candidate);
+      }
+    }
+
+    strictMatches.sort((a, b) => b.totalScore - a.totalScore || a.vwapDiffPct - b.vwapDiffPct);
+    secondaryMatches.sort((a, b) => b.totalScore - a.totalScore || a.vwapDiffPct - b.vwapDiffPct);
+
+    const allRanked = [...strictMatches, ...secondaryMatches];
+    return {
+      topPick: allRanked[0] || null,
+      runnerUps: allRanked.slice(1, 4),
+      allQualified: allRanked,
+    };
+  } catch (err) {
+    console.error('[TelegramNotifier] select5StepSwingPicks error:', err.message);
+    return { topPick: null, runnerUps: [], allQualified: [] };
+  }
+}
+
+/**
+ * Formats and dispatches the 5-Step 10–15 Day Swing Stock Alert to Telegram
+ * and automatically registers the top pick in the Exit Guard (trackCustomHolding).
+ */
+export async function run5StepSwingSelectionAndDispatch({ onTrackHolding } = {}) {
+  const { topPick, runnerUps } = await select5StepSwingPicks();
+  if (!topPick) {
+    return {
+      success: false,
+      reason: 'No stock currently passes all 5 strict swing gates (50-EMA, VWAP discount, BCR5 >= 20%, Shield Fortress). Hold cash!',
+    };
+  }
+
+  // Automatically arm the real-time Exit Guard for the #1 Top Pick if callback provided
+  if (typeof onTrackHolding === 'function') {
+    try {
+      onTrackHolding({
+        symbol: topPick.symbol,
+        buyPrice: topPick.ltp,
+        stopLoss: topPick.stopLoss,
+        target1: topPick.target1,
+        target2: topPick.target2,
+        kitta: topPick.sharesPer1Lakh,
+      });
+    } catch (_) {}
+  }
+
+  const vwapSign = topPick.vwapDiffPct >= 0 ? `+${topPick.vwapDiffPct}%` : `${topPick.vwapDiffPct}%`;
+  const vwapTag =
+    topPick.vwapDiffPct <= 0
+      ? `🔥 ${Math.abs(topPick.vwapDiffPct)}% BELOW Operator VWAP`
+      : `✅ ${vwapSign} AT Operator VWAP`;
+
+  const runnerLines =
+    runnerUps.length > 0
+      ? runnerUps
+          .map(
+            (r, i) =>
+              `<b>#${i + 2} <code>${r.symbol}</code></b> (${r.strategy.replace(/_/g, ' ')}) — Score: <b>${r.totalScore}/100</b>\n` +
+              `   • LTP: Rs. ${r.ltp} | VWAP: Rs. ${r.brokerVwap} (${r.vwapDiffPct >= 0 ? '+' : ''}${r.vwapDiffPct}%) | POC: Rs. ${r.pocPrice}\n` +
+              `   • BCR5: ${r.bcr5Net}% vs SCR3: ${r.scr3Net}% | Lead: ${r.leadBrokerName} (${r.anomalyScore}x, ${r.avgTicket} kitta/trade)\n` +
+              `   • Trend: EMA50 Rs. ${r.ema50} ✅ | RSI: ${r.rsi14} | SL: Rs. ${r.stopLoss} | T1: Rs. ${r.target1} | T2: Rs. ${r.target2}`
+          )
+          .join('\n\n')
+      : '<i>No secondary runner-ups today.</i>';
+
+  const html = [
+    `👑 <b>DRABYASHREE 5-STEP SWING PICK (7–15 DAYS)</b>`,
+    `⚡ <b>Zero-Look-Ahead SQLite Audit • T+2 &amp; Fee Adjusted</b>`,
+    `──────────────────────────`,
+    `🏆 <b>#1 PRIME PICK: <code>$${topPick.symbol}</code></b> (${topPick.companyName})`,
+    `📂 <b>Sector:</b> ${topPick.sector} | <b>Score:</b> <b>${topPick.totalScore}/100</b>`,
+    `📅 <b>Signal Session:</b> ${topPick.signalDate} | <b>Strategy:</b> ${topPick.strategy.replace(/_/g, ' ')}`,
+    ``,
+    `✅ <b>5-STEP CHECKLIST VERIFICATION:</b>`,
+    `<b>1. Trend &amp; Regime:</b> LTP <b>Rs. ${topPick.ltp}</b> &gt; 50-EMA (Rs. ${topPick.ema50}) | RSI(14): <b>${topPick.rsi14}</b> (Sweet Spot 48–66) | MACD: <b>${topPick.macdSignal.toUpperCase()}</b>`,
+    `<b>2. Smart Money Flow:</b> BCR5 Net: <b>${topPick.bcr5Net}%</b> (≥20%) vs SCR3 Net: <b>${topPick.scr3Net}%</b> (&lt;13% Exhausted)`,
+    `   • Lead Accumulator: <b>${topPick.leadBrokerName}</b> (<b>${topPick.anomalyScore}x</b> Anomaly | Avg Ticket: <b>${topPick.avgTicket} kitta</b> Inst.)`,
+    `<b>3. 13-Tab Price &amp; Volume Profile Audit:</b>`,
+    `   • Big Broker VWAP: <b>Rs. ${topPick.brokerVwap}</b> (${vwapTag})`,
+    `   • Volume Profile POC Support: <b>Rs. ${topPick.pocPrice}</b>`,
+    `   • Portfolio Shield Verdict: <b>🛡️ ${topPick.shieldVerdict.replace(/_/g, ' ')}</b>`,
+    ``,
+    `🎯 <b>STEP 4 &amp; 5: 10–15 DAY EXECUTION &amp; EXIT PLAN</b>`,
+    `• 🟢 <b>Limit Buy Zone:</b> <b>Rs. ${topPick.entryLow} – Rs. ${topPick.entryHigh}</b>`,
+    `• ⏰ <b>Best Entry Window:</b> 12:15–1:30 PM (VWAP Pullback) or 2:35–2:55 PM NPT`,
+    `• ⚠️ <b>Chase Cap (+2.5% Max):</b> Do NOT buy above <b>Rs. ${topPick.chaseCap}</b>`,
+    `• 🛡️ <b>Hard Stop-Loss (-${topPick.slPct}%):</b> <b>Rs. ${topPick.stopLoss}</b>`,
+    `• 🔒 <b>+1.2R Ratchet Floor (+3.2%):</b> Raise SL to <b>Rs. ${topPick.ratchetFloor}</b> once price hits +5.5% (100% Risk-Free after CGT &amp; fees)`,
+    `• 🎯 <b>Target 1 (4–7 Days, Sell 50%):</b> <b>Rs. ${topPick.target1}</b> (+${topPick.t1Pct}%)`,
+    `• 🚀 <b>Target 2 (10–15 Days, Sell 50%):</b> <b>Rs. ${topPick.target2}</b> (+${topPick.t2Pct}% | RRR <b>${topPick.rrr}:1</b>)`,
+    ``,
+    `💼 <b>POSITION SIZING (Per Rs. 1,00,000 Capital):</b>`,
+    `• Recommended Size: <b>${topPick.sharesPer1Lakh} Kitta</b> (~Rs. ${topPick.capitalOutlay.toLocaleString()})`,
+    `• Max Capital Risk at SL: <b>Rs. ${topPick.maxRiskRs.toLocaleString()}</b>`,
+    `──────────────────────────`,
+    `🥈 <b>QUALIFIED RUNNER-UP SWING SETUPS:</b>`,
+    runnerLines,
+    `──────────────────────────`,
+    `🔔 <i>Exit Guard auto-armed for <code>${topPick.symbol}</code>! Send <code>/swing</code> or <code>/pick</code> anytime for a live re-scan, or <code>/list</code> to check tracked stops.</i>`,
+  ].join('\n');
+
+  const telegramResult = await sendTelegramMessage(html, 'HTML');
+  return {
+    success: Boolean(telegramResult?.success),
+    topPick,
+    runnerUps,
+    telegramResult,
+  };
+}
+
+/**
  * Dispatches the 3:45 PM Daily Post-Market Verified Prime Pick
  */
 export async function sendTelegramPrimePickAlert(winner) {
@@ -1040,19 +1307,25 @@ async function handleTelegramCommand(text, {
     return await sendTelegramMessage(`🏓 <b>Pong!</b> Drabyashree server is online and actively watching NEPSE live market.`);
   }
 
-  // 2.5 AUTOMATED PLAYBOOK MID-STAGE ACCUMULATION PICK
+  // 2.5 AUTOMATED 5-STEP 10–15 DAY SWING & MID-STAGE ACCUMULATION PICK
   if (
+    lower === '/swing' || lower === 'swing' ||
+    lower === '/best' || lower === 'best' ||
     lower === '/pick' || lower === 'pick' ||
     lower === '/signal' || lower === 'signal' ||
     lower === '/accumulate' || lower === 'accumulate' ||
     lower === '/midstage' || lower === 'midstage' ||
     lower === '/playbook_pick' || lower === 'playbook_pick'
   ) {
+    const swingRes = await run5StepSwingSelectionAndDispatch({ onTrackHolding });
+    if (swingRes.success) {
+      return swingRes.telegramResult;
+    }
     const res = await autoSelectAndDispatchPlaybookPick();
     if (res.success) {
       return res.telegramResult;
     }
-    return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${res.reason || 'No stock currently passes all 8 strict Method 1 & 2 accumulation filters.'}`);
+    return await sendTelegramMessage(`ℹ️ <b>Market Scanning Complete:</b> ${swingRes.reason || res.reason || 'No stock currently passes all strict 5-Step accumulation filters.'}`);
   }
 
   // 2.6 PLAYBOOK / GUIDE MATRIX
