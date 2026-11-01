@@ -445,9 +445,47 @@ export function BrokerFlowDominanceService({
     if (!targetSym) return;
     setLoadingRetention(true);
     try {
-      const res = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all' });
-      const payload = res?.data || res;
-      if (payload && (payload.brokers || payload.topHoldings || payload.symbol)) {
+      const res: any = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all' });
+      // Robust unwrap: handle when res has topHoldings, or res.data has topHoldings, or res is already data
+      let payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
+        ? res
+        : (res?.data && Array.isArray(res.data.topHoldings) && res.data.topHoldings.length > 0)
+          ? res.data
+          : (res && (Array.isArray(res.brokers) || Array.isArray(res.allBrokers) || res.symbol))
+            ? res
+            : (res?.data || res);
+
+      if (payload) {
+        // Guarantee topHoldings is always populated from positive net accumulators
+        if (!Array.isArray(payload.topHoldings) || payload.topHoldings.length === 0) {
+          const rawBrokers = Array.isArray(payload.brokers)
+            ? payload.brokers
+            : (Array.isArray(payload.allBrokers) ? payload.allBrokers : (Array.isArray(payload.data) ? payload.data : (Array.isArray(payload) ? payload : [])));
+          
+          const accumulators = rawBrokers
+            .filter((b: any) => Number(b.netQty ?? b.holdQty ?? b.netVolume ?? 0) > 0)
+            .sort((a: any, b: any) => Number(b.netQty ?? b.holdQty ?? b.netVolume ?? 0) - Number(a.netQty ?? a.holdQty ?? a.netVolume ?? 0));
+          
+          const totalHeld = accumulators.reduce((sum: number, b: any) => sum + Number(b.netQty ?? b.holdQty ?? b.netVolume ?? 0), 0);
+          
+          payload.topHoldings = accumulators.map((b: any) => {
+            const bId = String(b.brokerId || b.id || b.broker || '');
+            const netKitta = Number(b.netQty ?? b.holdQty ?? b.netVolume ?? 0);
+            return {
+              ...b,
+              id: bId,
+              brokerId: bId,
+              name: b.brokerName || b.name,
+              brokerName: b.brokerName || b.name,
+              netQty: netKitta,
+              holdQty: netKitta,
+              holdingSharePct: totalHeld > 0 ? Number(((netKitta / totalHeld) * 100).toFixed(2)) : 0
+            };
+          });
+          payload.totalSharesHeldTillNow = totalHeld;
+        }
+
+        if (!payload.symbol) payload.symbol = targetSym;
         setStockRetentionData(payload);
       } else {
         setStockRetentionData(null);
@@ -4123,8 +4161,18 @@ export function BrokerFlowDominanceService({
               <p className="text-xs text-slate-400 font-mono">Aggregating all-time broker holdings across 38+ floorsheets…</p>
             </div>
           ) : !stockRetentionData || !Array.isArray(stockRetentionData.topHoldings) || stockRetentionData.topHoldings.length === 0 ? (
-            <div className="py-16 text-center bg-slate-950/40 rounded-2xl border border-slate-800 text-slate-400 text-xs font-sans">
-              No all-time broker holding records found for <span className="font-bold text-white">{selectedStockRetention}</span>.
+            <div className="py-16 text-center bg-slate-950/40 rounded-2xl border border-slate-800 text-slate-400 text-xs font-sans flex flex-col items-center justify-center gap-3">
+              <div>
+                No all-time broker holding records found for <span className="font-bold text-white">{selectedStockRetention}</span>.
+              </div>
+              <button
+                type="button"
+                onClick={() => loadStockRetention(selectedStockRetention, true)}
+                className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-lg shadow-cyan-900/30"
+              >
+                <RefreshCw size={13} className={loadingRetention ? 'animate-spin' : ''} />
+                <span>Re-sync from Live Ledger</span>
+              </button>
             </div>
           ) : (
             <>
