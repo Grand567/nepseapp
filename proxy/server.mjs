@@ -79,6 +79,8 @@ import {
   getLocalDailyFloorsheet 
 } from './utils/dailyFloorsheetCollector.mjs';
 import {
+  isGitHubConfigured,
+  getGitHubRepo,
   isR2Configured,
   isFirebaseConfigured,
   getActiveCloudProvider,
@@ -3643,10 +3645,13 @@ app.get('/api/floorsheet/archive/:date', async (req, res) => {
 app.get('/api/floorsheet/cloud/status', async (req, res) => {
   try {
     const provider = getActiveCloudProvider();
-    const cloudDates = (isFirebaseConfigured() || isR2Configured()) ? await listAvailableCloudFloorsheetDates() : [];
+    const isCloudConfigured = isGitHubConfigured() || isFirebaseConfigured() || isR2Configured();
+    const cloudDates = isCloudConfigured ? await listAvailableCloudFloorsheetDates() : [];
     return res.json({
       success: true,
       provider,
+      githubConfigured: isGitHubConfigured(),
+      repo: getGitHubRepo(),
       firebaseConfigured: isFirebaseConfigured(),
       r2Configured: isR2Configured(),
       cloudDatesCount: cloudDates.length,
@@ -3663,7 +3668,7 @@ app.post('/api/floorsheet/cloud/sync', async (req, res) => {
     if (provider === 'LOCAL_ONLY') {
       return res.status(400).json({
         success: false,
-        error: 'No cloud storage credentials configured. Add FIREBASE_SERVICE_ACCOUNT (or R2 credentials) to activate cloud syncing.'
+        error: 'No cloud storage credentials configured. Add GITHUB_TOKEN in Render environment to activate GitHub Releases cloud archiving.'
       });
     }
     const syncResult = await syncLocalFloorsheetsToCloud();

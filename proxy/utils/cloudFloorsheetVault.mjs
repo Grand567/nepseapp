@@ -1,15 +1,20 @@
 // proxy/utils/cloudFloorsheetVault.mjs
 /**
- * Dual-Cloud Floorsheet Archive & Streaming Vault
+ * Multi-Cloud Floorsheet Archive & Streaming Vault
  * 
- * Supports:
- * 1. Firebase Cloud Storage (Google Cloud Storage via Firebase Spark Plan)
- *    - 5 GB Free Cloud Storage Forever ($0.00)
- *    - ZERO Credit Card or Billing Details Required!
+ * Supports 3 Cloud Providers:
+ * 1. GitHub Releases Cloud Archive (Recommended - 100% Free Forever, Zero Card Needed!)
+ *    - Repository: Grand567/nepseapp
+ *    - Unlimited file releases, up to 2 GB per file
+ *    - Public downloads require NO authentication
+ *    - Uploading requires GITHUB_TOKEN (Personal Access Token)
+ * 
+ * 2. Firebase Cloud Storage (Google Cloud Storage)
+ *    - 5 GB Free Storage
  *    - Uses drabyashree-nepse-hub-11ef9.firebasestorage.app
  * 
- * 2. Cloudflare R2 Object Storage
- *    - 10 GB Free Storage ($0.00) with zero egress fees
+ * 3. Cloudflare R2 Object Storage
+ *    - 10 GB Free Storage
  *    - Requires international payment method on file
  * 
  * Architecture:
@@ -23,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import {
@@ -36,11 +42,96 @@ import { DAILY_FLOORSHEETS_DIR } from './dailyFloorsheetCollector.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ─── Firebase Storage Configuration (No Credit Card Required) ────────────────
+// ─── GitHub Releases Configuration (100% Free Forever, No Credit Card) ───────
+export function getGitHubToken() {
+  return (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+}
+
+export function getGitHubRepo() {
+  return (process.env.GITHUB_REPO || 'Grand567/nepseapp').trim();
+}
+
+export function isGitHubConfigured() {
+  return Boolean(getGitHubToken());
+}
+
+async function getOrCreateGitHubRelease(tag, year) {
+  const token = getGitHubToken();
+  if (!token) return null;
+
+  const repo = getGitHubRepo();
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'DrabyashreeNepseProxy/1.0'
+  };
+
+  try {
+    const res = await axios.get(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers });
+    if (res.data && res.data.id) return res.data;
+  } catch (err) {
+    if (err.response?.status !== 404) {
+      console.warn(`[cloudFloorsheetVault] Warning checking GitHub release tag ${tag}:`, err.message);
+    }
+  }
+
+  // Create release if it doesn't exist
+  try {
+    const res = await axios.post(`https://api.github.com/repos/${repo}/releases`, {
+      tag_name: tag,
+      target_commitish: 'main',
+      name: `NEPSE Floorsheet Archive (${year})`,
+      body: `Automated tick-by-tick floorsheet data vault for NEPSE trading sessions in ${year}.`,
+      draft: false,
+      prerelease: false
+    }, { headers });
+    console.log(`[cloudFloorsheetVault] 📦 Created GitHub release: ${tag} on ${repo}`);
+    return res.data;
+  } catch (err) {
+    console.error(`[cloudFloorsheetVault] Failed to create GitHub release ${tag}:`, err.message, err.response?.data);
+    return null;
+  }
+}
+
+async function uploadAssetToGitHubRelease(release, fileName, bufferToUpload) {
+  const token = getGitHubToken();
+  const repo = getGitHubRepo();
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'DrabyashreeNepseProxy/1.0'
+  };
+
+  // Check if asset already exists in release
+  const existingAsset = (release.assets || []).find(a => a.name === fileName);
+  if (existingAsset) {
+    try {
+      await axios.delete(`https://api.github.com/repos/${repo}/releases/assets/${existingAsset.id}`, { headers });
+      console.log(`[cloudFloorsheetVault] Overwriting existing asset ${fileName} in GitHub release...`);
+    } catch (_) {}
+  }
+
+  // Upload URL format: https://uploads.github.com/repos/:owner/:repo/releases/:id/assets{?name,label}
+  const uploadUrl = release.upload_url.replace('{?name,label}', '') + `?name=${encodeURIComponent(fileName)}`;
+
+  const uploadRes = await axios.post(uploadUrl, bufferToUpload, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/gzip',
+      'Content-Length': bufferToUpload.length,
+      'User-Agent': 'DrabyashreeNepseProxy/1.0'
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+
+  return uploadRes.data;
+}
+
+// ─── Firebase Storage Configuration ──────────────────────────────────────────
 const FIREBASE_BUCKET_NAME = process.env.FIREBASE_STORAGE_BUCKET || 'drabyashree-nepse-hub-11ef9.firebasestorage.app';
 let firebaseAppInstance = null;
 let firebaseBucketInstance = null;
-let firebaseLoggedNotice = false;
 
 function resolveFirebaseCredentials() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -109,7 +200,6 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || process.env.CLO
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'drabyashree-floorsheets';
 
 let s3ClientInstance = null;
-let r2LoggedWarning = false;
 
 export function isR2Configured() {
   return Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
@@ -137,13 +227,14 @@ export function getR2Client() {
 }
 
 export function getActiveCloudProvider() {
+  if (isGitHubConfigured()) return 'GITHUB';
   if (isFirebaseConfigured()) return 'FIREBASE';
   if (isR2Configured()) return 'R2';
   return 'LOCAL_ONLY';
 }
 
 /**
- * Universal Cloud Upload: Uploads daily floorsheet to Firebase Storage or Cloudflare R2
+ * Universal Cloud Upload: Uploads daily floorsheet to GitHub Releases, Firebase, or R2
  */
 export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null) {
   const cleanDate = String(dateStr || '').trim();
@@ -180,23 +271,46 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
     return { success: false, reason: `Empty payload for date ${cleanDate}` };
   }
 
-  const objectKey = `daily_floorsheets/floorsheet-${cleanDate}.json.gz`;
+  const fileName = `floorsheet-${cleanDate}.json.gz`;
   const sizeKb = +(bufferToUpload.length / 1024).toFixed(1);
 
-  // 1. Try Firebase Storage first (No-Card Provider)
+  // 1. Try GitHub Releases first (100% Free Forever, Zero Card)
+  if (isGitHubConfigured()) {
+    try {
+      const year = cleanDate.slice(0, 4);
+      const tag = `floorsheets-${year}`;
+      const release = await getOrCreateGitHubRelease(tag, year);
+      if (release) {
+        const asset = await uploadAssetToGitHubRelease(release, fileName, bufferToUpload);
+        if (asset) {
+          console.log(`[cloudFloorsheetVault] 🚀 Uploaded floorsheet for ${cleanDate} to GitHub Release ${tag} (${sizeKb} KB)`);
+          return {
+            success: true,
+            provider: 'GITHUB',
+            releaseTag: tag,
+            assetName: fileName,
+            sizeKb,
+            downloadUrl: asset.browser_download_url
+          };
+        }
+      }
+    } catch (err) {
+      console.error(`[cloudFloorsheetVault] GitHub upload error for ${cleanDate}:`, err.message);
+    }
+  }
+
+  // 2. Try Firebase Storage
   const fbBucket = getFirebaseBucket();
   if (fbBucket) {
     try {
+      const objectKey = `daily_floorsheets/${fileName}`;
       const file = fbBucket.file(objectKey);
       await file.save(bufferToUpload, {
         resumable: false,
         contentType: 'application/gzip',
         metadata: {
           contentEncoding: 'gzip',
-          metadata: {
-            tradeDate: cleanDate,
-            uploadedAt: new Date().toISOString()
-          }
+          metadata: { tradeDate: cleanDate, uploadedAt: new Date().toISOString() }
         }
       });
       console.log(`[cloudFloorsheetVault] 🚀 Uploaded floorsheet for ${cleanDate} to Firebase Storage (${sizeKb} KB) -> ${objectKey}`);
@@ -212,20 +326,18 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
     }
   }
 
-  // 2. Try Cloudflare R2
+  // 3. Try Cloudflare R2
   const r2Client = getR2Client();
   if (r2Client) {
     try {
+      const objectKey = `daily_floorsheets/${fileName}`;
       const command = new PutObjectCommand({
         Bucket: R2_BUCKET_NAME,
         Key: objectKey,
         Body: bufferToUpload,
         ContentType: 'application/gzip',
         ContentEncoding: 'gzip',
-        Metadata: {
-          tradeDate: cleanDate,
-          uploadedAt: new Date().toISOString()
-        }
+        Metadata: { tradeDate: cleanDate, uploadedAt: new Date().toISOString() }
       });
       await r2Client.send(command);
       console.log(`[cloudFloorsheetVault] 🚀 Uploaded floorsheet for ${cleanDate} to Cloudflare R2 (${sizeKb} KB) -> ${objectKey}`);
@@ -241,11 +353,11 @@ export async function uploadDailyFloorsheetToCloud(dateStr, contentOrPath = null
     }
   }
 
-  return { success: false, reason: 'No cloud storage provider configured (Firebase or R2 credentials missing)' };
+  return { success: false, reason: 'No cloud storage provider configured. Set GITHUB_TOKEN in Render.' };
 }
 
 /**
- * Universal Cloud Fetch: Checks local disk cache first, then streams from Firebase Storage or R2
+ * Universal Cloud Fetch: Checks local disk cache first, then streams from GitHub Releases, Firebase, or R2
  */
 export async function fetchFloorsheetFromCloud(dateStr) {
   const cleanDate = String(dateStr || '').trim();
@@ -269,12 +381,41 @@ export async function fetchFloorsheetFromCloud(dateStr) {
     } catch (_) {}
   }
 
-  const objectKey = `daily_floorsheets/floorsheet-${cleanDate}.json.gz`;
+  const fileName = `floorsheet-${cleanDate}.json.gz`;
+  const year = cleanDate.slice(0, 4);
+  const repo = getGitHubRepo();
 
-  // 2. Stream from Firebase Storage (if available)
+  // 2. Stream from GitHub Releases (Public download URL - requires NO token if repo is public!)
+  try {
+    const downloadUrl = `https://github.com/${repo}/releases/download/floorsheets-${year}/${fileName}`;
+    const res = await axios.get(downloadUrl, {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      headers: { 'User-Agent': 'DrabyashreeNepseProxy/1.0' }
+    });
+
+    if (res.data) {
+      const gzBuffer = Buffer.from(res.data);
+      try { fs.writeFileSync(localGz, gzBuffer); } catch (_) {}
+      const unzipped = zlib.gunzipSync(gzBuffer);
+      const trades = JSON.parse(unzipped.toString('utf8'));
+      if (Array.isArray(trades) && trades.length > 0) {
+        try { fs.writeFileSync(localJson, JSON.stringify(trades), 'utf8'); } catch (_) {}
+        console.log(`[cloudFloorsheetVault] 📥 Streamed ${trades.length} contracts for ${cleanDate} from GitHub Releases.`);
+        return trades;
+      }
+    }
+  } catch (err) {
+    if (err.response?.status !== 404) {
+      // Release not found or other non-fatal code
+    }
+  }
+
+  // 3. Stream from Firebase Storage (if available)
   const fbBucket = getFirebaseBucket();
   if (fbBucket) {
     try {
+      const objectKey = `daily_floorsheets/${fileName}`;
       const file = fbBucket.file(objectKey);
       const [exists] = await file.exists();
       if (exists) {
@@ -288,15 +429,14 @@ export async function fetchFloorsheetFromCloud(dateStr) {
           return trades;
         }
       }
-    } catch (fbErr) {
-      console.warn(`[cloudFloorsheetVault] Firebase Storage fetch warning for ${cleanDate}:`, fbErr.message);
-    }
+    } catch (_) {}
   }
 
-  // 3. Stream from Cloudflare R2 (if available)
+  // 4. Stream from Cloudflare R2 (if available)
   const r2Client = getR2Client();
   if (r2Client) {
     try {
+      const objectKey = `daily_floorsheets/${fileName}`;
       const command = new GetObjectCommand({
         Bucket: R2_BUCKET_NAME,
         Key: objectKey
@@ -314,23 +454,45 @@ export async function fetchFloorsheetFromCloud(dateStr) {
           return trades;
         }
       }
-    } catch (r2Err) {
-      if (r2Err.name !== 'NoSuchKey' && r2Err.$metadata?.httpStatusCode !== 404) {
-        console.warn(`[cloudFloorsheetVault] R2 fetch warning for ${cleanDate}:`, r2Err.message);
-      }
-    }
+    } catch (_) {}
   }
 
   return null;
 }
 
 /**
- * Universal Dates Listing: Lists all dates archived across Firebase Storage and R2
+ * Universal Dates Listing: Lists all dates archived across GitHub Releases, Firebase, and R2
  */
 export async function listAvailableCloudFloorsheetDates() {
   const dates = new Set();
+  const repo = getGitHubRepo();
 
-  // 1. Check Firebase Storage
+  // 1. Check GitHub Releases
+  try {
+    const token = getGitHubToken();
+    const headers = {
+      'Accept': 'application/vnd.github.v3+json',
+      'User-Agent': 'DrabyashreeNepseProxy/1.0',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+    const res = await axios.get(`https://api.github.com/repos/${repo}/releases`, { headers, timeout: 10000 });
+    if (Array.isArray(res.data)) {
+      for (const rel of res.data) {
+        if (rel.tag_name?.startsWith('floorsheet')) {
+          for (const asset of (rel.assets || [])) {
+            const match = asset.name?.match(/floorsheet-(\d{4}-\d{2}-\d{2})\.json/);
+            if (match && match[1]) dates.add(match[1]);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.response?.status !== 404) {
+      console.warn('[cloudFloorsheetVault] Notice listing GitHub releases:', err.message);
+    }
+  }
+
+  // 2. Check Firebase Storage
   const fbBucket = getFirebaseBucket();
   if (fbBucket) {
     try {
@@ -339,12 +501,10 @@ export async function listAvailableCloudFloorsheetDates() {
         const match = file.name.match(/floorsheet-(\d{4}-\d{2}-\d{2})\.json/);
         if (match && match[1]) dates.add(match[1]);
       }
-    } catch (err) {
-      console.warn('[cloudFloorsheetVault] Failed to list Firebase Storage dates:', err.message);
-    }
+    } catch (_) {}
   }
 
-  // 2. Check Cloudflare R2
+  // 3. Check Cloudflare R2
   const r2Client = getR2Client();
   if (r2Client) {
     try {
@@ -359,21 +519,19 @@ export async function listAvailableCloudFloorsheetDates() {
           if (match && match[1]) dates.add(match[1]);
         }
       }
-    } catch (err) {
-      console.warn('[cloudFloorsheetVault] Failed to list R2 dates:', err.message);
-    }
+    } catch (_) {}
   }
 
   return Array.from(dates).sort((a, b) => b.localeCompare(a));
 }
 
 /**
- * Syncs any local floorsheet files in DAILY_FLOORSHEETS_DIR to Cloud Storage (Firebase or R2)
+ * Syncs all local floorsheet files in DAILY_FLOORSHEETS_DIR to Cloud Storage (GitHub, Firebase, or R2)
  */
 export async function syncLocalFloorsheetsToCloud() {
   const provider = getActiveCloudProvider();
   if (provider === 'LOCAL_ONLY') {
-    return { success: false, reason: 'No cloud storage credentials found (Firebase or R2)' };
+    return { success: false, reason: 'No cloud storage credentials found (set GITHUB_TOKEN in Render).' };
   }
 
   if (!fs.existsSync(DAILY_FLOORSHEETS_DIR)) {
@@ -383,20 +541,27 @@ export async function syncLocalFloorsheetsToCloud() {
   try {
     const cloudDates = new Set(await listAvailableCloudFloorsheetDates());
     const files = fs.readdirSync(DAILY_FLOORSHEETS_DIR);
-    let uploadedCount = 0;
-    let skippedCount = 0;
-
+    const dateFileMap = new Map();
     for (const file of files) {
       const match = file.match(/^floorsheet-(\d{4}-\d{2}-\d{2})\.(json|json\.gz)$/);
       if (!match) continue;
       const dateStr = match[1];
+      const isGz = file.endsWith('.json.gz');
+      // Prefer .json.gz over uncompressed .json to avoid redundant gzip compression
+      if (!dateFileMap.has(dateStr) || isGz) {
+        dateFileMap.set(dateStr, path.join(DAILY_FLOORSHEETS_DIR, file));
+      }
+    }
 
+    let uploadedCount = 0;
+    let skippedCount = 0;
+
+    for (const [dateStr, filePath] of dateFileMap.entries()) {
       if (cloudDates.has(dateStr)) {
         skippedCount++;
         continue;
       }
 
-      const filePath = path.join(DAILY_FLOORSHEETS_DIR, file);
       const res = await uploadDailyFloorsheetToCloud(dateStr, filePath);
       if (res.success) {
         uploadedCount++;
@@ -417,3 +582,7 @@ export const uploadDailyFloorsheetToR2 = uploadDailyFloorsheetToCloud;
 export const fetchFloorsheetFromR2 = fetchFloorsheetFromCloud;
 export const listAvailableR2FloorsheetDates = listAvailableCloudFloorsheetDates;
 export const syncLocalFloorsheetsToR2 = syncLocalFloorsheetsToCloud;
+export const uploadDailyFloorsheetToGitHub = uploadDailyFloorsheetToCloud;
+export const fetchFloorsheetFromGitHub = fetchFloorsheetFromCloud;
+export const listAvailableGitHubFloorsheetDates = listAvailableCloudFloorsheetDates;
+export const syncLocalFloorsheetsToGitHub = syncLocalFloorsheetsToCloud;
