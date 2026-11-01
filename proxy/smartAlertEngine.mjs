@@ -26,7 +26,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getBrokerName, aggregateFloorsheetRows, fetchShareSansarFloorsheet } from './brokerVault.mjs';
 import { getDetailedMarketStatus } from '../src/utils/nepseCalendar.js';
 import { calculateStatutoryBreakevenPrice } from '../src/utils/calculations.js';
-import { sendTelegramSmartAlert, sendTelegramExitAlert } from './telegramNotifier.mjs';
+import { sendTelegramSmartAlert, sendTelegramExitAlert, sendTelegramMessage } from './telegramNotifier.mjs';
 import { sendDiscordSmartAlert } from './discordNotifier.mjs';
 import {
   evaluateInstitutionalAlert,
@@ -108,6 +108,7 @@ let pushTokens = loadJson(TOKENS_FILE, []);
 
 let isFcmInitialized = false;
 let fcmMessaging = null;
+let hasValidFcmPrivateKey = false;
 
 try {
   let creds = null;
@@ -130,6 +131,10 @@ try {
     } catch (e3) {
       console.warn('[SmartAlertEngine] Error reading firebase-service-account.json:', e3.message);
     }
+  } else if (fs.existsSync(path.join(process.cwd(), 'firebase-service-account.json'))) {
+    try {
+      creds = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-service-account.json'), 'utf8'));
+    } catch (_) {}
   }
 
   if (creds && creds.private_key) {
@@ -143,18 +148,12 @@ try {
     }) : getApps()[0];
     fcmMessaging = getMessaging(app);
     isFcmInitialized = true;
+    hasValidFcmPrivateKey = true;
     console.log('[SmartAlertEngine] ✅ Firebase Admin FCM successfully authenticated with private key.');
   } else {
-    try {
-      const app = getApps().length === 0 ? initializeApp({
-        projectId: 'drabyashree-nepse-hub-11ef9'
-      }) : getApps()[0];
-      fcmMessaging = getMessaging(app);
-      isFcmInitialized = true;
-      console.log('[SmartAlertEngine] Firebase Admin initialized with project ID drabyashree-nepse-hub-11ef9.');
-    } catch (eInit) {
-      console.warn('[SmartAlertEngine] Firebase Admin default init notice:', eInit.message);
-    }
+    isFcmInitialized = false;
+    hasValidFcmPrivateKey = false;
+    console.log('[SmartAlertEngine] ℹ️ Firebase service account private key pending. Closed-app alerts are delivered via Android native WorkManager background worker + local notification channels.');
   }
 } catch (fcmErr) {
   console.warn('[SmartAlertEngine] FCM initialization notice:', fcmErr.message);
@@ -169,7 +168,31 @@ export function subscribeAlertEvents(res) {
 }
 
 export function broadcastAlert(alertPayload) {
-  // 1. Dispatch to in-memory web/app listeners
+  if (!alertPayload.id) {
+    alertPayload.id = `alert_${alertPayload.type || 'generic'}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+  }
+  if (!alertPayload.triggeredAt) {
+    alertPayload.triggeredAt = new Date().toISOString();
+  }
+
+  // Normalize category: pro vs general
+  if (!alertPayload.category) {
+    const isProType = ['INSTITUTIONAL_ENTRY', 'BREAKOUT', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(alertPayload.type);
+    alertPayload.category = isProType ? 'pro' : 'general';
+  }
+
+  // Deduplicate against recent history
+  const isDuplicate = alertHistory.some(a => 
+    a.id === alertPayload.id || 
+    (a.symbol === alertPayload.symbol && a.type === alertPayload.type && (Date.now() - new Date(a.triggeredAt).getTime() < 180000))
+  );
+  if (!isDuplicate) {
+    alertHistory.unshift(alertPayload);
+    if (alertHistory.length > 200) alertHistory.pop();
+    saveJson(HISTORY_FILE, alertHistory);
+  }
+
+  // 1. Dispatch to in-memory web/app listeners (SSE)
   const dataString = `data: ${JSON.stringify(alertPayload)}\n\n`;
   for (const client of alertSubscribers) {
     try {
@@ -184,17 +207,31 @@ export function broadcastAlert(alertPayload) {
     console.warn('[SmartAlertEngine] Push dispatch warning:', err.message);
   });
 
-  // 3. Dispatch Instant Alert to Telegram Bot (strictly skip during automated unit tests)
+  // 3. Dispatch Instant Alert to Telegram Bot (PRO Users: Breakouts, Prime Picks, Accumulation, Watchlist, Exits)
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.SUPPRESS_TEST_ALERTS === 'true';
   if (!isTestEnv || process.env.TEST_LIVE_TELEGRAM === 'true') {
-    sendTelegramSmartAlert(alertPayload).catch(err => {
-      console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
-    });
-  } else {
-    console.log('[SmartAlertEngine] ℹ️ Skipping live Telegram dispatch during automated test run.');
+    const isProAlert = alertPayload.category === 'pro' || ['INSTITUTIONAL_ENTRY', 'BREAKOUT', 'ACCUMULATION', 'HOT_STOCK', 'WATCHLIST_ALERT', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(alertPayload.type);
+
+    if (alertPayload.type === 'PROFIT_BOOKING' || alertPayload.type === 'STOP_LOSS_WARNING') {
+      sendTelegramExitAlert({
+        symbol: alertPayload.symbol,
+        type: alertPayload.type === 'PROFIT_BOOKING' ? 'TARGET_REACHED' : 'STOP_LOSS_HIT',
+        ltp: alertPayload.ltp,
+        entryPrice: alertPayload.entryPrice || alertPayload.ltp,
+        targetPrice: alertPayload.target1 || alertPayload.targetPrice,
+        stopLoss: alertPayload.stopLoss,
+        reason: alertPayload.body
+      }).catch(err => {
+        console.warn('[SmartAlertEngine] Telegram exit alert dispatch warning:', err.message);
+      });
+    } else if (isProAlert) {
+      sendTelegramSmartAlert(alertPayload).catch(err => {
+        console.warn('[SmartAlertEngine] Telegram alert dispatch warning:', err.message);
+      });
+    }
   }
 
-  // 4. Dispatch Instant Alert to Discord Webhook (100% Free / Zero SMS)
+  // 4. Dispatch Instant Alert to Discord Webhook (100% Free)
   if (!isTestEnv) {
     sendDiscordSmartAlert(alertPayload).catch(err => {
       console.warn('[SmartAlertEngine] Discord alert dispatch warning:', err.message);
@@ -225,10 +262,11 @@ export async function registerPushToken(token, platform = 'android') {
   saveJson(TOKENS_FILE, pushTokens);
   console.log(`[SmartAlertEngine] Push token registered (${platform}). Total tokens: ${pushTokens.length}`);
 
-  // Subscribe token to 'institutional_alerts' topic if FCM is active
+  // Subscribe token to 'institutional_alerts' and 'general_alerts' topics if FCM is active
   if (isFcmInitialized && fcmMessaging) {
     try {
       await fcmMessaging.subscribeToTopic([cleanToken], 'institutional_alerts');
+      await fcmMessaging.subscribeToTopic([cleanToken], 'general_alerts');
     } catch (subErr) {
       console.warn('[SmartAlertEngine] Error subscribing token to topic:', subErr.message);
     }
@@ -237,20 +275,38 @@ export async function registerPushToken(token, platform = 'android') {
 }
 
 export async function dispatchFcmNotification(alertItem) {
-  const symbol = alertItem.symbol;
-  const ltp = alertItem.ltp;
+  const symbol = alertItem.symbol || 'NEPSE';
+  const ltp = Number(alertItem.ltp || 0);
+  const type = alertItem.type || 'INSTITUTIONAL_ENTRY';
+  const isPro = alertItem.category === 'pro' || ['BREAKOUT', 'INSTITUTIONAL_ENTRY', 'ACCUMULATION', 'PROFIT_BOOKING', 'STOP_LOSS_WARNING'].includes(type);
+  const channelId = isPro ? 'dravyashree-pro-signals' : 'nepse-general-news';
+
   const buyZone = alertItem.buyZone || {};
-  const brokersText = alertItem.dominantBrokersText || `Brokers ${alertItem.topBuyerBrokers?.map(b => b.broker).join(', ')}`;
+  const brokersText = alertItem.dominantBrokersText || (alertItem.topBuyerBrokers?.length ? `Brokers ${alertItem.topBuyerBrokers.map(b => b.broker).join(', ')}` : 'Institutional Desks');
   const concentration = alertItem.concentrationPct || 52;
-  const targetText = `NPR ${alertItem.target1 || Math.round(ltp * 1.15)} - ${alertItem.target2 || Math.round(ltp * 1.25)}`;
-  const stopLossText = `NPR ${alertItem.stopLoss || Math.round(ltp * 0.95)}`;
+  const targetText = `NPR ${alertItem.target1 || (ltp > 0 ? Math.round(ltp * 1.12) : 0)}`;
+  const stopLossText = `NPR ${alertItem.stopLoss || (ltp > 0 ? Math.round(ltp * 0.95) : 0)}`;
 
-  const title = `🔔 Dravyashree Alert: ${symbol} is Ready for Entry`;
-  const body = `LTP: NPR ${ltp.toFixed(2)} (Inside Buy Zone: ${buyZone.low || (ltp * 0.99).toFixed(0)} - ${buyZone.high || (ltp * 1.02).toFixed(0)})\n` +
-    `${brokersText} absorbing ${concentration}% of morning float. Seller volume dry.\n` +
-    `Target: ${targetText} | Stop-Loss: ${stopLossText}`;
+  let title = alertItem.title;
+  let body = alertItem.body;
 
-  console.log(`[SmartAlertEngine] 🚀 DISPATCHING ALERT for ${symbol}:\n${body}`);
+  if (!title) {
+    if (type === 'PROFIT_BOOKING') title = `💰 Target Hit: Take Profit on ${symbol}`;
+    else if (type === 'STOP_LOSS_WARNING') title = `🛑 Exit Guard: Stop-Loss Hit for ${symbol}`;
+    else if (type === 'BREAKOUT') title = `⚡ Breakout Alert: ${symbol} Expanding`;
+    else if (type === 'ACCUMULATION') title = `🐋 Stealth Whale Accumulation: ${symbol}`;
+    else if (type === 'NEWS_ALERT') title = `📰 NEPSE Announcement: ${symbol}`;
+    else if (type === 'IPO_ALERT') title = `🔔 IPO Pipeline Update`;
+    else title = `🔔 Dravyashree Alert: ${symbol} is Ready for Entry`;
+  }
+
+  if (!body) {
+    if (type === 'PROFIT_BOOKING') body = `LTP Rs. ${ltp} hit Target. Consider scale-out and lock profits.`;
+    else if (type === 'STOP_LOSS_WARNING') body = `LTP Rs. ${ltp} breached Stop-Loss floor. Protect capital.`;
+    else if (type === 'NEWS_ALERT') body = `Important corporate announcement received for ${symbol}.`;
+    else if (type === 'IPO_ALERT') body = `Live IPO pipeline event updated.`;
+    else body = `LTP: NPR ${ltp.toFixed(2)} (Inside Buy Zone: ${buyZone.low || (ltp * 0.99).toFixed(0)} - ${buyZone.high || (ltp * 1.02).toFixed(0)})\n${brokersText} absorbing ${concentration}% morning float.`;
+  }
 
   const fcmPayload = {
     notification: {
@@ -258,33 +314,32 @@ export async function dispatchFcmNotification(alertItem) {
       body,
     },
     data: {
-      action: 'OPEN_ACCUMULATION_CARD',
+      action: alertItem.action || (isPro ? 'OPEN_ACCUMULATION_CARD' : 'OPEN_NEWS'),
       symbol: String(symbol),
+      type: String(type),
+      category: String(isPro ? 'pro' : 'general'),
+      id: String(alertItem.id || `alert_${Date.now()}`),
       ltp: String(ltp),
-      entryLow: String(buyZone.low || ''),
-      entryHigh: String(buyZone.high || ''),
       target1: String(alertItem.target1 || ''),
       target2: String(alertItem.target2 || ''),
       stopLoss: String(alertItem.stopLoss || ''),
-      brokersText: String(brokersText),
-      concentrationPct: String(concentration),
       timestamp: String(Date.now()),
+      ...(alertItem.data || {})
     },
     android: {
       priority: 'high',
       notification: {
         sound: 'default',
-        channelId: 'dravyashree_institutional_alerts',
-        clickAction: 'OPEN_ACCUMULATION_CARD',
+        channelId,
+        clickAction: alertItem.action || (isPro ? 'OPEN_ACCUMULATION_CARD' : 'OPEN_NEWS'),
         icon: 'ic_stat_notification',
-        color: '#10b981', // Emerald green
+        color: isPro ? '#8b5cf6' : '#10b981',
       }
     }
   };
 
-  if (!isFcmInitialized || !fcmMessaging) {
-    console.warn('[SmartAlertEngine] FCM admin not fully authenticated with private key; alert saved locally and broadcasted to live clients.');
-    return { success: true, count: 0, notice: 'Local broadcast only (FCM credentials pending)' };
+  if (!hasValidFcmPrivateKey || !fcmMessaging) {
+    return { success: true, count: 0, notice: 'Alert saved to live notification feed (Native Android WorkManager and SSE handle dispatch)' };
   }
 
   try {
@@ -735,6 +790,22 @@ export async function runMarketAlertScanCycle({
           console.log(`[SmartAlertEngine] 🚨 STOP-LOSS TRIGGERED for ${alert.symbol}: LTP Rs. ${currentLtp} <= SL Rs. ${sl} (T+2 Cleared: ${isT2Cleared})`);
           if (!dispatchedAlertsThisCycle.has(`SL_${alert.symbol}`)) {
             dispatchedAlertsThisCycle.add(`SL_${alert.symbol}`);
+            const slPayload = {
+              id: `sl_${alert.symbol}_${Date.now()}`,
+              type: 'STOP_LOSS_WARNING',
+              category: 'pro',
+              symbol: alert.symbol,
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              stopLoss: sl,
+              kitta: alert.kitta || 100,
+              isT2Cleared,
+              title: `🛑 Stop-Loss Triggered: ${alert.symbol}`,
+              body: `LTP Rs. ${currentLtp.toFixed(2)} breached SL Rs. ${sl.toFixed(2)}. Capital preservation triggered (T+2: ${isT2Cleared ? 'Settled' : 'Pending'}).`,
+              action: 'OPEN_STOCK_DETAIL',
+              triggeredAt: new Date().toISOString()
+            };
+            broadcastAlert(slPayload);
             sendTelegramExitAlert({
               symbol: alert.symbol,
               type: 'STOP_LOSS_HIT',
@@ -755,6 +826,23 @@ export async function runMarketAlertScanCycle({
           console.log(`[SmartAlertEngine] 🚀 TARGET 2 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T2 Rs. ${t2} (T+2 Cleared: ${isT2Cleared})`);
           if (!dispatchedAlertsThisCycle.has(`T2_${alert.symbol}`)) {
             dispatchedAlertsThisCycle.add(`T2_${alert.symbol}`);
+            const t2Payload = {
+              id: `t2_${alert.symbol}_${Date.now()}`,
+              type: 'PROFIT_BOOKING',
+              category: 'pro',
+              targetLevel: 2,
+              symbol: alert.symbol,
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              targetPrice: t2,
+              kitta: alert.kitta || 100,
+              isT2Cleared,
+              title: `🚀 Target 2 Achieved: ${alert.symbol}`,
+              body: `LTP Rs. ${currentLtp.toFixed(2)} reached Target 2 Rs. ${t2.toFixed(2)}! Full swing profit target captured.`,
+              action: 'OPEN_STOCK_DETAIL',
+              triggeredAt: new Date().toISOString()
+            };
+            broadcastAlert(t2Payload);
             sendTelegramExitAlert({
               symbol: alert.symbol,
               type: 'TARGET_2_REACHED',
@@ -783,6 +871,25 @@ export async function runMarketAlertScanCycle({
           console.log(`[SmartAlertEngine] 🎯 TARGET 1 HIT for ${alert.symbol}: LTP Rs. ${currentLtp} >= T1 Rs. ${t1}. SL moved to Statutory Breakeven Rs. ${statutoryBeStop} (T+2 Cleared: ${isT2Cleared})`);
           if (!dispatchedAlertsThisCycle.has(`T1_${alert.symbol}`)) {
             dispatchedAlertsThisCycle.add(`T1_${alert.symbol}`);
+            const t1Payload = {
+              id: `t1_${alert.symbol}_${Date.now()}`,
+              type: 'PROFIT_BOOKING',
+              category: 'pro',
+              targetLevel: 1,
+              symbol: alert.symbol,
+              ltp: currentLtp,
+              entryPrice: alert.ltp,
+              targetPrice: t1,
+              target2: t2,
+              raisedStopLoss: statutoryBeStop,
+              kitta: totalKitta,
+              isT2Cleared,
+              title: `💰 Target 1 Hit: Lock Profit on ${alert.symbol}`,
+              body: `LTP Rs. ${currentLtp.toFixed(2)} reached Target 1 Rs. ${t1.toFixed(2)}. Sell 50%, raised SL to breakeven Rs. ${statutoryBeStop}.`,
+              action: 'OPEN_STOCK_DETAIL',
+              triggeredAt: new Date().toISOString()
+            };
+            broadcastAlert(t1Payload);
             sendTelegramExitAlert({
               symbol: alert.symbol,
               type: 'TARGET_REACHED',
@@ -998,7 +1105,10 @@ export function resetSymbolAlertState(symbol) {
 export function getSmartAlertSystemStatus() {
   const status = getDetailedMarketStatus();
   return {
-    isFcmInitialized,
+    isFcmInitialized: hasValidFcmPrivateKey,
+    hasValidFcmPrivateKey,
+    nativeWorkManagerSupported: true,
+    androidChannels: ['dravyashree-pro-signals', 'nepse-general-news'],
     registeredPushTokensCount: pushTokens.length,
     activeAlertsToday: getActiveSmartAlerts().length,
     totalHistoryCount: alertHistory.length,
@@ -1066,3 +1176,117 @@ export function getUserTrackedHoldings() {
 }
 
 
+
+// ── 9. LIVE NEWS & IPO WATCHER ──────────────────────────────────────────────
+
+const seenNewsTitles = new Set();
+const seenIpoStatusKeys = new Set();
+
+export async function pollLiveNewsAndIpoAlerts(fetchNewsFn = null, getIpoListingsFn = null) {
+  let actualNewsFn = fetchNewsFn;
+  let actualIpoFn = getIpoListingsFn;
+  if (typeof fetchNewsFn === 'object' && fetchNewsFn !== null) {
+    actualNewsFn = fetchNewsFn.scrapeMeroLaganiNews || fetchNewsFn.fetchNewsFn || null;
+    actualIpoFn = fetchNewsFn.getLiveIpoListings || fetchNewsFn.getIpoListingsFn || null;
+  }
+
+  // 1. Check Live News & Corporate Announcements
+  try {
+    let articles = [];
+    if (typeof actualNewsFn === 'function') {
+      articles = await actualNewsFn().catch(() => []);
+    }
+    if (Array.isArray(articles) && articles.length > 0) {
+      const impactKeywords = [
+        'लाभांश', 'बोनस', 'हकप्रद', 'साधारण सभा', 'वित्तीय विवरण', 'आइपिओ', 'म्युचुअल फन्ड',
+        'dividend', 'bonus', 'right share', 'agm', 'quarterly', 'financial report', 'ipo', 'circuit', 'halt', 'monetary policy'
+      ];
+
+      for (const item of articles.slice(0, 20)) {
+        const title = String(item.title || '').trim();
+        if (!title || seenNewsTitles.has(title)) continue;
+        seenNewsTitles.add(title);
+        if (seenNewsTitles.size > 500) seenNewsTitles.clear();
+
+        const lowerTitle = title.toLowerCase();
+        const hasImpact = impactKeywords.some(kw => lowerTitle.includes(kw));
+        if (hasImpact) {
+          let foundSym = null;
+          if (stockMap && typeof stockMap === 'object') {
+            for (const sym of Object.keys(stockMap)) {
+              if (sym.length >= 3 && title.toUpperCase().includes(sym)) {
+                foundSym = sym;
+                break;
+              }
+            }
+          }
+
+          const isMacro = ['मौद्रिक नीति', 'ब्याजदर', 'धितोपत्र बोर्ड', 'राष्ट्र बैंक', 'सर्कुलर', 'monetary policy', 'interest rate', 'sebon', 'nrb', 'halt'].some(m => lowerTitle.includes(m));
+
+          broadcastAlert({
+            id: `news_${item.id || Date.now()}_${Math.random().toString(36).substr(2, 3)}`,
+            type: isMacro ? 'NEPSE_MACRO' : 'NEWS_ALERT',
+            category: 'general',
+            title: isMacro ? '🏛️ NEPSE Macro News' : (foundSym ? `📰 ${foundSym} Corporate Announcement` : `📰 NEPSE Announcement`),
+            body: title,
+            symbol: foundSym || 'NEPSE',
+            url: item.url || item.link || '',
+            source: item.source || 'MeroLagani',
+            action: 'OPEN_NEWS',
+            triggeredAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+  } catch (newsErr) {
+    console.debug('[SmartAlertEngine] News poller notice:', newsErr.message);
+  }
+
+  // 2. Check Live IPO Pipeline
+  try {
+    let ipos = [];
+    if (typeof actualIpoFn === 'function') {
+      ipos = await actualIpoFn().catch(() => []);
+    }
+    if (Array.isArray(ipos) && ipos.length > 0) {
+      const nowNpt = new Date(Date.now() + (5 * 60 + 45) * 60 * 1000);
+      const todayIso = nowNpt.toISOString().split('T')[0];
+
+      for (const ipo of ipos) {
+        const key = `${ipo.id || ipo.scrip}_${ipo.status}_${todayIso}`;
+        if (seenIpoStatusKeys.has(key)) continue;
+
+        const openDate = (ipo.openDate || '').split('T')[0];
+        const closeDate = (ipo.closeDate || '').split('T')[0];
+
+        if (ipo.status === 'Open' && (!openDate || openDate <= todayIso)) {
+          seenIpoStatusKeys.add(key);
+          broadcastAlert({
+            id: `ipo_open_${ipo.id || ipo.scrip}_${todayIso}`,
+            type: 'IPO_ALERT',
+            category: 'general',
+            title: `🔔 IPO Open: ${ipo.name} (${ipo.scrip || 'IPO'})`,
+            body: `${ipo.name} IPO is open for application. Price: Rs. ${ipo.issuePrice || 100} | Closes: ${closeDate || 'Soon'}.`,
+            symbol: ipo.scrip || 'IPO',
+            action: 'OPEN_IPO',
+            triggeredAt: new Date().toISOString()
+          });
+        } else if (closeDate === todayIso) {
+          seenIpoStatusKeys.add(key);
+          broadcastAlert({
+            id: `ipo_close_${ipo.id || ipo.scrip}_${todayIso}`,
+            type: 'IPO_ALERT',
+            category: 'general',
+            title: `⏳ Last Day to Apply: ${ipo.name} (${ipo.scrip || 'IPO'})`,
+            body: `Today is the LAST DAY to apply for ${ipo.name} before 5:00 PM NPT.`,
+            symbol: ipo.scrip || 'IPO',
+            action: 'OPEN_IPO',
+            triggeredAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+  } catch (ipoErr) {
+    console.debug('[SmartAlertEngine] IPO poller notice:', ipoErr.message);
+  }
+}

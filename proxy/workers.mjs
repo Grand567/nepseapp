@@ -109,6 +109,8 @@ let _getCache = null;
 let _getDividendHistoryInternal = null;
 let _getMarketIndicesInternal = null;
 let _db = null;
+let _scrapeMeroLaganiNews = null;
+let _getLiveIpoListings = null;
 
 export function initWorkerDependencies({
   getPriceHistoryInternal,
@@ -119,6 +121,8 @@ export function initWorkerDependencies({
   getDividendHistoryInternal,
   getMarketIndicesInternal,
   db,
+  scrapeMeroLaganiNews,
+  getLiveIpoListings,
 }) {
   _getPriceHistoryInternal = getPriceHistoryInternal;
   _getOrFetchBrokerAnalysis = getOrFetchBrokerAnalysis;
@@ -128,6 +132,8 @@ export function initWorkerDependencies({
   _getDividendHistoryInternal = getDividendHistoryInternal;
   _getMarketIndicesInternal = getMarketIndicesInternal;
   _db = db;
+  _scrapeMeroLaganiNews = scrapeMeroLaganiNews;
+  _getLiveIpoListings = getLiveIpoListings;
 }
 
 /**
@@ -556,7 +562,8 @@ import {
   runMarketAlertScanCycle, 
   trackCustomHolding, 
   untrackCustomHolding, 
-  getUserTrackedHoldings 
+  getUserTrackedHoldings,
+  pollLiveNewsAndIpoAlerts
 } from './smartAlertEngine.mjs';
 
 // Start workers
@@ -680,7 +687,35 @@ export function startWorkers() {
     }
   }, 4000);
 
-  console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Prime Pick Scanner + Telegram Bot Command Poller).');
+  // 4. Live News & IPO Alert Poller (General + Pro Users):
+  // Checks news and IPO pipeline status every 3 minutes.
+  // Sends push notifications and Telegram updates for new listings, IPO open/close, and major announcements.
+  setInterval(async () => {
+    try {
+      if (_scrapeMeroLaganiNews || _getLiveIpoListings) {
+        await pollLiveNewsAndIpoAlerts({
+          scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
+          getLiveIpoListings: _getLiveIpoListings
+        });
+      }
+    } catch (newsErr) {
+      console.warn('[NewsIpoWorker] Polling notice:', newsErr.message);
+    }
+  }, 3 * 60 * 1000);
+
+  // Initial check 12 seconds after startup
+  setTimeout(async () => {
+    try {
+      if (_scrapeMeroLaganiNews || _getLiveIpoListings) {
+        await pollLiveNewsAndIpoAlerts({
+          scrapeMeroLaganiNews: _scrapeMeroLaganiNews,
+          getLiveIpoListings: _getLiveIpoListings
+        });
+      }
+    } catch (_) {}
+  }, 12000);
+
+  console.log('Background analytical workers started (Floorsheet + Smart Alert Pipeline + Prime Pick Scanner + Telegram Bot Command Poller + News/IPO Alerts).');
 }
 
 

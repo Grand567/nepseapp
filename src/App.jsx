@@ -24,7 +24,8 @@ import SubscriptionModal from './components/SubscriptionModal';
 import { RiskDisclaimer } from './components/DataQualityBanner'; // A1: Global disclaimer
 import { InstitutionalAlertCardModal } from './components/InstitutionalAlertCardModal';
 import { SmartAlertBanner } from './components/SmartAlertBanner';
-import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert } from './utils/pushNotificationService';
+import { NotificationCenterDrawer } from './components/NotificationCenterDrawer';
+import { initPushNotifications, fetchActiveSmartAlerts, triggerTestAlert, getUnreadNotificationCount } from './utils/pushNotificationService';
 import { NavigationProvider, useNavigation, useBackHandler } from './context/NavigationContext';
 import { SubscriptionProvider, useSubscription } from './context/SubscriptionContext';
 import { fetchHolidays, fetchNepseIntradayGraph } from './utils/servicesApi.js';
@@ -122,12 +123,26 @@ function AppInner() {
   const [upcomingHolidaysList, setUpcomingHolidaysList] = useState([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
 
-  // ── Dravyashree Smart Institutional Alert Modal State ──
+  // ── Dravyashree Smart Institutional Alert Modal & Live Notification Drawer State ──
   const [smartAlertModal, setSmartAlertModal] = useState({ isOpen: false, alert: null });
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
 
   // Initialize Push Notifications (Capacitor FCM on Android + Web SSE)
   useEffect(() => {
     initPushNotifications().catch(() => {});
+  }, []);
+
+  // Track unread alerts badge
+  useEffect(() => {
+    const updateCount = () => {
+      setUnreadAlertCount(getUnreadNotificationCount());
+    };
+    updateCount();
+    window.addEventListener('dravyashree_notifications_updated', updateCount);
+    return () => {
+      window.removeEventListener('dravyashree_notifications_updated', updateCount);
+    };
   }, []);
 
   // Listen for Lockscreen / Deep Link tap or In-App Banner clicks
@@ -138,16 +153,67 @@ function AppInner() {
         setSmartAlertModal({ isOpen: true, alert: alertData });
       }
     };
+    const handleOpenIpo = () => {
+      setActiveTab('portfolio');
+    };
+    const handleOpenNews = (e) => {
+      if (e.detail?.url) {
+        window.open(e.detail.url, '_blank', 'noopener,noreferrer');
+      }
+    };
+
     window.addEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
+    window.addEventListener('dravyashree_open_ipo', handleOpenIpo);
+    window.addEventListener('dravyashree_open_news', handleOpenNews);
     return () => {
       window.removeEventListener('dravyashree_open_smart_alert', handleOpenSmartAlert);
+      window.removeEventListener('dravyashree_open_ipo', handleOpenIpo);
+      window.removeEventListener('dravyashree_open_news', handleOpenNews);
     };
-  }, []);
+  }, [setActiveTab]);
+
+  useBackHandler(() => {
+    setShowNotificationCenter(false);
+    return true;
+  }, showNotificationCenter, 58);
 
   useBackHandler(() => {
     setSmartAlertModal({ isOpen: false, alert: null });
     return true;
   }, smartAlertModal.isOpen, 60);
+
+  // Memoized user portfolio and watchlist symbols for notification filtering
+  const userPortfolioSymbols = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('nepse_portfolio_profiles') || '[]';
+      const profs = JSON.parse(raw);
+      const syms = [];
+      if (Array.isArray(profs)) {
+        profs.forEach(p => {
+          (p.holdings || []).forEach(h => {
+            const s = h.symbol || h.scrip;
+            if (s) syms.push(s);
+          });
+        });
+      }
+      return syms;
+    } catch (_) {
+      return [];
+    }
+  }, [showNotificationCenter]);
+
+  const userWatchlistSymbols = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('nepse_user_watchlist') || '[]';
+      const wl = JSON.parse(raw);
+      if (Array.isArray(wl)) {
+        return wl.map(w => typeof w === 'string' ? w : (w.symbol || w.scrip)).filter(Boolean);
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }, [showNotificationCenter]);
 
   const handleOpenRadarFromAlert = (symbol) => {
     setSmartAlertModal({ isOpen: false, alert: null });
@@ -1073,37 +1139,54 @@ function AppInner() {
               </span>
             </button>
 
-            {/* Smart Institutional Alerts Bell Button */}
+            {/* Live Notification Center & Smart Institutional Alerts Bell Button */}
             <button
               id="btn-smart-alerts"
               className="icon-btn"
-              onClick={async () => {
-                const alerts = await fetchActiveSmartAlerts();
-                if (alerts && alerts.length > 0) {
-                  setSmartAlertModal({ isOpen: true, alert: alerts[0] });
-                } else {
-                  const testRes = await triggerTestAlert('GHL', 269.50);
-                  if (testRes?.result?.alert) {
-                    setSmartAlertModal({ isOpen: true, alert: testRes.result.alert });
-                  }
-                }
-              }}
-              title="Dravyashree Smart Alerts: High-Probability Institutional Setup"
+              onClick={() => setShowNotificationCenter(true)}
+              title="Live Notification Center: PRO Signals, Breakouts, News & IPO"
               style={{
                 height: 30,
                 padding: '0 8px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 4,
-                background: 'rgba(16, 185, 129, 0.15)',
-                borderColor: 'rgba(16, 185, 129, 0.45)',
+                gap: 5,
+                background: unreadAlertCount > 0 ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.15)',
+                borderColor: unreadAlertCount > 0 ? '#10b981' : 'rgba(16, 185, 129, 0.45)',
                 color: '#10b981',
                 cursor: 'pointer',
                 fontWeight: 800,
-                fontSize: 12
+                fontSize: 12,
+                position: 'relative'
               }}
             >
-              <Bell style={{ width: 13, height: 13, color: '#10b981' }} />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Bell style={{ width: 13, height: 13, color: '#10b981' }} />
+                {unreadAlertCount > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -8,
+                      minWidth: 14,
+                      height: 14,
+                      borderRadius: 999,
+                      background: '#f43f5e',
+                      color: '#ffffff',
+                      fontSize: 9,
+                      fontWeight: 900,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 3px',
+                      border: '1.5px solid #080d1a',
+                      lineHeight: 1
+                    }}
+                  >
+                    {unreadAlertCount > 9 ? '9+' : unreadAlertCount}
+                  </span>
+                )}
+              </div>
               <span className="header-alerts-label">Alerts</span>
             </button>
 
@@ -1692,6 +1775,17 @@ function AppInner() {
                 alert={smartAlertModal.alert}
                 onClose={() => setSmartAlertModal({ isOpen: false, alert: null })}
                 onOpenRadar={handleOpenRadarFromAlert}
+              />
+
+              {/* ── Live Notification Center Drawer (PRO vs General Alerts) ── */}
+              <NotificationCenterDrawer
+                isOpen={showNotificationCenter}
+                onClose={() => setShowNotificationCenter(false)}
+                onOpenAlertModal={(alert) => setSmartAlertModal({ isOpen: true, alert })}
+                onOpenStock={(sym) => openStockDetail(sym)}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+                userPortfolioSymbols={userPortfolioSymbols}
+                userWatchlistSymbols={userWatchlistSymbols}
               />
 
               {/* ── Global ShareHub-Style Stock Detail Modal ── */}

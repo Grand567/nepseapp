@@ -419,10 +419,11 @@ export default function ShortTermProfitPlan({
   const [customQuantity, setCustomQuantity] = useState(null);
 
   // ── 3. Active Mode in Right Workstation ──
-  // 'calculator' | 'expectancy_kelly' | 't2_guard' | 'simulator'
+  // 'calculator' | 'playbook_7_15d' | 'expectancy_kelly' | 't2_guard' | 'simulator'
   const [activeMode, setActiveMode] = useState('calculator');
   const [assumedWinRate, setAssumedWinRate] = useState(55); // default 55%
   const [numTradesSim, setNumTradesSim] = useState(20); // default 20 trades
+  const [copyBlueprintToast, setCopyBlueprintToast] = useState(false);
 
   // ── 4. Active Plans Journal (Local Storage) ──
   const [activePlans, setActivePlans] = useState(() => {
@@ -1759,6 +1760,7 @@ export default function ShortTermProfitPlan({
           }}>
             {[
               { id: 'calculator', label: '💰 Profit & Sizing', icon: CalcIcon },
+              { id: 'playbook_7_15d', label: '🎯 7–15D Swing Playbook & Checklist', icon: Target },
               { id: 'expectancy_kelly', label: '📈 Expectancy & Kelly', icon: Scale },
               { id: 't2_guard', label: '🛡️ T+2 Circuit Guard', icon: ShieldAlert },
               { id: 'simulator', label: '🚀 20-Trade Compound', icon: TrendingUp }
@@ -2328,6 +2330,285 @@ export default function ShortTermProfitPlan({
               </div>
             </div>
           )}
+
+          {/* ── SUB-VIEW 5: 7–15 Day Swing Playbook & Quantitative Checklist ── */}
+          {activeMode === 'playbook_7_15d' && (() => {
+            const gate1Pass = !activeStock.isExcluded && activeStock.ltp >= 60 && (activeStock.turnover >= 500000 || activeStock.vol >= 1500 || activeStock.criteriaList?.find(c => c.id === 'liquidity')?.passed);
+            const gate2Pass = Boolean(activeStock.vsr >= 1.15 || activeStock.pChg >= 1.0 || activeStock.criteriaList?.find(c => c.id === 'volume')?.passed);
+            const gate3Pass = Boolean(activeStock.isBrokerAccum || activeStock.score >= 65);
+            const gate4Pass = Boolean((activeStock.rrr || 2.0) >= 1.6 && (activeStock.stopLossPct || 4.5) <= 6.5);
+            const gatesPassed = [gate1Pass, gate2Pass, gate3Pass, gate4Pass].filter(Boolean).length;
+
+            const copySwingBlueprint = () => {
+              const text = `🎯 NEPSE 7–15D SWING PLAYBOOK: ${activeStock.symbol}
+• Current LTP: Rs. ${activeStock.ltp} (${activeStock.pChg >= 0 ? '+' : ''}${activeStock.pChg}%)
+• Green Buy Zone: Rs. ${activeStock.entryMin || (entryPrice * 0.985).toFixed(1)} – Rs. ${activeStock.entryMax || (entryPrice * 1.015).toFixed(1)}
+• Target 1 (+8% to +14%): Rs. ${target1Price} (Sell 50% & Slide SL to Entry)
+• Target 2 (+18% to +25%): Rs. ${(target1Price * 1.08).toFixed(1)}
+• Hard Stop Loss: Rs. ${stopLossPrice} (Max -4.5%)
+• Risk-Reward Ratio: ${(activeStock.rrr || 2.1)}:1
+• T+2 Settlement Rule: Demat credit on Day 3 unlocks legal selling power.
+• Time Stop: If sideways for 8 sessions, exit 100% to protect capital.`;
+
+              if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                navigator.clipboard.writeText(text);
+                setCopyBlueprintToast(true);
+                setTimeout(() => setCopyBlueprintToast(false), 2500);
+              }
+            };
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Feasibility Summary Banner */}
+                <div style={{
+                  background: gatesPassed === 4 
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.12))' 
+                    : gatesPassed === 3 
+                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(59, 130, 246, 0.08))' 
+                    : 'rgba(244, 63, 94, 0.08)',
+                  border: `1px solid ${gatesPassed === 4 ? 'rgba(16, 185, 129, 0.4)' : gatesPassed === 3 ? 'rgba(245, 158, 11, 0.35)' : 'rgba(244, 63, 94, 0.25)'}`,
+                  borderRadius: 14,
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Target size={18} color={gatesPassed === 4 ? '#10B981' : gatesPassed === 3 ? '#F59E0B' : '#F43F5E'} />
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#FFF' }}>
+                        {activeStock.symbol} 7–15D SWING FEASIBILITY
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 900,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      background: gatesPassed === 4 ? '#10B981' : gatesPassed === 3 ? '#F59E0B' : '#F43F5E',
+                      color: gatesPassed === 4 ? '#000' : '#FFF'
+                    }}>
+                      {gatesPassed}/4 GATES PASSED
+                    </span>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 12, color: '#E2E8F0', lineHeight: 1.45 }}>
+                    {gatesPassed === 4 && '⭐ Institutional Grade Swing Candidate: Meets all 4 quantitative gates (Liquidity, RVOL breakout, Whale Accumulation, and 2:1 asymmetric RRR). High probability of 7–15 day impulse move.'}
+                    {gatesPassed === 3 && '⚡ Selective Opportunity: Passes 3 out of 4 criteria. Wait for clear volume confirmation or a tighter pullback before initiating a full position.'}
+                    {gatesPassed < 3 && '⚠️ High Friction Setup: Fails multiple quantitative criteria. Capital preservation dictates waiting for a textbook setup rather than chasing.'}
+                  </p>
+                </div>
+
+                {/* 4 Interactive Quantitative Gates */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <SlidersHorizontal size={13} />
+                    <span>THE 4-GATE INSTITUTIONAL SWING CHECKLIST</span>
+                  </div>
+
+                  {/* Gate 1 */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: `1px solid ${gate1Pass ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#FFF' }}>
+                        <span>Gate 1: Tradable Equity & Liquidity Floor</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        LTP Rs. {activeStock.ltp} · Sector: {activeStock.sector} · Daily Vol: {formatSouthAsian(activeStock.vol || 0)}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: gate1Pass ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.18)',
+                      color: gate1Pass ? '#34D399' : '#FB7185',
+                      border: `1px solid ${gate1Pass ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}`
+                    }}>
+                      {gate1Pass ? 'PASS' : 'FAIL'}
+                    </span>
+                  </div>
+
+                  {/* Gate 2 */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: `1px solid ${gate2Pass ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#FFF' }}>
+                        <span>Gate 2: Wyckoff VDU & Momentum Breakout</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Relative Vol (RVOL): {(activeStock.vsr || 1.0).toFixed(2)}x · Day Change: {activeStock.pChg >= 0 ? `+${activeStock.pChg}%` : `${activeStock.pChg}%`}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: gate2Pass ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.18)',
+                      color: gate2Pass ? '#34D399' : '#FB7185',
+                      border: `1px solid ${gate2Pass ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}`
+                    }}>
+                      {gate2Pass ? 'PASS' : 'WATCH'}
+                    </span>
+                  </div>
+
+                  {/* Gate 3 */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: `1px solid ${gate3Pass ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#FFF' }}>
+                        <span>Gate 3: Institutional Whale Broker Accumulation</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Dominant Broker Footprint · Setup Conviction: {activeStock.score}/100
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: gate3Pass ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.18)',
+                      color: gate3Pass ? '#34D399' : '#FB7185',
+                      border: `1px solid ${gate3Pass ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}`
+                    }}>
+                      {gate3Pass ? 'CONFIRMED' : 'MODERATE'}
+                    </span>
+                  </div>
+
+                  {/* Gate 4 */}
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: `1px solid ${gate4Pass ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#FFF' }}>
+                        <span>Gate 4: Volume Profile POC Floor & Asymmetric RRR</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Target 1: Rs. {target1Price} (+{activeStock.target1Pct || 8}%) · SL: Rs. {stopLossPrice} (-{activeStock.stopLossPct || 4}%) · RRR: {(activeStock.rrr || 2.1)}:1
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: 6,
+                      background: gate4Pass ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.18)',
+                      color: gate4Pass ? '#34D399' : '#FB7185',
+                      border: `1px solid ${gate4Pass ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.4)'}`
+                    }}>
+                      {gate4Pass ? 'PASS (≥2:1)' : 'SUB-OPTIMAL'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Direct Action Buttons */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button
+                    onClick={() => onSelectStock && onSelectStock(activeStock.symbol)}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      color: '#38BDF8',
+                      fontWeight: 800,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <ExternalLink size={13} />
+                    <span>Stock Diagnostics</span>
+                  </button>
+
+                  <button
+                    onClick={copySwingBlueprint}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 10,
+                      background: copyBlueprintToast ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                      border: `1px solid ${copyBlueprintToast ? '#10B981' : 'rgba(255, 255, 255, 0.1)'}`,
+                      color: copyBlueprintToast ? '#34D399' : '#FFF',
+                      fontWeight: 800,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <Bookmark size={13} />
+                    <span>{copyBlueprintToast ? 'Blueprint Copied!' : 'Copy Plan Details'}</span>
+                  </button>
+                </div>
+
+                {/* 7-15 Day Trade Lifecycle Calendar */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#FFF', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Clock size={14} color="#38BDF8" />
+                    <span>7–15 DAY TRADE LIFECYCLE DISCIPLINE</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, color: '#CBD5E1', lineHeight: 1.45 }}>
+                    <div>
+                      <strong style={{ color: '#34D399' }}>Day 1–2 (Accumulation):</strong> Enter strictly inside green zone (Rs. {activeStock.entryMin || (entryPrice * 0.985).toFixed(1)}–{activeStock.entryMax || (entryPrice * 1.015).toFixed(1)}). Never chase if price gaps &gt;2.5% above trigger.
+                    </div>
+                    <div>
+                      <strong style={{ color: '#38BDF8' }}>Day 3 (T+2 Settlement):</strong> Demat credit confirmed — legal selling power unlocked. Keep hard stop at Rs. {stopLossPrice}.
+                    </div>
+                    <div>
+                      <strong style={{ color: '#FCD34D' }}>Days 4–7 (Target 1 Harvest):</strong> When price hits Rs. {target1Price} (+{activeStock.target1Pct || 8}%), <strong>sell 50% immediately</strong>. Shift stop on remaining 50% to breakeven (entry price).
+                    </div>
+                    <div>
+                      <strong style={{ color: '#FB7185' }}>Days 8–15 (Runner & Time Stop):</strong> Trail remainder with 20 EMA for Target 2. If sideways for 8 consecutive sessions, exit 100% to recycle capital into next fresh setup!
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

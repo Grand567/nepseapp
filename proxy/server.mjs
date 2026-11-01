@@ -11243,6 +11243,41 @@ app.post('/api/smart-alerts/register-token', async (req, res) => {
   }
 });
 
+// Unified Live Notification Center Feed (General vs PRO)
+app.get('/api/notifications', (req, res) => {
+  try {
+    const category = (req.query.category || 'all').toLowerCase();
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+    const history = getSmartAlertHistory(100);
+
+    let filtered = history;
+    if (category === 'pro') {
+      filtered = history.filter(a => a.category === 'pro' || a.tier === 'pro' || a.isPro);
+    } else if (category === 'general') {
+      filtered = history.filter(a => a.category === 'general' || a.tier === 'general' || a.type === 'NEWS_ALERT' || a.type === 'IPO_ALERT' || a.type === 'NEPSE_MACRO');
+    }
+
+    res.json({
+      success: true,
+      count: filtered.slice(0, limit).length,
+      total: filtered.length,
+      data: filtered.slice(0, limit)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/notifications/test', async (req, res) => {
+  try {
+    const { symbol } = req.body || {};
+    const alert = await testTriggerAlert(symbol || 'NABIL');
+    res.json({ success: true, message: 'Test alert triggered and dispatched', alert });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/smart-alerts/test-trigger', async (req, res) => {
   try {
     const { symbol, ltp, vwap } = req.body || {};
@@ -12893,7 +12928,7 @@ app.listen(PORT, '0.0.0.0', async () => {
         } catch (cacheErr) {
           console.warn('[ledgerStore] Initial hot cache build error:', cacheErr.message);
         }
-        // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan
+        // Inject dependencies so workers can run full-universe Entry/Exit Analyzer scan and live News/IPO alerts
         initWorkerDependencies({
           getPriceHistoryInternal,
           getOrFetchBrokerAnalysis,
@@ -12902,6 +12937,8 @@ app.listen(PORT, '0.0.0.0', async () => {
           getDividendHistoryInternal,
           getMarketIndicesInternal,
           db,
+          scrapeMeroLaganiNews,
+          getLiveIpoListings,
           fetchTodayPricesInternal: async () => {
             const stockData = getCache('today-prices') || getCache('market-summary');
             let list = Array.isArray(stockData) ? stockData : (stockData?.data || stockData?.stocks || []);
