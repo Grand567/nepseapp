@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import zlib from 'zlib';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit'; // A7: Rate limiting
@@ -76,7 +77,8 @@ import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday, isNepseT
 import { 
   getArchiveIndex, 
   downloadAndArchiveDailyFloorsheet, 
-  getLocalDailyFloorsheet 
+  getLocalDailyFloorsheet,
+  ingestContractsToLedger
 } from './utils/dailyFloorsheetCollector.mjs';
 import {
   isGitHubConfigured,
@@ -205,61 +207,16 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Native zlib Compression Middleware for Ultra-Fast Data Delivery ──
-// Compresses JSON and text bodies >= 1KB using native Node.js zlib gzip/deflate
-app.use((req, res, next) => {
-  const enc = req.headers['accept-encoding'] || '';
-  if (!enc.includes('gzip') && !enc.includes('deflate')) {
-    return next();
+// ── High-Performance Streaming Gzip Compression Middleware ──
+// Compresses all JSON and text responses >= 1KB using streaming deflate/gzip
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
   }
-
-  const originalSend = res.send;
-  res.send = function(body) {
-    if (res.headersSent) {
-      return originalSend.call(this, body);
-    }
-
-    const isBuffer = Buffer.isBuffer(body);
-    const isString = typeof body === 'string';
-    if (!isBuffer && !isString) {
-      return originalSend.call(this, body);
-    }
-
-    const len = isBuffer ? body.length : Buffer.byteLength(body);
-    if (len < 1024 || res.getHeader('Content-Encoding')) {
-      return originalSend.call(this, body);
-    }
-
-    const buffer = isBuffer ? body : Buffer.from(body);
-
-    if (enc.includes('gzip')) {
-      zlib.gzip(buffer, (err, compressed) => {
-        if (err || !compressed) {
-          return originalSend.call(this, body);
-        }
-        res.setHeader('Content-Encoding', 'gzip');
-        res.setHeader('Vary', 'Accept-Encoding');
-        res.removeHeader('Content-Length');
-        originalSend.call(this, compressed);
-      });
-      return this;
-    } else if (enc.includes('deflate')) {
-      zlib.deflate(buffer, (err, compressed) => {
-        if (err || !compressed) {
-          return originalSend.call(this, body);
-        }
-        res.setHeader('Content-Encoding', 'deflate');
-        res.setHeader('Vary', 'Accept-Encoding');
-        res.removeHeader('Content-Length');
-        originalSend.call(this, compressed);
-      });
-      return this;
-    }
-
-    return originalSend.call(this, body);
-  };
-  next();
-});
+}));
 
 // ── Live Trading Hours Ultra-Fast HTTP Caching Middleware ──
 // Accelerates rapid polling and multi-component requests during trading hours
@@ -12717,4 +12674,33 @@ app.listen(PORT, '0.0.0.0', async () => {
     setInterval(runPostMarketFloorsheetCollector, 60 * 1000);
     // Also run a check on startup in case server started after 3:00 PM
     setTimeout(runPostMarketFloorsheetCollector, 10000);
+
+    // Auto-warmup on server start: ensures SQLite and broker summary caches have the latest cloud session immediately
+    const autoWarmupCloudLedger = async () => {
+      try {
+        let hasContracts = false;
+        if (db) {
+          const row = db.prepare('SELECT COUNT(*) as cnt FROM floorsheet_contracts').get();
+          if (row && row.cnt > 0) hasContracts = true;
+        }
+        if (!hasContracts) {
+          console.log('[startup-warmup] SQLite ledger is cold. Auto-warming latest verified session from cloud vault...');
+          const cloudDates = await listAvailableCloudFloorsheetDates();
+          if (Array.isArray(cloudDates) && cloudDates.length > 0) {
+            const latestCloudDate = cloudDates[0];
+            console.log(`[startup-warmup] Hydrating ${latestCloudDate} from GitHub Releases...`);
+            const trades = await fetchFloorsheetFromCloud(latestCloudDate);
+            if (Array.isArray(trades) && trades.length > 0) {
+              ingestContractsToLedger(latestCloudDate, trades);
+              console.log(`[startup-warmup] ✅ Hydrated ${trades.length} contracts for ${latestCloudDate} into SQLite!`);
+              // Pre-warm broker summary map
+              getMarketWideBrokerSummaryMap(1, { date: latestCloudDate }).catch(() => {});
+            }
+          }
+        }
+      } catch (wErr) {
+        console.warn('[startup-warmup] Warmup notice:', wErr.message);
+      }
+    };
+    setTimeout(autoWarmupCloudLedger, 3000);
 });

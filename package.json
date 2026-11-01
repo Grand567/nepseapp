@@ -38,6 +38,7 @@
     "axios-cookiejar-support": "^7.0.0",
     "better-sqlite3": "^13.0.3",
     "cheerio": "^1.2.0",
+    "compression": "^1.8.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",

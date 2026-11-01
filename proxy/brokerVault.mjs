@@ -12,7 +12,11 @@ import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
 import { isNepseTradingDay, formatNptDateIso } from '../src/utils/nepseCalendar.js';
-import { fetchFloorsheetFromR2 } from './utils/cloudFloorsheetVault.mjs';
+import { 
+  fetchFloorsheetFromCloud, 
+  listAvailableCloudFloorsheetDates 
+} from './utils/cloudFloorsheetVault.mjs';
+import { ingestContractsToLedger } from './utils/dailyFloorsheetCollector.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2405,14 +2409,18 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     }
 
-    // Cloudflare R2 Cloud Archive Query for requested historical date
+    // Cloud Archive Query for requested historical date
     try {
-      const r2Contracts = await fetchFloorsheetFromR2(cleanDate);
-      if (Array.isArray(r2Contracts) && r2Contracts.length > 0) {
-        return r2Contracts;
+      const cloudContracts = await fetchFloorsheetFromCloud(cleanDate);
+      if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
+        try {
+          ingestDailyFloorsheetTransaction(cleanDate, cloudContracts);
+          ingestContractsToLedger(cleanDate, cloudContracts);
+        } catch (_) {}
+        return cloudContracts;
       }
-    } catch (r2Err) {
-      console.warn(`[brokerVault] Cloudflare R2 query error for date ${cleanDate}:`, r2Err.message);
+    } catch (cErr) {
+      console.warn(`[brokerVault] Cloud query notice for date ${cleanDate}:`, cErr.message);
     }
   } else {
     // If no specific date was requested, check for the most recent floorsheet-full-*.json on disk
@@ -2466,6 +2474,25 @@ export async function getFullSessionFloorsheet(dateStr = '') {
           }
         }
       } catch (_) {}
+    }
+
+    // Cloud Archive Query for latest available date if local disk & DB are cold
+    try {
+      const availCloudDates = await listAvailableCloudFloorsheetDates();
+      if (Array.isArray(availCloudDates) && availCloudDates.length > 0) {
+        const latestCloudDate = availCloudDates[0];
+        console.log(`[brokerVault] Cold boot detected: auto-streaming latest session ${latestCloudDate} from cloud vault...`);
+        const cloudContracts = await fetchFloorsheetFromCloud(latestCloudDate);
+        if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
+          try {
+            ingestDailyFloorsheetTransaction(latestCloudDate, cloudContracts);
+            ingestContractsToLedger(latestCloudDate, cloudContracts);
+          } catch (_) {}
+          return cloudContracts;
+        }
+      }
+    } catch (cErr) {
+      console.warn('[brokerVault] Cold-boot cloud stream notice:', cErr.message);
     }
   }
 
@@ -2757,6 +2784,22 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       }
     }
   }
+
+  // Tier 4: Final Cloud Vault Fallback before returning empty
+  try {
+    const availCloudDates = await listAvailableCloudFloorsheetDates();
+    const targetCloudDate = cleanDate || (availCloudDates.length > 0 ? availCloudDates[0] : null);
+    if (targetCloudDate) {
+      const cloudContracts = await fetchFloorsheetFromCloud(targetCloudDate);
+      if (Array.isArray(cloudContracts) && cloudContracts.length > 0) {
+        try {
+          ingestDailyFloorsheetTransaction(targetCloudDate, cloudContracts);
+          ingestContractsToLedger(targetCloudDate, cloudContracts);
+        } catch (_) {}
+        return cloudContracts;
+      }
+    }
+  } catch (_) {}
 
   return [];
 }
