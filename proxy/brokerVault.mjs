@@ -4,6 +4,7 @@ import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import nepseClient from './nepseClientManager.mjs';
 import { db, ingestDailyFloorsheetTransaction, rebuildHotCache, getStoredDates, getSymbolHistoryFromDb, recordDailyCompleteness, backupRawFloorsheet, hasTradeDate } from './db/ledgerStore.js';
@@ -11,6 +12,7 @@ import { fetchWithRetryBackoff } from './utils/retryHelper.mjs';
 import { deduplicateFloorsheetContracts } from './utils/floorsheetDeduplicator.mjs';
 import { recordScraperMetric } from './utils/monitoringService.mjs';
 import { isNepseTradingDay, formatNptDateIso } from '../src/utils/nepseCalendar.js';
+import { fetchFloorsheetFromR2 } from './utils/cloudFloorsheetVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2348,7 +2350,8 @@ export async function getFullSessionFloorsheet(dateStr = '') {
     for (const dataDir of candidateDirs) {
       const candidateFiles = [
         path.join(dataDir, `floorsheet-full-${cleanDate}.json`),
-        path.join(dataDir, 'daily_floorsheets', `floorsheet-${cleanDate}.json`)
+        path.join(dataDir, 'daily_floorsheets', `floorsheet-${cleanDate}.json`),
+        path.join(dataDir, 'daily_floorsheets', `floorsheet-${cleanDate}.json.gz`)
       ];
       for (const file of candidateFiles) {
         if (fs.existsSync(file)) {
@@ -2358,7 +2361,13 @@ export async function getFullSessionFloorsheet(dateStr = '') {
             if (cleanDate === nptDate && isIntradayWindow && ageMs > 5 * 60 * 1000) {
               break;
             }
-            const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+            let parsed;
+            if (file.endsWith('.gz')) {
+              const unzipped = zlib.gunzipSync(fs.readFileSync(file));
+              parsed = JSON.parse(unzipped.toString('utf8'));
+            } else {
+              parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+            }
             if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(r => Boolean(r.buyerMemberId || r.buyerBroker || r.buyer || r.sellerMemberId || r.sellerBroker || r.seller))) {
               const recDate = cleanDate || parsed[0]?.businessDate;
               if (recDate && typeof hasTradeDate === 'function' && !hasTradeDate(recDate)) {
@@ -2394,6 +2403,16 @@ export async function getFullSessionFloorsheet(dateStr = '') {
       } catch (dbErr) {
         console.warn(`[brokerVault] SQLite query error for date ${cleanDate}:`, dbErr.message);
       }
+    }
+
+    // Cloudflare R2 Cloud Archive Query for requested historical date
+    try {
+      const r2Contracts = await fetchFloorsheetFromR2(cleanDate);
+      if (Array.isArray(r2Contracts) && r2Contracts.length > 0) {
+        return r2Contracts;
+      }
+    } catch (r2Err) {
+      console.warn(`[brokerVault] Cloudflare R2 query error for date ${cleanDate}:`, r2Err.message);
     }
   } else {
     // If no specific date was requested, check for the most recent floorsheet-full-*.json on disk

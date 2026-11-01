@@ -16,6 +16,7 @@ import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { db } from '../db/ledgerStore.js';
 import { getFullSessionFloorsheet } from '../brokerVault.mjs';
+import { uploadDailyFloorsheetToR2, fetchFloorsheetFromR2 } from './cloudFloorsheetVault.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -363,6 +364,13 @@ export async function downloadAndArchiveDailyFloorsheet(dateStr = '', options = 
 
   console.log(`[dailyFloorsheetCollector] Successfully saved ${trades.length} trades for ${targetDate} into ${jsonFilePath} and ${gzFilePath}.`);
 
+  // Cloud Archive: Upload compressed .json.gz to Cloudflare R2 asynchronously
+  try {
+    uploadDailyFloorsheetToR2(targetDate, gzFilePath).catch(uploadErr => {
+      console.warn(`[dailyFloorsheetCollector] Background R2 upload warning for ${targetDate}:`, uploadErr.message);
+    });
+  } catch (_) {}
+
   return {
     success: true,
     date: targetDate,
@@ -400,4 +408,15 @@ export function getLocalDailyFloorsheet(dateStr) {
   }
 
   return null;
+}
+
+/**
+ * Comprehensive retrieval: checks local disk first, then streams from Cloudflare R2 cloud archive
+ */
+export async function getDailyFloorsheet(dateStr) {
+  const local = getLocalDailyFloorsheet(dateStr);
+  if (local) return local;
+
+  // Fallback to Cloudflare R2
+  return await fetchFloorsheetFromR2(dateStr);
 }

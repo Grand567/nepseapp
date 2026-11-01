@@ -78,6 +78,13 @@ import {
   downloadAndArchiveDailyFloorsheet, 
   getLocalDailyFloorsheet 
 } from './utils/dailyFloorsheetCollector.mjs';
+import {
+  isR2Configured,
+  uploadDailyFloorsheetToR2,
+  fetchFloorsheetFromR2,
+  listAvailableR2FloorsheetDates,
+  syncLocalFloorsheetsToR2
+} from './utils/cloudFloorsheetVault.mjs';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { 
   adToBs, 
@@ -3615,11 +3622,58 @@ app.post('/api/floorsheet/download-daily', async (req, res) => {
 app.get('/api/floorsheet/archive/:date', async (req, res) => {
   try {
     const targetDate = String(req.params.date || '').trim();
-    const data = getLocalDailyFloorsheet(targetDate);
-    if (data) {
-      return res.json({ success: true, date: targetDate, count: data.length, data });
+    let data = getLocalDailyFloorsheet(targetDate);
+    let source = 'LOCAL_VAULT';
+    if (!data) {
+      data = await fetchFloorsheetFromR2(targetDate);
+      if (data) source = 'CLOUDFLARE_R2';
     }
-    return res.status(404).json({ success: false, error: `Daily floorsheet for ${targetDate} not found locally.` });
+    if (data) {
+      return res.json({ success: true, date: targetDate, count: data.length, source, data });
+    }
+    return res.status(404).json({ success: false, error: `Daily floorsheet for ${targetDate} not found locally or in cloud.` });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/* Cloudflare R2 Cloud Floorsheet Management Endpoints */
+app.get('/api/floorsheet/cloud/status', async (req, res) => {
+  try {
+    const configured = isR2Configured();
+    const cloudDates = configured ? await listAvailableR2FloorsheetDates() : [];
+    return res.json({
+      success: true,
+      configured,
+      bucket: process.env.R2_BUCKET_NAME || 'drabyashree-floorsheets',
+      cloudDatesCount: cloudDates.length,
+      cloudDates
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/floorsheet/cloud/sync', async (req, res) => {
+  try {
+    if (!isR2Configured()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cloudflare R2 credentials (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) are not set.'
+      });
+    }
+    const syncResult = await syncLocalFloorsheetsToR2();
+    return res.json(syncResult);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/floorsheet/cloud/upload/:date', async (req, res) => {
+  try {
+    const targetDate = String(req.params.date || '').trim();
+    const uploadResult = await uploadDailyFloorsheetToR2(targetDate);
+    return res.json(uploadResult);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

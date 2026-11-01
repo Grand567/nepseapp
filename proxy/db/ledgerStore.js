@@ -1529,22 +1529,25 @@ export function seedFromDiskVault() {
     const availableContractsDates = new Set(
       db.prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts`).all().map(r => r.trade_date)
     );
-    const dataFiles = fs.readdirSync(DATA_DIR);
-    // Keep tick-level contracts table lightweight (< 150k rows) by only bootstrapping latest 2 sessions into SQLite
-    const floorsheetFiles = dataFiles
-      .filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"))
-      .sort()
-      .reverse()
-      .slice(0, 2);
-    for (const file of floorsheetFiles) {
-      const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
-      if (match) {
-        const tradeDate = match[1];
-        if (!availableContractsDates.has(tradeDate)) {
-          const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
-          if (Array.isArray(raw) && raw.length > 0) {
-            const count = ingestFloorsheetContractsTransaction(tradeDate, raw);
-            console.log(`[Drabyashree Ledger] Auto-bootstrapped ${count} contracts for ${tradeDate} into floorsheet_contracts`);
+    if (availableContractsDates.size < 2) {
+      const dataFiles = fs.readdirSync(DATA_DIR);
+      // Keep tick-level contracts table lightweight (< 150k rows) by only bootstrapping latest 2 sessions into SQLite
+      const floorsheetFiles = dataFiles
+        .filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"))
+        .sort()
+        .reverse()
+        .slice(0, 2);
+      for (const file of floorsheetFiles) {
+        const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
+        if (match) {
+          const tradeDate = match[1];
+          if (!availableContractsDates.has(tradeDate) && availableContractsDates.size < 2) {
+            const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), "utf8"));
+            if (Array.isArray(raw) && raw.length > 0) {
+              const count = ingestFloorsheetContractsTransaction(tradeDate, raw);
+              availableContractsDates.add(tradeDate);
+              console.log(`[Drabyashree Ledger] Auto-bootstrapped ${count} contracts for ${tradeDate} into floorsheet_contracts`);
+            }
           }
         }
       }

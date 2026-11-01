@@ -4,6 +4,18 @@ import { db } from '../db/ledgerStore.js';
 import { safeNum } from './aiGuruRoutes.mjs';
 import { getFullSessionFloorsheet } from '../brokerVault.mjs';
 import { isNepseTradingDay, formatNptDateIso } from '../../src/utils/nepseCalendar.js';
+import { listAvailableR2FloorsheetDates, fetchFloorsheetFromR2 } from '../utils/cloudFloorsheetVault.mjs';
+
+let _cachedR2Dates = { timestamp: 0, dates: [] };
+async function getCachedR2Dates() {
+  const now = Date.now();
+  if (_cachedR2Dates.dates.length > 0 && (now - _cachedR2Dates.timestamp < 5 * 60 * 1000)) {
+    return _cachedR2Dates.dates;
+  }
+  const dates = await listAvailableR2FloorsheetDates().catch(() => []);
+  _cachedR2Dates = { timestamp: now, dates };
+  return dates;
+}
 
 const router = express.Router();
 
@@ -127,9 +139,16 @@ export async function handleFloorsheetHub(req, res) {
         db.prepare('SELECT DISTINCT trade_date FROM daily_stock_summary WHERE (is_quarantined = 0 OR is_quarantined IS NULL) AND trade_date <= ? ORDER BY trade_date DESC LIMIT 500').all(formatNptDateIso(new Date())).forEach(r => r.trade_date && dateSet.add(r.trade_date));
       } catch (_) {}
     }
+    try {
+      const r2Dates = await getCachedR2Dates();
+      for (const d of r2Dates) {
+        if (d) dateSet.add(d);
+      }
+    } catch (_) {}
     availableDates = Array.from(dateSet).filter(d => d && d <= formatNptDateIso(new Date()) && isNepseTradingDay(new Date(d + 'T12:00:00+05:45'))).sort((a, b) => String(b).localeCompare(String(a))).slice(0, 500);
 
     const requestedDate = req.query.date || null;
+    let chosenDate = requestedDate || (availableDates.length > 0 ? availableDates[0] : null);
 
     // 1. Primary Path: Query tick-level `floorsheet_contracts` table
     if (tableExists(db, 'floorsheet_contracts')) {
@@ -137,7 +156,7 @@ export async function handleFloorsheetHub(req, res) {
         .prepare(`SELECT MAX(trade_date) AS latest_date FROM floorsheet_contracts`)
         .get();
 
-      const chosenDate = requestedDate || (availableDates.length > 0 ? availableDates[0] : latestDateRow?.latest_date);
+      if (!chosenDate && latestDateRow?.latest_date) chosenDate = latestDateRow.latest_date;
       if (chosenDate) {
         asOfDate = chosenDate;
         source = 'SQLITE_CONTRACTS';
@@ -198,7 +217,10 @@ export async function handleFloorsheetHub(req, res) {
     // 2. Secondary Path: Query authentic full session floorsheet from vault/disk
     if (rawContracts.length === 0 && chosenDate) {
       try {
-        const fullTrades = await getFullSessionFloorsheet(chosenDate);
+        let fullTrades = await getFullSessionFloorsheet(chosenDate);
+        if (!Array.isArray(fullTrades) || fullTrades.length === 0) {
+          fullTrades = await fetchFloorsheetFromR2(chosenDate);
+        }
         if (Array.isArray(fullTrades) && fullTrades.length > 0) {
           let filtered = fullTrades;
           if (chosenDate) {

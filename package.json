@@ -28,6 +28,7 @@
     "build:apk": "npm run mobile:build-release"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.3.4",
