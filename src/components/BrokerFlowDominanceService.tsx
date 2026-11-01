@@ -387,8 +387,13 @@ export function BrokerFlowDominanceService({
 
     setLoadingBrokerRetention(true);
     try {
-      const res = await fetchBrokerHoldings(targetId);
-      const payload = res?.data || res;
+      const res: any = await fetchBrokerHoldings(targetId);
+      const payload: any = (res && Array.isArray(res.topHoldings) && res.topHoldings.length > 0)
+        ? res
+        : (res?.data && Array.isArray(res.data.topHoldings) && res.data.topHoldings.length > 0)
+          ? res.data
+          : (res?.data || res || seed);
+
       if (payload && (Array.isArray(payload.topHoldings) || payload.brokerId)) {
         setBrokerRetentionData(payload);
       } else if (seed) {
