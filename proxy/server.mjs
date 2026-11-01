@@ -80,10 +80,12 @@ import {
 } from './utils/dailyFloorsheetCollector.mjs';
 import {
   isR2Configured,
-  uploadDailyFloorsheetToR2,
-  fetchFloorsheetFromR2,
-  listAvailableR2FloorsheetDates,
-  syncLocalFloorsheetsToR2
+  isFirebaseConfigured,
+  getActiveCloudProvider,
+  uploadDailyFloorsheetToCloud,
+  fetchFloorsheetFromCloud,
+  listAvailableCloudFloorsheetDates,
+  syncLocalFloorsheetsToCloud
 } from './utils/cloudFloorsheetVault.mjs';
 import { generateEntryExitPlan } from '../src/utils/setupAnalyzer.js';
 import { 
@@ -3640,12 +3642,13 @@ app.get('/api/floorsheet/archive/:date', async (req, res) => {
 /* Cloudflare R2 Cloud Floorsheet Management Endpoints */
 app.get('/api/floorsheet/cloud/status', async (req, res) => {
   try {
-    const configured = isR2Configured();
-    const cloudDates = configured ? await listAvailableR2FloorsheetDates() : [];
+    const provider = getActiveCloudProvider();
+    const cloudDates = (isFirebaseConfigured() || isR2Configured()) ? await listAvailableCloudFloorsheetDates() : [];
     return res.json({
       success: true,
-      configured,
-      bucket: process.env.R2_BUCKET_NAME || 'drabyashree-floorsheets',
+      provider,
+      firebaseConfigured: isFirebaseConfigured(),
+      r2Configured: isR2Configured(),
       cloudDatesCount: cloudDates.length,
       cloudDates
     });
@@ -3656,13 +3659,14 @@ app.get('/api/floorsheet/cloud/status', async (req, res) => {
 
 app.post('/api/floorsheet/cloud/sync', async (req, res) => {
   try {
-    if (!isR2Configured()) {
+    const provider = getActiveCloudProvider();
+    if (provider === 'LOCAL_ONLY') {
       return res.status(400).json({
         success: false,
-        error: 'Cloudflare R2 credentials (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY) are not set.'
+        error: 'No cloud storage credentials configured. Add FIREBASE_SERVICE_ACCOUNT (or R2 credentials) to activate cloud syncing.'
       });
     }
-    const syncResult = await syncLocalFloorsheetsToR2();
+    const syncResult = await syncLocalFloorsheetsToCloud();
     return res.json(syncResult);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
