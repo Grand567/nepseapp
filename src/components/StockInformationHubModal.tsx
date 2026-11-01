@@ -591,35 +591,35 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
 
   const tabs: Array<{ key: StockInfoTabKey; label: string; badge?: string | number }> = [
     { key: "OVERVIEW", label: "1. Overview" },
-    { key: "STOCK_SCORE", label: "★ Stock Score & Selection" },
-    { key: "TECHNICALS", label: "2. Technicals", badge: `RSI ${technicals.rsi14}` },
     {
       key: "BROKER_FLOW",
-      label: "3. Broker Flow & Smart Money",
+      label: "2. Broker Flow & Smart Money",
       badge: `${telemetry.smartMoney5D.netAccumulationRatio}%`,
     },
+    { key: "AI_GURU_TOOLS", label: "3. AI Guru & Targets", badge: "🧠 AI" },
+    { key: "STOCK_SCORE", label: "★ Stock Score & Selection" },
+    { key: "TECHNICALS", label: "4. Technicals", badge: `RSI ${technicals.rsi14}` },
     {
       key: "MARKET_DEPTH",
-      label: "4. Market Depth",
+      label: "5. Market Depth",
       badge: `OBIR ${telemetry.marketDepth.obir}x`,
     },
     {
       key: "FLOORSHEET",
-      label: "5. Floorsheet",
+      label: "6. Floorsheet Tape",
       badge: telemetry.overview.totalContracts,
     },
     {
       key: "VOLUME_PROFILE",
-      label: "6. Volume Profile",
+      label: "7. Volume Profile",
       badge: telemetry.volumeProfile.pocPrice ? `Rs ${telemetry.volumeProfile.pocPrice}` : undefined,
     },
-    { key: "FUNDAMENTALS_LOCKIN", label: "7. Fundamentals & Lock-In" },
-    { key: "DIVIDENDS_RIGHTS", label: "8. Dividends & Rights" },
-    { key: "REPORTS_ANNOUNCEMENTS", label: "9. Reports & Notices" },
-    { key: "COMPARE_PEERS", label: "10. Compare Peers" },
+    { key: "FUNDAMENTALS_LOCKIN", label: "8. Fundamentals & Lock-In" },
+    { key: "DIVIDENDS_RIGHTS", label: "9. Dividends & Rights" },
+    { key: "REPORTS_ANNOUNCEMENTS", label: "10. Reports & Notices" },
     { key: "PRICE_HISTORY_CHARTS", label: "11. Price History & Charts" },
-    { key: "SEASONALITY", label: "12. BS Seasonality" },
-    { key: "AI_GURU_TOOLS", label: "13. AI Guru & Tools" },
+    { key: "COMPARE_PEERS", label: "12. Compare Peers" },
+    { key: "SEASONALITY", label: "13. BS Seasonality" },
   ];
 
   return (

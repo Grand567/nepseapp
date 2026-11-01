@@ -2795,9 +2795,9 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     { id: 'tools', label: '🧠 Analytics & AI', count: 2 }
   ], []);
 
-  // ── Organized Tabs by Usage Frequency, Importance & Industry Standards ──
+  // ── Organized Tabs by Importance & Alpha Decision Flow ──
   const allTabs = useMemo(() => [
-    // ── Tier 1: Core Trading & Flow (Used by 80-100% of traders on every visit) ──
+    // ── Tier 1: Actionable Trading, Flow & AI Decision Signals ──
     {
       id: 'overview',
       label: 'Overview',
@@ -2806,18 +2806,25 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       badge: null
     },
     {
-      id: 'technicals',
-      label: 'Technicals',
-      icon: Zap,
-      category: 'trading',
-      badge: '⚡ Hot'
-    },
-    {
       id: 'broker_analysis',
       label: 'Broker Flow',
       icon: BarChart2,
       category: 'trading',
       badge: '🔥 Smart Money'
+    },
+    {
+      id: 'ai_calc',
+      label: 'AI Guru & Targets',
+      icon: BrainCircuit,
+      category: 'tools',
+      badge: '🧠 AI Alpha'
+    },
+    {
+      id: 'technicals',
+      label: 'Technicals',
+      icon: Zap,
+      category: 'trading',
+      badge: '⚡ Hot'
     },
     {
       id: 'market_depth',
@@ -2841,7 +2848,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       badge: '📊 POC'
     },
 
-    // ── Tier 2: Financials & Corporate Actions (Essential for Valuation & Long-Term Holding) ──
+    // ── Tier 2: Financials & Corporate Actions (Valuation & Fundamentals) ──
     {
       id: 'fundamentals',
       label: 'Fundamentals',
@@ -2864,6 +2871,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       badge: null
     },
     {
+      id: 'history',
+      label: 'Price History',
+      icon: LineChart,
+      category: 'trading',
+      badge: '1Y'
+    },
+    {
       id: 'compare',
       label: 'Compare Peers',
       icon: BarChart2,
@@ -2871,27 +2885,13 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
       badge: null
     },
 
-    // ── Tier 3: Analytics, History & Decision Tools ──
-    {
-      id: 'history',
-      label: 'Price History',
-      icon: LineChart,
-      category: 'trading',
-      badge: null
-    },
+    // ── Tier 3: Cycles & Seasonality ──
     {
       id: 'seasonality',
       label: 'Seasonality',
       icon: Calendar,
       category: 'tools',
       badge: null
-    },
-    {
-      id: 'ai_calc',
-      label: 'AI Guru & Tools',
-      icon: BrainCircuit,
-      category: 'tools',
-      badge: '🧠 AI'
     }
   ], []);
 
