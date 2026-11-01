@@ -588,6 +588,10 @@ export function BrokerFlowDominanceService({
     targetTo = toDate
   ) => {
     setLoading(true);
+    // When switching dates, reset previous heatmapData if dates don't match so stale date data is never displayed
+    if (targetDate && heatmapData?.businessDate && heatmapData.businessDate !== targetDate) {
+      setHeatmapData(null);
+    }
     try {
       const days = DAYS_MAP[activeTf] || 1;
       const effDate = targetDate || sessionDate || formatNptDateIso(new Date());
@@ -627,7 +631,7 @@ export function BrokerFlowDominanceService({
       const hmData = hmRes.status === 'fulfilled' ? (hmRes.value?.data || hmRes.value) : null;
       if (hmData && Array.isArray(hmData.matrix) && hmData.matrix.length > 0) {
         setHeatmapData(hmData);
-      } else if (latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
+      } else if (!targetDate && latestBrokerMatrix && Array.isArray((latestBrokerMatrix as any)?.matrix)) {
         setHeatmapData(latestBrokerMatrix);
       }
     } catch (_) {}

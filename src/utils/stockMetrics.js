@@ -9,15 +9,21 @@ export function calculateStockMetrics(stock = {}, priceHistory = []) {
   const ltp = Number(s.ltp || s.marketPrice || s.close || 0);
   const listedShares = Number(s.listedShares || s.sharesOutstanding || 0);
 
-  // BUG FIX (Discrepancy #5): The nepseAdapterLayer returns `promoterPct` and `publicFloatPct`
-  // while this function was reading `promoterPercentage` and `publicPercentage` — causing 0% display.
-  // Now reads both canonical and adapter field names via cascaded null-coalescing.
-  const promoterPct = Number(
-    s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct ?? 0
-  );
-  const publicPct = Number(
-    s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct ?? (100 - promoterPct)
-  );
+  // Cascade through all variants of promoter & public float percentages
+  // In NEPSE, when promoter lock-in expires (e.g. SHEL), promoter shares = 0 and public float = 100%
+  const rawPromoter = s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct;
+  const rawPublic = s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct;
+
+  let promoterPct = (rawPromoter !== undefined && rawPromoter !== null && !isNaN(Number(rawPromoter))) 
+    ? Number(rawPromoter) 
+    : 0;
+  let publicPct = (rawPublic !== undefined && rawPublic !== null && !isNaN(Number(rawPublic)) && Number(rawPublic) > 0) 
+    ? Number(rawPublic) 
+    : (promoterPct > 0 ? +(100 - promoterPct).toFixed(2) : 100);
+
+  if (promoterPct === 0 && (rawPublic === 0 || rawPublic === undefined || rawPublic === null)) {
+    publicPct = 100;
+  }
   
   // Public float units
   const publicShares = Number(s.publicShares || (listedShares > 0 ? Math.round(listedShares * (publicPct / 100)) : 0));

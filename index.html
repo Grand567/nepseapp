@@ -9,13 +9,93 @@
     <meta name="theme-color" content="#080c14" />
     <meta name="color-scheme" content="dark" />
     <title>Drabyashree NEPSE</title>
+    <!-- Dark Background and Instant Pre-Boot Splash Styling -->
+    <style>
+      html, body {
+        background-color: #080c14 !important;
+        color: #ffffff;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        width: 100%;
+        overflow-x: hidden;
+      }
+      #app-pre-boot {
+        position: fixed;
+        inset: 0;
+        background-color: #080c14;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 999999;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        user-select: none;
+      }
+      .pre-boot-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .pre-boot-logo {
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.35);
+        margin-bottom: 16px;
+      }
+      .pre-boot-title {
+        font-size: 19px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.02em;
+        margin-bottom: 4px;
+      }
+      .pre-boot-sub {
+        font-size: 11px;
+        font-weight: 600;
+        color: #94a3b8;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+      }
+      .pre-boot-spinner {
+        width: 26px;
+        height: 26px;
+        border: 2.5px solid rgba(59, 130, 246, 0.2);
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: preboot-spin 0.7s linear infinite;
+      }
+      @keyframes preboot-spin { to { transform: rotate(360deg); } }
+    </style>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-dark text-white font-sans overflow-x-hidden antialiased">
-    <div id="root"></div>
+  <body class="bg-dark text-white font-sans overflow-x-hidden antialiased" style="background-color: #080c14;">
+    <div id="root">
+      <div id="app-pre-boot">
+        <div class="pre-boot-card">
+          <div class="pre-boot-logo">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+          </div>
+          <div class="pre-boot-title">Drabyashree NEPSE</div>
+          <div class="pre-boot-sub">Institutional Terminal</div>
+          <div class="pre-boot-spinner"></div>
+        </div>
+      </div>
+    </div>
     <script>
       // Only warn if opened directly in an external desktop browser via file:// (not Electron, not Capacitor)
       if (window.location.protocol === 'file:' && !navigator.userAgent.includes('Electron') && !window.Capacitor) {

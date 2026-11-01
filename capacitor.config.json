@@ -2,7 +2,9 @@
   "appId": "com.smartwealth.nepse",
   "appName": "Drabyashree NEPSE",
   "webDir": "dist",
+  "backgroundColor": "#080c14",
   "android": {
+    "backgroundColor": "#080c14",
     "allowMixedContent": false
   },
   "plugins": {

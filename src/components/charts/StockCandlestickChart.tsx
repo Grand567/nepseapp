@@ -548,7 +548,7 @@ export function StockCandlestickChart({
 
       // Map to lightweight-charts marker format
       const markers: Array<{
-        time: string;
+        time: any;
         position: 'aboveBar' | 'belowBar';
         color: string;
         shape: 'arrowUp' | 'arrowDown' | 'circle';
@@ -558,12 +558,40 @@ export function StockCandlestickChart({
 
       const datesSeen = new Set<string>();
       for (const det of detections) {
-        const time = String(det.date || '').slice(0, 10);
-        if (!time || datesSeen.has(time + det.id)) continue;
-        datesSeen.add(time + det.id);
+        let markerTime: any = det.date;
+        if (timeframe === '1D') {
+          if (typeof det.time === 'number') {
+            markerTime = det.time;
+          } else if (typeof det.rawTime === 'number') {
+            markerTime = det.rawTime;
+          } else if (typeof det.date === 'number') {
+            markerTime = det.date;
+          } else if (typeof markerTime === 'string' && /^\d{9,12}$/.test(markerTime.trim())) {
+            markerTime = Number(markerTime.trim());
+          } else if (filteredCandles.length > 0 && typeof filteredCandles[0].date === 'number') {
+            markerTime = filteredCandles[filteredCandles.length - 1].date;
+          }
+        } else {
+          if (typeof markerTime === 'number') {
+            const ts = markerTime > 1e11 ? Math.floor(markerTime / 1000) : markerTime;
+            markerTime = new Date(ts * 1000).toISOString().slice(0, 10);
+          } else if (typeof markerTime === 'string') {
+            const trimmed = markerTime.trim();
+            if (/^\d{9,12}$/.test(trimmed)) {
+              const ts = parseInt(trimmed, 10);
+              markerTime = new Date(ts * 1000).toISOString().slice(0, 10);
+            } else {
+              markerTime = trimmed.slice(0, 10);
+            }
+          }
+        }
+        if (!markerTime) continue;
+        const markerKey = String(markerTime) + (det.id || '');
+        if (datesSeen.has(markerKey)) continue;
+        datesSeen.add(markerKey);
         const isBullish = det.type === 'bullish';
         markers.push({
-          time,
+          time: markerTime,
           position: isBullish ? 'belowBar' : 'aboveBar',
           color: isBullish ? '#10b981' : '#f43f5e',
           shape: isBullish ? 'arrowUp' : 'arrowDown',
@@ -572,11 +600,14 @@ export function StockCandlestickChart({
         });
       }
       // Must be sorted ascending by time for lightweight-charts
-      return markers.sort((a, b) => a.time.localeCompare(b.time));
+      return markers.sort((a, b) => {
+        if (typeof a.time === 'number' && typeof b.time === 'number') return a.time - b.time;
+        return String(a.time).localeCompare(String(b.time));
+      });
     } catch {
       return [];
     }
-  }, [filteredCandles]);
+  }, [filteredCandles, timeframe]);
 
   // ── 52W levels from stock prop ────────────────────────────────────────────────
   const high52w = useMemo(() => {
@@ -693,9 +724,14 @@ export function StockCandlestickChart({
       visible: showCandles,
     });
 
+    const sanitizeBarTime = (t: any) => {
+      if (typeof t === 'string' && /^\d{9,12}$/.test(t.trim())) return Number(t.trim());
+      return t;
+    };
+
     candleSeries.setData(
       filteredCandles.map((c) => ({
-        time: c.date,
+        time: sanitizeBarTime(c.date),
         open: Number(c.open),
         high: Number(c.high),
         low: Number(c.low),
@@ -728,7 +764,7 @@ export function StockCandlestickChart({
 
       volumeSeries.setData(
         filteredCandles.map((c) => ({
-          time: c.date,
+          time: sanitizeBarTime(c.date),
           value: Number(c.volume) || 0,
           color: Number(c.close) >= Number(c.open) ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)',
         }))

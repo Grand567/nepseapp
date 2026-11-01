@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronLeft, X, ExternalLink, Cpu, Layers } from 'lucide-react';
+import { ChevronLeft, X, ExternalLink, Cpu, Layers, Maximize2, Minimize2, RotateCw } from 'lucide-react';
+import { useEffect, useCallback } from 'react';
 import ShareHubChart from './ShareHubChart';
 import { StockCandlestickChart } from './charts/StockCandlestickChart';
 import { useBackHandler } from '../context/NavigationContext';
@@ -19,6 +20,42 @@ export default function AdvancedChartModal({
 
   const [timeframe, setTimeframe] = useState(initialTimeframe || '1M');
   const [chartMode, setChartMode] = useState('pro'); // 'pro' | 'ribbon'
+  const [isLandscape, setIsLandscape] = useState(false);
+
+  // Landscape full-screen orientation handler for mobile workstations
+  const toggleLandscape = useCallback(async () => {
+    try {
+      if (!isLandscape) {
+        if (document.documentElement?.requestFullscreen) {
+          await document.documentElement.requestFullscreen().catch(() => {});
+        }
+        if (window.screen?.orientation?.lock) {
+          await window.screen.orientation.lock('landscape').catch(() => {});
+        }
+        setIsLandscape(true);
+      } else {
+        if (document.exitFullscreen && document.fullscreenElement) {
+          await document.exitFullscreen().catch(() => {});
+        }
+        if (window.screen?.orientation?.unlock) {
+          window.screen.orientation.unlock();
+        }
+        setIsLandscape(false);
+      }
+    } catch (_) {
+      setIsLandscape(prev => !prev);
+    }
+  }, [isLandscape]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        if (window.screen?.orientation?.unlock) {
+          window.screen.orientation.unlock();
+        }
+      } catch (_) {}
+    };
+  }, []);
 
   const ltp = Number(stock?.ltp || 0);
   const change = Number(stock?.change || 0);
@@ -164,6 +201,30 @@ export default function AdvancedChartModal({
             </button>
           </div>
 
+          {/* Mobile Landscape Orientation Toggle */}
+          <button
+            type="button"
+            onClick={toggleLandscape}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              borderRadius: 8,
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: isLandscape ? 'rgba(56, 189, 248, 0.22)' : 'rgba(255, 255, 255, 0.05)',
+              border: isLandscape ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+              color: isLandscape ? '#38bdf8' : '#94a3b8',
+              transition: 'all 0.15s ease'
+            }}
+            title={isLandscape ? "Switch to Portrait View" : "Rotate to Fullscreen Landscape View"}
+          >
+            {isLandscape ? <Minimize2 size={12} /> : <RotateCw size={12} />}
+            <span>{isLandscape ? "Portrait" : "Landscape"}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -211,16 +272,16 @@ export default function AdvancedChartModal({
       </div>
 
       {/* ── Main Workstation Content Area ── */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, position: 'relative', overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column' }}>
         {chartMode === 'pro' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '6px 8px 10px' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '6px 8px 14px' }}>
             <ShareHubChart
               symbol={symbol}
               stock={stock}
               chartTimeframe={timeframe}
               onTimeframeChange={setTimeframe}
               isFullscreen={true}
-              height={520}
+              height={isLandscape ? 320 : (typeof window !== 'undefined' && window.innerWidth < 640 ? 400 : 520)}
               entryExitPlan={entryExitPlan}
               brokerAnalysis={brokerAnalysis}
               floorsheetData={floorsheetData}
@@ -230,7 +291,7 @@ export default function AdvancedChartModal({
             />
           </div>
         ) : (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '10px 14px' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '10px 14px 18px' }}>
             <StockCandlestickChart
               symbol={symbol}
               stock={stock}

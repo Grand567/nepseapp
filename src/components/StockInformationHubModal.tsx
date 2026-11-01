@@ -305,6 +305,14 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
   );
 
   const ltp = telemetry.overview.verifiedPrice ?? 500;
+  const dailyPrevClose = Number(
+    quoteData?.previousClose ??
+    quoteData?.prevClose ??
+    selectedScrip?.previousClose ??
+    selectedScrip?.prevClose ??
+    historicalCandles?.[historicalCandles.length - 2]?.close ??
+    (ltp > 0 ? ltp : 500)
+  );
   const dailyLowerCircuit = Number((ltp * 0.85).toFixed(2));
   const dailyUpperCircuit = Number((ltp * 1.15).toFixed(2));
 
@@ -1443,7 +1451,13 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
         {/* TAB 6: VOLUME PROFILE (POC) */}
         {activeTab === "VOLUME_PROFILE" && (
           <div className="space-y-2 text-xs">
-            {telemetry.volumeProfile.nodes.map((node) => (
+            {(!telemetry.volumeProfile?.nodes || telemetry.volumeProfile.nodes.length === 0) ? (
+              <div className="p-8 text-center text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800">
+                <p className="font-bold text-slate-300">No Volume Profile nodes compiled yet for {resolvedSymbol}.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Collecting horizontal liquidity price distribution from latest floorsheet trades...</p>
+              </div>
+            ) : (
+              telemetry.volumeProfile.nodes.map((node) => (
               <div
                 key={node.priceBucket}
                 className={`p-2 rounded-lg border ${
@@ -1489,7 +1503,8 @@ export const StockInformationHubModal: React.FC<StockInformationHubModalProps> =
                   />
                 </div>
               </div>
-            ))}
+            ))
+            )}
           </div>
         )}
 

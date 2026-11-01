@@ -4261,6 +4261,17 @@ function enrichWithMicrostructure(symbol, days, vaultData, date = '') {
     topDistributors: date ? (diag.topDistributors || enriched.topDistributors) : (enriched.topDistributors || diag.topDistributors),
     topAccumulator: date ? (diag.topAccumulators?.[0]?.brokerId || diag.topAccumulators?.[0]?.broker || enriched.topAccumulator) : (enriched.topAccumulator || (diag.topAccumulators?.[0] ? (diag.topAccumulators[0].brokerId || diag.topAccumulators[0].broker) : null)),
     topDistributor: date ? (diag.topDistributors?.[0]?.brokerId || diag.topDistributors?.[0]?.broker || enriched.topDistributor) : (enriched.topDistributor || (diag.topDistributors?.[0] ? (diag.topDistributors[0].brokerId || diag.topDistributors[0].broker) : null)),
+    dailyFlow: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
+    dateWiseBrokers: diag.dailyFlow || vaultData.dailyFlow || enriched.dailyFlow || [],
+    timeframeDays: diag.timeframeDays || days,
+    tradingDays: diag.timeframeDays || days,
+    availableDates: (Array.isArray(vaultData?.availableDates) && vaultData.availableDates.length > 0)
+      ? vaultData.availableDates
+      : ((Array.isArray(diag?.availableDates) && diag.availableDates.length > 0)
+          ? diag.availableDates
+          : (_cachedTradingDates?.dates?.length > 0 ? _cachedTradingDates.dates : [])),
+    grossBuyConcentrationPct: diag.grossBuyConcentrationPct ?? enriched.grossBuyConcentrationPct,
+    grossSellConcentrationPct: diag.grossSellConcentrationPct ?? enriched.grossSellConcentrationPct,
   };
 }
 
@@ -4382,7 +4393,8 @@ app.get('/api/broker-analysis/:symbol', async (req, res) => {
               allHoldings: topHoldings,
               topDistributors: distributors.slice(0, 50),
               allDistributors: distributors,
-              tradingDays: 38
+              tradingDays: 38,
+              availableDates: await getMarketTradingDates().catch(() => [])
             };
           }
         }
@@ -5581,6 +5593,298 @@ app.get('/api/scanner/bulk', async (req, res) => {
 
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   HELPER: Aggregate Broker Heatmap Matrix from SQLite Ledger (100% Authentic)
+   ══════════════════════════════════════════════════════════════════════════════ */
+export function aggregateBrokerMatrixFromLedger({ targetDate = '', days = 1, fromDate = '', toDate = '', symbols = null } = {}, cumLedgerMap = null) {
+  if (!db) return null;
+  try {
+    let dateCondition = '';
+    let params = [];
+
+    if (fromDate && toDate) {
+      dateCondition = 'trade_date >= ? AND trade_date <= ?';
+      params = [fromDate, toDate];
+    } else if (days > 1) {
+      const refDate = targetDate || db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get()?.maxDate;
+      if (!refDate) return null;
+      dateCondition = `trade_date IN (SELECT DISTINCT trade_date FROM daily_broker_ledger WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT ?)`;
+      params = [refDate, days];
+    } else {
+      const refDate = targetDate || db.prepare('SELECT MAX(trade_date) as maxDate FROM daily_broker_ledger').get()?.maxDate;
+      if (!refDate) return null;
+      dateCondition = 'trade_date = ?';
+      params = [refDate];
+    }
+
+    let symCondition = '';
+    if (Array.isArray(symbols) && symbols.length > 0) {
+      symCondition = ` AND UPPER(symbol) IN (${symbols.map(() => '?').join(',')})`;
+      params.push(...symbols.map(s => String(s).toUpperCase().trim()));
+    }
+
+    const query = `
+      SELECT broker_id, UPPER(symbol) as symbol,
+             SUM(buy_vol) as buy_vol, SUM(sell_vol) as sell_vol,
+             SUM(buy_amt) as buy_amt, SUM(sell_amt) as sell_amt
+      FROM daily_broker_ledger
+      WHERE ${dateCondition} ${symCondition}
+      GROUP BY broker_id, UPPER(symbol)
+    `;
+
+    const rows = db.prepare(query).all(...params);
+    if (!rows || rows.length === 0) return null;
+
+    if (!cumLedgerMap) {
+      cumLedgerMap = new Map();
+      try {
+        const cRows = db.prepare(`
+          SELECT broker_id, UPPER(symbol) as symbol,
+                 SUM(buy_vol) as totalBuyVol,
+                 SUM(sell_vol) as totalSellVol,
+                 SUM(buy_vol) - SUM(sell_vol) as cumNetQty,
+                 SUM(buy_amt) as totalBuyAmt
+          FROM daily_broker_ledger
+          GROUP BY broker_id, UPPER(symbol)
+        `).all();
+        for (const r of cRows) {
+          cumLedgerMap.set(`${String(r.broker_id).replace(/^0+/, '')}_${r.symbol}`, r);
+        }
+      } catch (_) {}
+    }
+
+    const brokerMap = new Map();
+    const scripTurnoverMap = new Map();
+
+    for (const r of rows) {
+      const bId = String(r.broker_id).replace(/^0+/, '');
+      const sym = String(r.symbol).toUpperCase().trim();
+      const bBuyAmt = Math.round(Number(r.buy_amt || 0));
+      const bSellAmt = Math.round(Number(r.sell_amt || 0));
+      const bBuyQty = Number(r.buy_vol || 0);
+      const bSellQty = Number(r.sell_vol || 0);
+      const bNetAmt = bBuyAmt - bSellAmt;
+      const bNetQty = bBuyQty - bSellQty;
+      const avgBuyRate = bBuyQty > 0 ? +(bBuyAmt / bBuyQty).toFixed(2) : 0;
+      const avgSellRate = bSellQty > 0 ? +(bSellAmt / bSellQty).toFixed(2) : 0;
+
+      const cumRec = cumLedgerMap.get(`${bId}_${sym}`);
+      const cumHoldQty = cumRec ? Number(cumRec.cumNetQty || 0) : 0;
+      const cumAvgBuy = cumRec && Number(cumRec.totalBuyVol || 0) > 0 ? +(cumRec.totalBuyAmt / cumRec.totalBuyVol).toFixed(2) : 0;
+
+      if (!brokerMap.has(bId)) {
+        brokerMap.set(bId, {
+          broker: bId,
+          id: bId,
+          brokerName: getBrokerName(bId) || ('Broker #' + bId),
+          totalBuy: 0,
+          totalSell: 0,
+          netFlow: 0,
+          totalTrades: 0,
+          bias: 'Neutral',
+          topStock: '—',
+          scrips: []
+        });
+      }
+      const bObj = brokerMap.get(bId);
+      bObj.totalBuy += bBuyAmt;
+      bObj.totalSell += bSellAmt;
+
+      bObj.scrips.push({
+        symbol: sym,
+        buy: bBuyAmt,
+        sell: bSellAmt,
+        net: bNetAmt,
+        buyAmount: bBuyAmt,
+        sellAmount: bSellAmt,
+        netFlow: bNetAmt,
+        buyQty: bBuyQty,
+        sellQty: bSellQty,
+        netQty: bNetQty,
+        avgBuyRate,
+        avgSellRate,
+        cumHoldQty: cumHoldQty > 0 ? cumHoldQty : undefined,
+        cumAvgBuy: cumAvgBuy > 0 ? cumAvgBuy : undefined,
+        bias: bNetAmt > 1000000 ? 'Accumulation' : bNetAmt < -1000000 ? 'Distribution' : 'Neutral'
+      });
+
+      scripTurnoverMap.set(sym, (scripTurnoverMap.get(sym) || 0) + bBuyAmt + bSellAmt);
+    }
+
+    const matrix = Array.from(brokerMap.values()).map(b => {
+      b.netFlow = b.totalBuy - b.totalSell;
+      if (b.netFlow > 8000000) b.bias = 'Aggressive Accumulation';
+      else if (b.netFlow > 2000000) b.bias = 'Mild Accumulation';
+      else if (b.netFlow < -8000000) b.bias = 'Heavy Selling';
+      else if (b.netFlow < -2000000) b.bias = 'Distribution';
+      else b.bias = 'Neutral';
+
+      let maxScripAmt = 0;
+      for (const s of b.scrips) {
+        const amt = s.buyAmount + s.sellAmount;
+        if (amt > maxScripAmt) {
+          maxScripAmt = amt;
+          b.topStock = s.symbol;
+        }
+      }
+
+      b.topAccumulation = [...b.scrips].filter(s => s.netFlow > 0).sort((x, y) => y.netFlow - x.netFlow).slice(0, 10);
+      b.topDistribution = [...b.scrips].filter(s => s.netFlow < 0).sort((x, y) => x.netFlow - y.netFlow).slice(0, 10);
+      b.topByNetQty = [...b.scrips].filter(s => s.netQty > 0).sort((x, y) => y.netQty - x.netQty).slice(0, 10);
+      b.topDistByNetQty = [...b.scrips].filter(s => s.netQty < 0).sort((x, y) => x.netQty - y.netQty).slice(0, 10);
+      b.topByGrossBuyAmt = [...b.scrips].filter(s => s.buyAmount > 0).sort((x, y) => y.buyAmount - x.buyAmount).slice(0, 10);
+      b.topByGrossBuyQty = [...b.scrips].filter(s => s.buyQty > 0).sort((x, y) => y.buyQty - x.buyQty).slice(0, 10);
+      b.topDistByGrossSellAmt = [...b.scrips].filter(s => s.sellAmount > 0).sort((x, y) => y.sellAmount - x.sellAmount).slice(0, 10);
+      b.topDistByGrossSellQty = [...b.scrips].filter(s => s.sellQty > 0).sort((x, y) => y.sellQty - x.sellQty).slice(0, 10);
+      b.totalTrades = Math.round((b.totalBuy + b.totalSell) / 120000) || 1;
+      return b;
+    }).sort((a, b) => b.netFlow - a.netFlow);
+
+    const netBuys = [];
+    const netSells = [];
+    matrix.forEach(b => {
+      b.scrips.forEach(s => {
+        if (s.netQty > 0) {
+          netBuys.push({
+            symbol: s.symbol,
+            buyerBroker: b.broker,
+            brokerName: b.brokerName,
+            qty: s.netQty,
+            netQty: s.netQty,
+            buyQty: s.buyQty,
+            sellQty: s.sellQty,
+            amount: s.netFlow,
+            amountCr: +(s.netFlow / 1e7).toFixed(2),
+            avgRate: s.avgBuyRate,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        } else if (s.netQty < 0) {
+          const absK = Math.abs(s.netQty);
+          const absA = Math.abs(s.netFlow);
+          netSells.push({
+            symbol: s.symbol,
+            sellerBroker: b.broker,
+            brokerName: b.brokerName,
+            qty: absK,
+            netQty: s.netQty,
+            buyQty: s.buyQty,
+            sellQty: s.sellQty,
+            amount: absA,
+            amountCr: +(absA / 1e7).toFixed(2),
+            avgRate: s.avgSellRate,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        }
+      });
+    });
+    netBuys.sort((a, b) => b.qty - a.qty);
+    netSells.sort((a, b) => b.qty - a.qty);
+
+    const seenB = new Set();
+    const topUniqueStockNetBuyers = [];
+    for (const it of netBuys) {
+      if (!seenB.has(it.symbol)) { seenB.add(it.symbol); topUniqueStockNetBuyers.push(it); }
+    }
+    const seenS = new Set();
+    const topUniqueStockNetSellers = [];
+    for (const it of netSells) {
+      if (!seenS.has(it.symbol)) { seenS.add(it.symbol); topUniqueStockNetSellers.push(it); }
+    }
+
+    const wholeDayMap = new Map();
+    matrix.forEach(b => {
+      b.scrips.forEach(s => {
+        const sym = s.symbol;
+        if (!wholeDayMap.has(sym)) {
+          wholeDayMap.set(sym, {
+            symbol: sym,
+            totalBuyVol: 0,
+            totalNetKitta: 0,
+            totalNetInflow: 0,
+            totalBuyAmt: 0,
+            accumulators: []
+          });
+        }
+        const st = wholeDayMap.get(sym);
+        st.totalBuyVol += s.buyQty;
+        st.totalBuyAmt += s.buyAmount;
+        if (s.netQty > 0) {
+          st.totalNetKitta += s.netQty;
+          st.totalNetInflow += s.netFlow;
+          st.accumulators.push({
+            broker: b.broker,
+            brokerName: b.brokerName,
+            netQty: s.netQty,
+            buyQty: s.buyQty,
+            sellQty: s.sellQty,
+            avgBuyRate: s.avgBuyRate,
+            cumHoldQty: s.cumHoldQty,
+            cumAvgBuy: s.cumAvgBuy
+          });
+        }
+      });
+    });
+    const wholeDayList = Array.from(wholeDayMap.values()).map(st => {
+      st.accumulators.sort((a, b) => b.netQty - a.netQty);
+      const topAcc = st.accumulators[0] || null;
+      const top3Acc = st.accumulators.slice(0, 3);
+      const top3AccKitta = top3Acc.reduce((acc, x) => acc + x.netQty, 0);
+      const effTradedVol = st.totalBuyVol || 1;
+      const lockPct = +((st.totalNetKitta / effTradedVol) * 100).toFixed(1);
+      const bcr3NetPct = +((top3AccKitta / effTradedVol) * 100).toFixed(1);
+      const avgPrice = st.totalBuyVol > 0 ? +(st.totalBuyAmt / st.totalBuyVol).toFixed(2) : (topAcc?.avgBuyRate || 0);
+      return {
+        symbol: st.symbol,
+        totalNetKitta: st.totalNetKitta,
+        totalTradedVol: st.totalBuyVol,
+        lockPct,
+        totalNetInflow: Math.round(st.totalNetInflow),
+        totalNetInflowCr: +(st.totalNetInflow / 1e7).toFixed(2),
+        avgPrice,
+        leadAccumulator: topAcc ? {
+          broker: topAcc.broker,
+          brokerName: topAcc.brokerName,
+          netQty: topAcc.netQty,
+          buyQty: topAcc.buyQty,
+          sellQty: topAcc.sellQty,
+          shareOfLockPct: +((topAcc.netQty / (st.totalNetKitta || 1)) * 100).toFixed(1),
+          cumHoldQty: topAcc.cumHoldQty,
+          cumAvgBuy: topAcc.cumAvgBuy
+        } : null,
+        top3Accumulators: top3Acc,
+        top3AccKitta,
+        bcr3NetPct,
+        smartMoneyBias: lockPct >= 65 || (bcr3NetPct >= 35 && st.totalNetKitta > 100000) ? 'Heavy Cornering' : (lockPct >= 45 ? 'Institutional Accumulation' : 'Mild Accumulation')
+      };
+    });
+    wholeDayList.sort((a, b) => b.totalNetKitta - a.totalNetKitta);
+
+    const topScrips = Array.from(scripTurnoverMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 30).map(x => x[0]);
+    const topBrokers = matrix.slice(0, 20).map(b => b.broker);
+    const topBrokerNames = {};
+    matrix.forEach(b => { topBrokerNames[b.broker] = b.brokerName; });
+
+    return {
+      topBrokers,
+      topBrokerNames,
+      topScrips,
+      matrix,
+      topCrossBrokerNetBuyers: netBuys.slice(0, 50),
+      topCrossBrokerNetSells: netSells.slice(0, 50),
+      topUniqueStockNetBuyers: topUniqueStockNetBuyers.slice(0, 30),
+      topUniqueStockNetSellers: topUniqueStockNetSellers.slice(0, 30),
+      topNetBoughtScripsWholeDay: wholeDayList.slice(0, 20),
+      businessDate: targetDate || params[0],
+      totalTrades: matrix.reduce((acc, b) => acc + (b.totalTrades || 0), 0)
+    };
+  } catch (err) {
+    console.warn('[ledger-matrix] aggregation error:', err.message);
+    return null;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
    ENDPOINT S5 — Broker Heatmap Matrix
    GET /api/smart-money/broker-heatmap
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -5619,7 +5923,22 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           return res.json({ success: true, data: aggData, source: 'full_session_floorsheet_authentic' });
         }
 
-        // 1.5. Snapshot fallback if raw floorsheet JSON isn't available
+        // 1.2. SQLite Daily Broker Ledger Check (100% authentic historical floorsheet ledger)
+        if (db) {
+          const ledgerAgg = aggregateBrokerMatrixFromLedger({ targetDate: businessDate, days: 1 });
+          if (ledgerAgg && Array.isArray(ledgerAgg.matrix) && ledgerAgg.matrix.length > 0) {
+            let availableDates = [];
+            try {
+              const dates = await getMarketTradingDates();
+              if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
+            } catch (_) {}
+            ledgerAgg.availableDates = availableDates;
+            setCache(cacheKey, ledgerAgg, 5 * 60 * 1000);
+            return res.json({ success: true, data: ledgerAgg, source: 'sqlite_daily_broker_ledger' });
+          }
+        }
+
+        // 1.5. Snapshot fallback ONLY if no specific historical date was requested or snapshot matches
         const matrixDirs = [
           path.join(__dirname, 'data'),
           path.join(process.cwd(), 'data'),
@@ -5631,6 +5950,10 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
           if (fs.existsSync(mFile)) {
             try {
               const parsed = JSON.parse(fs.readFileSync(mFile, 'utf8'));
+              // If a specific historical date was requested that differs from the snapshot date, do NOT return stale/wrong snapshot!
+              if (businessDate && parsed?.businessDate && parsed.businessDate !== businessDate) {
+                continue;
+              }
               if (parsed?.matrix?.length > 0) {
                 let availableDates = [];
                 try {
@@ -5824,6 +6147,27 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
         }
       } catch (fErr) {
         console.warn('[broker-heatmap] getFullSessionFloorsheet error:', fErr.message);
+      }
+    }
+
+    // 2. Multi-day horizon or custom range: check SQLite ledger first!
+    if (db && (!sector || sector.toUpperCase() === 'ALL')) {
+      const ledgerMulti = aggregateBrokerMatrixFromLedger({
+        targetDate: businessDate,
+        days,
+        fromDate,
+        toDate,
+        symbols: symbolsParam ? symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : null
+      });
+      if (ledgerMulti && Array.isArray(ledgerMulti.matrix) && ledgerMulti.matrix.length > 0) {
+        let availableDates = [];
+        try {
+          const dates = await getMarketTradingDates();
+          if (Array.isArray(dates) && dates.length > 0) availableDates = dates.slice(0, 500);
+        } catch (_) {}
+        ledgerMulti.availableDates = availableDates;
+        setCache(cacheKey, ledgerMulti, 5 * 60 * 1000);
+        return res.json({ success: true, data: ledgerMulti, source: 'sqlite_multi_day_ledger' });
       }
     }
 
@@ -6671,6 +7015,7 @@ app.get([
     const distributors = enriched.filter(b => b.netQty < 0).sort((a, b) => a.netQty - b.netQty);
     const totalSharesHeld = accumulators.reduce((sum, b) => sum + b.netQty, 0);
 
+    const marketDates = await getMarketTradingDates().catch(() => []);
     return res.json({
       success: true,
       symbol,
@@ -6681,7 +7026,8 @@ app.get([
       brokers: enriched,
       allHoldings: accumulators,
       allDistributors: distributors,
-      topHoldings: accumulators.slice(0, 20)
+      topHoldings: accumulators.slice(0, 20),
+      availableDates: marketDates
     });
   } catch (error) {
     console.error(`[Server] /api/stocks/${symbol}/smart-money error:`, error.message);

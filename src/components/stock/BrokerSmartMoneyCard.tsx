@@ -62,6 +62,10 @@ export interface BrokerSmartMoneyCardProps {
   ) => Promise<any>;
   /** Optional 30D baseline market share map (brokerId -> ratio 0..1) */
   brokerBaselineShares?: Record<number, number>;
+  /** Optional external active timeframe sync (e.g., 1, 5, 15, 30, 'all') */
+  selectedDays?: number | string;
+  /** Callback fired when user changes timeframe inside the card */
+  onTimeframeChange?: (timeframe: SmartMoneyTimeframe, days: number | string) => void;
 }
 
 /**
@@ -136,14 +140,19 @@ export function normalizeAndAggregateBrokerData(
       payload?.data?.[tfUpper] ??
       payload?.data?.[tfLower] ??
       payload?.data?.allBrokers ??
-      payload?.data?.topHoldings ??
-      payload?.data?.topNetBuyers ??
       payload?.data?.brokers ??
       payload?.allBrokers ??
+      payload?.brokers ??
+      payload?.data?.allHoldings ??
+      payload?.allHoldings ??
+      ((Array.isArray(payload?.data?.topHoldings) || Array.isArray(payload?.topHoldings)) && (Array.isArray(payload?.data?.allDistributors) || Array.isArray(payload?.allDistributors))
+        ? [...(payload?.data?.topHoldings || payload?.topHoldings || []), ...(payload?.data?.allDistributors || payload?.allDistributors || [])]
+        : null) ??
+      payload?.data?.topHoldings ??
+      payload?.data?.topNetBuyers ??
       payload?.topHoldings ??
       payload?.topNetBuyers ??
-      payload?.data ??
-      payload?.brokers ??
+      (Array.isArray(payload?.data) ? payload.data : null) ??
       payload?.rows ??
       payload?.items;
 
@@ -361,14 +370,52 @@ function BrokerSmartMoneyCardInner({
   initialData,
   onFetchSmartMoney,
   brokerBaselineShares,
+  selectedDays,
+  onTimeframeChange,
 }: BrokerSmartMoneyCardProps) {
   const cleanSymbol = (symbol || '').trim().toUpperCase();
-  const [timeframe, setTimeframe] = useState<SmartMoneyTimeframe>('1D');
+  const [timeframe, setTimeframe] = useState<SmartMoneyTimeframe>(() => {
+    if (selectedDays != null) {
+      const sDays = String(selectedDays).toLowerCase();
+      if (sDays === 'all' || Number(selectedDays) >= 300) return 'ALL';
+      if (Number(selectedDays) >= 15) return '1M';
+      if (Number(selectedDays) >= 5) return '5D';
+    }
+    return '1D';
+  });
   const [rawPayload, setRawPayload] = useState<any>(initialData ?? null);
   const [cached1DPayload, setCached1DPayload] = useState<any>(initialData ?? null);
   const [loading, setLoading] = useState<boolean>(false);
   const [showAllHolders, setShowAllHolders] = useState<boolean>(false);
   const [warningBanner, setWarningBanner] = useState<string | null>(null);
+
+  // Sync external timeframe change (e.g. from BeginnerConfidenceCard)
+  useEffect(() => {
+    if (selectedDays != null) {
+      const sDays = String(selectedDays).toLowerCase();
+      let nextTf: SmartMoneyTimeframe = '1D';
+      if (sDays === 'all' || Number(selectedDays) >= 300) {
+        nextTf = 'ALL';
+      } else if (Number(selectedDays) >= 15) {
+        nextTf = '1M';
+      } else if (Number(selectedDays) >= 5) {
+        nextTf = '5D';
+      } else {
+        nextTf = '1D';
+      }
+      if (nextTf !== timeframe) {
+        setTimeframe(nextTf);
+      }
+    }
+  }, [selectedDays]);
+
+  const handleSelectTimeframe = (tf: SmartMoneyTimeframe) => {
+    setTimeframe(tf);
+    const dVal = tf === 'ALL' ? 'all' : (tf === '5D' ? 5 : tf === '1M' ? 30 : 1);
+    if (onTimeframeChange) {
+      onTimeframeChange(tf, dVal);
+    }
+  };
 
   useEffect(() => {
     if (initialData && !cached1DPayload) {
@@ -600,7 +647,7 @@ function BrokerSmartMoneyCardInner({
                 key={tf}
                 type="button"
                 disabled={loading}
-                onClick={() => setTimeframe(tf)}
+                onClick={() => handleSelectTimeframe(tf)}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   isActive
                     ? 'bg-emerald-600 text-white shadow-sm'

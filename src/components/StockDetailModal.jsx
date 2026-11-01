@@ -797,13 +797,46 @@ function BeginnerConfidenceCard({
   const diag = multiDayDiag;
 
   // Check 2: Big Broker / Smart Money Activity (Dynamically bound to brokerDays via rolling-window microstructure)
+  // When dailyHistory contains fewer sessions than brokerDays, prefer the authoritative backend multi-day rollup in realBrokerAnalysis
+  const isHistorySufficient = Boolean(multiDayDiag && multiDayDiag.timeframeDays >= brokerDays && dailyHistory.length >= brokerDays);
+
   const bcr3Buy = Number(realBrokerAnalysis?.bcr3BuyPct ?? brokerConcentration?.bcr3BuyPct ?? 0);
   const bcr3Sell = Number(realBrokerAnalysis?.bcr3SellPct ?? brokerConcentration?.bcr3SellPct ?? 0);
-  const grossBuyPct = Number(multiDayDiag?.grossBuyConcentrationPct ?? bcr3Buy ?? 0);
-  const grossSellPct = Number(multiDayDiag?.grossSellConcentrationPct ?? bcr3Sell ?? 0);
+  const grossBuyPct = Number(
+    (isHistorySufficient ? multiDayDiag?.grossBuyConcentrationPct : null) ??
+    realBrokerAnalysis?.grossBuyConcentrationPct ??
+    realBrokerAnalysis?.bcr5BuyPct ??
+    realBrokerAnalysis?.bcr3BuyPct ??
+    multiDayDiag?.grossBuyConcentrationPct ??
+    bcr3Buy ??
+    0
+  );
+  const grossSellPct = Number(
+    (isHistorySufficient ? multiDayDiag?.grossSellConcentrationPct : null) ??
+    realBrokerAnalysis?.grossSellConcentrationPct ??
+    realBrokerAnalysis?.scr3SellPct ??
+    realBrokerAnalysis?.bcr3SellPct ??
+    multiDayDiag?.grossSellConcentrationPct ??
+    bcr3Sell ??
+    0
+  );
   const nbar = Number(realBrokerAnalysis?.nbar ?? (grossSellPct > 0 ? grossBuyPct / grossSellPct : 1.0));
-  const whaleVwap = (multiDayDiag?.bigBrokerVWAP != null && !isNaN(Number(multiDayDiag.bigBrokerVWAP))) ? Number(multiDayDiag.bigBrokerVWAP).toFixed(1) : null;
-  const bcr5Net = multiDayDiag?.bcr5NetPct != null ? Number(multiDayDiag.bcr5NetPct).toFixed(1) : grossBuyPct.toFixed(1);
+  const rawWhaleVwap = (isHistorySufficient ? multiDayDiag?.bigBrokerVWAP : null) ??
+    realBrokerAnalysis?.bigBrokerVWAP ??
+    multiDayDiag?.bigBrokerVWAP;
+  const whaleVwap = (rawWhaleVwap != null && !isNaN(Number(rawWhaleVwap)) && Number(rawWhaleVwap) > 0)
+    ? Number(rawWhaleVwap).toFixed(1)
+    : null;
+
+  const rawBcr5Net = (isHistorySufficient ? multiDayDiag?.bcr5NetPct : null) ??
+    realBrokerAnalysis?.bcr5NetPct ??
+    multiDayDiag?.bcr5NetPct ??
+    grossBuyPct;
+  const bcr5Net = Number(rawBcr5Net).toFixed(1);
+
+  const currentPhase = (isHistorySufficient ? multiDayDiag?.phase : null) ??
+    realBrokerAnalysis?.phase ??
+    multiDayDiag?.phase;
 
   let check2Badge = '⚪ Normal Retail Flow';
   let check2Desc = `Buying (${grossBuyPct.toFixed(1)}%) and selling (${grossSellPct.toFixed(1)}%) are evenly spread across retail brokers.`;
@@ -812,8 +845,8 @@ function BeginnerConfidenceCard({
   let check2Border = 'rgba(148, 163, 184, 0.2)';
 
   const isDistributionOrTrap = Boolean(
-    multiDayDiag?.phase === 'DISTRIBUTION_DANGER' ||
-    multiDayDiag?.phase === 'BULL_TRAP' ||
+    currentPhase === 'DISTRIBUTION_DANGER' ||
+    currentPhase === 'BULL_TRAP' ||
     (realBrokerAnalysis?.adSignal === 'Distribution' && ((Number(realBrokerAnalysis?.adStrength) || 0) >= 20 || grossSellPct >= grossBuyPct)) ||
     (grossSellPct >= 38 && grossSellPct > grossBuyPct) ||
     nbar <= 0.80
@@ -821,8 +854,8 @@ function BeginnerConfidenceCard({
 
   const isAccumulation = Boolean(
     !isDistributionOrTrap && (
-      multiDayDiag?.phase === 'STEALTH_ACCUMULATION' ||
-      multiDayDiag?.phase === 'ACTIVE_MARKUP' ||
+      currentPhase === 'STEALTH_ACCUMULATION' ||
+      currentPhase === 'ACTIVE_MARKUP' ||
       (grossBuyPct >= 38 && grossBuyPct > grossSellPct && nbar >= 1.15)
     )
   );
@@ -845,8 +878,23 @@ function BeginnerConfidenceCard({
   const ltp = Number(d?.ltp || 100);
   const pChange = Number(d?.pChange || 0);
   const lv = entryExitPlan?.levels;
-  const entryLow = Number(multiDayDiag?.buyZoneMin || lv?.entryZone?.low || lv?.pullbackAnchor || +(ltp * 0.98).toFixed(1));
-  const entryHigh = Number(multiDayDiag?.buyZoneMax || lv?.entryZone?.high || lv?.entryZone?.max || lv?.breakoutPivot || +(ltp * 1.02).toFixed(1));
+  const entryLow = Number(
+    (isHistorySufficient ? multiDayDiag?.buyZoneMin : null) ??
+    realBrokerAnalysis?.buyZoneMin ??
+    multiDayDiag?.buyZoneMin ??
+    lv?.entryZone?.low ??
+    lv?.pullbackAnchor ??
+    +(ltp * 0.98).toFixed(1)
+  );
+  const entryHigh = Number(
+    (isHistorySufficient ? multiDayDiag?.buyZoneMax : null) ??
+    realBrokerAnalysis?.buyZoneMax ??
+    multiDayDiag?.buyZoneMax ??
+    lv?.entryZone?.high ??
+    lv?.entryZone?.max ??
+    lv?.breakoutPivot ??
+    +(ltp * 1.02).toFixed(1)
+  );
   const isCircuitTrap = Boolean(entryExitPlan?.riskGate?.isCircuitTrap || pChange >= 10);
 
   let check3Badge = '🟡 Extended Above Buy Zone';
@@ -1475,17 +1523,19 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
     const computedMarketCap = (listedShares > 0 && ltp > 0) ? listedShares * ltp : 0;
     const marketCap = computedMarketCap > 0 ? computedMarketCap : Number(liveDetail?.marketCap || s.marketCap || 0);
 
-    // BUG FIX (Discrepancy #5): nepseAdapterLayer returns `promoterPct`/`publicFloatPct` while
-    // liveDetail and s may have either field name. Cascade through all variants to get non-zero values.
-    const promoterPercentage = Number(
-      liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ??
-      s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct ?? 0
-    );
-    const publicPercentage = Number(
-      liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ??
-      s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct ??
-      (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 0)
-    );
+    // Cascade through all variants of promoter & public float percentages
+    // When promoter lock-in has expired (or promoter = 0), public float is 100% of listed shares
+    const rawPromoterPct = liveDetail?.promoterPercentage ?? liveDetail?.promoterPct ??
+      s.promoterPercentage ?? s.promoterPct ?? s.promoter_pct;
+    const promoterPercentage = (rawPromoterPct !== undefined && rawPromoterPct !== null && !isNaN(Number(rawPromoterPct)))
+      ? Number(rawPromoterPct)
+      : 0;
+
+    const rawPublicPct = liveDetail?.publicPercentage ?? liveDetail?.publicFloatPct ?? liveDetail?.publicPct ??
+      s.publicPercentage ?? s.publicFloatPct ?? s.publicPct ?? s.public_pct;
+    const publicPercentage = (rawPublicPct !== undefined && rawPublicPct !== null && !isNaN(Number(rawPublicPct)) && Number(rawPublicPct) > 0)
+      ? Number(rawPublicPct)
+      : (promoterPercentage > 0 ? +(100 - promoterPercentage).toFixed(2) : 100);
 
     const quoteVol = Number(liveQuote?.volume || 0);
     const stockVol = quoteVol > 0 ? quoteVol : Number(s.volume || s.totalTradedQuantity || 0);
@@ -3459,6 +3509,8 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   symbol={d.symbol}
                   currentPrice={d.ltp}
                   initialData={realBrokerAnalysis}
+                  selectedDays={brokerDays}
+                  onTimeframeChange={(tf, days) => handleBrokerDaysChange(typeof days === 'number' ? days : 1)}
                   onFetchSmartMoney={handleFetchSmartMoney}
                 />
               </CardLocalErrorBoundary>
@@ -4125,12 +4177,16 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                   </div>
 
                   <div style={{ display: 'flex', height: 24, borderRadius: 8, overflow: 'hidden', fontWeight: 800, fontSize: 12, textAlign: 'center', lineHeight: '24px' }}>
-                    <div style={{ width: `${Math.max(5, stockMetrics.promoterPct)}%`, background: '#0284c7', color: '#ffffff' }}>
-                      {stockMetrics.promoterPct > 10 ? `${stockMetrics.promoterPct.toFixed(1)}%` : ''}
-                    </div>
-                    <div style={{ width: `${Math.max(5, stockMetrics.publicPct)}%`, background: '#10B981', color: '#0f172a' }}>
-                      {stockMetrics.publicPct > 10 ? `${stockMetrics.publicPct.toFixed(1)}%` : ''}
-                    </div>
+                    {stockMetrics.promoterPct > 0 && (
+                      <div style={{ width: `${stockMetrics.promoterPct}%`, background: '#0284c7', color: '#ffffff' }}>
+                        {stockMetrics.promoterPct >= 10 ? `${stockMetrics.promoterPct.toFixed(1)}%` : ''}
+                      </div>
+                    )}
+                    {stockMetrics.publicPct > 0 && (
+                      <div style={{ width: `${stockMetrics.promoterPct > 0 ? stockMetrics.publicPct : 100}%`, background: '#10B981', color: '#0f172a' }}>
+                        {stockMetrics.publicPct >= 10 ? `${stockMetrics.publicPct.toFixed(1)}% Public Float` : ''}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#94a3b8', marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
@@ -6139,6 +6195,7 @@ export default function StockDetailModal({ stock, allStocks = [], onClose, marke
                 onDaysChange={handleBrokerDaysChange}
                 onDateChange={handleBrokerDateChange}
                 loading={brokerAnalysisLoading}
+                availableDates={availableTradingDates}
               />
             </div>
 

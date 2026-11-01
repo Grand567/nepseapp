@@ -814,9 +814,28 @@ export default function ShareHubChart({
       const markers = [];
       const seen = new Set();
       for (const det of detections) {
-        const time = det.date || det.time;
-        if (!time || seen.has(time + det.id)) continue;
-        seen.add(time + det.id);
+        let time = det.time || det.rawTime || det.date;
+        if (!time) continue;
+        if (activeTf === '1D') {
+          if (typeof time === 'string' && /^\d{9,12}$/.test(time.trim())) {
+            time = Number(time.trim());
+          }
+        } else {
+          if (typeof time === 'number') {
+            const ts = time > 1e11 ? Math.floor(time / 1000) : time;
+            time = new Date(ts * 1000).toISOString().slice(0, 10);
+          } else if (typeof time === 'string') {
+            const trimmed = time.trim();
+            if (/^\d{9,12}$/.test(trimmed)) {
+              const ts = parseInt(trimmed, 10);
+              time = new Date(ts * 1000).toISOString().slice(0, 10);
+            } else {
+              time = trimmed.slice(0, 10);
+            }
+          }
+        }
+        if (seen.has(String(time) + det.id)) continue;
+        seen.add(String(time) + det.id);
         const isBullish = det.type === 'bullish';
         markers.push({
           time,
@@ -827,7 +846,10 @@ export default function ShareHubChart({
           size: 1
         });
       }
-      return markers.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+      return markers.sort((a, b) => {
+        if (typeof a.time === 'number' && typeof b.time === 'number') return a.time - b.time;
+        return String(a.time).localeCompare(String(b.time));
+      });
     } catch {
       return [];
     }

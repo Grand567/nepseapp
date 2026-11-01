@@ -228,12 +228,18 @@ function AppInner() {
 
   // ── Listen for Firebase auth state changes & sync cloud user profiles ──
   useEffect(() => {
+    // Fast safety fallback: If auth resolution takes longer than 350ms, unlock the app with local session or null
+    const authTimeout = setTimeout(() => {
+      setUser(prev => (prev === undefined ? (getLocalSession() || null) : prev));
+    }, 350);
+
     // Check if returning from a mobile OAuth redirect
     checkRedirectResult().then(redirectUser => {
       if (redirectUser) setUser(redirectUser);
     }).catch(console.error);
 
     const unsubscribe = onAuthChange(async (firebaseUser) => {
+      clearTimeout(authTimeout);
       setUser(firebaseUser); // null if signed out
 
       // ── Broad Migration & Cloud Synchronization Sequence ──
@@ -463,7 +469,10 @@ function AppInner() {
         }
       }
     });
-    return unsubscribe;
+    return () => {
+      clearTimeout(authTimeout);
+      unsubscribe();
+    };
   }, []);
 
   // ── Listen for Emergency Market Halt Broadcasts ──
@@ -899,20 +908,20 @@ function AppInner() {
   // ── Auth checking splash ──
   if (user === undefined) {
     return (
-      <div className="loading-screen">
+      <div className="loading-screen" style={{ background: '#080c14' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: 56, height: 56,
-            background: 'linear-gradient(135deg, #5b5ef4, #a855f7)',
+            background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
             borderRadius: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 20px',
-            boxShadow: '0 0 40px rgba(91,94,244,0.4)'
+            boxShadow: '0 0 40px rgba(59,130,246,0.35)'
           }}>
             <BarChart3 style={{ width: 28, height: 28, color: '#fff' }} />
           </div>
-          <div className="spinner" style={{ margin: '0 auto 16px' }} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.6)', letterSpacing: '-0.01em' }}>
+          <div className="spinner" style={{ margin: '0 auto 16px', borderTopColor: '#3b82f6' }} />
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '-0.01em' }}>
             Checking session…
           </div>
         </div>

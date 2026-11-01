@@ -517,8 +517,25 @@ export function detectCandlestickPatternsFromHistory(history = [], fallbackStock
       const high = Math.max(close, open, Number(c.high || close));
       const lowRaw = Number(c.low || close);
       const low = lowRaw > 0 ? Math.min(close, open, lowRaw) : Math.min(close, open);
+      const rawTime = c.rawTime ?? c.date ?? c.businessDate ?? c.time;
+      let dateStr = '';
+      if (typeof rawTime === 'number') {
+        const ts = rawTime > 1e11 ? Math.floor(rawTime / 1000) : rawTime;
+        dateStr = new Date(ts * 1000).toISOString().slice(0, 10);
+      } else if (typeof rawTime === 'string') {
+        const trimmed = rawTime.trim();
+        if (/^\d{9,12}$/.test(trimmed)) {
+          const ts = parseInt(trimmed, 10);
+          dateStr = new Date(ts * 1000).toISOString().slice(0, 10);
+        } else {
+          dateStr = trimmed.slice(0, 10);
+        }
+      } else {
+        dateStr = String(rawTime || '').slice(0, 10);
+      }
       return {
-        date: String(c.date || c.businessDate || c.time || '').slice(0, 10),
+        date: dateStr,
+        rawTime,
         open,
         high,
         low,

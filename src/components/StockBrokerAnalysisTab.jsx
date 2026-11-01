@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { getBrokerName, formatBrokerAmount } from '../utils/accumulationDistributionEngine';
 import { exportBrokerAnalysisReport, exportStockFloorsheet } from '../utils/floorsheetExport';
-import { fetchRealBrokerAnalysis, fetchFromBackend } from '../utils/liveData';
+import { fetchRealBrokerAnalysis, fetchFromBackend, fetchAvailableTradingDates } from '../utils/liveData';
 import { formatNptDateIso } from '../utils/nepseCalendar';
 
 function formatCompactQty(val) {
@@ -38,7 +38,8 @@ export default function StockBrokerAnalysisTab({
   onDaysChange = null,
   onDateChange = null,
   loading = false,
-  allTimeHoldingData = null
+  allTimeHoldingData = null,
+  availableDates: propAvailableDates = []
 }) {
   const [activeSubTab, setActiveSubTab] = useState('brokers'); // 'brokers' | 'acc_dist' | 'zero_sum'
   const [chartTab, setChartTab] = useState('holdings'); // 'holdings' | 'buyers' | 'sellers'
@@ -71,6 +72,19 @@ export default function StockBrokerAnalysisTab({
   useEffect(() => {
     if (selectedDate !== undefined) setLocalDate(selectedDate);
   }, [selectedDate]);
+
+  // Immediately hydrate all available trading dates from prop or background API
+  useEffect(() => {
+    if (Array.isArray(propAvailableDates) && propAvailableDates.length > 0) {
+      setAllStoredDates(prev => Array.from(new Set([...prev, ...propAvailableDates])).sort().reverse());
+    } else {
+      fetchAvailableTradingDates().then(dates => {
+        if (Array.isArray(dates) && dates.length > 0) {
+          setAllStoredDates(prev => Array.from(new Set([...prev, ...dates])).sort().reverse());
+        }
+      }).catch(() => {});
+    }
+  }, [propAvailableDates]);
 
   const effectiveDays = onDaysChange ? selectedDays : localDays;
   const effectiveDate = onDateChange ? selectedDate : localDate;
@@ -318,6 +332,9 @@ export default function StockBrokerAnalysisTab({
     const isOngoingMarketSession = (nptMins % 1440) >= (11 * 60) && (nptMins % 1440) < (15 * 60 + 5);
 
     const set = new Set();
+    if (Array.isArray(propAvailableDates)) {
+      propAvailableDates.forEach(d => d && set.add(String(d)));
+    }
     allStoredDates.forEach(d => d && set.add(String(d)));
     const bd = activeBrokerData;
     if (Array.isArray(bd?.availableDates)) {
