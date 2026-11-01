@@ -6,6 +6,7 @@ import { fetchBrokerAnalysis, fetchBrokerHeatmap, fetchBrokerHoldings } from '..
 import { exportMarketBrokerSurveillance } from '../utils/floorsheetExport';
 import { StatCard, InfoBanner, Insight, Spinner, TimeframeFilterBar } from './ui';
 import latestBrokerMatrix from '../data/broker_matrix_latest.json';
+import allTimeBrokerHoldingsSeed from '../data/broker_holdings_alltime.json';
 
 export function formatNepaliCurrency(amt: number): string {
   const abs = Math.abs(amt);
@@ -377,17 +378,31 @@ export function BrokerFlowDominanceService({
   const loadBrokerRetention = async (bId: string) => {
     const targetId = String(bId || selectedRetentionBrokerId || '58').trim();
     if (!targetId) return;
+
+    // Instant offline/bundled fallback so mobile immediately displays verified ledger positions
+    const seed = (allTimeBrokerHoldingsSeed as Record<string, any>)?.[targetId];
+    if (seed && (!brokerRetentionData || String(brokerRetentionData.brokerId || '').replace(/^0+/, '') !== targetId.replace(/^0+/, ''))) {
+      setBrokerRetentionData(seed);
+    }
+
     setLoadingBrokerRetention(true);
     try {
       const res = await fetchBrokerHoldings(targetId);
-      if (res && res.success && res.data) {
-        setBrokerRetentionData(res.data);
+      const payload = res?.data || res;
+      if (payload && (Array.isArray(payload.topHoldings) || payload.brokerId)) {
+        setBrokerRetentionData(payload);
+      } else if (seed) {
+        setBrokerRetentionData(seed);
       } else {
         setBrokerRetentionData(null);
       }
     } catch (err) {
-      console.error('Failed to load broker retention:', err);
-      setBrokerRetentionData(null);
+      console.warn('Failed to load broker retention from network:', err);
+      if (seed) {
+        setBrokerRetentionData(seed);
+      } else {
+        setBrokerRetentionData(null);
+      }
     } finally {
       setLoadingBrokerRetention(false);
     }
@@ -431,8 +446,9 @@ export function BrokerFlowDominanceService({
     setLoadingRetention(true);
     try {
       const res = await fetchBrokerAnalysis(targetSym, 'all', { refresh: force, days: 'all' });
-      if (res && res.success && res.data) {
-        setStockRetentionData(res.data);
+      const payload = res?.data || res;
+      if (payload && (payload.brokers || payload.topHoldings || payload.symbol)) {
+        setStockRetentionData(payload);
       } else {
         setStockRetentionData(null);
       }
@@ -1636,7 +1652,9 @@ export function BrokerFlowDominanceService({
                   setBrokerSubView('holding_till_now');
                   setActiveMode('stockRetention');
                   setRetentionViewType('byBroker');
-                  if (!brokerRetentionData) loadBrokerRetention(selectedTop10BrokerId);
+                  const targetBId = String(selectedTop10BrokerId || selectedRetentionBrokerId || '58').trim();
+                  setSelectedRetentionBrokerId(targetBId);
+                  loadBrokerRetention(targetBId);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                   (brokerSubView === 'holding_till_now' || (activeMode === 'stockRetention' && retentionViewType === 'byBroker'))
@@ -3636,7 +3654,7 @@ export function BrokerFlowDominanceService({
               type="button"
               onClick={() => {
                 setRetentionViewType('byBroker');
-                if (!brokerRetentionData) loadBrokerRetention(selectedRetentionBrokerId);
+                loadBrokerRetention(selectedRetentionBrokerId);
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
                 retentionViewType === 'byBroker'

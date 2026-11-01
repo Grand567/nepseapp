@@ -750,7 +750,10 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
   // 1. Primary: try configured local proxy ONLY if not already marked dead
   if (!isLocal || _localProxyState !== 'dead') {
     try {
-      const probeTimeout = isLocal && _localProxyState === 'unknown' ? 1500 : (isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 4000), 10000));
+      // For remote Render backend during cold-boot, allow up to 25s window so mobile doesn't prematurely drop the connection
+      const probeTimeout = isLocal 
+        ? (_localProxyState === 'unknown' ? 1500 : (isServerWarm() ? timeoutMs : Math.min(Math.max(timeoutMs, 4000), 10000)))
+        : (isServerWarm() ? timeoutMs : Math.max(timeoutMs, 25000));
       const res = await tryFetchJSON(`${base}${path}`, probeTimeout);
       if (res && res.success !== false) {
         if (!isServerWarm()) { _serverWarmTs = Date.now(); }
@@ -787,10 +790,11 @@ export async function fetchFromBackend(path, timeoutMs = 12000) {
     } catch (_) {}
     return null;
   } else {
-    // If primary was already Render and had a transient blip, retry once with short 500ms delay
-    await new Promise(r => setTimeout(r, 500));
+    // If primary was already Render and had a transient cold-start blip, retry once with grace window
+    await new Promise(r => setTimeout(r, 1000));
     try {
-      const retryRes = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, timeoutMs);
+      const retryTimeout = isServerWarm() ? timeoutMs : Math.max(timeoutMs, 20000);
+      const retryRes = await tryFetchJSON(`https://nepseapp.onrender.com${path}`, retryTimeout);
       if (retryRes && retryRes.success !== false) {
         _serverWarmTs = Date.now();
         return retryRes;

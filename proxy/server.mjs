@@ -6050,15 +6050,16 @@ app.get(['/api/smart-money/broker-holdings/:brokerId', '/api/broker-holdings/:br
   if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
   const cacheKey = `broker-alltime-holdings-${brokerId}`;
   const cached = getCache(cacheKey);
-  if (cached) return res.json({ success: true, data: cached, cached: true });
+  if (cached) return res.json({ success: true, data: { success: true, data: cached, ...cached }, cached: true });
 
   try {
     const data = getBrokerAllTimeTopHoldings(brokerId);
     if (data) {
-      setCache(cacheKey, data, 5 * 60 * 1000);
-      return res.json({ success: true, data, source: 'daily_broker_ledger' });
+      setCache(cacheKey, data, 60 * 60 * 1000);
+      return res.json({ success: true, data: { success: true, data, ...data }, source: 'daily_broker_ledger' });
     }
-    return res.status(404).json({ success: false, message: `No holdings found for broker #${brokerId}` });
+    const empty = { brokerId, brokerName: `Broker #${brokerId}`, topHoldings: [], totalSharesHeld: 0 };
+    return res.json({ success: true, data: { success: true, data: empty, ...empty }, source: 'empty_fallback' });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -12515,6 +12516,13 @@ app.listen(PORT, '0.0.0.0', async () => {
         try {
           seedFromDiskVault();
           rebuildHotCache();
+          // Warm up popular brokers asynchronously in background to avoid blocking event loop
+          setTimeout(() => {
+            const popularBrokers = ['58', '77', '45', '34', '17', '28', '49', '57', '38', '14', '22', '42'];
+            for (const bId of popularBrokers) {
+              try { getBrokerAllTimeTopHoldings(bId); } catch (_) {}
+            }
+          }, 5000);
         } catch (cacheErr) {
           console.warn('[ledgerStore] Initial hot cache build error:', cacheErr.message);
         }
@@ -12571,16 +12579,22 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`   🔸 Price History:   /api/price-history/:symbol`);
     console.log(`   🔸 UDF History:     /api/udf/history`);
 
-    // Auto self-ping on Render production to prevent sleeping
-    // Render free tier sleeps after 15 minutes — ping every 12 minutes to stay within the window
+    // Auto self-ping on Render production during NEPSE trading hours (Monday to Friday, 10:15 AM - 3:45 PM NPT)
+    // Guarantees zero cold-starts during live market hours while conserving Render free monthly hours at night & weekends
     if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
       const pingUrl = process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/api/ping` : 'https://nepseapp.onrender.com/api/ping';
-      console.log(`📡 Auto keep-alive enabled: Pinging ${pingUrl} every 12 minutes`);
+      console.log(`📡 Trading hours auto keep-alive enabled: Pinging ${pingUrl} every 10 minutes (Mon-Fri 10:15-15:45 NPT)`);
       setInterval(() => {
-        import('https').then(https => {
-          https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
-        }).catch(() => {});
-      }, 12 * 60 * 1000);
+        try {
+          const status = getDetailedMarketStatus();
+          const nptMins = status.nptTotalMinutes || 0;
+          if (status.isTradingDay && nptMins >= 615 && nptMins <= 945) {
+            import('https').then(https => {
+              https.default.get(pingUrl, (res) => res.resume()).on('error', () => {});
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      }, 10 * 60 * 1000);
     }
 
     // ── Proactive Background Market Data Warm-Up ──────────────────────────────

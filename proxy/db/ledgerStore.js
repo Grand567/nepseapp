@@ -123,6 +123,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_stock_date ON daily_stock_summary(symbol, trade_date DESC);
   CREATE INDEX IF NOT EXISTS idx_broker_symbol_date ON daily_broker_ledger(symbol, trade_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_broker_id_symbol ON daily_broker_ledger(broker_id, symbol);
   CREATE INDEX IF NOT EXISTS idx_stock_summary_date ON daily_stock_summary(trade_date DESC);
 
   -- 1. Raw Floorsheet Contracts Table (Tick-by-Tick Persistence)
@@ -660,7 +661,7 @@ export const ingestDailyFloorsheetTransaction = db.transaction((tradeDate, rawTr
   db.prepare(`
     DELETE FROM floorsheet_contracts
     WHERE trade_date NOT IN (
-      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 40
+      SELECT DISTINCT trade_date FROM daily_stock_summary ORDER BY trade_date DESC LIMIT 2
     )
   `).run();
 
@@ -1500,7 +1501,12 @@ export function seedFromDiskVault() {
   // 1. ALWAYS scan for disk floorsheet files (floorsheet-full-*.json) not yet ingested into daily_broker_ledger
   try {
     const dataFiles = fs.readdirSync(DATA_DIR);
-    const floorsheetFiles = dataFiles.filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"));
+    // Keep tick-level contracts table lightweight (< 150k rows) by only bootstrapping latest 2 sessions into SQLite
+    const floorsheetFiles = dataFiles
+      .filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"))
+      .sort()
+      .reverse()
+      .slice(0, 2);
     for (const file of floorsheetFiles) {
       const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
       if (match) {
@@ -1524,7 +1530,12 @@ export function seedFromDiskVault() {
       db.prepare(`SELECT DISTINCT trade_date FROM floorsheet_contracts`).all().map(r => r.trade_date)
     );
     const dataFiles = fs.readdirSync(DATA_DIR);
-    const floorsheetFiles = dataFiles.filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"));
+    // Keep tick-level contracts table lightweight (< 150k rows) by only bootstrapping latest 2 sessions into SQLite
+    const floorsheetFiles = dataFiles
+      .filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"))
+      .sort()
+      .reverse()
+      .slice(0, 2);
     for (const file of floorsheetFiles) {
       const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
       if (match) {
@@ -1554,7 +1565,12 @@ export function seedFromDiskVault() {
   // 1. Check for raw full floorsheets (floorsheet-full-*.json)
   try {
     const dataFiles = fs.readdirSync(DATA_DIR);
-    const floorsheetFiles = dataFiles.filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"));
+    // Keep tick-level contracts table lightweight (< 150k rows) by only bootstrapping latest 2 sessions into SQLite
+    const floorsheetFiles = dataFiles
+      .filter(f => f.startsWith("floorsheet-full-") && f.endsWith(".json"))
+      .sort()
+      .reverse()
+      .slice(0, 2);
     for (const file of floorsheetFiles) {
       const match = file.match(/floorsheet-full-(\d{4}-\d{2}-\d{2})\.json/);
       if (match) {
@@ -1995,7 +2011,7 @@ try {
       const discovered = fs.readdirSync(DATA_DIR).filter(f => /^floorsheet-full-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse();
       if (discovered.length > 0) candidateFiles = discovered;
     } catch (_) {}
-    for (const f of candidateFiles.slice(0, 30)) {
+    for (const f of candidateFiles.slice(0, 2)) {
       const p = path.join(DATA_DIR, f);
       if (fs.existsSync(p)) {
         try {

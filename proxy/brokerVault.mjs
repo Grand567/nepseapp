@@ -3053,6 +3053,8 @@ export async function getOrFetchBrokerDeskAnalysis(brokerId, options = {}) {
 
 
 
+const _brokerHoldingsCache = new Map();
+
 /**
  * Retrieve a broker's top net-held stocks across all trading sessions (All-Time Net Retention)
  */
@@ -3060,6 +3062,12 @@ export function getBrokerAllTimeTopHoldings(brokerId) {
   const bId = String(brokerId || '').replace(/^0+/, '').trim();
   const bNum = parseInt(bId, 10);
   if (!bNum || !db) return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };
+
+  const cacheKey = `holdings_${bNum}`;
+  const cached = _brokerHoldingsCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts < 3600000)) {
+    return cached.data;
+  }
 
   try {
     const rows = db.prepare(`
@@ -3076,7 +3084,7 @@ export function getBrokerAllTimeTopHoldings(brokerId) {
       HAVING cumHoldQty > 0
       ORDER BY cumHoldQty DESC
       LIMIT 25
-    `).all(bId);
+    `).all(bNum);
 
     const brokerName = getBrokerName(bId);
     let totalSharesHeld = 0;
@@ -3111,13 +3119,15 @@ export function getBrokerAllTimeTopHoldings(brokerId) {
       };
     });
 
-    return {
+    const result = {
       brokerId: bId,
       brokerName,
       totalHoldingsCount: topHoldings.length,
       totalSharesHeld,
       topHoldings
     };
+    _brokerHoldingsCache.set(cacheKey, { data: result, ts: Date.now() });
+    return result;
   } catch (err) {
     console.error(`[brokerVault] Error fetching all-time holdings for broker ${bId}:`, err);
     return { brokerId: bId, brokerName: getBrokerName(bId), topHoldings: [] };

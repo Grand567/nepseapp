@@ -17,7 +17,7 @@ import stockTelemetryRouter from '../proxy/routes/stockTelemetryRoutes.mjs';
 import signalTrackRecordRouter from '../proxy/routes/signalTrackRecordRoutes.mjs';
 import radarRouter from '../proxy/routes/radarRoutes.js';
 import aiGuruRouter from '../proxy/routes/aiGuruRoutes.mjs';
-import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap } from '../proxy/brokerVault.mjs';
+import { getOrFetchBrokerAnalysis, getOrFetchSymbolFloorsheet, fetchShareSansarFloorsheet, fetchChukulDateFloorsheet, fetchSymbolTradingDates, getBrokerName, BROKER_NAMES, getFullSessionFloorsheet, aggregateMarketFloorsheet, getMarketWideBrokerSummaryMap, getBrokerAllTimeTopHoldings } from '../proxy/brokerVault.mjs';
 import { getDetailedMarketStatus, isNepseWeekend, isNepsePublicHoliday } from '../src/utils/nepseCalendar.js';
 import { 
   adToBs, 
@@ -4067,6 +4067,25 @@ app.get('/api/smart-money/broker-heatmap', async (req, res) => {
   } catch (err) {
     console.error('[broker-heatmap] Error:', err.message);
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get(['/api/smart-money/broker-holdings/:brokerId', '/api/broker-holdings/:brokerId'], async (req, res) => {
+  const brokerId = String(req.params.brokerId || '').replace(/^0+/, '').trim();
+  if (!brokerId) return res.status(400).json({ success: false, error: 'Invalid broker id' });
+  const cacheKey = 'broker-alltime-holdings-' + brokerId;
+  const cached = getCache(cacheKey);
+  if (cached) return res.json({ success: true, data: { success: true, data: cached, ...cached }, cached: true });
+
+  try {
+    const data = getBrokerAllTimeTopHoldings(brokerId);
+    if (data) {
+      setCache(cacheKey, data, 60 * 60 * 1000);
+      return res.json({ success: true, data: { success: true, data, ...data }, source: 'daily_broker_ledger' });
+    }
+    return res.json({ success: true, data: { brokerId, brokerName: `Broker #${brokerId}`, topHoldings: [], totalSharesHeld: 0 }, source: 'empty_fallback' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

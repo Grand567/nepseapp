@@ -86,7 +86,7 @@ const _proxyFetch = async (path, options = {}, ttlMs = 60000, forceRefresh = fal
       const url = base + path;
       const isNative = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
 
-      const isBrokerOrHeatmap = path.includes('/api/broker-analysis') || path.includes('/api/smart-money/broker-heatmap') || path.includes('/api/market/broker-summary') || path.includes('/api/smart-money/broker-desk');
+      const isBrokerOrHeatmap = path.includes('/api/broker-analysis') || path.includes('/api/smart-money/broker-heatmap') || path.includes('/api/market/broker-summary') || path.includes('/api/smart-money/broker-desk') || path.includes('broker-holdings');
       const effectiveTimeout = options.timeout || (isBrokerOrHeatmap ? 45000 : 25000);
 
       if (isNative && typeof CapacitorHttp !== 'undefined' && CapacitorHttp && typeof CapacitorHttp.request === 'function') {
