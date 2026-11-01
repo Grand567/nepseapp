@@ -591,6 +591,10 @@
   outline: none;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   transition: border-color 0.2s, box-shadow 0.2s;
+  caret-color: #38bdf8;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .services-graceful-search-input:focus {

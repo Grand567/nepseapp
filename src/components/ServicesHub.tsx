@@ -9,9 +9,9 @@
 //    market-summary, top-volume/turnover/transactions, sector-rotation, api-status…
 // 4. Detail view + hub view use Tailwind (no inline-style fragility).
 import './servicesHub.css';
-import { useMemo, useState, useEffect, type ComponentType } from 'react';
+import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
 import {
-  Search, ChevronLeft, Activity, TrendingUp, TrendingDown,
+  Search, ChevronLeft, ChevronDown, Check, Activity, TrendingUp, TrendingDown,
   Zap, Flame, Award, Users, Radio, Compass, Layers, Shield,
   ArrowLeftRight, ArrowUp, DollarSign, Target, PieChart, Calculator,
   Wallet, Newspaper, Building2, Briefcase, Sparkles, Rocket, Percent,
@@ -1112,6 +1112,167 @@ interface ServicesHubProps {
   onAskGuruAi?: (stock: any) => void;
 }
 
+function SessionDateDropdown({
+  selectedSessionDate,
+  onSelectDate,
+  availableDates,
+}: {
+  selectedSessionDate: string;
+  onSelectDate: (d: string) => void;
+  availableDates: string[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: selectedSessionDate ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.06)',
+          border: selectedSessionDate ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: 8,
+          padding: '4px 9px',
+          color: selectedSessionDate ? '#38bdf8' : '#e2e8f0',
+          fontSize: 11,
+          fontWeight: 800,
+          cursor: 'pointer',
+          outline: 'none',
+          whiteSpace: 'nowrap',
+          transition: 'all 0.15s ease',
+        }}
+        title={selectedSessionDate ? `Filtered to session ${selectedSessionDate}` : 'Viewing Latest Session'}
+      >
+        <Calendar size={12} color={selectedSessionDate ? '#38bdf8' : '#94a3b8'} />
+        <span>{selectedSessionDate || 'Latest Session'}</span>
+        <ChevronDown size={11} color={selectedSessionDate ? '#38bdf8' : '#94a3b8'} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+
+      {selectedSessionDate && (
+        <button
+          type="button"
+          onClick={() => onSelectDate('')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#f43f5e',
+            fontSize: 12,
+            fontWeight: 900,
+            cursor: 'pointer',
+            padding: '2px 4px',
+            marginLeft: 2,
+          }}
+          title="Reset to Latest Session"
+        >
+          ×
+        </button>
+      )}
+
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            zIndex: 9999,
+            minWidth: 230,
+            maxHeight: 280,
+            overflowY: 'auto',
+            background: '#0B0E14',
+            border: '1px solid rgba(255, 255, 255, 0.16)',
+            borderRadius: 12,
+            boxShadow: '0 16px 36px rgba(0, 0, 0, 0.85)',
+            padding: 6,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+        >
+          <div style={{ padding: '6px 10px', fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Select Trading Session
+          </div>
+          <button
+            type="button"
+            onClick={() => { onSelectDate(''); setIsOpen(false); }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: !selectedSessionDate ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+              color: !selectedSessionDate ? '#38bdf8' : '#e2e8f0',
+              border: 'none',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+              <span>Latest Session (Live)</span>
+            </div>
+            {!selectedSessionDate && <Check size={14} color="#38bdf8" />}
+          </button>
+
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
+
+          {availableDates.map(dt => (
+            <button
+              key={dt}
+              type="button"
+              onClick={() => { onSelectDate(dt); setIsOpen(false); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '7px 10px',
+                borderRadius: 8,
+                background: selectedSessionDate === dt ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                color: selectedSessionDate === dt ? '#38bdf8' : '#cbd5e1',
+                border: 'none',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: '100%',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Calendar size={12} color="#64748b" />
+                <span>{dt}</span>
+              </div>
+              {selectedSessionDate === dt && <Check size={14} color="#38bdf8" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ServicesHub({
   stocks = [],
   indices,
@@ -1346,29 +1507,11 @@ export default function ServicesHub({
               <span style={{ textTransform: 'capitalize' }}>{s.cat.replace('-', ' ')}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '4px 8px', flexShrink: 0 }}>
-            <Calendar size={13} color="#38bdf8" />
-            <select
-              value={selectedSessionDate}
-              onChange={(e) => setSelectedSessionDate(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: selectedSessionDate ? '#38bdf8' : '#e2e8f0', fontSize: 11, fontWeight: 800, cursor: 'pointer', outline: 'none' }}
-            >
-              <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>Latest Session</option>
-              {availableTradingDates.map((dt) => (
-                <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>{dt}</option>
-              ))}
-            </select>
-            {selectedSessionDate && (
-              <button
-                type="button"
-                onClick={() => setSelectedSessionDate('')}
-                style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: 12, fontWeight: 900, cursor: 'pointer', padding: 0 }}
-                title="Reset to Latest"
-              >
-                ×
-              </button>
-            )}
-          </div>
+          <SessionDateDropdown
+            selectedSessionDate={selectedSessionDate}
+            onSelectDate={setSelectedSessionDate}
+            availableDates={availableTradingDates}
+          />
         </div>
         <div className="services-detail-body">
           <div className="services-detail-card">
@@ -1443,29 +1586,11 @@ export default function ServicesHub({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '3px 8px' }}>
-              <Calendar size={12} color="#38bdf8" />
-              <select
-                value={selectedSessionDate}
-                onChange={(e) => setSelectedSessionDate(e.target.value)}
-                style={{ background: 'transparent', border: 'none', color: selectedSessionDate ? '#38bdf8' : '#e2e8f0', fontSize: 11, fontWeight: 800, cursor: 'pointer', outline: 'none' }}
-              >
-                <option value="" style={{ background: '#0B0E14', color: '#94a3b8' }}>Latest Session</option>
-                {availableTradingDates.map((dt) => (
-                  <option key={dt} value={dt} style={{ background: '#0B0E14', color: '#ffffff' }}>{dt}</option>
-                ))}
-              </select>
-              {selectedSessionDate && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedSessionDate('')}
-                  style={{ background: 'none', border: 'none', color: '#f43f5e', fontSize: 11, fontWeight: 900, cursor: 'pointer', padding: 0 }}
-                  title="Reset to Latest"
-                >
-                  ×
-                </button>
-              )}
-            </div>
+            <SessionDateDropdown
+              selectedSessionDate={selectedSessionDate}
+              onSelectDate={setSelectedSessionDate}
+              availableDates={availableTradingDates}
+            />
             <div className="badge-live">
               <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
               <span>LIVE</span>
@@ -1477,12 +1602,19 @@ export default function ServicesHub({
         <div className="services-graceful-search-box">
           <Search size={16} color="#64748b" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
+            id="services-hub-search-input"
+            name="services_search_query"
+            type="search"
+            inputMode="search"
             className="services-graceful-search-input"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="none"
             spellCheck={false}
             data-form-type="other"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            style={{ caretColor: '#38bdf8' }}
             placeholder="Search 90+ tools & 350+ NEPSE stocks..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
