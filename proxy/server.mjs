@@ -12698,6 +12698,42 @@ app.listen(PORT, '0.0.0.0', async () => {
             }
           }
         }
+
+        // Check if daily_stock_summary has 1-year history (< 200 sessions)
+        if (db) {
+          const summaryRow = db.prepare('SELECT COUNT(DISTINCT trade_date) as cnt FROM daily_stock_summary').get();
+          if (!summaryRow || summaryRow.cnt < 200) {
+            console.log('[startup-warmup] daily_stock_summary lacks 1-year history. Fetching nepse-1year-market-history.json.gz from cloud vault...');
+            try {
+              const histUrl = `https://github.com/${getGitHubRepo()}/releases/download/floorsheets-2026/nepse-1year-market-history.json.gz`;
+              const histRes = await axios.get(histUrl, { responseType: 'arraybuffer', timeout: 20000 });
+              if (histRes.data) {
+                const unzipped = zlib.gunzipSync(Buffer.from(histRes.data));
+                const parsed = JSON.parse(unzipped.toString('utf8'));
+                if (parsed.stocks) {
+                  const insertStmt = db.prepare(`
+                    INSERT OR REPLACE INTO daily_stock_summary (
+                      trade_date, symbol, open_price, high_price, low_price, close_price, total_volume, total_turnover,
+                      is_quarantined, calendar_status, tape_scope, source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'VALID', 'FULL_TAPE', 'CHUKUL_1YEAR_VAULT')
+                  `);
+                  const tx = db.transaction(() => {
+                    for (const [sym, candles] of Object.entries(parsed.stocks)) {
+                      if (sym === 'NEPSE') continue;
+                      for (const c of candles) {
+                        insertStmt.run(c.d, sym, c.o, c.h, c.l, c.c, c.v, c.a);
+                      }
+                    }
+                  });
+                  tx();
+                  console.log(`[startup-warmup] ✅ Hydrated 1-year market history (${parsed.totalCandles} candles) into daily_stock_summary!`);
+                }
+              }
+            } catch (hErr) {
+              console.warn('[startup-warmup] 1-year history hydration notice:', hErr.message);
+            }
+          }
+        }
       } catch (wErr) {
         console.warn('[startup-warmup] Warmup notice:', wErr.message);
       }
