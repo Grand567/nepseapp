@@ -3629,8 +3629,9 @@ app.get('/api/floorsheet/archive/:date', async (req, res) => {
     let data = getLocalDailyFloorsheet(targetDate);
     let source = 'LOCAL_VAULT';
     if (!data) {
-      data = await fetchFloorsheetFromR2(targetDate);
-      if (data) source = 'CLOUDFLARE_R2';
+      const provider = getActiveCloudProvider();
+      data = await fetchFloorsheetFromCloud(targetDate);
+      if (data) source = `CLOUD_${provider}`;
     }
     if (data) {
       return res.json({ success: true, date: targetDate, count: data.length, source, data });
@@ -3641,7 +3642,7 @@ app.get('/api/floorsheet/archive/:date', async (req, res) => {
   }
 });
 
-/* Cloudflare R2 Cloud Floorsheet Management Endpoints */
+/* Cloud Floorsheet Management Endpoints */
 app.get('/api/floorsheet/cloud/status', async (req, res) => {
   try {
     const provider = getActiveCloudProvider();
@@ -3681,7 +3682,7 @@ app.post('/api/floorsheet/cloud/sync', async (req, res) => {
 app.post('/api/floorsheet/cloud/upload/:date', async (req, res) => {
   try {
     const targetDate = String(req.params.date || '').trim();
-    const uploadResult = await uploadDailyFloorsheetToR2(targetDate);
+    const uploadResult = await uploadDailyFloorsheetToCloud(targetDate);
     return res.json(uploadResult);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
